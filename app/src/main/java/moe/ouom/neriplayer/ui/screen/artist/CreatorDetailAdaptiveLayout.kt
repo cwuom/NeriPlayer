@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -71,7 +72,7 @@ internal fun CreatorDetailAdaptiveLayout(
                 }
                 Surface(
                     modifier = Modifier.weight(1f).fillMaxHeight().testTag("creatorDetailWorks"),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = neriRoundedShape(28.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow
                 ) {
                     content(true)

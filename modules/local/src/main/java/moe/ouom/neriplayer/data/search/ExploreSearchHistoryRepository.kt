@@ -37,6 +37,15 @@ class ExploreSearchHistoryRepository(context: Context) {
         }
     }
 
+    suspend fun remove(query: String) {
+        val target = query.trim().lowercase(Locale.ROOT)
+        appContext.exploreSearchHistoryDataStore.edit { prefs ->
+            val next = decodeExploreSearchHistory(prefs[HistoryKey])
+                .filterNot { it.lowercase(Locale.ROOT) == target }
+            prefs[HistoryKey] = historyJson.encodeToString(next)
+        }
+    }
+
     suspend fun clear() {
         appContext.exploreSearchHistoryDataStore.edit { prefs ->
             prefs.remove(HistoryKey)

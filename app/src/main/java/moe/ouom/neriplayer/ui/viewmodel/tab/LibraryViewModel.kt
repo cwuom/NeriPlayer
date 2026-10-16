@@ -35,6 +35,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,7 +67,10 @@ data class LibraryUiState(
     val youtubeMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
     val youtubeMusicError: String? = null,
     val biliPlaylists: List<BiliPlaylist> = emptyList(),
-    val biliError: String? = null
+    val biliError: String? = null,
+    val neteaseRefreshing: Boolean = false,
+    val youtubeMusicRefreshing: Boolean = false,
+    val biliRefreshing: Boolean = false
 )
 
 @Suppress("unused")
@@ -179,6 +183,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun refreshBilibili() {
         viewModelScope.launch {
+            _uiState.update { it.copy(biliRefreshing = true) }
             try {
                 val account = resolveLibraryBiliMid(
                     cookies = biliCookieRepo.getCookiesOnce(),
@@ -230,6 +235,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value = _uiState.value.copy(biliError = e.message)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(biliError = e.message)
+            } finally {
+                _uiState.update { it.copy(biliRefreshing = false) }
             }
         }
     }
@@ -269,6 +276,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun refreshNeteasePlaylists() {
         viewModelScope.launch {
+            _uiState.update { it.copy(neteaseRefreshing = true) }
             try {
                 val uid = withContext(Dispatchers.IO) { neteaseClient.getCurrentUserId() }
                 val raw = withContext(Dispatchers.IO) { neteaseClient.getUserPlaylists(uid) }
@@ -281,6 +289,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value = _uiState.value.copy(neteaseError = e.message)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(neteaseError = e.message)
+            } finally {
+                _uiState.update { it.copy(neteaseRefreshing = false) }
             }
         }
     }
@@ -313,6 +323,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
         youtubeMusicPlaylistsPending = false
         youtubeMusicPlaylistsJob = viewModelScope.launch {
+            _uiState.update { it.copy(youtubeMusicRefreshing = true) }
             try {
                 val playlists = withContext(Dispatchers.IO) {
                     AppContainer.youtubeMusicClient.getLibraryPlaylists(
@@ -336,6 +347,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     youtubeMusicError = e.message
                 )
             } finally {
+                _uiState.update { it.copy(youtubeMusicRefreshing = false) }
                 val completedJob = coroutineContext[Job]
                 if (youtubeMusicPlaylistsJob === completedJob) {
                     youtubeMusicPlaylistsJob = null

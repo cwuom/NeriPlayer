@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -210,7 +211,7 @@ internal fun NeteaseArtistDetailContent(
                 }
                 Surface(
                     modifier = Modifier.weight(1f).fillMaxSize(),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = neriRoundedShape(28.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -379,13 +380,13 @@ private fun ArtistWorkTabs(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth().padding(vertical = 8.dp),
-        shape = RoundedCornerShape(24.dp),
+        shape = neriRoundedShape(24.dp),
         color = Color.Transparent
     ) {
         AdvancedGlassSurface(
             role = AdvancedGlassRole.ScreenTopTab,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
+            shape = neriRoundedShape(24.dp),
             fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
             tintColor = MaterialTheme.colorScheme.surfaceVariant
         ) {
@@ -444,7 +445,7 @@ private fun ArtistHeaderCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
-        shape = RoundedCornerShape(28.dp)
+        shape = neriRoundedShape(28.dp)
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             AsyncImage(

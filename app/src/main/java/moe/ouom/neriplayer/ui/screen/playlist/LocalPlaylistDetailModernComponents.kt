@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -1554,7 +1555,7 @@ private fun PlaylistCompactIconButton(
         enabled = enabled,
         modifier = Modifier
             .size(PlaylistCompactActionButtonSize)
-            .clip(RoundedCornerShape(22.dp))
+            .clip(neriRoundedShape(22.dp))
             .background(containerColor)
     ) {
         Icon(

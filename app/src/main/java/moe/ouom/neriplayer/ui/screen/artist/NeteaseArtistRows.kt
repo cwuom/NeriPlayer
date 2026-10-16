@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -81,7 +82,7 @@ internal fun ArtistSongRow(
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(48.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(neriRoundedShape(10.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         )
         Spacer(Modifier.width(12.dp))
@@ -163,7 +164,7 @@ internal fun ArtistAlbumRow(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(58.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(neriRoundedShape(14.dp))
             )
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {

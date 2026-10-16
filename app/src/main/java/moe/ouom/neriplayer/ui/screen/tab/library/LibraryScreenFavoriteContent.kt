@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.tab.library
  * Created: 2025/8/8
  */
 
+import androidx.compose.ui.graphics.Shape
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -235,6 +237,7 @@ internal fun FavoritePlaylistList(
         }
     )
 
+    val cardShape = neriRoundedShape(12.dp)
     LazyColumn(
         state = reorderState.listState,
         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
@@ -243,7 +246,6 @@ internal fun FavoritePlaylistList(
             .fillMaxSize()
             .reorderable(reorderState)
     ) {
-        val cardShape = RoundedCornerShape(12.dp)
         val displayedFavorites = filterFavoritePlaylists(reorderableFavorites, favoriteSearchQuery)
         item(key = "favorite_category_tabs") {
             LibrarySecondaryTabs(
@@ -619,7 +621,7 @@ internal fun FavoritePlaylistList(
                                             .size(56.dp)
                                             .clip(
                                                 if (isArtistFavoriteSource(favorite.source)) CircleShape
-                                                else RoundedCornerShape(8.dp)
+                                                else neriRoundedShape(8.dp)
                                             )
                                     )
                                 } else {
@@ -720,13 +722,13 @@ internal fun QqMusicPlaylistList(
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 
+    val cardShape = neriRoundedShape(12.dp)
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        val cardShape = RoundedCornerShape(12.dp)
         // TODO: Implement QQ Music playlist list when type is available
         item {
             Card(

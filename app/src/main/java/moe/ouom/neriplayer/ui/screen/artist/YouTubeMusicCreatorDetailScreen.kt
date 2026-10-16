@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.app.Application
 import android.content.Context
 import androidx.compose.foundation.background
@@ -432,7 +433,7 @@ private fun YouTubeMusicCreatorHeader(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
-        shape = RoundedCornerShape(28.dp)
+        shape = neriRoundedShape(28.dp)
     ) {
         YouTubeMusicCreatorPhoneHero(header = detail.header, offlineMode = offlineMode)
         YouTubeMusicCreatorPhoneDetails(header = detail.header, followFavorite = followFavorite)
@@ -794,7 +795,7 @@ internal fun CreatorSongCover(
     Box(
         modifier = Modifier
             .size(48.dp)
-            .clip(RoundedCornerShape(8.dp)),
+            .clip(neriRoundedShape(8.dp)),
         contentAlignment = Alignment.Center
     ) {
         if (!coverUrl.isNullOrBlank()) {
@@ -839,7 +840,7 @@ private fun CreatorSectionCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp)),
+                .clip(neriRoundedShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
             if (item.coverUrl.isNotBlank()) {

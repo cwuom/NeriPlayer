@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +28,7 @@ internal fun NeteaseArtistProfileCard(
     val hero = header.toNeteaseArtistHero()
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp)
+        shape = neriRoundedShape(28.dp)
     ) {
         AsyncImage(
             model = offlineCachedImageRequest(

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.history.stats
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -118,7 +119,7 @@ internal fun PlaybackStatsContent(
                     AdvancedGlassSurface(
                         role = AdvancedGlassRole.SemanticCard,
                         modifier = Modifier.weight(1f).testTag("statsRankingPane"),
-                        shape = RoundedCornerShape(24.dp),
+                        shape = neriRoundedShape(24.dp),
                         fallbackColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.8f),
                         tintColor = MaterialTheme.colorScheme.surfaceContainerLow
                     ) {
@@ -240,7 +241,7 @@ private fun StatsChartCard(state: StatsPageState, sortMode: StatsSortMode) {
     AdvancedGlassSurface(
         role = AdvancedGlassRole.SemanticCard,
         modifier = Modifier.fillMaxWidth().testTag("statsChart"),
-        shape = RoundedCornerShape(20.dp),
+        shape = neriRoundedShape(20.dp),
         fallbackColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.75f),
         tintColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {

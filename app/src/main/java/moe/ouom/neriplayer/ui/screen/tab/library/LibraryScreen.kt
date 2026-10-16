@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.tab.library
  * Created: 2025/8/8
  */
 
+import androidx.compose.runtime.CompositionLocalProvider
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Column
@@ -275,9 +277,14 @@ fun LibraryScreen(
     var selectedNeteaseCategory by rememberSaveable {
         mutableIntStateOf(NETEASE_CATEGORY_PLAYLIST)
     }
+    val pullGate = remember { LibraryPullGate() }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
+        // follow the finger and stay put; a release snap reads as an unwanted bounce
+        snapAnimationSpec = null,
         canScroll = {
+            // an active pull owns the upward drag so it can be pushed back and cancelled
+            if (pullGate.pulling) return@exitUntilCollapsedScrollBehavior false
             when (orderedTabs.getOrNull(pagerState.currentPage)) {
                 LibraryTab.LOCAL -> shouldAllowCollapsingTopAppBar(
                     localListState.canScrollForward,
@@ -346,6 +353,7 @@ fun LibraryScreen(
         }
     }
 
+    CompositionLocalProvider(LocalLibraryPullGate provides pullGate) {
     Column(
         Modifier
             .fillMaxSize()
@@ -376,7 +384,7 @@ fun LibraryScreen(
         )
 
         Card(
-            shape = RoundedCornerShape(16.dp),
+            shape = neriRoundedShape(16.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f)
             ),
@@ -392,22 +400,9 @@ fun LibraryScreen(
                 LibraryMainTabs(
                     tabs = orderedTabs,
                     selectedTabIndex = pagerState.currentPage,
-                    refreshEnabled = currentTab.isRefreshable(),
                     onTabSelected = { index ->
                         scope.launch {
                             pagerState.animateScrollToPage(index)
-                        }
-                    },
-                    onRefresh = {
-                        when (currentTab) {
-                            LibraryTab.BILI -> vm.refreshBilibili()
-                            LibraryTab.YTMUSIC -> vm.refreshYouTubeMusicPlaylists()
-                            LibraryTab.NETEASE -> {
-                                vm.refreshNeteasePlaylists()
-                                vm.refreshNeteaseAlbums()
-                            }
-
-                            else -> Unit
                         }
                     }
                 )
@@ -459,7 +454,14 @@ fun LibraryScreen(
                         )
 
                         LibraryTab.NETEASE,
-                        LibraryTab.NETEASEALBUM -> NeteaseLibraryList(
+                        LibraryTab.NETEASEALBUM -> LibraryPullToRefresh(
+                            refreshing = ui.neteaseRefreshing,
+                            enabled = !offlineMode && topAppBarState.collapsedFraction <= 0.01f,
+                            onRefresh = {
+                                vm.refreshNeteasePlaylists()
+                                vm.refreshNeteaseAlbums()
+                            }
+                        ) { NeteaseLibraryList(
                             playlists = ui.neteasePlaylists,
                             albums = ui.neteaseAlbums,
                             playlistListState = neteaseListState,
@@ -469,24 +471,32 @@ fun LibraryScreen(
                             onPlaylistClick = onNeteasePlaylistClick,
                             onAlbumClick = onNeteaseAlbumClick,
                             offlineMode = offlineMode
-                        )
+                        ) }
 
-                        LibraryTab.YTMUSIC -> YouTubeMusicPlaylistList(
+                        LibraryTab.YTMUSIC -> LibraryPullToRefresh(
+                            refreshing = ui.youtubeMusicRefreshing,
+                            enabled = !offlineMode && topAppBarState.collapsedFraction <= 0.01f,
+                            onRefresh = vm::refreshYouTubeMusicPlaylists
+                        ) { YouTubeMusicPlaylistList(
                             playlists = ui.youtubeMusicPlaylists,
                             error = ui.youtubeMusicError,
                             listState = youtubeMusicListState,
                             onClick = onYouTubeMusicPlaylistClick,
                             onRetry = { vm.refreshYouTubeMusicPlaylists() },
                             offlineMode = offlineMode
-                        )
+                        ) }
 
-                        LibraryTab.BILI -> BiliPlaylistList(
+                        LibraryTab.BILI -> LibraryPullToRefresh(
+                            refreshing = ui.biliRefreshing,
+                            enabled = !offlineMode && topAppBarState.collapsedFraction <= 0.01f,
+                            onRefresh = vm::refreshBilibili
+                        ) { BiliPlaylistList(
                             playlists = ui.biliPlaylists,
                             error = ui.biliError,
                             listState = biliListState,
                             onClick = onBiliPlaylistClick,
                             offlineMode = offlineMode
-                        )
+                        ) }
 
                         LibraryTab.QQMUSIC -> QqMusicPlaylistList(
                             listState = qqMusicListState
@@ -495,5 +505,6 @@ fun LibraryScreen(
                 }
             }
         }
+    }
     }
 }

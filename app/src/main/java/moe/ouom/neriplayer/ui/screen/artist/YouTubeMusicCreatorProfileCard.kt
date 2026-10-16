@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,7 +40,7 @@ internal fun YouTubeMusicCreatorTabletProfile(
 ) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth().testTag("youtubeCreatorTabletProfile"),
-        shape = RoundedCornerShape(28.dp)
+        shape = neriRoundedShape(28.dp)
     ) {
         YouTubeMusicCreatorTabletCover(header = header, offlineMode = offlineMode)
         YouTubeMusicCreatorTabletDetails(header = header, followFavorite = followFavorite)

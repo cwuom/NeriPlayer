@@ -184,4 +184,3 @@ private fun rubberBand(x: Float, range: ClosedFloatingPointRange<Float>, width: 
     val damped = limit * (1f - 1f / (abs(overshoot) / limit + 1f))
     return (if (overshoot < 0) range.start else range.endInclusive) + damped * kotlin.math.sign(overshoot)
 }
-

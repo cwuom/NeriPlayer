@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.playlist.curation
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -86,7 +87,7 @@ internal fun LocalCurationFolderAccessCard(songs: List<SongItem>) {
     }
     if (access.pendingSongs == 0) return
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = neriRoundedShape(16.dp),
         color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
         modifier = Modifier.fillMaxWidth()
     ) {
