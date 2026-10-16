@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.data.settings
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
 import moe.ouom.neriplayer.platform.youtube.settings.YouTubePlaybackSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
@@ -34,6 +35,7 @@ import moe.ouom.neriplayer.data.settings.appearance.persistThemeDynamicColor
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeFollowSystemDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeForceDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeModeSnapshot
+import moe.ouom.neriplayer.data.settings.appearance.persistThemeUiStyle
 import moe.ouom.neriplayer.data.settings.bootstrap.updateBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
@@ -139,6 +141,26 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun <T> setSetting(setting: AutoSettingSpec<T>, value: T) {
         autoSettingSpecRepository.set(setting, value)
+    }
+
+    val uiStyleFlow: Flow<UiStyle> =
+        dataStoreSettingFlow { UiStyle.fromStorage(it[SettingsKeys.UI_STYLE]) }
+
+    val liquidGlassEnabledFlow: Flow<Boolean> =
+        dataStoreSettingFlow { it[SettingsKeys.LIQUID_GLASS_ENABLED] ?: true }
+
+    suspend fun setLiquidGlassEnabled(value: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.LIQUID_GLASS_ENABLED] = value }
+    }
+
+    val predictiveBackPreviewEnabledFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.motion.predictiveBackPreviewEnabled)
+
+    val nowPlayingImmersiveModeFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.display.nowPlayingImmersiveMode)
+
+    suspend fun setNowPlayingImmersiveMode(value: Boolean) {
+        setSetting(AutoSettingsSchema.display.nowPlayingImmersiveMode, value)
     }
 
     val dynamicColorFlow: Flow<Boolean> =
@@ -658,6 +680,11 @@ class SettingsRepository(private val context: Context) {
 
     val youtubeEnabledFlow: Flow<Boolean> =
         settingFlow(AutoSettingsSchema.general.youtubeEnabled)
+
+    suspend fun setUiStyle(value: UiStyle) {
+        context.dataStore.edit { it[SettingsKeys.UI_STYLE] = value.storageValue }
+        persistThemeUiStyle(context, value)
+    }
 
     suspend fun setDynamicColor(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DYNAMIC_COLOR] = value }

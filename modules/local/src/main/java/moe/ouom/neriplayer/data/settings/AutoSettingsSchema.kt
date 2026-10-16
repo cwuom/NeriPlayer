@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ADVANCED_BLUR_QUALIT
 import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.appearance.EnhancedAdvancedBlurPreference
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY
@@ -300,6 +301,21 @@ object AutoSettingsSchema {
             access = SettingAccessMode.KeyOnly
         )
         val themeColorSpec = Unit
+
+        @AutoSetting(
+            key = "ui_style",
+            type = SettingValueType.String,
+            defaultString = UiStyle.DEFAULT_STORAGE_VALUE,
+            constantName = "UI_STYLE",
+            order = 1,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val uiStyle = autoSetting(
+            titleRes = CoreCommonR.string.settings_ui_style,
+            descriptionRes = CoreCommonR.string.settings_ui_style_desc,
+            icon = AutoSettingIcon.Palette
+        )
     }
 
     /*
@@ -584,6 +600,15 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.Home
         )
 
+        @AutoSetting(order = 42)
+        val nowPlayingImmersiveMode = autoSwitchSetting(
+            key = "nowplaying_immersive_mode",
+            defaultValue = false,
+            titleRes = CoreCommonR.string.settings_nowplaying_immersive_mode,
+            descriptionRes = CoreCommonR.string.settings_nowplaying_immersive_mode_desc,
+            icon = AutoSettingIcon.Layers
+        )
+
         @AutoSetting(order = 45)
         val nowPlayingCoverLyricsEnabled = autoSwitchSetting(
             key = "nowplaying_cover_lyrics_enabled",
@@ -798,6 +823,28 @@ object AutoSettingsSchema {
             titleRes = CoreCommonR.string.settings_coherent_feedback,
             descriptionRes = CoreCommonR.string.settings_coherent_feedback_desc,
             icon = AutoSettingIcon.AdsClick
+        )
+
+        @AutoSetting(order = 17)
+        val predictiveBackPreviewEnabled = autoSwitchSetting(
+            key = "predictive_back_preview_enabled",
+            defaultValue = true,
+            titleRes = CoreCommonR.string.settings_predictive_back_preview,
+            descriptionRes = CoreCommonR.string.settings_predictive_back_preview_desc,
+            icon = AutoSettingIcon.ZoomInMap
+        )
+
+        @AutoSetting(
+            key = "liquid_glass_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 22,
+            ui = SettingUiType.Custom
+        )
+        val liquidGlassEnabled = autoSetting(
+            titleRes = CoreCommonR.string.settings_liquid_glass,
+            descriptionRes = CoreCommonR.string.settings_liquid_glass_desc,
+            icon = AutoSettingIcon.Brightness4
         )
 
         @AutoSetting(
