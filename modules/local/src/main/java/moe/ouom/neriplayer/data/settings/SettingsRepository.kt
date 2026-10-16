@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.data.settings
  * Created: 2025/8/8
  */
 
+import kotlinx.coroutines.flow.onEach
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
 import moe.ouom.neriplayer.platform.youtube.settings.YouTubePlaybackSourcePreferencePolicy
@@ -475,24 +476,27 @@ class SettingsRepository(private val context: Context) {
         autoSettingsRepository.hapticFeedbackEnabledFlow
 
     val disclaimerAcceptedFlow: Flow<Boolean?> =
-        flow {
-            emit(null) // 加载态
-            val realFlow: Flow<Boolean> =
-                dataStoreSettingFlow { prefs ->
-                    prefs[SettingsKeys.DISCLAIMER_ACCEPTED_V2] ?: false
-                }
-            emitAll(realFlow)
+        startupProgressFlow(STARTUP_PROGRESS_DISCLAIMER_KEY) { prefs ->
+            prefs[SettingsKeys.DISCLAIMER_ACCEPTED_V2] ?: false
         }
 
     val startupOnboardingCompletedFlow: Flow<Boolean?> =
-        flow {
-            emit(null)
-            val realFlow: Flow<Boolean> =
-                dataStoreSettingFlow { prefs ->
-                    prefs[SettingsKeys.STARTUP_ONBOARDING_COMPLETED] ?: false
-                }
-            emitAll(realFlow)
+        startupProgressFlow(STARTUP_PROGRESS_ONBOARDING_KEY) { prefs ->
+            prefs[SettingsKeys.STARTUP_ONBOARDING_COMPLETED] ?: false
         }
+
+    /** Emits the cached completion first (or null while loading), then the DataStore value. */
+    private fun startupProgressFlow(
+        cacheKey: String,
+        read: (Preferences) -> Boolean
+    ): Flow<Boolean?> = flow {
+        emit(readStartupProgressCompleted(context, cacheKey))
+        emitAll(
+            dataStoreSettingFlow(read).onEach { value ->
+                persistStartupProgress(context, cacheKey, value)
+            }
+        )
+    }
 
     val maxCacheSizeBytesFlow: Flow<Long> =
         dataStoreSettingFlow {
@@ -746,10 +750,12 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setDisclaimerAccepted(accepted: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DISCLAIMER_ACCEPTED_V2] = accepted }
+        persistStartupProgress(context, STARTUP_PROGRESS_DISCLAIMER_KEY, accepted)
     }
 
     suspend fun setStartupOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { it[SettingsKeys.STARTUP_ONBOARDING_COMPLETED] = completed }
+        persistStartupProgress(context, STARTUP_PROGRESS_ONBOARDING_KEY, completed)
     }
 
     suspend fun setAudioQuality(value: String) {

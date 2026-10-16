@@ -155,6 +155,7 @@ import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutRequest
 import moe.ouom.neriplayer.navigation.launcherShortcutActionFromIntentAction
 import moe.ouom.neriplayer.ui.dialog.MobileDataDownloadInterruptionDialog
 import moe.ouom.neriplayer.ui.dialog.startupDebugBuildWarningPrompt
+import moe.ouom.neriplayer.ui.dialog.startupPreviewThemePrompt
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlayNavigationBarHidden
@@ -458,7 +459,8 @@ class MainActivity : ComponentActivity() {
                         .collectAsStateWithLifecycle(initialValue = null)
                     val startupOnboardingCompleted by startupOnboardingFlow
                         .collectAsStateWithLifecycle(initialValue = null)
-                    var startupSettingsReadTimedOut by rememberSaveable { mutableStateOf(false) }
+                    // not saveable: a recreated activity (e.g. locale change) must wait for a fresh read
+                    var startupSettingsReadTimedOut by remember { mutableStateOf(false) }
                     LaunchedEffect(disclaimerAccepted, startupOnboardingCompleted) {
                         if (disclaimerAccepted != null && startupOnboardingCompleted != null) {
                             return@LaunchedEffect
@@ -1112,6 +1114,14 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
 
+                                        val externalStartupDialogsAvailable = startupCrashReportReadCompleted &&
+                                            startupTokenWarningCheckCompleted &&
+                                            pendingStartupCrashReport == null &&
+                                            !showTokenWarningDialog &&
+                                            pendingMobileDataDownloadInterruptionRequest == null &&
+                                            !showDialog && !showErrorDialog &&
+                                            pendingInvite == null && loudPlaybackConfirmation == null
+                                        var appGlobalDialogVisible by remember { mutableStateOf(true) }
                                         NeriApp(
                                             initialThemeSnapshot = startupThemeSnapshot,
                                             launcherShortcutRequestFlow = launcherShortcutRequestFlow,
@@ -1139,22 +1149,26 @@ class MainActivity : ComponentActivity() {
                                                     nowPlayingOrientationState.returnToPortrait()
                                                 applyNowPlayingOrientation()
                                             },
+                                            onGlobalDialogVisibilityChanged = {
+                                                appGlobalDialogVisible = it
+                                            },
+                                            canShowGlobalDialogs = externalStartupDialogsAvailable &&
+                                                appGlobalDialogVisible,
                                             onLanguageChanged = { language ->
                                                 selectedAppLanguage = language
                                             }
                                         )
-                                        val startupDialogsAvailable = startupCrashReportReadCompleted &&
-                                            startupTokenWarningCheckCompleted &&
-                                            pendingStartupCrashReport == null &&
-                                            !showTokenWarningDialog &&
-                                            pendingMobileDataDownloadInterruptionRequest == null &&
-                                            !showDialog && !showErrorDialog &&
-                                            pendingInvite == null && loudPlaybackConfirmation == null
+                                        val startupDialogsAvailable = externalStartupDialogsAvailable &&
+                                            !appGlobalDialogVisible
                                         val debugBuildWarningPending = startupDebugBuildWarningPrompt(
                                             canShowDialog = startupDialogsAvailable
                                         )
-                                        StartupSyncUpgradePrompt(
+                                        val previewThemePromptPending = startupPreviewThemePrompt(
                                             canShowDialog = startupDialogsAvailable && !debugBuildWarningPending
+                                        )
+                                        StartupSyncUpgradePrompt(
+                                            canShowDialog = startupDialogsAvailable &&
+                                                !debugBuildWarningPending && !previewThemePromptPending
                                         )
                                     }
                                 }

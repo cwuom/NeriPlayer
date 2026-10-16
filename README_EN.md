@@ -270,6 +270,9 @@ Current positioning:
   lyric blur, two-level advanced blur, Coherent Feedback, the fluid Now Playing background,
   Home card toggles, default start
   destination, haptic feedback, and custom song title/artist/cover metadata.
+  After upgrading or completing first-run onboarding, a one-time prompt offers the
+  preview theme. It applies immediately and can be changed in Theme settings;
+  users who already enabled it or answered the prompt are not asked again.
   OnePlus devices with high-density displays (`densityDpi >= 500`) automatically apply
   an additional `0.95x` UI correction; normal-density devices skip it, while the
   user's manual scale remains an additional multiplier.
