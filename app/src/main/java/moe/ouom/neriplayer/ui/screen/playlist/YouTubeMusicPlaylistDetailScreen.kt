@@ -306,7 +306,8 @@ fun YouTubeMusicPlaylistDetailScreen(
             resolvePlaylistChromeCollapseProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
-                expandedHeroHeightPx = with(density) {
+                expandedHeroHeightPx = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == 0 }?.size ?: with(density) {
                     playlistHeroHeight.roundToPx()
                 }
             )

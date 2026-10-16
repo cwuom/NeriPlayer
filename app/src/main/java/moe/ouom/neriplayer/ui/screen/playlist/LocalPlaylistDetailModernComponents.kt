@@ -12,9 +12,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -1059,7 +1062,7 @@ internal fun PlaylistModernHeroHeader(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(height)
+            .heightIn(min = height)
             .background(visualColors.background)
     ) {
         Column(
@@ -1457,6 +1460,7 @@ internal fun PlaylistModernListItemSurface(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun PlaylistModernPlaybackActions(
     songCount: Int,
@@ -1477,38 +1481,43 @@ internal fun PlaylistModernPlaybackActions(
     val playLabel = stringResource(playlistPlayLabelRes(shuffleEnabled))
     val onPlay = if (shuffleEnabled) onShufflePlay else onPlayInOrder
 
-    Row(
+    FlowRow(
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 18.dp, top = 8.dp, end = 22.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        itemVerticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        HapticFilledIconButton(
-            onClick = onPlay,
-            enabled = canUseSongs,
-            modifier = Modifier.size(PlaylistActionBarHeight),
-            shape = CircleShape,
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = accentColor,
-                contentColor = onAccentColor
-            )
+        Row(
+            modifier = Modifier.padding(end = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Filled.PlayArrow,
-                contentDescription = playLabel,
-                modifier = Modifier.size(26.dp)
+            HapticFilledIconButton(
+                onClick = onPlay,
+                enabled = canUseSongs,
+                modifier = Modifier.size(PlaylistActionBarHeight),
+                shape = CircleShape,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = accentColor,
+                    contentColor = onAccentColor
+                )
+            ) {
+                Icon(
+                    Icons.Filled.PlayArrow,
+                    contentDescription = playLabel,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+            Text(
+                text = playLabel,
+                style = MaterialTheme.typography.titleMedium,
+                color = controlContentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
-
-        Text(
-            text = playLabel,
-            style = MaterialTheme.typography.titleMedium,
-            color = controlContentColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),

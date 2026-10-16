@@ -344,7 +344,8 @@ internal fun LocalPlaylistDetailModernContent(
                         firstVisibleItemIndex = reorderState.listState.firstVisibleItemIndex,
                         firstVisibleItemScrollOffsetPx =
                             reorderState.listState.firstVisibleItemScrollOffset,
-                        expandedHeroHeightPx = with(density) {
+                        expandedHeroHeightPx = reorderState.listState.layoutInfo.visibleItemsInfo
+                            .firstOrNull { it.index == 0 }?.size ?: with(density) {
                             playlistHeroHeight.roundToPx()
                         }
                     )
