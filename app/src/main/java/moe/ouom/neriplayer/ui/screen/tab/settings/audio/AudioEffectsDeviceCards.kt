@@ -200,7 +200,8 @@ private fun QuickChips(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         values.forEach { value ->
             NeriChoiceChip(

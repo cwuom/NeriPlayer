@@ -19,6 +19,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
@@ -26,7 +28,7 @@ import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.NeriMotion
 
 /**
- * Single-choice chip. Clean style drops the outline entirely: an ink-tinted pill at rest and
+ * Choice chip. Clean style drops the outline entirely: an ink-tinted pill at rest and
  * a filled accent pill when chosen, with the fill easing between the two.
  */
 @Composable
@@ -35,14 +37,23 @@ fun NeriChoiceChip(
     onClick: () -> Unit,
     label: String,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    multiSelect: Boolean = false
 ) {
+    val selectionSemantics = Modifier.semantics {
+        role = if (multiSelect) Role.Checkbox else Role.RadioButton
+        if (multiSelect) {
+            toggleableState = ToggleableState(selected)
+        } else {
+            this.selected = selected
+        }
+    }
     if (!NeriDesign.isClean) {
         FilterChip(
             selected = selected,
             onClick = onClick,
             enabled = enabled,
-            modifier = modifier,
+            modifier = modifier.then(selectionSemantics),
             label = { Text(label) }
         )
         return
@@ -76,10 +87,7 @@ fun NeriChoiceChip(
             .defaultMinSize(minHeight = 34.dp)
             .clip(CircleShape)
             .background(fill)
-            .semantics {
-                role = Role.RadioButton
-                this.selected = selected
-            }
+            .then(selectionSemantics)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 7.dp),
         contentAlignment = Alignment.Center

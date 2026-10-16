@@ -344,7 +344,10 @@ private fun ParametricBandDialog(
                     checked = band.enabled,
                     onCheckedChange = { onChange(band.copy(enabled = it)) }
                 )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     ParametricEqBandType.entries.forEach { option ->
                         NeriChoiceChip(
                             selected = option == type,

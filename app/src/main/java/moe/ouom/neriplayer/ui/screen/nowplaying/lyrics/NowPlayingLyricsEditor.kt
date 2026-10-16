@@ -1025,6 +1025,7 @@ private fun LyricMatchSources(
                     onClick = { onSourceToggle(source) },
                     enabled = !isLoading,
                     modifier = Modifier.testTag("lyrics-match-source-${source.name}"),
+                    multiSelect = true,
                     label = stringResource(source.stringResId())
                 )
             }

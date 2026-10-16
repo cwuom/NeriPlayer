@@ -57,10 +57,13 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 
 private const val SEGMENTED_MAX_FIXED_ITEMS = 4
 private val SegmentedHeight = 36.dp
 private val SegmentedInset = 3.dp
+private val SegmentedLabelVerticalPadding = 4.dp
 
 /**
  * Clean-style tab selector. Up to four labels render as an equal-width segmented control with
@@ -77,10 +80,20 @@ fun CleanSegmentedTabs(
     badged: (Int) -> Boolean = { false }
 ) {
     if (labels.isEmpty()) return
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelLarge
+    val labelHeight = remember(labels, labelStyle, density, textMeasurer) {
+        labels.maxOf { textMeasurer.measure(it, style = labelStyle, maxLines = 1).size.height }
+    }
+    val height = maxOf(
+        SegmentedHeight,
+        with(density) { labelHeight.toDp() } + (SegmentedInset + SegmentedLabelVerticalPadding) * 2
+    )
     if (labels.size <= maxFixedItems) {
-        FixedSegmentedTabs(labels, selectedIndex, onSelected, modifier.padding(contentPadding), badged)
+        FixedSegmentedTabs(labels, selectedIndex, onSelected, modifier.padding(contentPadding), height, badged)
     } else {
-        ScrollableCapsuleTabs(labels, selectedIndex, onSelected, modifier, contentPadding, badged)
+        ScrollableCapsuleTabs(labels, selectedIndex, onSelected, modifier, contentPadding, height, badged)
     }
 }
 
@@ -90,6 +103,7 @@ private fun FixedSegmentedTabs(
     selectedIndex: Int,
     onSelected: (Int) -> Unit,
     modifier: Modifier,
+    height: Dp,
     badged: (Int) -> Boolean
 ) {
     val colors = MaterialTheme.colorScheme
@@ -97,7 +111,7 @@ private fun FixedSegmentedTabs(
     CleanTabGlass(
         modifier = modifier
             .fillMaxWidth()
-            .height(SegmentedHeight)
+            .height(height)
     ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -247,6 +261,7 @@ private fun ScrollableCapsuleTabs(
     onSelected: (Int) -> Unit,
     modifier: Modifier,
     contentPadding: PaddingValues,
+    height: Dp,
     badged: (Int) -> Boolean
 ) {
     val colors = MaterialTheme.colorScheme
@@ -294,7 +309,7 @@ private fun ScrollableCapsuleTabs(
             )
             CleanTabGlass(
                 modifier = Modifier
-                    .height(SegmentedHeight)
+                    .height(height)
                     .semantics {
                         role = Role.Tab
                         this.selected = selected
@@ -303,7 +318,7 @@ private fun ScrollableCapsuleTabs(
             ) {
                 Box(
                     modifier = Modifier
-                        .height(SegmentedHeight)
+                        .height(height)
                         .clickable {
                             if (!selected) {
                                 context.performHapticFeedback()

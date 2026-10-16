@@ -68,9 +68,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Shape
@@ -520,6 +522,7 @@ private fun CleanSettingsSlider(
     onValueChangeFinished: (() -> Unit)?
 ) {
     val colors = MaterialTheme.colorScheme
+    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsDraggedAsState()
     val knobScale by animateFloatAsState(
@@ -561,17 +564,20 @@ private fun CleanSettingsSlider(
                 val radius = CornerRadius(size.height / 2f)
                 drawRoundRect(inactive, cornerRadius = radius)
                 if (fraction > 0f) {
+                    val activeWidth = maxOf(size.height, size.width * fraction).coerceAtMost(size.width)
                     drawRoundRect(
                         color = active,
-                        size = Size(maxOf(size.height, size.width * fraction), size.height),
+                        topLeft = Offset(if (isRtl) size.width - activeWidth else 0f, 0f),
+                        size = Size(activeWidth, size.height),
                         cornerRadius = radius
                     )
                 }
                 if (state.steps > 0) {
                     val dot = size.height * 0.18f
                     for (index in 1..state.steps) {
-                        val x = size.width * index / (state.steps + 1)
-                        val onActive = x <= size.width * fraction
+                        val tickFraction = index.toFloat() / (state.steps + 1)
+                        val x = size.width * if (isRtl) 1f - tickFraction else tickFraction
+                        val onActive = tickFraction <= fraction
                         drawCircle(
                             color = if (onActive) colors.onPrimary.copy(alpha = 0.6f) else colors.onSurfaceVariant.copy(alpha = 0.5f),
                             radius = dot,
