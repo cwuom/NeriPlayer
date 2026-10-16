@@ -1,11 +1,16 @@
 package moe.ouom.neriplayer.platform.netease.encyclopedia
 
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaAward
+import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaCreditRole
+import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaRelatedPlaylist
+import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaSimilarSong
 import org.json.JSONArray
 import org.json.JSONObject
 
 private const val BASIC_BLOCK_CODE = "SONG_PLAY_ABOUT_SONG_BASIC"
+private const val SIMILAR_SONG_BLOCK_CODE = "SONG_PLAY_ABOUT_SIMILAR_SONG"
+private const val RELATED_PLAYLIST_BLOCK_CODE = "SONG_PLAY_ABOUT_RELATED_PLAYLIST"
 
 /**
  * 网易云「音乐百科」基础板块的解析结果。
@@ -55,6 +60,160 @@ internal fun parseNeteaseEncyclopediaCredits(raw: String): List<EncyclopediaCred
         val roleName = role.optTrimmedString("roleName") ?: continue
         val names = role.creatorNames()
         if (names.isNotEmpty()) result.add(EncyclopediaCreditRole(role = roleName, names = names))
+    }
+    return result
+}
+
+/** 创作者角色列表解析后的简要档案（头衔只保留角色名与作者名，不含头像等额外信息）。 */
+internal data class EncyclopediaSongDetail(
+    val name: String,
+    val artist: String,
+    val albumId: Long?,
+    val albumName: String?,
+    val albumPicUrl: String? = null,
+    val albumCompany: String? = null,
+    val publishTimeMs: Long? = null,
+    val durationMs: Long? = null,
+    val artistId: Long? = null
+)
+
+/**
+ * 解析 `/api/song/detail` 的第一首歌。
+ *
+ * code != 200 或 songs 为空返回 null（调用方据此把专辑/发行信息全部留空）。
+ * 响应不是合法 JSON 时抛异常，由调用方判定为可重试的失败。
+ */
+internal fun parseNeteaseSongDetail(raw: String): EncyclopediaSongDetail? {
+    val root = JSONObject(raw)
+    if (root.optInt("code", -1) != 200) return null
+    val songs = root.optJSONArray("songs") ?: return null
+    val song = songs.optJSONObject(0) ?: return null
+    val album = song.optJSONObject("album") ?: JSONObject()
+    val artists = song.optJSONArray("artists") ?: JSONArray()
+    val artistName = StringBuilder()
+    for (index in 0 until artists.length()) {
+        val artist = artists.optJSONObject(index) ?: continue
+        val name = artist.optTrimmedString("name") ?: continue
+        if (artistName.isNotEmpty()) artistName.append("/")
+        artistName.append(name)
+    }
+    return EncyclopediaSongDetail(
+        name = song.optTrimmedString("name") ?: return null,
+        artist = artistName.toString(),
+        albumId = album.optLongOrNull("id"),
+        albumName = album.optTrimmedString("name"),
+        albumPicUrl = album.optTrimmedString("picUrl"),
+        albumCompany = album.optTrimmedString("company"),
+        publishTimeMs = song.optLongOrNull("publishTime"),
+        durationMs = song.optLongOrNull("duration"),
+        artistId = artists.optJSONObject(0)?.optLongOrNull("id")
+    )
+}
+
+/**
+ * 解析 `/api/v1/artist/{id}` 的艺人简要资料。
+ *
+ * code != 200（含 404）或无 artist 对象返回 null。
+ * [EncyclopediaArtistInfo.fansCount] 恒为 null：该端点没有粉丝数字段，
+ * 而粉丝数专用接口实测不可用，禁止用任何方式估算。
+ */
+internal fun parseNeteaseArtistInfo(raw: String): EncyclopediaArtistInfo? {
+    val root = JSONObject(raw)
+    if (root.optInt("code", -1) != 200) return null
+    val artist = root.optJSONObject("artist") ?: return null
+    val artistId = artist.optLongOrNull("id") ?: return null
+    val name = artist.optTrimmedString("name") ?: return null
+    return EncyclopediaArtistInfo(
+        artistId = artistId,
+        name = name,
+        picUrl = artist.optTrimmedString("picUrl"),
+        briefDesc = artist.optTrimmedString("briefDesc"),
+        fansCount = null,
+        albumSize = artist.optIntOrNull("albumSize"),
+        musicSize = artist.optIntOrNull("musicSize")
+    )
+}
+
+/**
+ * 解析相似歌曲板块。
+ *
+ * 与 [parseNeteaseEncyclopediaSummary] 同源（`/api/song/play/about/block/page` 的原始返回），
+ * 因此调用方可以只请求一次、由这里与 summary 分别解析，避免重复请求。
+ * 非法 JSON 或无该板块/无有效条目时返回空列表。
+ */
+internal fun parseNeteaseSimilarSongs(raw: String): List<EncyclopediaSimilarSong> {
+    val root = jsonObjectOrNull(raw) ?: return emptyList()
+    if (root.optInt("code", -1) != 200) return emptyList()
+    val blocks = root.optJSONObject("data")?.optJSONArray("blocks") ?: return emptyList()
+    val block = blocks.firstObjectOrNull { it.optTrimmedString("code") == SIMILAR_SONG_BLOCK_CODE }
+        ?: return emptyList()
+    val creatives = block.optJSONArray("creatives") ?: return emptyList()
+    val result = ArrayList<EncyclopediaSimilarSong>(creatives.length())
+    for (index in 0 until creatives.length()) {
+        val resources = creatives.optJSONObject(index)?.optJSONArray("resources") ?: continue
+        for (resourceIndex in 0 until resources.length()) {
+            val resource = resources.optJSONObject(resourceIndex) ?: continue
+            if (resource.optTrimmedString("resourceType") != "SONG") continue
+            if (resource.optBoolean("valid", false).not()) continue
+            val songId = resource.optLongOrNull("resourceId") ?: continue
+            val element = resource.optJSONObject("uiElement") ?: continue
+            val name = element.optJSONObject("mainTitle")?.optTrimmedString("title") ?: continue
+            val artist = element.subTitleTexts().firstOrNull() ?: continue
+            val images = element.optJSONArray("images") ?: JSONArray()
+            val coverUrl = images.optJSONObject(0)
+                ?.optTrimmedString("imageUrl")
+                ?.replace("http://", "https://")
+            result.add(
+                EncyclopediaSimilarSong(
+                    songId = songId,
+                    name = name,
+                    artist = artist,
+                    coverUrl = coverUrl
+                )
+            )
+        }
+    }
+    return result
+}
+
+/**
+ * 解析相关歌单板块。
+ *
+ * [EncyclopediaRelatedPlaylist.trackCount] 恒为 null：接口只给播放量，歌单歌曲数无从取得。
+ * 非法 JSON 或无该板块/无有效条目时返回空列表。
+ */
+internal fun parseNeteaseRelatedPlaylists(raw: String): List<EncyclopediaRelatedPlaylist> {
+    val root = jsonObjectOrNull(raw) ?: return emptyList()
+    if (root.optInt("code", -1) != 200) return emptyList()
+    val blocks = root.optJSONObject("data")?.optJSONArray("blocks") ?: return emptyList()
+    val block = blocks.firstObjectOrNull { it.optTrimmedString("code") == RELATED_PLAYLIST_BLOCK_CODE }
+        ?: return emptyList()
+    val creatives = block.optJSONArray("creatives") ?: return emptyList()
+    val result = ArrayList<EncyclopediaRelatedPlaylist>(creatives.length())
+    for (index in 0 until creatives.length()) {
+        val resources = creatives.optJSONObject(index)?.optJSONArray("resources") ?: continue
+        for (resourceIndex in 0 until resources.length()) {
+            val resource = resources.optJSONObject(resourceIndex) ?: continue
+            if (resource.optTrimmedString("resourceType") != "PLAYLIST") continue
+            val playlistId = resource.optLongOrNull("resourceId") ?: continue
+            val element = resource.optJSONObject("uiElement") ?: continue
+            val name = element.optJSONObject("mainTitle")?.optTrimmedString("title") ?: continue
+            val images = element.optJSONArray("images") ?: JSONArray()
+            val coverUrl = images.optJSONObject(0)
+                ?.optTrimmedString("imageUrl")
+                ?.replace("http://", "https://")
+            val resourceExt = resource.optJSONObject("resourceExt") ?: JSONObject()
+            val playCount = resourceExt.optLongOrNull("playCount")
+            result.add(
+                EncyclopediaRelatedPlaylist(
+                    playlistId = playlistId,
+                    name = name,
+                    coverUrl = coverUrl,
+                    playCount = playCount,
+                    trackCount = null
+                )
+            )
+        }
     }
     return result
 }
@@ -147,4 +306,16 @@ private fun JSONObject.creatorNames(): List<String> {
 private fun JSONObject.optTrimmedString(key: String): String? {
     if (!has(key) || isNull(key)) return null
     return optString(key, "").trim().takeIf { it.isNotEmpty() }
+}
+
+/** 缺失、null、非数字、非正数一律返回 null，避免用 0 冒充未知。 */
+private fun JSONObject.optLongOrNull(key: String): Long? {
+    if (!has(key) || isNull(key)) return null
+    return optLong(key).takeIf { it > 0L }
+}
+
+/** 缺失或非数字返回 null；0 是合法值（艺人可能确实没有专辑），因此只过滤负数。 */
+private fun JSONObject.optIntOrNull(key: String): Int? {
+    if (!has(key) || isNull(key)) return null
+    return optInt(key).takeIf { it >= 0 }
 }

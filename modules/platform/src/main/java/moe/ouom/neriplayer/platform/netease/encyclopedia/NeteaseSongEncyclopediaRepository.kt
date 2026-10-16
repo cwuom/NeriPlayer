@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaBasicInfo
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaCreditRole
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaCredits
@@ -38,6 +39,10 @@ internal interface NeteaseEncyclopediaApi {
     suspend fun loadSummary(songId: Long): String
 
     suspend fun loadCreators(songId: Long): String
+
+    suspend fun loadSongDetail(songId: Long): String
+
+    suspend fun loadArtist(artistId: Long): String
 }
 
 /** 生产实现：把接缝调用原样转发给真实的网易云客户端。 */
@@ -49,6 +54,12 @@ internal class NeteaseClientEncyclopediaApi(
 
     override suspend fun loadCreators(songId: Long): String =
         client.getSongCreatorsCancellable(songId)
+
+    override suspend fun loadSongDetail(songId: Long): String =
+        client.getSongDetailByIdsCancellable(listOf(songId))
+
+    override suspend fun loadArtist(artistId: Long): String =
+        client.getArtistInfoCancellable(artistId)
 }
 
 /**
@@ -89,6 +100,11 @@ class NeteaseSongEncyclopediaRepository internal constructor(
         // 歌曲不存在时接口同样返回 200，只是不带 SONG_PLAY_ABOUT_SONG_BASIC 板块
         val summary = parseNeteaseEncyclopediaSummary(summaryRaw)
             ?: return SongEncyclopediaResult.NotAvailable
+        // 相似歌曲与相关歌单与 summary 同源，复用同一份原始响应，不再重复请求
+        val similarSongs = parseSafely { parseNeteaseSimilarSongs(summaryRaw) }.orEmpty()
+        val relatedPlaylists = parseSafely { parseNeteaseRelatedPlaylists(summaryRaw) }.orEmpty()
+        val detail = loadSongDetail(songId)
+        val artist = detail?.artistId?.let { loadArtist(it) }
         val data = SongEncyclopedia(
             songKey = songKey,
             source = MusicPlatform.CLOUD_MUSIC,
@@ -106,10 +122,65 @@ class NeteaseSongEncyclopediaRepository internal constructor(
             credits = loadCredits(songId),
             awards = summary.awards,
             appearances = summary.appearances,
+            publishTimeMs = detail?.publishTimeMs,
+            albumCompany = detail?.albumCompany,
+            albumId = detail?.albumId,
+            albumPicUrl = detail?.albumPicUrl,
+            artistId = detail?.artistId,
+            artist = artist,
+            similarSongs = similarSongs,
+            relatedPlaylists = relatedPlaylists,
             fetchedAtMs = nowMs()
         )
         cache.put(data)
         return SongEncyclopediaResult.Success(data)
+    }
+
+    /**
+     * 专辑/发行信息是加分项：整个接口失败只丢这一组字段，绝不影响已到手的曲风/BPM 等主数据。
+     */
+    private suspend fun loadSongDetail(songId: Long): EncyclopediaSongDetail? {
+        val raw = runCatching { api.loadSongDetail(songId) }
+            .getOrElse { error ->
+                if (error is CancellationException) throw error
+                NPLogger.w(TAG, "获取歌曲详情失败: songId=$songId", error)
+                return null
+            }
+        return runCatching { parseNeteaseSongDetail(raw) }
+            .getOrElse { error ->
+                if (error is CancellationException) throw error
+                NPLogger.w(TAG, "解析歌曲详情失败: songId=$songId", error)
+                null
+            }
+    }
+
+    /** 艺人资料同样是加分项，失败只让模块 5 留空。 */
+    private suspend fun loadArtist(artistId: Long): EncyclopediaArtistInfo? {
+        val raw = runCatching { api.loadArtist(artistId) }
+            .getOrElse { error ->
+                if (error is CancellationException) throw error
+                NPLogger.w(TAG, "获取艺人资料失败: artistId=$artistId", error)
+                return null
+            }
+        return runCatching { parseNeteaseArtistInfo(raw) }
+            .getOrElse { error ->
+                if (error is CancellationException) throw error
+                NPLogger.w(TAG, "解析艺人资料失败: artistId=$artistId", error)
+                null
+            }
+    }
+
+    /**
+     * 解析环节的兜底：解析器本身已对「无板块」返回空列表，
+     * 这里只防御非法 JSON 等意外，失败同样降级为空列表。
+     */
+    private inline fun <T> parseSafely(parse: () -> T): T? = try {
+        parse()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        NPLogger.w(TAG, "解析百科附加板块失败", error)
+        null
     }
 
     /**

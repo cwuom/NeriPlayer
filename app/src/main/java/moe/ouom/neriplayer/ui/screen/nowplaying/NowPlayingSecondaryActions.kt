@@ -93,6 +93,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricBehaviorSheet
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricFontSizeSheet
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
 
 private val NowPlayingFeedbackExtraBottomPadding = 24.dp
@@ -522,7 +523,9 @@ class MoreOptionsSheetNavigation(
     val onEnterAlbum: (AlbumSummary) -> Unit,
     val onNavigateUp: () -> Unit,
     val onShowQualitySwitch: () -> Unit = {},
-    val startWithLyricBehavior: Boolean = false
+    val startWithLyricBehavior: Boolean = false,
+    val onEnterArtist: (NeteaseArtistSummary) -> Unit = {},
+    val onEnterPlaylist: (PlaylistSummary) -> Unit = {}
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -602,7 +605,7 @@ private fun MoreOptionsSheetContent(
                 lyricContent.hasPhonetic, currentLyricFontScale,
                 currentTranslationFontScale, lyricFontScaleTarget, translationFontScaleTarget,
                 fontSettings.onChange, biliClient, currentPlaybackAudioInfo, snackbarHostState,
-                offlineMode, mainActions
+                offlineMode, mainActions, navigation
             )
         }
     }
@@ -631,7 +634,8 @@ private fun MoreOptionsPages(
     currentPlaybackAudioInfo: PlaybackAudioInfo?,
     snackbarHostState: SnackbarHostState,
     offlineMode: Boolean,
-    mainActions: MoreOptionsMainActions
+    mainActions: MoreOptionsMainActions,
+    navigation: MoreOptionsSheetNavigation
 ) {
     MoreOptionsMainPage(
         targetState, viewModel, originalSong, queue, isLocalSong,
@@ -652,7 +656,7 @@ private fun MoreOptionsPages(
         targetState, viewModel, actualSong, displayedLyrics, displayedTranslatedLyrics,
         displayedRomanizedLyrics, snackbarHostState, offlineMode, owner
     )
-    MoreOptionsEncyclopediaPage(targetState, viewModel, actualSong, owner)
+    MoreOptionsEncyclopediaPage(targetState, viewModel, actualSong, offlineMode, owner, navigation)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -1023,10 +1027,22 @@ private fun MoreOptionsEncyclopediaPage(
     targetState: MoreOptionsPage,
     viewModel: NowPlayingViewModel,
     actualSong: SongItem,
-    owner: MoreOptionsSheetOwner
+    offlineMode: Boolean,
+    owner: MoreOptionsSheetOwner,
+    navigation: MoreOptionsSheetNavigation
 ) {
     if (targetState != MoreOptionsPage.ENCYCLOPEDIA) return
-    SongEncyclopediaContent(viewModel, actualSong, owner.onBack)
+    SongEncyclopediaContent(
+        viewModel = viewModel,
+        song = actualSong,
+        offlineMode = offlineMode,
+        onDismiss = owner.onBack,
+        onEnterPlaylist = navigation.onEnterPlaylist,
+        onEnterArtist = navigation.onEnterArtist,
+        onPlaySongs = { songs, index ->
+            PlayerManager.playPlaylist(songs, index)
+        }
+    )
 }
 
 @Composable

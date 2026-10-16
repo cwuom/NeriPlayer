@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.platform.netease.api.client
 
 import moe.ouom.neriplayer.platform.netease.api.crypto.NeteaseCrypto
 import moe.ouom.neriplayer.data.model.netease.crypto.CryptoMode
+import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo
 import moe.ouom.neriplayer.platform.netease.api.request.buildNeteasePlaylistAddTracksParams
 import moe.ouom.neriplayer.platform.netease.api.request.buildNeteaseFollowedArtistsParams
 import moe.ouom.neriplayer.common.json.JsonUtil.jsonQuote
@@ -1478,6 +1479,39 @@ class NeteaseClient(
         return requestCancellable(
             url = "https://music.163.com/api/song/creators",
             params = mapOf("songId" to songId.toString()),
+            mode = CryptoMode.API,
+            method = "GET",
+        )
+    }
+
+    /**
+     * 歌曲详情（专辑、发行公司、发行时间、时长、主歌手 id）。
+     *
+     * ids 必须带方括号（如 `[123,456]`），`requestCancellable` 内部走
+     * `addQueryParameter`，OkHttp 会自动完成 `%5B` `%5D` 编码。
+     */
+    suspend fun getSongDetailByIdsCancellable(songIds: List<Long>): String {
+        require(songIds.isNotEmpty()) { "songIds 不能为空" }
+        val ids = songIds.joinToString(prefix = "[", postfix = "]") { it.toString() }
+        return requestCancellable(
+            url = "https://music.163.com/api/song/detail",
+            params = mapOf("ids" to ids),
+            mode = CryptoMode.API,
+            method = "GET",
+        )
+    }
+
+    /**
+     * 艺人简要资料（头像、简介、专辑数、单曲数）。
+     *
+     * 匿名可用。该端点不返回粉丝数，[EncyclopediaArtistInfo.fansCount] 恒为 null。
+     * 艺人不存在时返回 code=404 且无 artist 字段，由解析层返回 null。
+     */
+    suspend fun getArtistInfoCancellable(artistId: Long): String {
+        require(artistId > 0L) { "artistId 必须为正数" }
+        return requestCancellable(
+            url = "https://music.163.com/api/v1/artist/$artistId",
+            params = emptyMap(),
             mode = CryptoMode.API,
             method = "GET",
         )

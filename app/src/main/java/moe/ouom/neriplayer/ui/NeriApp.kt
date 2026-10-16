@@ -1376,6 +1376,15 @@ private fun NeriAppContent(
                     afterNavigate()
                 }
             }
+            fun navigateToNeteasePlaylist(playlist: PlaylistSummary) {
+                if (playlist.id <= 0L) return
+                scope.launch {
+                    CoverArtColorCache.preload(context, playlist.picUrl, offlineMode)
+                    navController.navigate(neteasePlaylistSourceRoute(playlist)) {
+                        launchSingleTop = true
+                    }
+                }
+            }
             fun navigateToPlaybackSourceRoute(route: String) {
                 scope.launch {
                     preloadNeteaseDetailRouteCover(route)
@@ -1921,6 +1930,7 @@ private fun NeriAppContent(
                             onEnterArtist = ::navigateToNeteaseArtist,
                             onEnterBiliUploader = ::navigateToBiliUploader,
                             onEnterYouTubeCreator = ::navigateToYouTubeMusicCreator,
+                            onEnterPlaylist = ::navigateToNeteasePlaylist,
                             lyricBlurEnabled = lyricBlurEnabled,
                             lyricBlurAmount = lyricBlurAmount,
                             lyricFontScales = lyricFontScales,

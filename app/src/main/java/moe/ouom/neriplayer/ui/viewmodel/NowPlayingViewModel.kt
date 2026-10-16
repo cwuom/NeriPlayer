@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
+import moe.ouom.neriplayer.platform.netease.encyclopedia.SongEncyclopediaRepository
 import moe.ouom.neriplayer.platform.netease.encyclopedia.SongEncyclopediaResult
 import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseArtistsFromSongDetail
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -128,6 +129,10 @@ class NowPlayingViewModel : ViewModel() {
     /** 歌曲百科状态；结果始终携带所属歌曲 key，界面渲染前必须按当前歌曲校验。 */
     val encyclopediaState = _encyclopediaState.asStateFlow()
 
+    /** 百科仓库；测试可注入。 */
+    internal var encyclopediaRepository: SongEncyclopediaRepository =
+        AppContainer.songEncyclopediaRepository
+
     /**
      * 加载当前歌曲的百科。
      *
@@ -146,7 +151,7 @@ class NowPlayingViewModel : ViewModel() {
         _encyclopediaState.value = SongEncyclopediaUiState.Loading
         encyclopediaJob = viewModelScope.launch {
             val result = runCatching {
-                AppContainer.songEncyclopediaRepository.getEncyclopedia(song)
+                encyclopediaRepository.getEncyclopedia(song)
             }.getOrElse { error ->
                 if (error is CancellationException) throw error
                 NPLogger.w("NowPlayingViewModel", "百科请求异常: songKey=$songKey", error)
@@ -638,7 +643,7 @@ private fun SongEncyclopediaResult.toUiState(): SongEncyclopediaUiState = when (
     is SongEncyclopediaResult.Success -> SongEncyclopediaUiState.Success(data)
     SongEncyclopediaResult.NotSupported -> SongEncyclopediaUiState.NotSupported
     SongEncyclopediaResult.NotAvailable -> SongEncyclopediaUiState.Empty
-    is SongEncyclopediaResult.Failed -> SongEncyclopediaUiState.Failed()
+    is SongEncyclopediaResult.Failed -> SongEncyclopediaUiState.Failed(cause.message.orEmpty())
 }
 
 private fun ManualSearchState.matches(request: ManualSearchRequest): Boolean {

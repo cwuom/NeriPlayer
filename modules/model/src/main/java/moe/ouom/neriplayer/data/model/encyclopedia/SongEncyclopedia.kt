@@ -26,6 +26,15 @@ data class SongEncyclopedia(
     val description: String? = null,
     val awards: List<EncyclopediaAward> = emptyList(),
     val appearances: List<String> = emptyList(),
+    // ---- 以下为九模块扩展字段，全部默认空/null 保证向后兼容 ----
+    val publishTimeMs: Long? = null, // 发行日期
+    val albumCompany: String? = null, // 专辑发行公司
+    val albumId: Long? = null, // 专辑 id（用于跳转专辑页）
+    val albumPicUrl: String? = null, // 专辑封面
+    val artistId: Long? = null, // 主歌手 id
+    val artist: EncyclopediaArtistInfo? = null,
+    val similarSongs: List<EncyclopediaSimilarSong> = emptyList(),
+    val relatedPlaylists: List<EncyclopediaRelatedPlaylist> = emptyList(),
     val fetchedAtMs: Long
 )
 
@@ -69,4 +78,38 @@ data class EncyclopediaCreditRole(
 data class EncyclopediaAward(
     val title: String,
     val detail: String? = null
+)
+
+/** 相似歌曲（模块7）。全部字段来自 `/api/song/play/about/block/page` 的相似歌曲板块。 */
+data class EncyclopediaSimilarSong(
+    val songId: Long,
+    val name: String,
+    val artist: String,
+    val coverUrl: String? = null,
+    val albumName: String? = null,
+    val durationMs: Long? = null
+)
+
+/** 相关歌单（模块8）。[trackCount] 接口不给，恒为 null，禁止伪造。 */
+data class EncyclopediaRelatedPlaylist(
+    val playlistId: Long,
+    val name: String,
+    val coverUrl: String? = null,
+    val playCount: Long? = null,
+    val trackCount: Int? = null
+)
+
+/**
+ * 艺人简要信息（模块5）。
+ *
+ * [fansCount] 恒为 null：粉丝数接口不可用，数据源未给出即不展示，禁止按热度推断。
+ */
+data class EncyclopediaArtistInfo(
+    val artistId: Long,
+    val name: String,
+    val picUrl: String? = null,
+    val briefDesc: String? = null,
+    val fansCount: Long? = null,
+    val albumSize: Int? = null,
+    val musicSize: Int? = null
 )
