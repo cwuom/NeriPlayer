@@ -11,15 +11,26 @@ import org.junit.Test
 class NeriAppThemeRevealPolicyTest {
 
     @Test
-    fun `large theme reveal snapshot is downsampled under max dimension`() {
+    fun `phone panels keep full resolution for the theme reveal`() {
         val dimensions = resolveThemeRevealSnapshotDimensions(
-            width = 3200,
-            height = 1440
+            width = 1440,
+            height = 3200
         )
 
-        assertEquals(1080, dimensions.width)
-        assertEquals(486, dimensions.height)
-        assertTrue(maxOf(dimensions.width, dimensions.height) <= 1080)
+        assertEquals(1440, dimensions.width)
+        assertEquals(3200, dimensions.height)
+    }
+
+    @Test
+    fun `oversized windows are still capped proportionally`() {
+        val dimensions = resolveThemeRevealSnapshotDimensions(
+            width = 8192,
+            height = 4096
+        )
+
+        assertEquals(4096, dimensions.width)
+        assertEquals(2048, dimensions.height)
+        assertTrue(maxOf(dimensions.width, dimensions.height) <= 4096)
     }
 
     @Test

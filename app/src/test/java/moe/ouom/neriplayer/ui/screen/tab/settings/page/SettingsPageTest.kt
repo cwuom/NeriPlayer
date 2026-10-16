@@ -34,11 +34,11 @@ class SettingsPageTest {
     }
 
     @Test
-    fun usbExclusiveBackTargetReturnsPlaybackPage() {
-        assertEquals(SettingsPage.Playback, SettingsPage.UsbExclusive.backTargetPage())
+    fun usbExclusiveIsATopLevelPageInThePlaybackGroup() {
+        assertEquals(null, SettingsPage.UsbExclusive.backTargetPage())
         assertEquals(null, SettingsPage.Playback.backTargetPage())
+        assertTrue(SettingsHomePageGroups.first { SettingsPage.Playback in it }.contains(SettingsPage.UsbExclusive))
     }
-
     @Test
     fun displaySectionSettingsOpenPersonalizationPage() {
         assertEquals(SettingsPage.Personalization, settingsPageForSection(AutoSettingsSections.display))
@@ -56,14 +56,13 @@ class SettingsPageTest {
             settingsSearchScrollAnchor(SettingsPage.Lyrics, "setting:default_lyric_source").itemIndex
         )
         assertEquals(
-            4,
+            3,
             settingsSearchScrollAnchor(
                 SettingsPage.Lyrics,
                 "setting:cloud_music_lyric_default_offset_ms"
             ).itemIndex
         )
     }
-
     @Test
     fun lyricAppearanceSettingsOpenLyricsPage() {
         listOf(
@@ -96,17 +95,22 @@ class SettingsPageTest {
     }
 
     @Test
-    fun themePersonalizationAndMotionStayInOneHomeGroup() {
+    fun appearancePagesStayInOneHomeGroup() {
         val visualGroup = SettingsHomePageGroups.first {
             SettingsPage.Theme in it
         }
 
         assertEquals(
-            listOf(SettingsPage.Theme, SettingsPage.Personalization, SettingsPage.Motion),
+            listOf(
+                SettingsPage.Theme,
+                SettingsPage.NowPlaying,
+                SettingsPage.Background,
+                SettingsPage.Personalization,
+                SettingsPage.Motion
+            ),
             visualGroup
         )
     }
-
     @Test
     fun homeCardSettingsUseConcreteTitlesForSearch() {
         fun titleRes(keyName: String): Int {
@@ -153,16 +157,17 @@ class SettingsPageTest {
     }
 
     @Test
-    fun dynamicIslandLyricsSettingOpensLyricsPage() {
+    fun dynamicIslandLyricsSettingOpensExternalLyricsPage() {
         val dynamicIslandLyrics = AutoSettingsMetadata.settings.first {
             it.keyName == "dynamic_island_lyrics_enabled"
         }
 
         assertEquals(AutoSettingsSections.lyrics, dynamicIslandLyrics.section)
-        assertEquals(SettingsPage.Lyrics, dynamicIslandLyrics.settingsPage())
+        assertEquals(SettingsPage.ExternalLyrics, dynamicIslandLyrics.settingsPage())
         assertEquals("setting:dynamic_island_lyrics_enabled", dynamicIslandLyrics.searchTargetId())
+        val offset = AutoSettingsMetadata.settings.first { it.keyName == "kugou_lyric_default_offset_ms" }
+        assertEquals(SettingsPage.Lyrics, offset.settingsPage())
     }
-
     @Test
     fun dynamicColorOnlyRedirectsHiddenThemeColorHighlight() {
         fun themeEntry(targetId: String): SettingsSearchEntry {
@@ -201,25 +206,32 @@ class SettingsPageTest {
             1,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Theme,
-                targetId = "manual:theme_mode"
+                targetId = "setting:ui_style"
             ).itemIndex
         )
         assertEquals(
             2,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Theme,
-                targetId = "setting:dynamic_color"
+                targetId = "manual:theme_mode"
             ).itemIndex
         )
         assertEquals(
             3,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Theme,
-                targetId = "manual:theme_palette_style"
+                targetId = "setting:dynamic_color"
             ).itemIndex
         )
         assertEquals(
             4,
+            settingsSearchScrollAnchor(
+                page = SettingsPage.Theme,
+                targetId = "manual:theme_palette_style"
+            ).itemIndex
+        )
+        assertEquals(
+            5,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Theme,
                 targetId = "manual:theme_color_spec"
@@ -304,42 +316,45 @@ class SettingsPageTest {
             ).itemIndex
         )
         assertEquals(
-            3,
+            1,
             settingsSearchScrollAnchor(
-                page = SettingsPage.Personalization,
+                page = SettingsPage.NowPlaying,
                 targetId = "setting:nowplaying_progress_show_audio_spec"
             ).itemIndex
         )
         assertEquals(
-            3,
+            1,
             settingsSearchScrollAnchor(
-                page = SettingsPage.Personalization,
+                page = SettingsPage.NowPlaying,
                 targetId = "setting:nowplaying_song_title_marquee_enabled"
             ).itemIndex
         )
         assertEquals(
-            4,
+            2,
             settingsSearchScrollAnchor(
-                page = SettingsPage.Personalization,
+                page = SettingsPage.NowPlaying,
                 targetId = "setting:nowplaying_toolbar_dock_enabled"
             ).itemIndex
         )
         assertEquals(
-            4,
+            2,
             settingsSearchScrollAnchor(
-                page = SettingsPage.Personalization,
+                page = SettingsPage.NowPlaying,
                 targetId = "setting:lyrics_control_size"
             ).itemIndex
         )
         assertEquals(
-            5,
+            1,
             settingsSearchScrollAnchor(
-                page = SettingsPage.Personalization,
+                page = SettingsPage.Background,
                 targetId = "setting:background_image_uri"
             ).itemIndex
         )
+        val marquee = AutoSettingsMetadata.settings.first { it.keyName == "nowplaying_song_title_marquee_enabled" }
+        assertEquals(SettingsPage.NowPlaying, marquee.settingsPage())
+        val background = AutoSettingsMetadata.settings.first { it.keyName == "background_image_uri" }
+        assertEquals(SettingsPage.Background, background.settingsPage())
     }
-
     @Test
     fun lyricsSearchUsesAppearanceCardAnchor() {
         listOf(
@@ -350,7 +365,7 @@ class SettingsPageTest {
             "setting:lyrics_page_translation_font_scale"
         ).forEach { targetId ->
             assertEquals(
-                5,
+                1,
                 settingsSearchScrollAnchor(
                     page = SettingsPage.Lyrics,
                     targetId = targetId
@@ -358,7 +373,6 @@ class SettingsPageTest {
             )
         }
     }
-
     @Test
     fun generalSearchUsesDefaultAnchorForUiScale() {
         assertEquals(
@@ -652,40 +666,32 @@ class SettingsPageTest {
         assertEquals(
             1,
             settingsSearchScrollAnchor(
-                page = SettingsPage.Lyrics,
+                page = SettingsPage.ExternalLyrics,
                 targetId = "setting:floating_lyrics_enabled"
             ).itemIndex
         )
         assertEquals(
-            4,
+            2,
+            settingsSearchScrollAnchor(
+                page = SettingsPage.ExternalLyrics,
+                targetId = "setting:status_bar_lyrics_enabled"
+            ).itemIndex
+        )
+        assertEquals(
+            3,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Lyrics,
                 targetId = "setting:cloud_music_lyric_default_offset_ms"
             ).itemIndex
         )
         assertEquals(
-            4,
+            3,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Lyrics,
                 targetId = "setting:amll_ttml_lyric_default_offset_ms"
             ).itemIndex
         )
-        assertEquals(
-            1,
-            settingsSearchScrollAnchor(
-                page = SettingsPage.Storage,
-                targetId = "setting:download_directory_uri"
-            ).itemIndex
-        )
-        assertEquals(
-            4,
-            settingsSearchScrollAnchor(
-                page = SettingsPage.Storage,
-                targetId = "manual:clear_cache"
-            ).itemIndex
-        )
     }
-
     @Test
     fun independentSliderSettingsKeepTheirOwnHighlightTargets() {
         fun targetId(keyName: String): String {

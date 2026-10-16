@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.audio
 
+import moe.ouom.neriplayer.ui.component.common.NeriChoiceChip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -345,10 +346,10 @@ private fun ParametricBandDialog(
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ParametricEqBandType.entries.forEach { option ->
-                        FilterChip(
+                        NeriChoiceChip(
                             selected = option == type,
                             onClick = { onChange(band.copy(type = option.storageValue)) },
-                            label = { Text(stringResource(option.labelRes())) }
+                            label = stringResource(option.labelRes())
                         )
                     }
                 }

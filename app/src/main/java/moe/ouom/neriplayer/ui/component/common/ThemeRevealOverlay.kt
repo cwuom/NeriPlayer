@@ -20,38 +20,69 @@ package moe.ouom.neriplayer.ui.component.common
  * If not, see <https://www.gnu.org/licenses/>.
  *
  * File: moe.ouom.neriplayer.ui.component/ThemeRevealOverlay
- * Updated: 2026/3/23
+ * Updated: 2026/10/15
  */
 
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
+import android.graphics.BitmapShader
+import android.graphics.Matrix
+import android.graphics.Shader
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.unit.IntSize
-import kotlin.math.roundToInt
+import moe.ouom.neriplayer.ui.theme.NeriMotion
 
+private const val ReverseFadeSpan = 0.12f
+private const val MaxRevealFrameStepNanos = 40_000_000L
+private const val SmoothFrameNanos = 40_000_000L
+private const val SmoothFramesRequired = 2
+private const val MaxSettleNanos = 320_000_000L
+
+/**
+ * The first themed frames recompose the whole app and can stall the main thread for hundreds of
+ * milliseconds. The circle waits for a couple of regular frames so it starts where it can be seen,
+ * but never longer than [MaxSettleNanos] so a uniformly slow device still responds promptly.
+ */
+private suspend fun awaitSmoothFrames() {
+    val start = withFrameNanos { it }
+    var previous = start
+    var smooth = 0
+    while (smooth < SmoothFramesRequired) {
+        val now = withFrameNanos { it }
+        smooth = if (now - previous <= SmoothFrameNanos) smooth + 1 else 0
+        previous = now
+        if (now - start >= MaxSettleNanos) return
+    }
+}
+
+/**
+ * Circular theme hand-off. Forward: the new theme grows out of [originInWindow] while the old
+ * snapshot stays outside the circle. Reverse (Telegram-style): the old snapshot collapses back
+ * into the origin, uncovering the new theme. The snapshot is drawn through a shader brush as
+ * an anti-aliased ring or disc, so no offscreen layer or clear blend is needed per frame.
+ */
 @Composable
 fun ThemeRevealOverlay(
     snapshot: ImageBitmap?,
@@ -59,16 +90,14 @@ fun ThemeRevealOverlay(
     originInWindow: Offset,
     modifier: Modifier = Modifier,
     startRadiusPx: Float = 1f,
-    legacySnapshotDim: Boolean = false,
+    reverse: Boolean = false,
     durationMillis: Int = 720,
     onFinished: () -> Unit
 ) {
     var containerOffsetInWindow by remember { mutableStateOf(Offset.Zero) }
     var hasFinished by remember { mutableStateOf(false) }
     val currentOnFinished by rememberUpdatedState(onFinished)
-    val progress = remember {
-        Animatable(0f)
-    }
+    val progress = remember { mutableFloatStateOf(0f) }
     val finishReveal = {
         if (!hasFinished) {
             hasFinished = true
@@ -82,12 +111,19 @@ fun ThemeRevealOverlay(
 
     LaunchedEffect(Unit) {
         try {
-            progress.stop()
-            progress.snapTo(0f)
-            progress.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = durationMillis, easing = FastOutSlowInEasing)
-            )
+            progress.floatValue = 0f
+            awaitSmoothFrames()
+            val easing = if (reverse) NeriMotion.EmphasizedAccelerateSoft else NeriMotion.SmoothInOut
+            val durationNanos = durationMillis * 1_000_000L
+            var elapsed = 0L
+            var last = withFrameNanos { it }
+            while (elapsed < durationNanos) {
+                val now = withFrameNanos { it }
+                // a stalled frame pauses the circle instead of letting it leap ahead unseen
+                elapsed += (now - last).coerceIn(0L, MaxRevealFrameStepNanos)
+                last = now
+                progress.floatValue = easing.transform((elapsed.toFloat() / durationNanos).coerceIn(0f, 1f))
+            }
         } finally {
             finishReveal()
         }
@@ -99,53 +135,43 @@ fun ThemeRevealOverlay(
             .onGloballyPositioned { coordinates ->
                 containerOffsetInWindow = coordinates.positionInWindow()
             }
-            .graphicsLayer {
-                compositingStrategy = CompositingStrategy.Offscreen
-            }
-            .drawWithContent {
-                if (snapshot != null) {
-                    val snapshotAlpha = if (legacySnapshotDim) {
-                        0.78f + (1f - progress.value) * 0.18f
-                    } else {
-                        1f
-                    }
-                    drawImage(
-                        image = snapshot,
-                        dstSize = IntSize(
-                            width = size.width.roundToInt().coerceAtLeast(1),
-                            height = size.height.roundToInt().coerceAtLeast(1)
-                        ),
-                        alpha = snapshotAlpha
+            .drawWithCache {
+                val brush: Brush = snapshot?.let { image ->
+                    val bitmap = image.asAndroidBitmap()
+                    val shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+                    shader.setLocalMatrix(
+                        Matrix().apply {
+                            setScale(size.width / bitmap.width, size.height / bitmap.height)
+                        }
                     )
-                } else {
-                    drawRect(color = fallbackColor)
-                }
+                    ShaderBrush(shader)
+                } ?: SolidColor(fallbackColor)
                 val origin = originInWindow - containerOffsetInWindow
-                val maxRadius = maxRevealRadius(origin, size)
-                val initialRadius = startRadiusPx.coerceIn(1f, maxRadius.coerceAtLeast(1f))
-                val radius = initialRadius + (maxRadius - initialRadius) * progress.value
-                val haloAlpha = (1f - progress.value) * 0.08f
-                if (haloAlpha > 0.001f) {
-                    val haloRadius = radius * 1.12f
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = haloAlpha),
-                                Color.Transparent
-                            ),
-                            center = origin,
-                            radius = haloRadius
-                        ),
-                        radius = haloRadius,
-                        center = origin
-                    )
+                val maxRadius = maxRevealRadius(origin, size).coerceAtLeast(1f)
+                val initialRadius = startRadiusPx.coerceIn(1f, maxRadius)
+                onDrawBehind {
+                    val fraction = progress.floatValue
+                    if (reverse) {
+                        // collapse fully into the origin and fade the last sliver; stopping at the
+                        // toggle's radius left a small disc that vanished in a single frame
+                        val radius = maxRadius * (1f - fraction)
+                        val alpha = ((1f - fraction) / ReverseFadeSpan).coerceIn(0f, 1f)
+                        if (fraction < 1f && radius > 0.5f && alpha > 0f) {
+                            drawCircle(brush = brush, radius = radius, center = origin, alpha = alpha)
+                        }
+                    } else {
+                        val radius = initialRadius + (maxRadius - initialRadius) * fraction
+                        val ringWidth = maxRadius - radius
+                        if (ringWidth > 0.5f) {
+                            drawCircle(
+                                brush = brush,
+                                radius = radius + ringWidth / 2f,
+                                center = origin,
+                                style = Stroke(width = ringWidth + 1f)
+                            )
+                        }
+                    }
                 }
-                drawCircle(
-                    color = Color.Transparent,
-                    radius = radius,
-                    center = origin,
-                    blendMode = BlendMode.Clear
-                )
             }
     )
 }

@@ -5,7 +5,7 @@
     <string name="settings_search_hint">搜索设置</string>
     <string name="settings_search_empty">没有匹配的设置</string>
     <string name="settings_general">通用</string>
-    <string name="settings_general_desc">语言、触感和全局行为</string>
+    <string name="settings_general_desc">触感、后台服务与界面缩放</string>
     <string name="settings_accounts_desc">管理网易云、哔哩哔哩和 YouTube 登录状态</string>
     <string name="settings_personalization">个性化</string>
     <string name="settings_network">网络设置</string>
@@ -294,6 +294,9 @@
     <string name="settings_download_directory_reset_desc">改回应用自己的下载位置</string>
     <string name="settings_download_file_name_format">保存文件名格式</string>
     <string name="settings_download_file_name_format_desc">自定义本地文件名</string>
+    <string name="settings_download_file_name_format_template">文件名模板</string>
+    <string name="settings_download_file_name_format_insert_hint">点击占位符插入到光标位置，或替换选中文字</string>
+    <string name="settings_download_file_name_format_preview_title">文件名预览</string>
     <string name="settings_download_file_name_format_supported" formatted="false">支持占位符：%artist% 、%title% 、%album% 、%source% 、%id% 、%audioId% 、%subAudioId%</string>
     <string name="settings_download_file_name_format_preview">预览：%1$s</string>
     <string name="settings_download_metadata_post_processing">元信息后处理</string>
@@ -351,6 +354,13 @@
     <string name="settings_backup_restore">备份与恢复</string>
     <string name="settings_backup_local_section">本地备份</string>
     <string name="settings_backup_local_section_desc">导入或导出歌单和应用配置</string>
+    <string name="settings_backup_group_playlists">歌单</string>
+    <string name="settings_backup_group_config">应用配置</string>
+    <string name="settings_backup_group_config_desc">设置、登录信息与同步配置</string>
+    <string name="settings_backup_action_export">导出</string>
+    <string name="settings_backup_action_import">导入</string>
+    <string name="settings_backup_action_export_hint">保存为备份文件</string>
+    <string name="settings_backup_action_import_hint">从备份文件恢复</string>
     <string name="settings_backup_history_section">播放历史</string>
     <string name="settings_backup_history_section_desc">设置播放历史的同步频率</string>
     <string name="settings_backup_github_section">GitHub 同步</string>

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.settings.route
 import android.content.Context
 import android.content.res.Resources
 import android.net.Uri
+import android.os.Build
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.State
 import kotlinx.coroutines.CoroutineScope
@@ -102,7 +103,17 @@ internal class AppAppearanceSettingsActions(
         }
 
     val onBackgroundImageChange: (Uri?) -> Unit = { uri ->
-            scope.launch { repo.setBackgroundImageUri(uri?.toString()) }
+            scope.launch {
+                repo.setBackgroundImageUri(uri?.toString())
+                // a custom background only reads through frosted chrome, so picking one opts into it
+                if (uri != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    repo.setAdvancedBlurEnabled(true)
+                    repo.setEnhancedAdvancedBlurEnabled(true)
+                } else if (uri == null) {
+                    // enhanced blur only pays off over an image; a plain canvas does not need it
+                    repo.setEnhancedAdvancedBlurEnabled(false)
+                }
+            }
         }
 
     val onBackgroundImageBlurChange: (Float) -> Unit = {}

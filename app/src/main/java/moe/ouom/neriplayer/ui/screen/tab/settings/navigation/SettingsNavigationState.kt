@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.resolveSettingsSearchHigh
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.searchSettingsEntries
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsSearchScrollAnchor
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 import kotlin.math.roundToInt
 
@@ -47,8 +48,17 @@ internal fun shouldUseSettingsSplitLayout(
     windowWidth: Dp
 ): Boolean = shouldUseTabletSettingsTransitions(smallestScreenWidthDp) && windowWidth >= 840.dp
 
-internal fun shouldShowSettingsDetailHeader(page: SettingsPage): Boolean =
-    page != SettingsPage.Accounts
+/** Clean pages drop the hero card: the large top bar title already names the page. */
+internal fun shouldShowSettingsDetailHeader(page: SettingsPage, clean: Boolean = false): Boolean =
+    page != SettingsPage.Accounts && !clean
+
+/** Search anchors count the header as item 0; shift them when the header is not rendered. */
+internal fun settingsDetailListIndex(anchorIndex: Int, page: SettingsPage, clean: Boolean): Int =
+    if (shouldShowSettingsDetailHeader(page) && !shouldShowSettingsDetailHeader(page, clean)) {
+        (anchorIndex - 1).coerceAtLeast(0)
+    } else {
+        anchorIndex
+    }
 
 internal fun ensureSplitSettingsPage(splitLayout: Boolean, page: SettingsPage?): SettingsPage? =
     page ?: initialSettingsPage(splitLayout)
@@ -97,7 +107,8 @@ internal class SettingsNavigationState(
     private val searchResultsState: State<List<SettingsSearchEntry>>,
     private val dynamicColor: Boolean,
     private val mobileDataFollowDefaultAudioQuality: Boolean,
-    private val hasCustomBackground: Boolean
+    private val hasCustomBackground: Boolean,
+    private val cleanStyle: Boolean = false
 ) {
     val searchResults: List<SettingsSearchEntry>
         get() = searchResultsState.value
@@ -144,14 +155,15 @@ internal class SettingsNavigationState(
         clearHighlight()
         val detailListState = detailListStates.getValue(pending.page)
         val anchor = settingsSearchScrollAnchor(pending.page, pending.targetId)
+        val itemIndex = settingsDetailListIndex(anchor.itemIndex, pending.page, cleanStyle)
         withFrameNanos { }
         withFrameNanos { }
         snapshotFlow { detailListState.layoutInfo.totalItemsCount }
-            .first { it > anchor.itemIndex }
+            .first { it > itemIndex }
         val scrollOffset = with(density) { anchor.scrollOffset.toPx().roundToInt() }
-        detailListState.scrollToItem(anchor.itemIndex, scrollOffset)
+        detailListState.scrollToItem(itemIndex, scrollOffset)
         withFrameNanos { }
-        detailListState.scrollToItem(anchor.itemIndex, scrollOffset)
+        detailListState.scrollToItem(itemIndex, scrollOffset)
         highlightTargetState.value = pending.targetId
         highlightPulseState.intValue = pending.requestId
         pendingNavigationState.value = null
@@ -250,7 +262,8 @@ internal fun rememberSettingsNavigationState(
         searchResultsState = searchResultsState,
         dynamicColor = dynamicColor,
         mobileDataFollowDefaultAudioQuality = mobileDataFollowDefaultAudioQuality,
-        hasCustomBackground = backgroundImageUri != null
+        hasCustomBackground = backgroundImageUri != null,
+        cleanStyle = NeriDesign.isClean
     )
 
     // 分栏时默认显示通用页只是展示兜底，不写回状态，窗口变窄后仍回到设置首页

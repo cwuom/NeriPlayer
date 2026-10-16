@@ -72,6 +72,10 @@ import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedTransitionElement
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmap
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
+import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
+import moe.ouom.neriplayer.ui.animation.sharedCoverTarget
+import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import kotlin.math.min
@@ -879,7 +883,14 @@ private fun NowPlayingCoverSizedPanel(
             )
         }
         val requestSizePx = with(density) { coverSize.roundToPx().coerceAtLeast(256) }
-        Box(modifier = Modifier.align(Alignment.Center).size(coverSize)) {
+        val coverFlight = LocalSharedCoverFlight.current
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(coverSize)
+                // the source badge rides with the artwork, so it hides while the artwork flies
+                .graphicsLayer { alpha = if (coverFlight?.hidesCovers == true) 0f else 1f }
+        ) {
             NowPlayingCoverPanelImage(
                 owner = owner,
                 content = NowPlayingCoverPanelImageContent(source, offlineMode, requestSizePx),
@@ -950,9 +961,15 @@ private fun NowPlayingCoverInteractiveImage(
         onTap = preview.action(owner, content.source.coverUrl, longPress = false),
         onLongPress = preview.action(owner, content.source.coverUrl, longPress = true)
     )
+    val coverShape = if (NeriDesign.isClean) {
+        ContinuousRoundedCornerShape(NowPlayingCoverCornerRadius)
+    } else {
+        RoundedCornerShape(NowPlayingCoverCornerRadius)
+    }
     val imageModifier = Modifier.fillMaxSize()
         .then(modifier)
-        .clip(RoundedCornerShape(24.dp))
+        .sharedCoverTarget(NowPlayingCoverCornerRadius)
+        .clip(coverShape)
         .background(coverSurfaceColor(content.source.coverUrl, MaterialTheme.colorScheme.primaryContainer))
         .then(previewModifier)
     NowPlayingCoverImageFrame(
@@ -983,6 +1000,8 @@ private fun NowPlayingCoverImageFrame(
         )
     }
 }
+
+private val NowPlayingCoverCornerRadius = 24.dp
 
 private fun coverSurfaceColor(coverUrl: String?, placeholder: Color): Color =
     if (coverUrl == null) placeholder else Color.Transparent

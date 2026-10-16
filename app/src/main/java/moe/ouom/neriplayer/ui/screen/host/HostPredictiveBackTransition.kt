@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -41,7 +42,9 @@ internal fun <S> rememberHostPredictiveBackTransition(
     val transition = rememberTransition(transitionState, label = label)
     var gesture by remember { mutableStateOf<HostBackGesture<S>?>(null) }
     val currentBackTarget by rememberUpdatedState(backTargetState)
-    val currentSeekEnabled by rememberUpdatedState(seekEnabled)
+    val currentSeekEnabled by rememberUpdatedState(
+        seekEnabled && LocalPredictiveBackPreviewEnabled.current
+    )
     val currentOnBack by rememberUpdatedState(onBack)
 
     PredictiveBackHandler(enabled = backEnabled) { events ->

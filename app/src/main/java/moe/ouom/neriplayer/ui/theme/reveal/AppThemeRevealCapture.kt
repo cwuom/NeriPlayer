@@ -20,11 +20,15 @@ import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
-private const val THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX = 1080
+// a safety cap for unusual windows only; phone and tablet panels are captured 1:1 so the
+// hand-off never swaps crisp live pixels for a softened copy
+private const val THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX = 4096
 private const val THEME_REVEAL_STABLE_DRAW_PASSES = 1
-internal const val THEME_REVEAL_DURATION_MILLIS = 720
-internal const val THEME_REVEAL_WATCHDOG_DELAY_MILLIS = 900L
-private val THEME_REVEAL_SNAPSHOT_CONFIG = Bitmap.Config.RGB_565
+internal const val THEME_REVEAL_DURATION_MILLIS = 640
+internal const val THEME_REVEAL_REVERSE_DURATION_MILLIS = 560
+// the first themed frame recomposes the whole app; too short a watchdog cut the circle mid-way
+internal const val THEME_REVEAL_WATCHDOG_DELAY_MILLIS = 4000L
+private val THEME_REVEAL_SNAPSHOT_CONFIG = Bitmap.Config.ARGB_8888
 
 internal data class ThemeRevealSnapshotDimensions(
     val width: Int,

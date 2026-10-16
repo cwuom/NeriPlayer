@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.dialog
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.theme.NeriMotion
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloatAsState
 import android.annotation.SuppressLint
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -250,7 +253,12 @@ private fun ColorPickerItem(
             .then(clickableModifier),
         contentAlignment = Alignment.Center
     ) {
-        if (isSelected) {
+        val tick by animateFloatAsState(
+            targetValue = if (isSelected) 1f else 0f,
+            animationSpec = if (isSelected) NeriMotion.bouncy() else NeriMotion.snappy(),
+            label = "color_picker_tick"
+        )
+        if (tick > 0.01f) {
             val contentColor = if (ColorUtils.calculateLuminance(color.toArgb()) > 0.5) {
                 Color.Black
             } else {
@@ -259,7 +267,12 @@ private fun ColorPickerItem(
             Icon(
                 imageVector = Icons.Default.Check,
                 contentDescription = stringResource(CoreCommonR.string.common_selected),
-                tint = contentColor
+                tint = contentColor,
+                modifier = Modifier.graphicsLayer {
+                    alpha = tick.coerceIn(0f, 1f)
+                    scaleX = 0.4f + 0.6f * tick
+                    scaleY = 0.4f + 0.6f * tick
+                }
             )
         }
 
@@ -326,16 +339,10 @@ internal fun DpiSettingDialog(
             )
         },
         dismissButton = {
-            Row {
-                MiuixSettingsTextButton(
-                    onClick = { sliderValue = 1.0f },
-                    text = { Text(stringResource(CoreCommonR.string.action_reset)) }
-                )
-                MiuixSettingsTextButton(
-                    onClick = onDismiss,
-                    text = { Text(stringResource(CoreCommonR.string.action_cancel)) }
-                )
-            }
+            MiuixSettingsTextButton(
+                onClick = { onApply(1.0f) },
+                text = { Text(stringResource(CoreCommonR.string.action_reset)) }
+            )
         }
     )
 }

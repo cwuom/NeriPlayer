@@ -153,7 +153,7 @@ private enum class StartupStep {
     LearningGuide
 }
 
-private const val STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS = 900L
+private const val STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS = 1100L
 private const val STARTUP_THEME_REVEAL_CAPTURE_TIMEOUT_MILLIS = 500L
 
 internal fun calculateStartupOnboardingProgress(stepIndex: Int, stepCount: Int): Float {
@@ -1273,8 +1273,7 @@ fun StartupOnboardingScreen(
                     originInWindow = revealOrigin,
                     modifier = Modifier.fillMaxSize(),
                     startRadiusPx = themeRevealStartRadiusPx,
-                    legacySnapshotDim = true,
-                    durationMillis = 720,
+                    durationMillis = 640,
                     onFinished = { finishThemeReveal(activeThemeRevealToken) }
                 )
             }

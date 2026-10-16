@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.home
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.content.Context
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -338,7 +339,7 @@ private fun ContinueCardSurface(
     var showMenu by remember { mutableStateOf(false) }
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(neriRoundedShape(8.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = {
@@ -374,7 +375,7 @@ private fun ContinueCover(displayName: String, coverUrl: String?, offlineMode: B
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(neriRoundedShape(8.dp))
     )
 }
 

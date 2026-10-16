@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.component.playback
  * Created: 2025/8/8
  */
 
+import androidx.compose.runtime.SideEffect
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
@@ -31,6 +32,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.text.TextAutoSize
@@ -89,6 +91,15 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import coil.compose.AsyncImage
+import moe.ouom.neriplayer.ui.animation.sharedCoverSource
+import moe.ouom.neriplayer.ui.animation.shouldOpenNowPlayingFromDrag
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -481,7 +492,18 @@ fun NeriMiniPlayer(
     val smallestScreenWidthDp = LocalConfiguration.current.smallestScreenWidthDp
     val useTabletControls = tabletControls != null &&
         smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
-    val shape = if (useTabletControls) RectangleShape else RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+    val cleanStyle = NeriDesign.isClean
+    val sharedCoverFlight = LocalSharedCoverFlight.current
+    val miniContentColor = if (cleanStyle) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    val shape = when {
+        useTabletControls -> RectangleShape
+        cleanStyle -> NeriDesign.tokens.miniPlayerShape
+        else -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+    }
     val requestedCoverUrl = coverUrl.trimmedNonEmptyOrNull()
     val retainedCoverUrl = visualCoverUrl.trimmedNonEmptyOrNull()
     val requestedIdentityKey = miniPlayerCoverIdentityKey(
@@ -544,6 +566,10 @@ fun NeriMiniPlayer(
     }
     val latestFailedFrame by rememberUpdatedState(failedFrameForVisibleState)
     val currentOnPrevious by rememberUpdatedState(onPrevious)
+    val currentOnExpand by rememberUpdatedState(onExpand)
+    val openDragDistancePx = with(LocalDensity.current) {
+        (LocalConfiguration.current.screenHeightDp.dp * 0.5f).toPx()
+    }
     val currentOnNext by rememberUpdatedState(onNext)
     val swipeOffset = remember { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
@@ -717,17 +743,20 @@ fun NeriMiniPlayer(
         }
     }
 
+    val coverCornerRadius = if (cleanStyle) 10.dp else 8.dp
+    val coverShape = if (cleanStyle) NeriDesign.tokens.coverSmallShape else RoundedCornerShape(8.dp)
     val cover: @Composable () -> Unit = {
         Box(
             modifier = Modifier
                 .size(NeriMiniPlayerDefaults.CoverSize)
+                .sharedCoverSource(coverCornerRadius, visibleFrame?.decodedBitmap)
                 .background(
                     color = if (visibleFrame != null) {
                         Color.Transparent
                     } else {
                         MaterialTheme.colorScheme.primaryContainer
                     },
-                    shape = RoundedCornerShape(8.dp)
+                    shape = coverShape
                 )
         ) {
             if (visibleFrame?.decodedBitmap != null) {
@@ -737,7 +766,7 @@ fun NeriMiniPlayer(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .matchParentSize()
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(coverShape)
                 )
             } else if (visibleFrame != null) {
                 key(visibleFrame.requestToken) {
@@ -754,7 +783,7 @@ fun NeriMiniPlayer(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .matchParentSize()
-                            .clip(RoundedCornerShape(8.dp)),
+                            .clip(coverShape),
                         onSuccess = { state ->
                             val bitmap = resolveMiniPlayerCoverBitmap(state.result.drawable)
                             if (bitmap != null &&
@@ -821,13 +850,37 @@ fun NeriMiniPlayer(
         }
     }
 
+    val capsuleColor = if (cleanStyle) {
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(
+            alpha = if (LocalHasCustomBackground.current) 0.72f else 1f
+        )
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer
+    }
+    SideEffect { sharedCoverFlight?.miniPlayerContainerColor = capsuleColor }
     AdvancedGlassSurface(
         role = AdvancedGlassRole.MiniPlayer,
         modifier = modifier
             .fillMaxWidth()
             .height(if (useTabletControls) NeriMiniPlayerDefaults.TabletHeight else NeriMiniPlayerDefaults.Height)
-            .padding(horizontal = if (useTabletControls) 0.dp else 8.dp)
+            // aligned with the floating tab bar's side margins, with a small gap above it
+            .padding(horizontal = if (useTabletControls) 0.dp else if (cleanStyle) 16.dp else 8.dp)
+            .padding(bottom = if (cleanStyle && !useTabletControls) 6.dp else 0.dp)
+            .onGloballyPositioned { coordinates ->
+                sharedCoverFlight?.reportMiniPlayerContainer(coordinates.boundsInWindow())
+            }
             .clip(shape)
+            .then(
+                if (cleanStyle && !useTabletControls) {
+                    Modifier.border(
+                        width = 0.5.dp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                        shape = shape
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .pointerInput(useTabletControls) {
                 if (useTabletControls) return@pointerInput
                 detectHorizontalDragGestures(
@@ -880,10 +933,39 @@ fun NeriMiniPlayer(
                     }
                 )
             }
+            .pointerInput(useTabletControls, cleanStyle) {
+                if (useTabletControls) return@pointerInput
+                val tracker = VelocityTracker()
+                var dragTotalPx = 0f
+                fun dragProgress() = (-dragTotalPx / openDragDistancePx).coerceIn(0f, 1f)
+                detectVerticalDragGestures(
+                    onDragStart = {
+                        tracker.resetTracking()
+                        dragTotalPx = 0f
+                    },
+                    onVerticalDrag = { change, dragAmount ->
+                        change.consume()
+                        tracker.addPosition(change.uptimeMillis, change.position)
+                        dragTotalPx += dragAmount
+                        // the clean morph follows the finger; Material only opens on release
+                        if (cleanStyle) sharedCoverFlight?.dragOpenProgress = dragProgress()
+                    },
+                    onDragEnd = {
+                        val open = shouldOpenNowPlayingFromDrag(dragProgress(), tracker.calculateVelocity().y)
+                        if (open) currentOnExpand()
+                        sharedCoverFlight?.dragOpenProgress = null
+                    },
+                    onDragCancel = { sharedCoverFlight?.dragOpenProgress = null }
+                )
+            }
             .clickable { onExpand() },
         shape = shape,
-        fallbackColor = MaterialTheme.colorScheme.secondaryContainer,
-        tintColor = MaterialTheme.colorScheme.secondaryContainer,
+        fallbackColor = capsuleColor,
+        tintColor = if (cleanStyle) {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        },
         enabled = enableBlur
     ) {
         Card(
@@ -905,7 +987,7 @@ fun NeriMiniPlayer(
                             EllipsizingMiniPlayerText(
                                 text = title,
                                 style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                color = miniContentColor,
                                 maxLineHeightDp = 20f,
                                 minVisualFontSizeSp = MINI_PLAYER_TITLE_MIN_VISUAL_FONT_SIZE_SP,
                                 modifier = Modifier.fillMaxWidth()
@@ -913,7 +995,7 @@ fun NeriMiniPlayer(
                             AutoSizingMiniPlayerText(
                                 text = artist,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                                color = miniContentColor.copy(alpha = 0.8f),
                                 maxLineHeightDp = 16f,
                                 minVisualFontSizeSp = MINI_PLAYER_ARTIST_MIN_VISUAL_FONT_SIZE_SP,
                                 modifier = Modifier.fillMaxWidth()
@@ -922,7 +1004,7 @@ fun NeriMiniPlayer(
                                 text = "${formatDuration(tabletControls.positionMs.coerceAtLeast(0L))} / " +
                                     formatDuration(tabletControls.durationMs.coerceAtLeast(0L)),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.65f),
+                                color = miniContentColor.copy(alpha = 0.65f),
                                 maxLineHeightDp = 12f,
                                 minVisualFontSizeSp = 9f,
                                 modifier = Modifier.fillMaxWidth()
@@ -969,7 +1051,7 @@ fun NeriMiniPlayer(
                             EllipsizingMiniPlayerText(
                                 text = title,
                                 style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                color = miniContentColor,
                                 maxLineHeightDp = MINI_PLAYER_TITLE_LINE_HEIGHT_DP,
                                 minVisualFontSizeSp = MINI_PLAYER_TITLE_MIN_VISUAL_FONT_SIZE_SP,
                                 modifier = Modifier.fillMaxWidth()
@@ -977,7 +1059,7 @@ fun NeriMiniPlayer(
                             AutoSizingMiniPlayerText(
                                 text = artist,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                                color = miniContentColor.copy(alpha = 0.8f),
                                 maxLineHeightDp = MINI_PLAYER_ARTIST_LINE_HEIGHT_DP,
                                 minVisualFontSizeSp = MINI_PLAYER_ARTIST_MIN_VISUAL_FONT_SIZE_SP,
                                 modifier = Modifier.fillMaxWidth()
@@ -995,7 +1077,7 @@ fun NeriMiniPlayer(
                                     Icon(
                                         imageVector = Icons.Outlined.SkipPrevious,
                                         contentDescription = stringResource(CoreCommonR.string.player_previous),
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                        tint = miniContentColor
                                     )
                                 }
                             }
@@ -1016,7 +1098,7 @@ fun NeriMiniPlayer(
                                     pauseContentDescription = stringResource(CoreCommonR.string.lyrics_pause),
                                     restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
                                     waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    color = miniContentColor,
                                     progressIndicatorSize = 22.dp,
                                     progressStrokeWidth = 2.dp
                                 )
@@ -1031,7 +1113,7 @@ fun NeriMiniPlayer(
                                     Icon(
                                         imageVector = Icons.Outlined.SkipNext,
                                         contentDescription = stringResource(CoreCommonR.string.player_next),
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                        tint = miniContentColor
                                     )
                                 }
                             }

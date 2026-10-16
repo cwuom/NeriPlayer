@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 
@@ -414,12 +415,12 @@ private fun NowPlayingQueueRow(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 72.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .clip(neriRoundedShape(20.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongPress
             ),
-        shape = RoundedCornerShape(20.dp),
+        shape = neriRoundedShape(20.dp),
         color = containerColor
     ) {
         Row(
@@ -524,12 +525,12 @@ private fun QueueRowArtwork(song: SongItem, offlineMode: Boolean) {
             ),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp))
+            modifier = Modifier.size(52.dp).clip(neriRoundedShape(14.dp))
         )
     } else {
         Surface(
             modifier = Modifier.size(52.dp),
-            shape = RoundedCornerShape(14.dp),
+            shape = neriRoundedShape(14.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f)
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -612,7 +613,7 @@ private fun QueueRowReorderHandle(reorderState: ReorderableLazyListState) {
         modifier = Modifier
             .padding(start = 8.dp)
             .size(44.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(neriRoundedShape(14.dp))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.48f))
             .detectReorder(reorderState)
             .padding(10.dp),
@@ -702,7 +703,7 @@ private fun NowPlayingQueueQuickActionButton(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Surface(
-            shape = RoundedCornerShape(999.dp),
+            shape = neriRoundedShape(999.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
             tonalElevation = 4.dp
         ) {
@@ -1143,7 +1144,7 @@ internal fun NowPlayingQueueSheet(
                             )
                         }
                         if (currentIndexInQueueEntries >= 0) {
-                            val queueIndexButtonShape = RoundedCornerShape(999.dp)
+                            val queueIndexButtonShape = neriRoundedShape(999.dp)
                             Surface(
                                 modifier = Modifier
                                     .clip(queueIndexButtonShape)

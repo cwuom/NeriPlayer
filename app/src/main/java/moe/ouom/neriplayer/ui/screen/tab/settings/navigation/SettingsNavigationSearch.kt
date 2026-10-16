@@ -22,6 +22,10 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.navigation
  * File: moe.ouom.neriplayer.ui.screen.tab.settings.navigation/SettingsNavigationSearch
  */
 
+import moe.ouom.neriplayer.ui.settings.SettingGlyphIcon
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.settings.settingGlyphForTarget
+import moe.ouom.neriplayer.ui.settings.settingGlyphFor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -280,12 +284,16 @@ private fun SettingsSearchResultRow(
     ListItem(
         modifier = Modifier.settingsItemClickable(onClick = onClick),
         leadingContent = {
-            Icon(
-                imageVector = entry.page.icon,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
+            val glyph = settingGlyphForTarget(entry.targetId) ?: settingGlyphFor(entry.id.substringAfter(':'))
+            when {
+                NeriDesign.isClean && glyph != null -> SettingGlyphIcon(glyph)
+                else -> Icon(
+                    imageVector = entry.page.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
         },
         headlineContent = { Text(entry.title) },
         supportingContent = {

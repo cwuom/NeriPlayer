@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import android.content.ClipData
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -68,6 +70,15 @@ internal fun resolveNowPlayingTrackIdentityPresentation(
     NowPlayingTrackIdentityPresentation(typography.headlineSmall, typography.bodyLarge, Alignment.CenterHorizontally)
 }
 
+/** Large-cover layout: the title reads like a headline under the artwork, aligned to its edge. */
+internal fun resolveNowPlayingLargeCoverIdentityPresentation(
+    typography: Typography
+): NowPlayingTrackIdentityPresentation = NowPlayingTrackIdentityPresentation(
+    typography.headlineMedium,
+    typography.titleMedium.copy(fontWeight = FontWeight.Normal),
+    Alignment.Start
+)
+
 internal class NowPlayingTrackIdentityOwner {
     private data class CopyContext(val clipboard: Clipboard, val scope: CoroutineScope)
 
@@ -112,15 +123,21 @@ internal fun NowPlayingTrackIdentity(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onArtistClick: () -> Unit,
-    compact: Boolean = false
+    compact: Boolean = false,
+    largeCover: Boolean = false
 ) {
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     val owner = remember { NowPlayingTrackIdentityOwner() }
     owner.bindCopyContext(clipboard, clipboardScope)
-    val presentation = resolveNowPlayingTrackIdentityPresentation(compact, MaterialTheme.typography)
+    val presentation = if (largeCover) {
+        resolveNowPlayingLargeCoverIdentityPresentation(MaterialTheme.typography)
+    } else {
+        resolveNowPlayingTrackIdentityPresentation(compact, MaterialTheme.typography)
+    }
     AnimatedVisibility(
         visible = visible,
+        modifier = if (largeCover) Modifier.fillMaxWidth() else Modifier,
         enter = slideInVertically(
             animationSpec = tween(durationMillis = 400, delayMillis = 150),
             initialOffsetY = { it / 4 }

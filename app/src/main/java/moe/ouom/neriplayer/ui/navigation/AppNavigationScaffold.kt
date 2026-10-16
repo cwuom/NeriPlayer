@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.ui.navigation
 
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
+import androidx.compose.ui.layout.boundsInWindow
 import android.content.res.Resources
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -186,11 +191,18 @@ internal fun AppNavigationScaffold(
                     }
                 }
             ) { innerPadding ->
+                // pages keep their bottom reserve while Now Playing covers them; dropping it made a
+                // list scrolled to its end jump as the player opened
+                val pageReservedMiniPlayerHeight = reservedMiniPlayerHeight(
+                    miniPlayer.hasSong,
+                    showNowPlaying = false,
+                    configuration.smallestScreenWidthDp
+                )
                 val layoutInsets = resolveAppNavigationLayoutInsets(
                     useNavigationRail = useNavigationRail,
                     baseBlurRequested = baseBlurRequested,
                     bottomBarInset = innerPadding.calculateBottomPadding().coerceAtLeast(0.dp),
-                    reservedMiniPlayerHeight = reservedMiniPlayerHeight
+                    reservedMiniPlayerHeight = pageReservedMiniPlayerHeight
                 )
                 val dragBounds = dragBoundsOwner.visibleBounds(miniPlayer.hasSong, bottomBar.showNowPlaying)
                 CompositionLocalProvider(
@@ -222,6 +234,16 @@ internal fun AppNavigationScaffold(
     }
 }
 
+/**
+ * The clean floating tab bar and mini player sit over a fullscreen glass backdrop; when the IME
+ * resizes the window they would ride above the keyboard with a stale blur region, so they step
+ * aside until it closes, like iOS does.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun cleanFloatingChromeYieldsToIme(): Boolean =
+    NeriDesign.isClean && WindowInsets.isImeVisible
+
 private fun bottomBarVisibilityTarget(showNowPlaying: Boolean): Float =
     if (showNowPlaying) 0f else 1f
 
@@ -238,10 +260,11 @@ private fun AppScaffoldBottomBar(
     val layoutDirection = LocalLayoutDirection.current
     val tabInsets = NavigationBarDefaults.windowInsets
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
+    val barHidden = bottomBar.showNowPlaying || cleanFloatingChromeYieldsToIme()
     val visibilityProgress by animateFloatAsState(
-        targetValue = bottomBarVisibilityTarget(bottomBar.showNowPlaying),
+        targetValue = bottomBarVisibilityTarget(barHidden),
         animationSpec = tween(
-            durationMillis = bottomBarVisibilityDuration(bottomBar.showNowPlaying),
+            durationMillis = bottomBarVisibilityDuration(barHidden),
             easing = FastOutSlowInEasing
         ),
         label = "bottom_bar_visibility"
@@ -428,16 +451,19 @@ private fun AppMiniPlayerOverlay(
 ) {
     val controls = rememberMiniPlayerPlaybackControls()
     val resources = LocalResources.current
+    val sharedCoverFlight = LocalSharedCoverFlight.current
+    val miniPlayerVisible = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying) &&
+        !cleanFloatingChromeYieldsToIme()
     val tabletControls = if (LocalConfiguration.current.smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP) {
         rememberMiniPlayerTabletActions(
-            visible = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying),
+            visible = miniPlayerVisible,
             offlineMode = offlineMode,
             onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
         )
     } else null
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedVisibility(
-            visible = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying),
+            visible = miniPlayerVisible,
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(bottom = bottomPadding)

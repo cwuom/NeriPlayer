@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.Manifest
@@ -481,6 +482,9 @@ fun NowPlayingScreen(
     val nowPlayingToolbarDockEnabled by settingsRepo
         .nowPlayingToolbarDockEnabledFlow
         .collectAsStateWithLifecycle(initialValue = true)
+    val immersiveMode by settingsRepo
+        .nowPlayingImmersiveModeFlow
+        .collectAsStateWithLifecycle(initialValue = false)
     val playbackControlLayoutPreferences by settingsRepo
         .playbackControlLayoutPreferencesFlow
         .collectAsStateWithLifecycle(initialValue = settingsRepo.defaultPlaybackControlLayoutPreferences)
@@ -635,6 +639,22 @@ fun NowPlayingScreen(
     var pendingSyncConfirmLabel by remember { mutableStateOf("") }
 
     val screenScope = rememberCoroutineScope()
+    val toggleImmersiveMode: () -> Unit = {
+        val enable = !immersiveMode
+        context.performHapticFeedback()
+        screenScope.launch {
+            settingsRepo.setNowPlayingImmersiveMode(enable)
+            snackbarHostState.showNeriSnackbar(
+                composeResources.getString(
+                    if (enable) {
+                        CoreCommonR.string.nowplaying_immersive_mode_on
+                    } else {
+                        CoreCommonR.string.nowplaying_immersive_mode_off
+                    }
+                )
+            )
+        }
+    }
 
     val downloadCurrentCover: () -> Unit = {
         val song = currentSong
@@ -1226,6 +1246,7 @@ fun NowPlayingScreen(
                                         onClick = { PlayerManager.togglePlayPause() },
                                         enabled = !usbPlaybackPreparing,
                                         modifier = Modifier
+                                            .nowPlayingLongPress(toggleImmersiveMode)
                                             .sharedElement(
                                                 rememberSharedContentState(
                                                     key = NowPlayingLyricsSharedTransitionElement.PLAY.key
@@ -1358,7 +1379,10 @@ fun NowPlayingScreen(
                             onQueue = { showQueueSheet = true },
                             onSleepTimer = { showSleepTimerDialog = true },
                             onVolume = { showVolumeSheet = true },
-                            onLyrics = resolveNowPlayingLyricsToolbarAction(
+                            // in immersive mode the lyrics button always opens the full lyrics page
+                            onLyrics = if (immersiveMode) {
+                                { onShowLyricsScreenChange(true) }
+                            } else resolveNowPlayingLyricsToolbarAction(
                                 lyricsAdjustBehavior = lyricsAdjustBehavior,
                                 onAdjust = {
                                     startMoreOptionsWithLyricBehavior = true
@@ -1444,6 +1468,18 @@ fun NowPlayingScreen(
                                 preferredSize = preferredSize
                             )
                         }
+                        val largeCoverTrackIdentity: @Composable () -> Unit = {
+                            NowPlayingTrackIdentity(
+                                display = resolveNowPlayingTrackDisplay(currentSong),
+                                visible = contentVisible,
+                                marqueeEnabled = nowPlayingSongTitleMarqueeEnabled,
+                                titleColor = targetNowPlayingColorScheme.onSurface,
+                                sharedTransitionScope = this@SharedTransitionLayout,
+                                animatedVisibilityScope = this@AnimatedContent,
+                                onArtistClick = openCurrentArtist,
+                                largeCover = true
+                            )
+                        }
                         val trackIdentity: @Composable (Boolean) -> Unit = { compact ->
                             NowPlayingTrackIdentity(
                                 display = resolveNowPlayingTrackDisplay(currentSong),
@@ -1465,7 +1501,7 @@ fun NowPlayingScreen(
                                     iconSize = nowPlayingToolbarIconSize,
                                     minimumTouchTarget = nowPlayingToolbarMinimumTouchTarget,
                                     compactHeight = compactHeight,
-                                    lyricsAdjustBehavior = lyricsAdjustBehavior
+                                    lyricsAdjustBehavior = lyricsAdjustBehavior && !immersiveMode
                                 ),
                                 status = NowPlayingCoverToolbarStatus(
                                     sleepTimerActive = sleepTimerState.isActive,
@@ -1479,7 +1515,7 @@ fun NowPlayingScreen(
                             )
                         }
                         val embeddedLyricsVisible = shouldShowNowPlayingEmbeddedLyrics(
-                            useWideLandscapeLayout, showCoverPageLyrics, coverLyricsAvailable
+                            useWideLandscapeLayout, showCoverPageLyrics && !immersiveMode, coverLyricsAvailable
                         )
                         val embeddedLyricContent = buildNowPlayingSyncedLyricContent(
                             plainLyrics, secondaryPlainLyrics, showSecondaryLyrics,
@@ -1505,13 +1541,13 @@ fun NowPlayingScreen(
                         // 手机竖屏保留原来的控件顺序和封面歌词
                         val mainColumnContent: @Composable ColumnScope.() -> Unit = {
                             coverTopBar()
-                            Spacer(Modifier.height(8.dp))
+                            Spacer(Modifier.height(if (immersiveMode) 16.dp else 8.dp))
                             coverPanel(
                                 Modifier.nowPlayingCoverPanelModifier(false, this),
-                                null
+                                if (immersiveMode) NowPlayingImmersiveCoverSize else null
                             )
-                            Spacer(Modifier.height(16.dp))
-                            trackIdentity(false)
+                            Spacer(Modifier.height(if (immersiveMode) 28.dp else 16.dp))
+                            if (immersiveMode) largeCoverTrackIdentity() else trackIdentity(false)
 
                             NowPlayingLeadingProgress(
                                 nowPlayingProgressAtBottom,
