@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -480,7 +481,7 @@ private fun YouTubeMusicCreatorPhoneHero(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(210.dp)
+            .heightIn(min = 210.dp)
             .background(MaterialTheme.colorScheme.surfaceVariant)
     ) {
         if (coverUrl != null) {
@@ -488,12 +489,12 @@ private fun YouTubeMusicCreatorPhoneHero(
                 model = backdropRequest,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.matchParentSize()
             )
         }
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .background(Color.Black.copy(alpha = 0.32f))
         )
         Row(

@@ -24,6 +24,8 @@ package moe.ouom.neriplayer.ui.screen.artist
  */
 
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
 import android.app.Application
 import android.content.Context
 import androidx.compose.foundation.background
@@ -694,6 +696,19 @@ private fun BiliUploaderTabs(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit
 ) {
+    if (NeriDesign.isClean) {
+        CleanSegmentedTabs(
+            labels = listOf(
+                stringResource(CoreCommonR.string.bili_uploader_tab_videos),
+                stringResource(CoreCommonR.string.bili_uploader_tab_collections),
+                stringResource(CoreCommonR.string.bili_uploader_tab_series)
+            ),
+            selectedIndex = selectedTab,
+            onSelected = onTabSelected,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+        )
+        return
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()

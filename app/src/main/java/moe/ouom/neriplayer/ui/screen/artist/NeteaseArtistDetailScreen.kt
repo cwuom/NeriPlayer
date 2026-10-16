@@ -85,6 +85,8 @@ import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -378,6 +380,18 @@ private fun ArtistWorkTabs(
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    if (NeriDesign.isClean) {
+        CleanSegmentedTabs(
+            labels = listOf(
+                stringResource(CoreCommonR.string.artist_tab_songs),
+                stringResource(CoreCommonR.string.artist_tab_albums)
+            ),
+            selectedIndex = selectedTab,
+            onSelected = onTabSelected,
+            modifier = modifier.fillMaxWidth().padding(vertical = 8.dp)
+        )
+        return
+    }
     Surface(
         modifier = modifier.fillMaxWidth().padding(vertical = 8.dp),
         shape = neriRoundedShape(24.dp),
@@ -578,7 +592,7 @@ private fun ArtistPhoneHeaderDetails(
     followUpdating: Boolean,
     onToggleFollow: () -> Unit
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ArtistReleaseCounts(header)
     }
     ArtistBriefDescription(header, maxLines = 3)
