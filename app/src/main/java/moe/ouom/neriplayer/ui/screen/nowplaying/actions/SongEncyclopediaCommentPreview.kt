@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -15,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,28 +90,28 @@ internal fun SongEncyclopediaCommentPreview(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            LazyColumn(
+            // 只有 3 条预览，用普通 Column 即可。
+            // 外层是 Column(Modifier.verticalScroll())，此处若用 LazyColumn 会因无限高度约束崩溃。
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                userScrollEnabled = false,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                itemsIndexed(
-                    items = ui.comments.take(COMMENT_PREVIEW_LIMIT),
-                    key = { _, comment -> comment.id }
-                ) { index, comment ->
-                    CommentItem(
-                        comment = comment,
-                        floor = index + 1,
-                        offlineMode = offlineMode,
-                        isLiking = false,
-                        likeEnabled = false,
-                        onLike = {},
-                        onReply = {},
-                        onToggleReplies = {},
-                        repliesExpanded = false,
-                        hasReplyThread = false,
-                        replyEnabled = false
-                    )
+                ui.comments.take(COMMENT_PREVIEW_LIMIT).forEachIndexed { index, comment ->
+                    key(comment.id) {
+                        CommentItem(
+                            comment = comment,
+                            floor = index + 1,
+                            offlineMode = offlineMode,
+                            isLiking = false,
+                            likeEnabled = false,
+                            onLike = {},
+                            onReply = {},
+                            onToggleReplies = {},
+                            repliesExpanded = false,
+                            hasReplyThread = false,
+                            replyEnabled = false
+                        )
+                    }
                 }
             }
             SongEncyclopediaCommentShowAll(onOpenAll)
