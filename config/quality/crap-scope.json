@@ -1105,6 +1105,7 @@
       "class": "moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingScreenKt",
       "methods": [
         "NowPlayingScreen",
+        "NowPlayingImmersivePortraitLayout-EUb7tLY",
         "resolveNowPlayingCoverPagePresentation",
         "NowPlayingScreen$lambda$154$1$0$1",
         "NowPlayingScreen$lambda$154$1$0$1$21",
@@ -1117,6 +1118,14 @@
         "NowPlayingScreen$lambda$154$1$0$1$28",
         "NowPlayingScreen$lambda$154$1$0$1$29",
         "NowPlayingScreen$lambda$154$1$0$1$23$0"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingScreen.kt",
+      "class": "moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingScreenKt$NowPlayingImmersivePortraitLayout$1$1",
+      "methods": [
+        "measure-3p2s80s",
+        "measure_3p2s80s$lambda$0"
       ]
     },
     {
