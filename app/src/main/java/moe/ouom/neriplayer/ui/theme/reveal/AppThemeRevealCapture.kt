@@ -17,12 +17,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
 import kotlin.coroutines.resume
-import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import kotlin.time.Duration.Companion.milliseconds
 
-// a safety cap for unusual windows only; phone and tablet panels are captured 1:1 so the
-// hand-off never swaps crisp live pixels for a softened copy
+// the snapshot and its GPU texture overlap during the reveal, so bound bytes as well as edges
 private const val THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX = 4096
+private const val THEME_REVEAL_SNAPSHOT_MAX_BYTES = 18L * 1024 * 1024
+private const val THEME_REVEAL_SNAPSHOT_HEAP_DIVISOR = 16
+private const val THEME_REVEAL_SNAPSHOT_BYTES_PER_PIXEL = 4
 private const val THEME_REVEAL_STABLE_DRAW_PASSES = 1
 internal const val THEME_REVEAL_DURATION_MILLIS = 640
 internal const val THEME_REVEAL_REVERSE_DURATION_MILLIS = 560
@@ -35,19 +37,31 @@ internal data class ThemeRevealSnapshotDimensions(
     val height: Int
 )
 
+internal fun resolveThemeRevealSnapshotByteBudget(maxMemoryBytes: Long): Long =
+    minOf(
+        THEME_REVEAL_SNAPSHOT_MAX_BYTES,
+        (maxMemoryBytes / THEME_REVEAL_SNAPSHOT_HEAP_DIVISOR)
+            .coerceAtLeast(THEME_REVEAL_SNAPSHOT_BYTES_PER_PIXEL.toLong())
+    )
+
 internal fun resolveThemeRevealSnapshotDimensions(
     width: Int,
     height: Int,
-    maxDimensionPx: Int = THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX
+    maxDimensionPx: Int = THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX,
+    maxBitmapBytes: Long = THEME_REVEAL_SNAPSHOT_MAX_BYTES
 ): ThemeRevealSnapshotDimensions {
     val safeWidth = width.coerceAtLeast(1)
     val safeHeight = height.coerceAtLeast(1)
-    val maxDimension = maxOf(safeWidth, safeHeight)
-    val downsampleRatio = (maxDimension.toFloat() / maxDimensionPx)
-        .coerceAtLeast(1f)
+    val maxPixels = (maxBitmapBytes / THEME_REVEAL_SNAPSHOT_BYTES_PER_PIXEL).coerceAtLeast(1)
+    val dimensionLimit = minOf(maxDimensionPx.coerceAtLeast(1).toLong(), maxPixels).toDouble()
+    val downsampleRatio = maxOf(
+        1.0,
+        maxOf(safeWidth, safeHeight) / dimensionLimit,
+        sqrt(safeWidth.toDouble() * safeHeight / maxPixels)
+    )
     return ThemeRevealSnapshotDimensions(
-        width = (safeWidth / downsampleRatio).roundToInt().coerceAtLeast(1),
-        height = (safeHeight / downsampleRatio).roundToInt().coerceAtLeast(1)
+        width = (safeWidth / downsampleRatio).toInt().coerceAtLeast(1),
+        height = (safeHeight / downsampleRatio).toInt().coerceAtLeast(1)
     )
 }
 
@@ -69,7 +83,8 @@ private fun View.drawScaledThemeRevealBitmapOrNull(): Bitmap? {
     if (minOf(width, height) <= 0) return null
     val snapshotDimensions = resolveThemeRevealSnapshotDimensions(
         width = width,
-        height = height
+        height = height,
+        maxBitmapBytes = resolveThemeRevealSnapshotByteBudget(Runtime.getRuntime().maxMemory())
     )
     return createBitmap(
         snapshotDimensions.width,
@@ -103,7 +118,8 @@ private suspend fun captureWindowThemeRevealSnapshot(activity: Activity): Bitmap
         }
         val snapshotDimensions = resolveThemeRevealSnapshotDimensions(
             width = decorView.width,
-            height = decorView.height
+            height = decorView.height,
+            maxBitmapBytes = resolveThemeRevealSnapshotByteBudget(Runtime.getRuntime().maxMemory())
         )
         val bitmap = createBitmap(
             snapshotDimensions.width,
