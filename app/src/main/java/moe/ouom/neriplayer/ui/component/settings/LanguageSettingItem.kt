@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.component.settings
  */
 
 
+import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
@@ -65,7 +66,8 @@ fun LanguageSettingItem(
         headlineContent = { Text(stringResource(CoreCommonR.string.language_setting_title)) },
         supportingContent = { Text(currentLanguage.getDisplayName(context)) },
         leadingContent = {
-            Icon(
+            SettingRowIcon(
+                key = "language",
                 imageVector = Icons.Outlined.Language,
                 contentDescription = null
             )

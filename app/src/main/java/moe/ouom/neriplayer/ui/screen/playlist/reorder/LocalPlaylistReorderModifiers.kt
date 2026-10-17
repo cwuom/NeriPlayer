@@ -63,6 +63,7 @@ internal fun LazyItemScope.LocalPlaylistReorderableItem(
     state: LocalPlaylistReorderState,
     key: Any,
     modifier: Modifier = Modifier,
+    animatePlacement: Boolean = true,
     content: @Composable BoxScope.(isDragging: Boolean) -> Unit
 ) {
     val isDragging = state.draggingItemKey == key
@@ -89,7 +90,8 @@ internal fun LazyItemScope.LocalPlaylistReorderableItem(
         isReturning -> Modifier.zIndex(1f).graphicsLayer {
             translationY = state.dragCancelledAnimation.offset.y
         }
-        else -> Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null)
+        animatePlacement -> Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null)
+        else -> Modifier
     }
     val drawingModifier = if (overlay != null && lifted) {
         Modifier.drawWithContent {

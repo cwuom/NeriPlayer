@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.app.Application
 import android.content.Context
 import androidx.compose.foundation.background
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -432,7 +434,7 @@ private fun YouTubeMusicCreatorHeader(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
-        shape = RoundedCornerShape(28.dp)
+        shape = neriRoundedShape(28.dp)
     ) {
         YouTubeMusicCreatorPhoneHero(header = detail.header, offlineMode = offlineMode)
         YouTubeMusicCreatorPhoneDetails(header = detail.header, followFavorite = followFavorite)
@@ -479,7 +481,7 @@ private fun YouTubeMusicCreatorPhoneHero(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(210.dp)
+            .heightIn(min = 210.dp)
             .background(MaterialTheme.colorScheme.surfaceVariant)
     ) {
         if (coverUrl != null) {
@@ -487,12 +489,12 @@ private fun YouTubeMusicCreatorPhoneHero(
                 model = backdropRequest,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.matchParentSize()
             )
         }
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .background(Color.Black.copy(alpha = 0.32f))
         )
         Row(
@@ -794,7 +796,7 @@ internal fun CreatorSongCover(
     Box(
         modifier = Modifier
             .size(48.dp)
-            .clip(RoundedCornerShape(8.dp)),
+            .clip(neriRoundedShape(8.dp)),
         contentAlignment = Alignment.Center
     ) {
         if (!coverUrl.isNullOrBlank()) {
@@ -839,7 +841,7 @@ private fun CreatorSectionCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp)),
+                .clip(neriRoundedShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
             if (item.coverUrl.isNotBlank()) {

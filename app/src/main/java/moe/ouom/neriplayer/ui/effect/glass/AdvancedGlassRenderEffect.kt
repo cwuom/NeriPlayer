@@ -18,8 +18,21 @@ internal data class AdvancedGlassRenderRegion(
     val right: Float,
     val bottom: Float,
     val cornerRadiiPx: AdvancedGlassCornerRadii,
-    val opacity: Float = 1f
+    val opacity: Float = 1f,
+    val lens: Float = 0f
 )
+
+/** Liquid glass refraction parameters; [None] keeps the plain frosted mask. */
+internal data class AdvancedGlassLensSpec(
+    val refraction: Float,
+    val edgeBandPx: Float,
+    val rimPx: Float,
+    val rimHighlight: Float
+) {
+    companion object {
+        val None = AdvancedGlassLensSpec(0f, 0f, 0f, 0f)
+    }
+}
 
 internal fun isAdvancedGlassBackendSupported(sdkInt: Int): Boolean =
     sdkInt >= ADVANCED_GLASS_BACKEND_MIN_SDK
@@ -46,13 +59,14 @@ internal fun createAdvancedGlassRenderEffect(
         "Region-local profiles must render through AdvancedGlassLocalBlurRenderer"
     }
     return createAdvancedGlassRenderEffectSession(shaderSource, sdkInt)
-        .update(radiusPx, regions)
+        .update(radiusPx, regions, AdvancedGlassLensSpec.None)
 }
 
 internal interface AdvancedGlassRenderEffectSession {
     fun update(
         radiusPx: Float,
-        regions: List<AdvancedGlassRenderRegion>
+        regions: List<AdvancedGlassRenderRegion>,
+        lens: AdvancedGlassLensSpec = AdvancedGlassLensSpec.None
     ): RenderEffect?
 }
 
@@ -71,7 +85,8 @@ internal fun createAdvancedGlassRenderEffectSession(
 private object UnsupportedAdvancedGlassRenderEffectSession : AdvancedGlassRenderEffectSession {
     override fun update(
         radiusPx: Float,
-        regions: List<AdvancedGlassRenderRegion>
+        regions: List<AdvancedGlassRenderRegion>,
+        lens: AdvancedGlassLensSpec
     ): RenderEffect? = null
 }
 
@@ -83,7 +98,8 @@ private class AdvancedGlassRuntimeShaderSession(
 
     override fun update(
         radiusPx: Float,
-        regions: List<AdvancedGlassRenderRegion>
+        regions: List<AdvancedGlassRenderRegion>,
+        lens: AdvancedGlassLensSpec
     ): RenderEffect? {
         if (!radiusPx.isFinite() || radiusPx <= 0f || regions.isEmpty()) {
             return null
@@ -94,7 +110,7 @@ private class AdvancedGlassRuntimeShaderSession(
         val activeBackend = backend ?: AdvancedGlassRuntimeShaderBackend.Session(
             maskShaderSource = shaderSource.load()
         ).also { backend = it }
-        return activeBackend.update(radiusPx, regions)
+        return activeBackend.update(radiusPx, regions, lens)
     }
 }
 
@@ -108,9 +124,10 @@ private object AdvancedGlassRuntimeShaderBackend {
 
         fun update(
             radiusPx: Float,
-            regions: List<AdvancedGlassRenderRegion>
+            regions: List<AdvancedGlassRenderRegion>,
+            lens: AdvancedGlassLensSpec
         ): RenderEffect {
-            val regionUniforms = regionUniforms(regions)
+            val regionUniforms = regionUniforms(regions, lens)
             return resolveNativeEffect(
                 regionUniforms = regionUniforms,
                 radiusPx = radiusPx
@@ -118,11 +135,13 @@ private object AdvancedGlassRuntimeShaderBackend {
         }
 
         private fun regionUniforms(
-            regions: List<AdvancedGlassRenderRegion>
+            regions: List<AdvancedGlassRenderRegion>,
+            lens: AdvancedGlassLensSpec
         ): AdvancedGlassRegionUniforms {
             val regionBounds = FloatArray(ADVANCED_GLASS_MAX_REGIONS * RegionComponentCount)
             val cornerRadii = FloatArray(ADVANCED_GLASS_MAX_REGIONS * RegionComponentCount)
             val opacity = FloatArray(ADVANCED_GLASS_MAX_REGIONS)
+            val regionLens = FloatArray(ADVANCED_GLASS_MAX_REGIONS)
             regions.forEachIndexed { index, region ->
                 val offset = index * RegionComponentCount
                 regionBounds[offset] = region.left
@@ -134,12 +153,20 @@ private object AdvancedGlassRuntimeShaderBackend {
                 cornerRadii[offset + 2] = region.cornerRadiiPx.bottomRight.coerceAtLeast(0f)
                 cornerRadii[offset + 3] = region.cornerRadiiPx.bottomLeft.coerceAtLeast(0f)
                 opacity[index] = region.opacity.coerceIn(0f, 1f)
+                regionLens[index] = region.lens.coerceIn(0f, 1f)
             }
             return AdvancedGlassRegionUniforms(
                 count = regions.size,
                 bounds = regionBounds,
                 cornerRadii = cornerRadii,
-                opacity = opacity
+                opacity = opacity,
+                lens = regionLens,
+                lensParams = floatArrayOf(
+                    lens.refraction.coerceAtLeast(0f),
+                    lens.edgeBandPx.coerceAtLeast(0f),
+                    lens.rimPx.coerceAtLeast(0f),
+                    lens.rimHighlight.coerceAtLeast(0f)
+                )
             )
         }
 
@@ -189,6 +216,8 @@ private object AdvancedGlassRuntimeShaderBackend {
             setFloatUniform(RegionBoundsUniform, regionUniforms.bounds)
             setFloatUniform(CornerRadiiUniform, regionUniforms.cornerRadii)
             setFloatUniform(RegionOpacityUniform, regionUniforms.opacity)
+            setFloatUniform(RegionLensUniform, regionUniforms.lens)
+            setFloatUniform(LensParamsUniform, regionUniforms.lensParams)
             setFloatUniform(InvertMaskUniform, if (invertMask) 1f else 0f)
         }
 
@@ -196,7 +225,9 @@ private object AdvancedGlassRuntimeShaderBackend {
             val count: Int,
             val bounds: FloatArray,
             val cornerRadii: FloatArray,
-            val opacity: FloatArray
+            val opacity: FloatArray,
+            val lens: FloatArray,
+            val lensParams: FloatArray
         )
     }
 
@@ -207,4 +238,6 @@ private object AdvancedGlassRuntimeShaderBackend {
     private const val CornerRadiiUniform = "cornerRadii"
     private const val RegionOpacityUniform = "regionOpacity"
     private const val InvertMaskUniform = "invertMask"
+    private const val RegionLensUniform = "regionLens"
+    private const val LensParamsUniform = "lensParams"
 }

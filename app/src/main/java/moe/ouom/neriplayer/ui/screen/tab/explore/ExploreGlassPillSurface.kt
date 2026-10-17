@@ -28,11 +28,12 @@ internal fun ExploreGlassPillSurface(
     contentColor: Color,
     onClick: () -> Unit,
     border: BorderStroke? = null,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     Box(
-        modifier = Modifier
+        modifier = modifier
             .minimumInteractiveComponentSize()
             .clickable(
                 interactionSource = interactionSource,

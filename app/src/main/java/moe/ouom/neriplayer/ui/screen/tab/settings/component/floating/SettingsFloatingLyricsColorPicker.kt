@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.component.floating
 
+import androidx.compose.material.icons.outlined.BorderStyle
+import moe.ouom.neriplayer.ui.settings.FloatingLyricsRowHue
+import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,7 +60,9 @@ internal fun FloatingLyricsColorPicker(
     val title = stringResource(titleRes)
     ListItem(
         leadingContent = {
-            Icon(
+            SettingRowIcon(
+                key = null,
+                fallbackHue = FloatingLyricsRowHue,
                 imageVector = icon,
                 contentDescription = title,
                 tint = MaterialTheme.colorScheme.onSurface

@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.ui.navigation
 
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.ui.layout.boundsInWindow
 import android.content.res.Resources
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -42,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -65,6 +70,7 @@ import moe.ouom.neriplayer.ui.component.navigation.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.navigation.resolveBottomBarSelectionAlpha
 import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer
 import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayerDefaults
+import moe.ouom.neriplayer.ui.component.playback.MiniPlayerTabletControls
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassBackdrops
@@ -115,14 +121,10 @@ internal fun shouldShowMiniPlayer(hasSong: Boolean, showNowPlaying: Boolean): Bo
 
 internal fun shouldSuppressPlaybackNavigation(
     playbackOpen: Boolean,
-    overlayMounted: Boolean,
-    smallestScreenWidthDp: Int,
     backGestureRevealing: Boolean = false
 ): Boolean =
-    // 返回手势拖动播放页时，底下露出的应是关闭后的底栏和迷你播放器；
-    // 手机底栏与播放页退出同时开始恢复，避免两段动画串联等待
-    !backGestureRevealing &&
-        (playbackOpen || (smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP && overlayMounted))
+    // 底栏和迷你播放器与播放页退出同步恢复，避免两段动画串联等待
+    !backGestureRevealing && playbackOpen
 
 internal fun playbackSourceNavigationAction(
     sourceRoute: String?,
@@ -155,8 +157,10 @@ internal fun AppNavigationScaffold(
 ) {
     val configuration = LocalConfiguration.current
     val dragBoundsOwner = remember { AppDragBoundsOwner() }
+    val yieldsToIme = cleanFloatingChromeYieldsToIme()
+    val miniPlayerReservesSpace = miniPlayer.hasSong && !yieldsToIme
     val reservedMiniPlayerHeight = reservedMiniPlayerHeight(
-        miniPlayer.hasSong,
+        miniPlayerReservesSpace,
         bottomBar.showNowPlaying,
         configuration.smallestScreenWidthDp
     )
@@ -180,19 +184,30 @@ internal fun AppNavigationScaffold(
                     if (!useNavigationRail) {
                         AppScaffoldBottomBar(
                             bottomBar = bottomBar,
+                            yieldsToIme = yieldsToIme,
                             onMainTabSelected = onMainTabSelected,
                             onTabBarBoundsChanged = dragBoundsOwner::updateTabBarBounds
                         )
                     }
                 }
             ) { innerPadding ->
+                // pages keep their bottom reserve while Now Playing covers them; dropping it made a
+                // list scrolled to its end jump as the player opened
+                val pageReservedMiniPlayerHeight = reservedMiniPlayerHeight(
+                    miniPlayerReservesSpace,
+                    showNowPlaying = false,
+                    configuration.smallestScreenWidthDp
+                )
                 val layoutInsets = resolveAppNavigationLayoutInsets(
                     useNavigationRail = useNavigationRail,
                     baseBlurRequested = baseBlurRequested,
                     bottomBarInset = innerPadding.calculateBottomPadding().coerceAtLeast(0.dp),
-                    reservedMiniPlayerHeight = reservedMiniPlayerHeight
+                    reservedMiniPlayerHeight = pageReservedMiniPlayerHeight
                 )
-                val dragBounds = dragBoundsOwner.visibleBounds(miniPlayer.hasSong, bottomBar.showNowPlaying)
+                val dragBounds = dragBoundsOwner.visibleBounds(
+                    miniPlayer.hasSong,
+                    bottomBar.showNowPlaying || yieldsToIme
+                )
                 CompositionLocalProvider(
                     LocalMiniPlayerHeight provides layoutInsets.screenBottomInset,
                     LocalMiniPlayerBoundsInRoot provides dragBounds.miniPlayer,
@@ -222,15 +237,41 @@ internal fun AppNavigationScaffold(
     }
 }
 
-private fun bottomBarVisibilityTarget(showNowPlaying: Boolean): Float =
-    if (showNowPlaying) 0f else 1f
+/**
+ * The clean floating tab bar and mini player sit over a fullscreen glass backdrop; when the IME
+ * resizes the window they would ride above the keyboard with a stale blur region, so they step
+ * aside until it closes, like iOS does.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun cleanFloatingChromeYieldsToIme(): Boolean =
+    NeriDesign.isClean && WindowInsets.isImeVisible
 
-private fun bottomBarVisibilityDuration(showNowPlaying: Boolean): Int =
-    if (showNowPlaying) 220 else 280
+@Composable
+private fun floatingPlaybackChromeVisible(requested: Boolean): Boolean =
+    shouldShowFloatingPlaybackChrome(requested, cleanFloatingChromeYieldsToIme())
+
+internal fun shouldShowFloatingPlaybackChrome(requested: Boolean, yieldsToIme: Boolean): Boolean =
+    requested && !yieldsToIme
+
+private fun bottomBarVisibilityTarget(visible: Boolean): Float =
+    if (visible) 1f else 0f
+
+private fun bottomBarVisibilityDuration(visible: Boolean): Int =
+    if (visible) 280 else 220
+
+private fun Modifier.collapseBottomBarSlot(collapsed: Boolean): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    // 保留自然测量和动画实例，只释放隐藏chrome占用的Scaffold槽位
+    layout(placeable.width, if (collapsed) 0 else placeable.height) {
+        placeable.placeRelative(0, 0)
+    }
+}
 
 @Composable
 private fun AppScaffoldBottomBar(
     bottomBar: AppBottomBarPresentation,
+    yieldsToIme: Boolean,
     onMainTabSelected: (String) -> Unit,
     onTabBarBoundsChanged: (Rect) -> Unit
 ) {
@@ -238,10 +279,12 @@ private fun AppScaffoldBottomBar(
     val layoutDirection = LocalLayoutDirection.current
     val tabInsets = NavigationBarDefaults.windowInsets
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
+    var navigationBarHeightPx by remember { mutableIntStateOf(0) }
+    val barVisible = shouldShowFloatingPlaybackChrome(!bottomBar.showNowPlaying, yieldsToIme)
     val visibilityProgress by animateFloatAsState(
-        targetValue = bottomBarVisibilityTarget(bottomBar.showNowPlaying),
+        targetValue = bottomBarVisibilityTarget(barVisible),
         animationSpec = tween(
-            durationMillis = bottomBarVisibilityDuration(bottomBar.showNowPlaying),
+            durationMillis = bottomBarVisibilityDuration(barVisible),
             easing = FastOutSlowInEasing
         ),
         label = "bottom_bar_visibility"
@@ -250,7 +293,29 @@ private fun AppScaffoldBottomBar(
         hasCustomBackground = bottomBar.hasCustomBackground,
         alwaysUseNewTabStyle = bottomBar.alwaysUseNewTabStyle
     )
-    Box(modifier = Modifier.fillMaxWidth().clipToBounds()) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clipToBounds()
+            .collapseBottomBarSlot(yieldsToIme)
+            .onGloballyPositioned { coordinates ->
+                if (!yieldsToIme) {
+                    // 拖拽目标使用未位移的槽位，避免IME关闭时入场动画的空边界覆盖目标
+                    val slotBounds = coordinates.boundsInRoot()
+                    val navigationBounds = slotBounds.copy(
+                        top = (slotBounds.bottom - navigationBarHeightPx).coerceAtLeast(slotBounds.top)
+                    )
+                    onTabBarBoundsChanged(
+                        resolveBottomTabDragBounds(
+                            navigationBounds,
+                            tabInsets.getLeft(density, layoutDirection),
+                            tabInsets.getRight(density, layoutDirection),
+                            tabInsets.getBottom(density)
+                        )
+                    )
+                }
+            }
+    ) {
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -269,7 +334,7 @@ private fun AppScaffoldBottomBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("appBottomNavigation")
-                    .reportBottomTabBounds(tabInsets, density, layoutDirection, onTabBarBoundsChanged),
+                    .onSizeChanged { navigationBarHeightPx = it.height },
                 selectAlpha = selectAlpha,
                 items = bottomBar.items,
                 currentDestination = bottomBar.currentDestination,
@@ -417,6 +482,22 @@ private fun rememberMiniPlayerPlaybackControls(): AppMiniPlayerPlaybackControls 
 }
 
 @Composable
+private fun rememberAdaptiveMiniPlayerActions(
+    visible: Boolean,
+    offlineMode: Boolean,
+    onOpenCurrentPlaybackSource: (() -> Unit)?
+): MiniPlayerTabletControls? {
+    if (LocalConfiguration.current.smallestScreenWidthDp < PHONE_SMALLEST_SCREEN_WIDTH_DP) {
+        return null
+    }
+    return rememberMiniPlayerTabletActions(
+        visible = visible,
+        offlineMode = offlineMode,
+        onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
+    )
+}
+
+@Composable
 private fun AppMiniPlayerOverlay(
     miniPlayer: AppMiniPlayerPresentation,
     showNowPlaying: Boolean,
@@ -428,16 +509,17 @@ private fun AppMiniPlayerOverlay(
 ) {
     val controls = rememberMiniPlayerPlaybackControls()
     val resources = LocalResources.current
-    val tabletControls = if (LocalConfiguration.current.smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP) {
-        rememberMiniPlayerTabletActions(
-            visible = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying),
-            offlineMode = offlineMode,
-            onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
-        )
-    } else null
+    val miniPlayerVisible = floatingPlaybackChromeVisible(
+        requested = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying)
+    )
+    val tabletControls = rememberAdaptiveMiniPlayerActions(
+        visible = miniPlayerVisible,
+        offlineMode = offlineMode,
+        onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
+    )
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedVisibility(
-            visible = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying),
+            visible = miniPlayerVisible,
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(bottom = bottomPadding)

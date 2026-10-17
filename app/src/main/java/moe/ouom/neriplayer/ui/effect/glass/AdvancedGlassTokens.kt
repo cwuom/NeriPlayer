@@ -12,19 +12,28 @@ internal data class AdvancedGlassTokens(
 internal fun advancedGlassTokens(
     role: AdvancedGlassRole,
     isDarkTheme: Boolean,
-    enhancedBlurRadiusDp: Float? = null
+    enhancedBlurRadiusDp: Float? = null,
+    liquid: Boolean = false
 ): AdvancedGlassTokens {
     val adjustableRadiusDp = enhancedBlurRadiusDp?.let(EnhancedAdvancedBlurPreference::normalize)
     return when (role) {
         AdvancedGlassRole.MiniPlayer -> AdvancedGlassTokens(
             blurRadiusDp = adjustableRadiusDp ?: 24f,
-            tintAlpha = if (isDarkTheme) 0.30f else 0.36f,
-            edgeAlpha = 0.10f
+            tintAlpha = when {
+                liquid -> if (isDarkTheme) 0.22f else 0.30f
+                isDarkTheme -> 0.30f
+                else -> 0.36f
+            },
+            edgeAlpha = if (liquid) 0.06f else 0.10f
         )
         AdvancedGlassRole.BottomNavigation -> AdvancedGlassTokens(
             blurRadiusDp = adjustableRadiusDp ?: 28f,
-            tintAlpha = 0.75f,
-            edgeAlpha = 0.12f
+            tintAlpha = if (liquid) {
+                if (isDarkTheme) 0.48f else 0.56f
+            } else {
+                0.75f
+            },
+            edgeAlpha = if (liquid) 0.07f else 0.12f
         )
         AdvancedGlassRole.NavigationRail,
         AdvancedGlassRole.ScreenTopTab -> AdvancedGlassTokens(

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.history.stats
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -26,6 +27,10 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
+import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -73,6 +78,17 @@ internal fun StatsPeriodSelector(
     selectedPeriod: PlaybackStatsPeriod,
     onPeriodSelected: (PlaybackStatsPeriod) -> Unit
 ) {
+    if (NeriDesign.isClean) {
+        CleanSegmentedTabs(
+            labels = StatsPeriodOptions.map { stringResource(it.labelResId()) },
+            selectedIndex = StatsPeriodOptions.indexOf(selectedPeriod).coerceAtLeast(0),
+            onSelected = { index -> onPeriodSelected(StatsPeriodOptions[index]) },
+            modifier = Modifier.padding(horizontal = 12.dp),
+            maxFixedItems = StatsPeriodOptions.size
+        )
+        return
+    }
+    val overBackground = LocalHasCustomBackground.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -84,7 +100,19 @@ internal fun StatsPeriodSelector(
             FilterChip(
                 selected = selectedPeriod == period,
                 onClick = { onPeriodSelected(period) },
-                label = { Text(stringResource(period.labelResId())) }
+                label = { Text(stringResource(period.labelResId())) },
+                // outlines vanish against busy wallpapers; a translucent fill holds up instead
+                border = if (overBackground) null else FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = selectedPeriod == period
+                ),
+                colors = if (overBackground) {
+                    FilterChipDefaults.filterChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.62f)
+                    )
+                } else {
+                    FilterChipDefaults.filterChipColors()
+                }
             )
         }
     }
@@ -146,7 +174,7 @@ internal fun StatsOverviewCard(
         }
         return
     }
-    val shape = RoundedCornerShape(16.dp)
+    val shape = neriRoundedShape(16.dp)
     val baseColor = MaterialTheme.colorScheme.secondaryContainer
     AdvancedGlassSurface(
         role = AdvancedGlassRole.SemanticCard,
@@ -186,7 +214,7 @@ private fun CompactStatMetric(icon: ImageVector, value: String, label: String, m
     AdvancedGlassSurface(
         role = AdvancedGlassRole.SemanticCard,
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
+        shape = neriRoundedShape(20.dp),
         fallbackColor = tint.copy(alpha = 0.25f),
         tintColor = tint.copy(alpha = tint.alpha * CompactMetricGlassTintStrength)
     ) {
@@ -341,7 +369,7 @@ internal fun StatTrackRow(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = neriRoundedShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.Transparent,
             disabledContainerColor = Color.Transparent
@@ -373,14 +401,14 @@ internal fun StatTrackRow(
                             contentDescription = null,
                             modifier = Modifier
                                 .size(48.dp)
-                                .clip(RoundedCornerShape(8.dp)),
+                                .clip(neriRoundedShape(8.dp)),
                             contentScale = ContentScale.Crop
                         )
                     } else {
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
-                                .clip(RoundedCornerShape(8.dp)),
+                                .clip(neriRoundedShape(8.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(

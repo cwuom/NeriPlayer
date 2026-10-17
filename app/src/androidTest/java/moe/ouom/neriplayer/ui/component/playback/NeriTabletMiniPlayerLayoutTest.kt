@@ -47,6 +47,7 @@ import androidx.media3.common.Player
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.activity.AppUiDensityRoot
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -73,6 +74,7 @@ class NeriTabletMiniPlayerLayoutTest {
     private val calls = mutableListOf<Action>()
     private val seekRequests = mutableListOf<SeekRequest>()
     private var pixelsPerDp = 1f
+    private var appliedUiScale = Float.NaN
 
     @Before
     fun assumeDeviceUnlocked() {
@@ -97,6 +99,24 @@ class NeriTabletMiniPlayerLayoutTest {
         assertLayout(TabletMiniPlayerLayout.Compact)
         exerciseEveryAction(TabletMiniPlayerLayout.Compact)
         capture("tablet-mini-portrait")
+    }
+
+    @Test
+    fun tabletLandscapeRestoredTwoTimesIsCappedAtOnePointThreeAndKeepsFullControls() {
+        render(1280.dp, 800.dp, appUiScale = 2f)
+        composeRule.runOnIdle { assertEquals(1.3f, appliedUiScale, 0.001f) }
+        assertLayout(TabletMiniPlayerLayout.Full)
+        exerciseEveryAction(TabletMiniPlayerLayout.Full)
+        capture("tablet-mini-landscape-restored-2x-effective-1_3x")
+    }
+
+    @Test
+    fun tabletPortraitRestoredTwoTimesIsCappedAtOnePointThreeAndKeepsOverflowReachable() {
+        render(800.dp, 1280.dp, appUiScale = 2f)
+        composeRule.runOnIdle { assertEquals(1.3f, appliedUiScale, 0.001f) }
+        assertLayout(TabletMiniPlayerLayout.Overflow)
+        exerciseEveryAction(TabletMiniPlayerLayout.Overflow)
+        capture("tablet-mini-portrait-restored-2x-effective-1_3x")
     }
 
     @Test
@@ -316,7 +336,8 @@ class NeriTabletMiniPlayerLayoutTest {
         smallestScreenWidthDp: Int = 800,
         fontScale: Float = 1f,
         provideTabletControls: Boolean = true,
-        progressPixelFixture: Boolean = false
+        progressPixelFixture: Boolean = false,
+        appUiScale: Float = 1f
     ) {
         viewportWidth.value = width
         composeRule.setContent {
@@ -334,40 +355,46 @@ class NeriTabletMiniPlayerLayoutTest {
                         else Configuration.ORIENTATION_PORTRAIT
                     }
                     CompositionLocalProvider(LocalDensity provides density, LocalConfiguration provides configuration) {
-                        SideEffect { pixelsPerDp = density.density }
                         Box(
                             Modifier.requiredSize(logicalWidth, height).testTag(ViewportTag)
                                 .then(if (progressPixelFixture) Modifier.background(Color.Cyan) else Modifier)
                         ) {
-                            val state = playback.value
-                            val controls = MiniPlayerTabletControls(
-                                trackKey = state.trackKey,
-                                positionMs = state.positionMs,
-                                durationMs = state.durationMs,
-                                seekEnabled = state.seekEnabled,
-                                shuffleEnabled = false,
-                                repeatMode = Player.REPEAT_MODE_OFF,
-                                onSeek = { seekRequests += SeekRequest(state.trackKey, it) },
-                                onShuffle = { calls += Action.Shuffle },
-                                onRepeat = { calls += Action.Repeat },
-                                onVolume = { calls += Action.Volume },
-                                onListenTogether = { calls += Action.ListenTogether },
-                                onQueue = { calls += Action.Queue }
-                            )
-                            NeriMiniPlayer(
-                                title = Title,
-                                artist = Artist,
-                                coverUrl = null,
-                                isPlaying = false,
-                                modifier = (if (progressPixelFixture) Modifier.padding(16.dp) else Modifier)
-                                    .testTag(PlayerTag),
-                                onPlayPause = { calls += Action.PlayPause },
-                                onPrevious = { calls += Action.Previous },
-                                onNext = { calls += Action.Next },
-                                onExpand = { calls += Action.Expand },
-                                enableBlur = false,
-                                tabletControls = controls.takeIf { provideTabletControls }
-                            )
+                            AppUiDensityRoot(appUiScale) {
+                                val appliedDensity = LocalDensity.current
+                                SideEffect {
+                                    pixelsPerDp = appliedDensity.density
+                                    appliedUiScale = appliedDensity.density / density.density
+                                }
+                                val state = playback.value
+                                val controls = MiniPlayerTabletControls(
+                                    trackKey = state.trackKey,
+                                    positionMs = state.positionMs,
+                                    durationMs = state.durationMs,
+                                    seekEnabled = state.seekEnabled,
+                                    shuffleEnabled = false,
+                                    repeatMode = Player.REPEAT_MODE_OFF,
+                                    onSeek = { seekRequests += SeekRequest(state.trackKey, it) },
+                                    onShuffle = { calls += Action.Shuffle },
+                                    onRepeat = { calls += Action.Repeat },
+                                    onVolume = { calls += Action.Volume },
+                                    onListenTogether = { calls += Action.ListenTogether },
+                                    onQueue = { calls += Action.Queue }
+                                )
+                                NeriMiniPlayer(
+                                    title = Title,
+                                    artist = Artist,
+                                    coverUrl = null,
+                                    isPlaying = false,
+                                    modifier = (if (progressPixelFixture) Modifier.padding(16.dp) else Modifier)
+                                        .testTag(PlayerTag),
+                                    onPlayPause = { calls += Action.PlayPause },
+                                    onPrevious = { calls += Action.Previous },
+                                    onNext = { calls += Action.Next },
+                                    onExpand = { calls += Action.Expand },
+                                    enableBlur = false,
+                                    tabletControls = controls.takeIf { provideTabletControls }
+                                )
+                            }
                         }
                     }
                 }
@@ -398,7 +425,7 @@ class NeriTabletMiniPlayerLayoutTest {
         }
         val metadata = bounds(MetadataTag)
         assertTrue("歌曲信息空间不足: $metadata", metadata.width >= 120f * pixelsPerDp - 1f)
-        val bodyTop = player.top + 4f * pixelsPerDp
+        val bodyTop = player.top + (4f * pixelsPerDp).roundToInt()
         assertEquals("歌曲信息上下留白不一致", metadata.top - bodyTop, player.bottom - metadata.bottom, 1f)
         val direct = Action.entries.filter { isDirect(it, layout) }
         Action.entries.forEach { action ->

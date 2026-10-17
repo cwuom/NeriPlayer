@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 
-private const val TABLET_SMALLEST_SCREEN_WIDTH_DP = 600
+internal const val TABLET_SMALLEST_SCREEN_WIDTH_DP = 600
 
 internal fun defaultPlaybackControlLayoutPreferences(
     smallestScreenWidthDp: Int

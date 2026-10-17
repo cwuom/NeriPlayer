@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="preview_theme_prompt_title">体验预览版主题？</string>
+    <string name="preview_theme_prompt_message">全新界面采用更简洁的布局与视觉样式。启用后立即生效，也可以随时在“设置 → 主题设置”中切换。</string>
+    <string name="preview_theme_prompt_enable">立即启用</string>
+    <string name="preview_theme_prompt_decline">暂不启用</string>
+    <string name="preview_theme_prompt_save_failed">未能保存选择，请重试</string>
+</resources>

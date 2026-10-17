@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Created: 2025/8/10
  */
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
@@ -436,7 +437,8 @@ fun DetailScreen(
             resolvePlaylistChromeCollapseProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
-                expandedHeroHeightPx = with(density) {
+                expandedHeroHeightPx = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == 0 }?.size ?: with(density) {
                     playlistHeroHeight.roundToPx()
                 }
             )
@@ -744,6 +746,7 @@ fun DetailScreen(
                                         subtitle = heroSubtitle,
                                         offlineMode = offlineMode,
                                         height = playlistHeroHeight,
+                                        actionsRevealProgress = searchVisibilityEased,
                                         coverContentDescription = heroTitle,
                                         actions = if (headerSearchVisible) {
                                             {
@@ -1183,10 +1186,10 @@ private fun SongRowCover(song: SongItem, showCover: Boolean, offlineMode: Boolea
         Box(
             modifier = Modifier
                 .size(48.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(neriRoundedShape(10.dp))
                 .background(
                     color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(10.dp)
+                    shape = neriRoundedShape(10.dp)
                 )
         ) {
             AsyncImage(

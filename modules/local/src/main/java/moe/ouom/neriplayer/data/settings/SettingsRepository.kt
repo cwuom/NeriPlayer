@@ -23,17 +23,21 @@ package moe.ouom.neriplayer.data.settings
  * Created: 2025/8/8
  */
 
+import kotlinx.coroutines.flow.onEach
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
 import moe.ouom.neriplayer.platform.youtube.settings.YouTubePlaybackSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.settings.appearance.isDimensityDevice
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeDynamicColor
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeFollowSystemDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeForceDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeModeSnapshot
+import moe.ouom.neriplayer.data.settings.appearance.persistThemeUiStyle
 import moe.ouom.neriplayer.data.settings.bootstrap.updateBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
@@ -139,6 +143,26 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun <T> setSetting(setting: AutoSettingSpec<T>, value: T) {
         autoSettingSpecRepository.set(setting, value)
+    }
+
+    val uiStyleFlow: Flow<UiStyle> =
+        dataStoreSettingFlow { UiStyle.fromStorage(it[SettingsKeys.UI_STYLE]) }
+
+    val liquidGlassEnabledFlow: Flow<Boolean> =
+        dataStoreSettingFlow { it[SettingsKeys.LIQUID_GLASS_ENABLED] ?: true }
+
+    suspend fun setLiquidGlassEnabled(value: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.LIQUID_GLASS_ENABLED] = value }
+    }
+
+    val predictiveBackPreviewEnabledFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.motion.predictiveBackPreviewEnabled)
+
+    val nowPlayingImmersiveModeFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.display.nowPlayingImmersiveMode)
+
+    suspend fun setNowPlayingImmersiveMode(value: Boolean) {
+        setSetting(AutoSettingsSchema.display.nowPlayingImmersiveMode, value)
     }
 
     val dynamicColorFlow: Flow<Boolean> =
@@ -420,8 +444,15 @@ class SettingsRepository(private val context: Context) {
             )
         }
 
+    // 保留请求值，车载模式变化时由显示层重新裁剪
     val uiDensityScaleFlow: Flow<Float> =
         autoSettingsRepository.uiDensityScaleFlow
+
+    private fun normalizeUiDensityScale(scale: Float): Float {
+        val configuration = context.resources.configuration
+        return UiDensityScalePreference.forDevice(configuration.smallestScreenWidthDp, configuration.uiMode)
+            .normalize(scale)
+    }
 
     val bypassProxyFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.BYPASS_PROXY] ?: true }
@@ -453,24 +484,27 @@ class SettingsRepository(private val context: Context) {
         autoSettingsRepository.hapticFeedbackEnabledFlow
 
     val disclaimerAcceptedFlow: Flow<Boolean?> =
-        flow {
-            emit(null) // 加载态
-            val realFlow: Flow<Boolean> =
-                dataStoreSettingFlow { prefs ->
-                    prefs[SettingsKeys.DISCLAIMER_ACCEPTED_V2] ?: false
-                }
-            emitAll(realFlow)
+        startupProgressFlow(STARTUP_PROGRESS_DISCLAIMER_KEY) { prefs ->
+            prefs[SettingsKeys.DISCLAIMER_ACCEPTED_V2] ?: false
         }
 
     val startupOnboardingCompletedFlow: Flow<Boolean?> =
-        flow {
-            emit(null)
-            val realFlow: Flow<Boolean> =
-                dataStoreSettingFlow { prefs ->
-                    prefs[SettingsKeys.STARTUP_ONBOARDING_COMPLETED] ?: false
-                }
-            emitAll(realFlow)
+        startupProgressFlow(STARTUP_PROGRESS_ONBOARDING_KEY) { prefs ->
+            prefs[SettingsKeys.STARTUP_ONBOARDING_COMPLETED] ?: false
         }
+
+    /** Emits the cached completion first (or null while loading), then the DataStore value. */
+    private fun startupProgressFlow(
+        cacheKey: String,
+        read: (Preferences) -> Boolean
+    ): Flow<Boolean?> = flow {
+        emit(readStartupProgressCompleted(context, cacheKey))
+        emitAll(
+            dataStoreSettingFlow(read).onEach { value ->
+                persistStartupProgress(context, cacheKey, value)
+            }
+        )
+    }
 
     val maxCacheSizeBytesFlow: Flow<Long> =
         dataStoreSettingFlow {
@@ -659,6 +693,11 @@ class SettingsRepository(private val context: Context) {
     val youtubeEnabledFlow: Flow<Boolean> =
         settingFlow(AutoSettingsSchema.general.youtubeEnabled)
 
+    suspend fun setUiStyle(value: UiStyle) {
+        context.dataStore.edit { it[SettingsKeys.UI_STYLE] = value.storageValue }
+        persistThemeUiStyle(context, value)
+    }
+
     suspend fun setDynamicColor(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DYNAMIC_COLOR] = value }
         persistThemeDynamicColor(context, value)
@@ -719,10 +758,12 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setDisclaimerAccepted(accepted: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DISCLAIMER_ACCEPTED_V2] = accepted }
+        persistStartupProgress(context, STARTUP_PROGRESS_DISCLAIMER_KEY, accepted)
     }
 
     suspend fun setStartupOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { it[SettingsKeys.STARTUP_ONBOARDING_COMPLETED] = completed }
+        persistStartupProgress(context, STARTUP_PROGRESS_ONBOARDING_KEY, completed)
     }
 
     suspend fun setAudioQuality(value: String) {
@@ -1112,7 +1153,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setUiDensityScale(scale: Float) {
-        autoSettingsRepository.setUiDensityScale(scale)
+        autoSettingsRepository.setUiDensityScale(normalizeUiDensityScale(scale))
     }
 
     suspend fun setBypassProxy(enabled: Boolean) {

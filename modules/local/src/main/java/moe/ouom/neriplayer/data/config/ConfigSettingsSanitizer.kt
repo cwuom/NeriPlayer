@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.platform.youtube.settings.YouTubePlaybackSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsBackupKeys
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsAlignment
@@ -43,6 +44,12 @@ import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
 import java.util.Locale
 
 internal class ConfigSettingsSanitizer(private val context: Context) {
+    private val floatSettingNormalizers = FLOAT_SETTING_NORMALIZERS +
+        (SettingsKeys.UI_DENSITY_SCALE.name to { scale: Float ->
+            val configuration = context.resources.configuration
+            UiDensityScalePreference.forDevice(configuration.smallestScreenWidthDp, configuration.uiMode)
+                .normalize(scale)
+        })
 
     fun sanitize(
         snapshot: TypedPreferenceSnapshot,
@@ -90,7 +97,7 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
                 onAdjusted()
                 return@forEach
             }
-            val normalized = FLOAT_SETTING_NORMALIZERS[name]?.invoke(value) ?: value
+            val normalized = floatSettingNormalizers[name]?.invoke(value) ?: value
             if (normalized != value) {
                 onAdjusted()
             }
@@ -396,7 +403,6 @@ private val SETTINGS_INT_KEY_NAMES = SETTINGS_INT_KEYS.map { it.name }.toSet()
 private val SETTINGS_LONG_KEY_NAMES = SETTINGS_LONG_KEYS.map { it.name }.toSet()
 private val SETTINGS_STRING_KEY_NAMES = SETTINGS_STRING_KEYS.map { it.name }.toSet()
 
-private val UI_DENSITY_SCALE_RANGE = 0.6f..1.2f
 private val BACKGROUND_IMAGE_BLUR_RANGE = 0f..25f
 private val BACKGROUND_IMAGE_ALPHA_RANGE = 0.1f..1.0f
 private val NOW_PLAYING_COVER_BLUR_AMOUNT_RANGE = 0f..500f
@@ -427,7 +433,6 @@ private val FLOAT_SETTING_NORMALIZERS: Map<String, (Float) -> Float> = buildMap 
     put(SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA.name) { normalizeFloatingLyricsAlpha(it) }
     put(SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP.name) { normalizeFloatingLyricsMaxWidthDp(it) }
     put(SettingsKeys.FLOATING_LYRICS_LANDSCAPE_MAX_WIDTH_DP.name) { normalizeFloatingLyricsLandscapeWidthDp(it) }
-    put(SettingsKeys.UI_DENSITY_SCALE.name) { it.coerceIn(UI_DENSITY_SCALE_RANGE) }
     put(SettingsKeys.BACKGROUND_IMAGE_BLUR.name) { it.coerceIn(BACKGROUND_IMAGE_BLUR_RANGE) }
     put(SettingsKeys.BACKGROUND_IMAGE_ALPHA.name) { it.coerceIn(BACKGROUND_IMAGE_ALPHA_RANGE) }
     put(SettingsKeys.NOWPLAYING_COVER_BLUR_AMOUNT.name) { it.coerceIn(NOW_PLAYING_COVER_BLUR_AMOUNT_RANGE) }

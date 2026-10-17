@@ -168,7 +168,7 @@ class SettingsPageTransitionTest {
         renderSplitPane()
         val left = bounds(SETTINGS_SPLIT_NAVIGATION_PANE_TAG)
         val right = bounds(SETTINGS_SPLIT_DETAIL_PANE_TAG)
-        listOf(SettingsPage.Accounts, SettingsPage.Playback, SettingsPage.UsbExclusive, SettingsPage.Playback)
+        listOf(SettingsPage.Accounts, SettingsPage.Storage, SettingsPage.StorageCacheDetails, SettingsPage.Storage)
             .forEach { target ->
                 val previous = composeRule.runOnIdle { requireNotNull(selectedPage.value) }
                 composeRule.runOnIdle { selectedPage.value = target }
@@ -220,17 +220,17 @@ class SettingsPageTransitionTest {
         finishTransition()
         assertRectEquals(originalRow, bounds(rowTag(SettingsPage.General, 5)))
 
-        composeRule.runOnIdle { selectedPage.value = SettingsPage.Playback }
+        composeRule.runOnIdle { selectedPage.value = SettingsPage.Storage }
         finishTransition()
-        composeRule.onNodeWithTag(rowTag(SettingsPage.Playback, 7)).assertIsDisplayed()
-        composeRule.runOnIdle { selectedPage.value = SettingsPage.UsbExclusive }
+        composeRule.onNodeWithTag(rowTag(SettingsPage.Storage, 7)).assertIsDisplayed()
+        composeRule.runOnIdle { selectedPage.value = SettingsPage.StorageCacheDetails }
         finishTransition()
-        composeRule.onNodeWithTag(rowTag(SettingsPage.UsbExclusive, 3)).assertIsDisplayed()
+        composeRule.onNodeWithTag(rowTag(SettingsPage.StorageCacheDetails, 3)).assertIsDisplayed()
         val backLabel = InstrumentationRegistry.getInstrumentation().targetContext.getString(CoreCommonR.string.action_back)
         composeRule.onNodeWithContentDescription(backLabel).performClick()
         finishTransition()
-        composeRule.runOnIdle { assertEquals(SettingsPage.Playback, selectedPage.value) }
-        composeRule.onNodeWithTag(rowTag(SettingsPage.Playback, 7)).assertIsDisplayed()
+        composeRule.runOnIdle { assertEquals(SettingsPage.Storage, selectedPage.value) }
+        composeRule.onNodeWithTag(rowTag(SettingsPage.Storage, 7)).assertIsDisplayed()
     }
 
     @Test
@@ -393,7 +393,7 @@ class SettingsPageTransitionTest {
         composeRule.setContent {
             Fixture(960f, 640f, smallestWidth = 800) {
                 selectedPage = remember { mutableStateOf<SettingsPage?>(SettingsPage.General) }
-                val pages = listOf(SettingsPage.General, SettingsPage.Accounts, SettingsPage.Playback, SettingsPage.UsbExclusive)
+                val pages = listOf(SettingsPage.General, SettingsPage.Accounts, SettingsPage.Storage, SettingsPage.StorageCacheDetails)
                 val states = pages.associateWith { page -> rememberLazyListState(initialIndex(page)) }
                 val bars = pages.associateWith { page ->
                     rememberTopAppBarState(initialHeightOffset = if (page == SettingsPage.General) -24f else 0f)
@@ -727,7 +727,7 @@ class SettingsPageTransitionTest {
     private fun initialIndex(page: SettingsPage): Int = when (page) {
         SettingsPage.General -> 5
         SettingsPage.Accounts -> 2
-        SettingsPage.Playback -> 7
+        SettingsPage.Storage -> 7
         else -> 3
     }
 

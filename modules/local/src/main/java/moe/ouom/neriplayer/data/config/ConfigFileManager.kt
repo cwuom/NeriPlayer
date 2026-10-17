@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.playback.persistPlaybackPreferenceSnapshot
@@ -325,7 +326,8 @@ private fun <T : Any> MutablePreferences.replaceAll(keys: List<Preferences.Key<T
 internal fun Preferences.toThemePreferenceSnapshot() = ThemePreferenceSnapshot(
     dynamicColor = this[SettingsKeys.DYNAMIC_COLOR] ?: true,
     forceDark = this[SettingsKeys.FORCE_DARK] ?: false,
-    followSystemDark = this[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true
+    followSystemDark = this[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true,
+    uiStyle = UiStyle.fromStorage(this[SettingsKeys.UI_STYLE])
 )
 
 private val AppConfigBackupSections.touchesSyncTargets: Boolean

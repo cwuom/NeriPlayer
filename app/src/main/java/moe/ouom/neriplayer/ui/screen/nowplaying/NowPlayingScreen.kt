@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.Manifest
@@ -78,6 +79,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,6 +87,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -189,6 +192,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverOwne
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverRequestUrl
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldShowNowPlayingEmbeddedLyrics
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.rememberNowPlayingLyricsLoadOwner
+import moe.ouom.neriplayer.ui.component.lyrics.LocalAdvancedLyricsPreparationCache
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadRequest
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsRefreshVersions
 import moe.ouom.neriplayer.ui.screen.playback.nextFavoriteStateAfterTap
@@ -257,6 +261,27 @@ internal fun shouldUseNowPlayingToolbarDock(
     useCompactPortraitLayout: Boolean,
     controlsAtBottom: Boolean = false
 ): Boolean = toolbarDockEnabled && !useCompactPortraitLayout && !controlsAtBottom
+
+internal data class NowPlayingCoverPagePresentation(
+    val beforeCoverSpacing: Dp,
+    val afterCoverSpacing: Dp,
+    val preferredCoverSize: Dp?,
+    val trackIdentityLayout: NowPlayingTrackIdentityLayout,
+    val lyricsAdjustBehavior: Boolean
+)
+
+internal fun resolveNowPlayingCoverPagePresentation(
+    immersiveMode: Boolean,
+    lyricsAdjustBehavior: Boolean
+): NowPlayingCoverPagePresentation = if (immersiveMode) {
+    NowPlayingCoverPagePresentation(
+        16.dp, 28.dp, NowPlayingImmersiveCoverSize, NowPlayingTrackIdentityLayout.LargeCover, false
+    )
+} else {
+    NowPlayingCoverPagePresentation(
+        8.dp, 16.dp, null, NowPlayingTrackIdentityLayout.Expanded, lyricsAdjustBehavior
+    )
+}
 
 internal data class PlaybackActionToolbarLayout(
     val horizontalPadding: Dp,
@@ -395,6 +420,47 @@ private fun seekToLyricSafely(
     resolveLyricSeekPosition(positionMs, knownDurationMs)?.let(PlayerManager::seekTo)
 }
 
+@Composable
+private fun NowPlayingImmersivePortraitLayout(
+    modifier: Modifier,
+    beforeCoverSpacing: Dp,
+    topBar: @Composable () -> Unit,
+    cover: @Composable () -> Unit,
+    leadingContent: @Composable ColumnScope.() -> Unit,
+    trailingContent: @Composable ColumnScope.() -> Unit
+) {
+    Layout(
+        modifier = modifier,
+        content = {
+            Box { topBar() }
+            Box { cover() }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, content = leadingContent)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, content = trailingContent)
+        }
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val (topBarMeasurable, coverMeasurable, leadingMeasurable, trailingMeasurable) = measurables
+        val topBarPlaceable = topBarMeasurable.measure(childConstraints)
+        val leadingPlaceable = leadingMeasurable.measure(childConstraints)
+        val trailingPlaceable = trailingMeasurable.measure(childConstraints)
+        val coverTop = topBarPlaceable.height + beforeCoverSpacing.roundToPx()
+        // 先为真实文字和操作区留足高度，再让封面使用剩余空间
+        val coverHeight = (height - coverTop - leadingPlaceable.height -
+            trailingPlaceable.height).coerceAtLeast(0)
+        val coverPlaceable = coverMeasurable.measure(childConstraints.copy(maxHeight = coverHeight))
+        layout(width, height) {
+            topBarPlaceable.placeRelative((width - topBarPlaceable.width) / 2, 0)
+            coverPlaceable.placeRelative((width - coverPlaceable.width) / 2, coverTop)
+            leadingPlaceable.placeRelative((width - leadingPlaceable.width) / 2,
+                coverTop + coverPlaceable.height)
+            trailingPlaceable.placeRelative((width - trailingPlaceable.width) / 2,
+                height - trailingPlaceable.height)
+        }
+    }
+}
+
 @OptIn(
     ExperimentalMaterial3Api::class,
     ExperimentalFoundationApi::class,
@@ -481,6 +547,9 @@ fun NowPlayingScreen(
     val nowPlayingToolbarDockEnabled by settingsRepo
         .nowPlayingToolbarDockEnabledFlow
         .collectAsStateWithLifecycle(initialValue = true)
+    val immersiveMode by settingsRepo
+        .nowPlayingImmersiveModeFlow
+        .collectAsStateWithLifecycle(initialValue = false)
     val playbackControlLayoutPreferences by settingsRepo
         .playbackControlLayoutPreferencesFlow
         .collectAsStateWithLifecycle(initialValue = settingsRepo.defaultPlaybackControlLayoutPreferences)
@@ -635,6 +704,22 @@ fun NowPlayingScreen(
     var pendingSyncConfirmLabel by remember { mutableStateOf("") }
 
     val screenScope = rememberCoroutineScope()
+    val toggleImmersiveMode: () -> Unit = {
+        val enable = !immersiveMode
+        context.performHapticFeedback()
+        screenScope.launch {
+            settingsRepo.setNowPlayingImmersiveMode(enable)
+            snackbarHostState.showNeriSnackbar(
+                composeResources.getString(
+                    if (enable) {
+                        CoreCommonR.string.nowplaying_immersive_mode_on
+                    } else {
+                        CoreCommonR.string.nowplaying_immersive_mode_off
+                    }
+                )
+            )
+        }
+    }
 
     val downloadCurrentCover: () -> Unit = {
         val song = currentSong
@@ -951,9 +1036,9 @@ fun NowPlayingScreen(
     val tabletPortrait = isNowPlayingTabletPortrait(isLandscape, configuration.smallestScreenWidthDp)
     val windowWidthDp = with(density) { windowInfo.containerSize.width.toDp() }
     val windowHeightDp = with(density) { windowInfo.containerSize.height.toDp() }
-    val isWideLayout = windowWidthDp >= 480.dp
-    val useWideLandscapeLayout = isLandscape && (isWideLayout || phoneLandscape)
+    val useWideLandscapeLayout = isLandscape
     val lyricsAdjustBehavior = shouldAdjustNowPlayingLyricsBehavior(isLandscape, phoneLandscape)
+    val coverPagePresentation = resolveNowPlayingCoverPagePresentation(immersiveMode, lyricsAdjustBehavior)
     val useCompactPortraitLayout = !tabletPortrait && shouldUseCompactNowPlayingPortraitLayout(
         isLandscape = isLandscape,
         availableHeightDp = windowHeightDp.value,
@@ -1034,7 +1119,10 @@ fun NowPlayingScreen(
         onDownload = requestCoverDownload
     )
 
-    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+    CompositionLocalProvider(
+        LocalContentColor provides MaterialTheme.colorScheme.onSurface,
+        LocalAdvancedLyricsPreparationCache provides loadedLyricsState.advancedLyricsPreparation
+    ) {
         // 歌词页和宽屏歌词共用一个可拖动的转场，返回手势按进度淡回播放页
         val lyricsTransition = rememberHostPredictiveBackTransition(
             targetState = showLyricsScreen,
@@ -1226,6 +1314,7 @@ fun NowPlayingScreen(
                                         onClick = { PlayerManager.togglePlayPause() },
                                         enabled = !usbPlaybackPreparing,
                                         modifier = Modifier
+                                            .nowPlayingLongPress(toggleImmersiveMode)
                                             .sharedElement(
                                                 rememberSharedContentState(
                                                     key = NowPlayingLyricsSharedTransitionElement.PLAY.key
@@ -1358,7 +1447,10 @@ fun NowPlayingScreen(
                             onQueue = { showQueueSheet = true },
                             onSleepTimer = { showSleepTimerDialog = true },
                             onVolume = { showVolumeSheet = true },
-                            onLyrics = resolveNowPlayingLyricsToolbarAction(
+                            // immersive mode switches pages without opening the lyric behavior sheet
+                            onLyrics = if (immersiveMode) {
+                                { onShowLyricsScreenChange(!showLyricsScreen) }
+                            } else resolveNowPlayingLyricsToolbarAction(
                                 lyricsAdjustBehavior = lyricsAdjustBehavior,
                                 onAdjust = {
                                     startMoreOptionsWithLyricBehavior = true
@@ -1444,6 +1536,18 @@ fun NowPlayingScreen(
                                 preferredSize = preferredSize
                             )
                         }
+                        val portraitTrackIdentity: @Composable () -> Unit = {
+                            NowPlayingTrackIdentity(
+                                display = resolveNowPlayingTrackDisplay(currentSong),
+                                visible = contentVisible,
+                                marqueeEnabled = nowPlayingSongTitleMarqueeEnabled,
+                                titleColor = targetNowPlayingColorScheme.onSurface,
+                                sharedTransitionScope = this@SharedTransitionLayout,
+                                animatedVisibilityScope = this@AnimatedContent,
+                                onArtistClick = openCurrentArtist,
+                                layout = coverPagePresentation.trackIdentityLayout
+                            )
+                        }
                         val trackIdentity: @Composable (Boolean) -> Unit = { compact ->
                             NowPlayingTrackIdentity(
                                 display = resolveNowPlayingTrackDisplay(currentSong),
@@ -1453,7 +1557,11 @@ fun NowPlayingScreen(
                                 sharedTransitionScope = this@SharedTransitionLayout,
                                 animatedVisibilityScope = this@AnimatedContent,
                                 onArtistClick = openCurrentArtist,
-                                compact = compact
+                                layout = if (compact) {
+                                    NowPlayingTrackIdentityLayout.Compact
+                                } else {
+                                    NowPlayingTrackIdentityLayout.Expanded
+                                }
                             )
                         }
                         val coverToolbar: @Composable (Boolean) -> Unit = { compactHeight ->
@@ -1465,7 +1573,7 @@ fun NowPlayingScreen(
                                     iconSize = nowPlayingToolbarIconSize,
                                     minimumTouchTarget = nowPlayingToolbarMinimumTouchTarget,
                                     compactHeight = compactHeight,
-                                    lyricsAdjustBehavior = lyricsAdjustBehavior
+                                    lyricsAdjustBehavior = coverPagePresentation.lyricsAdjustBehavior
                                 ),
                                 status = NowPlayingCoverToolbarStatus(
                                     sleepTimerActive = sleepTimerState.isActive,
@@ -1479,7 +1587,7 @@ fun NowPlayingScreen(
                             )
                         }
                         val embeddedLyricsVisible = shouldShowNowPlayingEmbeddedLyrics(
-                            useWideLandscapeLayout, showCoverPageLyrics, coverLyricsAvailable
+                            useWideLandscapeLayout, showCoverPageLyrics && !immersiveMode, coverLyricsAvailable
                         )
                         val embeddedLyricContent = buildNowPlayingSyncedLyricContent(
                             plainLyrics, secondaryPlainLyrics, showSecondaryLyrics,
@@ -1502,16 +1610,11 @@ fun NowPlayingScreen(
                             onLongClick = onEmbeddedLyricLongClick
                         )
 
-                        // 手机竖屏保留原来的控件顺序和封面歌词
-                        val mainColumnContent: @Composable ColumnScope.() -> Unit = {
-                            coverTopBar()
-                            Spacer(Modifier.height(8.dp))
-                            coverPanel(
-                                Modifier.nowPlayingCoverPanelModifier(false, this),
-                                null
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            trackIdentity(false)
+                        val portraitLeadingContent: @Composable ColumnScope.() -> Unit = {
+                            Spacer(Modifier.height(coverPagePresentation.afterCoverSpacing))
+                            key(coverPagePresentation.trackIdentityLayout) {
+                                portraitTrackIdentity()
+                            }
 
                             NowPlayingLeadingProgress(
                                 nowPlayingProgressAtBottom,
@@ -1522,6 +1625,27 @@ fun NowPlayingScreen(
                                 nowPlayingControlsAtBottom,
                                 mainPlaybackControls
                             )
+                        }
+                        val portraitTrailingContent: @Composable ColumnScope.() -> Unit = {
+                            NowPlayingTrailingControls(
+                                nowPlayingControlsAtBottom,
+                                nowPlayingProgressAtBottom,
+                                useWideLandscapeLayout,
+                                nowPlayingProgressSection,
+                                mainPlaybackControls
+                            )
+                            coverToolbar(false)
+                        }
+
+                        // 手机竖屏保留原来的控件顺序和封面歌词
+                        val mainColumnContent: @Composable ColumnScope.() -> Unit = {
+                            coverTopBar()
+                            Spacer(Modifier.height(coverPagePresentation.beforeCoverSpacing))
+                            coverPanel(
+                                Modifier.nowPlayingCoverPanelModifier(false, this),
+                                coverPagePresentation.preferredCoverSize
+                            )
+                            portraitLeadingContent()
 
                             NowPlayingEmbeddedLyrics(
                                 visible = embeddedLyricsVisible,
@@ -1534,15 +1658,7 @@ fun NowPlayingScreen(
                             // 置底偏好始终以可用内容区的底部为准
                             Spacer(modifier = Modifier.weight(1f))
 
-                            NowPlayingTrailingControls(
-                                nowPlayingControlsAtBottom,
-                                nowPlayingProgressAtBottom,
-                                useWideLandscapeLayout,
-                                nowPlayingProgressSection,
-                                mainPlaybackControls
-                            )
-
-                            coverToolbar(false)
+                            portraitTrailingContent()
                         }
 
                         if (useWideLandscapeLayout) {
@@ -1621,6 +1737,15 @@ fun NowPlayingScreen(
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
+                        } else if (immersiveMode) {
+                            NowPlayingImmersivePortraitLayout(
+                                modifier = contentModifier,
+                                beforeCoverSpacing = coverPagePresentation.beforeCoverSpacing,
+                                topBar = coverTopBar,
+                                cover = { coverPanel(Modifier, coverPagePresentation.preferredCoverSize) },
+                                leadingContent = portraitLeadingContent,
+                                trailingContent = portraitTrailingContent
+                            )
                         } else {
                             Column(
                                 modifier = contentModifier,

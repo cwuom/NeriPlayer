@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -116,7 +117,7 @@ internal fun CreatorFollowButton(
                 },
                 enabled = !updating,
                 modifier = Modifier.widthIn(min = 132.dp).heightIn(min = 48.dp),
-                shape = RoundedCornerShape(18.dp),
+                shape = neriRoundedShape(18.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (followed) {
                         MaterialTheme.colorScheme.primaryContainer

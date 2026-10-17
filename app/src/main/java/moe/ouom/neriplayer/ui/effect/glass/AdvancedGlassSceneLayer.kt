@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.movableContentWithReceiverOf
+import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +26,10 @@ internal fun AdvancedGlassSceneLayer(
     background: @Composable BoxScope.() -> Unit,
     content: @Composable BoxScope.() -> Unit
 ) {
+    // toggling a custom background flips the branch below; moving the page keeps its state
+    // (and the NavHost's saved destinations) instead of remounting it with a flash
+    val latestContent by rememberUpdatedState(content)
+    val movablePage = remember { movableContentWithReceiverOf<BoxScope> { latestContent() } }
     if (fixedBackground) {
         Box(
             modifier = modifier
@@ -39,7 +47,7 @@ internal fun AdvancedGlassSceneLayer(
                         scaleY = motion.contentScale.coerceIn(0.8f, 1f)
                         transformOrigin = TransformOrigin(0.5f, 0f)
                     },
-                content = content
+                content = { movablePage() }
             )
         }
         return
@@ -82,7 +90,7 @@ internal fun AdvancedGlassSceneLayer(
                             transformOrigin = TransformOrigin(0.5f, 0f)
                         }
                         .captureAdvancedGlassBackdrop(contentBackdrop),
-                    content = content
+                    content = { movablePage() }
                 )
             }
         }

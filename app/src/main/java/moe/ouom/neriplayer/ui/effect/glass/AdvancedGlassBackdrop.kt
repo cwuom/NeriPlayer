@@ -25,6 +25,8 @@ internal class AdvancedGlassBackdrop internal constructor() {
     internal var renderEffect: RenderEffect? by mutableStateOf(null)
     internal var localBlurPlan: AdvancedGlassLocalBlurPlan? by mutableStateOf(null)
     internal var freezeLocalBlurFrame: Boolean by mutableStateOf(false)
+    /** Read at mask resolution time; positions in window drift apart while the IME pans the window. */
+    internal var coordinates: LayoutCoordinates? = null
     private var localBlurRenderer: Any? = null
     private var localBlurRendererCacheKey = NoLocalBlurRendererCacheKey
     private val localBlurHandoffGuards = mutableStateMapOf<Any, Unit>()
@@ -73,6 +75,7 @@ internal fun Modifier.captureAdvancedGlassBackdrop(
     backdrop: AdvancedGlassBackdrop
 ): Modifier = this
     .onGloballyPositioned { coordinates ->
+        backdrop.coordinates = coordinates
         backdrop.positionInWindow = coordinates.attachedPositionInWindow()
         backdrop.scaleInWindow = coordinates.advancedGlassScaleInWindow()
     }

@@ -97,7 +97,13 @@ class NowPlayingProgressSpacingTest {
         assertEquals(bounds("identity").bottom, bounds("progressRow").top, 1f)
         assertEquals(pixels(5.dp), bounds("controls").top - informationBounds().bottom, 1f)
         assertTrue(bounds("nowPlayingLyricPane").height >= pixels(240.dp))
-        assertTrue(bounds("cover").height >= pixels(300.dp))
+        val cover = bounds("cover")
+        val playerPane = bounds("nowPlayingPlayerPane")
+        assertEquals("短横屏封面应使用左栏宽度的 72%", playerPane.width * 0.72f, cover.width, 1f)
+        assertEquals("短横屏封面应保持正方形", cover.width, cover.height, 1f)
+        assertEquals("短横屏封面应在左栏居中", playerPane.center.x, cover.center.x, 1f)
+        assertTrue("封面不能挤占顶部操作", cover.top >= bounds("topBar").bottom - 1f)
+        assertTrue("封面不能挤占工具栏", cover.bottom <= bounds("toolbar").top + 1f)
     }
 
     @Test

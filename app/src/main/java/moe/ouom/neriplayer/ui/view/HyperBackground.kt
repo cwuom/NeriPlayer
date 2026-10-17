@@ -64,6 +64,7 @@ import kotlin.math.abs
 
 private const val DynamicBackgroundFallbackColor = 0xFF808080.toInt()
 private const val StrongHueConflictDegrees = 105f
+private const val AchromaticChromaThreshold = 0.06f
 private const val PaletteCoverDecodeSizePx = 320
 private const val DynamicBackgroundPaletteTransitionDurationMs = 520L
 // 与波形、歌词共用帧格，播放时和它们落在同一批 vsync，不再单独多出一组帧
@@ -74,7 +75,7 @@ internal fun shouldCommitDynamicBackgroundPalette(
     latestIdentity: String?
 ): Boolean = requestIdentity == latestIdentity
 
-private enum class DynamicBackgroundColorRole {
+internal enum class DynamicBackgroundColorRole {
     Base,
     Accent,
     Light,
@@ -508,7 +509,7 @@ private fun pickPaletteColor(vararg candidates: Int?): Int {
     return candidates.firstOrNull { it != null && it != 0 } ?: DynamicBackgroundFallbackColor
 }
 
-private fun pickAccentPaletteColor(
+internal fun pickAccentPaletteColor(
     fallback: Int,
     vararg candidates: Int?
 ): Int {
@@ -517,10 +518,19 @@ private fun pickAccentPaletteColor(
         .filter { it != 0 }
         .maxByOrNull { colorfulnessScore(it) }
     val selected = accent?.takeIf { colorfulnessScore(it) >= 0.10f } ?: fallback
+    if (isAchromaticCoverColor(selected) && isAchromaticCoverColor(fallback)) {
+        return selected
+    }
     return ensureAccentColor(selected, fallback)
 }
 
-private fun softenPaletteColor(
+internal fun isAchromaticCoverColor(color: Int): Boolean {
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(color, hsl)
+    return hsl[1] * hslLightnessSpan(hsl[2]) < AchromaticChromaThreshold
+}
+
+internal fun softenPaletteColor(
     rawColor: Int,
     anchorColor: Int,
     isDark: Boolean,
@@ -544,6 +554,8 @@ private fun softenPaletteColor(
     val blendedColor = ColorUtils.blendARGB(rawColor, anchorColor, anchorBlend)
     val hsl = FloatArray(3)
     ColorUtils.colorToHSL(blendedColor, hsl)
+    // HSL saturation of near-black swatches is noise; carry real chroma across the lightness lift
+    val sourceChroma = hsl[1] * hslLightnessSpan(hsl[2])
 
     val saturationScale = when (role) {
         DynamicBackgroundColorRole.Base -> 0.94f
@@ -555,8 +567,8 @@ private fun softenPaletteColor(
     val saturationMax = if (role == DynamicBackgroundColorRole.Accent) {
         if (isDark) 0.70f else 0.64f
     } else if (isDark) 0.64f else 0.56f
-    val saturationFloor = if (hsl[1] < 0.05f) {
-        if (role == DynamicBackgroundColorRole.Accent) 0.30f else 0f
+    val saturationFloor = if (hsl[1] < 0.05f || isAchromaticCoverColor(anchorColor)) {
+        0f
     } else if (role == DynamicBackgroundColorRole.Dark) {
         0.10f
     } else if (role == DynamicBackgroundColorRole.Accent) {
@@ -564,7 +576,6 @@ private fun softenPaletteColor(
     } else {
         0.14f
     }
-    hsl[1] = (hsl[1] * saturationScale).coerceIn(saturationFloor, saturationMax)
 
     val targetLightness = when (role) {
         DynamicBackgroundColorRole.Base -> if (isDark) 0.34f else 0.58f
@@ -584,9 +595,13 @@ private fun softenPaletteColor(
     val maxLightness = if (isDark) 0.66f else 0.86f
     hsl[2] = lerpFloat(hsl[2], targetLightness, lightnessBlend)
         .coerceIn(minLightness, maxLightness)
+    val chromaPreservingSaturation = sourceChroma / hslLightnessSpan(hsl[2]).coerceAtLeast(0.05f)
+    hsl[1] = (chromaPreservingSaturation * saturationScale).coerceIn(saturationFloor, saturationMax)
 
     return ColorUtils.HSLToColor(hsl)
 }
+
+private fun hslLightnessSpan(lightness: Float): Float = 1f - abs(2f * lightness - 1f)
 
 private fun colorfulnessScore(color: Int): Float {
     val hsl = FloatArray(3)
@@ -608,7 +623,7 @@ private fun ensureAccentColor(color: Int, fallback: Int): Int {
     } else if (fallbackHsl[1] > 0.04f) {
         fallbackHsl[0]
     } else {
-        320f
+        return color
     }
     hsl[0] = resolvedHue
     hsl[1] = 0.48f

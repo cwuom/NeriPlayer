@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
@@ -305,7 +306,8 @@ fun YouTubeMusicPlaylistDetailScreen(
             resolvePlaylistChromeCollapseProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
-                expandedHeroHeightPx = with(density) {
+                expandedHeroHeightPx = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == 0 }?.size ?: with(density) {
                     playlistHeroHeight.roundToPx()
                 }
             )
@@ -657,6 +659,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 subtitle = heroSubtitle,
                                 offlineMode = offlineMode,
                                 height = playlistHeroHeight,
+                                actionsRevealProgress = searchVisibilityEased,
                                 coverContentDescription = resolvedPlaylist.title,
                                 actions = if (headerSearchVisible) {
                                     {
@@ -978,7 +981,7 @@ fun YouTubeMusicPlaylistDetailScreen(
 @Composable
 private fun PartialPlaylistBlock(onRetry: () -> Unit) {
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = neriRoundedShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
         ),
@@ -1199,10 +1202,10 @@ private fun YouTubeMusicSongRowCover(
         Box(
             modifier = Modifier
                 .size(48.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(neriRoundedShape(10.dp))
                 .background(
                     color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(10.dp)
+                    shape = neriRoundedShape(10.dp)
                 )
         ) {
             AsyncImage(

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.playlist.curation
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -101,7 +102,7 @@ internal fun LocalCurationSheet(
     ModalBottomSheet(
         onDismissRequest = ::dismissAnimated,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        shape = neriRoundedShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 8.dp,
         scrimColor = Color.Black.copy(alpha = 0.46f),

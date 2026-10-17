@@ -22,6 +22,7 @@ internal fun MainTabPredictiveBackHandler(
     val currentOnBackCommitted by rememberUpdatedState(onBackCommitted)
     val currentSelectedRoute by rememberUpdatedState(selectedRoute)
     val currentEnabled by rememberUpdatedState(enabled)
+    val currentPreviewEnabled by rememberUpdatedState(LocalPredictiveBackPreviewEnabled.current)
     PredictiveBackHandler(
         enabled = enabled && currentRoute == selectedRoute &&
             resolveMainTabTransitionDirection(currentRoute, targetRoute) != null
@@ -38,7 +39,7 @@ internal fun MainTabPredictiveBackHandler(
             navController.currentBackStackEntry === originEntry &&
             navController.previousBackStackEntry === targetEntry
 
-        val seeked = ownsHistory() && transitionState.beginPredictiveBack(backTarget)
+        val seeked = currentPreviewEnabled && ownsHistory() && transitionState.beginPredictiveBack(backTarget)
         try {
             events.collect { event ->
                 if (seeked && ownsHistory()) {

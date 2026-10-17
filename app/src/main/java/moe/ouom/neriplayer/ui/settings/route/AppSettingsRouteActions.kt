@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.settings.route
 import android.content.Context
 import android.content.res.Resources
 import android.net.Uri
+import android.os.Build
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.State
 import kotlinx.coroutines.CoroutineScope
@@ -102,8 +103,24 @@ internal class AppAppearanceSettingsActions(
         }
 
     val onBackgroundImageChange: (Uri?) -> Unit = { uri ->
-            scope.launch { repo.setBackgroundImageUri(uri?.toString()) }
+            scope.launch {
+                repo.setBackgroundImageUri(uri?.toString())
+                updateBackgroundImageBlur(uri)
+            }
         }
+
+    private suspend fun updateBackgroundImageBlur(uri: Uri?) {
+        // 增强模糊是独立偏好，移除图片时保留用户当前选择
+        if (uri == null) return
+        enableBackgroundImageBlur()
+    }
+
+    private suspend fun enableBackgroundImageBlur() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        // 自定义背景需要透过磨砂控件显示，选择图片时一并启用
+        repo.setAdvancedBlurEnabled(true)
+        repo.setEnhancedAdvancedBlurEnabled(true)
+    }
 
     val onBackgroundImageBlurChange: (Float) -> Unit = {}
 

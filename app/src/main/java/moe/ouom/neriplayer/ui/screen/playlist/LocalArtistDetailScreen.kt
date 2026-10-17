@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import androidx.activity.compose.BackHandler
@@ -702,7 +703,7 @@ internal fun LocalArtistDetailHeader(
         Modifier.fillMaxWidth().aspectRatio(1f)
     } else {
         Modifier.size(96.dp)
-    }).clip(RoundedCornerShape(18.dp))
+    }).clip(neriRoundedShape(18.dp))
     val cover: @Composable () -> Unit = {
         if (!coverUrl.isNullOrBlank()) {
             AsyncImage(
@@ -751,7 +752,7 @@ internal fun LocalArtistDetailHeader(
         )
     }
     Card(
-        shape = RoundedCornerShape(20.dp),
+        shape = neriRoundedShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
         ),
@@ -803,7 +804,7 @@ internal fun LocalArtistSongRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(neriRoundedShape(12.dp))
             .background(rowContainerColor)
             .combinedClickable(
                 onClick = hapticRowAction(context, onClick),
@@ -845,7 +846,7 @@ internal fun LocalArtistSongRow(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(48.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(neriRoundedShape(10.dp))
             )
         } else {
             Spacer(Modifier.size(48.dp))

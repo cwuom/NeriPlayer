@@ -17,7 +17,7 @@ fun ThemeRevealOverlay(
     originInWindow: Offset,
     modifier: Modifier = Modifier,
     startRadiusPx: Float = 1f,
-    legacySnapshotDim: Boolean = false,
+    reverse: Boolean = false,
     durationMillis: Int = 720,
     onFinished: () -> Unit
 ) {
@@ -27,7 +27,7 @@ fun ThemeRevealOverlay(
         originInWindow = originInWindow,
         modifier = modifier,
         startRadiusPx = startRadiusPx,
-        legacySnapshotDim = legacySnapshotDim,
+        reverse = reverse,
         durationMillis = durationMillis,
         onFinished = onFinished
     )

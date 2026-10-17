@@ -13,8 +13,15 @@ internal data class AdvancedGlassController(
     val backendReady: Boolean,
     val sessionHealthy: Boolean = true,
     val enhancedAdvancedBlurRadiusDp: Float = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP,
-    val advancedBlurQuality: AdvancedBlurQuality = AdvancedBlurQuality.Default
+    val advancedBlurQuality: AdvancedBlurQuality = AdvancedBlurQuality.Default,
+    val liquidGlassRequested: Boolean = false
 ) {
+    /** Lens refraction only rides the fullscreen pipeline; region-local profiles stay frosted. */
+    val isLiquidGlassEnabled: Boolean
+        get() = liquidGlassRequested &&
+            isBaseBlurEnabled &&
+            !advancedBlurQuality.renderProfile().usesRegionLocalRendering
+
     val isBaseBlurRequested: Boolean
         get() = sdkInt >= ADVANCED_GLASS_MIN_SDK &&
             advancedBlurEnabled &&

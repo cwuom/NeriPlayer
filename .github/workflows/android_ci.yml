@@ -124,7 +124,7 @@ jobs:
           if-no-files-found: ignore
 
   android-instrumented-tests:
-    name: Android instrumented tests (shard ${{ matrix.shard }})
+    name: Android instrumented tests (${{ matrix.test_group }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
@@ -134,15 +134,35 @@ jobs:
       matrix:
         include:
           - shard: 0
+            test_group: shard 0
+            emulator_gpu: swiftshader
             build_tasks: >-
               :database:assembleDebugAndroidTest :local:assembleDebugAndroidTest
               :playback:runtime:assembleDebugAndroidTest :app:assembleDebug :app:assembleDebugAndroidTest
             module_tests: >-
               :database:connectedDebugAndroidTest :local:connectedDebugAndroidTest
               :playback:runtime:connectedDebugAndroidTest
+            app_test_arguments: >-
+              -Pandroid.testInstrumentationRunnerArguments.numShards=2
+              -Pandroid.testInstrumentationRunnerArguments.shardIndex=0
+              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
           - shard: 1
+            test_group: shard 1
+            emulator_gpu: swiftshader
             build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
             module_tests: ""
+            app_test_arguments: >-
+              -Pandroid.testInstrumentationRunnerArguments.numShards=2
+              -Pandroid.testInstrumentationRunnerArguments.shardIndex=1
+              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
+          # 完整宿主触摸回归使用独立的新 AVD，隔离套件间图形状态并保留全部断言
+          - shard: 2
+            test_group: External Lyrics host
+            emulator_gpu: swangle
+            build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
+            module_tests: ""
+            app_test_arguments: >-
+              -Pandroid.testInstrumentationRunnerArguments.class=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -170,8 +190,17 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       # 先编译好测试 APK 再启动模拟器，避免编译与空闲模拟器争抢 CPU 时 Launcher 无响应
+      # 编译 JVM 随阶段退出，避免空闲编译守护进程在设备测试期间继续占用内存
       - name: Build instrumented test APKs
-        run: ./gradlew ${{ matrix.build_tasks }} --warning-mode all --stacktrace
+        run: >-
+          ./gradlew ${{ matrix.build_tasks }} --no-daemon
+          -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace
+
+      - name: Record memory before emulator startup
+        run: |
+          mkdir -p build/reports/emulator-host || exit 0
+          free -h > build/reports/emulator-host/before-emulator-memory.txt 2>&1 || true
+          "$JAVA_HOME/bin/jps" -l > build/reports/emulator-host/before-emulator-jvm-classes.txt 2>&1 || true
 
       - name: Run connected Android tests
         uses: reactivecircus/android-emulator-runner@v2
@@ -181,10 +210,14 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
+          # 完整歌词宿主使用 ANGLE 的 GLES 路径，常规分片保留原后端作为对照
+          emulator-options: >-
+            -no-window -gpu ${{ matrix.emulator_gpu }} -no-snapshot -noaudio -no-boot-anim
           # 保留 Launcher 组件，用设置页承接测试前的前台焦点
           # 首次沉浸模式提示会抢走原生输入，测试 AVD 预先标记已确认
           # 隐藏错误弹窗不会关闭启动时已有的 ANR，对 Launcher 停止进程以清理遗留窗口
           script: >-
+            { ps -eLo pid,tid,comm > build/reports/emulator-host/before-tests-threads.txt || true; } &&
             adb shell settings put global hide_error_dialogs 1 &&
             adb shell settings --user 0 put secure anr_show_background 0 &&
             adb shell settings --user 0 put secure immersive_mode_confirmations confirmed &&
@@ -192,12 +225,34 @@ jobs:
             adb shell am force-stop --user 0 com.google.android.apps.nexuslauncher &&
             { [ -z "${{ matrix.module_tests }}" ] || ./gradlew ${{ matrix.module_tests }}
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
-            --warning-mode all --stacktrace; } &&
+            --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace; } &&
             ./gradlew :app:connectedDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
-            -Pandroid.testInstrumentationRunnerArguments.numShards=2
-            -Pandroid.testInstrumentationRunnerArguments.shardIndex=${{ matrix.shard }}
-            --warning-mode all --stacktrace
+            ${{ matrix.app_test_arguments }}
+            --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace
+
+      - name: Collect emulator host diagnostics
+        if: always()
+        shell: bash
+        run: |
+          diagnostics_dir=build/reports/emulator-host
+          mkdir -p "$diagnostics_dir" || exit 0
+          date -u > "$diagnostics_dir/collected-at.txt" 2>&1 || true
+          free -h > "$diagnostics_dir/memory.txt" 2>&1 || true
+          df -h . > "$diagnostics_dir/disk.txt" 2>&1 || true
+          ps -eo pid,comm,rss,%mem --sort=-rss > "$diagnostics_dir/processes.txt" 2>&1 || true
+          "$JAVA_HOME/bin/jps" -l > "$diagnostics_dir/jvm-classes.txt" 2>&1 || true
+          {
+            if dmesg --color=never 2>/dev/null; then
+              printf 'source=dmesg\n' >&2
+            elif sudo -n dmesg --color=never 2>/dev/null; then
+              printf 'source=sudo-dmesg\n' >&2
+            else
+              printf 'kernel log unavailable\n' >&2
+            fi
+          } 2> "$diagnostics_dir/kernel-status.txt" |
+            grep -Ei 'out of memory|oom-kill|oom_reaper|killed process|segfault|qemu' \
+              > "$diagnostics_dir/kernel-filtered.txt" || true
 
       - name: Upload Android test reports
         if: always()
@@ -207,6 +262,7 @@ jobs:
           path: |
             **/build/reports/androidTests/connected/**
             **/build/outputs/androidTest-results/connected/**
+            build/reports/emulator-host/**
           if-no-files-found: ignore
 
   worker-check:

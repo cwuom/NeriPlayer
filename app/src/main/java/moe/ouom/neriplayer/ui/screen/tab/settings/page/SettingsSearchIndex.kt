@@ -96,6 +96,16 @@ internal fun AutoSettingInfo.settingsPage(): SettingsPage? {
     if (keyName in LyricAppearanceSettingKeys) {
         return SettingsPage.Lyrics
     }
+    val target = "setting:$keyName"
+    if (target in PersonalizationBackgroundTargets) {
+        return SettingsPage.Background
+    }
+    if (target in PersonalizationPlaybackInfoTargets || target in PersonalizationPlaybackControlTargets) {
+        return SettingsPage.NowPlaying
+    }
+    if (section == AutoSettingsSections.lyrics && !keyName.endsWith("_lyric_default_offset_ms")) {
+        return SettingsPage.ExternalLyrics
+    }
     if (
         keyName == "netease_auto_source_switch" ||
         keyName == "netease_local_source_fallback"
@@ -154,6 +164,7 @@ internal fun AutoSettingInfo.searchTargetId(): String {
         "playback_crossfade_out_duration_ms" -> "playback_crossfade_next"
         "enhanced_advanced_blur_radius_dp" -> "advanced_blur_enabled"
         "advanced_blur_quality" -> "advanced_blur_enabled"
+        "liquid_glass_enabled" -> "advanced_blur_enabled"
         "nowplaying_cover_blur_amount",
         "nowplaying_cover_blur_darken" -> "nowplaying_cover_blur_background_enabled"
         "lyric_blur_amount" -> "lyric_blur_enabled"
@@ -199,17 +210,25 @@ internal fun settingsSearchScrollAnchor(
     return when (page) {
         SettingsPage.Accounts -> SettingsSearchScrollAnchor(itemIndex = 0)
         SettingsPage.Theme -> when (targetId) {
-            "manual:theme_mode" -> SettingsSearchScrollAnchor(itemIndex = 1)
-            "manual:theme_palette_style" -> SettingsSearchScrollAnchor(itemIndex = 3)
-            "manual:theme_color_spec" -> SettingsSearchScrollAnchor(itemIndex = 4)
-            else -> SettingsSearchScrollAnchor(itemIndex = 2)
+            "setting:ui_style" -> SettingsSearchScrollAnchor(itemIndex = 1)
+            "manual:theme_mode" -> SettingsSearchScrollAnchor(itemIndex = 2)
+            "manual:theme_palette_style" -> SettingsSearchScrollAnchor(itemIndex = 4)
+            "manual:theme_color_spec" -> SettingsSearchScrollAnchor(itemIndex = 5)
+            else -> SettingsSearchScrollAnchor(itemIndex = 3)
         }
         SettingsPage.Motion -> SettingsSearchScrollAnchor(
             itemIndex = 1 + motionCardIndex(targetId)
         )
         SettingsPage.Lyrics -> SettingsSearchScrollAnchor(
-            itemIndex = 1 + lyricsCardIndex(targetId)
+            itemIndex = 1 + LyricsPageCards.indexOf(lyricsCardIndex(targetId)).coerceAtLeast(0)
         )
+        SettingsPage.ExternalLyrics -> SettingsSearchScrollAnchor(
+            itemIndex = 1 + ExternalLyricsPageCards.indexOf(lyricsCardIndex(targetId)).coerceAtLeast(0)
+        )
+        SettingsPage.NowPlaying -> SettingsSearchScrollAnchor(
+            itemIndex = 1 + (personalizationCardIndex(targetId) - 2).coerceIn(0, 1)
+        )
+        SettingsPage.Background -> SettingsSearchScrollAnchor(itemIndex = 1)
         SettingsPage.Playback -> SettingsSearchScrollAnchor(
             itemIndex = 1 + playbackCardIndex(targetId)
         )
@@ -220,7 +239,7 @@ internal fun settingsSearchScrollAnchor(
             itemIndex = 1 + backupCardIndex(targetId)
         )
         SettingsPage.Personalization -> SettingsSearchScrollAnchor(
-            itemIndex = 1 + personalizationCardIndex(targetId)
+            itemIndex = 1 + personalizationCardIndex(targetId).coerceIn(0, 1)
         )
         else -> SettingsSearchScrollAnchor(itemIndex = 1)
     }
@@ -284,6 +303,7 @@ private fun backupCardIndex(targetId: String): Int {
 private fun motionCardIndex(targetId: String): Int {
     return when (targetId) {
         "setting:advanced_blur_enabled",
+        "setting:liquid_glass_enabled",
         "setting:enhanced_advanced_blur_enabled",
         "setting:enhanced_advanced_blur_radius_dp",
         "setting:advanced_blur_quality" -> 1
@@ -339,6 +359,7 @@ private val PersonalizationHomeTargets = setOf(
 private val PersonalizationPlaybackInfoTargets = setOf(
     "setting:show_cover_source_badge",
     "setting:nowplaying_song_title_marquee_enabled",
+    "setting:nowplaying_immersive_mode",
     "setting:nowplaying_cover_lyrics_enabled",
     "setting:nowplaying_progress_show_quality_switch",
     "setting:nowplaying_progress_show_audio_codec",
@@ -346,7 +367,6 @@ private val PersonalizationPlaybackInfoTargets = setOf(
 )
 
 private val PersonalizationPlaybackControlTargets = setOf(
-    "setting:always_use_new_tab_style",
     "setting:nowplaying_keep_screen_on",
     "setting:nowplaying_toolbar_dock_enabled",
     "setting:nowplaying_control_placement",
@@ -422,7 +442,7 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
 
     return listOf(
         entry(
-            page = SettingsPage.General,
+            page = SettingsPage.Language,
             titleRes = CoreCommonR.string.language_setting_title,
             descriptionRes = CoreCommonR.string.language_select_title,
             id = "language",
@@ -445,7 +465,7 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
             order = 4
         ),
         entry(
-            page = SettingsPage.General,
+            page = SettingsPage.Language,
             titleRes = CoreCommonR.string.settings_internationalization,
             descriptionRes = CoreCommonR.string.settings_internationalization_desc,
             id = "internationalization",
@@ -553,7 +573,7 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
             aliases = listOf("accent", "seed", "custom color", "zhutise", "yanse")
         ),
         entry(
-            page = SettingsPage.Personalization,
+            page = SettingsPage.NowPlaying,
             titleRes = CoreCommonR.string.settings_nowplaying_control_placement,
             descriptionRes = CoreCommonR.string.settings_nowplaying_control_placement_desc,
             id = "nowplaying_control_placement",
@@ -568,10 +588,10 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
                 "bofangweizhi"
             ),
             targetId = "setting:nowplaying_control_placement",
-            order = SettingsPage.Personalization.ordinal * 100 + 32
+            order = SettingsPage.NowPlaying.ordinal * 100 + 32
         ),
         entry(
-            page = SettingsPage.Personalization,
+            page = SettingsPage.NowPlaying,
             titleRes = CoreCommonR.string.settings_nowplaying_control_size,
             descriptionRes = CoreCommonR.string.settings_nowplaying_control_size_desc,
             id = "nowplaying_control_size",
@@ -583,10 +603,10 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
                 "bofanganniu"
             ),
             targetId = "setting:nowplaying_control_size",
-            order = SettingsPage.Personalization.ordinal * 100 + 34
+            order = SettingsPage.NowPlaying.ordinal * 100 + 34
         ),
         entry(
-            page = SettingsPage.Personalization,
+            page = SettingsPage.NowPlaying,
             titleRes = CoreCommonR.string.settings_lyrics_control_size,
             descriptionRes = CoreCommonR.string.settings_lyrics_control_size_desc,
             id = "lyrics_control_size",
@@ -598,7 +618,7 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
                 "gecikongjian"
             ),
             targetId = "setting:lyrics_control_size",
-            order = SettingsPage.Personalization.ordinal * 100 + 36
+            order = SettingsPage.NowPlaying.ordinal * 100 + 36
         ),
         entry(
             page = SettingsPage.Backup,
@@ -850,10 +870,17 @@ private val PageSearchAliases = mapOf(
         "third party",
         "platform"
     ),
-    SettingsPage.Personalization to listOf("display", "home", "font", "dpi", "background", "tab", "xianshi"),
+    SettingsPage.Personalization to listOf("home", "start", "startup", "keyboard", "shouye", "qidong"),
+    SettingsPage.NowPlaying to listOf("now playing", "player", "cover", "badge", "controls", "immersive", "bofangye", "fengmian"),
+    SettingsPage.Background to listOf("background", "wallpaper", "image", "beijing", "bizhi"),
+    SettingsPage.Language to listOf("language", "locale", "international", "yuyan", "guojihua"),
+    SettingsPage.ExternalLyrics to listOf(
+        "floating", "desktop lyrics", "status bar", "island", "bluetooth", "lyricon", "amll",
+        "live update", "xuanfu", "zhuangtailan", "lingdongdao", "chaojidao"
+    ),
     SettingsPage.Motion to listOf("motion", "animation", "glass", "blur", "dynamic", "dongxiao", "mohu"),
     SettingsPage.Lyrics to listOf(
-        "lyrics", "lrc", "amll", "lyricon", "floating", "bluetooth", "geci",
+        "lyrics", "lrc", "geci", "translation", "font size",
         "lyric source", "lyrics source", "lyric provider", "word timed", "word by word",
         "kugou", "netease", "qq music", "lrclib", "ttml", "geciyuan", "zhuci"
     ),
@@ -934,6 +961,10 @@ private val SettingSearchAliases = mapOf(
     ),
     "show_cover_source_badge" to listOf("badge", "source", "cover", "biaoshi"),
     "always_use_new_tab_style" to listOf("tab", "bottom bar", "new ui"),
+    "ui_style" to listOf("style", "theme", "clean", "apple", "ios", "material", "fengge", "jianjie", "风格", "简洁"),
+    "liquid_glass_enabled" to listOf("liquid glass", "glass", "refraction", "yetai boli", "液态玻璃"),
+    "predictive_back_preview_enabled" to listOf("predictive back", "back gesture", "preview", "yuce fanhui", "预测性返回"),
+    "nowplaying_immersive_mode" to listOf("immersive", "fullscreen", "status bar", "chenjin", "沉浸"),
     "nowplaying_song_title_marquee_enabled" to listOf(
         "marquee",
         "scrolling title",

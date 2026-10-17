@@ -23,7 +23,7 @@ class PhoneSettingsPredictiveBackTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
-    private var activePage by mutableStateOf<SettingsPage?>(SettingsPage.UsbExclusive)
+    private var activePage by mutableStateOf<SettingsPage?>(SettingsPage.StorageCacheDetails)
 
     private val dispatcher get() = composeRule.activity.onBackPressedDispatcher
 
@@ -56,8 +56,8 @@ class PhoneSettingsPredictiveBackTest {
         setHost()
 
         swipeBack()
-        assertEquals(SettingsPage.Playback, activePage)
-        composeRule.onNodeWithText(SettingsPage.Playback.name).assertExists()
+        assertEquals(SettingsPage.Storage, activePage)
+        composeRule.onNodeWithText(SettingsPage.Storage.name).assertExists()
 
         swipeBack()
         assertEquals(null, activePage)
@@ -71,8 +71,8 @@ class PhoneSettingsPredictiveBackTest {
 
         swipeBack(cancel = true)
 
-        assertEquals(SettingsPage.UsbExclusive, activePage)
-        composeRule.onNodeWithText(SettingsPage.UsbExclusive.name).assertExists()
+        assertEquals(SettingsPage.StorageCacheDetails, activePage)
+        composeRule.onNodeWithText(SettingsPage.StorageCacheDetails.name).assertExists()
     }
 
     private companion object {

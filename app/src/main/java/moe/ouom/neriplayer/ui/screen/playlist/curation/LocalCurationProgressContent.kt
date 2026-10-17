@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.playlist.curation
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -88,7 +89,7 @@ internal fun LocalCurationProgressContent(
     }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = neriRoundedShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.fillMaxWidth()
         ) {

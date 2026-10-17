@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.explore
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -274,7 +275,7 @@ private fun LinkedCollectionCover(
     val context = LocalContext.current
     val visibleCoverUrl = exploreVisibleCoverUrl(coverUrl)
     Box(
-        modifier = Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)),
+        modifier = Modifier.size(52.dp).clip(neriRoundedShape(12.dp)),
         contentAlignment = Alignment.Center
     ) {
         if (visibleCoverUrl != null) {
@@ -454,7 +455,7 @@ private fun SongRowCover(song: SongItem, offlineMode: Boolean) {
             ),
             contentDescription = song.displayName(),
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(10.dp))
+            modifier = Modifier.size(48.dp).clip(neriRoundedShape(10.dp))
         )
     }
     Spacer(Modifier.width(12.dp))

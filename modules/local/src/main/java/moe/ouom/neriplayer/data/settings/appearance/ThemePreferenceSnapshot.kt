@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.data.settings.appearance
  */
 
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.dataStore
 import android.content.Context
@@ -40,6 +41,7 @@ private const val THEME_SNAPSHOT_PREFS = "theme_snapshot_cache"
 private const val THEME_DYNAMIC_COLOR_KEY = "dynamic_color"
 private const val THEME_FORCE_DARK_KEY = "force_dark"
 private const val THEME_FOLLOW_SYSTEM_DARK_KEY = "follow_system_dark"
+private const val THEME_UI_STYLE_KEY = "ui_style"
 private val themeSnapshotWarmupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 fun readThemePreferenceSnapshotSync(context: Context): ThemePreferenceSnapshot {
@@ -56,7 +58,8 @@ fun readThemePreferenceSnapshotSync(context: Context): ThemePreferenceSnapshot {
             ThemePreferenceSnapshot(
                 dynamicColor = prefs[SettingsKeys.DYNAMIC_COLOR] ?: true,
                 forceDark = prefs[SettingsKeys.FORCE_DARK] ?: false,
-                followSystemDark = prefs[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true
+                followSystemDark = prefs[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true,
+                uiStyle = UiStyle.fromStorage(prefs[SettingsKeys.UI_STYLE])
             )
         }
     }.getOrElse {
@@ -74,7 +77,8 @@ private fun warmThemePreferenceSnapshot(context: Context) {
             ThemePreferenceSnapshot(
                 dynamicColor = prefs[SettingsKeys.DYNAMIC_COLOR] ?: true,
                 forceDark = prefs[SettingsKeys.FORCE_DARK] ?: false,
-                followSystemDark = prefs[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true
+                followSystemDark = prefs[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true,
+                uiStyle = UiStyle.fromStorage(prefs[SettingsKeys.UI_STYLE])
             )
         }.onSuccess { snapshot ->
             persistThemePreferenceSnapshot(appContext, snapshot)
@@ -90,6 +94,13 @@ fun persistThemePreferenceSnapshot(
         putBoolean(THEME_DYNAMIC_COLOR_KEY, snapshot.dynamicColor)
         putBoolean(THEME_FORCE_DARK_KEY, snapshot.forceDark)
         putBoolean(THEME_FOLLOW_SYSTEM_DARK_KEY, snapshot.followSystemDark)
+        putString(THEME_UI_STYLE_KEY, snapshot.uiStyle.storageValue)
+    }
+}
+
+internal fun persistThemeUiStyle(context: Context, value: UiStyle) {
+    context.getSharedPreferences(THEME_SNAPSHOT_PREFS, Context.MODE_PRIVATE).edit {
+        putString(THEME_UI_STYLE_KEY, value.storageValue)
     }
 }
 
@@ -136,6 +147,7 @@ private fun readCachedThemePreferenceSnapshot(context: Context): ThemePreference
     return ThemePreferenceSnapshot(
         dynamicColor = prefs.getBoolean(THEME_DYNAMIC_COLOR_KEY, true),
         forceDark = prefs.getBoolean(THEME_FORCE_DARK_KEY, false),
-        followSystemDark = prefs.getBoolean(THEME_FOLLOW_SYSTEM_DARK_KEY, true)
+        followSystemDark = prefs.getBoolean(THEME_FOLLOW_SYSTEM_DARK_KEY, true),
+        uiStyle = UiStyle.fromStorage(prefs.getString(THEME_UI_STYLE_KEY, null))
     )
 }

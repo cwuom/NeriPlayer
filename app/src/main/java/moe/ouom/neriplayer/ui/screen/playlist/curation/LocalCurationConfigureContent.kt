@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.playlist.curation
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -200,7 +201,7 @@ private fun CoverOptions(
             modifier = Modifier.padding(horizontal = 4.dp)
         )
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = neriRoundedShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Column {
@@ -233,7 +234,7 @@ private fun ParallelismSection(
             color = MaterialTheme.colorScheme.primary
         )
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = neriRoundedShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -284,7 +285,7 @@ internal fun CurationSwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(neriRoundedShape(16.dp))
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -307,7 +308,7 @@ internal fun CurationSwitchRow(
 @Composable
 internal fun CurationHintCard(text: String) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = neriRoundedShape(16.dp),
         color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
         modifier = Modifier.fillMaxWidth()
     ) {

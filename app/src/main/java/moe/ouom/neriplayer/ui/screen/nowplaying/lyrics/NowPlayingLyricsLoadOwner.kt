@@ -87,7 +87,7 @@ internal interface NowPlayingLyricsStages {
 
     fun readInitial(request: NowPlayingLyricsLoadRequest): NowPlayingInitialLyricsResult =
         NowPlayingInitialLyricsResult(request.cachedPreferredLyrics,
-            buildNowPlayingInitialLyricsState(request.song, request.cachedPreferredLyrics))
+            buildNowPlayingCachedInitialLyricsState(request.song, request.cachedPreferredLyrics))
 
     suspend fun readFast(request: NowPlayingLyricsLoadRequest): NowPlayingFastLyricsResult
     suspend fun readBackground(
@@ -164,7 +164,7 @@ internal class NowPlayingLyricsLoadOwner(
         val resolved = overlayConfirmedUserLyrics(song, loaded)
         val hasLyrics = resolved.hasDisplayableContent()
         if (song.hasConfirmedLyricOverride() || shouldReplaceLyricsAfterRefresh(song != null, hasLyrics)) state = resolved
-        rememberSnapshot(resolved, stage)
+        rememberSnapshot(if (resolved == state) state else resolved, stage)
         logPublishedLyrics(song, stage, hasLyrics)
     }
 
@@ -215,19 +215,46 @@ internal fun rememberNowPlayingLyricsLoadOwner(
     stages: NowPlayingLyricsStages = DefaultNowPlayingLyricsStages
 ): NowPlayingLyricsLoadOwner {
     val scope = rememberCoroutineScope()
-    val initial = rememberNowPlayingInitialLyrics(request, versions.lyricsPreferenceRevision, stages)
     val cacheGeneration = stages.cacheGeneration
     val snapshotKey = nowPlayingLyricsSnapshotKey(request, versions, cacheGeneration)
-    val cached = stages.snapshotCache?.find(snapshotKey)
+    val restored = rememberNowPlayingLyricsRestorePoint(request, versions, stages, snapshotKey)
     val owner = rememberNowPlayingLyricsOwner(request.song, request.defaultLyricSource,
-        cached?.state ?: initial.state, scope, stages, cached?.secondaryResolved == true)
+        restored.state, scope, stages, restored.secondaryResolved)
     val reloadKey = NowPlayingLyricsReloadTrigger(
         nowPlayingLyricsReloadKey(request.song),
         resolveNowPlayingLyricsMediaReloadKey(request.song, request.currentMediaUrl),
         request.preferWordTimedLyrics, request.defaultLyricSource, versions
     )
     LaunchedEffect(owner, reloadKey, stages, cacheGeneration) {
-        owner.reload(request.copy(cachedPreferredLyrics = initial.cachedPreferredLyrics), snapshotKey)
+        owner.reload(request.copy(cachedPreferredLyrics = restored.initial.cachedPreferredLyrics), snapshotKey)
     }
     return owner
+}
+
+private data class NowPlayingLyricsRestorePoint(
+    val initial: NowPlayingInitialLyricsResult,
+    val state: LoadedLyricsState,
+    val secondaryResolved: Boolean
+)
+
+@Composable
+private fun rememberNowPlayingLyricsRestorePoint(
+    request: NowPlayingLyricsLoadRequest,
+    versions: NowPlayingLyricsRefreshVersions,
+    stages: NowPlayingLyricsStages,
+    snapshotKey: NowPlayingLyricsSnapshotKey?
+): NowPlayingLyricsRestorePoint {
+    val reusable = stages.snapshotCache?.reusable(snapshotKey)
+    // 完整快照可直接恢复，避免在播放页首帧再次同步解析同一份歌词
+    val initial = if (reusable == null) {
+        rememberNowPlayingInitialLyrics(request, versions.lyricsPreferenceRevision, stages)
+    } else {
+        NowPlayingInitialLyricsResult(request.cachedPreferredLyrics, reusable.state)
+    }
+    val cached = reusable ?: stages.snapshotCache?.find(snapshotKey)
+    return NowPlayingLyricsRestorePoint(
+        initial,
+        cached?.state ?: initial.state,
+        cached?.secondaryResolved == true
+    )
 }
