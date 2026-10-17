@@ -27,6 +27,8 @@ internal const val CONTINUOUS_CORNER_EXTENSION = 1.1f
 /** Cubic handle ratio of the miuix squircle curve. */
 private const val CONTINUOUS_CORNER_CONTROL = 0.643f
 
+private const val MAX_GENERIC_CLIP_AXIS_PX = 8192f
+
 class ContinuousRoundedCornerShape(
     topStart: CornerSize,
     topEnd: CornerSize,
@@ -64,8 +66,11 @@ class ContinuousRoundedCornerShape(
         val topRight = if (ltr) topEnd else topStart
         val bottomRight = if (ltr) bottomEnd else bottomStart
         val bottomLeft = if (ltr) bottomStart else bottomEnd
-        // RenderNode can only clip to arbitrary paths from API 30
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        // Compose probes generic outlines with a 0.01px path that Skia discards at large coordinates
+        // analytic rounded outlines keep controls near the end of long cards hittable
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+            size.width >= MAX_GENERIC_CLIP_AXIS_PX || size.height >= MAX_GENERIC_CLIP_AXIS_PX
+        ) {
             return Outline.Rounded(
                 RoundRect(
                     rect = size.toRect(),

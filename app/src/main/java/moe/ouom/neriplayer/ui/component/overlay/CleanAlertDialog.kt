@@ -55,7 +55,8 @@ internal fun CleanAlertDialog(
     icon: @Composable (() -> Unit)?,
     title: @Composable (() -> Unit)?,
     text: @Composable (() -> Unit)?,
-    properties: DialogProperties
+    properties: DialogProperties,
+    neutralButton: @Composable (() -> Unit)? = null
 ) {
     BasicAlertDialog(
         onDismissRequest = onDismissRequest,
@@ -120,7 +121,11 @@ internal fun CleanAlertDialog(
                 if (title != null && text == null) {
                     Box(Modifier.padding(bottom = 12.dp))
                 }
-                CleanDialogButtonRow(dismissButton = dismissButton, confirmButton = confirmButton)
+                CleanDialogButtonRow(
+                    dismissButton = dismissButton,
+                    confirmButton = confirmButton,
+                    neutralButton = neutralButton
+                )
             }
         }
     }
@@ -130,18 +135,22 @@ private val DialogButtonGap = 10.dp
 private val DialogButtonStackGap = 8.dp
 
 /**
- * Actions sit side by side while every label fits half the width; a longer label stacks them
- * full width with the confirm action on top, so no label is ever wrapped into a clipped pill.
+ * actions share a row when every label fits its equal-width slot, otherwise each action uses
+ * the full width with confirm first
  */
 @Composable
 private fun CleanDialogButtonRow(
     dismissButton: @Composable (() -> Unit)?,
-    confirmButton: @Composable () -> Unit
+    confirmButton: @Composable () -> Unit,
+    neutralButton: @Composable (() -> Unit)?
 ) {
     Layout(
         modifier = Modifier.fillMaxWidth(),
         content = {
             CleanDialogButtonSlot(DialogButtonSlot.Confirm, Modifier, confirmButton)
+            if (neutralButton != null) {
+                CleanDialogButtonSlot(DialogButtonSlot.Dismiss, Modifier, neutralButton)
+            }
             if (dismissButton != null) {
                 CleanDialogButtonSlot(DialogButtonSlot.Dismiss, Modifier, dismissButton)
             }
@@ -149,27 +158,29 @@ private fun CleanDialogButtonRow(
     ) { allMeasurables, constraints ->
         val width = constraints.maxWidth
         // pickers pass an empty confirm lambda; an empty slot must not leave a blank pill behind
-        val measurables = allMeasurables.filter { it.maxIntrinsicWidth(Constraints.Infinity) > 0 }
+        val measurables = allMeasurables.withIndex().filter {
+            it.value.maxIntrinsicWidth(Constraints.Infinity) > 0
+        }
         if (measurables.isEmpty()) return@Layout layout(width, 0) {}
         val gap = DialogButtonGap.roundToPx()
         val count = measurables.size
         val slotWidth = (width - gap * (count - 1)) / count
-        val sideBySide = measurables.all { it.maxIntrinsicWidth(Constraints.Infinity) <= slotWidth }
+        val sideBySide = measurables.all { it.value.maxIntrinsicWidth(Constraints.Infinity) <= slotWidth }
         if (sideBySide) {
-            val placeables = measurables.map {
-                it.measure(Constraints.fixedWidth(slotWidth).copy(minHeight = 0, maxHeight = constraints.maxHeight))
+            // preserve secondary action order while the original confirm slot trails
+            val placeables = measurables.sortedBy { if (it.index == 0) 1 else 0 }.map {
+                it.value.measure(Constraints.fixedWidth(slotWidth).copy(minHeight = 0, maxHeight = constraints.maxHeight))
             }
             val height = placeables.maxOf { it.height }
             layout(width, height) {
-                // dismiss leads, confirm trails, matching the reading order of the action
-                placeables.reversed().forEachIndexed { index, placeable ->
+                placeables.forEachIndexed { index, placeable ->
                     placeable.placeRelative(index * (slotWidth + gap), (height - placeable.height) / 2)
                 }
             }
         } else {
             val stackGap = DialogButtonStackGap.roundToPx()
             val placeables = measurables.map {
-                it.measure(Constraints.fixedWidth(width).copy(minHeight = 0, maxHeight = constraints.maxHeight))
+                it.value.measure(Constraints.fixedWidth(width).copy(minHeight = 0, maxHeight = constraints.maxHeight))
             }
             val height = placeables.sumOf { it.height } + stackGap * (count - 1)
             layout(width, height) {

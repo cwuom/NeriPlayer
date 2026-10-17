@@ -78,7 +78,8 @@ internal fun DensityScaledAlertDialog(
     titleContentColor: Color = AlertDialogDefaults.titleContentColor,
     textContentColor: Color = AlertDialogDefaults.textContentColor,
     tonalElevation: Dp = AlertDialogDefaults.TonalElevation,
-    properties: DialogProperties = DialogProperties()
+    properties: DialogProperties = DialogProperties(),
+    neutralButton: @Composable (() -> Unit)? = null
 ) {
     val surfaceScale = LocalOverlaySurfaceScale.current
     if (NeriDesign.isClean) {
@@ -93,7 +94,8 @@ internal fun DensityScaledAlertDialog(
             icon = icon,
             title = title,
             text = text,
-            properties = properties
+            properties = properties,
+            neutralButton = neutralButton
         )
         return
     }
@@ -104,7 +106,14 @@ internal fun DensityScaledAlertDialog(
             confirmButton()
         },
         modifier = Modifier.scaleOverlaySurfaceWidth(surfaceScale).then(modifier),
-        dismissButton = dismissButton,
+        dismissButton = if (neutralButton != null) {
+            {
+                dismissButton?.invoke()
+                neutralButton()
+            }
+        } else {
+            dismissButton
+        },
         icon = icon,
         title = title,
         text = text,
