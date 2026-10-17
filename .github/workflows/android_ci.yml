@@ -124,7 +124,7 @@ jobs:
           if-no-files-found: ignore
 
   android-instrumented-tests:
-    name: Android instrumented tests (shard ${{ matrix.shard }})
+    name: Android instrumented tests (${{ matrix.test_group }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
@@ -134,15 +134,32 @@ jobs:
       matrix:
         include:
           - shard: 0
+            test_group: shard 0
             build_tasks: >-
               :database:assembleDebugAndroidTest :local:assembleDebugAndroidTest
               :playback:runtime:assembleDebugAndroidTest :app:assembleDebug :app:assembleDebugAndroidTest
             module_tests: >-
               :database:connectedDebugAndroidTest :local:connectedDebugAndroidTest
               :playback:runtime:connectedDebugAndroidTest
+            app_test_arguments: >-
+              -Pandroid.testInstrumentationRunnerArguments.numShards=2
+              -Pandroid.testInstrumentationRunnerArguments.shardIndex=0
+              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
           - shard: 1
+            test_group: shard 1
             build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
             module_tests: ""
+            app_test_arguments: >-
+              -Pandroid.testInstrumentationRunnerArguments.numShards=2
+              -Pandroid.testInstrumentationRunnerArguments.shardIndex=1
+              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
+          # 完整宿主触摸回归使用独立的新 AVD，隔离套件间图形状态并保留全部断言
+          - shard: 2
+            test_group: External Lyrics host
+            build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
+            module_tests: ""
+            app_test_arguments: >-
+              -Pandroid.testInstrumentationRunnerArguments.class=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -206,8 +223,7 @@ jobs:
             --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace; } &&
             ./gradlew :app:connectedDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
-            -Pandroid.testInstrumentationRunnerArguments.numShards=2
-            -Pandroid.testInstrumentationRunnerArguments.shardIndex=${{ matrix.shard }}
+            ${{ matrix.app_test_arguments }}
             --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace
 
       - name: Collect emulator host diagnostics
