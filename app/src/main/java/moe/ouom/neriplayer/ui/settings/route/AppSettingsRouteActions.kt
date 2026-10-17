@@ -110,11 +110,8 @@ internal class AppAppearanceSettingsActions(
         }
 
     private suspend fun updateBackgroundImageBlur(uri: Uri?) {
-        if (uri == null) {
-            // 移除图片后不再需要背景增强模糊
-            repo.setEnhancedAdvancedBlurEnabled(false)
-            return
-        }
+        // 增强模糊是独立偏好，移除图片时保留用户当前选择
+        if (uri == null) return
         enableBackgroundImageBlur()
     }
 

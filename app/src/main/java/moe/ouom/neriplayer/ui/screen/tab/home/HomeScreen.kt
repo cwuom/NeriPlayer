@@ -110,6 +110,8 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -177,6 +179,19 @@ private const val HomeScrollKeyYtEmptyFeedError = "home:ytmusic:empty-feed:error
 private const val HomeScrollKeyNeteaseRadarPlaylists = "home:netease:radar-playlists"
 private const val HomeScrollKeyNeteaseRadarPlaylistsHeader = "$HomeScrollKeyNeteaseRadarPlaylists:header"
 private const val HomeScrollKeyNeteaseRadarPlaylistsContent = "$HomeScrollKeyNeteaseRadarPlaylists:content"
+
+internal class HomePhoneGridCells(minSize: Dp) : GridCells {
+    private val adaptive = GridCells.Adaptive(minSize)
+    private val twoColumns = GridCells.Fixed(2)
+
+    override fun Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): List<Int> {
+        val sizes = with(adaptive) { calculateCrossAxisCellSizes(availableSize, spacing) }
+        // use the measured space so padding and fractional density cannot turn two tiles into one
+        return if (sizes.size == 1 && availableSize - spacing >= 2) {
+            with(twoColumns) { calculateCrossAxisCellSizes(availableSize, spacing) }
+        } else sizes
+    }
+}
 
 private fun homeNeteaseSongSectionKey(group: String, source: NeteaseHomeSongSource): String {
     return "home:netease:$group:${source.name.lowercase(Locale.ROOT)}"
@@ -407,6 +422,10 @@ fun HomeScreen(
         cleanStyle -> 14.dp
         else -> 10.dp
     }
+    val gridColumns = remember(gridMinCellSize, cleanStyle, isTabletLayout) {
+        if (cleanStyle && !isTabletLayout) HomePhoneGridCells(gridMinCellSize)
+        else GridCells.Adaptive(gridMinCellSize)
+    }
     // 大标题与卡片左边缘对齐，扣掉 TopAppBar 自带的标题内边距
     val appBarTitleInset = (pageHorizontalPadding + gridContentPadding - TopAppBarTitleInset).coerceAtLeast(0.dp)
 
@@ -535,7 +554,7 @@ fun HomeScreen(
                 }
                 LazyVerticalGrid(
                     state = gridState,
-                    columns = GridCells.Adaptive(gridMinCellSize),
+                    columns = gridColumns,
                     contentPadding = PaddingValues(
                         start = gridContentPadding,
                         end = gridContentPadding,
