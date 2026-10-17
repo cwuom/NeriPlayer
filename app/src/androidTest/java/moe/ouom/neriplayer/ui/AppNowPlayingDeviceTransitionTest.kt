@@ -90,6 +90,25 @@ class AppNowPlayingDeviceTransitionTest {
     }
 
     @Test
+    fun materialTabletOnlySlidesVerticallyAndKeepsTheClassicTransitionWhenReopened() {
+        render(smallestScreenWidthDp = 800, widthDp = 1280, style = UiStyle.Material)
+        composeRule.runOnIdle { visible.value = true }
+        advance(128)
+        assertClassicTabletFrame(inMotion = true)
+        composeRule.runOnIdle { visible.value = false }
+        advance(64)
+        composeRule.runOnIdle { visible.value = true }
+        advance(1_500)
+        assertPlayerDisplayed("material-tablet-reopened")
+        assertClassicTabletFrame(inMotion = false)
+        composeRule.runOnIdle { backDispatcher.onBackPressed() }
+        advance(128)
+        assertClassicTabletFrame(inMotion = true)
+        advance(192)
+        composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
     fun materialPhoneUsesTheContainerMorphAndReleasesItAfterRapidReopen() {
         render(smallestScreenWidthDp = 390, widthDp = 844, style = UiStyle.Material)
         composeRule.runOnIdle { visible.value = true }
@@ -235,6 +254,26 @@ class AppNowPlayingDeviceTransitionTest {
     }
 
     private fun backEvent(progress: Float) = BackEventCompat(0f, 0f, progress, BackEventCompat.EDGE_LEFT)
+
+    private fun assertClassicTabletFrame(inMotion: Boolean) {
+        val root = composeRule.onRoot(useUnmergedTree = true).fetchSemanticsNode()
+        val player = composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).fetchSemanticsNode()
+        assertEquals("经典转场不应横向移动", root.positionInRoot.x, player.positionInRoot.x, 1f)
+        assertEquals("经典转场不应缩放页面宽度", root.size.width, player.size.width)
+        assertEquals("经典转场不应缩放页面高度", root.size.height, player.size.height)
+        val offsetY = player.positionInRoot.y - root.positionInRoot.y
+        if (inMotion) {
+            assertTrue("开关中途仍应保留纵向滑动: y=$offsetY", offsetY > 0f && offsetY < root.size.height)
+        } else {
+            assertEquals(0f, offsetY, 1f)
+        }
+        composeRule.runOnIdle {
+            assertFalse(flight.linked)
+            assertFalse(flight.flying)
+            assertFalse(flight.hidesCovers)
+            assertEquals(0f, flight.nowPlayingMorphProgress, 0f)
+        }
+    }
 
     private fun assertPlayerDisplayed(stage: String) {
         try {

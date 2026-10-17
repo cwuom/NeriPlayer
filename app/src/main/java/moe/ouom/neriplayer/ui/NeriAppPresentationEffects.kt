@@ -6,27 +6,21 @@ import android.content.ContextWrapper
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.CoroutineScope
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
-import moe.ouom.neriplayer.ui.playback.visual.shouldUseNowPlayingContainerMorph
 import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
-import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
 
 internal data class AppStylePreferences(
     val uiStyle: UiStyle,
@@ -35,9 +29,6 @@ internal data class AppStylePreferences(
 )
 
 internal data class NowPlayingBackgroundMode(val dynamic: Boolean, val audioReactive: Boolean)
-
-internal fun shouldUseStandaloneNowPlayingCoverFlight(uiStyle: UiStyle, smallestScreenWidthDp: Int): Boolean =
-    uiStyle == UiStyle.Material && !shouldUseNowPlayingContainerMorph(smallestScreenWidthDp)
 
 internal fun resolveNowPlayingBackgroundMode(
     dynamicRequested: Boolean,
@@ -59,35 +50,6 @@ internal fun rememberAppStylePreferences(
         .collectAsStateWithLifecycle(initialValue = true)
     SideEffect { NeriMotionStyle.clean = uiStyle == UiStyle.Clean }
     return AppStylePreferences(uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled)
-}
-
-internal fun SharedCoverFlightState.openFromMiniPlayer(
-    scope: CoroutineScope,
-    songKey: String?,
-    useStandaloneCoverFlight: Boolean
-) {
-    // 手机容器形变已接管封面，大屏只保留原有主题的独立封面动画
-    if (!useStandaloneCoverFlight) return
-    open(scope, RetainedPlaybackCoverBitmapCache.getLatestForOwner(songKey)?.bitmap)
-}
-
-/** 只为未使用容器形变的大屏保留原有主题的封面返回动画 */
-@Composable
-internal fun SharedCoverFlightCloseEffect(
-    flight: SharedCoverFlightState,
-    showNowPlaying: Boolean,
-    hasSong: Boolean,
-    songKey: String?,
-    scope: CoroutineScope,
-    useStandaloneCoverFlight: Boolean
-) {
-    var previousShowNowPlaying by remember { mutableStateOf(showNowPlaying) }
-    LaunchedEffect(showNowPlaying, useStandaloneCoverFlight) {
-        if (previousShowNowPlaying && !showNowPlaying && hasSong && useStandaloneCoverFlight) {
-            flight.close(scope, RetainedPlaybackCoverBitmapCache.getLatestForOwner(songKey)?.bitmap)
-        }
-        previousShowNowPlaying = showNowPlaying
-    }
 }
 
 private const val BackdropRecedeScale = 0.06f

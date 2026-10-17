@@ -74,6 +74,7 @@ class NeriTabletMiniPlayerLayoutTest {
     private val calls = mutableListOf<Action>()
     private val seekRequests = mutableListOf<SeekRequest>()
     private var pixelsPerDp = 1f
+    private var appliedUiScale = Float.NaN
 
     @Before
     fun assumeDeviceUnlocked() {
@@ -101,19 +102,21 @@ class NeriTabletMiniPlayerLayoutTest {
     }
 
     @Test
-    fun tabletLandscapeAtTwoTimesUsesTheAvailableWidthAndKeepsEveryAction() {
+    fun tabletLandscapeRestoredTwoTimesIsCappedAtOnePointThreeAndKeepsFullControls() {
         render(1280.dp, 800.dp, appUiScale = 2f)
-        assertLayout(TabletMiniPlayerLayout.Compact)
-        exerciseEveryAction(TabletMiniPlayerLayout.Compact)
-        capture("tablet-mini-landscape-2x")
+        composeRule.runOnIdle { assertEquals(1.3f, appliedUiScale, 0.001f) }
+        assertLayout(TabletMiniPlayerLayout.Full)
+        exerciseEveryAction(TabletMiniPlayerLayout.Full)
+        capture("tablet-mini-landscape-restored-2x-effective-1_3x")
     }
 
     @Test
-    fun tabletPortraitAtTwoTimesUsesMinimalControlsWithReachableOverflow() {
+    fun tabletPortraitRestoredTwoTimesIsCappedAtOnePointThreeAndKeepsOverflowReachable() {
         render(800.dp, 1280.dp, appUiScale = 2f)
-        assertLayout(TabletMiniPlayerLayout.Minimal)
-        exerciseEveryAction(TabletMiniPlayerLayout.Minimal)
-        capture("tablet-mini-portrait-2x")
+        composeRule.runOnIdle { assertEquals(1.3f, appliedUiScale, 0.001f) }
+        assertLayout(TabletMiniPlayerLayout.Overflow)
+        exerciseEveryAction(TabletMiniPlayerLayout.Overflow)
+        capture("tablet-mini-portrait-restored-2x-effective-1_3x")
     }
 
     @Test
@@ -358,7 +361,10 @@ class NeriTabletMiniPlayerLayoutTest {
                         ) {
                             AppUiDensityRoot(appUiScale) {
                                 val appliedDensity = LocalDensity.current
-                                SideEffect { pixelsPerDp = appliedDensity.density }
+                                SideEffect {
+                                    pixelsPerDp = appliedDensity.density
+                                    appliedUiScale = appliedDensity.density / density.density
+                                }
                                 val state = playback.value
                                 val controls = MiniPlayerTabletControls(
                                     trackKey = state.trackKey,

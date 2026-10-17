@@ -60,7 +60,6 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
@@ -210,7 +209,6 @@ import moe.ouom.neriplayer.ui.settings.route.AppSettingsRoute
 import moe.ouom.neriplayer.ui.theme.background.CustomBackground
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
-import moe.ouom.neriplayer.ui.animation.SharedCoverFlightLayer
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.effect.glass.rememberLiquidGlassDeviceAllowed
 import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
@@ -1628,14 +1626,6 @@ private fun NeriAppContent(
                 ::navigateToPlaybackSourceRoute
             )
 
-            val useStandaloneCoverFlight = shouldUseStandaloneNowPlayingCoverFlight(
-                uiStyle, LocalConfiguration.current.smallestScreenWidthDp
-            )
-            SharedCoverFlightCloseEffect(
-                sharedCoverFlight, showNowPlaying, currentSong != null, currentSongVisualKey, scope,
-                useStandaloneCoverFlight
-            )
-
             CompositionLocalProvider(
                 LocalSharedCoverFlight provides sharedCoverFlight,
                 LocalHasCustomBackground provides hasCustomBackground,
@@ -1677,8 +1667,7 @@ private fun NeriAppContent(
                             items = bottomBarItems,
                             currentDestination = navigationVisibility.destination,
                             showNowPlaying = shouldSuppressPlaybackNavigation(
-                                showNowPlaying, nowPlayingOverlayMounted,
-                                LocalConfiguration.current.smallestScreenWidthDp,
+                                showNowPlaying,
                                 backGestureRevealing = nowPlayingBackRevealing.value
                             ),
                             offlineMode = offlineMode,
@@ -1697,7 +1686,6 @@ private fun NeriAppContent(
                         snackbarHostState = snackbarHostState,
                         onMainTabSelected = ::navigateToMainTab,
                         onExpandNowPlaying = {
-                            sharedCoverFlight.openFromMiniPlayer(scope, currentSongVisualKey, useStandaloneCoverFlight)
                             showNowPlaying = true
                         },
                         onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
@@ -1852,8 +1840,6 @@ private fun NeriAppContent(
                             visualCoverSongKey = playbackVisualCoverState.ownerSongKey
                         )
                     }
-
-                    SharedCoverFlightLayer(sharedCoverFlight)
 
                     AppThemeRevealOverlayHost(
                         presentation = appThemeRevealPresentation(

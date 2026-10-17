@@ -181,6 +181,8 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
+          # 新版模拟器已弃用 swiftshader_indirect，保留其余启动参数
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
           # 保留 Launcher 组件，用设置页承接测试前的前台焦点
           # 首次沉浸模式提示会抢走原生输入，测试 AVD 预先标记已确认
           # 隐藏错误弹窗不会关闭启动时已有的 ANR，对 Launcher 停止进程以清理遗留窗口

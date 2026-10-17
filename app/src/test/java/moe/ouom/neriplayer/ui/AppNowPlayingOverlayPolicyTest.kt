@@ -6,7 +6,6 @@ import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
 import moe.ouom.neriplayer.ui.playback.visual.selectNowPlayingOverlayTheme
 import moe.ouom.neriplayer.ui.playback.visual.releaseNowPlayingInputSession
 import moe.ouom.neriplayer.ui.playback.visual.shouldUseNowPlayingContainerMorph
-import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.platform.TextToolbar
@@ -30,18 +29,6 @@ class AppNowPlayingOverlayPolicyTest {
     @Test
     fun `a landscape phone keeps its morph based on the smallest width`() {
         assertTrue(shouldUseNowPlayingContainerMorph(smallestScreenWidthDp = 390))
-    }
-
-    @Test
-    fun `only large Material layouts retain the standalone cover flight`() {
-        for (style in UiStyle.entries) {
-            assertFalse(shouldUseStandaloneNowPlayingCoverFlight(style, 390))
-            assertFalse(shouldUseStandaloneNowPlayingCoverFlight(style, 599))
-        }
-        assertTrue(shouldUseStandaloneNowPlayingCoverFlight(UiStyle.Material, 600))
-        assertTrue(shouldUseStandaloneNowPlayingCoverFlight(UiStyle.Material, 800))
-        assertFalse(shouldUseStandaloneNowPlayingCoverFlight(UiStyle.Clean, 600))
-        assertFalse(shouldUseStandaloneNowPlayingCoverFlight(UiStyle.Clean, 800))
     }
 
     @Test

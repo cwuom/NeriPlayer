@@ -8,6 +8,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
@@ -132,6 +133,7 @@ class NowPlayingLandscapeFlowTest {
         assumeTrue("需要至少 480dp 宽的横屏模拟器", context.resources.configuration.orientation ==
             Configuration.ORIENTATION_LANDSCAPE && context.resources.configuration.screenWidthDp >= 480)
         val phone = context.resources.configuration.smallestScreenWidthDp < 600
+        val classicTabletProbe = !phone && uiStyle == UiStyle.Material
         val settings = SettingsRepository(context)
         val autoSettings = AutoSettingsRepository(context)
         val saved = runBlocking { SavedSettings.read(settings) }
@@ -214,7 +216,7 @@ class NowPlayingLandscapeFlowTest {
             } else {
                 composeRule.onNodeWithTag("appNavigationRail").assertIsDisplayed()
             }
-            val song = createLocalSong(context, fixtureDirectory)
+            val song = createLocalSong(context, fixtureDirectory, classicTabletProbe)
             scenario.onActivity { activity ->
                 PlayerManager.release()
                 PlayerManager.initialize(activity.application)
@@ -335,6 +337,7 @@ class NowPlayingLandscapeFlowTest {
                 verifyPhonePortraitReturnAndReopening(scenario, context, songName)
             } else {
                 verifyTabletPortraitAndLandscape(scenario, context, songName, playLabel)
+                if (classicTabletProbe) verifyTabletClassicCoverHandoff(scenario, context, songName)
             }
 
             if (phone) Espresso.pressBack()
@@ -888,6 +891,141 @@ class NowPlayingLandscapeFlowTest {
         capture(context, "tablet-landscape-restored")
     }
 
+    private fun verifyTabletClassicCoverHandoff(
+        scenario: ActivityScenario<MainActivity>, context: Context, songName: String
+    ) {
+        assertNativeFixtureCover(scenario,
+            composeRule.onNodeWithContentDescription(songName, useUnmergedTree = true), false, "warm-page")
+        composeRule.onNodeWithTag("nowPlayingBackButton").performNativeClick()
+        advanceNativeAnimation(scenario, 320L)
+        assertNativeFixtureCover(scenario,
+            composeRule.onNodeWithTag("appMiniPlayer", useUnmergedTree = true), true, "mini-return-320ms")
+        capture(context, "classic-mini-return-320ms")
+        // 通过真实迷你播放器立即重开，不直接修改页面可见状态
+        composeRule.onNode(hasText(songName) and hasAnyAncestor(hasTestTag("appMiniPlayer")),
+            useUnmergedTree = true).performNativeClick()
+        advanceNativeAnimation(scenario, 128L)
+        assertNativeFixtureCover(scenario,
+            composeRule.onNodeWithContentDescription(songName, useUnmergedTree = true), false, "open-128ms")
+        capture(context, "classic-open-128ms")
+        composeRule.mainClock.advanceTimeBy(500L)
+        composeRule.waitForIdle()
+        assertNativeFixtureCover(scenario,
+            composeRule.onNodeWithContentDescription(songName, useUnmergedTree = true), false, "reopened-page")
+    }
+
+    private fun advanceNativeAnimation(scenario: ActivityScenario<MainActivity>, durationMillis: Long) {
+        val started = composeRule.mainClock.currentTime
+        // 每帧都完成原生布局与提交，避免覆盖层只在整个预算末尾卸载
+        while (composeRule.mainClock.currentTime - started < durationMillis) {
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.waitForIdle()
+            awaitCommittedFrame(scenario)
+            val mini = composeRule.onAllNodesWithTag("appMiniPlayer", useUnmergedTree = true)
+                .fetchSemanticsNodes().joinToString { "${it.positionOnScreen}/${it.size}" }
+            Log.i("LandscapeFlowTest", "animation elapsed=${composeRule.mainClock.currentTime - started} " +
+                "budget=$durationMillis mini=[$mini]")
+        }
+        assertEquals("逐帧采样不能延长动画预算", durationMillis, composeRule.mainClock.currentTime - started)
+    }
+
+    private fun assertNativeFixtureCover(
+        scenario: ActivityScenario<MainActivity>, interaction: SemanticsNodeInteraction,
+        miniPlayer: Boolean, stage: String
+    ) {
+        awaitCommittedFrame(scenario)
+        val node = interaction.assertIsDisplayed().fetchSemanticsNode()
+        val bounds = Rect(node.positionOnScreen, node.size.toSize())
+        val bitmap = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        try {
+            val left = bounds.left.toInt().coerceAtLeast(0)
+            val top = bounds.top.toInt().coerceAtLeast(0)
+            val right = bounds.right.toInt().coerceAtMost(bitmap.width)
+            val bottom = bounds.bottom.toInt().coerceAtMost(bitmap.height)
+            var bestDifference = Int.MIN_VALUE
+            var sampleX = left
+            var sampleY = top
+            var sampleSpan = 0
+            fun matches(x: Int, y: Int, span: Int, minimumDifference: Int): Boolean {
+                val difference = fixtureCoverDifference(bitmap, x, y, span)
+                if (difference > bestDifference) {
+                    bestDifference = difference
+                    sampleX = x
+                    sampleY = y
+                    sampleSpan = span
+                }
+                return difference >= minimumDifference
+            }
+            val visible = if (miniPlayer) {
+                // 入场透明度仍在变化，用四个色块间的相对色差识别真实封面
+                val span = (bounds.height / 4f).toInt().coerceAtLeast(1)
+                (top until bottom - span step 3).any { y ->
+                    (left until right - span step 3).any { x ->
+                        matches(x, y, span, minimumDifference = 6)
+                    }
+                }
+            } else {
+                val x = (bounds.left + bounds.width / 4f).toInt()
+                val y = (bounds.top + bounds.height / 4f).toInt()
+                val span = (bounds.width / 2f).toInt()
+                x >= left && y >= top && x + span < right && y + span < bottom &&
+                    matches(x, y, span, minimumDifference = 48)
+            }
+            val samples = listOf(sampleX to sampleY, sampleX + sampleSpan to sampleY,
+                sampleX to sampleY + sampleSpan, sampleX + sampleSpan to sampleY + sampleSpan)
+                .joinToString { (x, y) ->
+                    val color = if (x in 0 until bitmap.width && y in 0 until bitmap.height) {
+                        Integer.toHexString(bitmap.getPixel(x, y))
+                    } else "outside"
+                    "($x,$y)=$color"
+                }
+            val metadata = composeRule.onAllNodesWithTag("miniPlayerMetadata", useUnmergedTree = true)
+                .fetchSemanticsNodes().joinToString { "${it.positionOnScreen}/${it.size} root=${it.boundsInRoot}" }
+            Log.i("LandscapeFlowTest", "cover-probe stage=$stage visible=$visible bounds=$bounds " +
+                "span=$sampleSpan bestDifference=$bestDifference samples=[$samples] metadata=[$metadata] " +
+                "clock=${composeRule.mainClock.currentTime}")
+            capture(InstrumentationRegistry.getInstrumentation().targetContext, "classic-probe-$stage", bitmap)
+            assertTrue("真实封面不能被独立飞行层隐藏或移走: stage=$stage bounds=$bounds " +
+                "bitmap=${bitmap.width}x${bitmap.height} clock=${composeRule.mainClock.currentTime}", visible)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun fixtureCoverDifference(bitmap: Bitmap, x: Int, y: Int, span: Int): Int {
+        val red = bitmap.getPixel(x, y)
+        val green = bitmap.getPixel(x + span, y)
+        val blue = bitmap.getPixel(x, y + span)
+        val yellow = bitmap.getPixel(x + span, y + span)
+        return minOf(minOf(Color.red(red) - Color.red(green), Color.red(yellow) - Color.red(blue),
+            Color.green(green) - Color.green(red)), minOf(Color.green(yellow) - Color.green(blue),
+            Color.blue(blue) - Color.blue(red), Color.blue(blue) - Color.blue(yellow)))
+    }
+
+    private fun awaitCommittedFrame(scenario: ActivityScenario<MainActivity>) {
+        val observed = AtomicBoolean(false)
+        var observer: ViewTreeObserver? = null
+        val callback = Runnable { observed.set(true) }
+        try {
+            scenario.onActivity { activity ->
+                val decor = activity.window.decorView
+                check(decor.isHardwareAccelerated && decor.isAttachedToWindow)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    observer = decor.viewTreeObserver.also { it.registerFrameCommitCallback(callback) }
+                    decor.invalidate()
+                } else error("封面像素回归需要 API 29 硬件帧提交")
+            }
+            // 不推进虚拟时钟，保留精确的中途采样时刻
+            composeRule.waitUntil(STARTUP_TIMEOUT_MS) { observed.get() }
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    observer?.takeIf { it.isAlive }?.unregisterFrameCommitCallback(callback)
+                }
+            }
+        }
+    }
+
     private fun assertPlayerWindowAppearance(scenario: ActivityScenario<MainActivity>) {
         waitForNativeOrientation(scenario, Configuration.ORIENTATION_PORTRAIT)
         val reservedSamples = mutableListOf<Pair<Int, Int>>()
@@ -1078,7 +1216,7 @@ class NowPlayingLandscapeFlowTest {
         return false
     }
 
-    private fun createLocalSong(context: Context, directory: File): SongItem {
+    private fun createLocalSong(context: Context, directory: File, classicCoverProbe: Boolean): SongItem {
         val audio = File(directory, "landscape.wav")
         val pcm = ByteArray(8_000 * 60 * 2)
         val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
@@ -1112,10 +1250,21 @@ class NowPlayingLandscapeFlowTest {
         val bitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
         try {
             val canvas = Canvas(bitmap)
-            canvas.drawColor(Color.rgb(24, 40, 66))
-            checkNotNull(context.getDrawable(R.drawable.ic_launcher_foreground_material)).apply {
-                setBounds(0, 0, bitmap.width, bitmap.height)
-                draw(canvas)
+            if (classicCoverProbe) {
+                val paint = Paint()
+                listOf(Color.rgb(224, 32, 32), Color.rgb(32, 224, 32),
+                    Color.rgb(32, 32, 224), Color.rgb(224, 224, 32)).forEachIndexed { index, color ->
+                    paint.color = color
+                    val left = (index % 2) * bitmap.width / 2f
+                    val top = (index / 2) * bitmap.height / 2f
+                    canvas.drawRect(left, top, left + bitmap.width / 2f, top + bitmap.height / 2f, paint)
+                }
+            } else {
+                canvas.drawColor(Color.rgb(24, 40, 66))
+                checkNotNull(context.getDrawable(R.drawable.ic_launcher_foreground_material)).apply {
+                    setBounds(0, 0, bitmap.width, bitmap.height)
+                    draw(canvas)
+                }
             }
             cover.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
         } finally {
@@ -1132,16 +1281,16 @@ class NowPlayingLandscapeFlowTest {
         }
     }
 
-    private fun capture(context: Context, stage: String) {
+    private fun capture(context: Context, stage: String, frame: Bitmap? = null) {
         val prefix = InstrumentationRegistry.getArguments().getString("capturePrefix")
             ?.replace(Regex("[^a-zA-Z0-9_-]"), "-")?.take(80)?.takeIf { it.isNotBlank() } ?: return
-        val bitmap = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        val bitmap = frame ?: checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
         try {
             val file = File(checkNotNull(context.getExternalFilesDir(null)), "$prefix-$stage.png")
             file.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
             Log.i("LandscapeFlowTest", "screenshot=${file.absolutePath}")
         } finally {
-            bitmap.recycle()
+            if (frame == null) bitmap.recycle()
         }
     }
 
