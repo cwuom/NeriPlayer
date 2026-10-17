@@ -170,8 +170,17 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       # 先编译好测试 APK 再启动模拟器，避免编译与空闲模拟器争抢 CPU 时 Launcher 无响应
+      # 编译 JVM 随阶段退出，避免空闲编译守护进程在设备测试期间继续占用内存
       - name: Build instrumented test APKs
-        run: ./gradlew ${{ matrix.build_tasks }} --warning-mode all --stacktrace
+        run: >-
+          ./gradlew ${{ matrix.build_tasks }} --no-daemon
+          -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace
+
+      - name: Record memory before emulator startup
+        run: |
+          mkdir -p build/reports/emulator-host || exit 0
+          free -h > build/reports/emulator-host/before-emulator-memory.txt 2>&1 || true
+          "$JAVA_HOME/bin/jps" -l > build/reports/emulator-host/before-emulator-jvm-classes.txt 2>&1 || true
 
       - name: Run connected Android tests
         uses: reactivecircus/android-emulator-runner@v2
@@ -194,12 +203,12 @@ jobs:
             adb shell am force-stop --user 0 com.google.android.apps.nexuslauncher &&
             { [ -z "${{ matrix.module_tests }}" ] || ./gradlew ${{ matrix.module_tests }}
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
-            --warning-mode all --stacktrace; } &&
+            --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace; } &&
             ./gradlew :app:connectedDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
             -Pandroid.testInstrumentationRunnerArguments.numShards=2
             -Pandroid.testInstrumentationRunnerArguments.shardIndex=${{ matrix.shard }}
-            --warning-mode all --stacktrace
+            --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace
 
       - name: Collect emulator host diagnostics
         if: always()
@@ -211,6 +220,7 @@ jobs:
           free -h > "$diagnostics_dir/memory.txt" 2>&1 || true
           df -h . > "$diagnostics_dir/disk.txt" 2>&1 || true
           ps -eo pid,comm,rss,%mem --sort=-rss > "$diagnostics_dir/processes.txt" 2>&1 || true
+          "$JAVA_HOME/bin/jps" -l > "$diagnostics_dir/jvm-classes.txt" 2>&1 || true
           {
             if dmesg --color=never 2>/dev/null; then
               printf 'source=dmesg\n' >&2
