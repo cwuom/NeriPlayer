@@ -56,7 +56,6 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
 
 private const val BILI_DETAIL_BATCH_SIZE = 6
 private const val BILI_RESOURCE_TYPE_COLLECTION = 21
@@ -93,8 +92,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     )
     val uiState: StateFlow<LibraryUiState> = _uiState
     private var lastYouTubeAuthFingerprint: String? = null
-    private var youtubeMusicPlaylistsJob: Job? = null
-    private var youtubeMusicPlaylistsPending = false
     private var youtubeEnabled = YouTubeFeatureGate.isEnabled()
     private var lastObservedYouTubeEnabled: Boolean? = null
     private val neteaseRefreshOwner = LibraryNeteaseRefreshOwner(
@@ -117,6 +114,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         state = _uiState,
         currentCookies = biliCookieRepo::getCookiesOnce,
         load = ::loadBilibiliPlaylists
+    )
+    private val youtubeRefreshOwner = LibraryYouTubeRefreshOwner(
+        scope = viewModelScope,
+        state = _uiState,
+        isEnabled = { youtubeEnabled },
+        load = ::loadYouTubeMusicPlaylists
     )
 
     init {
@@ -169,13 +172,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 lastYouTubeAuthFingerprint = nextFingerprint
                 lastObservedYouTubeEnabled = enabled
                 if (!enabled || !bundle.hasYouTubeMusicCookieContext()) {
-                    youtubeMusicPlaylistsJob?.cancel()
-                    youtubeMusicPlaylistsJob = null
-                    youtubeMusicPlaylistsPending = false
-                    _uiState.value = _uiState.value.copy(
-                        youtubeMusicPlaylists = emptyList(),
-                        youtubeMusicError = null
-                    )
+                    youtubeRefreshOwner.clear()
+                } else if (authChanged) {
+                    youtubeRefreshOwner.onSessionChanged()
                 } else {
                     refreshYouTubeMusicPlaylists()
                 }
@@ -285,50 +284,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun refreshYouTubeMusicPlaylists() {
-        if (!youtubeEnabled) return
-        val runningJob = youtubeMusicPlaylistsJob
-        if (runningJob?.isActive == true) {
-            youtubeMusicPlaylistsPending = true
-            NPLogger.d("LibraryViewModel", "refreshYouTubeMusicPlaylists coalesced while loading")
-            return
+        youtubeRefreshOwner.refresh()
+    }
+
+    private suspend fun loadYouTubeMusicPlaylists(): List<YouTubeMusicPlaylist> {
+        val playlists = withContext(Dispatchers.IO) {
+            AppContainer.youtubeMusicClient.getLibraryPlaylists(
+                resolveMissingTrackCounts = false
+            )
         }
-        youtubeMusicPlaylistsPending = false
-        youtubeMusicPlaylistsJob = viewModelScope.launch {
-            _uiState.update { it.copy(youtubeMusicRefreshing = true) }
-            try {
-                val playlists = withContext(Dispatchers.IO) {
-                    AppContainer.youtubeMusicClient.getLibraryPlaylists(
-                        resolveMissingTrackCounts = false
-                    )
-                }
-                _uiState.value = _uiState.value.copy(
-                    youtubeMusicPlaylists = playlists.map(::mapYouTubeMusicPlaylist),
-                    youtubeMusicError = null
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: IOException) {
-                _uiState.value = _uiState.value.copy(
-                    youtubeMusicPlaylists = emptyList(),
-                    youtubeMusicError = e.message
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    youtubeMusicPlaylists = emptyList(),
-                    youtubeMusicError = e.message
-                )
-            } finally {
-                _uiState.update { it.copy(youtubeMusicRefreshing = false) }
-                val completedJob = coroutineContext[Job]
-                if (youtubeMusicPlaylistsJob === completedJob) {
-                    youtubeMusicPlaylistsJob = null
-                    if (youtubeMusicPlaylistsPending && youtubeEnabled) {
-                        youtubeMusicPlaylistsPending = false
-                        refreshYouTubeMusicPlaylists()
-                    }
-                }
-            }
-        }
+        return playlists.map(::mapYouTubeMusicPlaylist)
     }
 
     fun createLocalPlaylist(name: String) {

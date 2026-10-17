@@ -1195,7 +1195,7 @@ internal fun SettingsScreen(
         onRemoveColorFromPalette = appearanceActions.onRemoveColorFromPalette,
         showDpiDialog = showDpiDialog,
         onShowDpiDialogChange = { showDpiDialog = it },
-        uiDensityScale = effectiveUiDensityScale,
+        uiDensityScale = appearanceState.visualBackground.uiDensityScale,
         onUiDensityScaleChange = appearanceActions.onUiDensityScaleChange
     )
 

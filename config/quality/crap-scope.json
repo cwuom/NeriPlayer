@@ -164,6 +164,7 @@
     "moe/ouom/neriplayer/ui/screen/tab/settings/auth/SettingsAccountAuthController.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/auth/SettingsAccountStatusContent.kt",
     "moe/ouom/neriplayer/ui/viewmodel/tab/LibraryBilibiliRefreshOwner.kt",
+    "moe/ouom/neriplayer/ui/viewmodel/tab/LibraryYouTubeRefreshOwner.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/edit/NowPlayingSongEditSheet.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/edit/EditSongLayoutPresentation.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/edit/NowPlayingSongEditOwner.kt",

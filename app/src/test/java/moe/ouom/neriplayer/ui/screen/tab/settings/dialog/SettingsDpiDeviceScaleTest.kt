@@ -157,6 +157,7 @@ class SettingsDpiDeviceScaleTest {
         val range = slider.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo]
         assertEquals(0.6f..maximum, range.range)
         assertEquals(steps, range.steps)
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { it(0.6f) }
         slider.performSemanticsAction(SemanticsActions.SetProgress) { it(maximum) }
         val application = ApplicationProvider.getApplicationContext<Application>()
         composeRule.onNodeWithText(application.getString(CoreCommonR.string.action_apply)).performClick()

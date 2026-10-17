@@ -99,10 +99,12 @@ class SettingsDpiHighScaleLayoutTest {
                     layout.getLineTop(line) >= -1f && layout.getLineBottom(line) <= layout.size.height + 1f)
             }
         }
-        val range = composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
-            .fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo]
+        val slider = composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
+        val range = slider.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo]
         assertEquals(expectedMaximum, range.range.endInclusive, 0f)
         assertEquals(expectedMaximum, range.current, 0f)
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { it(0.6f) }
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { it(expectedMaximum) }
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_apply)).performClick()
         composeRule.runOnIdle { assertEquals(expectedMaximum, checkNotNull(appliedScale), 0f) }
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_reset)).performClick()

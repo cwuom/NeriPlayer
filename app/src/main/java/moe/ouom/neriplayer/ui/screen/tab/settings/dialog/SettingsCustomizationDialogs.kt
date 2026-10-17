@@ -312,6 +312,7 @@ internal fun DpiSettingDialog(
     var sliderValue by remember(currentScale, scaleRange.maximumScale) {
         mutableFloatStateOf(scaleRange.normalize(currentScale))
     }
+    var hasEdited by remember(currentScale, scaleRange.maximumScale) { mutableStateOf(false) }
 
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
@@ -329,7 +330,12 @@ internal fun DpiSettingDialog(
                 Spacer(Modifier.height(8.dp))
                 MiuixSettingsSlider(
                     value = sliderValue,
-                    onValueChange = { sliderValue = it },
+                    onValueChange = {
+                        if (it != sliderValue) {
+                            sliderValue = it
+                            hasEdited = true
+                        }
+                    },
                     valueRange = scaleRange.valueRange,
                     steps = scaleRange.steps,
                     modifier = Modifier.fillMaxWidth()
@@ -343,7 +349,8 @@ internal fun DpiSettingDialog(
         },
         confirmButton = {
             MiuixSettingsTextButton(
-                onClick = { onApply(sliderValue) },
+                // 原样应用不把车载临时上限写回平板的请求值
+                onClick = { if (hasEdited) onApply(sliderValue) else onDismiss() },
                 text = { Text(stringResource(CoreCommonR.string.action_apply)) }
             )
         },
