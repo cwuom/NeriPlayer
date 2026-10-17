@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.actions
  * Created: 2025/10/17
  */
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
@@ -42,12 +44,16 @@ private const val SONG_DETAIL_COLLAPSED_COUNT = 4
 internal fun SongEncyclopediaSongDetailSection(data: SongEncyclopedia) {
     val rows = buildSongDetailRows(data)
     if (rows.isEmpty()) return
-    SongEncyclopediaSubsectionTitle(CoreCommonR.string.encyclopedia_section_song_detail)
     var expanded by rememberSaveable { mutableStateOf(false) }
     val visible = if (expanded) rows else rows.take(SONG_DETAIL_COLLAPSED_COUNT)
-    visible.forEach { (labelRes, value) -> SongEncyclopediaRow(labelRes, value) }
-    if (rows.size > SONG_DETAIL_COLLAPSED_COUNT) {
-        SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
+    SongEncyclopediaSectionCard(
+        titleRes = CoreCommonR.string.encyclopedia_section_song_detail,
+        icon = Icons.Outlined.LibraryMusic
+    ) {
+        visible.forEach { (labelRes, value) -> SongEncyclopediaRow(labelRes, value) }
+        if (rows.size > SONG_DETAIL_COLLAPSED_COUNT) {
+            SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
+        }
     }
 }
 

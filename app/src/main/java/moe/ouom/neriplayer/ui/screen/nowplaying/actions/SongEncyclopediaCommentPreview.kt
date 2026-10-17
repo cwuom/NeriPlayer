@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -55,66 +57,70 @@ internal fun SongEncyclopediaCommentPreview(
         onDispose { commentViewModel.onSheetHidden() }
     }
 
-    SongEncyclopediaSubsectionTitle(CoreCommonR.string.encyclopedia_section_comments)
-    when (ui.status) {
-        CommentListStatus.IDLE,
-        CommentListStatus.LOADING -> Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-        }
+    SongEncyclopediaSectionCard(
+        titleRes = CoreCommonR.string.encyclopedia_section_comments,
+        icon = Icons.Outlined.Forum
+    ) {
+        when (ui.status) {
+            CommentListStatus.IDLE,
+            CommentListStatus.LOADING -> Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
 
-        CommentListStatus.EMPTY -> {
-            SongEncyclopediaEmptyHint(CoreCommonR.string.comment_empty)
-            SongEncyclopediaCommentShowAll(onOpenAll)
-        }
-
-        CommentListStatus.ERROR -> Column(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = stringResource(CoreCommonR.string.encyclopedia_comment_preview_failed),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                SongEncyclopediaExpandAction(expanded = false, onToggle = { commentViewModel.retry() })
+            CommentListStatus.EMPTY -> {
+                SongEncyclopediaEmptyHint(CoreCommonR.string.comment_empty)
                 SongEncyclopediaCommentShowAll(onOpenAll)
             }
-        }
 
-        CommentListStatus.SUCCESS -> {
-            ui.total?.let { total ->
+            CommentListStatus.ERROR -> Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = context.getString(CoreCommonR.string.comment_total_format, total.toString()),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = stringResource(CoreCommonR.string.encyclopedia_comment_preview_failed),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
                 )
-            }
-            // 只有 3 条预览，用普通 Column 即可。
-            // 外层是 Column(Modifier.verticalScroll())，此处若用 LazyColumn 会因无限高度约束崩溃。
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ui.comments.take(COMMENT_PREVIEW_LIMIT).forEachIndexed { index, comment ->
-                    key(comment.id) {
-                        CommentItem(
-                            comment = comment,
-                            floor = index + 1,
-                            offlineMode = offlineMode,
-                            isLiking = false,
-                            likeEnabled = false,
-                            onLike = {},
-                            onReply = {},
-                            onToggleReplies = {},
-                            repliesExpanded = false,
-                            hasReplyThread = false,
-                            replyEnabled = false
-                        )
-                    }
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    SongEncyclopediaExpandAction(expanded = false, onToggle = { commentViewModel.retry() })
+                    SongEncyclopediaCommentShowAll(onOpenAll)
                 }
             }
-            SongEncyclopediaCommentShowAll(onOpenAll)
+
+            CommentListStatus.SUCCESS -> {
+                ui.total?.let { total ->
+                    Text(
+                        text = context.getString(CoreCommonR.string.comment_total_format, total.toString()),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                // 只有 3 条预览，用普通 Column 即可。
+                // 外层是 Column(Modifier.verticalScroll())，此处若用 LazyColumn 会因无限高度约束崩溃。
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ui.comments.take(COMMENT_PREVIEW_LIMIT).forEachIndexed { index, comment ->
+                        key(comment.id) {
+                            CommentItem(
+                                comment = comment,
+                                floor = index + 1,
+                                offlineMode = offlineMode,
+                                isLiking = false,
+                                likeEnabled = false,
+                                onLike = {},
+                                onReply = {},
+                                onToggleReplies = {},
+                                repliesExpanded = false,
+                                hasReplyThread = false,
+                                replyEnabled = false
+                            )
+                        }
+                    }
+                }
+                SongEncyclopediaCommentShowAll(onOpenAll)
+            }
         }
     }
 }

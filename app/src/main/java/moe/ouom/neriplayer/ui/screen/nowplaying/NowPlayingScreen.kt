@@ -1651,7 +1651,9 @@ fun NowPlayingScreen(
                                     onShowQualitySwitch = { showQualitySwitchDialog = true },
                                     startWithLyricBehavior = startMoreOptionsWithLyricBehavior,
                                     onEnterArtist = onEnterArtist,
-                                    onEnterPlaylist = onEnterPlaylist
+                                    onEnterPlaylist = onEnterPlaylist,
+                                    // 更多面板已收起，这里直接打开原生评论面板。
+                                    onOpenComments = { showCommentSheet = true }
                                 ),
                                 snackbarHostState = snackbarHostState,
                                 fontSettings = MoreOptionsFontSettings(

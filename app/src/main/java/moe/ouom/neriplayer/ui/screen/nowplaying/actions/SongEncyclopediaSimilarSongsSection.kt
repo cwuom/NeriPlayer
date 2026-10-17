@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -67,37 +69,41 @@ internal fun SongEncyclopediaSimilarSongsSection(
     onPlaySong: (EncyclopediaSimilarSong) -> Unit,
     onPlayAll: () -> Unit
 ) {
-    SongEncyclopediaSubsectionTitle(CoreCommonR.string.encyclopedia_section_similar_songs)
-    if (similarSongs.isEmpty()) {
-        SongEncyclopediaEmptyHint(CoreCommonR.string.encyclopedia_empty)
-        return
-    }
     var expanded by rememberSaveable { mutableStateOf(false) }
     val visible = if (expanded) similarSongs else similarSongs.take(SIMILAR_SONG_EXPAND_THRESHOLD)
-    visible.forEachIndexed { index, song ->
-        SongEncyclopediaSimilarSongRow(
-            index = index + 1,
-            song = song,
-            onClick = { onPlaySong(song) }
-        )
-    }
-    if (similarSongs.size > SIMILAR_SONG_EXPAND_THRESHOLD) {
-        SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.End
+    SongEncyclopediaSectionCard(
+        titleRes = CoreCommonR.string.encyclopedia_section_similar_songs,
+        icon = Icons.Outlined.MusicNote
     ) {
-        Text(
-            text = stringResource(CoreCommonR.string.encyclopedia_action_play_all),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .encyclopediaClickable(onPlayAll)
-                .padding(8.dp)
-        )
+        if (similarSongs.isEmpty()) {
+            SongEncyclopediaEmptyHint(CoreCommonR.string.encyclopedia_empty)
+        } else {
+            visible.forEachIndexed { index, song ->
+                SongEncyclopediaSimilarSongRow(
+                    index = index + 1,
+                    song = song,
+                    onClick = { onPlaySong(song) }
+                )
+            }
+            if (similarSongs.size > SIMILAR_SONG_EXPAND_THRESHOLD) {
+                SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Text(
+                    text = stringResource(CoreCommonR.string.encyclopedia_action_play_all),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .encyclopediaClickable(onPlayAll)
+                        .padding(8.dp)
+                )
+            }
+        }
     }
 }
 

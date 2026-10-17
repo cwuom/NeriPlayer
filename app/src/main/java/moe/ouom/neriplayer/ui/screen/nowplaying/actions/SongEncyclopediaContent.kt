@@ -29,31 +29,29 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -61,19 +59,13 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.comments.CommentSource
 import moe.ouom.neriplayer.data.model.comments.CommentPlatform
-import moe.ouom.neriplayer.data.model.comments.SongComment
 import moe.ouom.neriplayer.platform.comments.resolveCommentSource
-import moe.ouom.neriplayer.ui.component.comment.CommentItem
-import moe.ouom.neriplayer.ui.component.comment.CommentSheet
-import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
-import moe.ouom.neriplayer.ui.viewmodel.CommentViewModel
+import moe.ouom.neriplayer.ui.component.sheet.HalfExpandableSheetPanel
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.encyclopedia.SongEncyclopedia
@@ -99,6 +91,8 @@ internal fun SongEncyclopediaContent(
     onEnterPlaylist: (PlaylistSummary) -> Unit = {},
     onEnterArtist: (NeteaseArtistSummary) -> Unit = {},
     onPlaySongs: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onOpenComments: (CommentSource) -> Unit = {},
+    onCloseSheet: () -> Unit = onDismiss,
     offlineMode: Boolean = false
 ) {
     val state by viewModel.encyclopediaState.collectAsStateWithLifecycle()
@@ -112,10 +106,6 @@ internal fun SongEncyclopediaContent(
     }
 
     val commentSource = remember(song) { resolveCommentSource(song) }
-    var showCommentSheet by remember(songKey) { mutableStateOf(false) }
-    LaunchedEffect(commentSource) {
-        if (commentSource == null) showCommentSheet = false
-    }
 
     SongEncyclopediaStateContent(
         state = state.forSongKey(songKey),
@@ -123,20 +113,15 @@ internal fun SongEncyclopediaContent(
         song = song,
         commentSource = commentSource,
         offlineMode = offlineMode,
-        onCommentClick = { showCommentSheet = true },
+        // 交给上层关闭百科/更多面板后再打开原生评论面板，避免在百科之上再叠一层评论弹层。
+        onCommentClick = { commentSource?.let(onOpenComments) },
         onEnterPlaylist = onEnterPlaylist,
         onEnterArtist = onEnterArtist,
         onPlaySongs = onPlaySongs,
         onRetry = { viewModel.retryEncyclopediaLoad(song) },
-        onDismiss = onDismiss
+        onDismiss = onDismiss,
+        onCloseSheet = onCloseSheet
     )
-    if (showCommentSheet && commentSource != null) {
-        CommentSheet(
-            source = commentSource,
-            offlineMode = offlineMode,
-            onDismissRequest = { showCommentSheet = false }
-        )
-    }
 }
 
 @Composable
@@ -151,42 +136,57 @@ private fun SongEncyclopediaStateContent(
     onEnterArtist: (NeteaseArtistSummary) -> Unit,
     onPlaySongs: (List<SongItem>, Int) -> Unit,
     onRetry: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onCloseSheet: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .bottomSheetScrollGuard()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .testTag(SONG_ENCYCLOPEDIA_TEST_TAG)
+    // 半屏 / 全屏 / 关闭三档由公共组件 HalfExpandableSheetPanel 提供，
+    // 与评论面板共用同一套拖拽与吸附实现，避免两处各写一遍。
+    HalfExpandableSheetPanel(
+        onDismiss = onCloseSheet,
+        panelTestTag = SONG_ENCYCLOPEDIA_TEST_TAG,
+        header = {
+            SongEncyclopediaHeader(
+                onDismiss = onDismiss,
+                landscape = landscape,
+                isFullScreen = isFullScreen,
+                onToggleFullScreen = toggleFullScreen
+            )
+        }
     ) {
-        SongEncyclopediaHeader(onDismiss)
-        when (state) {
-            SongEncyclopediaUiState.Idle,
-            SongEncyclopediaUiState.Loading -> SongEncyclopediaLoading()
-            SongEncyclopediaUiState.NotSupported -> SongEncyclopediaMessage(
-                CoreCommonR.string.encyclopedia_not_supported
-            )
-            SongEncyclopediaUiState.Empty -> SongEncyclopediaMessage(
-                CoreCommonR.string.encyclopedia_empty
-            )
-            is SongEncyclopediaUiState.Failed -> SongEncyclopediaFailure(onRetry)
-            is SongEncyclopediaUiState.Success -> {
-                // 双保险：即使状态泄漏，也不渲染不属于当前歌曲的数据。
-                if (state.data.songKey == songKey) {
-                    SongEncyclopediaBody(
-                        data = state.data,
-                        song = song,
-                        commentSource = commentSource,
-                        offlineMode = offlineMode,
-                        onCommentClick = onCommentClick,
-                        onEnterPlaylist = onEnterPlaylist,
-                        onEnterArtist = onEnterArtist,
-                        onPlaySongs = onPlaySongs
-                    )
-                } else {                    SongEncyclopediaLoading()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .bottomSheetScrollGuard { false }
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            when (state) {
+                SongEncyclopediaUiState.Idle,
+                SongEncyclopediaUiState.Loading -> SongEncyclopediaLoading()
+                SongEncyclopediaUiState.NotSupported -> SongEncyclopediaMessage(
+                    CoreCommonR.string.encyclopedia_not_supported
+                )
+                SongEncyclopediaUiState.Empty -> SongEncyclopediaMessage(
+                    CoreCommonR.string.encyclopedia_empty
+                )
+                is SongEncyclopediaUiState.Failed -> SongEncyclopediaFailure(onRetry)
+                is SongEncyclopediaUiState.Success -> {
+                    // 双保险：即使状态泄漏，也不渲染不属于当前歌曲的数据。
+                    if (state.data.songKey == songKey) {
+                        SongEncyclopediaBody(
+                            data = state.data,
+                            song = song,
+                            commentSource = commentSource,
+                            offlineMode = offlineMode,
+                            onCommentClick = onCommentClick,
+                            onEnterPlaylist = onEnterPlaylist,
+                            onEnterArtist = onEnterArtist,
+                            onPlaySongs = onPlaySongs
+                        )
+                    } else {
+                        SongEncyclopediaLoading()
+                    }
                 }
             }
         }
@@ -194,7 +194,12 @@ private fun SongEncyclopediaStateContent(
 }
 
 @Composable
-private fun SongEncyclopediaHeader(onDismiss: () -> Unit) {
+private fun SongEncyclopediaHeader(
+    onDismiss: () -> Unit,
+    landscape: Boolean,
+    isFullScreen: Boolean,
+    onToggleFullScreen: () -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -211,6 +216,24 @@ private fun SongEncyclopediaHeader(onDismiss: () -> Unit) {
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.weight(1f)
         )
+        if (!landscape) {
+            IconButton(onClick = onToggleFullScreen) {
+                Icon(
+                    imageVector = if (isFullScreen) {
+                        Icons.Filled.FullscreenExit
+                    } else {
+                        Icons.Filled.Fullscreen
+                    },
+                    contentDescription = stringResource(
+                        if (isFullScreen) {
+                            CoreCommonR.string.encyclopedia_action_collapse
+                        } else {
+                            CoreCommonR.string.encyclopedia_action_expand
+                        }
+                    )
+                )
+            }
+        }
     }
 }
 
@@ -287,30 +310,26 @@ private fun SongEncyclopediaBody(
     onEnterArtist: (NeteaseArtistSummary) -> Unit,
     onPlaySongs: (List<SongItem>, Int) -> Unit
 ) {
-    SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
+    // 每个模块自带卡片与标题栏，这里只负责在模块之间留出统一间距。
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(SongEncyclopediaSectionSpacing)
+    ) {
         SongEncyclopediaSongDetailSection(data)
-    }
-    SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
         SongEncyclopediaListeningSection(song)
-    }
-    data.artist?.let { artist ->
-        SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
+        data.artist?.let { artist ->
             SongEncyclopediaArtistSection(
                 artist = artist,
                 onOpenArtist = { onEnterArtist(NeteaseArtistSummary(artist.artistId, artist.name)) }
             )
         }
-    }
-    if (commentSource?.platform == CommentPlatform.NETEASE) {
-        SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
+        if (commentSource?.platform == CommentPlatform.NETEASE) {
             SongEncyclopediaCommentPreview(
                 source = commentSource,
                 offlineMode = offlineMode,
                 onOpenAll = onCommentClick
             )
         }
-    }
-    SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
         SongEncyclopediaSimilarSongsSection(
             similarSongs = data.similarSongs,
             onPlaySong = { similar ->
@@ -323,8 +342,6 @@ private fun SongEncyclopediaBody(
                 if (queue.isNotEmpty()) onPlaySongs(queue, 0)
             }
         )
-    }
-    SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
         SongEncyclopediaRelatedPlaylistsSection(
             playlists = data.relatedPlaylists,
             onOpenPlaylist = { playlist ->
@@ -339,8 +356,6 @@ private fun SongEncyclopediaBody(
                 )
             }
         )
-    }
-    SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
         SongEncyclopediaLegacySections(data)
     }
     SongEncyclopediaSourceNote()
@@ -381,16 +396,6 @@ internal fun SongEncyclopediaExpandAction(expanded: Boolean, onToggle: () -> Uni
         modifier = Modifier
             .clickable(onClick = onToggle)
             .padding(vertical = 8.dp)
-    )
-}
-
-@Composable
-internal fun SongEncyclopediaSubsectionTitle(titleRes: Int) {
-    Spacer(Modifier.height(6.dp))
-    Text(
-        text = stringResource(titleRes),
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary
     )
 }
 

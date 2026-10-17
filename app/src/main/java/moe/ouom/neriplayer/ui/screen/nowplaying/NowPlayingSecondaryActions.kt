@@ -35,6 +35,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -61,6 +62,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.platform.bilibili.skip.resolver.resolveBiliVideoSkipTargetOptions
+import moe.ouom.neriplayer.data.model.comments.CommentSource
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTargetOption
 import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
@@ -80,6 +82,9 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
+import moe.ouom.neriplayer.ui.component.common.PredictiveDismissHandler
+import moe.ouom.neriplayer.ui.component.common.predictiveDismissTransform
+import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
@@ -402,6 +407,15 @@ internal class MoreOptionsSheetOwner(
         isEditSongSaving = saving
     }
 
+    /**
+     * 是否由面板自身接管返回手势（跟手缩小关闭）。
+     *
+     * 主页返回由这里处理；子页返回主页仍走 [MoreOptionsAnimatedPage] 的转场，
+     * 两者互斥，保证任何一页都只有一个返回处理者。
+     */
+    val canPredictiveDismiss: Boolean
+        get() = !isEditSongSaving && !canGoBackToMainPage
+
     fun updateSheetImeVisibility(visible: Boolean) {
         sheetImeVisible = visible
     }
@@ -525,7 +539,9 @@ class MoreOptionsSheetNavigation(
     val onShowQualitySwitch: () -> Unit = {},
     val startWithLyricBehavior: Boolean = false,
     val onEnterArtist: (NeteaseArtistSummary) -> Unit = {},
-    val onEnterPlaylist: (PlaylistSummary) -> Unit = {}
+    val onEnterPlaylist: (PlaylistSummary) -> Unit = {},
+    /** 百科页「查看全部评论」：先关掉更多面板，再由宿主打开原生评论面板。 */
+    val onOpenComments: (CommentSource) -> Unit = {}
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -669,18 +685,28 @@ private fun MoreOptionsSheetSurface(
 ) {
     val presentation = owner.windowPresentation(isCompactEditSongLandscape())
     LaunchedEffect(presentation.expandToFit, sheetState, block = owner.expansionEffect(presentation))
+    // 主页返回时让整个面板跟手缩小、圆角并滑出，和播放页 overlay 的关闭手感一致；
+    // 子页返回主页仍由 MoreOptionsAnimatedPage 的转场处理。
+    val dismissState = rememberPredictiveDismissState()
     ModalBottomSheet(
         onDismissRequest = owner.onDismissRequest,
+        modifier = Modifier.predictiveDismissTransform(dismissState),
         sheetState = sheetState,
         sheetGesturesEnabled = presentation.gesturesEnabled,
         dragHandle = if (presentation.showDragHandle) {
             { BottomSheetDefaults.DragHandle() }
         } else null,
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = MaterialTheme.colorScheme.surface,
+        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false)
     ) {
         // Sheet 使用独立窗口，键盘可见性应从它自己的 composition 读取
         val imeVisible = WindowInsets.isImeVisible
         SideEffect { owner.updateSheetImeVisibility(imeVisible) }
+        PredictiveDismissHandler(
+            state = dismissState,
+            enabled = owner.canPredictiveDismiss,
+            onDismiss = owner.onDismissRequest
+        )
         MoreOptionsBackHandlers(owner)
         MoreOptionsSheetBody(owner.page, snackbarHostState, content)
     }
@@ -701,7 +727,9 @@ internal fun resolveMoreOptionsSheetPresentation(
     val compactEditSheet = isCompactMoreOptionsEditSheet(page, compactLandscape)
     return MoreOptionsSheetPresentation(
         expandToFit = compactEditSheet,
-        showDragHandle = !shouldHideCompactEditSongHandle(compactEditSheet, imeVisible),
+        // 百科页自带勾柄（它需要在半屏/全屏之间拖拽），避免出现两个勾柄。
+        showDragHandle = !shouldHideCompactEditSongHandle(compactEditSheet, imeVisible) &&
+            page != MoreOptionsPage.ENCYCLOPEDIA,
         gesturesEnabled = ownerGesturesEnabled && !compactEditSheet
     )
 }
@@ -1037,10 +1065,16 @@ private fun MoreOptionsEncyclopediaPage(
         song = actualSong,
         offlineMode = offlineMode,
         onDismiss = owner.onBack,
+        // 半屏面板继续下拉超过阈值时，直接收起整个更多面板。
+        onCloseSheet = owner.onDismissRequest,
         onEnterPlaylist = navigation.onEnterPlaylist,
         onEnterArtist = navigation.onEnterArtist,
         onPlaySongs = { songs, index ->
             PlayerManager.playPlaylist(songs, index)
+        },
+        // 先收起更多面板，再由宿主打开原生评论面板：不在百科之上再叠一层评论弹层。
+        onOpenComments = { source ->
+            owner.dismiss { navigation.onOpenComments(source) }
         }
     )
 }

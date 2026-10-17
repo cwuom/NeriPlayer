@@ -1,13 +1,6 @@
 package moe.ouom.neriplayer.ui.component.comment
 
 import android.content.res.Configuration
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -57,14 +50,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -77,8 +66,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlin.math.absoluteValue
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentError
@@ -86,6 +73,7 @@ import moe.ouom.neriplayer.data.model.comments.CommentSource
 import moe.ouom.neriplayer.data.model.comments.CommentSort
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
+import moe.ouom.neriplayer.ui.component.sheet.HalfExpandableSheetPanel
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
@@ -229,63 +217,12 @@ internal fun CommentSheetContent(
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val tablet = configuration.smallestScreenWidthDp >= 600
     val sortLoadingDescription = stringResource(CoreCommonR.string.comment_sort_loading)
     val listState = rememberLazyListState()
     var replyFocusRequest by remember(ui.source) { mutableIntStateOf(0) }
     val requestReply: (CommentReplyTarget?) -> Unit = { target ->
         onReply(target)
         if (target != null) replyFocusRequest++
-    }
-    val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
-    // 面板三态档位: 半屏 (默认 72% / 620dp) <-> 全屏 <-> 关闭 (真机反馈 #1)。
-    // 高度是连续值: 拖横条时直接跟手改值, 松手 / 点标题栏按钮时再吸附到某一档。
-    // 档位切换只由「横条拖拽」与「全屏-退出全屏按钮」负责; 评论列表的下拉手势一律让给刷新,
-    // 否则全屏档位下列表下拉会被降档吃掉, 刷新永远触发不了 (真机反馈 #1)。
-    // 关闭档由 [onDismiss] (sheet 自身的收起动画) 承担, 这里只维护「半屏 / 全屏」两档之间的连续高度。
-    val density = LocalDensity.current
-    val safeDrawing = WindowInsets.safeDrawing
-    // 平板评论面板与状态栏之间留一点空间，短手机横屏仍优先保留列表高度
-    val availableHeight = if (tablet) {
-        (windowHeight - with(density) {
-            (safeDrawing.getTop(this) + safeDrawing.getBottom(this)).toDp()
-        } - 24.dp).coerceAtLeast(0.dp)
-    } else windowHeight
-    // 横屏直接使用可用高度，避免标题和输入框挤掉评论列表
-    val halfHeightPx = with(density) {
-        (if (landscape) availableHeight else (availableHeight * 0.72f).coerceAtMost(620.dp)).toPx()
-    }
-    val fullHeightPx = with(density) { availableHeight.toPx() }
-    // 半屏档位再下拉这么多才进入「关闭」档: 48dp 太容易误关, 按真机反馈加大到 96dp
-    val dismissDistancePx = with(density) { 96.dp.toPx() }
-    // 不能用 Animatable: awaitEachGesture 的 block 是受限挂起作用域, 里面调不了 snapTo / animateTo。
-    // 所以跟手直接写状态值, 吸附用 animate() 在普通协程里逐帧回写同一个状态。
-    var panelHeightPx by remember { mutableFloatStateOf(halfHeightPx) }
-    var panelAnimJob by remember { mutableStateOf<Job?>(null) }
-    // 记录「吸附目标档位」而不是只看瞬间像素高度: 窗口尺寸变化 (旋转 / 分屏) 后,
-    // 旧的全屏像素高度可能低于新中线, 用 isFullScreen 判断会把全屏错误降成半屏 (CodeRabbit #476)
-    var targetFull by remember { mutableStateOf(false) }
-    // 档位判定必须用 derivedStateOf: 面板高度每帧都在变, 直接读普通变量在组合期之外拿不到新值
-    val isFullScreen by remember(halfHeightPx, fullHeightPx) {
-        derivedStateOf { panelHeightPx >= (halfHeightPx + fullHeightPx) / 2f }
-    }
-    val scope = rememberCoroutineScope()
-    // 档位吸附复用项目既有规格 (tween + LinearOutSlowInEasing, 参考 MiuixSettingsControls.kt / SettingsFloatingLyricsPreview.kt),
-    // 不新增独立动画体系; 上滑进全屏与下滑回半屏走同一条吸附动画, 保证两个方向的动作一致
-    val panelSnapAnimation = tween<Float>(durationMillis = 800, easing = LinearOutSlowInEasing)
-    val settlePanel: (Float) -> Unit = { target ->
-        targetFull = target == fullHeightPx
-        panelAnimJob?.cancel()
-        panelAnimJob = scope.launch {
-            animate(panelHeightPx, target, animationSpec = panelSnapAnimation) { value, _ ->
-                panelHeightPx = value
-            }
-        }
-    }
-    // 屏幕尺寸变化 (旋转 / 分屏) 时把面板重新落到「用户选定档位」对应的新高度
-    LaunchedEffect(halfHeightPx, fullHeightPx) {
-        panelAnimJob?.cancel()
-        panelHeightPx = if (targetFull) fullHeightPx else halfHeightPx
     }
 
     // 切换评论来源（换歌 / 自动切歌）时把列表位置重置到顶部: 数据已整体替换, 旧的滚动位置会让新来源停在中间 (§23/§24)
@@ -318,68 +255,13 @@ internal fun CommentSheetContent(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(with(density) { panelHeightPx.toDp() })
-            .testTag("comment-sheet-content")
-            .bottomSheetScrollGuard { false }
-    ) {
-        // 勾柄 + 标题条整条都支持上下拖拽: 拖动时面板高度跟手变化, 松手吸附到 全屏 / 半屏 / 关闭 三档之一。
-        // 手势在 Initial pass 抢下纵向位移: 外层 ModalBottomSheet 的拖拽走 Main pass,
-        // 若留到 Main pass 竞争会先被 sheet 消费, 表现为「按住上方拖不动」(真机反馈 #7)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("comment-header")
-                .pointerInput(fullHeightPx, halfHeightPx, landscape) {
-                    if (landscape) return@pointerInput
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val startHeight = panelHeightPx
-                        var totalDy = 0f
-                        var dragging = false
-                        while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) break
-                            val delta = change.positionChange()
-                            // 只接管纵向拖动, 横向位移留给其它手势
-                            if (delta.y == 0f || delta.y.absoluteValue < delta.x.absoluteValue) continue
-                            if (!dragging) {
-                                // 起手拖动时先打断上一次吸附动画, 否则动画会继续覆盖手指位置
-                                dragging = true
-                                panelAnimJob?.cancel()
-                            }
-                            totalDy += delta.y
-                            change.consume()
-                            // 跟手: 往上拖面板变高, 往下拖面板变矮 (手指位移 1:1 映射到高度)
-                            panelHeightPx = (startHeight - totalDy).coerceIn(0f, fullHeightPx)
-                        }
-                        if (!dragging) return@awaitEachGesture
-                        // 松手吸附: 比半屏再低 96dp 就是「关闭」档; 越过半屏与全屏的中线就是「全屏」档; 其余回半屏。
-                        // 一次手势只结算一次, 所以不会出现「下拉横条直接从全屏关掉」(真机反馈: 下滑应有与上滑一致的动画)
-                        when {
-                            panelHeightPx <= halfHeightPx - dismissDistancePx -> onDismiss()
-                            panelHeightPx >= (halfHeightPx + fullHeightPx) / 2f -> settlePanel(fullHeightPx)
-                            else -> settlePanel(halfHeightPx)
-                        }
-                    }
-                }
-        ) {
-            // 勾柄: 外观与原来一致 (BottomSheetDefaults.DragHandle), 点击仍然关闭面板
-            if (!landscape) Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onDismiss
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                BottomSheetDefaults.DragHandle()
-            }
+    // 半屏 / 全屏 / 关闭三档由公共组件 HalfExpandableSheetPanel 提供，
+    // 与歌曲百科面板共用同一套拖拽与吸附实现。
+    HalfExpandableSheetPanel(
+        onDismiss = onDismiss,
+        panelTestTag = "comment-sheet-content",
+        headerTestTag = "comment-header",
+        header = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -410,9 +292,7 @@ internal fun CommentSheetContent(
                 CommentSortMenu(ui, onSort)
                 if (landscape) HapticIconButton(onClick = onDismiss) {
                     Icon(Icons.Outlined.Close, stringResource(CoreCommonR.string.action_close))
-                } else HapticIconButton(onClick = {
-                    settlePanel(if (isFullScreen) halfHeightPx else fullHeightPx)
-                }) {
+                } else HapticIconButton(onClick = toggleFullScreen) {
                     Icon(
                         imageVector = if (isFullScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
                         contentDescription = stringResource(
@@ -422,7 +302,7 @@ internal fun CommentSheetContent(
                 }
             }
         }
-
+    ) {
         Box(Modifier.fillMaxWidth().height(4.dp)) {
             if (ui.pendingSort != null) {
                 LinearProgressIndicator(

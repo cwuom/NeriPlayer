@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -65,38 +67,42 @@ internal fun SongEncyclopediaArtistSection(
     artist: EncyclopediaArtistInfo,
     onOpenArtist: () -> Unit
 ) {
-    SongEncyclopediaSubsectionTitle(CoreCommonR.string.encyclopedia_section_artist)
     val context = LocalContext.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .encyclopediaClickable(onOpenArtist)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+    SongEncyclopediaSectionCard(
+        titleRes = CoreCommonR.string.encyclopedia_section_artist,
+        icon = Icons.Outlined.Person
     ) {
-        SongEncyclopediaArtistAvatar(artist)
-        Spacer(Modifier.size(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = artist.name,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            val meta = remember(artist.albumSize, artist.musicSize) {
-                buildEncyclopediaArtistMeta(context, artist)
-            }
-            if (meta != null) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .encyclopediaClickable(onOpenArtist)
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SongEncyclopediaArtistAvatar(artist)
+            Spacer(Modifier.size(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = meta,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = artist.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+                val meta = remember(artist.albumSize, artist.musicSize) {
+                    buildEncyclopediaArtistMeta(context, artist)
+                }
+                if (meta != null) {
+                    Text(
+                        text = meta,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
+        SongEncyclopediaArtistFollowButton(artist)
+        SongEncyclopediaArtistBrief(artist)
     }
-    SongEncyclopediaArtistFollowButton(artist)
-    SongEncyclopediaArtistBrief(artist)
 }
 
 @Composable

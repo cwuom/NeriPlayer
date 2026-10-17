@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
@@ -69,7 +71,6 @@ internal fun SongEncyclopediaListeningSection(song: SongItem) {
     val stat = trackStat ?: return
     // 本机没有任何收听记录时整段隐藏，不显示「暂无」，也不用空态误导用户。
     if (stat.playCount <= 0 && stat.totalListenMs <= 0L) return
-    SongEncyclopediaSubsectionTitle(CoreCommonR.string.encyclopedia_section_listen_history)
 
     val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()) }
     val firstPlayedText = remember(stat.firstPlayedAt) {
@@ -95,25 +96,30 @@ internal fun SongEncyclopediaListeningSection(song: SongItem) {
             )
         }
     }
-    SongEncyclopediaRow(
-        CoreCommonR.string.encyclopedia_label_first_listened,
-        firstPlayedText
-    )
-    SongEncyclopediaRow(
-        CoreCommonR.string.encyclopedia_label_total_listen_time,
-        totalListenText
-    )
-    SongEncyclopediaRow(
-        CoreCommonR.string.encyclopedia_label_play_count_times,
-        context.getString(CoreCommonR.string.encyclopedia_play_count_value, stat.playCount)
-    )
-    Spacer(Modifier.height(4.dp))
-    Text(
-        text = stringResource(CoreCommonR.string.encyclopedia_history_source_note),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 2.dp)
-    )
+    SongEncyclopediaSectionCard(
+        titleRes = CoreCommonR.string.encyclopedia_section_listen_history,
+        icon = Icons.Outlined.Headphones
+    ) {
+        SongEncyclopediaRow(
+            CoreCommonR.string.encyclopedia_label_first_listened,
+            firstPlayedText
+        )
+        SongEncyclopediaRow(
+            CoreCommonR.string.encyclopedia_label_total_listen_time,
+            totalListenText
+        )
+        SongEncyclopediaRow(
+            CoreCommonR.string.encyclopedia_label_play_count_times,
+            context.getString(CoreCommonR.string.encyclopedia_play_count_value, stat.playCount)
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = stringResource(CoreCommonR.string.encyclopedia_history_source_note),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 2.dp)
+        )
+    }
 }

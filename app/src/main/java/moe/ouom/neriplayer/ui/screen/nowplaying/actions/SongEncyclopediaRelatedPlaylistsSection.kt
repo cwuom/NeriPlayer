@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -57,21 +59,25 @@ internal fun SongEncyclopediaRelatedPlaylistsSection(
     playlists: List<EncyclopediaRelatedPlaylist>,
     onOpenPlaylist: (EncyclopediaRelatedPlaylist) -> Unit
 ) {
-    SongEncyclopediaSubsectionTitle(CoreCommonR.string.encyclopedia_section_related_playlists)
-    if (playlists.isEmpty()) {
-        SongEncyclopediaEmptyHint(CoreCommonR.string.encyclopedia_empty)
-        return
-    }
     var expanded by rememberSaveable { mutableStateOf(false) }
     val visible = if (expanded) playlists else playlists.take(RELATED_PLAYLIST_EXPAND_THRESHOLD)
-    visible.forEach { playlist ->
-        SongEncyclopediaRelatedPlaylistRow(
-            playlist = playlist,
-            onClick = { onOpenPlaylist(playlist) }
-        )
-    }
-    if (playlists.size > RELATED_PLAYLIST_EXPAND_THRESHOLD) {
-        SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
+    SongEncyclopediaSectionCard(
+        titleRes = CoreCommonR.string.encyclopedia_section_related_playlists,
+        icon = Icons.AutoMirrored.Outlined.QueueMusic
+    ) {
+        if (playlists.isEmpty()) {
+            SongEncyclopediaEmptyHint(CoreCommonR.string.encyclopedia_empty)
+        } else {
+            visible.forEach { playlist ->
+                SongEncyclopediaRelatedPlaylistRow(
+                    playlist = playlist,
+                    onClick = { onOpenPlaylist(playlist) }
+                )
+            }
+            if (playlists.size > RELATED_PLAYLIST_EXPAND_THRESHOLD) {
+                SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
+            }
+        }
     }
 }
 
