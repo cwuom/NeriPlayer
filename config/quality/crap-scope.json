@@ -570,7 +570,8 @@
       "source": "moe/ouom/neriplayer/ui/NeriAppPresentationEffects.kt",
       "class": "moe.ouom.neriplayer.ui.NeriAppPresentationEffectsKt",
       "methods": [
-        "resolveNowPlayingBackgroundMode"
+        "resolveNowPlayingBackgroundMode",
+        "shouldUseStandaloneNowPlayingCoverFlight"
       ]
     },
     {
