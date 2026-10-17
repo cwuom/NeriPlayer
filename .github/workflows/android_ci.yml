@@ -135,6 +135,7 @@ jobs:
         include:
           - shard: 0
             test_group: shard 0
+            emulator_gpu: swiftshader
             build_tasks: >-
               :database:assembleDebugAndroidTest :local:assembleDebugAndroidTest
               :playback:runtime:assembleDebugAndroidTest :app:assembleDebug :app:assembleDebugAndroidTest
@@ -147,6 +148,7 @@ jobs:
               -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
           - shard: 1
             test_group: shard 1
+            emulator_gpu: swiftshader
             build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
             module_tests: ""
             app_test_arguments: >-
@@ -156,6 +158,7 @@ jobs:
           # 完整宿主触摸回归使用独立的新 AVD，隔离套件间图形状态并保留全部断言
           - shard: 2
             test_group: External Lyrics host
+            emulator_gpu: swangle
             build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
             module_tests: ""
             app_test_arguments: >-
@@ -207,12 +210,15 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          # 新版模拟器已弃用 swiftshader_indirect，保留其余启动参数
-          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
+          # 完整歌词宿主使用 ANGLE 的 GLES 路径，常规分片保留原后端作为对照
+          emulator-options: >-
+            -no-window -gpu ${{ matrix.emulator_gpu }} -no-snapshot -noaudio -no-boot-anim
+            -stdouterr-file ${{ github.workspace }}/build/reports/emulator-host/emulator-stdio.log
           # 保留 Launcher 组件，用设置页承接测试前的前台焦点
           # 首次沉浸模式提示会抢走原生输入，测试 AVD 预先标记已确认
           # 隐藏错误弹窗不会关闭启动时已有的 ANR，对 Launcher 停止进程以清理遗留窗口
           script: >-
+            { ps -eLo pid,tid,comm > build/reports/emulator-host/before-tests-threads.txt || true; } &&
             adb shell settings put global hide_error_dialogs 1 &&
             adb shell settings --user 0 put secure anr_show_background 0 &&
             adb shell settings --user 0 put secure immersive_mode_confirmations confirmed &&

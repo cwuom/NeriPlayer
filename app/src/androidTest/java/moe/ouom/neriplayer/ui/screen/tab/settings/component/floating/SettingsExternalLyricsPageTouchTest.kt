@@ -157,9 +157,13 @@ class SettingsExternalLyricsPageTouchTest {
                     PersistedState(listOf(song), index = 0, positionMs = 1_000L, shouldResumePlayback = false)
                 )
             }
+            logPhase("player-initialize-before")
             instrumentation.runOnMainSync { PlayerManager.initialize(context.applicationContext as Application) }
+            logPhase("player-initialize-after")
+            logPhase("activity-launch-before")
             scenario = ActivityScenario.launch(MainActivity::class.java)
             activeScenario = scenario
+            logPhase("activity-launch-after")
             scenario.onActivity { activity ->
                 assertTrue("完整页面需要硬件渲染窗口", activity.window.decorView.isHardwareAccelerated)
                 val localized = LanguageManager.localizedContext(activity, LanguageManager.getCurrentLanguage(activity))
@@ -169,15 +173,19 @@ class SettingsExternalLyricsPageTouchTest {
                 PlayerManager.currentSongFlow.value?.mediaUri == song.mediaUri &&
                     composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).isDisplayed()
             }
+            logPhase("mini-player-ready")
             assertMiniPlayer(song.name)
             val pageRow = composeRule.onNodeWithTag(settingsPageRowTestTag(SettingsPage.ExternalLyrics))
             swipeUntilVisible(pageRow, composeRule.onNode(hasScrollToIndexAction()), avoidMiniPlayer = true)
+            logPhase("detail-route-click-before")
             pageRow.assertIsEnabled().performNativeClick()
+            logPhase("detail-route-click-after")
             composeRule.waitUntil(UiTimeoutMs) {
                 composeRule.onNodeWithTag(
                     settingsPageTransitionSceneTag(SettingsPage.ExternalLyrics), useUnmergedTree = true
                 ).isDisplayed()
             }
+            logPhase("detail-route-ready")
             composeRule.waitForIdle()
             val detail = composeRule.onNode(
                 hasScrollToIndexAction() and hasAnyAncestor(
@@ -200,6 +208,7 @@ class SettingsExternalLyricsPageTouchTest {
             }
             throw error
         } finally {
+            logPhase("cleanup-before")
             val cleanupFailures = mutableListOf<Throwable>()
             fun cleanup(action: () -> Unit) {
                 runCatching(action).exceptionOrNull()?.let(cleanupFailures::add)
@@ -219,6 +228,7 @@ class SettingsExternalLyricsPageTouchTest {
             }
             cleanup { check(!directory.exists() || directory.deleteRecursively()) }
             NeriMotionStyle.clean = originalCleanMotion
+            logPhase("cleanup-after")
             if (failure != null) cleanupFailures.forEach(failure::addSuppressed)
             else if (cleanupFailures.isNotEmpty()) {
                 val first = cleanupFailures.first()
@@ -427,12 +437,16 @@ class SettingsExternalLyricsPageTouchTest {
         var observer: ViewTreeObserver? = null
         var callback: Runnable? = null
         try {
+            logPhase("hardware-frame-register-before")
             activeScenario.onActivity { activity ->
                 val decor = activity.window.decorView
                 check(decor.isAttachedToWindow && decor.isHardwareAccelerated)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val frameObserver = decor.viewTreeObserver
-                    val frameCallback = Runnable { committed.set(true) }
+                    val frameCallback = Runnable {
+                        committed.set(true)
+                        logPhase("hardware-frame-committed")
+                    }
                     observer = frameObserver
                     callback = frameCallback
                     frameObserver.registerFrameCommitCallback(frameCallback)
@@ -441,6 +455,7 @@ class SettingsExternalLyricsPageTouchTest {
                     error("滚动停止验证需要 API 29 及以上的硬件帧提交")
                 }
             }
+            logPhase("hardware-frame-register-after")
             composeRule.waitUntil(timeoutMillis = (deadline - SystemClock.uptimeMillis()).coerceAtLeast(1L)) {
                 committed.get()
             }
@@ -452,7 +467,12 @@ class SettingsExternalLyricsPageTouchTest {
                     frameObserver.unregisterFrameCommitCallback(frameCallback)
                 }
             }
+            logPhase("hardware-frame-unregistered")
         }
+    }
+
+    private fun logPhase(phase: String) {
+        Log.i(DiagnosticTag, "density=$fixtureDensityScale, phase=$phase")
     }
 
     private fun nativeTap(target: SemanticsNodeInteraction, xFraction: Float) {
