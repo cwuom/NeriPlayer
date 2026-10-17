@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -156,8 +157,10 @@ internal fun AppNavigationScaffold(
 ) {
     val configuration = LocalConfiguration.current
     val dragBoundsOwner = remember { AppDragBoundsOwner() }
+    val yieldsToIme = cleanFloatingChromeYieldsToIme()
+    val miniPlayerReservesSpace = miniPlayer.hasSong && !yieldsToIme
     val reservedMiniPlayerHeight = reservedMiniPlayerHeight(
-        miniPlayer.hasSong,
+        miniPlayerReservesSpace,
         bottomBar.showNowPlaying,
         configuration.smallestScreenWidthDp
     )
@@ -181,6 +184,7 @@ internal fun AppNavigationScaffold(
                     if (!useNavigationRail) {
                         AppScaffoldBottomBar(
                             bottomBar = bottomBar,
+                            yieldsToIme = yieldsToIme,
                             onMainTabSelected = onMainTabSelected,
                             onTabBarBoundsChanged = dragBoundsOwner::updateTabBarBounds
                         )
@@ -190,7 +194,7 @@ internal fun AppNavigationScaffold(
                 // pages keep their bottom reserve while Now Playing covers them; dropping it made a
                 // list scrolled to its end jump as the player opened
                 val pageReservedMiniPlayerHeight = reservedMiniPlayerHeight(
-                    miniPlayer.hasSong,
+                    miniPlayerReservesSpace,
                     showNowPlaying = false,
                     configuration.smallestScreenWidthDp
                 )
@@ -200,7 +204,10 @@ internal fun AppNavigationScaffold(
                     bottomBarInset = innerPadding.calculateBottomPadding().coerceAtLeast(0.dp),
                     reservedMiniPlayerHeight = pageReservedMiniPlayerHeight
                 )
-                val dragBounds = dragBoundsOwner.visibleBounds(miniPlayer.hasSong, bottomBar.showNowPlaying)
+                val dragBounds = dragBoundsOwner.visibleBounds(
+                    miniPlayer.hasSong,
+                    bottomBar.showNowPlaying || yieldsToIme
+                )
                 CompositionLocalProvider(
                     LocalMiniPlayerHeight provides layoutInsets.screenBottomInset,
                     LocalMiniPlayerBoundsInRoot provides dragBounds.miniPlayer,
@@ -253,9 +260,18 @@ private fun bottomBarVisibilityTarget(visible: Boolean): Float =
 private fun bottomBarVisibilityDuration(visible: Boolean): Int =
     if (visible) 280 else 220
 
+private fun Modifier.collapseBottomBarSlot(collapsed: Boolean): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    // 保留自然测量和动画实例，只释放隐藏chrome占用的Scaffold槽位
+    layout(placeable.width, if (collapsed) 0 else placeable.height) {
+        placeable.placeRelative(0, 0)
+    }
+}
+
 @Composable
 private fun AppScaffoldBottomBar(
     bottomBar: AppBottomBarPresentation,
+    yieldsToIme: Boolean,
     onMainTabSelected: (String) -> Unit,
     onTabBarBoundsChanged: (Rect) -> Unit
 ) {
@@ -263,7 +279,8 @@ private fun AppScaffoldBottomBar(
     val layoutDirection = LocalLayoutDirection.current
     val tabInsets = NavigationBarDefaults.windowInsets
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
-    val barVisible = floatingPlaybackChromeVisible(requested = !bottomBar.showNowPlaying)
+    var navigationBarHeightPx by remember { mutableIntStateOf(0) }
+    val barVisible = shouldShowFloatingPlaybackChrome(!bottomBar.showNowPlaying, yieldsToIme)
     val visibilityProgress by animateFloatAsState(
         targetValue = bottomBarVisibilityTarget(barVisible),
         animationSpec = tween(
@@ -276,7 +293,29 @@ private fun AppScaffoldBottomBar(
         hasCustomBackground = bottomBar.hasCustomBackground,
         alwaysUseNewTabStyle = bottomBar.alwaysUseNewTabStyle
     )
-    Box(modifier = Modifier.fillMaxWidth().clipToBounds()) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clipToBounds()
+            .collapseBottomBarSlot(yieldsToIme)
+            .onGloballyPositioned { coordinates ->
+                if (!yieldsToIme) {
+                    // 拖拽目标使用未位移的槽位，避免IME关闭时入场动画的空边界覆盖目标
+                    val slotBounds = coordinates.boundsInRoot()
+                    val navigationBounds = slotBounds.copy(
+                        top = (slotBounds.bottom - navigationBarHeightPx).coerceAtLeast(slotBounds.top)
+                    )
+                    onTabBarBoundsChanged(
+                        resolveBottomTabDragBounds(
+                            navigationBounds,
+                            tabInsets.getLeft(density, layoutDirection),
+                            tabInsets.getRight(density, layoutDirection),
+                            tabInsets.getBottom(density)
+                        )
+                    )
+                }
+            }
+    ) {
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -295,7 +334,7 @@ private fun AppScaffoldBottomBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("appBottomNavigation")
-                    .reportBottomTabBounds(tabInsets, density, layoutDirection, onTabBarBoundsChanged),
+                    .onSizeChanged { navigationBarHeightPx = it.height },
                 selectAlpha = selectAlpha,
                 items = bottomBar.items,
                 currentDestination = bottomBar.currentDestination,
