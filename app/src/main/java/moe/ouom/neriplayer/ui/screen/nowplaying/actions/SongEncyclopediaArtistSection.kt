@@ -58,7 +58,7 @@ private const val ENCYCLOPEDIA_ARTIST_AVATAR_SIZE_DP = 48
  * 模块五 关于艺人。
  *
  * 粉丝数无匿名数据源，本页**不展示**；
- * 「+ 关注」同理：接口要求登录态，这里不渲染任何关注按钮，避免误导。
+ * 关注按钮仅在网易云登录后出现（见 [SongEncyclopediaArtistFollowButton]）。
  */
 @Composable
 internal fun SongEncyclopediaArtistSection(
@@ -95,6 +95,7 @@ internal fun SongEncyclopediaArtistSection(
             }
         }
     }
+    SongEncyclopediaArtistFollowButton(artist)
     SongEncyclopediaArtistBrief(artist)
 }
 

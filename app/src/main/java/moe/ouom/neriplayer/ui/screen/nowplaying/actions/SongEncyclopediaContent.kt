@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.actions
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,7 +44,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -60,8 +60,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.comments.CommentSource
+import moe.ouom.neriplayer.data.model.comments.CommentPlatform
+import moe.ouom.neriplayer.data.model.comments.SongComment
 import moe.ouom.neriplayer.platform.comments.resolveCommentSource
+import moe.ouom.neriplayer.ui.component.comment.CommentItem
 import moe.ouom.neriplayer.ui.component.comment.CommentSheet
+import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
+import moe.ouom.neriplayer.ui.viewmodel.CommentViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -117,6 +122,7 @@ internal fun SongEncyclopediaContent(
         songKey = songKey,
         song = song,
         commentSource = commentSource,
+        offlineMode = offlineMode,
         onCommentClick = { showCommentSheet = true },
         onEnterPlaylist = onEnterPlaylist,
         onEnterArtist = onEnterArtist,
@@ -139,6 +145,7 @@ private fun SongEncyclopediaStateContent(
     songKey: String,
     song: SongItem,
     commentSource: CommentSource?,
+    offlineMode: Boolean,
     onCommentClick: () -> Unit,
     onEnterPlaylist: (PlaylistSummary) -> Unit,
     onEnterArtist: (NeteaseArtistSummary) -> Unit,
@@ -173,6 +180,7 @@ private fun SongEncyclopediaStateContent(
                         data = state.data,
                         song = song,
                         commentSource = commentSource,
+                        offlineMode = offlineMode,
                         onCommentClick = onCommentClick,
                         onEnterPlaylist = onEnterPlaylist,
                         onEnterArtist = onEnterArtist,
@@ -273,70 +281,69 @@ private fun SongEncyclopediaBody(
     data: SongEncyclopedia,
     song: SongItem,
     commentSource: CommentSource?,
+    offlineMode: Boolean,
     onCommentClick: () -> Unit,
     onEnterPlaylist: (PlaylistSummary) -> Unit,
     onEnterArtist: (NeteaseArtistSummary) -> Unit,
     onPlaySongs: (List<SongItem>, Int) -> Unit
 ) {
-    SongEncyclopediaSongDetailSection(data)
-    SongEncyclopediaListeningSection(song)
+    SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
+        SongEncyclopediaSongDetailSection(data)
+    }
+    SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
+        SongEncyclopediaListeningSection(song)
+    }
     data.artist?.let { artist ->
-        SongEncyclopediaArtistSection(
-            artist = artist,
-            onOpenArtist = { onEnterArtist(NeteaseArtistSummary(artist.artistId, artist.name)) }
+        SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
+            SongEncyclopediaArtistSection(
+                artist = artist,
+                onOpenArtist = { onEnterArtist(NeteaseArtistSummary(artist.artistId, artist.name)) }
+            )
+        }
+    }
+    if (commentSource?.platform == CommentPlatform.NETEASE) {
+        SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
+            SongEncyclopediaCommentPreview(
+                source = commentSource,
+                offlineMode = offlineMode,
+                onOpenAll = onCommentClick
+            )
+        }
+    }
+    SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
+        SongEncyclopediaSimilarSongsSection(
+            similarSongs = data.similarSongs,
+            onPlaySong = { similar ->
+                val queue = buildEncyclopediaSimilarQueue(data.similarSongs)
+                val index = queue.indexOfFirst { it.id == similar.songId }
+                if (index >= 0) onPlaySongs(queue, index)
+            },
+            onPlayAll = {
+                val queue = buildEncyclopediaSimilarQueue(data.similarSongs)
+                if (queue.isNotEmpty()) onPlaySongs(queue, 0)
+            }
         )
     }
-    // 模块六 评论入口：解析不到评论来源（非 B 站/网易云音源）时整段隐藏。
-    if (commentSource != null) {
-        SongEncyclopediaSubsectionTitle(CoreCommonR.string.encyclopedia_section_comments)
-        SongEncyclopediaCommentEntry(onClick = onCommentClick)
-    }
-    SongEncyclopediaSimilarSongsSection(
-        similarSongs = data.similarSongs,
-        onPlaySong = { similar ->
-            val queue = buildEncyclopediaSimilarQueue(data.similarSongs)
-            val index = queue.indexOfFirst { it.id == similar.songId }
-            if (index >= 0) onPlaySongs(queue, index)
-        },
-        onPlayAll = {
-            val queue = buildEncyclopediaSimilarQueue(data.similarSongs)
-            if (queue.isNotEmpty()) onPlaySongs(queue, 0)
-        }
-    )
-    SongEncyclopediaRelatedPlaylistsSection(
-        playlists = data.relatedPlaylists,
-        onOpenPlaylist = { playlist ->
-            onEnterPlaylist(
-                PlaylistSummary(
-                    id = playlist.playlistId,
-                    name = playlist.name,
-                    picUrl = playlist.coverUrl.orEmpty(),
-                    playCount = playlist.playCount ?: 0L,
-                    trackCount = playlist.trackCount ?: 0
+    SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
+        SongEncyclopediaRelatedPlaylistsSection(
+            playlists = data.relatedPlaylists,
+            onOpenPlaylist = { playlist ->
+                onEnterPlaylist(
+                    PlaylistSummary(
+                        id = playlist.playlistId,
+                        name = playlist.name,
+                        picUrl = playlist.coverUrl.orEmpty(),
+                        playCount = playlist.playCount ?: 0L,
+                        trackCount = playlist.trackCount ?: 0
+                    )
                 )
-            )
-        }
-    )
-    SongEncyclopediaLegacySections(data)
+            }
+        )
+    }
+    SongEncyclopediaSectionCard(Modifier.fillMaxWidth()) {
+        SongEncyclopediaLegacySections(data)
+    }
     SongEncyclopediaSourceNote()
-}
-
-/** 模块六 评论入口行：副标题复用「评论」标题资源，点开直接进 [CommentSheet]。 */
-@Composable
-private fun SongEncyclopediaCommentEntry(onClick: () -> Unit) {
-    ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.comment_title)) },
-        supportingContent = {
-            Text(
-                text = stringResource(CoreCommonR.string.encyclopedia_section_comments),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .encyclopediaClickable(onClick)
-    )
 }
 
 @Composable

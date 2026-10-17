@@ -46,4 +46,6 @@
     <string name="encyclopedia_action_collapse">收起</string>
     <string name="encyclopedia_similar_index">%1$d</string>
     <string name="encyclopedia_playlist_play_count">%1$s 次播放</string>
+    <string name="encyclopedia_comment_preview_failed">评论加载失败</string>
+    <string name="encyclopedia_comment_show_all">查看全部评论</string>
 </resources>

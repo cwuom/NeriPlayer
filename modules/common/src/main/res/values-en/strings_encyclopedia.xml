@@ -46,4 +46,6 @@
     <string name="encyclopedia_action_collapse">Collapse</string>
     <string name="encyclopedia_similar_index">%1$d</string>
     <string name="encyclopedia_playlist_play_count">%1$s plays</string>
+    <string name="encyclopedia_comment_preview_failed">Could not load comments</string>
+    <string name="encyclopedia_comment_show_all">Show all comments</string>
 </resources>
