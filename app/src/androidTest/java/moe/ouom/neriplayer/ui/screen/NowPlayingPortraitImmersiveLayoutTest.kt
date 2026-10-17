@@ -215,8 +215,12 @@ class NowPlayingPortraitImmersiveLayoutTest {
     private fun assertFullyVisible(node: SemanticsNodeInteraction, viewport: DpRect) {
         node.assertIsDisplayed()
         val bounds = node.getUnclippedBoundsInRoot()
-        assertTrue("控件必须有完整触摸高度: bounds=$bounds viewport=$viewport",
-            bounds.right - bounds.left > 0.dp && bounds.bottom - bounds.top >= 40.dp)
+        val semanticsNode = node.fetchSemanticsNode()
+        val density = semanticsNode.layoutInfo.density
+        val minimumHeightPx = with(density) { 40.dp.roundToPx() }
+        assertTrue("控件必须有完整触摸高度: density=$density size=${semanticsNode.size} " +
+            "minimumHeightPx=$minimumHeightPx bounds=$bounds viewport=$viewport",
+            semanticsNode.size.width > 0 && semanticsNode.size.height >= minimumHeightPx)
         assertTrue("控件必须完整位于有效视窗: bounds=$bounds viewport=$viewport",
             bounds.left >= viewport.left - 1.dp && bounds.right <= viewport.right + 1.dp &&
                 bounds.top >= viewport.top - 1.dp && bounds.bottom <= viewport.bottom + 1.dp)
