@@ -81,6 +81,8 @@ import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.playback.PersistedState
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.appearance.PreviewThemePromptRepository
+import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsCursor
 import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
@@ -123,6 +125,9 @@ class NowPlayingLandscapeFlowTest {
         assumeTrue("仅在 API 35 模拟器运行真实播放流程", Build.VERSION.SDK_INT == 35 &&
             Build.HARDWARE in setOf("ranchu", "goldfish"))
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val uiStyle = InstrumentationRegistry.getArguments().getString("playerUiStyle")
+            ?.let(UiStyle::valueOf) ?: UiStyle.Clean
+        val uiScale = InstrumentationRegistry.getArguments().getString("playerUiScale")?.toFloat() ?: 1f
         val context = instrumentation.targetContext
         assumeTrue("需要至少 480dp 宽的横屏模拟器", context.resources.configuration.orientation ==
             Configuration.ORIENTATION_LANDSCAPE && context.resources.configuration.screenWidthDp >= 480)
@@ -130,6 +135,7 @@ class NowPlayingLandscapeFlowTest {
         val settings = SettingsRepository(context)
         val autoSettings = AutoSettingsRepository(context)
         val saved = runBlocking { SavedSettings.read(settings) }
+        val savedPreferences = runBlocking { context.dataStore.data.first() }
         val savedQueue = runBlocking { SavedPlaybackQueue.read(context) }
         val automation = instrumentation.uiAutomation
         val originalServiceFlags = automation.serviceInfo.flags
@@ -153,8 +159,9 @@ class NowPlayingLandscapeFlowTest {
                 settings.setDisclaimerAccepted(true)
                 settings.setStartupOnboardingCompleted(true)
                 settings.setDefaultStartDestination(Destinations.Settings.route)
-                settings.setUiDensityScale(1f)
-                settings.setUiStyle(UiStyle.Clean)
+                settings.setUiDensityScale(uiScale)
+                settings.setUiStyle(uiStyle)
+                PreviewThemePromptRepository(context).answer(enable = false)
                 settings.setAdvancedLyricsEnabled(false)
                 settings.setShowLyricTranslation(true)
                 settings.setLyricTranslationUsePhonetic(false)
@@ -169,7 +176,7 @@ class NowPlayingLandscapeFlowTest {
                 assertTrue(settings.disclaimerAcceptedFlow.filterNotNull().first())
                 assertTrue(settings.startupOnboardingCompletedFlow.filterNotNull().first())
                 assertTrue(settings.defaultStartDestinationFlow.first() == Destinations.Settings.route)
-                assertEquals(UiStyle.Clean, settings.uiStyleFlow.first())
+                assertEquals(uiStyle, settings.uiStyleFlow.first())
                 assertTrue(warning.isAcknowledged())
             }
             grantRuntimePermissions(*playbackRuntimePermissions())
@@ -396,7 +403,13 @@ class NowPlayingLandscapeFlowTest {
                         try {
                             runBlocking { savedQueue.restore(context) }
                         } finally {
-                            runBlocking { saved.restore(settings, autoSettings) }
+                            runBlocking {
+                                try {
+                                    saved.restore(settings, autoSettings)
+                                } finally {
+                                    context.dataStore.updateData { savedPreferences }
+                                }
+                            }
                             check(fixtureDirectory.deleteRecursively()) { "未能清理合成本地媒体" }
                         }
                     }

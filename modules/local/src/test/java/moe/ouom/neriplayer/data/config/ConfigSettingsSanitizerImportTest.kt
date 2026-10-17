@@ -47,11 +47,14 @@ class ConfigSettingsSanitizerImportTest {
     private val sanitizer = ConfigSettingsSanitizer(context)
 
     @Test
-    fun `density imports keep two times on tablets and car mode but retain the phone limit`() {
+    fun `legacy two times density imports use each tablet limit and fixed phone and car limits`() {
         for ((width, mode, expected) in listOf(
             Triple(599, Configuration.UI_MODE_TYPE_NORMAL, 1.2f),
-            Triple(600, Configuration.UI_MODE_TYPE_NORMAL, 2f),
-            Triple(320, Configuration.UI_MODE_TYPE_CAR or Configuration.UI_MODE_NIGHT_YES, 2f)
+            Triple(600, Configuration.UI_MODE_TYPE_NORMAL, 1f),
+            Triple(800, Configuration.UI_MODE_TYPE_NORMAL, 1.3f),
+            Triple(1200, Configuration.UI_MODE_TYPE_NORMAL, 2f),
+            Triple(1500, Configuration.UI_MODE_TYPE_NORMAL, 2f),
+            Triple(320, Configuration.UI_MODE_TYPE_CAR or Configuration.UI_MODE_NIGHT_YES, 1.5f)
         )) {
             configuration.smallestScreenWidthDp = width
             configuration.uiMode = mode

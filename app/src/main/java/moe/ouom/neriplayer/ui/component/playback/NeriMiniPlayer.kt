@@ -494,7 +494,7 @@ fun NeriMiniPlayer(
     val useTabletControls = tabletControls != null &&
         smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
     val cleanStyle = NeriDesign.isClean
-    val useContainerMorph = shouldUseNowPlayingContainerMorph(cleanStyle, smallestScreenWidthDp)
+    val useContainerMorph = shouldUseNowPlayingContainerMorph(smallestScreenWidthDp)
     val sharedCoverFlight = LocalSharedCoverFlight.current
     val miniContentColor = if (cleanStyle) {
         MaterialTheme.colorScheme.onSurface

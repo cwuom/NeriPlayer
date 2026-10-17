@@ -252,6 +252,47 @@ class NowPlayingAdaptiveLayoutTest {
     }
 
     @Test
+    fun compactTabletBottomProgressSharesTheCoverAndToolbarCenter() {
+        renderLayout(1000.dp, 500.dp, NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS)
+
+        val player = bounds("nowPlayingPlayerPane")
+        val progress = bounds("progress")
+        val controls = bounds("controls")
+        assertControlsFit(bounds("viewport"))
+        assertEquals("进度区应与封面使用同一个左栏中心", player.center.x, progress.center.x, 1f)
+        assertEquals(player.center.x, bounds("cover").center.x, 1f)
+        assertEquals(player.center.x, bounds("toolbar").center.x, 1f)
+        assertEquals(player.left, progress.left, 1f)
+        assertEquals(player.right, progress.right, 1f)
+        assertEquals(bounds("nowPlayingLyricPane").center.x, controls.center.x, 1f)
+    }
+
+    @Test
+    fun compactTabletWithOnlyBottomControlsKeepsTheFullWidthFooter() {
+        renderLayout(1000.dp, 500.dp, NowPlayingControlPlacement.BOTTOM)
+
+        val frame = bounds("viewport")
+        val controls = bounds("controls")
+        assertControlsFit(frame)
+        assertEquals(frame.left, controls.left, 1f)
+        assertEquals(frame.right, controls.right, 1f)
+    }
+
+    @Test
+    fun compactTabletCoverLeavesBalancedSpaceInsideThePlayerPane() {
+        renderLayout(1000.dp, 500.dp, NowPlayingControlPlacement.LOWER)
+
+        assertTabletCoverInsets()
+    }
+
+    @Test
+    fun expandedTabletCoverLeavesBalancedSpaceInsideThePlayerPane() {
+        renderLayout(1280.dp, 900.dp, NowPlayingControlPlacement.LOWER)
+
+        assertTabletCoverInsets()
+    }
+
+    @Test
     fun lyricPaneKeepsTheUnderlyingPlaybackBackgroundVisible() {
         val background = Color(0xFF5C2248)
         renderLayout(1280.dp, 800.dp, NowPlayingControlPlacement.LOWER, background = background)
@@ -422,6 +463,22 @@ class NowPlayingAdaptiveLayoutTest {
     private fun assertSquareCover() {
         val cover = bounds("cover")
         assertEquals(cover.width, cover.height, 1f)
+    }
+
+    private fun assertTabletCoverInsets() {
+        assertControlsFit(bounds("viewport"))
+        assertSquareCover()
+        val player = bounds("nowPlayingPlayerPane")
+        val cover = bounds("cover")
+        val leftInset = cover.left - player.left
+        val rightInset = player.right - cover.right
+        assertEquals("封面应在实际左栏内居中", leftInset, rightInset, 1f)
+        assertTrue(
+            "平板横屏封面最多占左栏的72%，保留两侧留白: cover=$cover player=$player",
+            cover.width <= player.width * 0.72f + 1f
+        )
+        assertTrue(cover.top >= bounds("topBar").bottom + logicalPixels(8.dp) - 1f)
+        assertTrue(cover.bottom <= bounds("toolbar").top - logicalPixels(8.dp) + 1f)
     }
 
     private fun bounds(tag: String): Rect =

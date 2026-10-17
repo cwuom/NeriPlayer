@@ -85,6 +85,23 @@ class NowPlayingMorphLifecycleTest {
         assertOpen()
     }
 
+    @Test
+    fun ordinaryCloseHandsBackTheMiniPlayerWithin320Milliseconds() {
+        composeRule.runOnIdle { visible.value = true }
+        settle()
+        composeRule.runOnIdle { visible.value = false }
+        composeRule.mainClock.advanceTimeBy(128)
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertTrue("关闭期间仍需绘制完整的收回过程", morph.mounted)
+            assertTrue(morph.progress.value > 0f && morph.progress.value < 1f)
+            assertTrue("退出中保留单一封面归属", flight.linked)
+        }
+        composeRule.mainClock.advanceTimeBy(192)
+        composeRule.waitForIdle()
+        assertClosed()
+    }
+
     private fun settle() {
         composeRule.mainClock.advanceTimeBy(1_500)
         composeRule.waitForIdle()
@@ -100,7 +117,7 @@ class NowPlayingMorphLifecycleTest {
     }
 
     private fun assertClosed() = composeRule.runOnIdle {
-        assertFalse(morph.mounted)
+        assertFalse("关闭后应卸载: progress=${morph.progress.value}, linked=${flight.linked}", morph.mounted)
         assertEquals(0f, morph.progress.value, 0.001f)
         assertFalse(flight.linked)
     }

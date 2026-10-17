@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -15,7 +16,6 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import androidx.compose.runtime.mutableIntStateOf
@@ -52,9 +52,9 @@ class AppUiDensityRootTest {
     private val originalDensityDpi = application.resources.displayMetrics.densityDpi
 
     @Test
-    fun tabletTwoTimesScaleChangesOnlyTheAppDensityAndKeepsFontScale() {
+    fun restoredTabletTwoTimesIsCappedWithoutChangingFontScale() {
         render(smallestWidth = 600, uiMode = Configuration.UI_MODE_TYPE_NORMAL, requestedScale = 2f)
-        assertScale(2f, 200)
+        assertScale(1f, 100)
     }
 
     @Test
@@ -64,15 +64,15 @@ class AppUiDensityRootTest {
     }
 
     @Test
-    fun carModeAtPhoneWidthCanApplyTwoTimesWithoutChangingSystemMetrics() {
+    fun restoredCarTwoTimesIsCappedWithoutChangingSystemMetrics() {
         render(smallestWidth = 320, uiMode = Configuration.UI_MODE_TYPE_CAR, requestedScale = 2f)
-        assertScale(2f, 200)
+        assertScale(1.5f, 150)
     }
 
     @Test
     fun changingDeviceConfigurationReclampsTheAlreadyLoadedPreference() {
         render(smallestWidth = 600, uiMode = Configuration.UI_MODE_TYPE_NORMAL, requestedScale = 2f)
-        assertScale(2f, 200)
+        assertScale(1f, 100)
 
         composeRule.runOnIdle { smallestWidth.intValue = 599 }
 
@@ -84,7 +84,7 @@ class AppUiDensityRootTest {
     fun oneRepositorySubscriptionRestoresStoredTwoTimesAcrossPhoneAndCarModeChanges() {
         val savedPreferences = runBlocking { application.dataStore.data.first() }
         try {
-            runBlocking { AutoSettingsRepository(application).setUiDensityScale(2f) }
+            runBlocking { application.dataStore.edit { it[AutoSettingsKeys.UI_DENSITY_SCALE] = 2f } }
             val starts = AtomicInteger()
             val emittedScale = AtomicReference<Float?>(null)
             val requestedScale = SettingsRepository(application).uiDensityScaleFlow
@@ -92,19 +92,32 @@ class AppUiDensityRootTest {
                 .onEach { emittedScale.set(it) }
             render(390, Configuration.UI_MODE_TYPE_NORMAL, 1f, requestedScale)
             composeRule.waitUntil(timeoutMillis = 5_000) { emittedScale.get() != null }
+            assertEquals(2f, checkNotNull(emittedScale.get()), 0f)
             assertScale(1.2f, 120)
 
             composeRule.runOnIdle { deviceUiMode.intValue = Configuration.UI_MODE_TYPE_CAR }
-            assertScale(2f, 200)
+            assertScale(1.5f, 150)
             composeRule.runOnIdle { deviceUiMode.intValue = Configuration.UI_MODE_TYPE_NORMAL }
             assertScale(1.2f, 120)
             composeRule.runOnIdle { deviceUiMode.intValue = Configuration.UI_MODE_TYPE_CAR }
-            assertScale(2f, 200)
+            assertScale(1.5f, 150)
             composeRule.runOnIdle { assertEquals(1, starts.get()) }
             assertEquals(2f, runBlocking { application.dataStore.data.first()[AutoSettingsKeys.UI_DENSITY_SCALE] })
         } finally {
             runBlocking { application.dataStore.updateData { savedPreferences } }
         }
+    }
+
+    @Test
+    fun tablet800DpRestoresOnlyTheScaleThatKeepsItsSmallestSideAbove600Dp() {
+        render(800, Configuration.UI_MODE_TYPE_NORMAL, requestedScale = 2f)
+        assertScale(1.3f, 130)
+    }
+
+    @Test
+    fun largeTabletCanApplyMoreThanTwoTimesWhileRetaining600Dp() {
+        render(1500, Configuration.UI_MODE_TYPE_NORMAL, requestedScale = 3f)
+        assertScale(2.5f, 250)
     }
 
     private fun assertScale(expectedDensity: Float, expectedWidth: Int) {

@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
 import moe.ouom.neriplayer.ui.playback.visual.selectNowPlayingOverlayTheme
 import moe.ouom.neriplayer.ui.playback.visual.releaseNowPlayingInputSession
 import moe.ouom.neriplayer.ui.playback.visual.shouldUseNowPlayingContainerMorph
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.platform.TextToolbar
@@ -19,17 +20,28 @@ import org.mockito.Mockito.verifyNoMoreInteractions
 
 class AppNowPlayingOverlayPolicyTest {
     @Test
-    fun `clean morph is limited to phone device widths including the 599 to 600 boundary`() {
-        assertTrue(shouldUseNowPlayingContainerMorph(cleanStyle = true, smallestScreenWidthDp = 599))
-        assertFalse(shouldUseNowPlayingContainerMorph(cleanStyle = true, smallestScreenWidthDp = 600))
-        assertFalse(shouldUseNowPlayingContainerMorph(cleanStyle = true, smallestScreenWidthDp = 800))
-        assertFalse(shouldUseNowPlayingContainerMorph(cleanStyle = false, smallestScreenWidthDp = 390))
-        assertFalse(shouldUseNowPlayingContainerMorph(cleanStyle = false, smallestScreenWidthDp = 800))
+    fun `phones use the morph while tablets keep the default transition`() {
+        assertTrue(shouldUseNowPlayingContainerMorph(smallestScreenWidthDp = 390))
+        assertTrue(shouldUseNowPlayingContainerMorph(smallestScreenWidthDp = 599))
+        assertFalse(shouldUseNowPlayingContainerMorph(smallestScreenWidthDp = 600))
+        assertFalse(shouldUseNowPlayingContainerMorph(smallestScreenWidthDp = 800))
     }
 
     @Test
     fun `a landscape phone keeps its morph based on the smallest width`() {
-        assertTrue(shouldUseNowPlayingContainerMorph(cleanStyle = true, smallestScreenWidthDp = 390))
+        assertTrue(shouldUseNowPlayingContainerMorph(smallestScreenWidthDp = 390))
+    }
+
+    @Test
+    fun `only large Material layouts retain the standalone cover flight`() {
+        for (style in UiStyle.entries) {
+            assertFalse(shouldUseStandaloneNowPlayingCoverFlight(style, 390))
+            assertFalse(shouldUseStandaloneNowPlayingCoverFlight(style, 599))
+        }
+        assertTrue(shouldUseStandaloneNowPlayingCoverFlight(UiStyle.Material, 600))
+        assertTrue(shouldUseStandaloneNowPlayingCoverFlight(UiStyle.Material, 800))
+        assertFalse(shouldUseStandaloneNowPlayingCoverFlight(UiStyle.Clean, 600))
+        assertFalse(shouldUseStandaloneNowPlayingCoverFlight(UiStyle.Clean, 800))
     }
 
     @Test

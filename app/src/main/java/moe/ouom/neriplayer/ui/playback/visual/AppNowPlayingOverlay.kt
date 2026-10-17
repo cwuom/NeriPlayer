@@ -41,7 +41,6 @@ import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
-import moe.ouom.neriplayer.ui.theme.NeriMotion
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 
@@ -106,9 +105,8 @@ internal fun resolveNowPlayingOverlayArtwork(
     ?: flight?.miniCoverBitmap
 
 internal fun shouldUseNowPlayingContainerMorph(
-    cleanStyle: Boolean,
     smallestScreenWidthDp: Int
-): Boolean = cleanStyle && smallestScreenWidthDp < PHONE_SMALLEST_SCREEN_WIDTH_DP
+): Boolean = smallestScreenWidthDp < PHONE_SMALLEST_SCREEN_WIDTH_DP
 
 @Composable
 internal fun AppNowPlayingOverlay(
@@ -133,7 +131,6 @@ internal fun AppNowPlayingOverlay(
         }
     }
     val useContainerMorph = shouldUseNowPlayingContainerMorph(
-        cleanStyle = theme.uiStyle == UiStyle.Clean,
         smallestScreenWidthDp = LocalConfiguration.current.smallestScreenWidthDp
     )
     val sharedCoverFlight = LocalSharedCoverFlight.current

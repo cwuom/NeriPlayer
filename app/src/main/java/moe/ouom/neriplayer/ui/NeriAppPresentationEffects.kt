@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
+import moe.ouom.neriplayer.ui.playback.visual.shouldUseNowPlayingContainerMorph
 import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
 
@@ -34,6 +35,9 @@ internal data class AppStylePreferences(
 )
 
 internal data class NowPlayingBackgroundMode(val dynamic: Boolean, val audioReactive: Boolean)
+
+internal fun shouldUseStandaloneNowPlayingCoverFlight(uiStyle: UiStyle, smallestScreenWidthDp: Int): Boolean =
+    uiStyle == UiStyle.Material && !shouldUseNowPlayingContainerMorph(smallestScreenWidthDp)
 
 internal fun resolveNowPlayingBackgroundMode(
     dynamicRequested: Boolean,
@@ -57,24 +61,29 @@ internal fun rememberAppStylePreferences(
     return AppStylePreferences(uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled)
 }
 
-internal fun SharedCoverFlightState.openFromMiniPlayer(scope: CoroutineScope, songKey: String?) {
-    // the clean style morphs the whole page out of the capsule, which already carries the cover
-    if (NeriMotionStyle.clean) return
+internal fun SharedCoverFlightState.openFromMiniPlayer(
+    scope: CoroutineScope,
+    songKey: String?,
+    useStandaloneCoverFlight: Boolean
+) {
+    // 手机容器形变已接管封面，大屏只保留原有主题的独立封面动画
+    if (!useStandaloneCoverFlight) return
     open(scope, RetainedPlaybackCoverBitmapCache.getLatestForOwner(songKey)?.bitmap)
 }
 
-/** Flies the cover back into the mini player whenever Now Playing closes with a song loaded. */
+/** 只为未使用容器形变的大屏保留原有主题的封面返回动画 */
 @Composable
 internal fun SharedCoverFlightCloseEffect(
     flight: SharedCoverFlightState,
     showNowPlaying: Boolean,
     hasSong: Boolean,
     songKey: String?,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    useStandaloneCoverFlight: Boolean
 ) {
     var previousShowNowPlaying by remember { mutableStateOf(showNowPlaying) }
-    LaunchedEffect(showNowPlaying) {
-        if (previousShowNowPlaying && !showNowPlaying && hasSong && !NeriMotionStyle.clean) {
+    LaunchedEffect(showNowPlaying, useStandaloneCoverFlight) {
+        if (previousShowNowPlaying && !showNowPlaying && hasSong && useStandaloneCoverFlight) {
             flight.close(scope, RetainedPlaybackCoverBitmapCache.getLatestForOwner(songKey)?.bitmap)
         }
         previousShowNowPlaying = showNowPlaying
@@ -84,7 +93,7 @@ internal fun SharedCoverFlightCloseEffect(
 private const val BackdropRecedeScale = 0.06f
 private val BackdropRecedeCorner = 28.dp
 
-/** The app recedes behind the clean Now Playing card while it grows, as on Apple Music. */
+/** 手机播放页展开时让底层界面适当后退 */
 internal fun Modifier.nowPlayingBackdropRecede(flight: SharedCoverFlightState): Modifier =
     graphicsLayer {
         val progress = flight.nowPlayingMorphProgress.coerceIn(0f, 1f)

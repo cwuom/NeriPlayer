@@ -1628,8 +1628,12 @@ private fun NeriAppContent(
                 ::navigateToPlaybackSourceRoute
             )
 
+            val useStandaloneCoverFlight = shouldUseStandaloneNowPlayingCoverFlight(
+                uiStyle, LocalConfiguration.current.smallestScreenWidthDp
+            )
             SharedCoverFlightCloseEffect(
-                sharedCoverFlight, showNowPlaying, currentSong != null, currentSongVisualKey, scope
+                sharedCoverFlight, showNowPlaying, currentSong != null, currentSongVisualKey, scope,
+                useStandaloneCoverFlight
             )
 
             CompositionLocalProvider(
@@ -1693,7 +1697,7 @@ private fun NeriAppContent(
                         snackbarHostState = snackbarHostState,
                         onMainTabSelected = ::navigateToMainTab,
                         onExpandNowPlaying = {
-                            sharedCoverFlight.openFromMiniPlayer(scope, currentSongVisualKey)
+                            sharedCoverFlight.openFromMiniPlayer(scope, currentSongVisualKey, useStandaloneCoverFlight)
                             showNowPlaying = true
                         },
                         onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource

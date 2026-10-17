@@ -20,8 +20,10 @@ class SettingsUiDensityScaleTest {
     fun typedWritesPersistTheDeviceLimitAndSurviveRepositoryRecreation() {
         for ((width, mode, expected) in listOf(
             Triple(599, Configuration.UI_MODE_TYPE_NORMAL, 1.2f),
-            Triple(600, Configuration.UI_MODE_TYPE_NORMAL, 2f),
-            Triple(320, Configuration.UI_MODE_TYPE_CAR or Configuration.UI_MODE_NIGHT_YES, 2f)
+            Triple(600, Configuration.UI_MODE_TYPE_NORMAL, 1f),
+            Triple(800, Configuration.UI_MODE_TYPE_NORMAL, 1.3f),
+            Triple(1500, Configuration.UI_MODE_TYPE_NORMAL, 2.5f),
+            Triple(320, Configuration.UI_MODE_TYPE_CAR or Configuration.UI_MODE_NIGHT_YES, 1.5f)
         )) {
             withSettings(width, mode) { context ->
                 SettingsRepository(context).setUiDensityScale(3f)
@@ -33,10 +35,11 @@ class SettingsUiDensityScaleTest {
     }
 
     @Test
-    fun rawRestoredPreferencesKeepTheirFiniteRequestedScaleForRuntimeDeviceClamping() {
+    fun rawRestoredTwoTimesKeepsItsRequestForRuntimeDeviceClampingWithoutRewritingStoredPreferences() {
         withSettings(390, Configuration.UI_MODE_TYPE_NORMAL) { context ->
             context.dataStore.edit { it[AutoSettingsKeys.UI_DENSITY_SCALE] = 2f }
             assertEquals(2f, SettingsRepository(context).uiDensityScaleFlow.first(), 0f)
+            assertEquals(2f, context.dataStore.data.first()[AutoSettingsKeys.UI_DENSITY_SCALE])
             for (scale in listOf(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)) {
                 context.dataStore.edit { it[AutoSettingsKeys.UI_DENSITY_SCALE] = scale }
                 assertEquals(1f, SettingsRepository(context).uiDensityScaleFlow.first(), 0f)
@@ -45,17 +48,25 @@ class SettingsUiDensityScaleTest {
     }
 
     @Test
-    fun generatedAccessAlsoRejectsInvalidNumbersAndValuesOutsideTheGlobalEnvelope() {
+    fun generatedAccessKeepsFiniteRequestsWhileRejectingInvalidNumbersAndValuesBelowTheMinimum() {
         withSettings(800, Configuration.UI_MODE_TYPE_NORMAL) { context ->
             val generated = AutoSettingsRepository(context)
             generated.setUiDensityScale(3f)
-            assertEquals(2f, generated.uiDensityScaleFlow.first(), 0f)
+            assertEquals(3f, generated.uiDensityScaleFlow.first(), 0f)
             generated.setUiDensityScale(Float.NaN)
             assertEquals(1f, generated.uiDensityScaleFlow.first(), 0f)
             context.dataStore.edit { it[AutoSettingsKeys.UI_DENSITY_SCALE] = Float.POSITIVE_INFINITY }
             assertEquals(1f, generated.uiDensityScaleFlow.first(), 0f)
             generated.setUiDensityScale(0.2f)
             assertEquals(0.6f, generated.uiDensityScaleFlow.first(), 0f)
+        }
+    }
+
+    @Test
+    fun freshPreferencesKeepTheDefaultScaleAtOne() {
+        withSettings(800, Configuration.UI_MODE_TYPE_NORMAL) { context ->
+            assertEquals(1f, SettingsRepository(context).uiDensityScaleFlow.first(), 0f)
+            assertEquals(1f, AutoSettingsRepository(context).uiDensityScaleFlow.first(), 0f)
         }
     }
 

@@ -53,24 +53,24 @@ class SettingsDpiHighScaleLayoutTest {
     }
 
     @Test
-    fun cleanTabletLandscapeAtTwoTimesKeepsItsApplyAndResetActionsFullyVisible() {
+    fun cleanTabletBoundaryRestoresTwoTimesAtItsDynamicMaximumWithVisibleActions() {
         render(UiStyle.Clean, 600, Configuration.UI_MODE_TYPE_NORMAL, Configuration.ORIENTATION_LANDSCAPE)
-        assertActionsAndApply()
+        assertActionsAndApply(expectedMaximum = 1f)
     }
 
     @Test
-    fun cleanTabletPortraitAtTwoTimesKeepsItsApplyAndResetActionsFullyVisible() {
-        render(UiStyle.Clean, 600, Configuration.UI_MODE_TYPE_NORMAL, Configuration.ORIENTATION_PORTRAIT)
-        assertActionsAndApply()
+    fun cleanTabletPortraitRestoresTwoTimesAtItsDynamicMaximumWithVisibleActions() {
+        render(UiStyle.Clean, 800, Configuration.UI_MODE_TYPE_NORMAL, Configuration.ORIENTATION_PORTRAIT)
+        assertActionsAndApply(expectedMaximum = 1.3f)
     }
 
     @Test
-    fun materialCarModeAtTwoTimesKeepsItsApplyAndResetActionsFullyVisible() {
+    fun materialCarRestoresTwoTimesAtOnePointFiveWithVisibleActions() {
         render(UiStyle.Material, 320, Configuration.UI_MODE_TYPE_CAR, Configuration.ORIENTATION_LANDSCAPE)
-        assertActionsAndApply()
+        assertActionsAndApply(expectedMaximum = 1.5f)
     }
 
-    private fun assertActionsAndApply() {
+    private fun assertActionsAndApply(expectedMaximum: Float) {
         val dialog = composeRule.onNode(isDialog()).getUnclippedBoundsInRoot()
         for (resource in listOf(CoreCommonR.string.action_apply, CoreCommonR.string.action_reset)) {
             val label = context.getString(resource)
@@ -101,10 +101,10 @@ class SettingsDpiHighScaleLayoutTest {
         }
         val range = composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
             .fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo]
-        assertEquals(2f, range.range.endInclusive, 0f)
-        assertEquals(2f, range.current, 0f)
+        assertEquals(expectedMaximum, range.range.endInclusive, 0f)
+        assertEquals(expectedMaximum, range.current, 0f)
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_apply)).performClick()
-        composeRule.runOnIdle { assertEquals(2f, checkNotNull(appliedScale), 0f) }
+        composeRule.runOnIdle { assertEquals(expectedMaximum, checkNotNull(appliedScale), 0f) }
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_reset)).performClick()
         composeRule.runOnIdle { assertEquals(1f, checkNotNull(appliedScale), 0f) }
     }

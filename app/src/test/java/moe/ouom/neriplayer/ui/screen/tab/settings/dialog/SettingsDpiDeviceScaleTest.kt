@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.dialog
 import android.app.Application
 import android.content.res.Configuration
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -19,7 +21,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.activity.AppUiDensityRoot
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.ui.theme.NeriTheme
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.UiScaleListItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -39,15 +43,15 @@ class SettingsDpiDeviceScaleTest {
     private var appliedScale: Float? = null
 
     @Test
-    fun tabletDialogExposesAndAppliesTwoTimesWithoutLosingTheSetting() {
+    fun tabletBoundaryDialogStopsAtDefaultSizeToKeepIts600DpLayout() {
         render(smallestWidth = 600, uiMode = Configuration.UI_MODE_TYPE_NORMAL, currentScale = 1f)
-        assertRangeAndApply(maximum = 2f, steps = 27)
+        assertRangeAndApply(maximum = 1f, steps = 7)
     }
 
     @Test
-    fun carModeExposesTwoTimesEvenAtPhoneWidthAndAtNight() {
+    fun carModeCapsAtOnePointFiveEvenAtPhoneWidthAndAtNight() {
         render(320, Configuration.UI_MODE_TYPE_CAR or Configuration.UI_MODE_NIGHT_YES, 1f)
-        assertRangeAndApply(maximum = 2f, steps = 27)
+        assertRangeAndApply(maximum = 1.5f, steps = 17)
     }
 
     @Test
@@ -59,18 +63,58 @@ class SettingsDpiDeviceScaleTest {
 
     @Test
     @Config(qualifiers = "sw600dp-w800dp-h480dp-land")
-    fun cleanTwoTimesDialogKeepsActionsInsideItsShortLandscapeWindow() {
+    fun cleanRestoredTwoTimesDialogKeepsActionsInsideItsShortLandscapeWindow() {
         render(600, Configuration.UI_MODE_TYPE_NORMAL, 2f, appScale = 2f, style = UiStyle.Clean)
         assertActionsInsideDialog()
-        assertRangeAndApply(maximum = 2f, steps = 27)
+        composeRule.onNodeWithText("1.00x").assertIsDisplayed()
+        assertRangeAndApply(maximum = 1f, steps = 7)
     }
 
     @Test
     @Config(qualifiers = "sw320dp-w800dp-h480dp-land")
-    fun materialTwoTimesCarDialogKeepsActionsInsideItsShortLandscapeWindow() {
+    fun materialRestoredTwoTimesCarDialogKeepsActionsInsideItsShortLandscapeWindow() {
         render(320, Configuration.UI_MODE_TYPE_CAR, 2f, appScale = 2f)
         assertActionsInsideDialog()
-        assertRangeAndApply(maximum = 2f, steps = 27)
+        composeRule.onNodeWithText("1.50x").assertIsDisplayed()
+        assertRangeAndApply(maximum = 1.5f, steps = 17)
+    }
+
+    @Test
+    fun settingsEntryAcceptsTheEffectiveScaleWhileTheStoredRequestSurvivesDeviceChanges() {
+        val width = mutableIntStateOf(600)
+        val mode = mutableIntStateOf(Configuration.UI_MODE_TYPE_NORMAL)
+        val application = ApplicationProvider.getApplicationContext<Application>()
+        composeRule.setContent {
+            val configuration = Configuration(LocalConfiguration.current).apply {
+                smallestScreenWidthDp = width.intValue
+                uiMode = mode.intValue
+            }
+            CompositionLocalProvider(LocalConfiguration provides configuration) {
+                val effective = UiDensityScalePreference.forDevice(configuration.smallestScreenWidthDp,
+                    configuration.uiMode).normalize(2f)
+                MaterialTheme { UiScaleListItem(currentScale = effective, onClick = {}) }
+            }
+        }
+        fun assertDisplayedScale(scale: String) {
+            composeRule.onNodeWithText(application.getString(CoreCommonR.string.settings_ui_scale_current, scale))
+                .assertIsDisplayed()
+        }
+        assertDisplayedScale("1.00")
+        composeRule.runOnIdle { width.intValue = 599 }
+        assertDisplayedScale("1.20")
+        composeRule.runOnIdle {
+            width.intValue = 320
+            mode.intValue = Configuration.UI_MODE_TYPE_CAR or Configuration.UI_MODE_NIGHT_YES
+        }
+        assertDisplayedScale("1.50")
+    }
+
+    @Test
+    @Config(qualifiers = "sw1500dp-w2400dp-h1500dp-land")
+    fun largeTabletDialogSupportsItsDynamicMaximumAboveTwoTimes() {
+        render(1500, Configuration.UI_MODE_TYPE_NORMAL, 3f, appScale = 3f)
+        composeRule.onNodeWithText("2.50x").assertIsDisplayed()
+        assertRangeAndApply(maximum = 2.5f, steps = 37)
     }
 
     private fun assertActionsInsideDialog() {

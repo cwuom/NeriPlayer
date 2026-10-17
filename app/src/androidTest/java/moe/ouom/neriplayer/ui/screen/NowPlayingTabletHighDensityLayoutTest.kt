@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen
 
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +30,8 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
 import moe.ouom.neriplayer.activity.AppUiDensityRoot
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
@@ -61,33 +64,37 @@ class NowPlayingTabletHighDensityLayoutTest {
     fun setUp() = assumeComposeHostAvailable()
 
     @Test
-    fun narrowTabletLandscapeAtTwoTimesKeepsPlaybackAndToolbarActionsReachable() =
-        assertActionsReachable(width = 800, height = 600)
+    fun tabletBoundaryCapsRestoredTwoTimesAndKeepsPlaybackAndToolbarActionsReachable() =
+        assertActionsReachable(width = 800, height = 600, requestedScale = 2f, expectedScale = 1f)
 
     @Test
-    fun tabletLandscapeJustBelowTheOldWideThresholdKeepsItsActionsReachable() =
-        assertActionsReachable(width = 958, height = 600)
+    fun tablet800DpCapsRestoredTwoTimesAndKeepsItsActionsReachable() =
+        assertActionsReachable(width = 1280, height = 800, requestedScale = 2f, expectedScale = 1.3f)
 
     @Test
-    fun tabletLandscapeAtTheOldWideThresholdKeepsItsActionsReachable() =
-        assertActionsReachable(width = 960, height = 600)
+    fun largeTabletSupportsMoreThanTwoTimesAndKeepsItsActionsReachable() =
+        assertActionsReachable(width = 2400, height = 1500, requestedScale = 3f, expectedScale = 2.5f)
 
     @Test
-    fun narrowTabletLandscapeAtTwoTimesKeepsLargeFontAndActionsInsideTheViewport() =
-        assertActionsReachable(width = 800, height = 600, fontScale = 1.5f)
+    fun tabletBoundaryCapsRestoredTwoTimesAndKeepsLargeFontAndActionsInsideTheViewport() =
+        assertActionsReachable(width = 800, height = 600, requestedScale = 2f, expectedScale = 1f,
+            fontScale = 1.5f)
 
-    private fun assertActionsReachable(width: Int, height: Int, fontScale: Float = 1f) =
-        UiFailureDiagnostics.onFailure("now-playing-tablet-2x-${width}x$height-font-$fontScale") {
-            render(width, height, fontScale)
+    private fun assertActionsReachable(width: Int, height: Int, requestedScale: Float,
+        expectedScale: Float, fontScale: Float = 1f) =
+        UiFailureDiagnostics.onFailure("now-playing-tablet-${width}x$height-scale-$requestedScale-font-$fontScale") {
+            render(width, height, requestedScale, fontScale)
             composeRule.runOnIdle {
-                assertEquals(unscaledDensity * 2f, playerDensity, 0.001f)
+                assertEquals(unscaledDensity * expectedScale, playerDensity, 0.001f)
                 assertEquals(fontScale, playerFontScale, 0.001f)
-                assertEquals(width / 2f, logicalWindow.width.value, 1f)
-                assertEquals(height / 2f, logicalWindow.height.value, 1f)
+                assertEquals(width / expectedScale, logicalWindow.width.value, 1f)
+                assertEquals(height / expectedScale, logicalWindow.height.value, 1f)
+                assertTrue("放大后仍须保留平板最小宽度", logicalWindow.height.value >= 599.999f)
             }
             val viewport = composeRule.onNodeWithTag(ViewportTag, useUnmergedTree = true)
                 .getUnclippedBoundsInRoot()
-            Log.i(DiagnosticsTag, "raw=${width}x$height sw=600 effective=$logicalWindow viewport=$viewport " +
+            Log.i(DiagnosticsTag, "raw=${width}x$height sw=$height requested=$requestedScale " +
+                "effective=$logicalWindow viewport=$viewport " +
                 "density=$playerDensity base=$unscaledDensity fontScale=$playerFontScale")
 
             listOf(CoreCommonR.string.player_previous, CoreCommonR.string.player_next,
@@ -103,6 +110,7 @@ class NowPlayingTabletHighDensityLayoutTest {
             listOf(CoreCommonR.string.playlist_queue, CoreCommonR.string.sleep_timer_short).forEach { resource ->
                 assertFullyVisible(button(resource), viewport)
             }
+            capture("tablet-${width}x$height-scale-$expectedScale-font-$fontScale")
 
             // 只打开并关闭本地对话框，不触发播放、队列或设置写入
             button(CoreCommonR.string.sleep_timer_short).performTouchInput { click() }
@@ -115,14 +123,14 @@ class NowPlayingTabletHighDensityLayoutTest {
             composeRule.runOnIdle { assertEquals(1, backCallbacks) }
         }
 
-    private fun render(width: Int, height: Int, fontScale: Float) {
+    private fun render(width: Int, height: Int, requestedScale: Float, fontScale: Float) {
         composeRule.setContent {
             val configuration = LocalConfiguration.current
             val tablet = remember(configuration, width, height, fontScale) {
                 Configuration(configuration).apply {
                     screenWidthDp = width
                     screenHeightDp = height
-                    smallestScreenWidthDp = 600
+                    smallestScreenWidthDp = height
                     orientation = Configuration.ORIENTATION_LANDSCAPE
                     uiMode = Configuration.UI_MODE_TYPE_NORMAL
                     this.fontScale = fontScale
@@ -140,7 +148,7 @@ class NowPlayingTabletHighDensityLayoutTest {
                         }
                     }
                     CompositionLocalProvider(LocalWindowInfo provides window) {
-                        AppUiDensityRoot(2f) {
+                        AppUiDensityRoot(requestedScale) {
                             val density = LocalDensity.current
                             SideEffect {
                                 unscaledDensity = baseDensity.density
@@ -195,6 +203,19 @@ class NowPlayingTabletHighDensityLayoutTest {
     }
 
     private fun label(resource: Int): String = composeRule.activity.getString(resource)
+
+    private fun capture(stage: String) {
+        val prefix = InstrumentationRegistry.getArguments().getString("capturePrefix")
+            ?.replace(Regex("[^a-zA-Z0-9_-]"), "-")?.take(80)?.takeIf(String::isNotBlank) ?: return
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try {
+            val file = File(checkNotNull(instrumentation.targetContext.getExternalFilesDir(null)), "$prefix-$stage.png")
+            file.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        } finally {
+            bitmap.recycle()
+        }
+    }
 
     private companion object {
         const val ViewportTag = "now-playing-tablet-density-viewport"

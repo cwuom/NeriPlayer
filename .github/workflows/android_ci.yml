@@ -199,6 +199,28 @@ jobs:
             -Pandroid.testInstrumentationRunnerArguments.shardIndex=${{ matrix.shard }}
             --warning-mode all --stacktrace
 
+      - name: Collect emulator host diagnostics
+        if: always()
+        shell: bash
+        run: |
+          diagnostics_dir=build/reports/emulator-host
+          mkdir -p "$diagnostics_dir" || exit 0
+          date -u > "$diagnostics_dir/collected-at.txt" 2>&1 || true
+          free -h > "$diagnostics_dir/memory.txt" 2>&1 || true
+          df -h . > "$diagnostics_dir/disk.txt" 2>&1 || true
+          ps -eo pid,comm,rss,%mem --sort=-rss > "$diagnostics_dir/processes.txt" 2>&1 || true
+          {
+            if dmesg --color=never 2>/dev/null; then
+              printf 'source=dmesg\n' >&2
+            elif sudo -n dmesg --color=never 2>/dev/null; then
+              printf 'source=sudo-dmesg\n' >&2
+            else
+              printf 'kernel log unavailable\n' >&2
+            fi
+          } 2> "$diagnostics_dir/kernel-status.txt" |
+            grep -Ei 'out of memory|oom-kill|oom_reaper|killed process|segfault|qemu' \
+              > "$diagnostics_dir/kernel-filtered.txt" || true
+
       - name: Upload Android test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -207,6 +229,7 @@ jobs:
           path: |
             **/build/reports/androidTests/connected/**
             **/build/outputs/androidTest-results/connected/**
+            build/reports/emulator-host/**
           if-no-files-found: ignore
 
   worker-check:

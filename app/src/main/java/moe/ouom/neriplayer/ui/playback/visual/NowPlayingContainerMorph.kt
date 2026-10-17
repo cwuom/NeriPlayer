@@ -2,7 +2,9 @@ package moe.ouom.neriplayer.ui.playback.visual
 
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,10 +51,8 @@ import kotlin.math.roundToInt
 
 private const val MorphOpenDamping = 0.9f
 private const val MorphOpenStiffness = 260f
-private const val MorphCloseDamping = 1f
-private const val MorphCloseStiffness = 360f
+private const val MorphCloseDurationMillis = 250
 private const val MorphSettleFrames = 2
-private const val MorphCloseThreshold = 0.01f
 /** On close the card dissolves into the returning mini player instead of covering it. */
 private const val CloseCardFadeSpan = 0.2f
 /** On open the card fades in over the capsule so the mini player content cross-fades away. */
@@ -116,7 +116,7 @@ internal fun rememberNowPlayingMorphState(
         } else if (state.mounted) {
             state.closing = true
             linked?.beginLinked()
-            state.progress.animateTo(0f, spring(MorphCloseDamping, MorphCloseStiffness, MorphCloseThreshold))
+            state.progress.animateTo(0f, tween(MorphCloseDurationMillis, easing = FastOutSlowInEasing))
             state.mounted = false
             linked?.endLinked()
         }

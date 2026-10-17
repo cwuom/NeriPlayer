@@ -2,10 +2,14 @@ package moe.ouom.neriplayer.ui
 
 import android.content.res.Configuration
 import android.util.Log
+import androidx.activity.BackEventCompat
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
@@ -57,6 +61,7 @@ class AppNowPlayingDeviceTransitionTest {
     private val queue = MutableStateFlow<List<SongItem>>(emptyList())
     private var viewportLayout = "not placed"
     private var playerLayout = "not placed"
+    private lateinit var backDispatcher: OnBackPressedDispatcher
 
     @Before
     fun setUp() {
@@ -82,6 +87,76 @@ class AppNowPlayingDeviceTransitionTest {
         }
         advance(400)
         composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun materialPhoneUsesTheContainerMorphAndReleasesItAfterRapidReopen() {
+        render(smallestScreenWidthDp = 390, widthDp = 844, style = UiStyle.Material)
+        composeRule.runOnIdle { visible.value = true }
+        advance(128)
+        composeRule.runOnIdle {
+            assertTrue("Material You 手机应与简洁主题共用容器展开", flight.linked)
+            assertTrue("开场应仍连续展开: progress=${flight.nowPlayingMorphProgress}",
+                flight.nowPlayingMorphProgress > 0f && flight.nowPlayingMorphProgress < 1f)
+            assertFalse("容器展开不能同时启动旧封面动画", flight.flying)
+            visible.value = false
+        }
+        advance(64)
+        composeRule.runOnIdle { visible.value = true }
+        advance(1_500)
+        assertPlayerDisplayed("material-phone-reopened")
+        composeRule.runOnIdle {
+            assertFalse(flight.linked)
+            assertFalse(flight.flying)
+            assertEquals(1f, flight.nowPlayingMorphProgress, 0.001f)
+            visible.value = false
+        }
+        advance(320)
+        composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).assertDoesNotExist()
+        composeRule.runOnIdle {
+            assertFalse(flight.linked)
+            assertEquals(0f, flight.nowPlayingMorphProgress, 0f)
+        }
+    }
+
+    @Test
+    fun materialPhoneCancelsBackPreviewAndCanReopenDuringACommittedClose() {
+        render(smallestScreenWidthDp = 390, widthDp = 844, style = UiStyle.Material)
+        composeRule.runOnIdle { visible.value = true }
+        advance(1_500)
+        composeRule.runOnIdle { backDispatcher.dispatchOnBackStarted(backEvent(0f)) }
+        composeRule.runOnIdle { backDispatcher.dispatchOnBackProgressed(backEvent(0.6f)) }
+        advance(64)
+        composeRule.runOnIdle {
+            assertEquals(0.76f, flight.nowPlayingMorphProgress, 0.001f)
+            assertTrue(flight.linked)
+            backDispatcher.dispatchOnBackCancelled()
+        }
+        advance(320)
+        composeRule.runOnIdle {
+            assertTrue(visible.value)
+            assertEquals(1f, flight.nowPlayingMorphProgress, 0.001f)
+            assertFalse(flight.linked)
+        }
+        composeRule.runOnIdle { backDispatcher.dispatchOnBackStarted(backEvent(0f)) }
+        composeRule.runOnIdle { backDispatcher.dispatchOnBackProgressed(backEvent(0.6f)) }
+        advance(64)
+        composeRule.runOnIdle { backDispatcher.onBackPressed() }
+        advance(64)
+        composeRule.runOnIdle {
+            assertFalse(visible.value)
+            visible.value = true
+        }
+        advance(1_500)
+        assertPlayerDisplayed("material-phone-back-reopened")
+        composeRule.runOnIdle {
+            assertEquals(1f, flight.nowPlayingMorphProgress, 0.001f)
+            assertFalse(flight.linked)
+            backDispatcher.onBackPressed()
+        }
+        advance(320)
+        composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).assertDoesNotExist()
+        composeRule.runOnIdle { assertFalse(flight.linked) }
     }
 
     @Test
@@ -116,10 +191,12 @@ class AppNowPlayingDeviceTransitionTest {
         composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).assertDoesNotExist()
     }
 
-    private fun render(smallestScreenWidthDp: Int, widthDp: Int) {
+    private fun render(smallestScreenWidthDp: Int, widthDp: Int, style: UiStyle = UiStyle.Clean) {
         smallestWidth.intValue = smallestScreenWidthDp
         windowWidth.intValue = widthDp
         composeRule.setContent {
+            val dispatcher = checkNotNull(LocalOnBackPressedDispatcherOwner.current).onBackPressedDispatcher
+            SideEffect { backDispatcher = dispatcher }
             val configuration = Configuration(LocalConfiguration.current).apply {
                 this.smallestScreenWidthDp = smallestWidth.intValue
                 screenWidthDp = windowWidth.intValue
@@ -137,7 +214,7 @@ class AppNowPlayingDeviceTransitionTest {
                     queueFlow = queue,
                     theme = NowPlayingOverlayTheme(
                         false, null, "6750A4", PaletteStyle.TonalSpot,
-                        ColorSpec.SpecVersion.Default, uiStyle = UiStyle.Clean
+                        ColorSpec.SpecVersion.Default, uiStyle = style
                     ),
                     background = NowPlayingOverlayBackground(false, 0f, 0f, false, true),
                     onVisibilityChanged = {},
@@ -156,6 +233,8 @@ class AppNowPlayingDeviceTransitionTest {
         composeRule.mainClock.advanceTimeBy(milliseconds)
         composeRule.waitForIdle()
     }
+
+    private fun backEvent(progress: Float) = BackEventCompat(0f, 0f, progress, BackEventCompat.EDGE_LEFT)
 
     private fun assertPlayerDisplayed(stage: String) {
         try {
