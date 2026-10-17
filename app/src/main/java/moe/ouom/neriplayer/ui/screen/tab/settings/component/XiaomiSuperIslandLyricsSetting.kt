@@ -44,8 +44,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.PermissionChecker
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.core.graphics.toColorInt
@@ -456,18 +456,14 @@ internal fun XiaomiSuperIslandSettingsPage(
     ) { granted ->
         notificationAllowed = granted || notificationsAllowed(context)
     }
-    LaunchedEffect(Unit) {
-        notificationAllowed = notificationsAllowed(context)
-        shizukuGranted = ShizukuPermissionHelper.isPermissionGrantedWhenReady()
-    }
     DisposableEffect(context, lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
+        val refreshJob = scope.launch {
+            lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 notificationAllowed = notificationsAllowed(context)
+                shizukuGranted = ShizukuPermissionHelper.isPermissionGrantedWhenReady()
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose { refreshJob.cancel() }
     }
     val update: (XiaomiSuperIslandSettings) -> Unit = { next ->
         scope.launch { settingsRepository.setXiaomiSuperIslandSettings(next) }

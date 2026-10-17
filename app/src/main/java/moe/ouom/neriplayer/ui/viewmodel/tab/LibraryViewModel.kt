@@ -112,6 +112,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
     )
+    private val biliRefreshOwner = LibraryBilibiliRefreshOwner(
+        scope = viewModelScope,
+        state = _uiState,
+        currentCookies = biliCookieRepo::getCookiesOnce,
+        load = ::loadBilibiliPlaylists
+    )
 
     init {
         // 本地歌单
@@ -182,73 +188,63 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 if (!cookies["SESSDATA"].isNullOrBlank()) {
                     refreshBilibili()
                 } else {
-                    _uiState.value = _uiState.value.copy(
-                        biliPlaylists = emptyList(),
-                        biliError = null
-                    )
+                    biliRefreshOwner.clear()
                 }
             }
         }
     }
 
     fun refreshBilibili() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(biliRefreshing = true) }
-            try {
-                val account = resolveLibraryBiliMid(
-                    cookies = biliCookieRepo.getCookiesOnce(),
-                    fetchLoginMid = biliClient::fetchLoginMid,
-                    saveUserMid = biliCookieRepo::saveUserMid
+        biliRefreshOwner.refresh()
+    }
+
+    private suspend fun loadBilibiliPlaylists(cookies: Map<String, String>): LibraryBilibiliLoadResult {
+        val account = resolveLibraryBiliMid(
+            cookies = cookies,
+            fetchLoginMid = biliClient::fetchLoginMid,
+            saveUserMid = biliCookieRepo::saveUserMid
+        )
+        val mid = when (account) {
+            is LibraryBiliMid.Ready -> account.mid
+            LibraryBiliMid.Persisted, LibraryBiliMid.Superseded -> return LibraryBilibiliLoadResult.Unchanged
+            LibraryBiliMid.Missing -> {
+                return LibraryBilibiliLoadResult.Failed(
+                    getApplication<Application>().getString(CoreCommonR.string.error_get_user_id)
                 )
-                val mid = when (account) {
-                    is LibraryBiliMid.Ready -> account.mid
-                    LibraryBiliMid.Persisted, LibraryBiliMid.Superseded -> return@launch
-                    LibraryBiliMid.Missing -> {
-                        _uiState.value = _uiState.value.copy(biliError = getApplication<Application>().getString(CoreCommonR.string.error_get_user_id))
-                        return@launch
-                    }
-                }
-                val mapped = withContext(Dispatchers.IO) {
-                    val created = async { biliClient.getUserCreatedFavFolders(mid) }
-                    val collected = async {
-                        runCatching { biliClient.getUserCollectedFavFolders(mid) }
-                            .onFailure { error ->
-                                NPLogger.w(
-                                    "LibraryViewModel-Bili",
-                                    "Failed to fetch collected fav folders",
-                                    error
-                                )
-                            }
-                            .getOrDefault(emptyList())
-                    }
-
-                    val createdPlaylists = mapBiliFolders(
-                        folders = created.await(),
-                        kind = BiliPlaylistKind.CREATED_FAVORITE,
-                        currentMid = mid
-                    )
-                    val collectedPlaylists = mapBiliFolders(
-                        folders = collected.await(),
-                        kind = BiliPlaylistKind.COLLECTED_FAVORITE,
-                        currentMid = mid
-                    )
-
-                    (createdPlaylists + collectedPlaylists)
-                        .filter { it.mediaId != 0L && it.title.isNotBlank() }
-                        .distinctBy { "${it.kind}:${it.mediaId}" }
-                }
-
-                NPLogger.d("LibraryViewModel-Bili", mapped)
-
-                _uiState.value = _uiState.value.copy(biliPlaylists = mapped, biliError = null)
-            } catch (e: IOException) {
-                _uiState.value = _uiState.value.copy(biliError = e.message)
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(biliError = e.message)
-            } finally {
-                _uiState.update { it.copy(biliRefreshing = false) }
             }
         }
+        val mapped = withContext(Dispatchers.IO) {
+            val created = async { biliClient.getUserCreatedFavFolders(mid) }
+            val collected = async {
+                runCatching { biliClient.getUserCollectedFavFolders(mid) }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            "LibraryViewModel-Bili",
+                            "Failed to fetch collected fav folders",
+                            error
+                        )
+                    }
+                    .getOrDefault(emptyList())
+            }
+
+            val createdPlaylists = mapBiliFolders(
+                folders = created.await(),
+                kind = BiliPlaylistKind.CREATED_FAVORITE,
+                currentMid = mid
+            )
+            val collectedPlaylists = mapBiliFolders(
+                folders = collected.await(),
+                kind = BiliPlaylistKind.COLLECTED_FAVORITE,
+                currentMid = mid
+            )
+
+            (createdPlaylists + collectedPlaylists)
+                .filter { it.mediaId != 0L && it.title.isNotBlank() }
+                .distinctBy { "${it.kind}:${it.mediaId}" }
+        }
+
+        NPLogger.d("LibraryViewModel-Bili", mapped)
+        return LibraryBilibiliLoadResult.Loaded(mapped)
     }
 
     private suspend fun mapBiliFolders(

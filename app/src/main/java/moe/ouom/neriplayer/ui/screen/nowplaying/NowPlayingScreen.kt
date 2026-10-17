@@ -87,6 +87,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -417,6 +418,47 @@ private fun seekToLyricSafely(
 ) {
     val knownDurationMs = maxOf(playbackDurationMs, songDurationMs)
     resolveLyricSeekPosition(positionMs, knownDurationMs)?.let(PlayerManager::seekTo)
+}
+
+@Composable
+private fun NowPlayingImmersivePortraitLayout(
+    modifier: Modifier,
+    beforeCoverSpacing: Dp,
+    topBar: @Composable () -> Unit,
+    cover: @Composable () -> Unit,
+    leadingContent: @Composable ColumnScope.() -> Unit,
+    trailingContent: @Composable ColumnScope.() -> Unit
+) {
+    Layout(
+        modifier = modifier,
+        content = {
+            Box { topBar() }
+            Box { cover() }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, content = leadingContent)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, content = trailingContent)
+        }
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val (topBarMeasurable, coverMeasurable, leadingMeasurable, trailingMeasurable) = measurables
+        val topBarPlaceable = topBarMeasurable.measure(childConstraints)
+        val leadingPlaceable = leadingMeasurable.measure(childConstraints)
+        val trailingPlaceable = trailingMeasurable.measure(childConstraints)
+        val coverTop = topBarPlaceable.height + beforeCoverSpacing.roundToPx()
+        // 先为真实文字和操作区留足高度，再让封面使用剩余空间
+        val coverHeight = (height - coverTop - leadingPlaceable.height -
+            trailingPlaceable.height).coerceAtLeast(0)
+        val coverPlaceable = coverMeasurable.measure(childConstraints.copy(maxHeight = coverHeight))
+        layout(width, height) {
+            topBarPlaceable.placeRelative((width - topBarPlaceable.width) / 2, 0)
+            coverPlaceable.placeRelative((width - coverPlaceable.width) / 2, coverTop)
+            leadingPlaceable.placeRelative((width - leadingPlaceable.width) / 2,
+                coverTop + coverPlaceable.height)
+            trailingPlaceable.placeRelative((width - trailingPlaceable.width) / 2,
+                height - trailingPlaceable.height)
+        }
+    }
 }
 
 @OptIn(
@@ -1568,14 +1610,7 @@ fun NowPlayingScreen(
                             onLongClick = onEmbeddedLyricLongClick
                         )
 
-                        // 手机竖屏保留原来的控件顺序和封面歌词
-                        val mainColumnContent: @Composable ColumnScope.() -> Unit = {
-                            coverTopBar()
-                            Spacer(Modifier.height(coverPagePresentation.beforeCoverSpacing))
-                            coverPanel(
-                                Modifier.nowPlayingCoverPanelModifier(false, this),
-                                coverPagePresentation.preferredCoverSize
-                            )
+                        val portraitLeadingContent: @Composable ColumnScope.() -> Unit = {
                             Spacer(Modifier.height(coverPagePresentation.afterCoverSpacing))
                             key(coverPagePresentation.trackIdentityLayout) {
                                 portraitTrackIdentity()
@@ -1590,6 +1625,27 @@ fun NowPlayingScreen(
                                 nowPlayingControlsAtBottom,
                                 mainPlaybackControls
                             )
+                        }
+                        val portraitTrailingContent: @Composable ColumnScope.() -> Unit = {
+                            NowPlayingTrailingControls(
+                                nowPlayingControlsAtBottom,
+                                nowPlayingProgressAtBottom,
+                                useWideLandscapeLayout,
+                                nowPlayingProgressSection,
+                                mainPlaybackControls
+                            )
+                            coverToolbar(false)
+                        }
+
+                        // 手机竖屏保留原来的控件顺序和封面歌词
+                        val mainColumnContent: @Composable ColumnScope.() -> Unit = {
+                            coverTopBar()
+                            Spacer(Modifier.height(coverPagePresentation.beforeCoverSpacing))
+                            coverPanel(
+                                Modifier.nowPlayingCoverPanelModifier(false, this),
+                                coverPagePresentation.preferredCoverSize
+                            )
+                            portraitLeadingContent()
 
                             NowPlayingEmbeddedLyrics(
                                 visible = embeddedLyricsVisible,
@@ -1602,15 +1658,7 @@ fun NowPlayingScreen(
                             // 置底偏好始终以可用内容区的底部为准
                             Spacer(modifier = Modifier.weight(1f))
 
-                            NowPlayingTrailingControls(
-                                nowPlayingControlsAtBottom,
-                                nowPlayingProgressAtBottom,
-                                useWideLandscapeLayout,
-                                nowPlayingProgressSection,
-                                mainPlaybackControls
-                            )
-
-                            coverToolbar(false)
+                            portraitTrailingContent()
                         }
 
                         if (useWideLandscapeLayout) {
@@ -1689,6 +1737,15 @@ fun NowPlayingScreen(
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
+                        } else if (immersiveMode) {
+                            NowPlayingImmersivePortraitLayout(
+                                modifier = contentModifier,
+                                beforeCoverSpacing = coverPagePresentation.beforeCoverSpacing,
+                                topBar = coverTopBar,
+                                cover = { coverPanel(Modifier, coverPagePresentation.preferredCoverSize) },
+                                leadingContent = portraitLeadingContent,
+                                trailingContent = portraitTrailingContent
+                            )
                         } else {
                             Column(
                                 modifier = contentModifier,

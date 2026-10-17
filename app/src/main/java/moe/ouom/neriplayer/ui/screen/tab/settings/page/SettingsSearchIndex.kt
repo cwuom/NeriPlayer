@@ -164,6 +164,7 @@ internal fun AutoSettingInfo.searchTargetId(): String {
         "playback_crossfade_out_duration_ms" -> "playback_crossfade_next"
         "enhanced_advanced_blur_radius_dp" -> "advanced_blur_enabled"
         "advanced_blur_quality" -> "advanced_blur_enabled"
+        "liquid_glass_enabled" -> "advanced_blur_enabled"
         "nowplaying_cover_blur_amount",
         "nowplaying_cover_blur_darken" -> "nowplaying_cover_blur_background_enabled"
         "lyric_blur_amount" -> "lyric_blur_enabled"
