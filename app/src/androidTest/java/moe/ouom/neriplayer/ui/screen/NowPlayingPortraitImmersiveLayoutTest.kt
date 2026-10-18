@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen
 
 import android.content.res.Configuration
+import android.net.Uri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -20,6 +21,7 @@ import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -40,6 +42,10 @@ import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.testing.TestComposeActivity
@@ -56,6 +62,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 @RunWith(AndroidJUnit4::class)
 class NowPlayingPortraitImmersiveLayoutTest {
@@ -66,6 +75,7 @@ class NowPlayingPortraitImmersiveLayoutTest {
     private var savedCleanMotion = false
     private var visible by mutableStateOf(true)
     private var backCallbacks = 0
+    private var audioFixture: File? = null
 
     @Before
     fun prepareSettings() {
@@ -80,6 +90,34 @@ class NowPlayingPortraitImmersiveLayoutTest {
                 setUiDensityScale(1f)
             }
         }
+        val audio = File.createTempFile("immersive-controls-", ".wav", context.cacheDir)
+        audioFixture = audio
+        val pcm = ByteArray(8_000 * 30 * 2)
+        val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray(Charsets.US_ASCII)); putInt(36 + pcm.size)
+            put("WAVEfmt ".toByteArray(Charsets.US_ASCII)); putInt(16)
+            putShort(1); putShort(1); putInt(8_000); putInt(16_000)
+            putShort(2); putShort(16)
+            put("data".toByteArray(Charsets.US_ASCII)); putInt(pcm.size)
+        }.array()
+        audio.outputStream().use { it.write(header); it.write(pcm) }
+        composeRule.runOnUiThread {
+            PlayerManager.release()
+            PlayerManager.initialize(composeRule.activity.application)
+            PlayerManager.playPlaylist(listOf(SongItem(
+                id = -538_181L,
+                name = "The Big Black",
+                artist = "The Quick Brown Fox",
+                album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+                albumId = 0L,
+                durationMs = 30_000L,
+                coverUrl = null,
+                mediaUri = Uri.fromFile(audio).toString(),
+                localFilePath = audio.absolutePath
+            )), startIndex = 0)
+        }
+        composeRule.waitUntil(10_000) { PlayerManager.currentSongFlow.value?.id == -538_181L }
+        composeRule.runOnUiThread { PlayerManager.pause() }
     }
 
     @After
@@ -98,6 +136,8 @@ class NowPlayingPortraitImmersiveLayoutTest {
                 }
             }
         } finally {
+            composeRule.runOnUiThread { PlayerManager.release() }
+            audioFixture?.let { check(it.delete()) }
             NeriMotionStyle.clean = savedCleanMotion
         }
     }
@@ -115,13 +155,54 @@ class NowPlayingPortraitImmersiveLayoutTest {
     fun tallPortraitImmersiveCoverKeepsItsActionsReachable() =
         assertActionsReachable(height = 800, fontScale = 1f, placement = NowPlayingControlPlacement.LOWER)
 
-    private fun assertActionsReachable(height: Int, fontScale: Float, placement: NowPlayingControlPlacement) =
+    @Test
+    fun compactPortraitImmersiveCoverKeepsLargeControlsReachable() =
+        assertActionsReachable(height = 480, fontScale = 1.3f, placement = NowPlayingControlPlacement.LOWER,
+            style = UiStyle.Material, toggleAtRuntime = true)
+
+    @Test
+    fun largeTextImmersiveCoverKeepsBottomProgressAndControlsReachable() =
+        assertActionsReachable(height = 568, fontScale = 2f,
+            placement = NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS)
+
+    @Test
+    fun cleanImmersiveModeCanBeEnabledWithALoadedSongOnAShortPortraitWindow() =
+        assertActionsReachable(height = 560, fontScale = 1.3f, placement = NowPlayingControlPlacement.LOWER,
+            toggleAtRuntime = true)
+
+    private fun assertActionsReachable(
+        height: Int,
+        fontScale: Float,
+        placement: NowPlayingControlPlacement,
+        style: UiStyle = UiStyle.Clean,
+        toggleAtRuntime: Boolean = false
+    ) =
         UiFailureDiagnostics.onFailure("now-playing-immersive-360x$height-font-$fontScale-$placement") {
             runBlocking {
-                SettingsRepository(composeRule.activity.applicationContext)
-                    .setPlaybackControlLayoutPreferences(PlaybackControlLayoutPreferences(nowPlayingPlacement = placement))
+                SettingsRepository(composeRule.activity.applicationContext).apply {
+                    setNowPlayingImmersiveMode(!toggleAtRuntime)
+                    setPlaybackControlLayoutPreferences(PlaybackControlLayoutPreferences(
+                        nowPlayingPlacement = placement, nowPlayingSize = PlaybackControlSize.LARGE))
+                }
             }
-            render(height, fontScale)
+            render(height, fontScale, style)
+            val transport = hasContentDescription(label(CoreCommonR.string.player_play)) or
+                hasContentDescription(label(CoreCommonR.string.player_pause)) or
+                hasContentDescription(label(CoreCommonR.string.player_restore_volume)) or
+                hasContentDescription(label(CoreCommonR.string.player_waiting))
+            if (toggleAtRuntime) {
+                val initialViewport = composeRule.onNodeWithTag(ViewportTag, useUnmergedTree = true)
+                    .getUnclippedBoundsInRoot()
+                val initialControl = composeRule.onNode(transport and hasClickAction())
+                assertFullyVisible(initialControl, initialViewport)
+                initialControl.performTouchInput { longClick() }
+                composeRule.waitUntil(5_000) {
+                    runBlocking {
+                        SettingsRepository(composeRule.activity.applicationContext).nowPlayingImmersiveModeFlow.first()
+                    }
+                }
+                composeRule.waitForIdle()
+            }
             val viewport = composeRule.onNodeWithTag(ViewportTag, useUnmergedTree = true)
                 .getUnclippedBoundsInRoot()
             assertEquals(360f, (viewport.right - viewport.left).value, 1f)
@@ -129,10 +210,6 @@ class NowPlayingPortraitImmersiveLayoutTest {
 
             val playbackButtons = listOf(CoreCommonR.string.player_shuffle, CoreCommonR.string.player_previous,
                 CoreCommonR.string.player_next, CoreCommonR.string.player_repeat).map(::button)
-            val transport = hasContentDescription(label(CoreCommonR.string.player_play)) or
-                hasContentDescription(label(CoreCommonR.string.player_pause)) or
-                hasContentDescription(label(CoreCommonR.string.player_restore_volume)) or
-                hasContentDescription(label(CoreCommonR.string.player_waiting))
             val primary = composeRule.onNode(transport and hasClickAction()).assertHasClickAction().assertIsEnabled()
             (playbackButtons + primary).forEach { assertFullyVisible(it, viewport) }
             val toolbarButtons = listOf(CoreCommonR.string.playlist_queue, CoreCommonR.string.sleep_timer_short,
@@ -154,7 +231,7 @@ class NowPlayingPortraitImmersiveLayoutTest {
             composeRule.runOnIdle { assertEquals(1, backCallbacks) }
         }
 
-    private fun render(height: Int, fontScale: Float) {
+    private fun render(height: Int, fontScale: Float, style: UiStyle) {
         composeRule.setContent {
             if (visible) {
                 val configuration = LocalConfiguration.current
@@ -181,7 +258,7 @@ class NowPlayingPortraitImmersiveLayoutTest {
                         }
                         CompositionLocalProvider(LocalWindowInfo provides window) {
                             NeriTheme(followSystemDark = false, forceDark = false, dynamicColor = false,
-                                seedColorHex = "6750A4", uiStyle = UiStyle.Clean) {
+                                seedColorHex = "6750A4", uiStyle = style) {
                                 // 预留系统栏后再测实际页面，避免宿主设备的 inset 大小影响短屏契约
                                 Box(Modifier.fillMaxSize().padding(top = 24.dp, bottom = 24.dp)) {
                                     Box(Modifier.fillMaxSize().testTag(ViewportTag)) {

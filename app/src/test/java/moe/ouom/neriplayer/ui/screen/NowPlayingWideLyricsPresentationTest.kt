@@ -19,13 +19,42 @@ import org.junit.Test
 
 class NowPlayingWideLyricsPresentationTest {
     @Test
-    fun `cover modes preserve advanced preference and never render missing lines`() {
-        assertEquals(NowPlayingWideLyricsMode.ADVANCED, presentation(advanced = true).coverMode)
-        assertEquals(NowPlayingWideLyricsMode.SYNCED, presentation(advanced = false).coverMode)
+    fun `phone cover modes preserve advanced preference and never render missing lines`() {
+        assertEquals(NowPlayingWideLyricsMode.ADVANCED, presentation(phone = true, advanced = true).coverMode)
+        assertEquals(NowPlayingWideLyricsMode.SYNCED, presentation(phone = true, advanced = false).coverMode)
         listOf(false, true).forEach { advanced ->
-            val empty = presentation(advanced = advanced, hasLyrics = false)
+            val empty = presentation(phone = true, advanced = advanced, hasLyrics = false)
             assertEquals(NowPlayingWideLyricsMode.NO_LYRICS, empty.coverMode)
             assertFalse(empty.fullPage)
+        }
+    }
+
+    @Test
+    fun `tablet lyrics retain one full presentation regardless of page state or saved renderer`() {
+        listOf(600.dp, 719.dp, 720.dp, 1280.dp).forEach { width ->
+            listOf(false, true).forEach { fullPage ->
+                listOf(false, true).forEach { advanced ->
+                    val tablet = presentation(fullPage = fullPage, width = width, advanced = advanced)
+                    assertTrue("tablet full presentation at width=$width", tablet.fullPage)
+                    assertEquals(NowPlayingWideLyricsMode.ADVANCED, tablet.coverMode)
+                    assertEquals(1.3f, tablet.typography.lyricScale, 0f)
+                    assertEquals(1.5f, tablet.typography.translationScale, 0f)
+                    val empty = presentation(
+                        fullPage = fullPage, width = width, advanced = advanced, hasLyrics = false
+                    )
+                    assertTrue(empty.fullPage)
+                    assertEquals(NowPlayingWideLyricsMode.NO_LYRICS, empty.coverMode)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `phone landscape retains its cover and full page states with legacy lyrics`() {
+        listOf(false, true).forEach { fullPage ->
+            val phone = presentation(fullPage = fullPage, phone = true, advanced = false)
+            assertEquals(fullPage, phone.fullPage)
+            assertEquals(NowPlayingWideLyricsMode.SYNCED, phone.coverMode)
         }
     }
 
@@ -40,8 +69,8 @@ class NowPlayingWideLyricsPresentationTest {
 
     @Test
     fun `cover and full lyrics use their own saved scales in both height classes`() {
-        val cover = presentation()
-        val full = presentation(fullPage = true)
+        val cover = presentation(phone = true)
+        val full = presentation(fullPage = true, phone = true)
         assertEquals(0.9f, cover.typography.lyricScale, 0f)
         assertEquals(1.1f, cover.typography.translationScale, 0f)
         assertEquals(1.3f, full.typography.lyricScale, 0f)
@@ -50,8 +79,8 @@ class NowPlayingWideLyricsPresentationTest {
         assertEquals(22f * 0.9f, cover.typography.syncedFontSizeSp, 0.001f)
         assertEquals(14f * 1.1f, cover.typography.syncedTranslationFontSizeSp, 0.001f)
         assertEquals(24.dp, full.bottomContentInset)
-        val compactCover = presentation(compact = true)
-        val compactFull = presentation(fullPage = true, compact = true)
+        val compactCover = presentation(compact = true, phone = true)
+        val compactFull = presentation(fullPage = true, compact = true, phone = true)
         assertEquals(18f, compactCover.typography.baseFontSizeSp, 0f)
         assertEquals(18f * 0.9f, compactCover.typography.syncedFontSizeSp, 0.001f)
         assertEquals(1.3f, compactFull.typography.lyricScale, 0f)

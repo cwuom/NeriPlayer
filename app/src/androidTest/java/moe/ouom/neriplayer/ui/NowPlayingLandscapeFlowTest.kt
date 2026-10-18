@@ -79,6 +79,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.playback.PersistedState
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.settings.SettingsRepository
@@ -171,6 +172,7 @@ class NowPlayingLandscapeFlowTest {
                 settings.setNowPlayingDynamicBackgroundEnabled(true)
                 settings.setNowPlayingCoverBlurBackgroundEnabled(false)
                 settings.setNowPlayingImmersiveMode(false)
+                settings.setShowCoverSourceBadge(true)
                 autoSettings.setNowPlayingCoverLyricsEnabled(true)
                 autoSettings.setNowPlayingProgressShowQualitySwitch(true)
                 autoSettings.setNowPlayingProgressShowAudioCodec(true)
@@ -330,7 +332,8 @@ class NowPlayingLandscapeFlowTest {
             capture(context, "player")
             if (!phone) verifyLandscapeLyricsAction(context, "nowPlayingLandscapeCoverPage")
             verifyLandscapeLyricsPage(context, phone)
-            if (!phone) verifyImmersiveLyricsPageToggle(context)
+            if (!phone) verifyTabletLyricFontTargets(scenario, context)
+            if (!phone) verifyImmersiveTabletLyricsAction(context)
 
             if (phone) {
                 verifyCompactEditingWithKeyboard(context, songName)
@@ -340,8 +343,7 @@ class NowPlayingLandscapeFlowTest {
                 if (classicTabletProbe) verifyTabletClassicCoverHandoff(scenario, context, songName)
             }
 
-            if (phone) Espresso.pressBack()
-            else composeRule.onNodeWithTag("nowPlayingBackButton").performClick()
+            Espresso.pressBack()
             composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
                 composeRule.mainClock.advanceTimeBy(64L)
                 val fields = composeRule.onAllNodes(hasSetTextAction())
@@ -486,7 +488,9 @@ class NowPlayingLandscapeFlowTest {
             .fetchSemanticsNode().boundsInRoot
         composeRule.onNodeWithTag("nowPlayingPlayerPane", useUnmergedTree = true)
             .performTouchInput { swipeLeft() }
-        waitForLandscapePage("nowPlayingLandscapeLyricsPage", "nowPlayingLandscapeCoverPage")
+        val swipedPageTag = if (phone) "nowPlayingLandscapeLyricsPage" else "nowPlayingLandscapeCoverPage"
+        val absentPageTag = if (phone) "nowPlayingLandscapeCoverPage" else "nowPlayingLandscapeLyricsPage"
+        waitForLandscapePage(swipedPageTag, absentPageTag)
         composeRule.onNodeWithTag("nowPlayingWideLayout", useUnmergedTree = true).assertIsDisplayed()
         assertEquals(playerBounds, composeRule.onNodeWithTag("nowPlayingPlayerPane", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot)
@@ -497,8 +501,8 @@ class NowPlayingLandscapeFlowTest {
             val lines = composeRule.onAllNodesWithText(LYRIC_LINE, useUnmergedTree = true)
             lines.fetchSemanticsNodes().indices.any { lines[it].isDisplayed() }
         }
-        assertPlaybackInformationVisible(!phone, "nowPlayingLandscapeLyricsPage")
-        if (!phone) verifyLandscapeLyricsAction(context, "nowPlayingLandscapeLyricsPage")
+        assertPlaybackInformationVisible(!phone, swipedPageTag)
+        if (!phone) verifyLandscapeLyricsAction(context, swipedPageTag)
         capture(context, "lyrics-page")
         composeRule.onNodeWithTag("nowPlayingPlayerPane", useUnmergedTree = true)
             .performTouchInput { swipeRight() }
@@ -507,28 +511,65 @@ class NowPlayingLandscapeFlowTest {
         capture(context, "cover-return")
     }
 
-    private fun verifyImmersiveLyricsPageToggle(context: Context) {
+    private fun verifyTabletLyricFontTargets(scenario: ActivityScenario<MainActivity>, context: Context) =
+        UiFailureDiagnostics.onFailure("tablet-lyrics-font-targets") {
+            val settings = SettingsRepository(context)
+            val expected = mapOf(LyricFontScaleTarget.COVER_LYRIC to 0.9f,
+                LyricFontScaleTarget.COVER_TRANSLATION to 1.1f,
+                LyricFontScaleTarget.LYRICS_PAGE_LYRIC to 1.3f,
+                LyricFontScaleTarget.LYRICS_PAGE_TRANSLATION to 1.5f)
+            runBlocking { expected.forEach { (target, value) -> settings.setLyricFontScale(target, value) } }
+            val localized = LanguageManager.localizedContext(context, LanguageManager.getCurrentLanguage(context))
+            val fontTitle = localized.getString(CoreCommonR.string.lyrics_font_size)
+            val summary = localized.getString(CoreCommonR.string.settings_lyrics_font_scale_pair_value, 130, 150)
+            composeRule.onNodeWithContentDescription(localized.getString(CoreCommonR.string.nowplaying_more_options))
+                .assertIsDisplayed().performNativeClick()
+            advanceNativeAnimation(scenario, 512L)
+            composeRule.waitUntil(5_000L) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                composeRule.onAllNodesWithText(summary).fetchSemanticsNodes().size == 1
+            }
+            val summaryRow = composeRule.onNodeWithText(summary).performScrollTo()
+            advanceNativeAnimation(scenario, 32L)
+            val summaryNode = summaryRow.fetchSemanticsNode()
+            Log.i("LandscapeFlowTest", "fontSummary raw=${Rect(summaryNode.positionInRoot, summaryNode.size.toSize())} " +
+                "clipped=${summaryNode.boundsInRoot} clock=${composeRule.mainClock.currentTime}")
+            summaryRow.assertIsDisplayed()
+            composeRule.onNodeWithText(fontTitle).performScrollTo().assertIsDisplayed().performClick()
+            advanceNativeAnimation(scenario, 512L)
+            composeRule.onNodeWithText("130%").assertIsDisplayed()
+            composeRule.onNodeWithText("150%").assertIsDisplayed()
+            composeRule.onNodeWithText(localized.getString(CoreCommonR.string.action_done))
+                .assertIsDisplayed().performClick()
+            advanceNativeAnimation(scenario, 512L)
+            composeRule.onNodeWithText(summary).performScrollTo().assertIsDisplayed()
+            val scales = runBlocking { settings.lyricFontScalesFlow.first() }
+            expected.forEach { (target, value) -> assertEquals("字号不能写入另一页面: $target", value, scales.scaleFor(target), 0.001f) }
+            Espresso.pressBack()
+            advanceNativeAnimation(scenario, 512L)
+            composeRule.onNodeWithText(fontTitle).assertDoesNotExist()
+            composeRule.onNodeWithTag("nowPlayingLandscapeCoverPage", useUnmergedTree = true).assertIsDisplayed()
+            capture(context, "tablet-lyrics-font-targets")
+        }
+
+    private fun verifyImmersiveTabletLyricsAction(context: Context) {
         val settings = SettingsRepository(context)
         val localized = LanguageManager.localizedContext(context, LanguageManager.getCurrentLanguage(context))
-        val lyricsLabel = localized.getString(CoreCommonR.string.lyrics_title)
         val adjustLabel = localized.getString(CoreCommonR.string.lyrics_adjust_behavior)
         runBlocking { settings.setNowPlayingImmersiveMode(true) }
-        fun awaitLyricsAction(label: String) {
+        fun awaitLyricsAdjustment() {
             composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
                 composeRule.mainClock.advanceTimeBy(64L)
                 composeRule.onNodeWithTag("nowPlayingLyricsAction").fetchSemanticsNode()
-                    .config.getOrNull(SemanticsProperties.ContentDescription)?.contains(label) == true
+                    .config.getOrNull(SemanticsProperties.ContentDescription)?.contains(adjustLabel) == true
             }
         }
-        awaitLyricsAction(lyricsLabel)
-        composeRule.onNodeWithTag("nowPlayingLyricsAction").assertIsDisplayed().performClick()
-        waitForLandscapePage("nowPlayingLandscapeLyricsPage", "nowPlayingLandscapeCoverPage")
-        composeRule.onNodeWithTag("nowPlayingLyricsAction").assertIsDisplayed().performClick()
-        waitForLandscapePage("nowPlayingLandscapeCoverPage", "nowPlayingLandscapeLyricsPage")
+        awaitLyricsAdjustment()
+        verifyLandscapeLyricsAction(context, "nowPlayingLandscapeCoverPage")
         assertPlaybackInformationVisible(true, "nowPlayingLandscapeCoverPage")
-        capture(context, "immersive-lyrics-cover-return")
+        capture(context, "immersive-tablet-lyrics-adjustment")
         runBlocking { settings.setNowPlayingImmersiveMode(false) }
-        awaitLyricsAction(adjustLabel)
+        awaitLyricsAdjustment()
     }
 
     private fun verifyLandscapeLyricsAction(context: Context, pageTag: String) {
@@ -562,10 +603,11 @@ class NowPlayingLandscapeFlowTest {
                 composeRule.mainClock.advanceTimeBy(64L)
                 runBlocking { settings.showLyricTranslationFlow.first() }
             }
+            val previousPhonetic = runBlocking { settings.lyricTranslationUsePhoneticFlow.first() }
             composeRule.onNodeWithText(phonetics).performClick()
             composeRule.waitUntil(5_000L) {
                 composeRule.mainClock.advanceTimeBy(64L)
-                runBlocking { settings.lyricTranslationUsePhoneticFlow.first() }
+                runBlocking { settings.lyricTranslationUsePhoneticFlow.first() } != previousPhonetic
             }
         }
         val done = composeRule.onNodeWithText(doneText)
@@ -859,7 +901,7 @@ class NowPlayingLandscapeFlowTest {
             assertPlaybackInformationVisible(true)
             capture(context, "tablet-portrait-player")
             val localized = LanguageManager.localizedContext(context, LanguageManager.getCurrentLanguage(context))
-        composeRule.onNodeWithTag("nowPlayingLyricsAction")
+            composeRule.onNodeWithTag("nowPlayingLyricsAction")
                 .assertContentDescriptionEquals(localized.getString(CoreCommonR.string.lyrics_title)).performClick()
             composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
                 composeRule.mainClock.advanceTimeBy(64L)
@@ -879,15 +921,38 @@ class NowPlayingLandscapeFlowTest {
             assertPlaybackInformationVisible(true)
             assertPlayerWindowAppearance(scenario)
             capture(context, "tablet-portrait-player-recreated")
+            composeRule.onNodeWithTag("nowPlayingLyricsAction")
+                .assertContentDescriptionEquals(localized.getString(CoreCommonR.string.lyrics_title)).performClick()
+            composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                composeRule.onAllNodesWithTag("lyricsScreen", useUnmergedTree = true).fetchSemanticsNodes().size == 1 &&
+                    composeRule.onAllNodesWithTag("nowPlayingTabletPortraitLayout", useUnmergedTree = true)
+                        .fetchSemanticsNodes().isEmpty()
+            }
+            composeRule.onNodeWithTag("lyricsScreen", useUnmergedTree = true).assertIsDisplayed()
+            capture(context, "tablet-portrait-lyrics-before-rotation")
         } finally {
             assertTrue(automation.setRotation(UiAutomation.ROTATION_FREEZE_0))
         }
         waitForNativeOrientation(scenario, Configuration.ORIENTATION_LANDSCAPE)
         waitForLandscapeCoverReady(songName)
+        composeRule.onNodeWithTag("nowPlayingLandscapeCoverPage", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("nowPlayingLandscapeLyricsPage", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("lyricsScreen", useUnmergedTree = true).assertDoesNotExist()
         composeRule.onNodeWithTag("nowPlayingWideLayout", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onAllNodesWithTag("nowPlayingTabletPortraitLayout", useUnmergedTree = true)
             .assertCountEquals(0)
         assertPlaybackInformationVisible(true, "nowPlayingLandscapeCoverPage")
+        val localized = LanguageManager.localizedContext(context, LanguageManager.getCurrentLanguage(context))
+        val sourceBadge = composeRule.onNode(
+            hasText(localized.getString(CoreCommonR.string.local_files)) and
+                hasAnyAncestor(hasTestTag("nowPlayingLandscapeCoverPage")),
+            useUnmergedTree = true
+        ).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val cover = composeRule.onNodeWithContentDescription(songName, useUnmergedTree = true)
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue("保留歌词状态转横屏后，来源徽标必须恢复并位于封面内",
+            cover.contains(sourceBadge.topLeft) && cover.contains(sourceBadge.bottomRight - Offset(1f, 1f)))
         capture(context, "tablet-landscape-restored")
     }
 

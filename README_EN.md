@@ -205,6 +205,7 @@ Current positioning:
   tablet Now Playing, Lyrics, Settings, and artist pages, plus phone landscape
   playback, use steadier width constraints and bottom controls. Clean and Material You Now Playing
   share the container morph on phones and use the classic vertical slide and fade on tablets.
+  Tablet landscape keeps one full lyrics pane, so horizontal swipes retain its style and one Back closes Now Playing; portrait retains its separate lyrics page.
   The `Mini Player` supports
   horizontal swipe for previous/next without expanding the full player. Home
   widgets include a 4x1 slim player, a 2x2 mini player, and a 4x2 playback card.

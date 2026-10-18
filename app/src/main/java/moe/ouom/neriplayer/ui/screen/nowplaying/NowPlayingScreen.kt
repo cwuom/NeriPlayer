@@ -977,17 +977,24 @@ fun NowPlayingScreen(
         mutableStateOf<LyricEntry?>(null)
     }
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val phoneLandscape = isNowPlayingPhoneLandscape(isLandscape, configuration.smallestScreenWidthDp)
+    val tabletLandscape = isLandscape && !phoneLandscape
+    // 平板横屏始终同时呈现封面与完整歌词，保留的手机页状态不能多消费一次返回
+    val effectiveShowLyricsScreen = showLyricsScreen && !tabletLandscape
+
     LaunchedEffect(Unit) { contentVisible = true }
     LaunchedEffect(currentSong?.id) { showQualitySwitchDialog = false }
-    LaunchedEffect(showLyricsScreen, showCoverSourceBadge) {
-        val returningFromLyrics = previousLyricsScreenState && !showLyricsScreen
-        previousLyricsScreenState = showLyricsScreen
+    LaunchedEffect(effectiveShowLyricsScreen, showCoverSourceBadge) {
+        val returningFromLyrics = previousLyricsScreenState && !effectiveShowLyricsScreen
+        previousLyricsScreenState = effectiveShowLyricsScreen
         if (!showCoverSourceBadge) {
             showCoverPageSourceBadge = false
             animateCoverPageSourceBadge = false
             return@LaunchedEffect
         }
-        if (showLyricsScreen) {
+        if (effectiveShowLyricsScreen) {
             showCoverPageSourceBadge = false
             animateCoverPageSourceBadge = false
         } else {
@@ -1028,17 +1035,16 @@ fun NowPlayingScreen(
     }
 
     // 自适应布局判断
-    val configuration = LocalConfiguration.current
     val windowInfo = LocalWindowInfo.current
     val density = LocalDensity.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val phoneLandscape = isNowPlayingPhoneLandscape(isLandscape, configuration.smallestScreenWidthDp)
     val tabletPortrait = isNowPlayingTabletPortrait(isLandscape, configuration.smallestScreenWidthDp)
     val windowWidthDp = with(density) { windowInfo.containerSize.width.toDp() }
     val windowHeightDp = with(density) { windowInfo.containerSize.height.toDp() }
     val useWideLandscapeLayout = isLandscape
     val lyricsAdjustBehavior = shouldAdjustNowPlayingLyricsBehavior(isLandscape, phoneLandscape)
-    val coverPagePresentation = resolveNowPlayingCoverPagePresentation(immersiveMode, lyricsAdjustBehavior)
+    val coverPagePresentation = resolveNowPlayingCoverPagePresentation(
+        immersiveMode && !tabletLandscape, lyricsAdjustBehavior
+    )
     val useCompactPortraitLayout = !tabletPortrait && shouldUseCompactNowPlayingPortraitLayout(
         isLandscape = isLandscape,
         availableHeightDp = windowHeightDp.value,
@@ -1063,7 +1069,7 @@ fun NowPlayingScreen(
         compactWideLayout = windowWidthDp < 720.dp,
         compactPortrait = useCompactPortraitLayout
     )
-    val lowPowerLyricsRendering = remember(context, showLyricsScreen) { context.isSystemPowerSaveMode() }
+    val lowPowerLyricsRendering = remember(context, effectiveShowLyricsScreen) { context.isSystemPowerSaveMode() }
 
     // 歌词偏移 (平台 + 用户自定义)
     val totalOffset = resolveEffectiveLyricOffsetMs(
@@ -1125,8 +1131,8 @@ fun NowPlayingScreen(
     ) {
         // 歌词页和宽屏歌词共用一个可拖动的转场，返回手势按进度淡回播放页
         val lyricsTransition = rememberHostPredictiveBackTransition(
-            targetState = showLyricsScreen,
-            backEnabled = showLyricsScreen,
+            targetState = effectiveShowLyricsScreen,
+            backEnabled = effectiveShowLyricsScreen,
             backTargetState = false,
             onBack = { onShowLyricsScreenChange(false) },
             label = "lyrics_transition"
@@ -1187,7 +1193,7 @@ fun NowPlayingScreen(
                         )
                     } else {
                         // 播放页面
-                        val lyricFontPage = resolveNowPlayingLyricFontPage(isLyricsMode)
+                        val lyricFontPage = resolveNowPlayingLyricFontPage(isLyricsMode || tabletLandscape)
                         val nowPlayingControlSize = resolveNowPlayingPageControlSize(
                             playbackControlLayoutPreferences, isLyricsMode
                         )
@@ -1228,8 +1234,8 @@ fun NowPlayingScreen(
                             )
                         }
 
-                        // 横屏仍可左右切页，进度条会先消费自己的拖动手势
-                        if (useWideLandscapeLayout && (isLyricsMode || lyrics.isNotEmpty())) {
+                        // 手机横屏仍可左右切页，平板分栏不再切换隐藏的歌词子页
+                        if (phoneLandscape && (isLyricsMode || lyrics.isNotEmpty())) {
                             contentModifier = contentModifier.pointerInput(isLyricsMode, lyrics) {
                                 var horizontalDragDistance = 0f
                                 detectHorizontalDragGestures(
@@ -1447,8 +1453,7 @@ fun NowPlayingScreen(
                             onQueue = { showQueueSheet = true },
                             onSleepTimer = { showSleepTimerDialog = true },
                             onVolume = { showVolumeSheet = true },
-                            // immersive mode switches pages without opening the lyric behavior sheet
-                            onLyrics = if (immersiveMode) {
+                            onLyrics = if (immersiveMode && !tabletLandscape) {
                                 { onShowLyricsScreenChange(!showLyricsScreen) }
                             } else resolveNowPlayingLyricsToolbarAction(
                                 lyricsAdjustBehavior = lyricsAdjustBehavior,
@@ -1578,7 +1583,7 @@ fun NowPlayingScreen(
                                 status = NowPlayingCoverToolbarStatus(
                                     sleepTimerActive = sleepTimerState.isActive,
                                     lyricsAvailable = coverLyricsAvailable,
-                                    lyricsShowing = showLyricsScreen,
+                                    lyricsShowing = isLyricsMode,
                                     activeColor = nowPlayingActiveIconColor
                                 ),
                                 actions = coverToolbarActions,
@@ -1737,7 +1742,7 @@ fun NowPlayingScreen(
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
-                        } else if (immersiveMode) {
+                        } else if (immersiveMode || useCompactPortraitLayout) {
                             NowPlayingImmersivePortraitLayout(
                                 modifier = contentModifier,
                                 beforeCoverSpacing = coverPagePresentation.beforeCoverSpacing,
