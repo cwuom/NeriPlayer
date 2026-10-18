@@ -37,9 +37,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.Espresso.pressBack
 import androidx.test.espresso.UiController
 import androidx.test.espresso.ViewAction
+import androidx.test.espresso.action.ViewActions.pressBack
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -168,7 +168,11 @@ class StartupPreviewThemePromptTest {
             val current = PromptFixture(newStore())
             mount(current)
             waitForDialog()
-            if (dismissWithBack) pressBack() else clickAction(R.string.preview_theme_prompt_decline)
+            if (dismissWithBack) {
+                onView(isRoot()).inRoot(isDialog()).perform(pressBack())
+            } else {
+                clickAction(R.string.preview_theme_prompt_decline)
+            }
             waitForPromptCompleted()
             composeRule.onNodeWithTag("theme_style").assertTextEquals("material")
             composeRule.runOnIdle { current.promptMounted = false }
