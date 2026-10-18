@@ -335,6 +335,18 @@ internal fun selectAllNowPlayingQueueKeys(
     queueItemKeys: Set<String>
 ): Set<String> = if (allSelected) emptySet() else queueItemKeys
 
+internal fun removeSelectedNowPlayingQueueEntries(
+    entries: List<NowPlayingQueueEntry>,
+    selectedKeys: Set<String>,
+    removeAt: (Int) -> Unit
+) {
+    // 从尾部移除，避免前面的删除使尚未处理的队列索引发生偏移
+    entries.filter { it.key in selectedKeys }
+        .map { it.queueIndex }
+        .sortedDescending()
+        .forEach(removeAt)
+}
+
 internal class NowPlayingQueueReorderOwner(sourceEntries: List<NowPlayingQueueEntry>) {
     val entries = mutableStateListOf<NowPlayingQueueEntry>().apply { addAll(sourceEntries) }
     var isDirty by mutableStateOf(false)
@@ -824,11 +836,13 @@ private fun QueueQuickActionToggle(expanded: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun NowPlayingQueueSelectionToolbar(
+internal fun NowPlayingQueueSelectionToolbar(
     selectedCount: Int,
     allSelected: Boolean,
     canExport: Boolean,
+    canRemove: Boolean,
     onSelectAll: () -> Unit,
+    onRemove: () -> Unit,
     onInvertSelection: () -> Unit,
     onExport: () -> Unit,
     onExitSelection: () -> Unit
@@ -849,7 +863,9 @@ private fun NowPlayingQueueSelectionToolbar(
             Text(
                 text = stringResource(CoreCommonR.string.common_selected),
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = pluralStringResource(
@@ -858,11 +874,19 @@ private fun NowPlayingQueueSelectionToolbar(
                     selectedCount
                 ),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
         HapticIconButton(onClick = onSelectAll) {
             QueueSelectAllIcon(allSelected)
+        }
+        HapticIconButton(enabled = canRemove, onClick = onRemove) {
+            Icon(
+                imageVector = Icons.Outlined.DeleteOutline,
+                contentDescription = stringResource(CoreCommonR.string.nowplaying_queue_remove)
+            )
         }
         HapticTextButton(onClick = onInvertSelection) {
             Text(stringResource(CoreCommonR.string.action_inverse_select))
@@ -1108,8 +1132,17 @@ internal fun NowPlayingQueueSheet(
                         selectedCount = selectedKeys.size,
                         allSelected = allItemsSelected,
                         canExport = selectedSongs.isNotEmpty(),
+                        canRemove = selectedSongs.isNotEmpty() && !queueOrderDirty,
                         onSelectAll = {
                             applySelection(selectAllNowPlayingQueueKeys(allItemsSelected, queueItemKeys))
+                        },
+                        onRemove = {
+                            removeSelectedNowPlayingQueueEntries(
+                                sourceEntries,
+                                selectedKeys,
+                                PlayerManager::removeQueueItem
+                            )
+                            exitSelection()
                         },
                         onInvertSelection = {
                             applySelection(invertNowPlayingQueueSelection(
@@ -1228,7 +1261,7 @@ internal fun NowPlayingQueueSheet(
                                 selectionMode = selectionMode,
                                 selected = entry.key in selectedKeys,
                                 onPlay = {
-                                    PlayerManager.playFromQueue(index)
+                                    PlayerManager.playFromQueue(entry.queueIndex)
                                     dismissQueue()
                                 },
                                 onLongPress = {
@@ -1242,7 +1275,7 @@ internal fun NowPlayingQueueSheet(
                                     toggleQueueSongFavorite(entry.song, isFavoriteSong)
                                 },
                                 onRemoveFromQueue = {
-                                    PlayerManager.removeQueueItem(index)
+                                    PlayerManager.removeQueueItem(entry.queueIndex)
                                 },
                                 dragHandle = if (
                                     shouldShowNowPlayingQueueDragHandle(

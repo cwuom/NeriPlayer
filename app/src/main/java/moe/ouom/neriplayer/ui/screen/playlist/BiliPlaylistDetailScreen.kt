@@ -103,7 +103,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsSh
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
-import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionMoreMenu
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionActions
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
@@ -569,7 +569,7 @@ fun BiliPlaylistDetailScreen(
                             ) {
                                 Icon(Icons.Outlined.Download, contentDescription = stringResource(CoreCommonR.string.download_selected_videos))
                             }
-                            PlaylistSelectionMoreMenu(
+                            PlaylistSelectionActions(
                                 allSelected = allSelected,
                                 onToggleSelectAll = {
                                     if (allSelected) clearSelection() else selectAll()
