@@ -193,18 +193,11 @@ internal fun MoreOptionsMainContent(
                 hue = MoreHueIndigo,
                 onClick = onOpenListenTogether
             )
-        }
             MoreOptionsItem(
                 title = stringResource(CoreCommonR.string.encyclopedia_title),
                 icon = Icons.Outlined.MenuBook,
                 hue = MoreHueViolet,
                 onClick = onOpenEncyclopedia
-            )
-            MoreOptionsItem(
-                title = stringResource(CoreCommonR.string.listen_together_title),
-                icon = Icons.Outlined.Headphones,
-                hue = MoreHueIndigo,
-                onClick = onOpenListenTogether
             )
         }
     }
