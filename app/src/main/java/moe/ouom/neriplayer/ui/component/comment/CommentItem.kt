@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.SongComment
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.util.format.formatDate
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -105,7 +106,13 @@ internal fun CommentItem(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainer
+            // Clean 下 surfaceContainer 与 sheet 底 surfaceContainerLow 只差一点点，
+            // 评论卡片会糊成一片，改用墨色半透明拉开层次。
+            color = if (NeriDesign.isClean) {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            }
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),

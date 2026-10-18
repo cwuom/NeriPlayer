@@ -7,7 +7,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.actions
  *
  * This software is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This software is distributed in the hope that it will be useful,
@@ -30,22 +30,28 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 
 /** 卡片之间的标准间距，保证各模块在视觉上彼此分离。 */
-internal val SongEncyclopediaSectionSpacing = 12.dp
+internal val SongEncyclopediaSectionSpacing: Dp
+    @Composable @ReadOnlyComposable
+    get() = NeriDesign.tokens.sectionSpacing
 
 /**
  * 百科模块独立容器。
@@ -60,43 +66,73 @@ internal fun SongEncyclopediaSectionCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Card(
+    val clean = NeriDesign.isClean
+    Surface(
         modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        )
+        // Clean 下 MaterialTheme.shapes.medium 已是 18dp 连续圆角，但 Material 主题
+        // 用的是默认 12dp，这里显式分支保证两套主题都维持原有观感。
+        shape = if (clean) neriRoundedShape(16.dp) else MaterialTheme.shapes.medium,
+        // Clean 的 surfaceContainerLow 是纯白，贴在 #F4F4F7 的宿主面板上几乎看不见，
+        // 且 surfaceTint 被置空后 elevation 染色失效，改用墨色半透明兜底。
+        color = if (clean) {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        tonalElevation = 0.dp,
+        shadowElevation = if (clean) 0.dp else 1.dp
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-                Text(
-                    text = stringResource(titleRes),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 12.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
+        SongEncyclopediaSectionCardBody(titleRes, icon, content)
+    }
+}
+
+@Composable
+private fun SongEncyclopediaSectionCardBody(
+    titleRes: Int,
+    icon: ImageVector,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val clean = NeriDesign.isClean
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                // Clean 只用字重表达层级，主色留给可点击动作
+                tint = if (clean) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
             )
-            Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                content = content
+            Text(
+                text = stringResource(titleRes),
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = if (clean) FontWeight.SemiBold else FontWeight.Normal
+                ),
+                color = if (clean) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
         }
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            // Clean 的发丝线是墨色 6%，outlineVariant 在 Clean 下偏重
+            color = if (clean) {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = NeriDesign.tokens.hairlineAlpha)
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            }
+        )
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            content = content
+        )
     }
 }

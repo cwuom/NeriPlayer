@@ -33,6 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -61,7 +63,9 @@ import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableBiliVideoItem
 import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableHotVideoItems
 import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableRankVideoItems
 import moe.ouom.neriplayer.platform.bilibili.api.image.buildBiliThumbnailUrl
+import moe.ouom.neriplayer.ui.component.common.NeriChoiceChip
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
@@ -130,6 +134,7 @@ internal fun BiliMusicRankDetailScreen(
     }
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(CoreCommonR.string.home_bili_music_rank)) },
@@ -151,7 +156,11 @@ internal fun BiliMusicRankDetailScreen(
                             contentDescription = stringResource(CoreCommonR.string.recommend_refresh)
                         )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent
+                )
             )
         }
     ) { padding ->
@@ -316,6 +325,7 @@ internal fun BiliMusicHotDetailScreen(
     }
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(CoreCommonR.string.home_bili_music_hot)) },
@@ -337,7 +347,11 @@ internal fun BiliMusicHotDetailScreen(
                             contentDescription = stringResource(CoreCommonR.string.recommend_refresh)
                         )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent
+                )
             )
         }
     ) { padding ->
@@ -418,20 +432,25 @@ private fun BiliMusicRankTypeRow(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
         BiliMusicRankType.values().forEach { type ->
-            FilterChip(
-                selected = selected == type,
-                onClick = { onTypeSelected(type) },
-                label = {
-                    Text(
-                        text = stringResource(
-                            when (type) {
-                                BiliMusicRankType.HOT -> CoreCommonR.string.home_bili_music_rank_hot
-                                BiliMusicRankType.ORIGINAL -> CoreCommonR.string.home_bili_music_rank_original
-                            }
-                        )
-                    )
+            val label = stringResource(
+                when (type) {
+                    BiliMusicRankType.HOT -> CoreCommonR.string.home_bili_music_rank_hot
+                    BiliMusicRankType.ORIGINAL -> CoreCommonR.string.home_bili_music_rank_original
                 }
             )
+            if (NeriDesign.isClean) {
+                NeriChoiceChip(
+                    selected = selected == type,
+                    onClick = { onTypeSelected(type) },
+                    label = label
+                )
+            } else {
+                FilterChip(
+                    selected = selected == type,
+                    onClick = { onTypeSelected(type) },
+                    label = { Text(text = label) }
+                )
+            }
         }
     }
 }

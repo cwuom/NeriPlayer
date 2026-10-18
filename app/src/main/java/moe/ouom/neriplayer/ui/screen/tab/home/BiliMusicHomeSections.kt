@@ -49,6 +49,7 @@ import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableBiliVideoItem
 import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableHotVideoItems
 import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableRankVideoItems
 import moe.ouom.neriplayer.platform.bilibili.api.image.buildBiliThumbnailUrl
+import moe.ouom.neriplayer.ui.component.common.NeriChoiceChip
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeBiliMusicRankState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeSectionState
@@ -198,28 +199,50 @@ private fun BiliMusicSectionHeader(
             .fillMaxWidth()
             .padding(top = 10.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(22.dp)
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .padding(start = 8.dp)
-                    .weight(1f)
-            )
-            TextButton(onClick = onMoreClick) {
-                Text(text = stringResource(CoreCommonR.string.home_bili_music_view_all))
+        if (NeriDesign.isClean) {
+            // clean style carries hierarchy by weight alone; the accent stays reserved for actions
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(top = 8.dp, bottom = 4.dp)
+                )
+                TextButton(onClick = onMoreClick) {
+                    Text(text = stringResource(CoreCommonR.string.home_bili_music_view_all))
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .weight(1f)
+                )
+                TextButton(onClick = onMoreClick) {
+                    Text(text = stringResource(CoreCommonR.string.home_bili_music_view_all))
+                }
             }
         }
         typeSelector?.invoke()
@@ -237,14 +260,27 @@ private fun BiliMusicRankTypeSelector(
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(start = 30.dp, bottom = 2.dp)
+        modifier = Modifier.padding(
+            // Clean 下标题没有图标，30dp 的图标缩进要收回
+            start = if (NeriDesign.isClean) 0.dp else 30.dp,
+            bottom = 2.dp
+        )
     ) {
         BiliMusicRankType.values().forEach { type ->
-            FilterChip(
-                selected = selected == type,
-                onClick = { onTypeSelected(type) },
-                label = { Text(text = stringResource(type.labelRes)) }
-            )
+            val label = stringResource(type.labelRes)
+            if (NeriDesign.isClean) {
+                NeriChoiceChip(
+                    selected = selected == type,
+                    onClick = { onTypeSelected(type) },
+                    label = label
+                )
+            } else {
+                FilterChip(
+                    selected = selected == type,
+                    onClick = { onTypeSelected(type) },
+                    label = { Text(text = label) }
+                )
+            }
         }
     }
 }

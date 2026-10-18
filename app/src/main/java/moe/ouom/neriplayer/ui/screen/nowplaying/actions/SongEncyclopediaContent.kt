@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.data.model.comments.CommentSource
 import moe.ouom.neriplayer.data.model.comments.CommentPlatform
 import moe.ouom.neriplayer.platform.comments.resolveCommentSource
 import moe.ouom.neriplayer.ui.component.sheet.HalfExpandableSheetPanel
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -150,7 +151,10 @@ private fun SongEncyclopediaStateContent(
                 .weight(1f)
                 .bottomSheetScrollGuard { false }
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(
+                    horizontal = NeriDesign.tokens.pageHorizontalPadding,
+                    vertical = if (NeriDesign.isClean) 12.dp else 8.dp
+                )
         ) {
             when (state) {
                 SongEncyclopediaUiState.Idle,
