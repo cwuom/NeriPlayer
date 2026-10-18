@@ -37,7 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -85,7 +85,6 @@ private fun SongEncyclopediaRelatedPlaylistRow(
     playlist: EncyclopediaRelatedPlaylist,
     onClick: () -> Unit
 ) {
-    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -107,7 +106,7 @@ private fun SongEncyclopediaRelatedPlaylistRow(
             )
             playlist.playCount?.let { playCount ->
                 Text(
-                    text = context.getString(
+                    text = stringResource(
                         CoreCommonR.string.encyclopedia_playlist_play_count,
                         formatEncyclopediaPlayCount(playCount)
                     ),

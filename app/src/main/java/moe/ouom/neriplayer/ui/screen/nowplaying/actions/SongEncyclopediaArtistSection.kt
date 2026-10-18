@@ -36,14 +36,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -63,7 +62,6 @@ internal fun SongEncyclopediaArtistSection(
     artist: EncyclopediaArtistInfo,
     onOpenArtist: () -> Unit
 ) {
-    val context = LocalContext.current
     SongEncyclopediaSectionCard(
         titleRes = CoreCommonR.string.encyclopedia_section_artist,
         icon = Icons.Outlined.Person
@@ -84,9 +82,7 @@ internal fun SongEncyclopediaArtistSection(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                val meta = remember(artist.albumSize, artist.musicSize) {
-                    buildEncyclopediaArtistMeta(context, artist)
-                }
+                val meta = buildEncyclopediaArtistMeta(artist)
                 if (meta != null) {
                     Text(
                         text = meta,
@@ -142,14 +138,9 @@ private fun SongEncyclopediaArtistBrief(artist: EncyclopediaArtistInfo) {
     SongEncyclopediaActionSpacer()
     SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
 }
-private fun buildEncyclopediaArtistMeta(
-    context: android.content.Context,
-    artist: EncyclopediaArtistInfo
-): String? {
-    val parts = buildList {
-        artist.albumSize?.let { albums -> artist.musicSize?.let { songs ->
-            add(context.getString(CoreCommonR.string.encyclopedia_artist_bio_note, albums, songs))
-        } }
-    }
-    return parts.firstOrNull()
+@Composable
+private fun buildEncyclopediaArtistMeta(artist: EncyclopediaArtistInfo): String? {
+    val albums = artist.albumSize ?: return null
+    val songs = artist.musicSize ?: return null
+    return stringResource(CoreCommonR.string.encyclopedia_artist_bio_note, albums, songs)
 }

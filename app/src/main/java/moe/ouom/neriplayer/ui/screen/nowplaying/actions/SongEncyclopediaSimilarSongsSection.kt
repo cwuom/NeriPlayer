@@ -43,7 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -111,7 +110,6 @@ private fun SongEncyclopediaSimilarSongRow(
     song: EncyclopediaSimilarSong,
     onClick: () -> Unit
 ) {
-    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -120,7 +118,7 @@ private fun SongEncyclopediaSimilarSongRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = context.getString(CoreCommonR.string.encyclopedia_similar_index, index),
+            text = stringResource(CoreCommonR.string.encyclopedia_similar_index, index),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(28.dp)

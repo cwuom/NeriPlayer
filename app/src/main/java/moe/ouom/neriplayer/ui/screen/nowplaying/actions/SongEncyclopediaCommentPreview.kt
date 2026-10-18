@@ -14,7 +14,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -43,7 +42,6 @@ internal fun SongEncyclopediaCommentPreview(
 ) {
     val commentViewModel: CommentViewModel = viewModel(key = "encyclopedia_comment_preview")
     val ui by commentViewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     val currentSource = remember(source) { source }
 
     LaunchedEffect(currentSource) {
@@ -83,7 +81,7 @@ internal fun SongEncyclopediaCommentPreview(
             CommentListStatus.SUCCESS -> {
                 ui.total?.let { total ->
                     Text(
-                        text = context.getString(CoreCommonR.string.comment_total_format, total.toString()),
+                        text = stringResource(CoreCommonR.string.comment_total_format, total.toString()),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -36,7 +36,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +58,6 @@ import java.util.Locale
 @Composable
 internal fun SongEncyclopediaListeningSection(song: SongItem) {
     val songKey = remember(song) { song.stableKey() }
-    val context = LocalContext.current
     val trackStat by produceState<TrackStat?>(initialValue = null, songKey) {
         value = withContext(Dispatchers.IO) {
             runCatching {
@@ -76,25 +74,23 @@ internal fun SongEncyclopediaListeningSection(song: SongItem) {
     val firstPlayedText = remember(stat.firstPlayedAt) {
         dateFormat.format(Date(stat.firstPlayedAt))
     }
-    val totalListenText = remember(stat.totalListenMs) {
-        val totalSeconds = stat.totalListenMs / 1000
-        val hours = totalSeconds / 3600
-        val minutes = (totalSeconds % 3600) / 60
-        when {
-            hours > 0 -> context.getString(
-                CoreCommonR.string.encyclopedia_total_listen_hours,
-                hours,
-                minutes
-            )
-            minutes > 0 -> context.getString(
-                CoreCommonR.string.encyclopedia_total_listen_minutes,
-                minutes
-            )
-            else -> context.getString(
-                CoreCommonR.string.encyclopedia_total_listen_seconds,
-                totalSeconds
-            )
-        }
+    val totalSeconds = stat.totalListenMs / 1000
+    val totalHours = totalSeconds / 3600
+    val totalMinutes = (totalSeconds % 3600) / 60
+    val totalListenText = when {
+        totalHours > 0 -> stringResource(
+            CoreCommonR.string.encyclopedia_total_listen_hours,
+            totalHours,
+            totalMinutes
+        )
+        totalMinutes > 0 -> stringResource(
+            CoreCommonR.string.encyclopedia_total_listen_minutes,
+            totalMinutes
+        )
+        else -> stringResource(
+            CoreCommonR.string.encyclopedia_total_listen_seconds,
+            totalSeconds
+        )
     }
     SongEncyclopediaSectionCard(
         titleRes = CoreCommonR.string.encyclopedia_section_listen_history,
@@ -110,7 +106,7 @@ internal fun SongEncyclopediaListeningSection(song: SongItem) {
         )
         SongEncyclopediaRow(
             CoreCommonR.string.encyclopedia_label_play_count_times,
-            context.getString(CoreCommonR.string.encyclopedia_play_count_value, stat.playCount)
+            stringResource(CoreCommonR.string.encyclopedia_play_count_value, stat.playCount)
         )
         Spacer(Modifier.height(4.dp))
         Text(
