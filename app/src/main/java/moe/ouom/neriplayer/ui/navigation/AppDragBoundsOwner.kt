@@ -1,16 +1,10 @@
 package moe.ouom.neriplayer.ui.navigation
 
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
 
 internal data class AppDragBounds(
     val miniPlayer: Rect?,
@@ -37,22 +31,6 @@ internal class AppDragBoundsOwner {
 
     private fun visibleMeasuredBounds(bounds: Rect?, visible: Boolean): Rect? =
         bounds?.takeIf { visible && !it.isEmpty }
-}
-
-internal fun Modifier.reportBottomTabBounds(
-    tabInsets: WindowInsets,
-    density: Density,
-    layoutDirection: LayoutDirection,
-    onBoundsChanged: (Rect) -> Unit
-): Modifier = onGloballyPositioned { coordinates ->
-    onBoundsChanged(
-        resolveBottomTabDragBounds(
-            bounds = coordinates.boundsInRoot(),
-            leftInset = tabInsets.getLeft(density, layoutDirection),
-            rightInset = tabInsets.getRight(density, layoutDirection),
-            bottomInset = tabInsets.getBottom(density)
-        )
-    )
 }
 
 internal fun resolveBottomTabDragBounds(

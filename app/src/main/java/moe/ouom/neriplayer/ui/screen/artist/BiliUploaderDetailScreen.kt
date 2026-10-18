@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.screen.artist
  * Created: 2026/8/3
  */
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
 import android.app.Application
 import android.content.Context
 import androidx.compose.foundation.background
@@ -453,7 +456,7 @@ private fun BiliUploaderHeaderCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
-        shape = RoundedCornerShape(28.dp)
+        shape = neriRoundedShape(28.dp)
     ) {
         BiliUploaderHero(header = header, offlineMode = offlineMode, isTabletLayout = isTabletLayout)
         BiliUploaderProfileDetails(
@@ -693,17 +696,30 @@ private fun BiliUploaderTabs(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit
 ) {
+    if (NeriDesign.isClean) {
+        CleanSegmentedTabs(
+            labels = listOf(
+                stringResource(CoreCommonR.string.bili_uploader_tab_videos),
+                stringResource(CoreCommonR.string.bili_uploader_tab_collections),
+                stringResource(CoreCommonR.string.bili_uploader_tab_series)
+            ),
+            selectedIndex = selectedTab,
+            onSelected = onTabSelected,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+        )
+        return
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
-        shape = RoundedCornerShape(24.dp),
+        shape = neriRoundedShape(24.dp),
         color = Color.Transparent
     ) {
         AdvancedGlassSurface(
             role = AdvancedGlassRole.ScreenTopTab,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
+            shape = neriRoundedShape(24.dp),
             fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
             tintColor = MaterialTheme.colorScheme.surfaceVariant
         ) {
@@ -776,7 +792,7 @@ private fun BiliUploaderVideoRow(
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(width = 100.dp, height = 60.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(neriRoundedShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         )
         Spacer(Modifier.width(12.dp))
@@ -836,7 +852,7 @@ private fun BiliUploaderContentRow(
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(58.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(neriRoundedShape(10.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         )
         Spacer(Modifier.width(14.dp))

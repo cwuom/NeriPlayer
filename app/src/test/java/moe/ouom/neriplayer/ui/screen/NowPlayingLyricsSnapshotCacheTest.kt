@@ -17,7 +17,10 @@ import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
+import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsPreparationInput
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LoadedLyricsState
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingFastLyricsResult
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingInitialLyricsResult
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadRequest
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadStages
@@ -25,9 +28,11 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsRefreshVe
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsSnapshotCache
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsStages
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildNowPlayingFastLyricsState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.nowPlayingLyricsSnapshotKey
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.rememberNowPlayingLyricsLoadOwner
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito
@@ -39,6 +44,77 @@ class NowPlayingLyricsSnapshotCacheTest {
     private val request = NowPlayingLyricsLoadRequest(context, song, "https://media", true,
         LyricSourcePreference.Automatic, null)
     private val versions = NowPlayingLyricsRefreshVersions(0, 0, 0)
+
+    @Test
+    fun `equal background publication keeps the visible advanced preparation in the reusable snapshot`() = runTest {
+        val displayed = buildNowPlayingFastLyricsState("[00:01.00]ready", null, null)
+        val background = displayed.copy()
+        val pending = CompletableDeferred<LoadedLyricsState>()
+        val cache = NowPlayingLyricsSnapshotCache()
+        val stages = object : NowPlayingLyricsStages {
+            override val snapshotCache = cache
+            override suspend fun readFast(request: NowPlayingLyricsLoadRequest) =
+                NowPlayingFastLyricsResult(displayed, null, null, false, false)
+            override suspend fun readBackground(request: NowPlayingLyricsLoadRequest, fast: NowPlayingFastLyricsResult) =
+                pending.await()
+        }
+        val input = AdvancedLyricsPreparationInput(displayed.rawLyrics, null, displayed.lyrics, emptyList(), false)
+        val entry = displayed.advancedLyricsPreparation.entryFor(input)
+        entry.prepare()
+        val prepared = checkNotNull(entry.ready)
+        assertTrue(prepared.lines.isNotEmpty())
+        val first = Page(this)
+        try {
+            val owner = first.compose(request, versions, stages)
+            runCurrent()
+            assertSame(displayed, owner.state)
+            pending.complete(background)
+            runCurrent()
+
+            assertSame(displayed, owner.state)
+            val reusable = checkNotNull(cache.reusable(nowPlayingLyricsSnapshotKey(request, versions, 0L)))
+            assertSame("快照必须沿用实际显示且已准备完成的实例", displayed, reusable.state)
+            assertSame(prepared, reusable.state.advancedLyricsPreparation.entryFor(input).ready)
+        } finally {
+            first.close()
+        }
+        val reopened = Page(this)
+        try {
+            val owner = reopened.compose(request, versions, stages)
+            assertSame(displayed, owner.state)
+            assertSame(prepared, owner.state.advancedLyricsPreparation.entryFor(input).ready)
+            assertTrue(owner.secondaryResolved)
+        } finally {
+            reopened.close()
+        }
+    }
+
+    @Test
+    fun `reusable complete snapshot skips synchronous initial lyric parsing`() = runTest {
+        val sources = OnlineSources().apply { translation = "translation" }
+        val delegate = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        var initialReads = 0
+        val stages = object : NowPlayingLyricsStages by delegate {
+            override fun readInitial(request: NowPlayingLyricsLoadRequest): NowPlayingInitialLyricsResult {
+                initialReads++
+                return delegate.readInitial(request)
+            }
+        }
+        loadedPage(this, request, versions, stages).close()
+        assertEquals(1, initialReads)
+        val reopened = Page(this)
+        try {
+            val owner = reopened.compose(request, versions, stages)
+            assertEquals("online lyrics", owner.state.lyrics.single().text)
+            assertEquals("translation", owner.state.translatedLyrics.single().text)
+            assertTrue(owner.secondaryResolved)
+            assertEquals("a ready snapshot must avoid main-thread initial parsing", 1, initialReads)
+            runCurrent()
+            assertEquals(1, sources.reads)
+        } finally {
+            reopened.close()
+        }
+    }
 
     @Test
     fun `reentry invalidates old display after source lyric preference metadata or download changes`() = runTest {

@@ -5,6 +5,7 @@ import com.materialkolor.dynamiccolor.ColorSpec
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
 import moe.ouom.neriplayer.ui.playback.visual.selectNowPlayingOverlayTheme
 import moe.ouom.neriplayer.ui.playback.visual.releaseNowPlayingInputSession
+import moe.ouom.neriplayer.ui.playback.visual.shouldUseNowPlayingContainerMorph
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.platform.TextToolbar
@@ -17,6 +18,19 @@ import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.verifyNoMoreInteractions
 
 class AppNowPlayingOverlayPolicyTest {
+    @Test
+    fun `phones use the morph while tablets keep the default transition`() {
+        assertTrue(shouldUseNowPlayingContainerMorph(smallestScreenWidthDp = 390))
+        assertTrue(shouldUseNowPlayingContainerMorph(smallestScreenWidthDp = 599))
+        assertFalse(shouldUseNowPlayingContainerMorph(smallestScreenWidthDp = 600))
+        assertFalse(shouldUseNowPlayingContainerMorph(smallestScreenWidthDp = 800))
+    }
+
+    @Test
+    fun `a landscape phone keeps its morph based on the smallest width`() {
+        assertTrue(shouldUseNowPlayingContainerMorph(smallestScreenWidthDp = 390))
+    }
+
     @Test
     fun `opening the player ends focus before hiding selection and the keyboard`() {
         val focus = mock(FocusManager::class.java)

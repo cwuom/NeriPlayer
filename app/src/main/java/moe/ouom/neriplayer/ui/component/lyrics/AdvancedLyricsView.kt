@@ -77,21 +77,15 @@ fun AdvancedLyricsView(
     onSeekTo: (Long) -> Unit = {}
 ) {
     val effectiveTranslatedLyrics = translatedLyrics.orEmpty()
-    val syncedLyrics = remember(
-        rawLyrics,
-        rawTranslatedLyrics,
-        lyrics,
-        effectiveTranslatedLyrics,
-        showPhoneticAsTranslation
-    ) {
-        buildAdvancedSyncedLyrics(
+    val syncedLyrics = rememberAdvancedSyncedLyrics(
+        AdvancedLyricsPreparationInput(
             rawLyrics = rawLyrics,
             rawTranslatedLyrics = rawTranslatedLyrics,
             lyrics = lyrics,
             translatedLyrics = effectiveTranslatedLyrics,
             showPhoneticAsTranslation = showPhoneticAsTranslation
         )
-    }
+    )
     if (syncedLyrics.lines.isEmpty()) {
         return
     }

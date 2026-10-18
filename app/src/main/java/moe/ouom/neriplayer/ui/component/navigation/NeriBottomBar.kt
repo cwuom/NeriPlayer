@@ -24,6 +24,27 @@ package moe.ouom.neriplayer.ui.component.navigation
  */
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.animation.core.Animatable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.NeriMotion
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +93,10 @@ fun NeriBottomBar(
     modifier: Modifier = Modifier,
     selectAlpha: Float = DEFAULT_BOTTOM_BAR_SELECTION_ALPHA
 ) {
+    if (NeriDesign.isClean) {
+        CleanFloatingTabBar(items, currentDestination, onItemSelected, modifier)
+        return
+    }
     val context = LocalContext.current
     val alwaysShowLabel = selectAlpha != 0f
     val baseBlurRequested = LocalAdvancedGlassController.current.isBaseBlurRequested
@@ -79,17 +104,22 @@ fun NeriBottomBar(
         selectAlpha = selectAlpha,
         baseBlurRequested = baseBlurRequested
     )
-    val fallbackColor = if (fallbackScrimAlpha > 0f) {
-        MaterialTheme.colorScheme.background.copy(alpha = fallbackScrimAlpha)
-    } else {
-        Color.Transparent
+    val clean = NeriDesign.isClean
+    val fallbackColor = when {
+        clean -> MaterialTheme.colorScheme.surfaceContainerLow.copy(
+            alpha = if (LocalHasCustomBackground.current) 0.62f else 0.94f
+        )
+        fallbackScrimAlpha > 0f -> MaterialTheme.colorScheme.background.copy(alpha = fallbackScrimAlpha)
+        else -> Color.Transparent
     }
 
     AdvancedGlassSurface(
         role = AdvancedGlassRole.BottomNavigation,
         modifier = modifier,
-        fallbackColor = fallbackColor
+        fallbackColor = fallbackColor,
+        tintColor = if (clean) MaterialTheme.colorScheme.surfaceContainerLow else Color.Unspecified
     ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
         NavigationBar(
             modifier = Modifier
                 .fillMaxWidth()
@@ -98,7 +128,7 @@ fun NeriBottomBar(
             contentColor = MaterialTheme.colorScheme.onSurface,
             tonalElevation = 0.dp,
         ) {
-            items.forEach { (dest, icon) ->
+            items.forEachIndexed { index, (dest, icon) ->
                 val selected = isNeriNavigationDestinationSelected(currentDestination, dest)
                 val label = stringResource(dest.labelResId)
                 NavigationBarItem(
@@ -107,17 +137,24 @@ fun NeriBottomBar(
                         context.performHapticFeedback()
                         onItemSelected(dest)
                     },
-                    icon = { Icon(icon, contentDescription = label) },
+                    icon = {
+                        if (clean) {
+                            CleanTabIcon(dest, icon, selected, label)
+                        } else {
+                            Icon(icon, contentDescription = label)
+                        }
+                    },
                     label = {
                         Text(
                             text = label,
+                            style = if (clean) MaterialTheme.typography.labelSmall else LocalTextStyle.current,
                             maxLines = 1,
                             softWrap = false,
                             overflow = TextOverflow.Ellipsis
                         )
                     },
-                    alwaysShowLabel = alwaysShowLabel,
-                    colors = NavigationBarItemDefaults.colors(
+                    alwaysShowLabel = alwaysShowLabel || clean,
+                    colors = if (clean) cleanNavigationBarItemColors() else NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         selectedTextColor = MaterialTheme.colorScheme.onSurface,
                         indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(
@@ -129,7 +166,51 @@ fun NeriBottomBar(
                 )
             }
         }
+        }
     }
+}
+
+@Composable
+private fun cleanNavigationBarItemColors() = NavigationBarItemDefaults.colors(
+    selectedIconColor = MaterialTheme.colorScheme.primary,
+    selectedTextColor = MaterialTheme.colorScheme.primary,
+    indicatorColor = Color.Transparent,
+    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+)
+
+/** Filled rounded glyph for the active tab, outlined for the rest, with a small spring pop. */
+@Composable
+internal fun CleanTabIcon(
+    destination: Destinations,
+    outlinedIcon: ImageVector,
+    selected: Boolean,
+    contentDescription: String
+) {
+    val pop = remember { Animatable(1f) }
+    LaunchedEffect(selected) {
+        if (selected) {
+            pop.snapTo(0.84f)
+            pop.animateTo(1f, NeriMotion.bouncy())
+        }
+    }
+    Icon(
+        imageVector = if (selected) cleanSelectedTabIcon(destination) ?: outlinedIcon else outlinedIcon,
+        contentDescription = contentDescription,
+        modifier = Modifier.graphicsLayer {
+            scaleX = pop.value
+            scaleY = pop.value
+        }
+    )
+}
+
+internal fun cleanSelectedTabIcon(destination: Destinations): ImageVector? = when (destination.route) {
+    Destinations.Home.route -> Icons.Rounded.Home
+    Destinations.Explore.route -> Icons.Rounded.Search
+    Destinations.Library.route -> Icons.Rounded.LibraryMusic
+    Destinations.Settings.route -> Icons.Rounded.Settings
+    Destinations.Debug.route -> Icons.Rounded.BugReport
+    else -> null
 }
 
 internal fun shouldUseOpaqueBottomBarFallback(

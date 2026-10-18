@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.data.config
 
 import android.content.ContentResolver
 import android.content.Context
+import android.content.res.Configuration
+import android.content.res.Resources
 import android.net.Uri
 import java.io.ByteArrayInputStream
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -26,10 +28,16 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockStatic
+import org.mockito.Mockito.`when`
 
 class ConfigSettingsSanitizerImportTest {
     private val resolver = mock(ContentResolver::class.java)
+    private val configuration = mock(Configuration::class.java)
+    private val resources = mock(Resources::class.java).also {
+        `when`(it.configuration).thenReturn(configuration)
+    }
     private val context = mock(Context::class.java).also { context ->
+        doReturn(resources).`when`(context).resources
         doReturn(resolver).`when`(context).contentResolver
         doReturn(INVALID_VALUES_WARNING).`when`(context)
             .getString(CoreCommonR.string.config_import_warning_invalid_setting_values)
@@ -37,6 +45,28 @@ class ConfigSettingsSanitizerImportTest {
             .getString(CoreCommonR.string.config_import_warning_background_image)
     }
     private val sanitizer = ConfigSettingsSanitizer(context)
+
+    @Test
+    fun `legacy two times density imports use each tablet limit and fixed phone and car limits`() {
+        for ((width, mode, expected) in listOf(
+            Triple(599, Configuration.UI_MODE_TYPE_NORMAL, 1.2f),
+            Triple(600, Configuration.UI_MODE_TYPE_NORMAL, 1f),
+            Triple(800, Configuration.UI_MODE_TYPE_NORMAL, 1.3f),
+            Triple(1200, Configuration.UI_MODE_TYPE_NORMAL, 2f),
+            Triple(1500, Configuration.UI_MODE_TYPE_NORMAL, 2f),
+            Triple(320, Configuration.UI_MODE_TYPE_CAR or Configuration.UI_MODE_NIGHT_YES, 1.5f)
+        )) {
+            configuration.smallestScreenWidthDp = width
+            configuration.uiMode = mode
+            val warnings = mutableListOf<String>()
+            val result = sanitizer.sanitize(
+                TypedPreferenceSnapshot(floats = mapOf(SettingsKeys.UI_DENSITY_SCALE.name to 2f)),
+                warnings
+            )
+            assertEquals(expected, result.floats[SettingsKeys.UI_DENSITY_SCALE.name])
+            assertEquals(if (expected == 2f) emptyList<String>() else listOf(INVALID_VALUES_WARNING), warnings)
+        }
+    }
 
     @Test
     fun `floating lyric layout choices are included in backup validation`() {

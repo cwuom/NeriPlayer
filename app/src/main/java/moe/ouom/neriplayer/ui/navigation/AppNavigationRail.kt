@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.ui.navigation
 
+import androidx.compose.material3.LocalTextStyle
+import moe.ouom.neriplayer.ui.component.navigation.cleanSelectedTabIcon
+import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -134,13 +138,24 @@ internal fun AppNavigationRail(
         selectAlpha,
         LocalAdvancedGlassController.current.isBaseBlurRequested
     )
-    val fallbackColor = MaterialTheme.colorScheme.background.copy(alpha = scrimAlpha)
+    val clean = NeriDesign.isClean
+    val fallbackColor = if (clean) {
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(
+            alpha = if (LocalHasCustomBackground.current) 0.62f else 0.94f
+        )
+    } else {
+        MaterialTheme.colorScheme.background.copy(alpha = scrimAlpha)
+    }
     AdvancedGlassSurface(
         // 侧栏只覆盖背景，右栏的页面 backdrop 不在侧栏的采样范围内
         role = AdvancedGlassRole.NavigationRail,
         modifier = modifier.width(AppNavigationRailWidth).fillMaxHeight().testTag("appNavigationRail"),
         fallbackColor = fallbackColor,
-        tintColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        tintColor = if (clean) {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        }
     ) {
         NavigationRail(
             modifier = Modifier.fillMaxSize(),
@@ -167,16 +182,30 @@ internal fun AppNavigationRail(
                                 context.performHapticFeedback()
                                 onMainTabSelected(destination.route)
                             },
-                            icon = { Icon(icon, contentDescription = label) },
+                            icon = {
+                                val railIcon = if (clean && selected) {
+                                    cleanSelectedTabIcon(destination) ?: icon
+                                } else {
+                                    icon
+                                }
+                                Icon(railIcon, contentDescription = label)
+                            },
                             modifier = Modifier.testTag("appNavigationItem_${destination.route}"),
                             label = {
-                                if (selected) {
+                                if (selected || clean) {
                                     Text(label, modifier = Modifier.testTag("appNavigationLabel_${destination.route}"),
+                                        style = if (clean) MaterialTheme.typography.labelSmall else LocalTextStyle.current,
                                         maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                                 }
                             },
-                            alwaysShowLabel = false,
-                            colors = NavigationRailItemDefaults.colors(
+                            alwaysShowLabel = clean,
+                            colors = if (clean) NavigationRailItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ) else NavigationRailItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
                                 indicatorColor = MaterialTheme.colorScheme.primaryContainer,

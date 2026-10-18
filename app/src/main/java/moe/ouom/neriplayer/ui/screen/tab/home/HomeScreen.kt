@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import android.app.Application
 import android.content.ClipData
@@ -108,6 +110,8 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -175,6 +179,19 @@ private const val HomeScrollKeyYtEmptyFeedError = "home:ytmusic:empty-feed:error
 private const val HomeScrollKeyNeteaseRadarPlaylists = "home:netease:radar-playlists"
 private const val HomeScrollKeyNeteaseRadarPlaylistsHeader = "$HomeScrollKeyNeteaseRadarPlaylists:header"
 private const val HomeScrollKeyNeteaseRadarPlaylistsContent = "$HomeScrollKeyNeteaseRadarPlaylists:content"
+
+internal class HomePhoneGridCells(minSize: Dp) : GridCells {
+    private val adaptive = GridCells.Adaptive(minSize)
+    private val twoColumns = GridCells.Fixed(2)
+
+    override fun Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): List<Int> {
+        val sizes = with(adaptive) { calculateCrossAxisCellSizes(availableSize, spacing) }
+        // use the measured space so padding and fractional density cannot turn two tiles into one
+        return if (sizes.size == 1 && availableSize - spacing >= 2) {
+            with(twoColumns) { calculateCrossAxisCellSizes(availableSize, spacing) }
+        } else sizes
+    }
+}
 
 private fun homeNeteaseSongSectionKey(group: String, source: NeteaseHomeSongSource): String {
     return "home:netease:$group:${source.name.lowercase(Locale.ROOT)}"
@@ -346,6 +363,8 @@ fun HomeScreen(
     val appBarTitle = titleOptions[titleSeed % titleOptions.size]
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
+        // follow the finger and stay put; a release snap reads as an unwanted bounce
+        snapAnimationSpec = null,
         canScroll = {
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = gridState.canScrollForward,
@@ -386,10 +405,27 @@ fun HomeScreen(
     val isTabletLayout = windowWidthDp >= 720.dp
     val isTabletDevice =
         LocalConfiguration.current.smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
+    // clean style trades a little density for calmer rhythm: wider gutters, larger tablet tiles
+    val cleanStyle = NeriDesign.isClean
     val pageHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
-    val gridMinCellSize = if (isTabletLayout) 156.dp else 120.dp
+    val gridMinCellSize = when {
+        isTabletLayout && cleanStyle -> 172.dp
+        isTabletLayout -> 156.dp
+        // two large tiles per row on phones reads calmer than three thumbnails
+        cleanStyle -> 150.dp
+        else -> 120.dp
+    }
     val gridContentPadding = if (isTabletLayout) 14.dp else 8.dp
-    val gridSpacing = if (isTabletLayout) 14.dp else 10.dp
+    val gridSpacing = when {
+        isTabletLayout && cleanStyle -> 18.dp
+        isTabletLayout -> 14.dp
+        cleanStyle -> 14.dp
+        else -> 10.dp
+    }
+    val gridColumns = remember(gridMinCellSize, cleanStyle, isTabletLayout) {
+        if (cleanStyle && !isTabletLayout) HomePhoneGridCells(gridMinCellSize)
+        else GridCells.Adaptive(gridMinCellSize)
+    }
     // 大标题与卡片左边缘对齐，扣掉 TopAppBar 自带的标题内边距
     val appBarTitleInset = (pageHorizontalPadding + gridContentPadding - TopAppBarTitleInset).coerceAtLeast(0.dp)
 
@@ -467,6 +503,16 @@ fun HomeScreen(
                     scrolledContainerColor = Color.Transparent
                 )
             )
+            val openSearch = LocalHomeOpenSearch.current
+            if (cleanStyle && openSearch != null) {
+                HomeSearchPill(
+                    onClick = openSearch,
+                    modifier = Modifier
+                        .widthIn(max = 1240.dp)
+                        .align(Alignment.CenterHorizontally)
+                        .padding(horizontal = pageHorizontalPadding + gridContentPadding, vertical = 4.dp)
+                )
+            }
 
             Box(
                 modifier = Modifier
@@ -508,7 +554,7 @@ fun HomeScreen(
                 }
                 LazyVerticalGrid(
                     state = gridState,
-                    columns = GridCells.Adaptive(gridMinCellSize),
+                    columns = gridColumns,
                     contentPadding = PaddingValues(
                         start = gridContentPadding,
                         end = gridContentPadding,
@@ -1081,7 +1127,7 @@ private fun SongRowMini(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(neriRoundedShape(8.dp))
             .clickable { onClick() }
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1108,7 +1154,7 @@ private fun SongRowMini(
                 modifier = Modifier
                     .width(44.dp)
                     .aspectRatio(1f)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(neriRoundedShape(8.dp))
             )
             Spacer(Modifier.width(10.dp))
         } else {
@@ -1282,7 +1328,7 @@ private fun RadarPlaylistCard(
 
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(neriRoundedShape(8.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { showMenu = true }
@@ -1292,7 +1338,7 @@ private fun RadarPlaylistCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(neriRoundedShape(8.dp))
                 .background(MaterialTheme.colorScheme.secondaryContainer),
             contentAlignment = Alignment.Center
         ) {
@@ -1321,7 +1367,7 @@ private fun RadarPlaylistCard(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(8.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(neriRoundedShape(8.dp))
                     .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.86f))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.labelSmall,
@@ -1418,44 +1464,61 @@ fun PlaylistCard(
 
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(neriRoundedShape(8.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { showMenu = true }
             )
     ) {
-        AsyncImage(
-            model = fastScrollableImageRequest(
-                context = context,
-                data = playlist.picUrl,
-                sizePx = 384,
-                offlineMode = offlineMode
-            ),
-            contentDescription = playlist.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp))
-        )
-        Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
-            Text(
-                text = playlist.name,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleSmall
-            )
-            Text(
-                text = stringResource(
+        if (NeriDesign.isClean) {
+            HomeFeaturedArtwork(
+                model = fastScrollableImageRequest(
+                    context = context,
+                    data = playlist.picUrl,
+                    sizePx = 384,
+                    offlineMode = offlineMode
+                ),
+                title = playlist.name,
+                subtitle = stringResource(
                     CoreCommonR.string.home_play_count_format,
                     formatPlayCount(context, playlist.playCount),
                     playlist.trackCount
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Clip
+                )
             )
+        } else {
+            AsyncImage(
+                model = fastScrollableImageRequest(
+                    context = context,
+                    data = playlist.picUrl,
+                    sizePx = 384,
+                    offlineMode = offlineMode
+                ),
+                contentDescription = playlist.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(neriRoundedShape(8.dp))
+            )
+            Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
+                Text(
+                    text = playlist.name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    text = stringResource(
+                        CoreCommonR.string.home_play_count_format,
+                        formatPlayCount(context, playlist.playCount),
+                        playlist.trackCount
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
+                )
+            }
         }
 
         DropdownMenu(
@@ -1502,232 +1565,6 @@ fun PlaylistCard(
                     }
                 }
             )
-        }
-    }
-}
-
-@Composable
-private fun YtMusicPlaylistCard(
-    playlist: YouTubeMusicPlaylist,
-    isFavorite: Boolean,
-    onClick: () -> Unit,
-    onShowSnackbar: (String) -> Unit,
-    offlineMode: Boolean
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
-    val playlistFavoriteId = remember(playlist.playlistId, playlist.browseId) {
-        playlist.favoriteId()
-    }
-    var showMenu by remember { mutableStateOf(false) }
-    val unfavoritedText = stringResource(CoreCommonR.string.home_unfavorited)
-    val favoriteSuccessText = stringResource(CoreCommonR.string.favorite_success)
-
-    Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = { showMenu = true }
-            )
-    ) {
-        AsyncImage(
-            model = fastScrollableImageRequest(
-                context = context,
-                data = playlist.coverUrl,
-                sizePx = 384,
-                offlineMode = offlineMode
-            ),
-            contentDescription = playlist.title,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp))
-        )
-        Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
-            Text(
-                text = playlist.title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleSmall
-            )
-            if (playlist.subtitle.isNotBlank()) {
-                Text(
-                    text = playlist.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip
-                )
-            }
-        }
-
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false }
-        ) {
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        if (isFavorite) {
-                            stringResource(CoreCommonR.string.home_unfavorite_playlist)
-                        } else {
-                            stringResource(CoreCommonR.string.home_favorite_playlist)
-                        }
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = if (isFavorite) {
-                            Icons.Filled.Favorite
-                        } else {
-                            Icons.Outlined.FavoriteBorder
-                        },
-                        contentDescription = null
-                    )
-                },
-                onClick = {
-                    showMenu = false
-                    scope.launch {
-                        if (isFavorite) {
-                            favoriteRepo.removeFavorite(playlistFavoriteId, "youtubeMusic")
-                            onShowSnackbar(unfavoritedText)
-                        } else {
-                            favoriteRepo.addFavorite(
-                                id = playlistFavoriteId,
-                                name = playlist.title,
-                                coverUrl = playlist.coverUrl,
-                                trackCount = playlist.trackCount,
-                                source = "youtubeMusic",
-                                browseId = playlist.browseId,
-                                playlistId = playlist.playlistId,
-                                subtitle = playlist.subtitle,
-                                songs = emptyList()
-                            )
-                            onShowSnackbar(favoriteSuccessText)
-                        }
-                    }
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun YtMusicHomeItemCard(
-    item: YouTubeMusicHomeItem,
-    isFavorite: Boolean,
-    onClick: () -> Unit,
-    onShowSnackbar: (String) -> Unit,
-    offlineMode: Boolean
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
-    val playlist = remember(item) { item.toPlaylist() }
-    val playlistFavoriteId = remember(playlist?.playlistId, playlist?.browseId) {
-        playlist?.favoriteId()
-    }
-    var showMenu by remember { mutableStateOf(false) }
-    val unfavoritedText = stringResource(CoreCommonR.string.home_unfavorited)
-    val favoriteSuccessText = stringResource(CoreCommonR.string.favorite_success)
-
-    Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = {
-                    if (playlist != null) {
-                        showMenu = true
-                    }
-                }
-            )
-    ) {
-        AsyncImage(
-            model = fastScrollableImageRequest(
-                context = context,
-                data = item.coverUrl,
-                sizePx = 384,
-                offlineMode = offlineMode
-            ),
-            contentDescription = item.title,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp))
-        )
-        Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
-            Text(
-                text = item.title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleSmall
-            )
-            if (item.subtitle.isNotBlank()) {
-                Text(
-                    text = item.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip
-                )
-            }
-        }
-
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false }
-        ) {
-            playlist?.let { resolvedPlaylist ->
-                val favoriteId = playlistFavoriteId ?: return@let
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            if (isFavorite) {
-                                stringResource(CoreCommonR.string.home_unfavorite_playlist)
-                            } else {
-                                stringResource(CoreCommonR.string.home_favorite_playlist)
-                            }
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (isFavorite) {
-                                Icons.Filled.Favorite
-                            } else {
-                                Icons.Outlined.FavoriteBorder
-                            },
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        showMenu = false
-                        scope.launch {
-                            if (isFavorite) {
-                                favoriteRepo.removeFavorite(favoriteId, "youtubeMusic")
-                                onShowSnackbar(unfavoritedText)
-                            } else {
-                                favoriteRepo.addFavorite(
-                                    id = favoriteId,
-                                    name = resolvedPlaylist.title,
-                                    coverUrl = resolvedPlaylist.coverUrl,
-                                    trackCount = resolvedPlaylist.trackCount,
-                                    source = "youtubeMusic",
-                                    browseId = resolvedPlaylist.browseId,
-                                    playlistId = resolvedPlaylist.playlistId,
-                                    subtitle = resolvedPlaylist.subtitle,
-                                    songs = emptyList()
-                                )
-                                onShowSnackbar(favoriteSuccessText)
-                            }
-                        }
-                    }
-                )
-            }
         }
     }
 }
@@ -1811,7 +1648,7 @@ private fun YouTubeMusicHomeItem.isPlaylistItem(): Boolean {
     }
 }
 
-private fun YouTubeMusicHomeItem.toPlaylist(): YouTubeMusicPlaylist? {
+internal fun YouTubeMusicHomeItem.toPlaylist(): YouTubeMusicPlaylist? {
     if (!isPlaylistItem()) {
         return null
     }

@@ -11,12 +11,19 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
+import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsPreparationCache
 import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
 import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
 
 internal fun resolvePreferredNeteaseLyricSongId(song: SongItem?): Long? {
     return song?.let(::resolveKnownNeteaseLyricSongId)
 }
+
+internal data class NowPlayingConfirmedLyricsKey(
+    val original: String?,
+    val translated: String?,
+    val phonetic: String?
+)
 
 internal data class LoadedLyricsState(
     val rawLyrics: String?,
@@ -28,8 +35,12 @@ internal data class LoadedLyricsState(
     val plainLyrics: List<LyricEntry>,
     val plainTranslatedLyrics: List<LyricEntry>,
     val embeddedPhoneticLyrics: List<LyricEntry>,
-    val preferredSource: LyricSourcePreference? = null
-)
+    val preferredSource: LyricSourcePreference? = null,
+    val confirmedLyricsKey: NowPlayingConfirmedLyricsKey? = null
+) {
+    // 高级歌词与完整显示快照共用寿命，重开可复用结果，内容 copy 则建立新准备状态
+    val advancedLyricsPreparation = AdvancedLyricsPreparationCache()
+}
 
 internal enum class ManagedLyricVariant(
     val localText: (LocalLyricsScanMetadata) -> String?,
@@ -179,14 +190,28 @@ internal fun buildNowPlayingInitialLyricsState(
     return overlayConfirmedUserLyrics(song, buildPreferredLyricSourceState(cachedPreferredLyrics))
 }
 
+internal fun buildNowPlayingCachedInitialLyricsState(
+    song: SongItem?,
+    cachedPreferredLyrics: PreferredLyricSourceResult?
+): LoadedLyricsState {
+    // 首帧只采用已解析的在线缓存，文件和编辑文本交给现有 IO 快读阶段
+    if (cachedPreferredLyrics == null || song?.isLocalSong() == true || song.hasConfirmedLyricOverride()) {
+        return buildNowPlayingFastLyricsState(null, null, null)
+    }
+    return buildPreferredLyricSourceState(cachedPreferredLyrics)
+}
+
 internal fun SongItem?.hasConfirmedLyricOverride(): Boolean = this?.lyricSyncEdited == true &&
     listOf(matchedLyric, matchedTranslatedLyric, matchedRomanizedLyric).any { it != null }
 
 internal fun overlayConfirmedUserLyrics(song: SongItem?, fallback: LoadedLyricsState): LoadedLyricsState {
     if (song?.lyricSyncEdited != true) return fallback
+    val key = NowPlayingConfirmedLyricsKey(song.matchedLyric, song.matchedTranslatedLyric, song.matchedRomanizedLyric)
+    // IO 阶段已处理的同一份编辑结果可以直接发布，避免主线程再次解析和复制分轨
+    if (fallback.confirmedLyricsKey == key) return fallback
     val original = overlayConfirmedOriginal(song.matchedLyric, fallback)
     val translated = overlayConfirmedTranslation(song.matchedTranslatedLyric, original)
-    return overlayConfirmedPhonetic(song.matchedRomanizedLyric, translated)
+    return overlayConfirmedPhonetic(song.matchedRomanizedLyric, translated).copy(confirmedLyricsKey = key)
 }
 
 private fun overlayConfirmedOriginal(text: String?, fallback: LoadedLyricsState): LoadedLyricsState {

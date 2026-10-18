@@ -23,6 +23,13 @@ package moe.ouom.neriplayer.ui.screen.tab.explore
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.ui.component.common.NeriSearchFieldGlass
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.shape.CircleShape
+import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
@@ -90,6 +97,7 @@ import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
@@ -249,6 +257,29 @@ internal fun shouldRenderExploreSearchResults(
     page: Int,
     currentPage: Int
 ): Boolean = page == currentPage
+
+@Composable
+internal fun rememberExploreSearchCollapsingHeaderState(
+    query: String,
+    source: SearchSource,
+    searching: Boolean,
+    searchError: String?,
+    hasResults: Boolean
+): ExploreCollapsingHeaderState {
+    val state = rememberExploreCollapsingHeaderState()
+    val showingSearch = query.isNotEmpty()
+    val showingResults = showingSearch && !searching && searchError == null && hasResults
+    LaunchedEffect(showingSearch, showingResults) {
+        // placeholders cannot dispatch the scroll gesture needed to reveal hidden controls
+        if (!showingResults) state.expand()
+    }
+    LaunchedEffect(showingSearch, source) {
+        if (!showingSearch && (source == SearchSource.BILIBILI || source == SearchSource.LINK_RECOGNITION)) {
+            state.expand()
+        }
+    }
+    return state
+}
 
 internal fun exploreSearchResultsBottomPadding(miniPlayerHeight: Dp): Dp =
     16.dp + miniPlayerHeight
@@ -446,33 +477,15 @@ fun ExploreScreen(
     val tagChipUnselectedAlpha = if (backgroundImageUri == null) 1f else 0.74f
     val tagChipBorderAlpha = if (backgroundImageUri == null) 1f else 0.58f
     var previousSearchSource by remember { mutableStateOf(ui.selectedSearchSource) }
-    val isExploreContentScrolled by remember(
-        searchQuery,
-        ui.selectedSearchSource,
-        searchListState,
-        gridState,
-        youtubeGridState,
-        topAppBarState
-    ) {
-        derivedStateOf {
-            when {
-                topAppBarState.collapsedFraction > 0f -> true
-                searchQuery.isNotBlank() -> searchListState.canScrollBackward
-                ui.selectedSearchSource == SearchSource.NETEASE -> gridState.canScrollBackward
-                ui.selectedSearchSource == SearchSource.YOUTUBE_MUSIC -> {
-                    youtubeGridState.canScrollBackward
-                }
-                else -> false
-            }
-        }
-    }
+    // history and type chips stay put while results scroll; collapsing them mid-gesture
+    // shifted the list under the finger
     val shouldShowSearchHistory = shouldShowExploreSearchHistory(
         history = visibleSearchHistory,
-        contentScrolled = isExploreContentScrolled
+        contentScrolled = false
     )
     val searchTypeBarSource = exploreSearchTypeBarSource(
         selectedSearchSource = ui.selectedSearchSource,
-        contentScrolled = isExploreContentScrolled
+        contentScrolled = false
     )
 
     val shouldLoadMoreSearch by remember(
@@ -672,8 +685,17 @@ fun ExploreScreen(
         queueExploreSearchRecord(normalizedQuery)
     }
 
+    val collapsingHeader = rememberExploreSearchCollapsingHeaderState(
+        query = searchQuery,
+        source = ui.selectedSearchSource,
+        searching = ui.searching,
+        searchError = ui.searchError,
+        hasResults = ui.searchItems.isNotEmpty()
+    )
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
+        // follow the finger and stay put; a release snap reads as an unwanted bounce
+        snapAnimationSpec = null,
         canScroll = {
             when {
                 searchQuery.isNotEmpty() -> shouldAllowCollapsingTopAppBar(
@@ -727,7 +749,8 @@ fun ExploreScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+                .nestedScroll(collapsingHeader.connection),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Column(
@@ -736,21 +759,25 @@ fun ExploreScreen(
                     .fillMaxWidth()
                     .padding(horizontal = searchPanelHorizontalPadding, vertical = 8.dp)
             ) {
+                    val cleanSearchField = NeriDesign.isClean
+                    val searchFieldLabel = stringResource(
+                        if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
+                            CoreCommonR.string.explore_link_input_label
+                        } else {
+                            CoreCommonR.string.search_keyword
+                        }
+                    )
+                    NeriSearchFieldGlass(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = if (cleanSearchField) NeriDesign.tokens.groupShape else ExploreSearchFieldShape
+                    ) {
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = {
                             onSearchQueryChange(it)
                         },
-                        label = {
-                            Text(
-                                stringResource(
-                                    if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
-                                        CoreCommonR.string.explore_link_input_label
-                                    } else {
-                                        CoreCommonR.string.search_keyword
-                                    }
-                                )
-                            )
+                        label = if (cleanSearchField) null else {
+                            { Text(searchFieldLabel) }
                         },
                         placeholder = {
                             when {
@@ -760,7 +787,18 @@ fun ExploreScreen(
                                 ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn -> {
                                     Text(stringResource(CoreCommonR.string.netease_login_required_search_placeholder))
                                 }
+                                cleanSearchField -> Text(searchFieldLabel)
                             }
+                        },
+                        colors = if (cleanSearchField) {
+                            OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                unfocusedBorderColor = Color.Transparent
+                            )
+                        } else {
+                            OutlinedTextFieldDefaults.colors()
                         },
                         leadingIcon = { Icon(Icons.Default.Search, "Search") },
                         trailingIcon = {
@@ -776,14 +814,20 @@ fun ExploreScreen(
                             submitExploreSearch()
                         }),
                         singleLine = true,
-                        shape = ExploreSearchFieldShape,
+                        shape = if (cleanSearchField) NeriDesign.tokens.groupShape else ExploreSearchFieldShape,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    }
+                    // only the search field stays pinned; everything below scrolls with the list
+                    Column(Modifier.fillMaxWidth().exploreCollapsingHeader(collapsingHeader)) {
                     ExploreSearchHistoryRow(
                         history = visibleSearchHistory,
                         visible = shouldShowSearchHistory,
                         query = searchQuery,
                         onHistoryClick = { item -> submitExploreSearch(item) },
+                        onRemoveHistory = { item ->
+                            scope.launch { searchHistoryRepository.remove(item) }
+                        },
                         onClearHistory = {
                             lastRecordedSearchKeyword = null
                             pendingSearchHistoryRecord = null
@@ -809,7 +853,16 @@ fun ExploreScreen(
                         )
                     }
                     Spacer(Modifier.height(8.dp))
-                    AdvancedGlassSurface(
+                    if (NeriDesign.isClean) {
+                        val sourceLabels = orderedSearchSources.map { searchSourceLabel(it) }
+                        CleanSegmentedTabs(
+                            labels = sourceLabels,
+                            selectedIndex = pagerState.currentPage,
+                            onSelected = { index ->
+                                scope.launch { pagerState.animateScrollToPage(index) }
+                            }
+                        )
+                    } else AdvancedGlassSurface(
                         role = AdvancedGlassRole.ScreenTopTab,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -852,6 +905,7 @@ fun ExploreScreen(
                         unselectedAlpha = tagChipUnselectedAlpha,
                         borderAlpha = tagChipBorderAlpha
                     )
+                    }
                 }
 
             HorizontalPager(
@@ -1322,6 +1376,8 @@ private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
+        // follow the finger and stay put; a release snap reads as an unwanted bounce
+        snapAnimationSpec = null,
         canScroll = {
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = false,
@@ -1381,6 +1437,7 @@ private fun ExploreSearchHistoryRow(
     visible: Boolean,
     query: String,
     onHistoryClick: (String) -> Unit,
+    onRemoveHistory: (String) -> Unit,
     onClearHistory: () -> Unit
 ) {
     AnimatedVisibility(visible = visible && history.isNotEmpty()) {
@@ -1434,10 +1491,12 @@ private fun ExploreSearchHistoryRow(
                     ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                itemsIndexed(history) { _, item ->
+                itemsIndexed(history, key = { _, item -> item }) { _, item ->
                     ExploreSearchHistoryChip(
                         text = item,
-                        onClick = { onHistoryClick(item) }
+                        onClick = { onHistoryClick(item) },
+                        onRemove = { onRemoveHistory(item) },
+                        modifier = Modifier.animateItem()
                     )
                 }
             }
@@ -1484,24 +1543,47 @@ internal fun Modifier.exploreHorizontalEdgeFade(
 @Composable
 private fun ExploreSearchHistoryChip(
     text: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f)
+    val removeDescription = "${stringResource(CoreCommonR.string.action_delete)} $text"
     ExploreGlassPillSurface(
+        modifier = modifier,
         fallbackColor = containerColor,
         tintColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         onClick = onClick
     ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            style = MaterialTheme.typography.labelMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = text,
+                modifier = Modifier.padding(start = 12.dp, top = 7.dp, bottom = 7.dp),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Box(
+                modifier = Modifier
+                    .padding(start = 2.dp, end = 4.dp)
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onRemove)
+                    .semantics { contentDescription = removeDescription },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Clear,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
+        }
     }
 }
+
 
 internal fun filteredExploreSearchHistory(history: List<String>): List<String> {
     return history.take(EXPLORE_HISTORY_DISPLAY_LIMIT)

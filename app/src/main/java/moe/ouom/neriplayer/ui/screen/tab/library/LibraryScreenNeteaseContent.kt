@@ -23,6 +23,11 @@ package moe.ouom.neriplayer.ui.screen.tab.library
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.ui.component.common.NeriSearchFieldGlass
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
+import androidx.compose.ui.graphics.Shape
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -102,6 +107,7 @@ internal fun NeteaseLibraryList(
         }
     }
 
+    val cardShape = neriRoundedShape(12.dp)
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(
@@ -113,7 +119,6 @@ internal fun NeteaseLibraryList(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        val cardShape = RoundedCornerShape(12.dp)
         item(key = "netease_library_header") {
             NeteaseLibraryHeaderContent(
                 selectedCategory = selectedCategory,
@@ -229,7 +234,7 @@ internal fun NeteaseCategoryTabs(
 
 @Composable
 internal fun NeteaseLibraryEmptyCard(
-    cardShape: RoundedCornerShape,
+    cardShape: Shape,
     title: String,
     hint: String,
     iconIsAlbum: Boolean
@@ -270,7 +275,7 @@ internal fun NeteaseLibraryEmptyCard(
 @Composable
 internal fun NeteasePlaylistRow(
     playlist: PlaylistSummary,
-    cardShape: RoundedCornerShape,
+    cardShape: Shape,
     context: Context,
     onClick: () -> Unit,
     offlineMode: Boolean
@@ -310,7 +315,7 @@ internal fun NeteasePlaylistRow(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(56.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(neriRoundedShape(8.dp))
                 )
             }
         )
@@ -320,7 +325,7 @@ internal fun NeteasePlaylistRow(
 @Composable
 internal fun NeteaseAlbumRow(
     album: AlbumSummary,
-    cardShape: RoundedCornerShape,
+    cardShape: Shape,
     onClick: () -> Unit,
     offlineMode: Boolean
 ) {
@@ -360,7 +365,7 @@ internal fun NeteaseAlbumRow(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(56.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(neriRoundedShape(8.dp))
                 )
             }
         )
@@ -383,13 +388,13 @@ internal fun NeteaseAlbumList(
         filterNeteaseAlbums(playlists, searchQuery)
     }
 
+    val cardShape = neriRoundedShape(12.dp)
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        val cardShape = RoundedCornerShape(12.dp)
         item(key = "netease_library_header") {
             NeteaseLibraryHeaderContent(
                 selectedCategory = selectedCategory,
@@ -397,16 +402,23 @@ internal fun NeteaseAlbumList(
             )
         }
         item(key = "netease_album_search") {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
+            NeriSearchFieldGlass(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
+                shape = neriSearchFieldShape(LibrarySearchFieldShape)
+            ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text(stringResource(CoreCommonR.string.library_netease_search_hint)) },
                 singleLine = true,
-                shape = LibrarySearchFieldShape
+                shape = neriSearchFieldShape(LibrarySearchFieldShape),
+
+                colors = neriSearchFieldColors()
             )
+            }
         }
         if (playlists.isNotEmpty() && filteredAlbums.isEmpty()) {
             item {
@@ -513,7 +525,7 @@ internal fun NeteaseAlbumList(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .size(56.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(neriRoundedShape(8.dp))
                         )
                     }
                 )

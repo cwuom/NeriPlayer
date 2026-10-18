@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -38,6 +39,7 @@ class MainTabPredictiveBackHandlerTest {
     private lateinit var navController: NavHostController
     private lateinit var transitionState: MainTabLayerTransitionState
     private var selectedRoute by mutableStateOf(HOME)
+    private var previewEnabled by mutableStateOf(true)
     private var nestedDepth by mutableIntStateOf(0)
     private val listStates = mutableMapOf<String, LazyListState>()
     private val committedRoutes = mutableListOf<String>()
@@ -45,7 +47,8 @@ class MainTabPredictiveBackHandlerTest {
     private var composedHandlerRoutes: Pair<String, String?> = HOME to HOME
     private val dispatcher get() = composeRule.activity.onBackPressedDispatcher
 
-    private fun setHost() {
+    private fun setHost(preview: Boolean = true) {
+        previewEnabled = preview
         composeRule.setContent {
             navController = rememberNavController()
             val currentEntry by navController.currentBackStackEntryAsState()
@@ -66,16 +69,18 @@ class MainTabPredictiveBackHandlerTest {
                     }
                     composable(DETAIL) { Text("detail") }
                 }
-                MainTabPredictiveBackHandler(
-                    navController = navController,
-                    transitionState = transitionState,
-                    selectedRoute = composedSelectedRoute,
-                    enabled = true,
-                    onBackCommitted = { route ->
-                        committedRoutes += route
-                        selectedRoute = route
-                    }
-                )
+                CompositionLocalProvider(LocalPredictiveBackPreviewEnabled provides previewEnabled) {
+                    MainTabPredictiveBackHandler(
+                        navController = navController,
+                        transitionState = transitionState,
+                        selectedRoute = composedSelectedRoute,
+                        enabled = true,
+                        onBackCommitted = { route ->
+                            committedRoutes += route
+                            selectedRoute = route
+                        }
+                    )
+                }
                 MainTabLayerHost(
                     selectedRoute,
                     transitionState,
@@ -192,6 +197,153 @@ class MainTabPredictiveBackHandlerTest {
             assertEquals(HOME, navController.currentDestination?.route)
             assertEquals(HOME, transitionState.visibleScenes.single().route)
         }
+    }
+
+    @Test
+    fun `disabled preview keeps the tab still and cancellation preserves history`() {
+        setHost(preview = false)
+        startGesture(0.6f)
+
+        composeRule.runOnIdle {
+            assertUnpreviewedHistory()
+            dispatcher.dispatchOnBackCancelled()
+        }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle { assertUnpreviewedHistory() }
+    }
+
+    @Test
+    fun `disabled preview commits back on release and restores the previous tab state`() {
+        setHost(preview = false)
+        startGesture(0.35f)
+
+        composeRule.runOnIdle {
+            assertUnpreviewedHistory()
+            dispatcher.onBackPressed()
+        }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle { assertCommittedHome() }
+    }
+
+    @Test
+    fun `disabled preview still supports ordinary back presses`() {
+        setHost(preview = false)
+
+        composeRule.runOnIdle { dispatcher.onBackPressed() }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle { assertCommittedHome() }
+    }
+
+    @Test
+    fun `preview changes between gestures apply without remounting tab history`() {
+        setHost()
+        startGesture(0.4f)
+        composeRule.runOnIdle {
+            assertEquals(listOf(SETTINGS, HOME), transitionState.visibleScenes.map(MainTabLayerScene::route))
+            dispatcher.dispatchOnBackCancelled()
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { previewEnabled = false }
+        composeRule.waitForIdle()
+
+        startGesture(0.5f)
+        composeRule.runOnIdle {
+            assertUnpreviewedHistory()
+            dispatcher.dispatchOnBackCancelled()
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { previewEnabled = true }
+        composeRule.waitForIdle()
+
+        startGesture(0.3f)
+        composeRule.runOnIdle {
+            val scenes = transitionState.visibleScenes
+            assertEquals(listOf(SETTINGS, HOME), scenes.map(MainTabLayerScene::route))
+            assertEquals(0.3f, transitionState.offsetFractionFor(scenes.first()), 0.001f)
+            dispatcher.onBackPressed()
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { assertCommittedHome() }
+    }
+
+    @Test
+    fun `enabling preview during a disabled gesture takes effect on the next gesture`() {
+        setHost(preview = false)
+        startGesture(0.2f)
+        composeRule.runOnIdle {
+            assertUnpreviewedHistory()
+            previewEnabled = true
+        }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle { dispatcher.dispatchOnBackProgressed(event(0.65f)) }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertUnpreviewedHistory()
+            dispatcher.dispatchOnBackCancelled()
+        }
+        composeRule.waitForIdle()
+
+        startGesture(0.4f)
+        composeRule.runOnIdle {
+            val scenes = transitionState.visibleScenes
+            assertEquals(listOf(SETTINGS, HOME), scenes.map(MainTabLayerScene::route))
+            assertEquals(0.4f, transitionState.offsetFractionFor(scenes.first()), 0.001f)
+            dispatcher.onBackPressed()
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { assertCommittedHome() }
+    }
+
+    @Test
+    fun `disabling preview during a gesture preserves its reverse and cancel cleanup`() {
+        setHost()
+        startGesture(0.65f)
+        composeRule.runOnIdle { previewEnabled = false }
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle { dispatcher.dispatchOnBackProgressed(event(0.2f)) }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            val scenes = transitionState.visibleScenes
+            assertEquals(listOf(SETTINGS, HOME), scenes.map(MainTabLayerScene::route))
+            assertEquals(0.2f, transitionState.offsetFractionFor(scenes.first()), 0.001f)
+            dispatcher.dispatchOnBackCancelled()
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { assertUnpreviewedHistory() }
+
+        startGesture(0.7f)
+        composeRule.runOnIdle {
+            assertUnpreviewedHistory()
+            dispatcher.onBackPressed()
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { assertCommittedHome() }
+    }
+
+    private fun assertUnpreviewedHistory() {
+        assertEquals(SETTINGS, selectedRoute)
+        assertEquals(SETTINGS, navController.currentDestination?.route)
+        assertEquals(HOME, navController.previousBackStackEntry?.destination?.route)
+        val scenes = transitionState.visibleScenes
+        assertEquals(listOf(SETTINGS), scenes.map(MainTabLayerScene::route))
+        val scene = scenes.single()
+        assertEquals(0f, transitionState.offsetFractionFor(scene), 0.001f)
+        assertEquals(5, listStates.getValue(SETTINGS).firstVisibleItemIndex)
+        assertEquals(7, listStates.getValue(HOME).firstVisibleItemIndex)
+        assertTrue(committedRoutes.isEmpty())
+    }
+
+    private fun assertCommittedHome() {
+        assertEquals(listOf(HOME), committedRoutes)
+        assertEquals(HOME, selectedRoute)
+        assertEquals(HOME, navController.currentDestination?.route)
+        assertEquals(HOME, transitionState.visibleScenes.single().route)
+        assertEquals(7, listStates.getValue(HOME).firstVisibleItemIndex)
     }
 
     @Test

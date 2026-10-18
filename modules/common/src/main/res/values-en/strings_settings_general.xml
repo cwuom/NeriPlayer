@@ -5,7 +5,7 @@
     <string name="settings_search_hint">Search settings</string>
     <string name="settings_search_empty">No matching settings</string>
     <string name="settings_general">General</string>
-    <string name="settings_general_desc">Language, haptics, and global behavior</string>
+    <string name="settings_general_desc">Haptics, background service and interface scale</string>
     <string name="settings_accounts_desc">Manage NetEase, Bilibili, and YouTube sign-in states</string>
     <string name="settings_personalization">Personalization</string>
     <string name="settings_network">Network</string>
@@ -294,6 +294,9 @@
     <string name="settings_download_directory_reset_desc">Switch back to the app private download folder</string>
     <string name="settings_download_file_name_format">Saved File Name Format</string>
     <string name="settings_download_file_name_format_desc">Customize local file names</string>
+    <string name="settings_download_file_name_format_template">File name template</string>
+    <string name="settings_download_file_name_format_insert_hint">Tap a placeholder to insert it at the cursor or replace selected text</string>
+    <string name="settings_download_file_name_format_preview_title">File name preview</string>
     <string name="settings_download_file_name_format_supported" formatted="false">Supported placeholders: %artist% , %title% , %album% , %source% , %id% , %audioId% , %subAudioId%</string>
     <string name="settings_download_file_name_format_preview">Preview: %1$s</string>
     <string name="settings_download_metadata_post_processing">Metadata post-processing</string>
@@ -351,6 +354,13 @@
     <string name="settings_backup_restore">Backup &amp; Restore</string>
     <string name="settings_backup_local_section">Local Backup</string>
     <string name="settings_backup_local_section_desc">Import or export playlists and app config.</string>
+    <string name="settings_backup_group_playlists">Playlists</string>
+    <string name="settings_backup_group_config">App config</string>
+    <string name="settings_backup_group_config_desc">Settings, sign-in and sync config</string>
+    <string name="settings_backup_action_export">Export</string>
+    <string name="settings_backup_action_import">Import</string>
+    <string name="settings_backup_action_export_hint">Save to a backup file</string>
+    <string name="settings_backup_action_import_hint">Restore from a backup file</string>
     <string name="settings_backup_history_section">Playback History</string>
     <string name="settings_backup_history_section_desc">Set the playback history sync frequency.</string>
     <string name="settings_backup_github_section">GitHub Sync</string>

@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +28,7 @@ import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
 internal fun managedLibraryProcessingTitleId(reason: ManagedLibraryProcessingReason?): Int = when (reason) {
     ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE -> CoreCommonR.string.managed_library_processing_upgrade_title
@@ -266,7 +269,7 @@ private fun pendingDownloadDirectoryDialogPort(
     onConfirm = { controller.onConfirmPendingChange(change) }
 )
 
-private class PendingDownloadDirectoryDialogPort(
+internal class PendingDownloadDirectoryDialogPort(
     val targetSummary: String,
     val showTargetConflictWarning: Boolean,
     val confirmEnabled: Boolean,
@@ -276,7 +279,7 @@ private class PendingDownloadDirectoryDialogPort(
 )
 
 @Composable
-private fun DownloadDirectoryPendingChangeDialogContent(
+internal fun DownloadDirectoryPendingChangeDialogContent(
     port: PendingDownloadDirectoryDialogPort
 ) {
     MiuixSettingsDialog(
@@ -291,15 +294,19 @@ private fun DownloadDirectoryPendingChangeDialogContent(
                 Text(stringResource(CoreCommonR.string.settings_download_directory_migrate_confirm))
             }
         },
-        dismissButton = { DownloadDirectoryPendingChangeActions(port) }
+        dismissButton = { DownloadDirectoryCancelPendingChangeButton(port) }
     )
 }
 
 @Composable
 private fun DownloadDirectoryPendingChangeDescription(port: PendingDownloadDirectoryDialogPort) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Text(stringResource(CoreCommonR.string.settings_download_directory_migrate_message, port.targetSummary))
         DownloadDirectoryTargetConflictWarning(port.showTargetConflictWarning)
+        DownloadDirectorySkipPendingChangeButton(port)
     }
 }
 
@@ -310,16 +317,6 @@ private fun DownloadDirectoryTargetConflictWarning(visible: Boolean) {
             text = stringResource(CoreCommonR.string.settings_download_directory_migrate_conflict_warning),
             color = MaterialTheme.colorScheme.error
         )
-    }
-}
-
-@Composable
-private fun DownloadDirectoryPendingChangeActions(
-    port: PendingDownloadDirectoryDialogPort
-) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        DownloadDirectoryCancelPendingChangeButton(port)
-        DownloadDirectorySkipPendingChangeButton(port)
     }
 }
 
@@ -336,7 +333,7 @@ private fun DownloadDirectoryCancelPendingChangeButton(
 private fun DownloadDirectorySkipPendingChangeButton(
     port: PendingDownloadDirectoryDialogPort
 ) {
-    MiuixSettingsTextButton(onClick = port.onSkip) {
+    HapticTextButton(modifier = Modifier.fillMaxWidth(), onClick = port.onSkip) {
         Text(stringResource(CoreCommonR.string.settings_download_directory_migrate_skip))
     }
 }

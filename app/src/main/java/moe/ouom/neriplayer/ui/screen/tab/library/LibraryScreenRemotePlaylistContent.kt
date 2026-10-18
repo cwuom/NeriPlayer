@@ -23,6 +23,13 @@ package moe.ouom.neriplayer.ui.screen.tab.library
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.ui.component.common.NeriSearchFieldGlass
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
+import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import androidx.compose.ui.graphics.Shape
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -93,9 +100,7 @@ import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 internal fun LibraryMainTabs(
     tabs: List<LibraryTab>,
     selectedTabIndex: Int,
-    refreshEnabled: Boolean,
-    onTabSelected: (Int) -> Unit,
-    onRefresh: () -> Unit
+    onTabSelected: (Int) -> Unit
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -103,7 +108,14 @@ internal fun LibraryMainTabs(
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
     ) {
-        AdvancedGlassSurface(
+        if (NeriDesign.isClean) {
+            CleanSegmentedTabs(
+                labels = tabs.map { stringResource(it.labelResId) },
+                selectedIndex = selectedTabIndex,
+                onSelected = onTabSelected,
+                modifier = Modifier.weight(1f)
+            )
+        } else AdvancedGlassSurface(
             role = AdvancedGlassRole.ScreenTopTab,
             modifier = Modifier
                 .weight(1f)
@@ -127,16 +139,6 @@ internal fun LibraryMainTabs(
                     )
                 }
             }
-        }
-
-        HapticIconButton(
-            onClick = onRefresh,
-            enabled = refreshEnabled
-        ) {
-            Icon(
-                Icons.Filled.Refresh,
-                contentDescription = stringResource(CoreCommonR.string.action_refresh)
-            )
         }
     }
 }
@@ -169,6 +171,7 @@ internal fun YouTubeMusicPlaylistList(
         )
     }
 
+    val cardShape = neriRoundedShape(12.dp)
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(
@@ -180,7 +183,6 @@ internal fun YouTubeMusicPlaylistList(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        val cardShape = RoundedCornerShape(12.dp)
         if (playlists.isEmpty()) {
             item {
                 Card(
@@ -292,7 +294,7 @@ internal fun YouTubeMusicPlaylistList(
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .size(56.dp)
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(neriRoundedShape(8.dp))
                             )
                         } else {
                             Icon(
@@ -411,24 +413,31 @@ internal fun BiliPlaylistList(
         )
     }
 
+    val cardShape = neriRoundedShape(12.dp)
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        val cardShape = RoundedCornerShape(12.dp)
         item(key = "bili_playlist_search") {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
+            NeriSearchFieldGlass(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
+                shape = neriSearchFieldShape(LibrarySearchFieldShape)
+            ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text(stringResource(CoreCommonR.string.library_bili_search_hint)) },
                 singleLine = true,
-                shape = LibrarySearchFieldShape
+                shape = neriSearchFieldShape(LibrarySearchFieldShape),
+
+                colors = neriSearchFieldColors()
             )
+            }
         }
         if (playlists.isNotEmpty() && filteredPlaylists.isEmpty()) {
             item {
@@ -555,7 +564,7 @@ internal fun BiliPlaylistList(
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .size(56.dp)
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(neriRoundedShape(8.dp))
                             )
                         } else {
                             Icon(

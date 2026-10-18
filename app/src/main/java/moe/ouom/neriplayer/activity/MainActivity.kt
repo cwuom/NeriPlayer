@@ -89,6 +89,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -155,6 +156,7 @@ import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutRequest
 import moe.ouom.neriplayer.navigation.launcherShortcutActionFromIntentAction
 import moe.ouom.neriplayer.ui.dialog.MobileDataDownloadInterruptionDialog
 import moe.ouom.neriplayer.ui.dialog.startupDebugBuildWarningPrompt
+import moe.ouom.neriplayer.ui.dialog.startupPreviewThemePrompt
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlayNavigationBarHidden
@@ -236,23 +238,26 @@ private fun GitHubSyncWarningDialog(
 }
 
 @Composable
-private fun AppUiDensityRoot(
+internal fun AppUiDensityRoot(
     userScale: Float,
     content: @Composable () -> Unit
 ) {
     val baseContext = LocalContext.current
     val baseDensity = LocalDensity.current
-    val scaledDensity = remember(baseDensity, userScale) {
+    val configuration = LocalConfiguration.current
+    val appliedScale = UiDensityScalePreference
+        .forDevice(configuration.smallestScreenWidthDp, configuration.uiMode).normalize(userScale)
+    val scaledDensity = remember(baseDensity, appliedScale) {
         Density(
-            density = baseDensity.density * userScale,
+            density = baseDensity.density * appliedScale,
             fontScale = baseDensity.fontScale
         )
     }
     val uncorrectedDensityDpi = baseContext.applicationContext.resources
         .displayMetrics.densityDpi
-    val surfaceScale = remember(userScale, uncorrectedDensityDpi) {
+    val surfaceScale = remember(appliedScale, uncorrectedDensityDpi) {
         resolveOnePlusHighDensityUiScale(
-            userScale = userScale,
+            userScale = appliedScale,
             manufacturer = Build.MANUFACTURER,
             brand = Build.BRAND,
             densityDpi = uncorrectedDensityDpi
@@ -267,12 +272,13 @@ private fun AppUiDensityRoot(
 }
 
 @Composable
-private fun LocalizedAppContent(
+internal fun LocalizedAppContent(
     language: LanguageManager.Language,
     content: @Composable () -> Unit
 ) {
     val baseContext = LocalContext.current
-    val localizedContext = remember(baseContext, language) {
+    val configuration = LocalConfiguration.current
+    val localizedContext = remember(baseContext, language, configuration) {
         LanguageManager.localizedContext(baseContext, language)
     }
     CompositionLocalProvider(
@@ -395,6 +401,7 @@ class MainActivity : ComponentActivity() {
                             val controller = WindowInsetsControllerCompat(window, window.decorView)
                             controller.isAppearanceLightStatusBars = !useDark
                             controller.isAppearanceLightNavigationBars = !useDark
+                            window.applyMainWindowCaptionAppearance(useLightSystemBarIcons = useDark)
                         }
                         SafeModeScreen(
                             onRestoreNormal = ::restoreFromSafeMode
@@ -458,7 +465,8 @@ class MainActivity : ComponentActivity() {
                         .collectAsStateWithLifecycle(initialValue = null)
                     val startupOnboardingCompleted by startupOnboardingFlow
                         .collectAsStateWithLifecycle(initialValue = null)
-                    var startupSettingsReadTimedOut by rememberSaveable { mutableStateOf(false) }
+                    // not saveable: a recreated activity (e.g. locale change) must wait for a fresh read
+                    var startupSettingsReadTimedOut by remember { mutableStateOf(false) }
                     LaunchedEffect(disclaimerAccepted, startupOnboardingCompleted) {
                         if (disclaimerAccepted != null && startupOnboardingCompleted != null) {
                             return@LaunchedEffect
@@ -556,6 +564,7 @@ class MainActivity : ComponentActivity() {
                             val controller = WindowInsetsControllerCompat(window, window.decorView)
                             controller.isAppearanceLightStatusBars = !useLightSystemBarIcons
                             controller.isAppearanceLightNavigationBars = !useLightSystemBarIcons
+                            window.applyMainWindowCaptionAppearance(useLightSystemBarIcons)
                         }
 
                         var playedEntrance by rememberSaveable { mutableStateOf(false) }
@@ -1112,6 +1121,14 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
 
+                                        val externalStartupDialogsAvailable = startupCrashReportReadCompleted &&
+                                            startupTokenWarningCheckCompleted &&
+                                            pendingStartupCrashReport == null &&
+                                            !showTokenWarningDialog &&
+                                            pendingMobileDataDownloadInterruptionRequest == null &&
+                                            !showDialog && !showErrorDialog &&
+                                            pendingInvite == null && loudPlaybackConfirmation == null
+                                        var appGlobalDialogVisible by remember { mutableStateOf(true) }
                                         NeriApp(
                                             initialThemeSnapshot = startupThemeSnapshot,
                                             launcherShortcutRequestFlow = launcherShortcutRequestFlow,
@@ -1119,10 +1136,11 @@ class MainActivity : ComponentActivity() {
                                                 ::clearLauncherShortcutRequest,
                                             onIsDarkChanged = { isDark ->
                                                 // 主题切换时保留窗口底色与内容主题一致
-                                                window.applyMainWindowBackground(isDark)
+                                                window.applyMainWindowBackground(isDark || isNowPlayingVisible)
                                             },
                                             onNowPlayingVisibilityChanged = { visible ->
                                                 isNowPlayingVisible = visible
+                                                window.applyMainWindowBackground(useDark || visible)
                                                 if (nowPlayingShownForRefreshRate != visible) {
                                                     nowPlayingShownForRefreshRate = visible
                                                     lastTouchAtMs = SystemClock.uptimeMillis()
@@ -1139,22 +1157,26 @@ class MainActivity : ComponentActivity() {
                                                     nowPlayingOrientationState.returnToPortrait()
                                                 applyNowPlayingOrientation()
                                             },
+                                            onGlobalDialogVisibilityChanged = {
+                                                appGlobalDialogVisible = it
+                                            },
+                                            canShowGlobalDialogs = externalStartupDialogsAvailable &&
+                                                appGlobalDialogVisible,
                                             onLanguageChanged = { language ->
                                                 selectedAppLanguage = language
                                             }
                                         )
-                                        val startupDialogsAvailable = startupCrashReportReadCompleted &&
-                                            startupTokenWarningCheckCompleted &&
-                                            pendingStartupCrashReport == null &&
-                                            !showTokenWarningDialog &&
-                                            pendingMobileDataDownloadInterruptionRequest == null &&
-                                            !showDialog && !showErrorDialog &&
-                                            pendingInvite == null && loudPlaybackConfirmation == null
+                                        val startupDialogsAvailable = externalStartupDialogsAvailable &&
+                                            !appGlobalDialogVisible
                                         val debugBuildWarningPending = startupDebugBuildWarningPrompt(
                                             canShowDialog = startupDialogsAvailable
                                         )
-                                        StartupSyncUpgradePrompt(
+                                        val previewThemePromptPending = startupPreviewThemePrompt(
                                             canShowDialog = startupDialogsAvailable && !debugBuildWarningPending
+                                        )
+                                        StartupSyncUpgradePrompt(
+                                            canShowDialog = startupDialogsAvailable &&
+                                                !debugBuildWarningPending && !previewThemePromptPending
                                         )
                                     }
                                 }

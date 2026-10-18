@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -181,7 +182,8 @@ internal fun ThemeSeedListItem(
             )
             .settingsItemClickable(onClick = onClick),
         leadingContent = {
-            Icon(
+            SettingRowIcon(
+                key = "theme_seed_color",
                 imageVector = Icons.Outlined.ColorLens,
                 contentDescription = stringResource(CoreCommonR.string.settings_theme_color),
                 tint = MaterialTheme.colorScheme.onSurface

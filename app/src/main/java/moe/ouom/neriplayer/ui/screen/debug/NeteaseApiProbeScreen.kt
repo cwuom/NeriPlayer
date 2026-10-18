@@ -24,26 +24,20 @@ package moe.ouom.neriplayer.ui.screen.debug
  */
 
 import android.app.Application
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Badge
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -51,13 +45,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseApiProbeViewModel
 
 @Composable
@@ -74,199 +66,109 @@ fun NeteaseApiProbeScreen() {
     )
 
     val ui by vm.ui.collectAsState()
-    val scroll = rememberScrollState()
-    val miniH = LocalMiniPlayerHeight.current
+    val idle = !ui.running
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.safeDrawing)
-            .imePadding()
-            .verticalScroll(scroll)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .padding(bottom = miniH),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    DebugProbePage(
+        title = stringResource(CoreCommonR.string.debug_netease_probe),
+        description = stringResource(CoreCommonR.string.debug_netease_desc)
     ) {
-        Text(
-            text = stringResource(CoreCommonR.string.debug_netease_probe),
-            style = MaterialTheme.typography.titleLarge
+        DebugProbeSection(title = stringResource(CoreCommonR.string.debug_netease_probe_section_auth)) {
+            Text(
+                ui.authSummary,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+            )
+        }
+
+        DebugProbeSection(title = stringResource(CoreCommonR.string.debug_netease_probe_section_inputs)) {
+            DebugProbeField(ui.keyword, vm::onKeywordChange, stringResource(CoreCommonR.string.debug_netease_probe_input_keyword))
+            DebugProbeField(
+                ui.songId, vm::onSongIdChange,
+                stringResource(CoreCommonR.string.debug_netease_probe_input_song_id),
+                numeric = true
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_netease_probe_action_search),
+                icon = Icons.Rounded.Search,
+                onClick = vm::callSearchAndCopy,
+                enabled = idle
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_netease_probe_action_song_detail),
+                icon = Icons.Rounded.Info,
+                onClick = vm::callSongDetailAndCopy,
+                enabled = idle
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_netease_probe_action_song_lyric),
+                icon = Icons.Rounded.Subtitles,
+                onClick = vm::callSongLyricAndCopy,
+                enabled = idle
+            )
+        }
+
+        DebugProbeSection(
+            title = stringResource(CoreCommonR.string.debug_netease_probe_section_actions),
+            trailing = { DebugProbeRunningIndicator(ui.running) }
+        ) {
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_call_all_copy),
+                icon = Icons.Rounded.Bolt,
+                onClick = { vm.callAllAndCopy() },
+                enabled = idle
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_account_only),
+                icon = Icons.Rounded.Person,
+                onClick = { vm.callAccountAndCopy() },
+                enabled = idle
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_userid_only),
+                icon = Icons.Rounded.Badge,
+                onClick = { vm.callUserIdAndCopy() },
+                enabled = idle
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_created_playlists),
+                icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                onClick = { vm.callCreatedPlaylistsAndCopy() },
+                enabled = idle
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_subscribed_playlists),
+                icon = Icons.Rounded.LibraryMusic,
+                onClick = { vm.callSubscribedPlaylistsAndCopy() },
+                enabled = idle
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_stared_albums),
+                icon = Icons.Rounded.Album,
+                onClick = { vm.callStaredAlbums() },
+                enabled = idle
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_liked_playlist_id),
+                icon = Icons.Rounded.Favorite,
+                onClick = { vm.callLikedPlaylistIdAndCopy() },
+                enabled = idle
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_lyric_sample),
+                icon = Icons.Rounded.Lyrics,
+                onClick = { vm.callLyric33894312AndCopy() },
+                enabled = idle
+            )
+        }
+
+        DebugProbeResult(
+            title = stringResource(CoreCommonR.string.debug_netease_probe_section_result),
+            status = ui.lastMessage,
+            running = ui.running,
+            output = ui.lastJsonPreview,
+            emptyOutput = stringResource(CoreCommonR.string.debug_netease_probe_raw_empty),
+            summary = ui.resultSummary
         )
-        Text(
-            text = stringResource(CoreCommonR.string.debug_netease_desc),
-            style = MaterialTheme.typography.bodyMedium
-        )
-
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = stringResource(CoreCommonR.string.debug_netease_probe_section_auth),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = ui.authSummary,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
-
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = stringResource(CoreCommonR.string.debug_netease_probe_section_inputs),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                OutlinedTextField(
-                    value = ui.keyword,
-                    onValueChange = vm::onKeywordChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(CoreCommonR.string.debug_netease_probe_input_keyword)) },
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = ui.songId,
-                    onValueChange = vm::onSongIdChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(CoreCommonR.string.debug_netease_probe_input_song_id)) },
-                    singleLine = true
-                )
-            }
-        }
-
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-            )
-        ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = stringResource(CoreCommonR.string.debug_netease_probe_section_actions),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Button(
-                    onClick = { vm.callAllAndCopy() },
-                    enabled = !ui.running,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_call_all_copy)) }
-
-                OutlinedButton(
-                    onClick = { vm.callAccountAndCopy() },
-                    enabled = !ui.running,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_account_only)) }
-
-                OutlinedButton(
-                    onClick = { vm.callUserIdAndCopy() },
-                    enabled = !ui.running,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_userid_only)) }
-
-                OutlinedButton(
-                    onClick = { vm.callCreatedPlaylistsAndCopy() },
-                    enabled = !ui.running,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_created_playlists)) }
-
-                OutlinedButton(
-                    onClick = { vm.callStaredAlbums() },
-                    enabled = !ui.running,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_stared_albums)) }
-
-                OutlinedButton(
-                    onClick = { vm.callSubscribedPlaylistsAndCopy() },
-                    enabled = !ui.running,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_subscribed_playlists)) }
-
-                OutlinedButton(
-                    onClick = { vm.callLikedPlaylistIdAndCopy() },
-                    enabled = !ui.running,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_liked_playlist_id)) }
-
-                OutlinedButton(
-                    onClick = { vm.callLyric33894312AndCopy() },
-                    enabled = !ui.running,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_lyric_sample)) }
-
-                OutlinedButton(
-                    onClick = vm::callSearchAndCopy,
-                    enabled = !ui.running,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_netease_probe_action_search)) }
-
-                OutlinedButton(
-                    onClick = vm::callSongDetailAndCopy,
-                    enabled = !ui.running,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_netease_probe_action_song_detail)) }
-
-                OutlinedButton(
-                    onClick = vm::callSongLyricAndCopy,
-                    enabled = !ui.running,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_netease_probe_action_song_lyric)) }
-
-                if (ui.running) {
-                    Spacer(Modifier.height(8.dp))
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-        }
-
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-            )
-        ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = stringResource(CoreCommonR.string.debug_netease_probe_section_result),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(stringResource(CoreCommonR.string.debug_status, ui.lastMessage), style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    text = ui.resultSummary.ifBlank { stringResource(CoreCommonR.string.debug_netease_probe_summary_empty) },
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = ui.lastJsonPreview.ifBlank { stringResource(CoreCommonR.string.debug_netease_probe_raw_empty) },
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-        }
-        Spacer(Modifier.height(24.dp))
     }
 }

@@ -11,17 +11,22 @@ import moe.ouom.neriplayer.ui.component.common.ThemeRevealOverlay
 internal data class AppThemeRevealPresentation(
     val originInWindow: Offset,
     val fallbackColorArgb: Int,
-    val captureToken: Int
+    val captureToken: Int,
+    val reverse: Boolean = false
 )
 
 internal fun appThemeRevealPresentation(
     originInWindow: Offset?,
     fallbackColorArgb: Int?,
-    captureToken: Int
+    captureToken: Int,
+    reverse: Boolean = false
 ): AppThemeRevealPresentation? {
     if (originInWindow == null || fallbackColorArgb == null) return null
-    return AppThemeRevealPresentation(originInWindow, fallbackColorArgb, captureToken)
+    return AppThemeRevealPresentation(originInWindow, fallbackColorArgb, captureToken, reverse)
 }
+
+/** Going back to light collapses the dark snapshot into the toggle instead of expanding. */
+internal fun shouldReverseThemeReveal(nextDark: Boolean): Boolean = !nextDark
 
 @Composable
 internal fun AppThemeRevealOverlayHost(
@@ -47,8 +52,12 @@ private fun themeRevealContent(
             originInWindow = presentation.originInWindow,
             modifier = Modifier.fillMaxSize(),
             startRadiusPx = startRadiusPx,
-            legacySnapshotDim = true,
-            durationMillis = THEME_REVEAL_DURATION_MILLIS,
+            reverse = presentation.reverse,
+            durationMillis = if (presentation.reverse) {
+                THEME_REVEAL_REVERSE_DURATION_MILLIS
+            } else {
+                THEME_REVEAL_DURATION_MILLIS
+            },
             onFinished = { onFinished(presentation.captureToken) }
         )
     }

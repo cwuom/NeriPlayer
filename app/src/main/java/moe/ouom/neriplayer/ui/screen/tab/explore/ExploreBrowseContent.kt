@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.explore
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -342,7 +343,7 @@ private fun YtMusicExploreCard(
     val context = LocalContext.current
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(neriRoundedShape(12.dp))
             .clickable(onClick = onClick)
     ) {
         AsyncImage(
@@ -357,7 +358,7 @@ private fun YtMusicExploreCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(neriRoundedShape(12.dp))
         )
         Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
             Text(

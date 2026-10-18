@@ -158,7 +158,7 @@ class SettingsPageHostTest {
                         pages = listOf(
                             SettingsPage.General,
                             SettingsPage.Accounts,
-                            SettingsPage.Playback
+                            SettingsPage.Storage
                         ),
                         onPageClick = { page -> activePage.value = page },
                         selectedPage = activePage.value.backTargetPage() ?: activePage.value
@@ -188,11 +188,11 @@ class SettingsPageHostTest {
                     .assertIsSelected()
             }
 
-            composeRule.runOnIdle { activePage.value = SettingsPage.UsbExclusive }
+            composeRule.runOnIdle { activePage.value = SettingsPage.StorageCacheDetails }
             advanceRecompositionFrame()
             composeRule.onNodeWithTag(settingsPageRowTestTag(SettingsPage.Accounts))
                 .assertIsNotSelected()
-            composeRule.onNodeWithTag(settingsPageRowTestTag(SettingsPage.Playback))
+            composeRule.onNodeWithTag(settingsPageRowTestTag(SettingsPage.Storage))
                 .assertIsSelected()
         } finally {
             composeRule.mainClock.autoAdvance = true
@@ -205,7 +205,7 @@ class SettingsPageHostTest {
         composeRule.mainClock.autoAdvance = false
         try {
             composeRule.setContent {
-                activePage = remember { mutableStateOf(SettingsPage.Playback) }
+                activePage = remember { mutableStateOf(SettingsPage.Storage) }
                 MaterialTheme {
                     MiuixSettingsResponsiveDetailScaffold(
                         title = "Settings",
@@ -233,17 +233,17 @@ class SettingsPageHostTest {
             }
 
             composeRule.waitForIdle()
-            composeRule.onNodeWithTag("settings-detail-Playback").assertExists()
+            composeRule.onNodeWithTag("settings-detail-Storage").assertExists()
 
-            composeRule.runOnIdle { activePage.value = SettingsPage.UsbExclusive }
+            composeRule.runOnIdle { activePage.value = SettingsPage.StorageCacheDetails }
             repeat(3) { composeRule.mainClock.advanceTimeByFrame() }
-            composeRule.onNodeWithTag("settings-detail-Playback", useUnmergedTree = true).assertExists()
-            composeRule.onNodeWithTag("settings-detail-UsbExclusive", useUnmergedTree = true).assertExists()
+            composeRule.onNodeWithTag("settings-detail-Storage", useUnmergedTree = true).assertExists()
+            composeRule.onNodeWithTag("settings-detail-StorageCacheDetails", useUnmergedTree = true).assertExists()
 
             composeRule.mainClock.advanceTimeBy(2_000)
             composeRule.waitForIdle()
-            composeRule.onAllNodesWithTag("settings-detail-Playback").assertCountEquals(0)
-            composeRule.onNodeWithTag("settings-detail-UsbExclusive").assertExists()
+            composeRule.onAllNodesWithTag("settings-detail-Storage").assertCountEquals(0)
+            composeRule.onNodeWithTag("settings-detail-StorageCacheDetails").assertExists()
         } finally {
             composeRule.mainClock.autoAdvance = true
         }

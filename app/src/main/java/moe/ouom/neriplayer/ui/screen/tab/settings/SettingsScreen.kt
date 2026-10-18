@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import moe.ouom.neriplayer.data.ltw.validation.format
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -34,7 +35,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
-import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,6 +44,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.NonRestartableComposable
 import androidx.compose.runtime.getValue
@@ -56,6 +57,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -88,6 +91,10 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsPreferenceDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.LocalSettingsPageNavigator
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.XiaomiSuperIslandSettingsPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.LyricsPageCards
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.ExternalLyricsPageCards
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHomeScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsResponsiveDetailScaffold
@@ -97,6 +104,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.miuixSettingsSectionCardI
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.screen.tab.settings.about.SettingsAboutPageContent
+import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.SettingsUiStyleSelector
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.BackgroundImagePickerPort
 import moe.ouom.neriplayer.ui.screen.tab.settings.audio.AudioEffectsSettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.EnforceNowPlayingBackgroundExclusion
@@ -132,6 +140,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageScaffol
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.rememberSettingsNavigationState
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsHomePageItems
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldShowSettingsDetailHeader
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.rememberSettingsQualityPresentation
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.openStorageSystemSettings
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.rememberSettingsStorageDetailsController
@@ -152,6 +161,10 @@ internal fun SettingsScreen(
     onNavigateToDownloadManager: () -> Unit
 ) {
     val appearanceState = bindings.state.appearance
+    val configuration = LocalConfiguration.current
+    val effectiveUiDensityScale = UiDensityScalePreference
+        .forDevice(configuration.smallestScreenWidthDp, configuration.uiMode)
+        .normalize(appearanceState.visualBackground.uiDensityScale)
     val lyricsState = bindings.state.lyrics
     val playbackState = bindings.state.playback
     val otherState = bindings.state.other
@@ -303,7 +316,9 @@ internal fun SettingsScreen(
         settingsHomePageItems(navigation)
     }
 
+    val settingsPageNavigator: (SettingsPage) -> Unit = { page -> navigation.activePage = page }
     val settingsPageContent: @Composable (SettingsPage?) -> Unit = { requestedPage ->
+        CompositionLocalProvider(LocalSettingsPageNavigator provides settingsPageNavigator) {
         SettingsPageScaffold(
             page = requestedPage,
             home = {
@@ -315,9 +330,10 @@ internal fun SettingsScreen(
                 )
             },
             detail = { requestedDetailPage ->
+                val cleanStyle = NeriDesign.isClean
                 val settingsDetailContent: LazyListScope.(SettingsPage) -> Unit = { selectedPage ->
                     settingsDetailHeaderItem(
-                        selectedPage, settingsHighlightTargetId,
+                        selectedPage, cleanStyle, settingsHighlightTargetId,
                         settingsHighlightPulse, onSettingsHighlightFinished
                     )
 
@@ -340,6 +356,38 @@ internal fun SettingsScreen(
                                     highlightPulse = settingsHighlightPulse,
                                     onHighlightFinished = onSettingsHighlightFinished
                                 )
+                                MiuixSettingsSectionIntro(
+                                    title = stringResource(CoreCommonR.string.settings_ui_scale),
+                                    description = stringResource(CoreCommonR.string.settings_ui_scale_global_desc)
+                                )
+                                AutoSettingsListItem(
+                                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.UI_DENSITY_SCALE),
+                                    leadingContent = {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ZoomInMap,
+                                            contentDescription = stringResource(CoreCommonR.string.settings_ui_scale),
+                                            modifier = Modifier.size(24.dp),
+                                            tint = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    supportingContent = {
+                                        Text(
+                                            stringResource(
+                                                CoreCommonR.string.settings_ui_scale_current,
+                                                "%.2f".format(effectiveUiDensityScale)
+                                            )
+                                        )
+                                    },
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
+                                    onHighlightFinished = onSettingsHighlightFinished,
+                                    onClick = { showDpiDialog = true }
+                                )
+                            }
+                        },
+
+                        SettingsPage.Language to {
+                            miuixSettingsSectionCardItem("${selectedPage.name}:content") {
                                 LanguageSettingItem(
                                     modifier = Modifier.settingsHighlightTarget(
                                         targetId = "manual:language",
@@ -357,7 +405,8 @@ internal fun SettingsScreen(
                                         onHighlightFinished = onSettingsHighlightFinished
                                     ),
                                     leadingContent = {
-                                        Icon(
+                                        SettingRowIcon(
+                                            key = "internationalization",
                                             painter = painterResource(id = CoreCommonR.drawable.ic_i18n),
                                             contentDescription = stringResource(CoreCommonR.string.settings_internationalization),
                                             modifier = Modifier.size(24.dp),
@@ -378,33 +427,6 @@ internal fun SettingsScreen(
                                     },
                                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                                 )
-                                MiuixSettingsSectionIntro(
-                                    title = stringResource(CoreCommonR.string.settings_ui_scale),
-                                    description = stringResource(CoreCommonR.string.settings_ui_scale_global_desc)
-                                )
-                                AutoSettingsListItem(
-                                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.UI_DENSITY_SCALE),
-                                    leadingContent = {
-                                        Icon(
-                                            imageVector = Icons.Outlined.ZoomInMap,
-                                            contentDescription = stringResource(CoreCommonR.string.settings_ui_scale),
-                                            modifier = Modifier.size(24.dp),
-                                            tint = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    },
-                                    supportingContent = {
-                                        Text(
-                                            stringResource(
-                                                CoreCommonR.string.settings_ui_scale_current,
-                                                "%.2f".format(appearanceState.visualBackground.uiDensityScale)
-                                            )
-                                        )
-                                    },
-                                    highlightTargetId = settingsHighlightTargetId,
-                                    highlightPulse = settingsHighlightPulse,
-                                    onHighlightFinished = onSettingsHighlightFinished,
-                                    onClick = { showDpiDialog = true }
-                                )
                             }
                         },
 
@@ -418,6 +440,16 @@ internal fun SettingsScreen(
                         },
 
                         SettingsPage.Theme to {
+                            miuixSettingsSectionCardItem(key = "${selectedPage.name}:ui_style") {
+                                SettingsUiStyleSelector(
+                                    modifier = Modifier.settingsHighlightTarget(
+                                        targetId = "setting:ui_style",
+                                        highlightTargetId = settingsHighlightTargetId,
+                                        highlightPulse = settingsHighlightPulse,
+                                        onHighlightFinished = onSettingsHighlightFinished
+                                    )
+                                )
+                            }
                             miuixSettingsSectionCardItem(key = "${selectedPage.name}:mode") {
                                 MiuixSettingsSectionIntro(
                                     title = stringResource(CoreCommonR.string.settings_theme_mode),
@@ -447,13 +479,6 @@ internal fun SettingsScreen(
                                 )
                                 AutoSettingsListItem(
                                     setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DYNAMIC_COLOR),
-                                    leadingContent = {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Colorize,
-                                            contentDescription = stringResource(CoreCommonR.string.settings_dynamic_color),
-                                            tint = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    },
                                     trailingContent = {
                                         MiuixSettingsSwitch(
                                             checked = appearanceState.theme.dynamicColorEnabled,
@@ -560,6 +585,9 @@ internal fun SettingsScreen(
                                     onHighlightFinished = onSettingsHighlightFinished
                                 )
                             }
+                        },
+
+                        SettingsPage.NowPlaying to {
                             item(key = "${selectedPage.name}:card:2") {
                                 SettingsPersonalizationPlaybackInfoCard(
                                     autoSettingsRepository = autoSettingsRepository,
@@ -579,6 +607,9 @@ internal fun SettingsScreen(
                                     onHighlightFinished = onSettingsHighlightFinished
                                 )
                             }
+                        },
+
+                        SettingsPage.Background to {
                             item(key = "${selectedPage.name}:card:4") {
                                 SettingsPersonalizationBackgroundCard(
                                     backgroundImageUri = appearanceState.visualBackground.backgroundImageUri,
@@ -672,7 +703,56 @@ internal fun SettingsScreen(
                         },
 
                         SettingsPage.Lyrics to {
-                            for (cardIndex in 0..4) {
+                            for (cardIndex in LyricsPageCards) {
+                                item(key = "${selectedPage.name}:card:$cardIndex") {
+                                    SettingsLyricsSection(
+                                        expanded = true,
+                                        arrowRotation = 0f,
+                                        onExpandedChange = {},
+                                        showHeader = false,
+                                        autoSettingsRepository = autoSettingsRepository,
+                                        settingsRepository = repository,
+                                        scope = scope,
+                                        floatingLyricsPreferences = lyricsState.lyricPresentation.floatingLyricsPreferences,
+                                        onFloatingLyricsPreferencesChange = lyricsActions.onFloatingLyricsPreferencesChange,
+                                        lyricsAppearanceContent = {
+                                            SettingsLyricsAppearanceContent(
+                                                autoSettingsRepository = autoSettingsRepository,
+                                                scope = scope,
+                                                lyricFontScales = lyricsState.lyricPresentation.lyricFontScales,
+                                                onLyricFontScaleChange = lyricsActions.onLyricFontScaleChange,
+                                                highlightTargetId = settingsHighlightTargetId,
+                                                highlightPulse = settingsHighlightPulse,
+                                                onHighlightFinished = onSettingsHighlightFinished
+                                            )
+                                        },
+                                        cloudMusicLyricDefaultOffsetMs = lyricsState.lyricOffsets.cloudMusicLyricDefaultOffsetMs,
+                                        onCloudMusicLyricDefaultOffsetMsChange =
+                                            lyricsActions.onCloudMusicLyricDefaultOffsetMsChange,
+                                        qqMusicLyricDefaultOffsetMs = lyricsState.lyricOffsets.qqMusicLyricDefaultOffsetMs,
+                                        onQqMusicLyricDefaultOffsetMsChange =
+                                            lyricsActions.onQqMusicLyricDefaultOffsetMsChange,
+                                        kugouLyricDefaultOffsetMs = lyricsState.lyricOffsets.kugouLyricDefaultOffsetMs,
+                                        onKugouLyricDefaultOffsetMsChange =
+                                            lyricsActions.onKugouLyricDefaultOffsetMsChange,
+                                        lrclibLyricDefaultOffsetMs = lyricsState.lyricOffsets.lrclibLyricDefaultOffsetMs,
+                                        onLrclibLyricDefaultOffsetMsChange =
+                                            lyricsActions.onLrclibLyricDefaultOffsetMsChange,
+                                        amllTtmlLyricDefaultOffsetMs = lyricsState.lyricOffsets.amllTtmlLyricDefaultOffsetMs,
+                                        onAmllTtmlLyricDefaultOffsetMsChange =
+                                            lyricsActions.onAmllTtmlLyricDefaultOffsetMsChange,
+                                        onResetAllLyricDefaultOffsets = lyricsActions.onResetAllLyricDefaultOffsets,
+                                        cardIndex = cardIndex,
+                                        highlightTargetId = settingsHighlightTargetId,
+                                        highlightPulse = settingsHighlightPulse,
+                                        onHighlightFinished = onSettingsHighlightFinished
+                                    )
+                                }
+                            }
+                        },
+
+                        SettingsPage.ExternalLyrics to {
+                            for (cardIndex in ExternalLyricsPageCards) {
                                 item(key = "${selectedPage.name}:card:$cardIndex") {
                                     SettingsLyricsSection(
                                         expanded = true,
@@ -791,10 +871,6 @@ internal fun SettingsScreen(
                                         onKeepPlaybackModeStateChange = playbackActions.onKeepPlaybackModeStateChange,
                                         stopOnBluetoothDisconnect = playbackState.playbackContinuity.stopOnBluetoothDisconnect,
                                         onStopOnBluetoothDisconnectChange = playbackActions.onStopOnBluetoothDisconnectChange,
-                                        usbExclusivePlayback = playbackState.playbackOutput.usbExclusivePlayback,
-                                        onUsbExclusiveSettingsClick = {
-                                            navigation.activePage = SettingsPage.UsbExclusive
-                                        },
                                         allowMixedPlayback = playbackState.playbackSources.allowMixedPlayback,
                                         onAllowMixedPlaybackChange = playbackActions.onAllowMixedPlaybackChange,
                                         preemptAudioFocus = playbackState.playbackSources.preemptAudioFocus,
@@ -832,6 +908,16 @@ internal fun SettingsScreen(
                                     onFloatingKeepAliveChange = { enabled ->
                                         scope.launch { repository.setUsbExclusiveFloatingKeepAlive(enabled) }
                                     },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
+                        },
+
+                        SettingsPage.XiaomiSuperIsland to {
+                            item(key = "${selectedPage.name}:content") {
+                                XiaomiSuperIslandSettingsPage(
+                                    autoSettingsRepository = autoSettingsRepository,
+                                    settingsRepository = repository,
                                     modifier = Modifier.animateItem()
                                 )
                             }
@@ -1081,6 +1167,7 @@ internal fun SettingsScreen(
                 }
             }
         )
+        }
     }
 
     SettingsPageHost(
@@ -1134,16 +1221,18 @@ internal fun SettingsScreen(
 
 private fun LazyListScope.settingsDetailHeaderItem(
     page: SettingsPage,
+    cleanStyle: Boolean,
     highlightTargetId: String?,
     highlightPulse: Int,
     onHighlightFinished: () -> Unit
 ) {
-    if (!shouldShowSettingsDetailHeader(page)) return
+    if (!shouldShowSettingsDetailHeader(page, cleanStyle)) return
     item(key = "${page.name}:header") {
         MiuixSettingsHeader(
             icon = page.icon,
             title = stringResource(page.titleRes),
             description = stringResource(page.descriptionRes),
+            page = page,
             modifier = Modifier
                 .animateItem()
                 .settingsHighlightTarget(

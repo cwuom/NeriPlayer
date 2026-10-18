@@ -2,11 +2,15 @@ package moe.ouom.neriplayer.ui.screen
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingTrackDisplay
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingTrackIdentityOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingTrackIdentityLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingTrackDisplay
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingTrackIdentityPresentation
 import org.junit.Assert.assertEquals
@@ -25,14 +29,31 @@ class NowPlayingTrackIdentityTest {
             bodyMedium = TextStyle(fontSize = 14.sp),
             bodyLarge = TextStyle(fontSize = 18.sp)
         )
-        val compact = resolveNowPlayingTrackIdentityPresentation(true, typography)
-        val expanded = resolveNowPlayingTrackIdentityPresentation(false, typography)
+        val compact = resolveNowPlayingTrackIdentityPresentation(NowPlayingTrackIdentityLayout.Compact, typography)
+        val expanded = resolveNowPlayingTrackIdentityPresentation(NowPlayingTrackIdentityLayout.Expanded, typography)
         assertSame(typography.titleLarge, compact.titleStyle)
         assertSame(typography.bodyMedium, compact.artistStyle)
         assertSame(Alignment.Start, compact.horizontalAlignment)
         assertSame(typography.headlineSmall, expanded.titleStyle)
         assertSame(typography.bodyLarge, expanded.artistStyle)
         assertSame(Alignment.CenterHorizontally, expanded.horizontalAlignment)
+        assertEquals(Modifier, compact.modifier)
+        assertEquals(Modifier, expanded.modifier)
+    }
+
+    @Test
+    fun `large artwork identity fills the cover width with left aligned headline typography`() {
+        val typography = Typography(
+            headlineMedium = TextStyle(fontSize = 30.sp),
+            titleMedium = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        )
+
+        val largeCover = resolveNowPlayingTrackIdentityPresentation(NowPlayingTrackIdentityLayout.LargeCover, typography)
+
+        assertSame(typography.headlineMedium, largeCover.titleStyle)
+        assertEquals(typography.titleMedium.copy(fontWeight = FontWeight.Normal), largeCover.artistStyle)
+        assertSame(Alignment.Start, largeCover.horizontalAlignment)
+        assertEquals(Modifier.fillMaxWidth(), largeCover.modifier)
     }
 
     @Test

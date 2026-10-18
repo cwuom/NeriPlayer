@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.dialog
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.theme.NeriMotion
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloatAsState
 import android.annotation.SuppressLint
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -60,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,6 +73,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.toColorInt
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.ui.component.settings.HsvPicker
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -250,7 +255,12 @@ private fun ColorPickerItem(
             .then(clickableModifier),
         contentAlignment = Alignment.Center
     ) {
-        if (isSelected) {
+        val tick by animateFloatAsState(
+            targetValue = if (isSelected) 1f else 0f,
+            animationSpec = if (isSelected) NeriMotion.bouncy() else NeriMotion.snappy(),
+            label = "color_picker_tick"
+        )
+        if (tick > 0.01f) {
             val contentColor = if (ColorUtils.calculateLuminance(color.toArgb()) > 0.5) {
                 Color.Black
             } else {
@@ -259,7 +269,12 @@ private fun ColorPickerItem(
             Icon(
                 imageVector = Icons.Default.Check,
                 contentDescription = stringResource(CoreCommonR.string.common_selected),
-                tint = contentColor
+                tint = contentColor,
+                modifier = Modifier.graphicsLayer {
+                    alpha = tick.coerceIn(0f, 1f)
+                    scaleX = 0.4f + 0.6f * tick
+                    scaleY = 0.4f + 0.6f * tick
+                }
             )
         }
 
@@ -292,13 +307,21 @@ internal fun DpiSettingDialog(
     onDismiss: () -> Unit,
     onApply: (Float) -> Unit
 ) {
-    var sliderValue by remember(currentScale) { mutableFloatStateOf(currentScale) }
+    val configuration = LocalConfiguration.current
+    val scaleRange = UiDensityScalePreference.forDevice(configuration.smallestScreenWidthDp, configuration.uiMode)
+    var sliderValue by remember(currentScale, scaleRange.maximumScale) {
+        mutableFloatStateOf(scaleRange.normalize(currentScale))
+    }
+    var hasEdited by remember(currentScale, scaleRange.maximumScale) { mutableStateOf(false) }
 
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(CoreCommonR.string.settings_ui_scale)) },
         text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
                     text = String.format("%.2fx", sliderValue),
                     style = MaterialTheme.typography.titleLarge,
@@ -307,9 +330,14 @@ internal fun DpiSettingDialog(
                 Spacer(Modifier.height(8.dp))
                 MiuixSettingsSlider(
                     value = sliderValue,
-                    onValueChange = { sliderValue = it },
-                    valueRange = 0.6f..1.2f,
-                    steps = 11,
+                    onValueChange = {
+                        if (it != sliderValue) {
+                            sliderValue = it
+                            hasEdited = true
+                        }
+                    },
+                    valueRange = scaleRange.valueRange,
+                    steps = scaleRange.steps,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
@@ -321,21 +349,16 @@ internal fun DpiSettingDialog(
         },
         confirmButton = {
             MiuixSettingsTextButton(
-                onClick = { onApply(sliderValue) },
+                // 原样应用不把车载临时上限写回平板的请求值
+                onClick = { if (hasEdited) onApply(sliderValue) else onDismiss() },
                 text = { Text(stringResource(CoreCommonR.string.action_apply)) }
             )
         },
         dismissButton = {
-            Row {
-                MiuixSettingsTextButton(
-                    onClick = { sliderValue = 1.0f },
-                    text = { Text(stringResource(CoreCommonR.string.action_reset)) }
-                )
-                MiuixSettingsTextButton(
-                    onClick = onDismiss,
-                    text = { Text(stringResource(CoreCommonR.string.action_cancel)) }
-                )
-            }
+            MiuixSettingsTextButton(
+                onClick = { onApply(1.0f) },
+                text = { Text(stringResource(CoreCommonR.string.action_reset)) }
+            )
         }
     )
 }

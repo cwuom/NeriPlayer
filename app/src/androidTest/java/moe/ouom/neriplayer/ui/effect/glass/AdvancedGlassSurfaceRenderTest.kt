@@ -25,6 +25,7 @@ import androidx.compose.material3.TopAppBarState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.MutableState
@@ -41,6 +42,7 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.captureToImage
@@ -75,6 +77,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.atomic.AtomicBoolean
 
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
@@ -1025,7 +1028,18 @@ class AdvancedGlassSurfaceRenderTest {
 
     @Test
     fun topOnlyCornerRadiiKeepTopCornerOutsideBlurMask() {
+        val firstFrameCommitted = AtomicBoolean(false)
         composeRule.setContent {
+            val view = LocalView.current
+            DisposableEffect(view) {
+                val observer = view.viewTreeObserver
+                val callback = Runnable { firstFrameCommitted.set(true) }
+                observer.registerFrameCommitCallback(callback)
+                view.invalidate()
+                onDispose {
+                    if (observer.isAlive) observer.unregisterFrameCommitCallback(callback)
+                }
+            }
             val assetManager = LocalContext.current.applicationContext.assets
             val shaderSource = remember(assetManager) {
                 AdvancedGlassShaderSource(assetManager)
@@ -1080,6 +1094,8 @@ class AdvancedGlassSurfaceRenderTest {
         }
 
         composeRule.waitForIdle()
+        // Compose 空闲不代表硬件帧已提交，先等首次绘制完成再进入截图的重绘期限
+        composeRule.waitUntil(timeoutMillis = 5_000L) { firstFrameCommitted.get() }
         val image = composeRule.onNodeWithTag(TopOnlyCornersTag).captureToImage()
         val pixels = image.toPixelMap()
         val sampleX = image.width / 10

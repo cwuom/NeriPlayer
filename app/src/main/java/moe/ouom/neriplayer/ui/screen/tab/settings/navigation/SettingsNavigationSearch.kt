@@ -22,6 +22,11 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.navigation
  * File: moe.ouom.neriplayer.ui.screen.tab.settings.navigation/SettingsNavigationSearch
  */
 
+import moe.ouom.neriplayer.ui.settings.SettingGlyphIcon
+import moe.ouom.neriplayer.ui.settings.SettingGlyph
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.settings.settingGlyphForTarget
+import moe.ouom.neriplayer.ui.settings.settingGlyphFor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -279,18 +284,43 @@ private fun SettingsSearchResultRow(
 ) {
     ListItem(
         modifier = Modifier.settingsItemClickable(onClick = onClick),
-        leadingContent = {
-            Icon(
-                imageVector = entry.page.icon,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-        },
+        leadingContent = { SettingsSearchResultIcon(entry) },
         headlineContent = { Text(entry.title) },
         supportingContent = {
             Text(stringResource(entry.page.titleRes))
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+private fun settingsSearchResultGlyph(entry: SettingsSearchEntry): SettingGlyph? =
+    settingGlyphForTarget(entry.targetId) ?: settingGlyphFor(entry.id.substringAfter(':'))
+
+@Composable
+private fun SettingsSearchResultIcon(entry: SettingsSearchEntry) {
+    if (NeriDesign.isClean) {
+        SettingsSearchResultCleanIcon(entry)
+    } else {
+        SettingsSearchResultPageIcon(entry.page)
+    }
+}
+
+@Composable
+private fun SettingsSearchResultCleanIcon(entry: SettingsSearchEntry) {
+    val glyph = settingsSearchResultGlyph(entry)
+    if (glyph != null) {
+        SettingGlyphIcon(glyph)
+    } else {
+        SettingsSearchResultPageIcon(entry.page)
+    }
+}
+
+@Composable
+private fun SettingsSearchResultPageIcon(page: SettingsPage) {
+    Icon(
+        imageVector = page.icon,
+        contentDescription = null,
+        modifier = Modifier.size(24.dp),
+        tint = MaterialTheme.colorScheme.onSurface
     )
 }

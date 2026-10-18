@@ -5,6 +5,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.IsolatedSettingsDataStore
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.testing.InMemorySharedPreferencesRegistry
@@ -33,6 +34,21 @@ class ThemePreferenceSnapshotCacheTest {
     }
 
     @Test
+    fun `clean ui style survives the startup cache`() {
+        preferences[THEME_CACHE].edit()
+            .putBoolean("dynamic_color", true)
+            .putBoolean("force_dark", false)
+            .putBoolean("follow_system_dark", true)
+            .putString("ui_style", "clean")
+            .commit()
+
+        assertEquals(
+            ThemePreferenceSnapshot(uiStyle = UiStyle.Clean),
+            readThemePreferenceSnapshotSync(context)
+        )
+    }
+
+    @Test
     fun `partial cache on the main thread returns defaults and warms the cache`() = runTest {
         IsolatedSettingsDataStore.withEmptySettings(
             context,
@@ -53,7 +69,7 @@ class ThemePreferenceSnapshotCacheTest {
 
             assertTrue(warmed.await(30, TimeUnit.SECONDS))
             assertEquals(
-                mapOf("dynamic_color" to false, "force_dark" to true, "follow_system_dark" to true),
+                mapOf("dynamic_color" to false, "force_dark" to true, "follow_system_dark" to true, "ui_style" to "material"),
                 cache.snapshot()
             )
         }
@@ -76,7 +92,7 @@ class ThemePreferenceSnapshotCacheTest {
 
             assertTrue(warmed.await(30, TimeUnit.SECONDS))
             assertEquals(
-                mapOf("force_dark" to false, "dynamic_color" to true, "follow_system_dark" to false),
+                mapOf("force_dark" to false, "dynamic_color" to true, "follow_system_dark" to false, "ui_style" to "material"),
                 cache.snapshot()
             )
         }
@@ -96,7 +112,7 @@ class ThemePreferenceSnapshotCacheTest {
 
             assertEquals(expected, readOffMainThread())
             assertEquals(
-                mapOf("dynamic_color" to false, "force_dark" to true, "follow_system_dark" to false),
+                mapOf("dynamic_color" to false, "force_dark" to true, "follow_system_dark" to false, "ui_style" to "material"),
                 preferences[THEME_CACHE].snapshot()
             )
         }
@@ -109,7 +125,7 @@ class ThemePreferenceSnapshotCacheTest {
 
             assertEquals(ThemePreferenceSnapshot(), readOffMainThread())
             assertEquals(
-                mapOf("dynamic_color" to true, "force_dark" to false, "follow_system_dark" to true),
+                mapOf("dynamic_color" to true, "force_dark" to false, "follow_system_dark" to true, "ui_style" to "material"),
                 preferences[THEME_CACHE].snapshot()
             )
         }

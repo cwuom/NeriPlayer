@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,14 +52,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Dp
+import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.geometry.Rect
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
@@ -81,6 +92,42 @@ internal const val SETTINGS_SPLIT_DETAIL_PANE_TAG = "settings-split-detail-pane"
 
 internal fun settingsPageRowTestTag(page: SettingsPage): String = "settings-page-row-${page.name}"
 
+private val settingsCardShape: Shape
+    @Composable get() = if (NeriDesign.isClean) NeriDesign.tokens.groupShape else MiuixCardShape
+
+/** Clean style uses opaque inset-grouped cards; Material keeps the translucent glass tint. */
+private val settingsCardFallbackColor: Color
+    @Composable get() = if (NeriDesign.isClean) {
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(
+            alpha = if (LocalHasCustomBackground.current) CleanCardOverBackgroundAlpha else 1f
+        )
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.56f)
+    }
+
+private val settingsCardTintColor: Color
+    @Composable get() = if (NeriDesign.isClean) {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+
+/** Clean cards drop the glass pass on a plain canvas but keep it over a custom background. */
+private val settingsCardGlassEnabled: Boolean
+    @Composable get() = !NeriDesign.isClean || LocalHasCustomBackground.current
+
+private const val CleanCardOverBackgroundAlpha = 0.66f
+
+private val settingsListSpacing: Dp
+    @Composable get() = if (NeriDesign.isClean) 16.dp else 12.dp
+
+@Composable
+private fun settingsHorizontalPadding(isTabletLayout: Boolean): Dp = when {
+    isTabletLayout -> 28.dp
+    NeriDesign.isClean -> 16.dp
+    else -> 18.dp
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MiuixSettingsHomeScaffold(
@@ -92,6 +139,8 @@ internal fun MiuixSettingsHomeScaffold(
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
+        // follow the finger and stay put; a release snap reads as an unwanted bounce
+        snapAnimationSpec = null,
         canScroll = {
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = listState.canScrollForward,
@@ -103,7 +152,7 @@ internal fun MiuixSettingsHomeScaffold(
     val showExpandedTitleMask = scrollBehavior.state.collapsedFraction < 0.5f
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val isTabletLayout = currentWindowWidthDp() >= 720.dp
-    val horizontalPadding = if (isTabletLayout) 28.dp else 18.dp
+    val horizontalPadding = settingsHorizontalPadding(isTabletLayout)
 
     Scaffold(
         modifier = modifier
@@ -152,7 +201,7 @@ internal fun MiuixSettingsHomeScaffold(
                     top = 10.dp,
                     bottom = 18.dp + miniPlayerHeight
                 ),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(settingsListSpacing),
                 content = content
             )
         }
@@ -170,6 +219,11 @@ internal fun Modifier.settingsHighlightTarget(
     val highlighted = targetId == highlightTargetId && highlightPulse > 0
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
     var highlightActive by remember(targetId) { mutableStateOf(false) }
+    var targetSize by remember { mutableStateOf(IntSize.Zero) }
+    val density = LocalDensity.current
+    // the floating mini player covers the list bottom, so keep the target clear of it
+    val bottomClearancePx = with(density) { (LocalMiniPlayerHeight.current + 24.dp).toPx() }
+    val topClearancePx = with(density) { 16.dp.toPx() }
 
     LaunchedEffect(highlighted, highlightPulse) {
         if (!highlighted) {
@@ -177,7 +231,14 @@ internal fun Modifier.settingsHighlightTarget(
             return@LaunchedEffect
         }
         repeat(2) {
-            bringIntoViewRequester.bringIntoView()
+            bringIntoViewRequester.bringIntoView(
+                Rect(
+                    left = 0f,
+                    top = -topClearancePx,
+                    right = targetSize.width.toFloat(),
+                    bottom = targetSize.height + bottomClearancePx
+                )
+            )
             withFrameNanos { }
         }
         delay(80.milliseconds)
@@ -199,6 +260,7 @@ internal fun Modifier.settingsHighlightTarget(
     )
 
     return this
+        .onSizeChanged { targetSize = it }
         .bringIntoViewRequester(bringIntoViewRequester)
         .clip(MiuixHighlightShape)
         .background(highlightColor)
@@ -210,21 +272,26 @@ internal fun MiuixSettingsSectionIntro(
     description: String,
     modifier: Modifier = Modifier
 ) {
+    val clean = NeriDesign.isClean
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
+            .padding(start = 16.dp, top = if (clean) 12.dp else 10.dp, end = 16.dp, bottom = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(if (clean) 3.dp else 2.dp)
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary
+            style = if (clean) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+            color = if (clean) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
         )
         Text(
             text = description,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.76f)
+            color = if (clean) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.76f)
+            }
         )
     }
 }
@@ -240,11 +307,16 @@ internal fun MiuixSettingsPageGroupCard(
         return
     }
 
-    val fallbackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.58f)
+    val fallbackColor = if (NeriDesign.isClean) {
+        settingsCardFallbackColor
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.58f)
+    }
+    val cardShape = settingsCardShape
 
     ElevatedCard(
         modifier = modifier.fillMaxWidth(),
-        shape = MiuixCardShape,
+        shape = cardShape,
         colors = CardDefaults.elevatedCardColors(
             containerColor = Color.Transparent
         ),
@@ -253,9 +325,10 @@ internal fun MiuixSettingsPageGroupCard(
         AdvancedGlassSurface(
             role = AdvancedGlassRole.SettingsGroup,
             modifier = Modifier.fillMaxWidth(),
-            shape = MiuixCardShape,
+            enabled = settingsCardGlassEnabled,
+            shape = cardShape,
             fallbackColor = fallbackColor,
-            tintColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            tintColor = settingsCardTintColor
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 pages.forEachIndexed { index, page ->
@@ -266,8 +339,14 @@ internal fun MiuixSettingsPageGroupCard(
                     )
                     if (index != pages.lastIndex) {
                         HorizontalDivider(
-                            modifier = Modifier.padding(start = 74.dp, end = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            modifier = Modifier.padding(
+                                start = if (NeriDesign.isClean) 66.dp else 74.dp,
+                                end = 16.dp
+                            ),
+                            thickness = if (NeriDesign.isClean) 0.5.dp else 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(
+                                alpha = if (NeriDesign.isClean) 0.9f else 0.5f
+                            )
                         )
                     }
                 }
@@ -282,29 +361,31 @@ private fun MiuixSettingsPageRow(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val clean = NeriDesign.isClean
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 76.dp)
+            .heightIn(min = if (clean) 64.dp else 76.dp)
             .testTag(settingsPageRowTestTag(page))
             .semantics {
                 this.selected = selected
             }
             .background(
-                if (selected) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-                } else {
-                    Color.Transparent
+                when {
+                    !selected -> Color.Transparent
+                    clean -> MaterialTheme.colorScheme.secondaryContainer
+                    else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
                 }
             )
             .clickable(onClick = onClick)
             .padding(MiuixPageRowPadding),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalArrangement = Arrangement.spacedBy(if (clean) 14.dp else 16.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(42.dp),
+        if (clean) {
+            SettingsPageGlyphTile(page = page, size = 32.dp)
+        } else Box(
+            modifier = Modifier.size(42.dp),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -333,7 +414,7 @@ private fun MiuixSettingsPageRow(
             )
             Text(
                 text = stringResource(page.descriptionRes),
-                style = MaterialTheme.typography.bodyMedium,
+                style = if (clean) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -361,6 +442,8 @@ internal fun MiuixSettingsDetailScaffold(
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
+        // follow the finger and stay put; a release snap reads as an unwanted bounce
+        snapAnimationSpec = null,
         canScroll = {
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = listState.canScrollForward,
@@ -371,7 +454,7 @@ internal fun MiuixSettingsDetailScaffold(
     )
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val isTabletLayout = currentWindowWidthDp() >= 720.dp
-    val horizontalPadding = if (isTabletLayout) 28.dp else 18.dp
+    val horizontalPadding = settingsHorizontalPadding(isTabletLayout)
 
     Scaffold(
         modifier = modifier
@@ -417,7 +500,7 @@ internal fun MiuixSettingsDetailScaffold(
                     top = 10.dp,
                     bottom = 18.dp + miniPlayerHeight
                 ),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(settingsListSpacing),
                 content = content
             )
         }
@@ -523,13 +606,19 @@ internal fun MiuixSettingsHeader(
     icon: ImageVector,
     title: String,
     description: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    page: SettingsPage? = null
 ) {
-    val fallbackColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
+    val fallbackColor = if (NeriDesign.isClean) {
+        settingsCardFallbackColor
+    } else {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
+    }
+    val cardShape = settingsCardShape
 
     ElevatedCard(
         modifier = modifier.fillMaxWidth(),
-        shape = MiuixCardShape,
+        shape = cardShape,
         colors = CardDefaults.elevatedCardColors(
             containerColor = Color.Transparent
         ),
@@ -538,10 +627,15 @@ internal fun MiuixSettingsHeader(
         AdvancedGlassSurface(
             role = AdvancedGlassRole.SettingsHeader,
             modifier = Modifier.fillMaxWidth(),
-            shape = MiuixCardShape,
+            enabled = settingsCardGlassEnabled,
+            shape = cardShape,
             fallbackColor = fallbackColor,
-            tintColor = MaterialTheme.colorScheme.primaryContainer
+            tintColor = if (NeriDesign.isClean) settingsCardTintColor else MaterialTheme.colorScheme.primaryContainer
         ) {
+            if (NeriDesign.isClean && page != null) {
+                CleanSettingsHeroContent(page = page, title = title, description = description)
+                return@AdvancedGlassSurface
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -570,6 +664,33 @@ internal fun MiuixSettingsHeader(
     }
 }
 
+/** Page hero in the system-settings style: the section glyph leads, copy sits centred below. */
+@Composable
+private fun CleanSettingsHeroContent(page: SettingsPage, title: String, description: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        SettingsPageGlyphTile(page = page, size = 52.dp)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun MiuixSettingsSectionCard(
@@ -579,7 +700,8 @@ internal fun MiuixSettingsSectionCard(
     onHighlightFinished: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
-    val fallbackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.56f)
+    val fallbackColor = settingsCardFallbackColor
+    val cardShape = settingsCardShape
     var highlightActive by remember { mutableStateOf(false) }
 
     LaunchedEffect(highlighted, highlightPulse) {
@@ -607,7 +729,7 @@ internal fun MiuixSettingsSectionCard(
     ElevatedCard(
         modifier = modifier
             .fillMaxWidth(),
-        shape = MiuixCardShape,
+        shape = cardShape,
         colors = CardDefaults.elevatedCardColors(
             containerColor = Color.Transparent
         ),
@@ -616,9 +738,10 @@ internal fun MiuixSettingsSectionCard(
         AdvancedGlassSurface(
             role = AdvancedGlassRole.SettingsSection,
             modifier = Modifier.fillMaxWidth(),
-            shape = MiuixCardShape,
+            enabled = settingsCardGlassEnabled,
+            shape = cardShape,
             fallbackColor = fallbackColor,
-            tintColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            tintColor = settingsCardTintColor
         ) {
             Column(
                 modifier = Modifier

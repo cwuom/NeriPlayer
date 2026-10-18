@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_ui_style">界面风格</string>
+    <string name="settings_ui_style_desc">在 Material You 与全新的简洁风格之间切换</string>
+    <string name="ui_style_material">Material You</string>
+    <string name="ui_style_material_desc">经典 Material 3 设计，跟随壁纸或封面取色</string>
+    <string name="ui_style_clean">简洁</string>
+    <string name="ui_style_clean_desc">中性配色、连续曲率圆角与玻璃质感，长时间使用更不易疲劳</string>
+    <string name="ui_style_preview_badge">预览</string>
+    <string name="settings_predictive_back_preview">预测性返回预览</string>
+    <string name="settings_predictive_back_preview_desc">返回手势时跟随手指预览上一级页面；关闭后返回本身与松手后的返回动画保持不变</string>
+    <string name="settings_liquid_glass">液态玻璃</string>
+    <string name="settings_liquid_glass_desc">简洁风格下为底栏与迷你播放器加入边缘折射与高光；低端设备、省电模式下会自动降级</string>
+    <string name="settings_liquid_glass_requires_clean">需切换到简洁风格</string>
+    <string name="settings_nowplaying_immersive_mode">沉浸模式</string>
+    <string name="settings_nowplaying_immersive_mode_desc">大封面布局：封面撑满宽度、标题左对齐，隐藏封面页歌词；在播放页长按播放键也可切换</string>
+    <string name="nowplaying_immersive_mode_on">已进入沉浸模式</string>
+    <string name="nowplaying_immersive_mode_off">已退出沉浸模式</string>
+    <string name="settings_page_language">语言与地区</string>
+    <string name="settings_page_language_desc">界面语言与国际化内容源</string>
+    <string name="settings_page_home_start">首页与启动</string>
+    <string name="settings_page_home_start_desc">默认启动页、首页分区与输入行为</string>
+    <string name="settings_page_now_playing">播放页</string>
+    <string name="settings_page_now_playing_desc">封面信息、音质标识、控件布局与沉浸模式</string>
+    <string name="settings_page_background">背景</string>
+    <string name="settings_page_background_desc">自定义背景图、模糊与透明度</string>
+    <string name="settings_page_lyrics">歌词</string>
+    <string name="settings_page_lyrics_desc">歌词外观、歌词来源与默认偏移</string>
+    <string name="settings_page_external_lyrics">悬浮与外部歌词</string>
+    <string name="settings_page_external_lyrics_desc">悬浮歌词、状态栏、灵动岛与蓝牙歌词</string>
+</resources>

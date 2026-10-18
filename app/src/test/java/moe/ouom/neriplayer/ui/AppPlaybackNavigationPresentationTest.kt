@@ -36,30 +36,19 @@ class AppPlaybackNavigationPresentationTest {
     }
 
     @Test
-    fun `phone navigation starts returning while the player exit is still mounted`() {
-        for (width in listOf(360, 599)) {
-            assertFalse(shouldSuppressPlaybackNavigation(false, false, width))
-            assertTrue(shouldSuppressPlaybackNavigation(true, false, width))
-            assertTrue(shouldSuppressPlaybackNavigation(true, true, width))
-            assertFalse(shouldSuppressPlaybackNavigation(false, true, width))
-        }
+    fun `open playback suppresses navigation before returning begins`() {
+        assertTrue(shouldSuppressPlaybackNavigation(playbackOpen = true))
     }
 
     @Test
-    fun `tablet navigation remains suppressed throughout playback entry and exit`() {
-        for (width in listOf(600, 800)) {
-            assertFalse(shouldSuppressPlaybackNavigation(false, false, width))
-            assertTrue(shouldSuppressPlaybackNavigation(true, false, width))
-            assertTrue(shouldSuppressPlaybackNavigation(true, true, width))
-            assertTrue(shouldSuppressPlaybackNavigation(false, true, width))
-        }
+    fun `closed playback restores navigation without waiting for overlay disposal`() {
+        assertFalse(shouldSuppressPlaybackNavigation(playbackOpen = false))
     }
 
     @Test
     fun `a back gesture on the player reveals navigation on phones and tablets`() {
-        for (width in listOf(360, 800)) {
-            assertFalse(shouldSuppressPlaybackNavigation(true, true, width, backGestureRevealing = true))
-            assertFalse(shouldSuppressPlaybackNavigation(false, true, width, backGestureRevealing = true))
+        for (open in listOf(false, true)) {
+            assertFalse(shouldSuppressPlaybackNavigation(open, backGestureRevealing = true))
         }
     }
 

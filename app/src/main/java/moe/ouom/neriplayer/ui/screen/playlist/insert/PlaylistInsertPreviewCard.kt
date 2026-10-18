@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.playlist.insert
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,7 +53,7 @@ internal fun PlaylistInsertPreviewCard(
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedSectionIndex)
     Surface(
         modifier = modifier.heightIn(max = maxHeight),
-        shape = RoundedCornerShape(20.dp),
+        shape = neriRoundedShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
     ) {
@@ -181,7 +182,7 @@ private fun PlaylistInsertPreviewSongRow(
     else MaterialTheme.colorScheme.onSurface
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = neriRoundedShape(14.dp),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer
         else MaterialTheme.colorScheme.surfaceContainerHigh,
         border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))

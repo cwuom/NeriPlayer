@@ -65,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -87,6 +88,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
 import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
@@ -153,7 +155,7 @@ private enum class StartupStep {
     LearningGuide
 }
 
-private const val STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS = 900L
+private const val STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS = 1100L
 private const val STARTUP_THEME_REVEAL_CAPTURE_TIMEOUT_MILLIS = 500L
 
 internal fun calculateStartupOnboardingProgress(stepIndex: Int, stepCount: Int): Float {
@@ -235,10 +237,14 @@ fun StartupOnboardingScreen(
     }
 
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsStateWithLifecycle(initialValue = 1.0f)
-    var pendingUiScale by rememberSaveable { mutableFloatStateOf(uiDensityScale) }
-    LaunchedEffect(uiDensityScale) {
-        if ((pendingUiScale - uiDensityScale).absoluteValue > 0.001f) {
-            pendingUiScale = uiDensityScale
+    val configuration = LocalConfiguration.current
+    val uiScaleRange = UiDensityScalePreference.forDevice(configuration.smallestScreenWidthDp, configuration.uiMode)
+    var pendingUiScale by rememberSaveable { mutableFloatStateOf(uiScaleRange.normalize(uiDensityScale)) }
+    val appliedPendingUiScale = uiScaleRange.normalize(pendingUiScale)
+    LaunchedEffect(uiDensityScale, uiScaleRange.maximumScale) {
+        val normalizedScale = uiScaleRange.normalize(uiDensityScale)
+        if ((pendingUiScale - normalizedScale).absoluteValue > 0.001f) {
+            pendingUiScale = normalizedScale
         }
     }
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsStateWithLifecycle(initialValue = null)
@@ -556,10 +562,10 @@ fun StartupOnboardingScreen(
     val previewDensity = remember(
         baseDensity.fontScale,
         composeResources.displayMetrics.density,
-        pendingUiScale
+        appliedPendingUiScale
     ) {
         Density(
-            composeResources.displayMetrics.density * pendingUiScale,
+            composeResources.displayMetrics.density * appliedPendingUiScale,
             baseDensity.fontScale
         )
     }
@@ -918,7 +924,7 @@ fun StartupOnboardingScreen(
                     )
                 }
                 StartupStep.Personalize -> PersonalizeContent(
-                    pendingUiScale = pendingUiScale,
+                    pendingUiScale = appliedPendingUiScale,
                     onUiScaleChange = { pendingUiScale = it },
                     onUiScaleCommit = { scope.launch { repo.setUiDensityScale(pendingUiScale) } },
                     backgroundImageUri = backgroundImageUri,
@@ -1273,8 +1279,7 @@ fun StartupOnboardingScreen(
                     originInWindow = revealOrigin,
                     modifier = Modifier.fillMaxSize(),
                     startRadiusPx = themeRevealStartRadiusPx,
-                    legacySnapshotDim = true,
-                    durationMillis = 720,
+                    durationMillis = 640,
                     onFinished = { finishThemeReveal(activeThemeRevealToken) }
                 )
             }
@@ -1339,6 +1344,8 @@ private fun PersonalizeContent(
     onThemeToggleRequest: (Offset, Float) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val configuration = LocalConfiguration.current
+    val uiScaleRange = UiDensityScalePreference.forDevice(configuration.smallestScreenWidthDp, configuration.uiMode)
 
     StepHeader(
         icon = Icons.Outlined.Palette,
@@ -1354,8 +1361,8 @@ private fun PersonalizeContent(
             value = pendingUiScale,
             onValueChange = onUiScaleChange,
             onValueChangeFinished = onUiScaleCommit,
-            valueRange = 0.6f..1.2f,
-            steps = 11
+            valueRange = uiScaleRange.valueRange,
+            steps = uiScaleRange.steps
         )
     }
     Spacer(Modifier.height(14.dp))

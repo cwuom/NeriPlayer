@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="preview_theme_prompt_title">Try the preview theme?</string>
+    <string name="preview_theme_prompt_message">Explore a fresh look with simpler layouts and visuals. The theme applies immediately, and you can switch at any time in Settings → Theme settings.</string>
+    <string name="preview_theme_prompt_enable">Enable now</string>
+    <string name="preview_theme_prompt_decline">Not now</string>
+    <string name="preview_theme_prompt_save_failed">Could not save your choice. Please try again.</string>
+</resources>

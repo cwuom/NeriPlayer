@@ -24,6 +24,9 @@ package moe.ouom.neriplayer.ui.screen.download
  */
 
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.component.common.CleanSearchField
 import android.app.Application
 import android.content.res.Resources
 import androidx.activity.compose.BackHandler
@@ -543,7 +546,7 @@ private fun DownloadManagerStatsCard(songCount: Int, totalSize: Long) {
             .padding(horizontal = 16.dp)
             .testTag(DOWNLOAD_MANAGER_STATS_TAG)
     ) {
-        val shape = RoundedCornerShape(16.dp)
+        val shape = neriRoundedShape(16.dp)
         val baseColor = MaterialTheme.colorScheme.surfaceVariant
         AdvancedGlassSurface(
             role = AdvancedGlassRole.SemanticCard,
@@ -568,7 +571,11 @@ private fun DownloadManagerStatsCard(songCount: Int, totalSize: Long) {
                     modifier = Modifier
                         .height(32.dp)
                         .width(1.dp),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    color = if (NeriDesign.isClean) {
+                        MaterialTheme.colorScheme.outlineVariant
+                    } else {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    }
                 )
 
                 DownloadManagerStat(
@@ -598,6 +605,17 @@ private fun DownloadManagerStat(value: String, label: String) {
 
 @Composable
 private fun DownloadManagerSearchField(query: String, onQueryChange: (String) -> Unit) {
+    if (NeriDesign.isClean) {
+        CleanSearchField(
+            query = query,
+            onQueryChange = onQueryChange,
+            placeholder = stringResource(CoreCommonR.string.download_search_hint),
+            modifier = Modifier
+                .downloadPageContentWidth()
+                .padding(horizontal = 16.dp)
+        )
+        return
+    }
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
@@ -754,7 +772,7 @@ private fun DownloadedSongsList(
                     .align(Alignment.TopCenter)
                     .downloadPageContentWidth()
                     .padding(horizontal = 16.dp)
-                    .clip(RoundedCornerShape(999.dp))
+                    .clip(neriRoundedShape(999.dp))
                     .height(3.dp),
                 trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.18f)
             )
@@ -810,7 +828,7 @@ private fun DownloadedSongItem(
         resolveDownloadedSongCoverReference(song)
     }
 
-    val shape = RoundedCornerShape(12.dp)
+    val shape = neriRoundedShape(12.dp)
     val fallbackColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
     } else {
@@ -900,7 +918,7 @@ private fun DownloadedSongCover(resolvedCover: String?, offlineMode: Boolean) {
             contentDescription = null,
             modifier = Modifier
                 .size(48.dp)
-                .clip(RoundedCornerShape(12.dp)),
+                .clip(neriRoundedShape(12.dp)),
             contentScale = ContentScale.Crop,
             error = painterResource(id = R.drawable.ic_launcher_foreground)
         )
@@ -909,7 +927,7 @@ private fun DownloadedSongCover(resolvedCover: String?, offlineMode: Boolean) {
         Box(
             modifier = Modifier
                 .size(48.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(neriRoundedShape(12.dp))
                 .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center
         ) {

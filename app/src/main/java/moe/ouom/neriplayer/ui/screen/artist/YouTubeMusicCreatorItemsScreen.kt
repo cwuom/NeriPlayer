@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -178,7 +179,7 @@ internal fun YouTubeMusicCreatorItemsContent(
                 )
                 .padding(bottom = if (tabletLayout) miniPlayerHeight else 0.dp)
                 .testTag("youtubeCreatorItemsPane"),
-            shape = RoundedCornerShape(if (tabletLayout) 28.dp else 0.dp),
+            shape = neriRoundedShape(if (tabletLayout) 28.dp else 0.dp),
             color = if (tabletLayout) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent
         ) {
             LazyColumn(

@@ -22,6 +22,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.lyrics
  * File: moe.ouom.neriplayer.ui.screen.nowplaying.lyrics/NowPlayingLyricsEditor
  */
 
+import moe.ouom.neriplayer.ui.component.common.NeriChoiceChip
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.content.ClipData
 import android.content.Context
@@ -1019,12 +1020,13 @@ private fun LyricMatchSources(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             lyricMatchSelectableSources.forEach { source ->
-                FilterChip(
+                NeriChoiceChip(
                     selected = source in selectedSources,
                     onClick = { onSourceToggle(source) },
                     enabled = !isLoading,
                     modifier = Modifier.testTag("lyrics-match-source-${source.name}"),
-                    label = { Text(stringResource(source.stringResId()), maxLines = 1) }
+                    multiSelect = true,
+                    label = stringResource(source.stringResId())
                 )
             }
         }

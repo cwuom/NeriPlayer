@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.appearance
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -225,6 +227,12 @@ internal fun SettingsPersonalizationPlaybackInfoCard(
         .nowPlayingSongTitleMarqueeEnabledFlow.collectAsState(initial = true)
     val nowPlayingCoverLyricsEnabled by autoSettingsRepository.nowPlayingCoverLyricsEnabledFlow
         .collectAsState(initial = true)
+    val nowPlayingImmersiveMode by autoSettingsRepository.nowPlayingImmersiveModeFlow
+        .collectAsState(initial = false)
+    val coverLyricsState = resolveCoverLyricsSwitchState(
+        lyricsEnabled = nowPlayingCoverLyricsEnabled,
+        immersiveMode = nowPlayingImmersiveMode
+    )
     val nowPlayingProgressShowQualitySwitch by autoSettingsRepository
         .nowPlayingProgressShowQualitySwitchFlow.collectAsState(initial = true)
     val nowPlayingProgressShowAudioCodec by autoSettingsRepository
@@ -265,12 +273,24 @@ internal fun SettingsPersonalizationPlaybackInfoCard(
             onHighlightFinished = onHighlightFinished
         )
         PersonalizationSwitchItem(
+            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOW_PLAYING_IMMERSIVE_MODE),
+            checked = nowPlayingImmersiveMode,
+            onCheckedChange = { enabled ->
+                scope.launch { autoSettingsRepository.setNowPlayingImmersiveMode(enabled) }
+            },
+            enabled = true,
+            supportingContent = null,
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
+        )
+        PersonalizationSwitchItem(
             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOW_PLAYING_COVER_LYRICS_ENABLED),
-            checked = nowPlayingCoverLyricsEnabled,
+            checked = coverLyricsState.checked,
             onCheckedChange = { enabled ->
                 scope.launch { autoSettingsRepository.setNowPlayingCoverLyricsEnabled(enabled) }
             },
-            enabled = true,
+            enabled = coverLyricsState.enabled,
             supportingContent = null,
             highlightTargetId = highlightTargetId,
             highlightPulse = highlightPulse,
@@ -317,6 +337,20 @@ internal fun SettingsPersonalizationPlaybackInfoCard(
     }
 }
 
+internal data class CoverLyricsSwitchState(
+    val checked: Boolean,
+    val enabled: Boolean
+)
+
+internal fun resolveCoverLyricsSwitchState(
+    lyricsEnabled: Boolean,
+    immersiveMode: Boolean
+): CoverLyricsSwitchState = CoverLyricsSwitchState(
+    // 沉浸模式只锁定显示状态，退出后恢复保存的封面歌词偏好
+    checked = lyricsEnabled && !immersiveMode,
+    enabled = !immersiveMode
+)
+
 @Composable
 internal fun SettingsPersonalizationControlsCard(
     autoSettingsRepository: AutoSettingsRepository,
@@ -326,8 +360,6 @@ internal fun SettingsPersonalizationControlsCard(
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
 ) {
-    val alwaysUseNewTabStyle by autoSettingsRepository.alwaysUseNewTabStyleFlow
-        .collectAsState(initial = true)
     val nowPlayingKeepScreenOn by autoSettingsRepository.nowPlayingKeepScreenOnFlow
         .collectAsState(initial = true)
     val nowPlayingToolbarDockEnabled by autoSettingsRepository.nowPlayingToolbarDockEnabledFlow
@@ -346,18 +378,6 @@ internal fun SettingsPersonalizationControlsCard(
         MiuixSettingsSectionIntro(
             title = stringResource(CoreCommonR.string.settings_personalization_playback_controls_section),
             description = stringResource(CoreCommonR.string.settings_personalization_playback_controls_section_desc)
-        )
-        PersonalizationSwitchItem(
-            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.ALWAYS_USE_NEW_TAB_STYLE),
-            checked = alwaysUseNewTabStyle,
-            onCheckedChange = { enabled ->
-                scope.launch { autoSettingsRepository.setAlwaysUseNewTabStyle(enabled) }
-            },
-            enabled = true,
-            supportingContent = null,
-            highlightTargetId = highlightTargetId,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
         )
         PersonalizationSwitchItem(
             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_KEEP_SCREEN_ON),
@@ -786,8 +806,13 @@ private fun PersonalizationSwitchItem(
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
 ) {
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (enabled) 1f else 0.5f,
+        label = "personalization_switch_item_alpha"
+    )
     AutoSettingsListItem(
         setting = setting,
+        modifier = Modifier.graphicsLayer { alpha = contentAlpha },
         enabled = enabled,
         supportingContent = supportingContent,
         trailingContent = {

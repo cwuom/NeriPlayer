@@ -1,5 +1,14 @@
 package moe.ouom.neriplayer.ui.screen.tab.library
 
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedContent
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,14 +68,14 @@ internal fun FavoriteArtistPlatformHeader(
     val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(24.dp),
+        shape = neriRoundedShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         AdvancedGlassSurface(
             role = AdvancedGlassRole.ScreenTopTab,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
+            shape = neriRoundedShape(24.dp),
             fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
             tintColor = MaterialTheme.colorScheme.surfaceVariant
         ) {
@@ -86,41 +95,108 @@ internal fun FavoriteArtistPlatformHeader(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    FavoriteArtistPlatform.entries.forEachIndexed { index, platform ->
-                        SegmentedButton(
-                            selected = selected == platform,
-                            onClick = {
-                                context.performHapticFeedback()
-                                onSelect(platform)
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index, FavoriteArtistPlatform.entries.size
-                            ),
-                            label = { Text(stringResource(platform.labelRes), maxLines = 1) }
-                        )
+                if (NeriDesign.isClean) {
+                    val platforms = FavoriteArtistPlatform.entries
+                    CleanSegmentedTabs(
+                        labels = platforms.map { stringResource(it.labelRes) },
+                        selectedIndex = platforms.indexOf(selected),
+                        onSelected = { index -> onSelect(platforms[index]) }
+                    )
+                } else {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        FavoriteArtistPlatform.entries.forEachIndexed { index, platform ->
+                            SegmentedButton(
+                                selected = selected == platform,
+                                onClick = {
+                                    context.performHapticFeedback()
+                                    onSelect(platform)
+                                },
+                                shape = SegmentedButtonDefaults.itemShape(
+                                    index, FavoriteArtistPlatform.entries.size
+                                ),
+                                label = { Text(stringResource(platform.labelRes), maxLines = 1) }
+                            )
+                        }
                     }
                 }
                 if (selected != FavoriteArtistPlatform.BILIBILI && !editMode) {
                     val importingHere = importState.loading && importState.source == selected.source
-                    HapticOutlinedButton(
-                        onClick = onImport,
-                        enabled = !offlineMode && !importState.loading,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        if (importingHere) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Outlined.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    val importLabel = stringResource(
+                        if (importingHere) CoreCommonR.string.library_artist_import_loading
+                        else CoreCommonR.string.library_artist_import
+                    )
+                    if (NeriDesign.isClean) {
+                        CleanImportPill(
+                            label = importLabel,
+                            loading = importingHere,
+                            enabled = !offlineMode && !importState.loading,
+                            onClick = onImport
+                        )
+                    } else {
+                        HapticOutlinedButton(
+                            onClick = onImport,
+                            enabled = !offlineMode && !importState.loading,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (importingHere) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Outlined.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(
+                                if (importingHere) CoreCommonR.string.library_artist_import_loading
+                                else CoreCommonR.string.library_artist_import
+                            ))
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(
-                            if (importingHere) CoreCommonR.string.library_artist_import_loading
-                            else CoreCommonR.string.library_artist_import
-                        ))
                     }
                 }
             }
         }
+    }
+}
+
+/** Borderless tonal pill; the outlined Material button reads as a hard frame inside a glass card. */
+@Composable
+private fun CleanImportPill(
+    label: String,
+    loading: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val colors = MaterialTheme.colorScheme
+    val contentColor = if (enabled || loading) colors.primary else colors.onSurface.copy(alpha = 0.38f)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(CircleShape)
+            .background(colors.primary.copy(alpha = if (enabled) 0.12f else 0.06f))
+            .clickable(enabled = enabled) {
+                context.performHapticFeedback()
+                onClick()
+            },
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AnimatedContent(targetState = loading, label = "clean_import_icon") { busy ->
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = contentColor
+                )
+            } else {
+                Icon(
+                    Icons.Outlined.CloudDownload,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, color = contentColor)
     }
 }
