@@ -69,8 +69,9 @@ internal fun SongEncyclopediaSectionCard(
     val clean = NeriDesign.isClean
     Surface(
         modifier = modifier,
-        // Clean 下 MaterialTheme.shapes.medium 已是 18dp 连续圆角，但 Material 主题
-        // 用的是默认 12dp，这里显式分支保证两套主题都维持原有观感。
+        // 原 Card 的默认 shape 就是 MaterialTheme.shapes.medium：Material 主题下
+        // NeriShapes 未覆盖 medium，取 M3 默认 12dp 圆角，这里原样沿用；Clean 下
+        // 16dp 经 cleanCornerRadiusFor 放大到 20dp 连续圆角，与 tokens.cardShape 一致。
         shape = if (clean) neriRoundedShape(16.dp) else MaterialTheme.shapes.medium,
         // Clean 的 surfaceContainerLow 是纯白，贴在 #F4F4F7 的宿主面板上几乎看不见，
         // 且 surfaceTint 被置空后 elevation 染色失效，改用墨色半透明兜底。
@@ -79,8 +80,15 @@ internal fun SongEncyclopediaSectionCard(
         } else {
             MaterialTheme.colorScheme.surfaceContainerLow
         },
+        // 原 Card 的 contentColor 是 contentColorFor(containerColor)：Material 下
+        // surfaceContainerLow → onSurface。Clean 的墨色半透明不在色板内，不显式指定
+        // 会退化为继承外层 LocalContentColor，这里固定回 onSurface 保持一致。
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        // 原 Card 的 tonalElevation 是 0dp，shadowElevation 取 CardDefaults.cardElevation()
+        // 的 defaultElevation = FilledCardTokens.ContainerElevation = ElevationTokens.Level0
+        // = 0dp —— 两套主题原本都没有阴影，这里保持 0dp 才是真正的零回归。
         tonalElevation = 0.dp,
-        shadowElevation = if (clean) 0.dp else 1.dp
+        shadowElevation = 0.dp
     ) {
         SongEncyclopediaSectionCardBody(titleRes, icon, content)
     }
@@ -111,9 +119,13 @@ private fun SongEncyclopediaSectionCardBody(
             )
             Text(
                 text = stringResource(titleRes),
-                style = MaterialTheme.typography.titleSmall.copy(
-                    fontWeight = if (clean) FontWeight.SemiBold else FontWeight.Normal
-                ),
+                // 原代码直接用 titleSmall（M3 默认字重是 Medium 500），Material 下必须
+                // 原样沿用，不能覆盖成 Normal(400)；Clean 才用 SemiBold 加重层级。
+                style = if (clean) {
+                    MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+                } else {
+                    MaterialTheme.typography.titleSmall
+                },
                 color = if (clean) MaterialTheme.colorScheme.onSurface
                 else MaterialTheme.colorScheme.primary,
                 maxLines = 1,
