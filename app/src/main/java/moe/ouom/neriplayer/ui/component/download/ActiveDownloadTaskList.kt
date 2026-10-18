@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.component.download
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.download.DownloadStage
 
@@ -106,7 +107,7 @@ fun ActiveDownloadTaskList(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
+                                    .clip(neriRoundedShape(2.dp))
                             )
                         }
 
@@ -120,7 +121,7 @@ fun ActiveDownloadTaskList(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
+                                    .clip(neriRoundedShape(2.dp))
                             )
                         }
 
@@ -150,14 +151,14 @@ fun ActiveDownloadTaskList(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
+                                        .clip(neriRoundedShape(2.dp))
                                 )
                             } else {
                                 LinearProgressIndicator(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
+                                        .clip(neriRoundedShape(2.dp))
                                 )
                             }
                         }
@@ -177,14 +178,14 @@ fun ActiveDownloadTaskList(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
+                                        .clip(neriRoundedShape(2.dp))
                                 )
                             } else {
                                 LinearProgressIndicator(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
+                                        .clip(neriRoundedShape(2.dp))
                                 )
                             }
                         }
@@ -207,7 +208,7 @@ fun ActiveDownloadTaskList(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
+                                    .clip(neriRoundedShape(2.dp))
                             )
                         }
                     }

@@ -24,25 +24,19 @@ package moe.ouom.neriplayer.ui.screen.debug
  */
 
 import android.app.Application
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
-import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.SearchApiProbeViewModel
 
 @Composable
@@ -58,85 +52,37 @@ fun SearchApiProbeScreen() {
     )
 
     val ui by vm.ui.collectAsState()
-    val scroll = rememberScrollState()
-    val miniH = LocalMiniPlayerHeight.current
+    val enabled = !ui.running && ui.keyword.isNotBlank()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scroll)
-            .windowInsetsPadding(WindowInsets.safeDrawing)
-            .imePadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .padding(bottom = miniH),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    DebugProbePage(
+        title = stringResource(CoreCommonR.string.debug_search_probe),
+        description = stringResource(CoreCommonR.string.debug_search_desc)
     ) {
-        Text(
-            text = stringResource(CoreCommonR.string.debug_search_probe),
-            style = MaterialTheme.typography.titleLarge
-        )
-        Text(
-            text = stringResource(CoreCommonR.string.debug_search_desc),
-            style = MaterialTheme.typography.bodyMedium
-        )
-
-        OutlinedTextField(
-            value = ui.keyword,
-            onValueChange = vm::onKeywordChange,
-            label = { Text(stringResource(CoreCommonR.string.debug_search_keyword_label)) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-            )
+        DebugProbeSection(
+            title = stringResource(CoreCommonR.string.debug_search_section_platforms),
+            trailing = { DebugProbeRunningIndicator(ui.running) }
         ) {
-            Column(
-                Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val buttonEnabled = !ui.running && ui.keyword.isNotBlank()
-
-                Button(
-                    onClick = { vm.callSearchAndCopy(MusicPlatform.CLOUD_MUSIC) },
-                    enabled = buttonEnabled,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_search_netease)) }
-
-                Button(
-                    onClick = { vm.callSearchAndCopy(MusicPlatform.QQ_MUSIC) },
-                    enabled = buttonEnabled,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(CoreCommonR.string.debug_search_qq)) }
-
-
-                if (ui.running) {
-                    Spacer(Modifier.height(8.dp))
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
+            DebugProbeField(ui.keyword, vm::onKeywordChange, stringResource(CoreCommonR.string.debug_search_keyword_label))
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_search_netease),
+                icon = Icons.Rounded.Cloud,
+                onClick = { vm.callSearchAndCopy(MusicPlatform.CLOUD_MUSIC) },
+                enabled = enabled
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_search_qq),
+                icon = Icons.Rounded.MusicNote,
+                onClick = { vm.callSearchAndCopy(MusicPlatform.QQ_MUSIC) },
+                enabled = enabled
+            )
         }
 
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-            )
-        ) {
-            Column(
-                Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(stringResource(CoreCommonR.string.debug_status, ui.lastMessage), style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    text = ui.lastJsonPreview.ifBlank { stringResource(CoreCommonR.string.debug_search_preview_hint) },
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-        }
-        Spacer(Modifier.height(24.dp))
+        DebugProbeResult(
+            title = stringResource(CoreCommonR.string.debug_youtube_probe_section_result),
+            status = ui.lastMessage,
+            running = ui.running,
+            output = ui.lastJsonPreview,
+            emptyOutput = stringResource(CoreCommonR.string.debug_search_preview_hint)
+        )
     }
 }

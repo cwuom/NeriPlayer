@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_ui_style">Interface style</string>
+    <string name="settings_ui_style_desc">Switch between Material You and the new clean style</string>
+    <string name="ui_style_material">Material You</string>
+    <string name="ui_style_material_desc">Classic Material 3, tinted by your wallpaper or the cover art</string>
+    <string name="ui_style_clean">Clean</string>
+    <string name="ui_style_clean_desc">Neutral colors, continuous corners and glass chrome that stay easy on the eyes</string>
+    <string name="ui_style_preview_badge">Preview</string>
+    <string name="settings_predictive_back_preview">Predictive back preview</string>
+    <string name="settings_predictive_back_preview_desc">Preview the previous page while the back gesture follows your finger; going back and the release animation stay the same when off</string>
+    <string name="settings_liquid_glass">Liquid glass</string>
+    <string name="settings_liquid_glass_desc">Adds edge refraction and highlights to the bottom bar and mini player in the clean style; scales down automatically on low-end devices and in battery saver</string>
+    <string name="settings_liquid_glass_requires_clean">Requires the clean style</string>
+    <string name="settings_nowplaying_immersive_mode">Immersive mode</string>
+    <string name="settings_nowplaying_immersive_mode_desc">Large-cover layout: full-width artwork, left-aligned title and no cover lyrics; long-press play on Now Playing to toggle</string>
+    <string name="nowplaying_immersive_mode_on">Immersive mode on</string>
+    <string name="nowplaying_immersive_mode_off">Immersive mode off</string>
+    <string name="settings_page_language">Language &amp; region</string>
+    <string name="settings_page_language_desc">Interface language and international content sources</string>
+    <string name="settings_page_home_start">Home &amp; startup</string>
+    <string name="settings_page_home_start_desc">Default start screen, home sections and input behavior</string>
+    <string name="settings_page_now_playing">Now Playing</string>
+    <string name="settings_page_now_playing_desc">Cover info, quality badges, control layout and immersive mode</string>
+    <string name="settings_page_background">Background</string>
+    <string name="settings_page_background_desc">Custom background image, blur and opacity</string>
+    <string name="settings_page_lyrics">Lyrics</string>
+    <string name="settings_page_lyrics_desc">Lyric appearance, sources and default offsets</string>
+    <string name="settings_page_external_lyrics">Floating &amp; external lyrics</string>
+    <string name="settings_page_external_lyrics_desc">Floating lyrics, status bar, islands and Bluetooth lyrics</string>
+</resources>

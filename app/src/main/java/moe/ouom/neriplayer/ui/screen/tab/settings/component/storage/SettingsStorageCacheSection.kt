@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component.storage
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
@@ -37,12 +38,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.TextSnippet
@@ -56,6 +60,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -71,6 +76,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -317,7 +324,8 @@ internal fun SettingsStorageCacheSection(
                 AnimatedVisibility(visible = isCustomDownloadDirectory) {
                     ListItem(
                         leadingContent = {
-                            Icon(
+                            SettingRowIcon(
+                                key = "download_directory_uri",
                                 Icons.Outlined.Restore,
                                 contentDescription = stringResource(CoreCommonR.string.settings_download_directory_reset),
                                 tint = MaterialTheme.colorScheme.onSurface
@@ -663,21 +671,34 @@ internal fun SettingsStorageCacheSection(
             onDismissRequest = ::dismissDownloadFileNameDialog,
             title = { Text(stringResource(CoreCommonR.string.settings_download_file_name_format)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(CoreCommonR.string.settings_download_file_name_format_desc))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     MiuixSettingsTextField(
                         value = pendingDownloadFileNameTemplate,
-                        onValueChange = { pendingDownloadFileNameTemplate = it },
+                        onValueChange = { value ->
+                            pendingDownloadFileNameTemplate = value.copy(
+                                text = value.text.replace('\r', ' ').replace('\n', ' ')
+                            )
+                        },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
+                        label = {
+                            Text(stringResource(CoreCommonR.string.settings_download_file_name_format_template))
+                        },
+                        minLines = 2,
+                        maxLines = 3,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         placeholder = {
                             Text(DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE)
                         }
                     )
                     Text(
-                        text = stringResource(CoreCommonR.string.settings_download_file_name_format_supported),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline
+                        text = stringResource(CoreCommonR.string.settings_download_file_name_format_insert_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -685,6 +706,7 @@ internal fun SettingsStorageCacheSection(
                     ) {
                         DOWNLOAD_FILE_NAME_PLACEHOLDERS.forEach { placeholder ->
                             AssistChip(
+                                modifier = Modifier.heightIn(min = 40.dp),
                                 onClick = {
                                     pendingDownloadFileNameTemplate =
                                         insertDownloadFileNamePlaceholder(
@@ -692,22 +714,43 @@ internal fun SettingsStorageCacheSection(
                                             placeholder = placeholder
                                         )
                                 },
-                                label = { Text(placeholder) },
+                                label = {
+                                    Text(
+                                        placeholder,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                },
+                                shape = CircleShape,
+                                border = null,
                                 colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    labelColor = MaterialTheme.colorScheme.onSurface
                                 )
                             )
                         }
                     }
-                    Text(
-                        text = stringResource(
-                            CoreCommonR.string.settings_download_file_name_format_preview,
-                            samplePreview
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = stringResource(CoreCommonR.string.settings_download_file_name_format_preview_title),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = samplePreview,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -724,22 +767,18 @@ internal fun SettingsStorageCacheSection(
                 }
             },
             dismissButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MiuixSettingsTextButton(
-                        onClick = {
-                            pendingDownloadFileNameTemplate = TextFieldValue(
-                                DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-                            )
-                            onDownloadFileNameTemplateChange(null)
-                            showDownloadFileNameDialog.value = false
-                        },
-                        enabled = currentSavedTemplate != DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-                    ) {
-                        Text(stringResource(CoreCommonR.string.action_reset))
-                    }
-                    MiuixSettingsTextButton(onClick = ::dismissDownloadFileNameDialog) {
-                        Text(stringResource(CoreCommonR.string.action_cancel))
-                    }
+                MiuixSettingsTextButton(
+                    onClick = {
+                        pendingDownloadFileNameTemplate = TextFieldValue(
+                            DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+                        )
+                        onDownloadFileNameTemplateChange(null)
+                        showDownloadFileNameDialog.value = false
+                    },
+                    enabled = currentSavedTemplate != DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE ||
+                        pendingDownloadFileNameTemplate.text != DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+                ) {
+                    Text(stringResource(CoreCommonR.string.action_reset))
                 }
             }
         )

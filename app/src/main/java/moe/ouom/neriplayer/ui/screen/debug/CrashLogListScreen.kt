@@ -25,9 +25,8 @@ package moe.ouom.neriplayer.ui.screen.debug
 
 import android.content.Context
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Error
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import java.io.File
@@ -48,7 +47,8 @@ fun CrashLogListScreen(
         resolveDirectory = { crashLogDirectory(context) },
         onBack = onBack,
         onLogFileClick = onLogFileClick,
-        fileIcon = { Icon(Icons.Outlined.Error, null, tint = MaterialTheme.colorScheme.error) }
+        fileIcon = Icons.Rounded.BugReport,
+        fileHue = Color(0xFFFF453A)
     )
 }
 

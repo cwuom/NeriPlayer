@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.playlist.curation
 
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.component.common.NeriChoiceChip
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -127,11 +130,15 @@ internal fun LocalCurationReviewContent(
         ) {
             LocalCurationFilter.entries.forEach { option ->
                 val count = session.items.count { it.matches(option) }
-                FilterChip(
+                if (NeriDesign.isClean) NeriChoiceChip(
+                    selected = filter == option,
+                    onClick = { filter = option },
+                    label = "${stringResource(option.labelRes())} $count"
+                ) else FilterChip(
                     selected = filter == option,
                     onClick = { filter = option },
                     label = { Text("${stringResource(option.labelRes())} $count") },
-                    shape = RoundedCornerShape(12.dp),
+                    shape = neriRoundedShape(12.dp),
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                         selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
@@ -286,7 +293,7 @@ private fun LocalCurationReviewRow(
         label = "local-curation-row-chevron"
     )
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = neriRoundedShape(18.dp),
         color = containerColor,
         modifier = modifier.fillMaxWidth()
     ) {
@@ -376,7 +383,7 @@ private fun CurationCoverThumb(item: LocalCurationItem) {
     Box(
         modifier = Modifier
             .size(52.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(neriRoundedShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
@@ -473,7 +480,7 @@ private fun CurationChip(text: String, container: Color, content: Color) {
         color = content,
         maxLines = 1,
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(neriRoundedShape(8.dp))
             .background(container)
             .padding(horizontal = 8.dp, vertical = 3.dp)
     )
@@ -545,7 +552,7 @@ private fun CurationAlternatives(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(neriRoundedShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f))
                     .clickable {
                         context.performHapticFeedback()
@@ -604,7 +611,7 @@ private fun CurationLyricPreview(lyric: LocalCurationLyricProposal) {
             )
         }
         Surface(
-            shape = RoundedCornerShape(12.dp),
+            shape = neriRoundedShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
             modifier = Modifier.fillMaxWidth()
         ) {

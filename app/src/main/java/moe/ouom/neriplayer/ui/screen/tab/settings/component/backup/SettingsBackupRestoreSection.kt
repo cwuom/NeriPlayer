@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component.backup
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
@@ -55,6 +56,23 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Upload
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
+import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -293,6 +311,64 @@ internal fun SettingsBackupRestoreSection(
                 title = stringResource(CoreCommonR.string.settings_backup_local_section),
                 description = stringResource(CoreCommonR.string.settings_backup_local_section_desc)
             )
+            if (NeriDesign.isClean) {
+                CleanBackupTransferGroup(
+                    icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                    hue = Color(0xFF0A84FF),
+                    title = stringResource(CoreCommonR.string.settings_backup_group_playlists),
+                    subtitle = pluralStringResource(
+                        CoreCommonR.plurals.playlist_count_format,
+                        currentPlaylistCount,
+                        currentPlaylistCount
+                    ),
+                    exportLabel = stringResource(CoreCommonR.string.playlist_export),
+                    importLabel = stringResource(CoreCommonR.string.playlist_import),
+                    exportModifier = Modifier.settingsHighlightTarget(
+                        targetId = "manual:playlist_export",
+                        highlightTargetId = highlightTargetId,
+                        highlightPulse = highlightPulse,
+                        onHighlightFinished = onHighlightFinished
+                    ),
+                    importModifier = Modifier.settingsHighlightTarget(
+                        targetId = "manual:playlist_import",
+                        highlightTargetId = highlightTargetId,
+                        highlightPulse = highlightPulse,
+                        onHighlightFinished = onHighlightFinished
+                    ),
+                    onExport = onExportClick,
+                    onImport = onImportClick
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                CleanBackupTransferGroup(
+                    icon = Icons.Rounded.Tune,
+                    hue = Color(0xFF8E8E93),
+                    title = stringResource(CoreCommonR.string.settings_backup_group_config),
+                    subtitle = stringResource(CoreCommonR.string.settings_backup_group_config_desc),
+                    exportLabel = stringResource(CoreCommonR.string.settings_export_config),
+                    importLabel = stringResource(CoreCommonR.string.settings_import_config),
+                    exportModifier = Modifier.settingsHighlightTarget(
+                        targetId = "manual:config_export",
+                        highlightTargetId = highlightTargetId,
+                        highlightPulse = highlightPulse,
+                        onHighlightFinished = onHighlightFinished
+                    ),
+                    importModifier = Modifier.settingsHighlightTarget(
+                        targetId = "manual:config_import",
+                        highlightTargetId = highlightTargetId,
+                        highlightPulse = highlightPulse,
+                        onHighlightFinished = onHighlightFinished
+                    ),
+                    onExport = {
+                        if (!configTransferUiState.isExporting) {
+                            showConfigExportWarningDialog = true
+                        }
+                    },
+                    onImport = onImportConfigClick
+                )
+            } else {
             ListItem(
                 leadingContent = {
                     Icon(
@@ -317,7 +393,7 @@ internal fun SettingsBackupRestoreSection(
             ListItem(
                 leadingContent = {
                     Icon(
-                        Icons.Outlined.Upload,
+                        Icons.Outlined.FileUpload,
                         contentDescription = stringResource(CoreCommonR.string.settings_export_playlist),
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -337,8 +413,9 @@ internal fun SettingsBackupRestoreSection(
 
             ListItem(
                 leadingContent = {
-                    Icon(
-                        Icons.Outlined.Download,
+                    SettingRowIcon(
+                        key = null,
+                        Icons.Outlined.FileDownload,
                         contentDescription = stringResource(CoreCommonR.string.settings_import_playlist),
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -358,7 +435,8 @@ internal fun SettingsBackupRestoreSection(
 
             ListItem(
                 leadingContent = {
-                    Icon(
+                    SettingRowIcon(
+                        key = null,
                         Icons.Outlined.Upload,
                         contentDescription = stringResource(CoreCommonR.string.settings_export_config),
                         tint = MaterialTheme.colorScheme.primary
@@ -383,7 +461,8 @@ internal fun SettingsBackupRestoreSection(
 
             ListItem(
                 leadingContent = {
-                    Icon(
+                    SettingRowIcon(
+                        key = null,
                         Icons.Outlined.Download,
                         contentDescription = stringResource(CoreCommonR.string.settings_import_config),
                         tint = MaterialTheme.colorScheme.primary
@@ -401,6 +480,7 @@ internal fun SettingsBackupRestoreSection(
                     .settingsItemClickable(onClick = onImportConfigClick),
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
+            }
 
             backupRestoreUiState.exportProgress?.let { progress ->
                 ProgressStatusItem(
@@ -618,7 +698,8 @@ internal fun SettingsBackupRestoreSection(
             if (!githubState.isConfigured) {
                 ListItem(
                     leadingContent = {
-                        Icon(
+                        SettingRowIcon(
+                            key = "github_sync",
                             Icons.Outlined.Settings,
                             contentDescription = stringResource(CoreCommonR.string.settings_configure),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -639,7 +720,8 @@ internal fun SettingsBackupRestoreSection(
             } else {
                 ListItem(
                     leadingContent = {
-                        Icon(
+                        SettingRowIcon(
+                            key = "github_auto_sync",
                             Icons.Outlined.Sync,
                             contentDescription = stringResource(CoreCommonR.string.settings_auto_sync),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -664,7 +746,8 @@ internal fun SettingsBackupRestoreSection(
 
                 ListItem(
                     leadingContent = {
-                        Icon(
+                        SettingRowIcon(
+                            key = "github_auto_sync",
                             Icons.Outlined.CloudUpload,
                             contentDescription = stringResource(CoreCommonR.string.settings_sync_now),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -787,7 +870,8 @@ internal fun SettingsBackupRestoreSection(
             if (!webDavState.isConfigured) {
                 ListItem(
                     leadingContent = {
-                        Icon(
+                        SettingRowIcon(
+                            key = "webdav_sync",
                             Icons.Outlined.Settings,
                             contentDescription = stringResource(CoreCommonR.string.settings_configure),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -808,7 +892,8 @@ internal fun SettingsBackupRestoreSection(
             } else {
                 ListItem(
                     leadingContent = {
-                        Icon(
+                        SettingRowIcon(
+                            key = "webdav_auto_sync",
                             Icons.Outlined.Sync,
                             contentDescription = stringResource(CoreCommonR.string.settings_auto_sync),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -833,7 +918,8 @@ internal fun SettingsBackupRestoreSection(
 
                 ListItem(
                     leadingContent = {
-                        Icon(
+                        SettingRowIcon(
+                            key = "webdav_auto_sync",
                             Icons.Outlined.CloudUpload,
                             contentDescription = stringResource(CoreCommonR.string.settings_sync_now),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1245,4 +1331,106 @@ private fun PlayHistoryModeOption(
         selected = selected,
         onClick = onClick
     )
+}
+
+private val BackupGlyphShape = ContinuousRoundedCornerShape(9.dp)
+private val BackupActionShape = ContinuousRoundedCornerShape(16.dp)
+
+/**
+ * One backup subject with its two directions side by side. Export always points out of the
+ * tray and import into it, so the pair cannot be confused even before reading the labels.
+ */
+@Composable
+private fun CleanBackupTransferGroup(
+    icon: ImageVector,
+    hue: Color,
+    title: String,
+    subtitle: String,
+    exportLabel: String,
+    importLabel: String,
+    exportModifier: Modifier,
+    importModifier: Modifier,
+    onExport: () -> Unit,
+    onImport: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(BackupGlyphShape)
+                    .background(hue),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(19.dp))
+            }
+            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            CleanBackupActionTile(
+                icon = Icons.Rounded.FileUpload,
+                label = exportLabel,
+                hint = stringResource(CoreCommonR.string.settings_backup_action_export_hint),
+                modifier = exportModifier.weight(1f),
+                onClick = onExport
+            )
+            CleanBackupActionTile(
+                icon = Icons.Rounded.FileDownload,
+                label = importLabel,
+                hint = stringResource(CoreCommonR.string.settings_backup_action_import_hint),
+                modifier = importModifier.weight(1f),
+                onClick = onImport
+            )
+        }
+    }
+}
+
+@Composable
+private fun CleanBackupActionTile(
+    icon: ImageVector,
+    label: String,
+    hint: String,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(
+        modifier = modifier
+            .heightIn(min = 76.dp)
+            .clip(BackupActionShape)
+            .background(colors.onSurface.copy(alpha = 0.06f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = colors.primary, modifier = Modifier.size(22.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            hint,
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
 }

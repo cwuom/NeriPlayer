@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.download
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.core.download.presentation.progress.DownloadProgressReadAccess
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.download.DownloadProgress
@@ -952,7 +953,7 @@ private fun DownloadClearProgressCard(
     progress: DownloadClearVisibility.ClearProgress,
     backgroundCleanup: Boolean
 ) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = neriRoundedShape(12.dp)
     val baseColor = MaterialTheme.colorScheme.surfaceVariant
     AdvancedGlassSurface(
         role = AdvancedGlassRole.SemanticCard,
@@ -1018,7 +1019,7 @@ private fun DownloadClearProgressSummary(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(4.dp)
-                .clip(RoundedCornerShape(2.dp))
+                .clip(neriRoundedShape(2.dp))
         )
         Text(
             text = if (progress.totalItemCount > 0) {
@@ -1072,7 +1073,7 @@ internal fun DownloadTaskItem(
 ) {
     val songName = remember(task.song) { task.song.displayName() }
     val songArtist = remember(task.song) { task.song.displayArtist() }
-    val shape = RoundedCornerShape(12.dp)
+    val shape = neriRoundedShape(12.dp)
     val baseColor = MaterialTheme.colorScheme.surfaceVariant
     AdvancedGlassSurface(
         role = AdvancedGlassRole.SemanticCard,
@@ -1130,7 +1131,7 @@ internal fun DownloadTaskItem(
 
 @Composable
 private fun BatchDownloadOverallProgressCard(progress: BatchDownloadOverallProgress) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = neriRoundedShape(12.dp)
     val baseColor = MaterialTheme.colorScheme.surfaceVariant
     AdvancedGlassSurface(
         role = AdvancedGlassRole.SemanticCard,
@@ -1162,7 +1163,7 @@ private fun BatchDownloadOverallProgressCard(progress: BatchDownloadOverallProgr
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(neriRoundedShape(2.dp))
             )
         }
     }
@@ -1170,7 +1171,7 @@ private fun BatchDownloadOverallProgressCard(progress: BatchDownloadOverallProgr
 
 @Composable
 private fun PendingDownloadSummaryCard(count: Int) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = neriRoundedShape(12.dp)
     val baseColor = MaterialTheme.colorScheme.surfaceVariant
     AdvancedGlassSurface(
         role = AdvancedGlassRole.SemanticCard,
@@ -1194,7 +1195,7 @@ private fun PendingDownloadSummaryCard(count: Int) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(neriRoundedShape(2.dp))
             )
         }
     }
@@ -1206,7 +1207,7 @@ private fun FailedDownloadSummaryCard(
     enabled: Boolean,
     onClearFailed: () -> Unit
 ) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = neriRoundedShape(12.dp)
     val baseColor = MaterialTheme.colorScheme.errorContainer
     AdvancedGlassSurface(
         role = AdvancedGlassRole.SemanticCard,
@@ -1248,7 +1249,7 @@ private fun FailedDownloadSummaryCard(
 
 @Composable
 private fun ExplicitResumeSummaryCard(count: Int) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = neriRoundedShape(12.dp)
     val baseColor = MaterialTheme.colorScheme.surfaceVariant
     AdvancedGlassSurface(
         role = AdvancedGlassRole.SemanticCard,
@@ -1286,7 +1287,7 @@ private fun ExplicitResumeTaskItem(
     candidate: ExplicitDownloadResumeCandidate,
     onResume: () -> Unit
 ) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = neriRoundedShape(12.dp)
     val baseColor = MaterialTheme.colorScheme.surfaceVariant
     AdvancedGlassSurface(
         role = AdvancedGlassRole.SemanticCard,
@@ -1533,7 +1534,7 @@ private fun DownloadTaskProgressBar(progress: DownloadProgress) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(4.dp)
-                .clip(RoundedCornerShape(2.dp))
+                .clip(neriRoundedShape(2.dp))
         )
     } else {
         DownloadTaskIndeterminateProgress()
@@ -1546,6 +1547,6 @@ private fun DownloadTaskIndeterminateProgress() {
         modifier = Modifier
             .fillMaxWidth()
             .height(4.dp)
-            .clip(RoundedCornerShape(2.dp))
+            .clip(neriRoundedShape(2.dp))
     )
 }

@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -51,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaSimilarSong
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.ui.Alignment
 private const val SIMILAR_SONG_EXPAND_THRESHOLD = 5
 /**
@@ -147,7 +147,7 @@ private fun SongEncyclopediaSimilarSongRow(
 @Composable
 private fun SongEncyclopediaSongCover(coverUrl: String?) {
     val size = 40.dp
-    val shape = RoundedCornerShape(6.dp)
+    val shape = neriRoundedShape(6.dp)
     if (coverUrl.isNullOrBlank()) {
         Box(
             modifier = Modifier
@@ -170,7 +170,7 @@ private fun SongEncyclopediaSongCover(coverUrl: String?) {
 /** 供模块八复用的封面占位逻辑（同尺寸）。 */
 @Composable
 internal fun SongEncyclopediaPlaylistCover(coverUrl: String?, size: androidx.compose.ui.unit.Dp) {
-    val shape = RoundedCornerShape(8.dp)
+    val shape = neriRoundedShape(8.dp)
     if (coverUrl.isNullOrBlank()) {
         Box(
             modifier = Modifier

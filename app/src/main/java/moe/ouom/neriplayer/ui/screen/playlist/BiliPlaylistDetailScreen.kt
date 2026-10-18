@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Created: 2025/8/15
  */
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.app.Application
@@ -326,7 +327,8 @@ fun BiliPlaylistDetailScreen(
             resolvePlaylistChromeCollapseProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
-                expandedHeroHeightPx = with(density) {
+                expandedHeroHeightPx = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == 0 }?.size ?: with(density) {
                     playlistHeroHeight.roundToPx()
                 }
             )
@@ -634,6 +636,7 @@ fun BiliPlaylistDetailScreen(
                                     ),
                                     offlineMode = offlineMode,
                                     height = playlistHeroHeight,
+                                    actionsRevealProgress = searchVisibilityEased,
                                     coverContentDescription = displayHeader.title,
                                     actions = if (headerSearchVisible) {
                                         {
@@ -1210,7 +1213,7 @@ internal fun VideoRow(
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(width = 100.dp, height = 60.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(neriRoundedShape(8.dp))
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {

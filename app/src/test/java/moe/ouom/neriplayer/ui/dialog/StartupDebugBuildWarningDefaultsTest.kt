@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
@@ -48,6 +49,10 @@ class StartupDebugBuildWarningDefaultsTest {
             SideEffect { pendingStates += pending }
         }
 
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText(context.getString(R.string.debug_build_warning_title))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithText(context.getString(R.string.debug_build_warning_title))
             .assertExists()
         composeRule.onNodeWithText(context.getString(R.string.debug_build_warning_message))

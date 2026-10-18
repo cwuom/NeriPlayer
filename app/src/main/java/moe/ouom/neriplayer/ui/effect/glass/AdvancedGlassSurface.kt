@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
+import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -31,7 +32,9 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlin.math.max
 import kotlin.math.min
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 
 internal fun isAdvancedGlassNavigationOwnerActive(
     isGlobalNavigationSurface: Boolean,
@@ -58,6 +61,19 @@ internal fun shouldSuppressAdvancedGlassSurfaceForInactiveNavigationOwner(
     canRenderGlass &&
     !belongsToActiveNavigationScreen &&
     belongsToPrewarmedNavigationScreen
+
+/**
+ * Clean cards carry body text straight over the user's image, so a bright patch must never
+ * show through strongly enough to wash grey copy out. Chrome roles keep their lighter tints.
+ */
+internal fun cleanLegibleTintFloor(role: AdvancedGlassRole, isDarkTheme: Boolean): Float = when (role) {
+    AdvancedGlassRole.SettingsGroup,
+    AdvancedGlassRole.SettingsHeader,
+    AdvancedGlassRole.SettingsSection,
+    AdvancedGlassRole.SemanticCard,
+    AdvancedGlassRole.PlaylistSheet -> if (isDarkTheme) 0.56f else 0.62f
+    else -> 0f
+}
 
 internal fun resolveAdvancedGlassRelativeOpacity(sceneOpacity: Float, backdropOpacity: Float): Float {
     if (!sceneOpacity.isFinite() || !backdropOpacity.isFinite() || backdropOpacity <= 0f) return 0f
@@ -93,8 +109,14 @@ internal fun AdvancedGlassSurface(
     } else {
         null
     }
-    val tokens = advancedGlassTokens(role, isDarkTheme, enhancedBlurRadiusDp)
+    val tokens = advancedGlassTokens(
+        role,
+        isDarkTheme,
+        enhancedBlurRadiusDp,
+        liquid = controller.isLiquidGlassEnabled
+    )
     val resolvedTintColor = if (tintColor.isColorSpecified) tintColor else advancedGlassRoleColor(role)
+    val legibleTintFloor = if (NeriDesign.isClean) cleanLegibleTintFloor(role, isDarkTheme) else 0f
     val edgeBaseColor = MaterialTheme.colorScheme.onSurface
     val requiresContentBackdrop = role == AdvancedGlassRole.MiniPlayer ||
         role == AdvancedGlassRole.BottomNavigation
@@ -155,7 +177,8 @@ internal fun AdvancedGlassSurface(
                         boundsInWindow = bounds,
                         cornerRadiiPx = localCornerRadii.toWindowPixels(min(windowScale.x, windowScale.y)),
                         navigationOwner = advancedGlassRegionNavigationOwner(role, navigationOwner),
-                        opacity = opacity
+                        opacity = opacity,
+                        layoutCoordinates = coordinates
                     )
                 }
             }
@@ -197,7 +220,7 @@ internal fun AdvancedGlassSurface(
             GlassColorLayer(
                 shape = shape,
                 color = resolvedTintColor.copy(
-                    alpha = resolvedTintColor.alpha * tokens.tintAlpha
+                    alpha = resolvedTintColor.alpha * max(tokens.tintAlpha, legibleTintFloor)
                 )
             )
         } else if (
@@ -251,7 +274,20 @@ private fun resolveCornerRadiiPx(
             bottomLeft = roundRect.bottomLeftCornerRadius.x
         )
     }
-    else -> AdvancedGlassCornerRadii.Zero
+    else -> (shape as? CornerBasedShape)?.let { cornerShape ->
+        val ltr = layoutDirection == androidx.compose.ui.unit.LayoutDirection.Ltr
+        val topStart = cornerShape.topStart.toPx(size, density)
+        val topEnd = cornerShape.topEnd.toPx(size, density)
+        val bottomEnd = cornerShape.bottomEnd.toPx(size, density)
+        val bottomStart = cornerShape.bottomStart.toPx(size, density)
+        val maxRadius = minOf(size.width, size.height) / 2f
+        AdvancedGlassCornerRadii(
+            topLeft = (if (ltr) topStart else topEnd).coerceAtMost(maxRadius),
+            topRight = (if (ltr) topEnd else topStart).coerceAtMost(maxRadius),
+            bottomRight = (if (ltr) bottomEnd else bottomStart).coerceAtMost(maxRadius),
+            bottomLeft = (if (ltr) bottomStart else bottomEnd).coerceAtMost(maxRadius)
+        )
+    } ?: AdvancedGlassCornerRadii.Zero
 }
 
 @Composable
@@ -282,8 +318,10 @@ private fun BoxScope.GlassEdgeLayer(
                     addOutline(shape.createOutline(size, layoutDirection, this@drawWithCache))
                 }
                 val stroke = Stroke(width = 1.dp.toPx())
+                val rectangular = shape.createOutline(size, layoutDirection, this@drawWithCache) is Outline.Rectangle
                 onDrawBehind {
-                    if (role == AdvancedGlassRole.BottomNavigation) {
+                    // an edge-to-edge bar only needs its top seam; floating capsules get a full rim
+                    if (role == AdvancedGlassRole.BottomNavigation && rectangular) {
                         drawLine(
                             color = color,
                             start = Offset.Zero,

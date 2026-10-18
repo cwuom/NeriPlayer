@@ -5,6 +5,8 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import moe.ouom.neriplayer.ui.theme.NeriMotion
+import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
@@ -209,7 +211,8 @@ internal fun resolveMainTabBackgroundMotionDurationMillis(
     }
 }
 
-internal fun mainTabDetailContentOffsetEasing(): Easing = FastOutSlowInEasing
+internal fun mainTabDetailContentOffsetEasing(): Easing =
+    if (NeriMotionStyle.clean) NeriMotion.Emphasized else FastOutSlowInEasing
 
 internal data class MainTabNavigationMotionTarget(
     val backgroundMotion: MainTabBackgroundMotion,

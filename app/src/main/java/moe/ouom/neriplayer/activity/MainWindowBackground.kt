@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.activity
 import android.graphics.Color
 import android.os.Build
 import android.view.Window
+import android.view.WindowInsetsController
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 
@@ -16,5 +17,15 @@ internal fun Window.applyMainWindowBackground(isDark: Boolean) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         isStatusBarContrastEnforced = false
         isNavigationBarContrastEnforced = false
+    }
+}
+
+internal fun Window.applyMainWindowCaptionAppearance(useLightSystemBarIcons: Boolean) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+        val mask = WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND or
+            WindowInsetsController.APPEARANCE_LIGHT_CAPTION_BARS
+        val appearance = WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND or
+            (if (useLightSystemBarIcons) 0 else WindowInsetsController.APPEARANCE_LIGHT_CAPTION_BARS)
+        insetsController?.setSystemBarsAppearance(appearance, mask)
     }
 }

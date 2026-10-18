@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.settings
 
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
@@ -98,7 +99,8 @@ fun AutoSettingsListItem(
                 AutoSettingsIcon(
                     painter = autoSettingsIconPainter(setting.iconRes),
                     imageVector = autoSettingsIconVector(setting.icon),
-                    contentDescription = title
+                    contentDescription = title,
+                    glyphKey = setting.keyName
                 )
             }
         }
@@ -250,7 +252,8 @@ private fun AutoSettingsSwitchItem(
             AutoSettingsIcon(
                 painter = iconPainter,
                 imageVector = autoSettingsIconVector(icon),
-                contentDescription = title
+                contentDescription = title,
+                glyphKey = targetId.substringAfter(':')
             )
         },
         headlineContent = { Text(title) },
@@ -268,8 +271,15 @@ private fun AutoSettingsSwitchItem(
 private fun AutoSettingsIcon(
     painter: Painter?,
     imageVector: ImageVector?,
-    contentDescription: String
+    contentDescription: String,
+    glyphKey: String? = null
 ) {
+    if (NeriDesign.isClean) {
+        glyphKey?.let(::settingGlyphFor)?.let { glyph ->
+            SettingGlyphIcon(glyph, contentDescription)
+            return
+        }
+    }
     if (painter != null) {
         Icon(
             painter = painter,

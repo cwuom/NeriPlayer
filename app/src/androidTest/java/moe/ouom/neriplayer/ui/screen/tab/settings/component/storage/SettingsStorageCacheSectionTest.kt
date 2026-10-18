@@ -10,6 +10,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.espresso.Espresso.closeSoftKeyboard
+import androidx.test.espresso.Espresso.pressBack
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
@@ -96,7 +98,8 @@ class SettingsStorageCacheSectionTest {
         ).assertExists()
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_details)).performClick()
         composeRule.onNode(hasSetTextAction()).performTextInput(" temporary")
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_cancel)).performClick()
+        closeSoftKeyboard()
+        pressBack()
 
         composeRule.onNodeWithText(savedTemplate).assertExists()
         composeRule.runOnIdle {

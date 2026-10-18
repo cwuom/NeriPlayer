@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.content.Context
 import androidx.compose.foundation.clickable
@@ -111,7 +112,7 @@ internal fun NeteaseRemotePlaylistPickerDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(neriRoundedShape(12.dp))
                                     .clickable(enabled = !loading) {
                                         onPlaylistClick(playlist)
                                     }

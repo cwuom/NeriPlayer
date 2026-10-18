@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.audio
 
+import moe.ouom.neriplayer.ui.component.common.NeriChoiceChip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -199,14 +200,15 @@ private fun QuickChips(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         values.forEach { value ->
-            FilterChip(
+            NeriChoiceChip(
                 selected = selected(value),
                 onClick = { onClick(value) },
                 enabled = enabled,
-                label = { Text(label(value)) }
+                label = label(value)
             )
         }
     }
@@ -214,7 +216,7 @@ private fun QuickChips(
 
 @Composable
 internal fun AudioEffectsAdvancedCard(settings: AudioEffectsSettings, route: AudioOutputRoute, editor: AudioEffectsEditor) {
-    var confirmReset by remember { mutableStateOf(false) }
+    var confirmReset by remember(route) { mutableStateOf(false) }
     val modes = AudioEffectsPowerMode.entries
     val mode = AudioEffectsPowerMode.fromStorageValue(settings.powerMode)
     AudioEffectsCardIntro(

@@ -12,7 +12,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 
 private val LibrarySecondaryTabShape = RoundedCornerShape(24.dp)
@@ -29,6 +31,15 @@ internal fun LibrarySecondaryTabs(
     onSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    if (NeriDesign.isClean) {
+        CleanSegmentedTabs(
+            labels = labels,
+            selectedIndex = selectedIndex,
+            onSelected = onSelected,
+            modifier = modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+        )
+        return
+    }
     AdvancedGlassSurface(
         role = AdvancedGlassRole.ScreenTopTab,
         modifier = modifier

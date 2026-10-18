@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.library
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -111,13 +112,13 @@ private fun LocalArtistEmptyCard(
     hintResId: Int
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
+        shape = neriRoundedShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(neriRoundedShape(12.dp))
     ) {
         ListItem(
             headlineContent = { Text(stringResource(titleResId)) },
@@ -150,7 +151,7 @@ internal fun LocalArtistGridCard(
     val coverUrl = rememberLocalArtistDisplayCoverUrl(artist)
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(neriRoundedShape(12.dp))
             .clickable(onClick = onClick)
     ) {
         if (!coverUrl.isNullOrBlank()) {
@@ -166,7 +167,7 @@ internal fun LocalArtistGridCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(neriRoundedShape(12.dp))
             )
         } else {
             Box(
@@ -174,7 +175,7 @@ internal fun LocalArtistGridCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(neriRoundedShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             ) {
                 Icon(

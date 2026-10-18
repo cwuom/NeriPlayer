@@ -94,7 +94,7 @@ class AppPlaybackNavigationReturnTimingTest {
     }
 
     @Test
-    fun tabletNavigationKeepsWaitingForOverlayDisposalBeforeReturning() {
+    fun tabletNavigationStartsReturningWhileTheClassicPlayerExitIsStillMounted() {
         UiFailureDiagnostics.onFailure("tablet-playback-navigation-return") {
             // 使用竖屏平板底栏，避免侧栏规则改变被测动画
             render(smallestScreenWidthDp = 800, widthDp = 800, heightDp = 1280)
@@ -106,17 +106,15 @@ class AppPlaybackNavigationReturnTimingTest {
             composeRule.runOnIdle { playbackOpen.value = false }
             advanceBy(EarlyReturnTimeMs)
 
-            assertOverlayMounted("平板退出期间应继续抑制底栏和 MiniPlayer")
-            assertEquals("平板浮层仍挂载时不应开始恢复底栏", hiddenTabs.top, rawBounds(BottomNavigationTag).top, PixelTolerance)
-            composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).assertDoesNotExist()
+            assertOverlayMounted("平板退出 128ms 时经典播放页仍应处于退出动画")
+            val returningTabs = rawBounds(BottomNavigationTag)
+            assertTrue("平板底栏应在播放页退出期间恢复", returningTabs.top < hiddenTabs.top - PixelTolerance)
+            assertTrue("128ms 时底栏仍应处于恢复动画", returningTabs.top > initialTabs.top + PixelTolerance)
+            composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).assertIsDisplayed()
 
             advanceBy(CompleteReturnTimeMs - EarlyReturnTimeMs)
 
             composeRule.runOnIdle { assertFalse("320ms 时平板浮层应已卸载", overlayMounted.value) }
-            val returningTabs = rawBounds(BottomNavigationTag)
-            assertTrue("平板应保留原恢复时序", returningTabs.top > initialTabs.top + PixelTolerance)
-
-            advanceBy(400L)
             assertRestored(initialTabs, initialMini)
         }
     }
@@ -141,9 +139,7 @@ class AppPlaybackNavigationReturnTimingTest {
                                     ),
                                     currentDestination = null,
                                     showNowPlaying = shouldSuppressPlaybackNavigation(
-                                        playbackOpen = playbackOpen.value,
-                                        overlayMounted = overlayMounted.value,
-                                        smallestScreenWidthDp = LocalConfiguration.current.smallestScreenWidthDp
+                                        playbackOpen = playbackOpen.value
                                     ),
                                     offlineMode = true,
                                     alwaysUseNewTabStyle = false,

@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.history
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
@@ -693,7 +694,7 @@ internal fun RecentRowRich(
         animationSpec = spring(stiffness = 500f),
         label = "recent-row-scale"
     )
-    val rowShape = RoundedCornerShape(18.dp)
+    val rowShape = neriRoundedShape(18.dp)
     val rowContainerColor = if (selected) {
         MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
     } else {
@@ -808,7 +809,7 @@ private fun RecentRowCover(coverUrl: String?, offlineMode: Boolean) {
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(52.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(neriRoundedShape(10.dp))
         )
     } else {
         Spacer(Modifier.size(52.dp))
@@ -895,7 +896,7 @@ private fun PlayingIndicator(color: Color, animate: Boolean) {
             Modifier
                 .width(3.dp)
                 .height(h1.dp)
-                .clip(RoundedCornerShape(1.dp))
+                .clip(neriRoundedShape(1.dp))
                 .background(color)
         )
         Spacer(Modifier.width(3.dp))
@@ -903,7 +904,7 @@ private fun PlayingIndicator(color: Color, animate: Boolean) {
             Modifier
                 .width(3.dp)
                 .height(h2.dp)
-                .clip(RoundedCornerShape(1.dp))
+                .clip(neriRoundedShape(1.dp))
                 .background(color)
         )
         Spacer(Modifier.width(3.dp))
@@ -911,7 +912,7 @@ private fun PlayingIndicator(color: Color, animate: Boolean) {
             Modifier
                 .width(3.dp)
                 .height(h3.dp)
-                .clip(RoundedCornerShape(1.dp))
+                .clip(neriRoundedShape(1.dp))
                 .background(color)
         )
     }

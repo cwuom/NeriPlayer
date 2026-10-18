@@ -26,11 +26,8 @@ package moe.ouom.neriplayer.ui
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Activity
 import android.app.Application
-import android.content.Context
-import android.content.ContextWrapper
 import android.net.Uri
 import android.os.Build
-import android.view.WindowManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -38,15 +35,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LibraryMusic
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -68,7 +60,6 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
@@ -82,7 +73,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import coil.Coil
 import com.materialkolor.PaletteStyle
@@ -104,7 +94,6 @@ import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackOnForeground
 import moe.ouom.neriplayer.core.player.lifecycle.updateUsbExclusiveForegroundState
@@ -151,6 +140,7 @@ import moe.ouom.neriplayer.ui.screen.tab.home.shouldShowHomeContinueSection
 import moe.ouom.neriplayer.ui.screen.tab.home.rememberHomeUsageSnapshot
 import moe.ouom.neriplayer.ui.screen.tab.home.HomeContinueDiagnostics
 import moe.ouom.neriplayer.ui.theme.NeriTheme
+import moe.ouom.neriplayer.ui.theme.biasCoverSeedTowardBlue
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
@@ -217,6 +207,15 @@ import moe.ouom.neriplayer.ui.settings.route.AppSettingsHostEnvironment
 import moe.ouom.neriplayer.ui.settings.route.isAppSettingsVisible
 import moe.ouom.neriplayer.ui.settings.route.AppSettingsRoute
 import moe.ouom.neriplayer.ui.theme.background.CustomBackground
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
+import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
+import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
+import moe.ouom.neriplayer.ui.effect.glass.rememberLiquidGlassDeviceAllowed
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
+import moe.ouom.neriplayer.ui.navigation.PredictiveBackPreviewGate
+import moe.ouom.neriplayer.ui.theme.reveal.shouldReverseThemeReveal
+import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
+import moe.ouom.neriplayer.ui.screen.tab.home.LocalHomeOpenSearch
 import moe.ouom.neriplayer.ui.theme.reveal.AppThemeRevealOverlayHost
 import moe.ouom.neriplayer.ui.theme.reveal.THEME_REVEAL_WATCHDOG_DELAY_MILLIS
 import moe.ouom.neriplayer.ui.theme.reveal.appThemeRevealPresentation
@@ -261,14 +260,6 @@ internal fun resolveBottomBarLayoutInsets(
     )
 }
 
-private tailrec fun Context.findActivity(): Activity? {
-    return when (this) {
-        is Activity -> this
-        is ContextWrapper -> baseContext.findActivity()
-        else -> null
-    }
-}
-
 internal fun localPlaylistIdFromSourceRoute(sourceRoute: String?): Long? {
     return sourceRoute
         ?.takeIf { it.startsWith("local_playlist_detail/") }
@@ -286,7 +277,9 @@ fun NeriApp(
     onNowPlayingVisibilityChanged: (Boolean) -> Unit = {},
     onNowPlayingOpenChanged: (Boolean) -> Unit = {},
     onPhoneLandscapeBack: (() -> Unit)? = null,
-    onLanguageChanged: (LanguageManager.Language) -> Unit = {}
+    onLanguageChanged: (LanguageManager.Language) -> Unit = {},
+    onGlobalDialogVisibilityChanged: (Boolean) -> Unit = {},
+    canShowGlobalDialogs: Boolean = true
 ) {
     Box(
         modifier = Modifier
@@ -304,7 +297,9 @@ fun NeriApp(
                 onNowPlayingVisibilityChanged = onNowPlayingVisibilityChanged,
                 onNowPlayingOpenChanged = onNowPlayingOpenChanged,
                 onPhoneLandscapeBack = onPhoneLandscapeBack,
-                onLanguageChanged = onLanguageChanged
+                onLanguageChanged = onLanguageChanged,
+                onGlobalDialogVisibilityChanged = onGlobalDialogVisibilityChanged,
+                canShowGlobalDialogs = canShowGlobalDialogs
             )
         }
     }
@@ -332,7 +327,9 @@ private fun NeriAppContent(
     onNowPlayingVisibilityChanged: (Boolean) -> Unit = {},
     onNowPlayingOpenChanged: (Boolean) -> Unit = {},
     onPhoneLandscapeBack: (() -> Unit)? = null,
-    onLanguageChanged: (LanguageManager.Language) -> Unit = {}
+    onLanguageChanged: (LanguageManager.Language) -> Unit = {},
+    onGlobalDialogVisibilityChanged: (Boolean) -> Unit = {},
+    canShowGlobalDialogs: Boolean = true
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
@@ -366,6 +363,8 @@ private fun NeriAppContent(
     val storedForceDark by repo.forceDarkFlow.collectAsStateWithLifecycle(
         initialValue = initialThemeSnapshot.forceDark
     )
+    val (uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled) =
+        rememberAppStylePreferences(repo, initialThemeSnapshot.uiStyle)
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     var nowPlayingOverlayMounted by remember { mutableStateOf(showNowPlaying) }
     val nowPlayingDismissState = rememberPredictiveDismissState()
@@ -423,6 +422,7 @@ private fun NeriAppContent(
         initialValue = repo.defaultLyricFontScales
     )
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsStateWithLifecycle(initialValue = null)
+    val hasCustomBackground = backgroundImageUri != null
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsStateWithLifecycle(initialValue = 0f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsStateWithLifecycle(initialValue = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
@@ -431,18 +431,17 @@ private fun NeriAppContent(
     val showLyricTranslation by repo.showLyricTranslationFlow.collectAsStateWithLifecycle(initialValue = true)
     val defaultStartDestination: String? by repo.defaultStartDestinationFlow
         .collectAsStateWithLifecycle(initialValue = null)
-    val alwaysUseNewTabStyle by repo.alwaysUseNewTabStyleFlow
-        .collectAsStateWithLifecycle(initialValue = true)
     val showHomeContinueCard by repo.homeCardContinueFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeTrendingCard by repo.homeCardTrendingFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRadarCard by repo.homeCardRadarFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRecommendedCard by repo.homeCardRecommendedFlow.collectAsStateWithLifecycle(initialValue = true)
-    val usbExclusivePlayback by repo.usbExclusivePlaybackFlow.collectAsStateWithLifecycle(
-        initialValue = startupPlaybackPreferences.usbExclusivePlayback
-    )
+    val storedUsbExclusivePlayback by repo.usbExclusivePlaybackFlow
+        .collectAsStateWithLifecycle(initialValue = null)
+    val usbExclusivePlayback = storedUsbExclusivePlayback
+        ?: startupPlaybackPreferences.usbExclusivePlayback
     val usbExclusiveBackgroundPermissionPromptSuppressed by repo
         .usbExclusiveBackgroundPermissionPromptSuppressedFlow
-        .collectAsStateWithLifecycle(initialValue = false)
+        .collectAsStateWithLifecycle(initialValue = null)
     val allowMixedPlayback by repo.allowMixedPlaybackFlow.collectAsStateWithLifecycle(initialValue = false)
     val preemptAudioFocus by repo.preemptAudioFocusFlow.collectAsStateWithLifecycle(
         initialValue = startupPlaybackPreferences.preemptAudioFocus
@@ -466,6 +465,7 @@ private fun NeriAppContent(
     var themeRevealOriginWindow by remember { mutableStateOf<Offset?>(null) }
     var themeRevealStartRadiusPx by remember { mutableFloatStateOf(0f) }
     var themeRevealFallbackColorArgb by remember { mutableStateOf<Int?>(null) }
+    var themeRevealReverse by remember { mutableStateOf(false) }
     var themeRevealCaptureInFlight by remember { mutableStateOf(false) }
     var themeRevealCaptureJob by remember { mutableStateOf<Job?>(null) }
     var themeRevealCaptureToken by remember { mutableIntStateOf(0) }
@@ -500,16 +500,18 @@ private fun NeriAppContent(
 
     LaunchedEffect(
         lifecycleResumed,
-        usbExclusivePlayback,
+        storedUsbExclusivePlayback,
         usbExclusiveBackgroundPermissionPromptSuppressed
     ) {
-        if (!usbExclusivePlayback) {
+        val usbEnabled = storedUsbExclusivePlayback ?: return@LaunchedEffect
+        val promptSuppressed = usbExclusiveBackgroundPermissionPromptSuppressed ?: return@LaunchedEffect
+        if (!usbEnabled) {
             usbExclusiveBackgroundPermissionPromptHandled = false
             showUsbExclusiveBackgroundPermissionDialog = false
             return@LaunchedEffect
         }
         val shouldInspectBackgroundBehavior = lifecycleResumed &&
-            !usbExclusiveBackgroundPermissionPromptSuppressed &&
+            !promptSuppressed &&
             !usbExclusiveBackgroundPermissionPromptHandled
         val backgroundBehaviorAllowed = if (shouldInspectBackgroundBehavior) {
             context.readBackgroundBehaviorAllowance().fullyAllowed
@@ -518,9 +520,9 @@ private fun NeriAppContent(
         }
         if (
             shouldPromptForUsbExclusiveBackgroundPermission(
-                usbExclusiveEnabled = usbExclusivePlayback,
+                usbExclusiveEnabled = usbEnabled,
                 appResumed = lifecycleResumed,
-                promptSuppressed = usbExclusiveBackgroundPermissionPromptSuppressed,
+                promptSuppressed = promptSuppressed,
                 backgroundBehaviorAllowed = backgroundBehaviorAllowed,
                 promptHandledInCurrentSession = usbExclusiveBackgroundPermissionPromptHandled
             )
@@ -607,6 +609,17 @@ private fun NeriAppContent(
     val scope = rememberCoroutineScope()
     var pendingTrafficRiskDownloadRequest by remember {
         mutableStateOf<GlobalDownloadManager.TrafficRiskDownloadRequest?>(null)
+    }
+    val usbBackgroundPermissionCheckPending = storedUsbExclusivePlayback == null ||
+        usbExclusiveBackgroundPermissionPromptSuppressed == null ||
+        (usbExclusivePlayback && lifecycleResumed &&
+            usbExclusiveBackgroundPermissionPromptSuppressed == false &&
+            !usbExclusiveBackgroundPermissionPromptHandled)
+    SideEffect {
+        onGlobalDialogVisibilityChanged(
+            showUsbExclusiveBackgroundPermissionDialog || usbBackgroundPermissionCheckPending ||
+                pendingTrafficRiskDownloadRequest != null
+        )
     }
     LaunchedEffect(Unit) {
         GlobalDownloadManager.trafficRiskDownloadRequests.collect { request ->
@@ -834,11 +847,14 @@ private fun NeriAppContent(
         defaultStartDestination ?: initialMainStartDestination
     val backgroundGlassBackdrop = rememberAdvancedGlassBackdrop()
     val contentGlassBackdrop = rememberAdvancedGlassBackdrop()
+    val liquidGlassDeviceAllowed = rememberLiquidGlassDeviceAllowed(advancedBlurQuality)
+    val liquidGlassRequested = uiStyle == UiStyle.Clean && liquidGlassEnabled && liquidGlassDeviceAllowed
     val advancedGlassController = remember(
         advancedBlurEnabled,
         enhancedAdvancedBlurEnabled,
         enhancedAdvancedBlurRadiusDp,
-        advancedBlurQuality
+        advancedBlurQuality,
+        liquidGlassRequested
     ) {
         AdvancedGlassController(
             sdkInt = Build.VERSION.SDK_INT,
@@ -846,9 +862,11 @@ private fun NeriAppContent(
             enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
             backendReady = isAdvancedGlassBackendSupported(Build.VERSION.SDK_INT),
             enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
-            advancedBlurQuality = advancedBlurQuality
+            advancedBlurQuality = advancedBlurQuality,
+            liquidGlassRequested = liquidGlassRequested
         )
     }
+    val sharedCoverFlight = remember { SharedCoverFlightState() }
     val currentThemeBackgroundArgb = MaterialTheme.colorScheme.background.toArgb()
     // retained main-tab scenes can keep an earlier callback, so read the current theme state at click time
     val latestThemeMode by rememberUpdatedState(themeMode)
@@ -942,6 +960,7 @@ private fun NeriAppContent(
                 themeRevealFallbackColorArgb = latestThemeBackgroundArgb
                 themeRevealOriginWindow = originInWindow
                 themeRevealStartRadiusPx = startRadiusPx.coerceAtLeast(1f)
+                themeRevealReverse = shouldReverseThemeReveal(nextDark)
                 pendingFollowSystemDark = nextFollowSystemDark
                 pendingForceDark = nextForceDark
                 themeModeWriteInFlight = true
@@ -1138,7 +1157,7 @@ private fun NeriAppContent(
         sampledSeedHex = coverSeed?.seedHex,
         currentSongKey = currentSongVisualKey,
         sampledSongKey = coverSeed?.songKey
-    )
+    )?.let(::biasCoverSeedTowardBlue)
         val effectiveSeedHex = if (dynamicColorEnabled) {
             activeCoverSeedHex ?: themeSeedColor
         } else {
@@ -1154,38 +1173,19 @@ private fun NeriAppContent(
             seedColorHex = effectiveSeedHex,
             paletteStyle = themePaletteStyle,
             colorSpec = themeColorSpec,
-            systemDark = systemDark
+            systemDark = systemDark,
+            uiStyle = uiStyle,
+            liquidGlass = advancedGlassController.isLiquidGlassEnabled,
+            // 揭示快照完全遮住界面，颜色直接落到目标值，避免与扩散动画争抢帧
+            animateColors = themeRevealSnapshot == null
     ) {
             // changing NavHost's start destination rebuilds its graph and clears the live stack
             val navHostStartDestination = remember { initialMainStartDestination }
             val navController = rememberNavController()
-            val backEntry by navController.currentBackStackEntryAsState()
-            // Keep every NavHost entry that is still participating in the transition active
-            val visibleNavigationEntries by navController.visibleEntries
-                .collectAsStateWithLifecycle()
-            val visibleNavigationOwners: Set<Any> = remember(
-                visibleNavigationEntries,
-                backEntry,
-                lifecycleOwner
-            ) {
-                buildSet {
-                    if (visibleNavigationEntries.isNotEmpty()) {
-                        addAll(visibleNavigationEntries)
-                    } else {
-                        backEntry?.let(::add)
-                    }
-                    add(lifecycleOwner)
-                }
-            }
-            val currentRoute = backEntry?.destination?.route
-            val visibleNavigationRoutes = remember(visibleNavigationEntries, currentRoute) {
-                buildSet {
-                    visibleNavigationEntries.forEach { entry ->
-                        add(entry.destination.route)
-                    }
-                    add(currentRoute)
-                }
-            }
+            val navigationVisibility = rememberAppNavigationVisibility(navController, lifecycleOwner)
+            val currentRoute = navigationVisibility.currentRoute
+            val visibleNavigationOwners = navigationVisibility.owners
+            val visibleNavigationRoutes = navigationVisibility.routes
             val mainTabMotionTarget = resolveMainTabNavigationMotionTarget(
                 currentRoute = currentRoute,
                 visibleRoutes = visibleNavigationRoutes,
@@ -1395,102 +1395,12 @@ private fun NeriAppContent(
                     }
                 }
             }
-            fun navigateToNeteaseArtist(artist: NeteaseArtistSummary) {
-                val json = Uri.encode(navigationGson.toJson(artist))
-                val currentEntry = navController.currentBackStackEntry
-                val currentIsArtist =
-                    currentEntry?.destination?.route == Destinations.NeteaseArtistDetail.route
-                val currentArtist = currentEntry
-                    ?.arguments
-                    ?.getString("artistJson")
-                    ?.let {
-                        runCatching {
-                            navigationGson.fromJson(it, NeteaseArtistSummary::class.java)
-                        }.getOrNull()
-                    }
-                if (currentArtist?.id == artist.id) {
-                    return
-                }
-                if (currentIsArtist) {
-                    navController.popBackStack()
-                }
-                navController.navigate("netease_artist_detail/$json") {
-                    launchSingleTop = true
-                }
-            }
-            fun navigateToBiliUploader(uploader: BiliUploaderSummary) {
-                if (uploader.mid <= 0L) return
-                val currentEntry = navController.currentBackStackEntry
-                val currentIsUploader =
-                    currentEntry?.destination?.route == Destinations.BiliUploaderDetail.route
-                val currentUploader = currentEntry
-                    ?.arguments
-                    ?.getString("uploaderJson")
-                    ?.let {
-                        runCatching {
-                            navigationGson.fromJson(it, BiliUploaderSummary::class.java)
-                        }.getOrNull()
-                    }
-                if (currentUploader?.mid == uploader.mid) {
-                    return
-                }
-                if (currentIsUploader) {
-                    navController.popBackStack()
-                }
-                navController.navigate(biliUploaderSourceRoute(uploader)) {
-                    launchSingleTop = true
-                }
-            }
-            fun navigateToYouTubeMusicCreator(creator: YouTubeMusicCreatorSummary) {
-                if (creator.browseId.isBlank()) return
-                val currentEntry = navController.currentBackStackEntry
-                val currentCreator = currentEntry
-                    ?.takeIf {
-                        it.destination.route == Destinations.YouTubeMusicCreatorDetail.route
-                    }
-                    ?.arguments
-                    ?.getString("creatorJson")
-                    ?.let { creatorJson ->
-                        runCatching {
-                            navigationGson.fromJson(
-                                creatorJson,
-                                YouTubeMusicCreatorSummary::class.java
-                            )
-                        }.getOrNull()
-                    }
-                if (currentCreator?.browseId == creator.browseId) {
-                    return
-                }
-                val json = Uri.encode(navigationGson.toJson(creator))
-                navController.navigate("youtube_music_creator_detail/$json") {
-                    launchSingleTop = true
-                }
-            }
-            fun navigateToYouTubeMusicPlaylist(playlist: YouTubeMusicPlaylist) {
-                if (playlist.browseId.isBlank()) return
-                val currentEntry = navController.currentBackStackEntry
-                val currentPlaylist = currentEntry
-                    ?.takeIf {
-                        it.destination.route == Destinations.YouTubeMusicPlaylistDetail.route
-                    }
-                    ?.arguments
-                    ?.getString("playlistJson")
-                    ?.let { playlistJson ->
-                        runCatching {
-                            navigationGson.fromJson(
-                                playlistJson,
-                                YouTubeMusicPlaylist::class.java
-                            )
-                        }.getOrNull()
-                    }
-                if (currentPlaylist?.browseId == playlist.browseId) {
-                    return
-                }
-                val json = Uri.encode(navigationGson.toJson(playlist))
-                navController.navigate("youtube_music_playlist_detail/$json") {
-                    launchSingleTop = true
-                }
-            }
+            fun navigateToNeteaseArtist(artist: NeteaseArtistSummary) = navController.navigateToNeteaseArtist(artist)
+            fun navigateToBiliUploader(uploader: BiliUploaderSummary) = navController.navigateToBiliUploader(uploader)
+            fun navigateToYouTubeMusicCreator(creator: YouTubeMusicCreatorSummary) =
+                navController.navigateToYouTubeMusicCreator(creator)
+            fun navigateToYouTubeMusicPlaylist(playlist: YouTubeMusicPlaylist) =
+                navController.navigateToYouTubeMusicPlaylist(playlist)
             LaunchedEffect(currentRoute, restoreLyricsAfterAlbumBack) {
                 if (!restoreLyricsAfterAlbumBack) {
                     lyricsAlbumRouteObserved = false
@@ -1508,13 +1418,7 @@ private fun NeriAppContent(
                 }
             }
             val bottomBarItems = remember(showHomeTab, devModeEnabled) {
-                buildList {
-                    if (showHomeTab) add(Destinations.Home to Icons.Outlined.Home)
-                    add(Destinations.Explore to Icons.Outlined.Search)
-                    add(Destinations.Library to Icons.Outlined.LibraryMusic)
-                    add(Destinations.Settings to Icons.Outlined.Settings)
-                    if (devModeEnabled) add(Destinations.Debug to Icons.Outlined.BugReport)
-                }
+                appMainTabItems(showHomeTab, devModeEnabled)
             }
 
             val snackbarHostState = remember { SnackbarHostState() }
@@ -1534,6 +1438,9 @@ private fun NeriAppContent(
             @Composable
             fun RenderMainTabRoute(route: String) {
                 val homeContent: @Composable () -> Unit = {
+                    CompositionLocalProvider(
+                        LocalHomeOpenSearch provides { navigateToMainTab(Destinations.Explore.route) }
+                    ) {
                     HomeHostScreen(
                         showContinueCard = showHomeContinueCard,
                         showTrendingCard = showHomeTrendingCard,
@@ -1562,6 +1469,7 @@ private fun NeriAppContent(
                             )
                         }
                     )
+                }
                 }
                 val exploreContent: @Composable () -> Unit = {
                     ExploreHostScreen(
@@ -1709,48 +1617,35 @@ private fun NeriAppContent(
                 )?.invoke()
             }
 
-            val effectiveDynamicBackgroundEnabled =
-                nowPlayingDynamicBackgroundEnabled && !nowPlayingCoverBlurBackgroundEnabled
-            val effectiveAudioReactiveEnabled =
-                nowPlayingAudioReactiveEnabled && effectiveDynamicBackgroundEnabled
+            val backgroundMode = resolveNowPlayingBackgroundMode(
+                nowPlayingDynamicBackgroundEnabled,
+                nowPlayingCoverBlurBackgroundEnabled,
+                nowPlayingAudioReactiveEnabled
+            )
 
-            DisposableEffect(showNowPlaying, effectiveAudioReactiveEnabled, lifecycleResumed) {
-                AudioReactive.enabled = showNowPlaying && effectiveAudioReactiveEnabled && lifecycleResumed
-                onDispose { AudioReactive.enabled = false }
-            }
-
-            DisposableEffect(showNowPlaying, lifecycleResumed) {
-                PlayerManager.updateInteractiveNowPlayingVisible(showNowPlaying && lifecycleResumed)
-                onDispose { PlayerManager.updateInteractiveNowPlayingVisible(false) }
-            }
-
-            val activity = remember(context) { context.findActivity() }
-            DisposableEffect(activity, showNowPlaying, nowPlayingKeepScreenOn, lifecycleResumed) {
-                val window = activity?.window
-                val keepScreenOnFlag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-                val shouldKeepScreenOn = showNowPlaying && nowPlayingKeepScreenOn && lifecycleResumed
-                val wasKeepScreenOn = window?.attributes?.flags?.and(keepScreenOnFlag) == keepScreenOnFlag
-                if (shouldKeepScreenOn) {
-                    window?.addFlags(keepScreenOnFlag)
-                }
-                onDispose {
-                    if (shouldKeepScreenOn && !wasKeepScreenOn) {
-                        window?.clearFlags(keepScreenOnFlag)
-                    }
-                }
-            }
+            NowPlayingPresentationEffects(
+                showNowPlaying = showNowPlaying,
+                lifecycleResumed = lifecycleResumed,
+                audioReactiveEnabled = backgroundMode.audioReactive,
+                keepScreenOn = nowPlayingKeepScreenOn
+            )
 
             val onOpenCurrentPlaybackSource = playbackSourceNavigationAction(
                 currentPlaybackSourceRoute,
                 ::navigateToPlaybackSourceRoute
             )
 
+            CompositionLocalProvider(
+                LocalSharedCoverFlight provides sharedCoverFlight,
+                LocalHasCustomBackground provides hasCustomBackground,
+                LocalPredictiveBackPreviewEnabled provides predictiveBackPreviewEnabled
+            ) {
             AdvancedGlassHost(
                 controller = advancedGlassController,
                 backgroundBackdrop = backgroundGlassBackdrop,
                 contentBackdrop = contentGlassBackdrop,
                 activeNavigationOwners = activeAdvancedGlassOwners,
-                disableStretchOverscroll = backgroundImageUri != null
+                disableStretchOverscroll = hasCustomBackground
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                 Box(
@@ -1775,17 +1670,17 @@ private fun NeriAppContent(
                         navHostStartDestination = navHostStartDestination
                     )
 
+                    Box(Modifier.fillMaxSize().nowPlayingBackdropRecede(sharedCoverFlight)) {
                     AppNavigationScaffold(
                         bottomBar = AppBottomBarPresentation(
                             items = bottomBarItems,
-                            currentDestination = backEntry?.destination,
+                            currentDestination = navigationVisibility.destination,
                             showNowPlaying = shouldSuppressPlaybackNavigation(
-                                showNowPlaying, nowPlayingOverlayMounted,
-                                LocalConfiguration.current.smallestScreenWidthDp,
+                                showNowPlaying,
                                 backGestureRevealing = nowPlayingBackRevealing.value
                             ),
                             offlineMode = offlineMode,
-                            alwaysUseNewTabStyle = alwaysUseNewTabStyle,
+                            alwaysUseNewTabStyle = true,
                             backgroundImageUri = backgroundImageUri
                         ),
                         miniPlayer = AppMiniPlayerPresentation(
@@ -1799,7 +1694,9 @@ private fun NeriAppContent(
                         baseBlurRequested = advancedGlassController.isBaseBlurRequested,
                         snackbarHostState = snackbarHostState,
                         onMainTabSelected = ::navigateToMainTab,
-                        onExpandNowPlaying = { showNowPlaying = true },
+                        onExpandNowPlaying = {
+                            showNowPlaying = true
+                        },
                         onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
                     ) { _ ->
                         Box(
@@ -1811,6 +1708,7 @@ private fun NeriAppContent(
                                     visibleNavigationRoutes
                                 )
                             ) {
+                                PredictiveBackPreviewGate(previewEnabled = predictiveBackPreviewEnabled) {
                                 AppNavigationGraph(
                                     owner = AppNavigationGraphOwner(
                                         navController = navController,
@@ -1839,6 +1737,7 @@ private fun NeriAppContent(
                                         )
                                     )
                                 )
+                                }
                             }
                             MainTabPredictiveBackHandler(
                                 navController, mainTabTransitionState, selectedMainTabRoute,
@@ -1882,6 +1781,7 @@ private fun NeriAppContent(
                             )
                         }
                     }
+                    }
 
                     AppNowPlayingOverlay(
                         visible = showNowPlaying,
@@ -1897,13 +1797,15 @@ private fun NeriAppContent(
                             activeCoverSeedHex = activeCoverSeedHex,
                             seedColorHex = themeSeedColor,
                             paletteStyle = themePaletteStyle,
-                            colorSpec = themeColorSpec
+                            colorSpec = themeColorSpec,
+                            uiStyle = uiStyle,
+                            liquidGlass = advancedGlassController.isLiquidGlassEnabled
                         ),
                         background = NowPlayingOverlayBackground(
                             blurEnabled = nowPlayingCoverBlurBackgroundEnabled,
                             blurAmount = nowPlayingCoverBlurAmount,
                             blurDarken = nowPlayingCoverBlurDarken,
-                            dynamicEnabled = effectiveDynamicBackgroundEnabled,
+                            dynamicEnabled = backgroundMode.dynamic,
                             offlineMode = offlineMode
                         ),
                         onVisibilityChanged = { mounted ->
@@ -1953,7 +1855,8 @@ private fun NeriAppContent(
                         presentation = appThemeRevealPresentation(
                             themeRevealOriginWindow,
                             themeRevealFallbackColorArgb,
-                            themeRevealCaptureToken
+                            themeRevealCaptureToken,
+                            themeRevealReverse
                         ),
                         snapshot = themeRevealSnapshot,
                         startRadiusPx = themeRevealStartRadiusPx,
@@ -1961,7 +1864,7 @@ private fun NeriAppContent(
                     )
 
                     AppTrafficRiskDialogHost(
-                        request = pendingTrafficRiskDownloadRequest,
+                        request = pendingTrafficRiskDownloadRequest.takeIf { canShowGlobalDialogs },
                         onConfirm = { request ->
                             pendingTrafficRiskDownloadRequest = null
                             GlobalDownloadManager.confirmTrafficRiskDownload(context, request)
@@ -1970,7 +1873,8 @@ private fun NeriAppContent(
                     )
 
                     AppUsbBackgroundPermissionDialogHost(
-                        visible = showUsbExclusiveBackgroundPermissionDialog,
+                        visible = showUsbExclusiveBackgroundPermissionDialog && canShowGlobalDialogs &&
+                            pendingTrafficRiskDownloadRequest == null,
                         readBatteryOptimizationAllowed = {
                             context.readBackgroundBehaviorAllowance().ignoringBatteryOptimizations
                         },
@@ -1993,5 +1897,6 @@ private fun NeriAppContent(
 
             }
         }
+            }
     }
 }

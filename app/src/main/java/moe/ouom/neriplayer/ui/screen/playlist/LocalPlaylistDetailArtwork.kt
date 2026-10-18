@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.content.Context
 import androidx.compose.foundation.background
@@ -161,7 +162,7 @@ internal fun LocalPlaylistSongArtwork(
     Box(
         modifier = Modifier
             .size(48.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(neriRoundedShape(10.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
     ) {
         visibleImageRequest?.let { imageRequest ->

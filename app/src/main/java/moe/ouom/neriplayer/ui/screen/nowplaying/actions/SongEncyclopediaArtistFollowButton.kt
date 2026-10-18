@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -41,6 +40,7 @@ import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.haptic.HapticButton
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.screen.artist.containsCreator
 import moe.ouom.neriplayer.ui.screen.artist.toggleCreatorFollow
 import java.io.IOException
@@ -102,7 +102,7 @@ internal fun SongEncyclopediaArtistFollowButton(
             },
             enabled = !updating,
             modifier = Modifier.heightIn(min = 40.dp),
-            shape = RoundedCornerShape(18.dp),
+            shape = neriRoundedShape(18.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (followed) {
                     MaterialTheme.colorScheme.primaryContainer

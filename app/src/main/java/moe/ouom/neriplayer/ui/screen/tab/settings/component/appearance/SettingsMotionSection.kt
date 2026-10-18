@@ -23,6 +23,11 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component.appearance
  * Updated: 2026/3/23
  */
 
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import android.os.Build
@@ -273,6 +278,11 @@ internal fun SettingsMotionSection(
                     )
                 ) {
                     Column(Modifier.fillMaxWidth()) {
+                        LiquidGlassSettingItem(
+                            highlightTargetId = highlightTargetId,
+                            highlightPulse = highlightPulse,
+                            onHighlightFinished = onHighlightFinished
+                        )
                         BlurAmountSettingItem(
                             amountDp = enhancedAdvancedBlurRadiusDp,
                             onAmountDpChange = onEnhancedAdvancedBlurRadiusDpChange
@@ -541,6 +551,34 @@ internal fun EnhancedAdvancedBlurSettingItem(
 }
 
 @Composable
+private fun LiquidGlassSettingItem(
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
+    val repo = AppContainer.settingsRepo
+    val scope = rememberCoroutineScope()
+    val uiStyle by repo.uiStyleFlow.collectAsStateWithLifecycle(initialValue = UiStyle.Material)
+    val liquidGlassEnabled by repo.liquidGlassEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
+    val available = uiStyle == UiStyle.Clean
+    val update: (Boolean) -> Unit = { enabled ->
+        if (available) scope.launch { repo.setLiquidGlassEnabled(enabled) }
+    }
+    MotionSwitchItem(
+        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LIQUID_GLASS_ENABLED),
+        disabledSuffix = stringResource(CoreCommonR.string.settings_liquid_glass_requires_clean),
+        checked = available && liquidGlassEnabled,
+        enabled = available,
+        alpha = if (available) 1f else 0.5f,
+        onToggle = { update(!liquidGlassEnabled) },
+        onCheckedChange = update,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+}
+
+@Composable
 private fun BlurAmountSettingItem(
     amountDp: Float,
     onAmountDpChange: (Float) -> Unit
@@ -564,7 +602,7 @@ private fun BlurAmountSettingItem(
                 ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP
             ).roundToInt() - 1,
         snapStep = ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP,
-        onValueChanged = onAmountDpChange,
+        // every radius re-renders all glass regions; applying it per step made the drag stutter
         onValueCommitted = onAmountDpChange
     )
 }
@@ -699,9 +737,11 @@ private fun SnappedFloatSliderListItem(
     onValueCommitted: (Float) -> Unit
 ) {
     var pendingValue by remember { mutableFloatStateOf(value) }
+    var dragging by remember { mutableStateOf(false) }
 
+    // 松手后保留预览，等待异步保存值回流，避免再次采纳旧值
     LaunchedEffect(value) {
-        if ((pendingValue - value).absoluteValue > 0.01f) {
+        if (!dragging && (pendingValue - value).absoluteValue > 0.01f) {
             pendingValue = value
         }
     }
@@ -719,6 +759,7 @@ private fun SnappedFloatSliderListItem(
                 MiuixSettingsSlider(
                     value = pendingValue,
                     onValueChange = { changed ->
+                        dragging = true
                         val nextValue = snapStep
                             ?.let { step ->
                                 ((changed / step).roundToInt() * step)
@@ -730,7 +771,10 @@ private fun SnappedFloatSliderListItem(
                             onValueChanged?.invoke(nextValue)
                         }
                     },
-                    onValueChangeFinished = { onValueCommitted(pendingValue) },
+                    onValueChangeFinished = {
+                        onValueCommitted(pendingValue)
+                        dragging = false
+                    },
                     valueRange = valueRange,
                     steps = steps
                 )

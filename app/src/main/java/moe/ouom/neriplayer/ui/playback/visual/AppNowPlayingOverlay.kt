@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.playback.visual
 
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -14,9 +15,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalTextToolbar
@@ -27,13 +31,18 @@ import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.ui.component.common.PredictiveDismissHandler
 import moe.ouom.neriplayer.ui.component.common.PredictiveDismissState
 import moe.ouom.neriplayer.ui.component.common.blockUnderlyingTouches
 import moe.ouom.neriplayer.ui.component.common.predictiveDismissTransform
 import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
+import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
+import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
 import moe.ouom.neriplayer.ui.theme.NeriTheme
+import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 
 internal data class NowPlayingOverlayCover(
     val url: String?,
@@ -47,7 +56,9 @@ internal data class NowPlayingOverlayTheme(
     val activeCoverSeedHex: String?,
     val seedColorHex: String,
     val paletteStyle: PaletteStyle,
-    val colorSpec: ColorSpec.SpecVersion
+    val colorSpec: ColorSpec.SpecVersion,
+    val uiStyle: UiStyle = UiStyle.Material,
+    val liquidGlass: Boolean = false
 )
 
 internal data class NowPlayingThemeSelection(
@@ -87,6 +98,16 @@ internal fun releaseNowPlayingInputSession(
     keyboardController?.hide()
 }
 
+internal fun resolveNowPlayingOverlayArtwork(
+    songKey: String?,
+    flight: SharedCoverFlightState?
+): ImageBitmap? = RetainedPlaybackCoverBitmapCache.getLatestForOwner(songKey)?.bitmap
+    ?: flight?.miniCoverBitmap
+
+internal fun shouldUseNowPlayingContainerMorph(
+    smallestScreenWidthDp: Int
+): Boolean = smallestScreenWidthDp < PHONE_SMALLEST_SCREEN_WIDTH_DP
+
 @Composable
 internal fun AppNowPlayingOverlay(
     visible: Boolean,
@@ -109,17 +130,11 @@ internal fun AppNowPlayingOverlay(
             releaseNowPlayingInputSession(focusManager, textToolbar, keyboardController)
         }
     }
-    AnimatedVisibility(
-        visible = visible,
-        enter = slideInVertically(
-            animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-            initialOffsetY = { fullHeight -> fullHeight }
-        ) + fadeIn(animationSpec = tween(durationMillis = 150)),
-        exit = slideOutVertically(
-            animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
-            targetOffsetY = { fullHeight -> fullHeight }
-        ) + fadeOut(animationSpec = tween(durationMillis = 150))
-    ) {
+    val useContainerMorph = shouldUseNowPlayingContainerMorph(
+        smallestScreenWidthDp = LocalConfiguration.current.smallestScreenWidthDp
+    )
+    val sharedCoverFlight = LocalSharedCoverFlight.current
+    val overlayBody: @Composable () -> Unit = {
         DisposableEffect(Unit) {
             latestOnVisibilityChanged(true)
             onDispose {
@@ -127,21 +142,25 @@ internal fun AppNowPlayingOverlay(
             }
         }
         val themeSelection = selectNowPlayingOverlayTheme(theme, cover.url)
-
         NeriTheme(
             followSystemDark = false,
             forceDark = true,
             dynamicColor = themeSelection.useSystemDynamic,
             seedColorHex = themeSelection.seedColorHex,
             paletteStyle = theme.paletteStyle,
-            colorSpec = theme.colorSpec
+            colorSpec = theme.colorSpec,
+            uiStyle = theme.uiStyle,
+            liquidGlass = theme.liquidGlass,
+            // text sits on the cover-tinted backdrop, so keep the cover palette instead of greys
+            neutralSurfaces = false
         ) {
             PredictiveDismissHandler(state = dismissState, onDismiss = onClose)
 
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .predictiveDismissTransform(dismissState)
+                    // phone morphs own the back preview, while tablets keep the default transform
+                    .then(if (useContainerMorph) Modifier else Modifier.predictiveDismissTransform(dismissState))
                     .blockUnderlyingTouches()
             ) {
                 NowPlayingBackdrop(
@@ -153,5 +172,39 @@ internal fun AppNowPlayingOverlay(
                 }
             }
         }
+    }
+    if (useContainerMorph) {
+        val backPreviewEnabled = LocalPredictiveBackPreviewEnabled.current
+        val morph = rememberNowPlayingMorphState(
+            visible = visible,
+            flight = sharedCoverFlight,
+            backProgress = { if (backPreviewEnabled) dismissState.progress else 0f }
+        )
+        if (morph.mounted) {
+            NowPlayingContainerMorph(
+                morph = morph,
+                flight = sharedCoverFlight,
+                capsuleInWindow = { sharedCoverFlight?.miniPlayerContainerBounds },
+                artwork = { resolveNowPlayingOverlayArtwork(cover.songKey, sharedCoverFlight) },
+                cardColor = remember(theme.activeCoverSeedHex) {
+                    nowPlayingMorphCardColor(theme.activeCoverSeedHex)
+                },
+                content = overlayBody
+            )
+        }
+        return
+    }
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically(
+            animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+            initialOffsetY = { fullHeight -> fullHeight }
+        ) + fadeIn(animationSpec = tween(durationMillis = 150)),
+        exit = slideOutVertically(
+            animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+            targetOffsetY = { fullHeight -> fullHeight }
+        ) + fadeOut(animationSpec = tween(durationMillis = 150))
+    ) {
+        overlayBody()
     }
 }

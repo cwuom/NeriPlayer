@@ -54,8 +54,15 @@ internal fun EditSongLocalMetadataWriteBackConfirmDialog(
                 Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_write))
             }
         },
+        neutralButton = {
+            HapticTextButton(enabled = !isSaving, onClick = onSaveInAppOnly) {
+                Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_app_only))
+            }
+        },
         dismissButton = {
-            EditSongWriteBackDismissActions(!isSaving, onSaveInAppOnly, onCancel)
+            HapticTextButton(enabled = !isSaving, onClick = onCancel) {
+                Text(stringResource(CoreCommonR.string.action_cancel))
+            }
         }
     )
 }
@@ -125,22 +132,6 @@ internal fun EditSongFillLyricsWriteBackDialog(
             }
         }
     )
-}
-
-@Composable
-private fun EditSongWriteBackDismissActions(
-    enabled: Boolean,
-    onSaveInAppOnly: () -> Unit,
-    onCancel: () -> Unit
-) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        HapticTextButton(enabled = enabled, onClick = onSaveInAppOnly) {
-            Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_app_only))
-        }
-        HapticTextButton(enabled = enabled, onClick = onCancel) {
-            Text(stringResource(CoreCommonR.string.action_cancel))
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.component.floating
 
+import androidx.compose.material.icons.outlined.MotionPhotosOff
+import androidx.compose.material.icons.outlined.BorderStyle
+import androidx.compose.material.icons.outlined.StayCurrentLandscape
+import moe.ouom.neriplayer.ui.settings.FloatingLyricsRowHue
+import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
@@ -450,7 +455,7 @@ internal fun SettingsFloatingLyricsSection(
         FloatingLyricsSliderListItem(
             title = stringResource(CoreCommonR.string.settings_floating_lyrics_landscape_max_width),
             valueText = stringResource(CoreCommonR.string.settings_floating_lyrics_max_width_value, pendingLandscapeMaxWidthDp),
-            icon = Icons.Outlined.WidthFull,
+            icon = Icons.Outlined.StayCurrentLandscape,
             value = pendingLandscapeMaxWidthDp,
             valueRange = MIN_FLOATING_LYRICS_MAX_WIDTH_DP..MAX_FLOATING_LYRICS_LANDSCAPE_WIDTH_DP,
             steps = 0,
@@ -554,7 +559,7 @@ internal fun SettingsFloatingLyricsSection(
             description = stringResource(
                 CoreCommonR.string.settings_floating_lyrics_disable_reveal_animation_desc
             ),
-            icon = Icons.Outlined.AutoAwesome,
+            icon = Icons.Outlined.MotionPhotosOff,
             checked = !normalizedPreferences.revealAnimationEnabled,
             onCheckedChange = { disabled ->
                 updatePreferences { it.copy(revealAnimationEnabled = !disabled) }
@@ -586,10 +591,12 @@ private fun FloatingLyricsSwitchListItem(
     ListItem(
         modifier = highlightedModifier.settingsItemClickable { onCheckedChange(!checked) },
         leadingContent = {
-            Icon(
+            SettingRowIcon(
+                key = targetId?.substringAfter(':'),
                 imageVector = icon,
                 contentDescription = title,
-                tint = MaterialTheme.colorScheme.onSurface
+                tint = MaterialTheme.colorScheme.onSurface,
+                fallbackHue = FloatingLyricsRowHue
             )
         },
         headlineContent = { Text(title) },
@@ -614,10 +621,12 @@ private fun FloatingLyricsSliderListItem(
 ) {
     ListItem(
         leadingContent = {
-            Icon(
+            SettingRowIcon(
+                key = null,
                 imageVector = icon,
                 contentDescription = title,
-                tint = MaterialTheme.colorScheme.onSurface
+                tint = MaterialTheme.colorScheme.onSurface,
+                fallbackHue = FloatingLyricsRowHue
             )
         },
         headlineContent = {
@@ -660,8 +669,10 @@ private fun FloatingLyricsRenderStyleSelector(
 
     ListItem(
         leadingContent = {
-            Icon(
-                imageVector = Icons.Outlined.AutoAwesome,
+            SettingRowIcon(
+                key = null,
+                fallbackHue = FloatingLyricsRowHue,
+                imageVector = Icons.Outlined.BorderStyle,
                 contentDescription = stringResource(CoreCommonR.string.settings_floating_lyrics_render_style),
                 tint = MaterialTheme.colorScheme.onSurface
             )
@@ -700,7 +711,9 @@ private fun FloatingLyricsOrientationSelector(
 
     ListItem(
         leadingContent = {
-            Icon(
+            SettingRowIcon(
+                key = null,
+                fallbackHue = FloatingLyricsRowHue,
                 imageVector = Icons.Outlined.ScreenRotation,
                 contentDescription = stringResource(CoreCommonR.string.settings_floating_lyrics_orientation),
                 tint = MaterialTheme.colorScheme.onSurface
@@ -741,7 +754,9 @@ private fun FloatingLyricsAlignmentSelector(
 
     ListItem(
         leadingContent = {
-            Icon(
+            SettingRowIcon(
+                key = null,
+                fallbackHue = FloatingLyricsRowHue,
                 imageVector = Icons.Outlined.FormatAlignCenter,
                 contentDescription = stringResource(CoreCommonR.string.settings_floating_lyrics_alignment),
                 tint = MaterialTheme.colorScheme.onSurface

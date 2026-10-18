@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
@@ -63,6 +62,7 @@ import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableHotVideoItems
 import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableRankVideoItems
 import moe.ouom.neriplayer.platform.bilibili.api.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
 import moe.ouom.neriplayer.util.format.formatDate
@@ -475,7 +475,7 @@ private fun BiliMusicRankDetailRow(
             modifier = Modifier
                 .width(100.dp)
                 .height(60.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(neriRoundedShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         )
         Column(
@@ -562,7 +562,7 @@ private fun BiliMusicHotDetailRow(
             modifier = Modifier
                 .width(100.dp)
                 .height(60.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(neriRoundedShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         )
         Column(

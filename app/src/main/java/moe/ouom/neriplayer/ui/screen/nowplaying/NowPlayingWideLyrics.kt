@@ -98,13 +98,21 @@ internal fun resolveNowPlayingWideLyricsPresentation(
     availableWidth: Dp,
     hasLyrics: Boolean,
     preferences: NowPlayingWideLyricsPreferences
-): NowPlayingWideLyricsPresentation = NowPlayingWideLyricsPresentation(
-    fullPage = fullPage,
-    coverMode = resolveNowPlayingWideLyricsMode(hasLyrics, preferences.advancedEnabled),
-    typography = resolveNowPlayingWideLyricsTypography(fullPage, compactHeight, preferences.fontScales),
-    bottomContentInset = if (compactHeight) 8.dp else 24.dp,
-    useTabletLayout = !phoneLandscape && availableWidth >= 720.dp
-)
+): NowPlayingWideLyricsPresentation {
+    val tabletLyrics = !phoneLandscape
+    val effectiveFullPage = fullPage || tabletLyrics
+    return NowPlayingWideLyricsPresentation(
+        fullPage = effectiveFullPage,
+        coverMode = resolveNowPlayingWideLyricsMode(
+            hasLyrics, preferences.advancedEnabled || tabletLyrics
+        ),
+        typography = resolveNowPlayingWideLyricsTypography(
+            effectiveFullPage, compactHeight, preferences.fontScales
+        ),
+        bottomContentInset = if (compactHeight) 8.dp else 24.dp,
+        useTabletLayout = tabletLyrics && availableWidth >= 720.dp
+    )
+}
 
 internal data class NowPlayingWideLyricsSecondaryContent(
     val rawTranslation: String?,
@@ -173,7 +181,7 @@ private fun NowPlayingFullWideLyrics(
         phoneticLyrics = content.phoneticLyrics,
         playbackSessionKey = content.synced.playbackSessionKey,
         previewPositionOverrideMs = playback.previewPositionMs,
-        advancedLyricsEnabled = preferences.advancedEnabled,
+        advancedLyricsEnabled = presentation.coverMode == NowPlayingWideLyricsMode.ADVANCED,
         showLyricTranslation = preferences.showSecondary,
         lyricTranslationUsePhonetic = preferences.usePhonetic,
         lyricFontScale = presentation.typography.lyricScale,

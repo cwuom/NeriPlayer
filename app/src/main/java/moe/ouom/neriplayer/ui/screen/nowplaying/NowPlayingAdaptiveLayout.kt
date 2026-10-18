@@ -36,6 +36,7 @@ private val NowPlayingPhoneLandscapeMinimumContentHeight = 240.dp
 private val NowPlayingTabletPortraitFixedContentReserve = 480.dp
 private val NowPlayingTabletPortraitCoverMaxSize = 336.dp
 private const val NOW_PLAYING_EXPANDED_CONTROLS_SPACER_WEIGHT = 0.12f
+private const val NOW_PLAYING_TABLET_LANDSCAPE_COVER_WIDTH_FRACTION = 0.72f
 
 internal fun isNowPlayingPhoneLandscape(
     isLandscape: Boolean,
@@ -364,7 +365,10 @@ private fun NowPlayingExpandedLandscape(
         ) {
             topBar()
             Spacer(Modifier.height(spec.sectionSpacing))
-            cover(Modifier.fillMaxWidth().weight(1f).padding(vertical = spec.coverVerticalPadding))
+            cover(
+                Modifier.width(spec.playerPaneWidth * NOW_PLAYING_TABLET_LANDSCAPE_COVER_WIDTH_FRACTION)
+                    .weight(1f).padding(vertical = spec.coverVerticalPadding)
+            )
             Spacer(Modifier.height(spec.sectionSpacing))
             identity(false)
             Spacer(Modifier.height(spec.sectionSpacing))
@@ -484,7 +488,10 @@ private fun NowPlayingCompactLandscape(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 topBar()
-                cover(Modifier.fillMaxWidth().weight(1f).padding(vertical = spec.coverVerticalPadding))
+                cover(
+                    Modifier.width(spec.playerPaneWidth * NOW_PLAYING_TABLET_LANDSCAPE_COVER_WIDTH_FRACTION)
+                        .weight(1f).padding(vertical = spec.coverVerticalPadding)
+                )
                 toolbar(true)
             }
             Column(
@@ -520,7 +527,13 @@ private fun NowPlayingCompactControlFooter(
         verticalAlignment = Alignment.CenterVertically
     ) {
         slots.forEach { slot ->
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            // 双区底栏沿用上方分栏，单区底栏仍使用整行
+            val slotModifier = if (slots.size > 1 && slot == NowPlayingWideControlSlot.PROGRESS) {
+                Modifier.width(spec.playerPaneWidth)
+            } else {
+                Modifier.weight(1f)
+            }
+            Box(slotModifier, contentAlignment = Alignment.Center) {
                 NowPlayingWideControl(slot, progress, controls)
             }
         }

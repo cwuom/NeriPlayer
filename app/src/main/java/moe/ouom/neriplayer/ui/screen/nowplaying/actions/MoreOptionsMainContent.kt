@@ -5,7 +5,24 @@ import moe.ouom.neriplayer.data.model.download.DownloadStage
 import moe.ouom.neriplayer.data.ltw.validation.format
 
 import android.content.Intent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -126,52 +143,70 @@ internal fun MoreOptionsMainContent(
             .verticalScroll(scrollState)
             .padding(bottom = 32.dp)
     ) {
-        MetadataAndPlaybackActions(
-            audioInfo = currentPlaybackAudioInfo,
-            isDismissing = isDismissing,
-            onOpenSearch = onOpenSearch,
-            onOpenEditInfo = onOpenEditInfo,
-            onShowQualitySwitch = onShowQualitySwitch
-        )
-        DownloadOrDetailsAction(
-            viewModel = viewModel,
-            song = originalSong,
-            isLocalSong = isLocalSong,
-            onShowSongDetails = onShowSongDetails
-        )
-        LyricsAndAlbumActions(
-            song = originalSong,
-            lyricFontScale = lyricFontScale,
-            translationFontScale = translationFontScale,
-            onOpenLyricBehavior = onOpenLyricBehavior,
-            onOpenFontSize = onOpenFontSize,
-            onEnterAlbum = onEnterAlbum,
-            snackbarHostState = snackbarHostState
-        )
-        if (PlayerManager.isBiliTrack(originalSong)) {
-            ListItem(
-                headlineContent = { Text(stringResource(CoreCommonR.string.bili_video_skip_manage)) },
-                leadingContent = { Icon(Icons.Outlined.SkipNext, null) },
-                modifier = Modifier.clickable(onClick = onOpenBiliVideoSkip)
+        MoreOptionsGroup {
+            MetadataAndPlaybackActions(
+                audioInfo = currentPlaybackAudioInfo,
+                isDismissing = isDismissing,
+                onOpenSearch = onOpenSearch,
+                onOpenEditInfo = onOpenEditInfo,
+                onShowQualitySwitch = onShowQualitySwitch
+            )
+            DownloadOrDetailsAction(
+                viewModel = viewModel,
+                song = originalSong,
+                isLocalSong = isLocalSong,
+                onShowSongDetails = onShowSongDetails
+            )
+            NeteaseAlbumAction(
+                song = originalSong,
+                onEnterAlbum = onEnterAlbum,
+                snackbarHostState = snackbarHostState
             )
         }
-        ShareSongAction(
-            song = originalSong,
-            queue = queue,
-            snackbarHostState = snackbarHostState,
-            onDismissSheet = onDismissSheet
-        )
-        PlaybackStatsAction(originalSong)
-        ListItem(
-            headlineContent = { Text(stringResource(CoreCommonR.string.encyclopedia_title)) },
-            leadingContent = { Icon(Icons.Outlined.MenuBook, null) },
-            modifier = Modifier.clickable(onClick = onOpenEncyclopedia)
-        )
-        ListItem(
-            headlineContent = { Text(stringResource(CoreCommonR.string.listen_together_title)) },
-            leadingContent = { Icon(Icons.Outlined.Headphones, null) },
-            modifier = Modifier.clickable(onClick = onOpenListenTogether)
-        )
+        MoreOptionsGroup {
+            LyricsActions(
+                lyricFontScale = lyricFontScale,
+                translationFontScale = translationFontScale,
+                onOpenLyricBehavior = onOpenLyricBehavior,
+                onOpenFontSize = onOpenFontSize
+            )
+        }
+        MoreOptionsGroup {
+            if (PlayerManager.isBiliTrack(originalSong)) {
+                MoreOptionsItem(
+                    title = stringResource(CoreCommonR.string.bili_video_skip_manage),
+                    icon = Icons.Outlined.SkipNext,
+                    hue = MoreHuePink,
+                    onClick = onOpenBiliVideoSkip
+                )
+            }
+            ShareSongAction(
+                song = originalSong,
+                queue = queue,
+                snackbarHostState = snackbarHostState,
+                onDismissSheet = onDismissSheet
+            )
+            PlaybackStatsAction(originalSong)
+            MoreOptionsItem(
+                title = stringResource(CoreCommonR.string.listen_together_title),
+                icon = Icons.Outlined.Headphones,
+                hue = MoreHueIndigo,
+                onClick = onOpenListenTogether
+            )
+        }
+            MoreOptionsItem(
+                title = stringResource(CoreCommonR.string.encyclopedia_title),
+                icon = Icons.Outlined.MenuBook,
+                hue = MoreHueViolet,
+                onClick = onOpenEncyclopedia
+            )
+            MoreOptionsItem(
+                title = stringResource(CoreCommonR.string.listen_together_title),
+                icon = Icons.Outlined.Headphones,
+                hue = MoreHueIndigo,
+                onClick = onOpenListenTogether
+            )
+        }
     }
 }
 
@@ -183,27 +218,26 @@ private fun MetadataAndPlaybackActions(
     onOpenEditInfo: () -> Unit,
     onShowQualitySwitch: () -> Unit
 ) {
-    ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.music_get_info)) },
-        leadingContent = { Icon(Icons.Outlined.Info, null) },
-        modifier = Modifier.clickable(
-            enabled = !isDismissing,
-            onClick = onOpenSearch
-        )
+    MoreOptionsItem(
+        title = stringResource(CoreCommonR.string.music_get_info),
+        icon = Icons.Outlined.Info,
+        hue = MoreHueBlue,
+        enabled = !isDismissing,
+        onClick = onOpenSearch
     )
-    ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.music_edit_info)) },
-        leadingContent = { Icon(Icons.Outlined.Edit, null) },
-        modifier = Modifier.clickable(onClick = onOpenEditInfo)
+    MoreOptionsItem(
+        title = stringResource(CoreCommonR.string.music_edit_info),
+        icon = Icons.Outlined.Edit,
+        hue = MoreHueOrange,
+        onClick = onOpenEditInfo
     )
     if (audioInfo?.qualityOptions.orEmpty().size > 1) {
-        ListItem(
-            headlineContent = { Text(stringResource(CoreCommonR.string.nowplaying_quality_switch_title)) },
-            leadingContent = { Icon(Icons.Outlined.MusicNote, null) },
-            supportingContent = audioInfo?.qualityLabel
-                ?.takeIf { it.isNotBlank() }
-                ?.let { label -> { Text(label) } },
-            modifier = Modifier.clickable(onClick = onShowQualitySwitch)
+        MoreOptionsItem(
+            title = stringResource(CoreCommonR.string.nowplaying_quality_switch_title),
+            icon = Icons.Outlined.MusicNote,
+            hue = MoreHueRed,
+            subtitle = audioInfo?.qualityLabel?.takeIf { it.isNotBlank() },
+            onClick = onShowQualitySwitch
         )
     }
 }
@@ -216,10 +250,11 @@ private fun DownloadOrDetailsAction(
     onShowSongDetails: () -> Unit
 ) {
     if (isLocalSong) {
-        ListItem(
-            headlineContent = { Text(stringResource(CoreCommonR.string.local_song_open_details)) },
-            leadingContent = { Icon(Icons.Outlined.Info, null) },
-            modifier = Modifier.clickable(onClick = onShowSongDetails)
+        MoreOptionsItem(
+            title = stringResource(CoreCommonR.string.local_song_open_details),
+            icon = Icons.Outlined.Info,
+            hue = MoreHueTeal,
+            onClick = onShowSongDetails
         )
         return
     }
@@ -246,11 +281,17 @@ private fun DownloadOrDetailsAction(
             status != DownloadStatus.DOWNLOADING &&
             status != DownloadStatus.WAITING_NETWORK
         ) || canCancel
-    ListItem(
-        headlineContent = { Text(stringResource(downloadActionLabel(currentTask))) },
-        leadingContent = { Icon(Icons.Outlined.Download, null) },
-        supportingContent = { DownloadProgressContent(currentTask) },
-        modifier = Modifier.clickable(enabled = canClick) {
+    MoreOptionsItem(
+        title = stringResource(downloadActionLabel(currentTask)),
+        icon = Icons.Outlined.Download,
+        hue = MoreHueGreen,
+        enabled = canClick,
+        supporting = if (currentTask != null) {
+            { DownloadProgressContent(currentTask) }
+        } else {
+            null
+        },
+        onClick = {
             when (currentTask?.status) {
                 DownloadStatus.QUEUED,
                 DownloadStatus.WAITING_NETWORK,
@@ -367,34 +408,37 @@ internal fun DownloadProgressContent(task: DownloadTask?) {
 }
 
 @Composable
-private fun LyricsAndAlbumActions(
-    song: SongItem,
+private fun LyricsActions(
     lyricFontScale: Float,
     translationFontScale: Float,
     onOpenLyricBehavior: () -> Unit,
-    onOpenFontSize: () -> Unit,
+    onOpenFontSize: () -> Unit
+) {
+    MoreOptionsItem(
+        title = stringResource(CoreCommonR.string.lyrics_adjust_behavior),
+        icon = Icons.Outlined.Timer,
+        hue = MoreHueViolet,
+        onClick = onOpenLyricBehavior
+    )
+    MoreOptionsItem(
+        title = stringResource(CoreCommonR.string.lyrics_font_size),
+        icon = Icons.Outlined.FormatSize,
+        hue = MoreHueMint,
+        subtitle = stringResource(
+            CoreCommonR.string.settings_lyrics_font_scale_pair_value,
+            (lyricFontScale * 100).roundToInt(),
+            (translationFontScale * 100).roundToInt()
+        ),
+        onClick = onOpenFontSize
+    )
+}
+
+@Composable
+private fun NeteaseAlbumAction(
+    song: SongItem,
     onEnterAlbum: (AlbumSummary) -> Unit,
     snackbarHostState: SnackbarHostState
 ) {
-    ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.lyrics_adjust_behavior)) },
-        leadingContent = { Icon(Icons.Outlined.Timer, null) },
-        modifier = Modifier.clickable(onClick = onOpenLyricBehavior)
-    )
-    ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.lyrics_font_size)) },
-        leadingContent = { Icon(Icons.Outlined.FormatSize, null) },
-        supportingContent = {
-            Text(
-                stringResource(
-                    CoreCommonR.string.settings_lyrics_font_scale_pair_value,
-                    (lyricFontScale * 100).roundToInt(),
-                    (translationFontScale * 100).roundToInt()
-                )
-            )
-        },
-        modifier = Modifier.clickable(onClick = onOpenFontSize)
-    )
     if (!isNeteaseAlbumNavigationSource(song)) return
 
     val albumName = neteaseAlbumDisplayName(song)
@@ -420,19 +464,13 @@ private fun LyricsAndAlbumActions(
         }
     }
 
-    ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.music_view_album, albumName)) },
-        leadingContent = {
-            if (resolvingAlbum) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp
-                )
-            } else {
-                Icon(Icons.Outlined.LibraryMusic, null)
-            }
-        },
-        modifier = Modifier.clickable(enabled = !resolvingAlbum) {
+    MoreOptionsItem(
+        title = stringResource(CoreCommonR.string.music_view_album, albumName),
+        icon = Icons.Outlined.LibraryMusic,
+        hue = MoreHuePurple,
+        enabled = !resolvingAlbum,
+        busy = resolvingAlbum,
+        onClick = {
             resolvingAlbum = true
             albumResolveRequest++
         }
@@ -449,10 +487,11 @@ private fun ShareSongAction(
     val context = LocalContext.current
     val composeResources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
-    ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.action_share)) },
-        leadingContent = { Icon(Icons.Outlined.Share, null) },
-        modifier = Modifier.clickable {
+    MoreOptionsItem(
+        title = stringResource(CoreCommonR.string.action_share),
+        icon = Icons.Outlined.Share,
+        hue = MoreHueBlue,
+        onClick = share@{
             if (song.isLocalSong()) {
                 coroutineScope.launch {
                     val shared = runCatching {
@@ -466,7 +505,7 @@ private fun ShareSongAction(
                         )
                     }
                 }
-                return@clickable
+                return@share
             }
 
             val shareUrl = buildRemoteSongShareUrl(song, queue)
@@ -501,10 +540,11 @@ private fun PlaybackStatsAction(song: SongItem) {
     }
     val resolvedTrackStat = trackStat ?: return
     var showDialog by remember { mutableStateOf(false) }
-    ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.stats_title)) },
-        leadingContent = { Icon(Icons.Outlined.BarChart, null) },
-        modifier = Modifier.clickable { showDialog = true }
+    MoreOptionsItem(
+        title = stringResource(CoreCommonR.string.stats_title),
+        icon = Icons.Outlined.BarChart,
+        hue = MoreHueOrange,
+        onClick = { showDialog = true }
     )
     if (!showDialog) return
 
@@ -560,6 +600,108 @@ private fun StatsCard(labelRes: Int, value: String) {
         ListItem(
             headlineContent = { Text(stringResource(labelRes)) },
             supportingContent = { Text(value) }
+        )
+    }
+}
+
+private val MoreHueBlue = Color(0xFF0A84FF)
+private val MoreHueOrange = Color(0xFFFF9F0A)
+private val MoreHueRed = Color(0xFFFF453A)
+private val MoreHueGreen = Color(0xFF30D158)
+private val MoreHueTeal = Color(0xFF30B0C7)
+private val MoreHuePurple = Color(0xFFBF5AF2)
+private val MoreHueViolet = Color(0xFF7D7AFF)
+private val MoreHueMint = Color(0xFF00C7BE)
+private val MoreHuePink = Color(0xFFFF375F)
+private val MoreHueIndigo = Color(0xFF5E5CE6)
+private val MoreRowShape = ContinuousRoundedCornerShape(14.dp)
+private val MoreGlyphShape = ContinuousRoundedCornerShape(8.dp)
+private val MoreGroupShape = ContinuousRoundedCornerShape(20.dp)
+
+/** Clean sheets group related actions into cards; Material keeps its flat list. */
+@Composable
+private fun MoreOptionsGroup(content: @Composable ColumnScope.() -> Unit) {
+    if (!NeriDesign.isClean) {
+        Column(content = content)
+        return
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(MoreGroupShape)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+            .padding(4.dp),
+        content = content
+    )
+}
+
+@Composable
+private fun MoreOptionsItem(
+    title: String,
+    icon: ImageVector,
+    hue: Color,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    busy: Boolean = false,
+    subtitle: String? = null,
+    supporting: (@Composable () -> Unit)? = null
+) {
+    if (!NeriDesign.isClean) {
+        ListItem(
+            headlineContent = { Text(title) },
+            leadingContent = {
+                if (busy) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(icon, null)
+                }
+            },
+            supportingContent = supporting ?: subtitle?.let { text -> { Text(text) } },
+            modifier = Modifier.clickable(enabled = enabled, onClick = onClick)
+        )
+        return
+    }
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MoreRowShape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .heightIn(min = 52.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(MoreGlyphShape)
+                .background(hue),
+            contentAlignment = Alignment.Center
+        ) {
+            if (busy) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+            } else {
+                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = colors.onSurface)
+            if (!subtitle.isNullOrBlank()) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            }
+            if (supporting != null) {
+                CompositionLocalProvider(LocalContentColor provides colors.onSurfaceVariant) {
+                    ProvideTextStyle(MaterialTheme.typography.bodySmall) { supporting() }
+                }
+            }
+        }
+        Icon(
+            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = colors.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.size(20.dp)
         )
     }
 }

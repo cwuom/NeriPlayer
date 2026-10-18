@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.audio
 
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
+import moe.ouom.neriplayer.ui.component.common.NeriChoiceChip
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -89,7 +92,7 @@ internal fun AudioEffectsSettingsPage(usbExclusive: Boolean, modifier: Modifier 
     val editor = remember(route) { AudioEffectsEditor(route) }
     val profile = settings.profileFor(route)
     var section by rememberSaveable { mutableStateOf(AudioEffectsSection.PRESETS) }
-    var confirmReset by remember { mutableStateOf<AudioEffectsSection?>(null) }
+    var confirmReset by remember(route) { mutableStateOf<AudioEffectsSection?>(null) }
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         MiuixSettingsSectionCard { AudioEffectsOverview(settings, profile, route, stats, editor) }
         AudioEffectsSectionTabs(
@@ -209,6 +212,16 @@ private fun AudioEffectsSectionTabs(
     isModified: (AudioEffectsSection) -> Boolean,
     onSelect: (AudioEffectsSection) -> Unit
 ) {
+    if (NeriDesign.isClean) {
+        val sections = AudioEffectsSection.entries
+        CleanSegmentedTabs(
+            labels = sections.map { stringResource(it.labelRes) },
+            selectedIndex = selected.ordinal,
+            onSelected = { index -> onSelect(sections[index]) },
+            badged = { index -> isModified(sections[index]) }
+        )
+        return
+    }
     val dotColor = MaterialTheme.colorScheme.primary
     AdvancedGlassSurface(
         role = AdvancedGlassRole.ScreenTopTab,
@@ -360,7 +373,7 @@ private fun AudioEffectsLimiterLine(stats: AudioEffectsRuntimeStats, limiterEnab
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AudioEffectsPresetCard(
+internal fun AudioEffectsPresetCard(
     settings: AudioEffectsSettings,
     profile: AudioEffectsProfile,
     editor: AudioEffectsEditor
@@ -387,13 +400,14 @@ private fun AudioEffectsPresetCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             AudioEffectsBuiltInPresets.filter { it.category == category }.forEach { preset ->
-                FilterChip(
+                NeriChoiceChip(
                     selected = profile.enabled && profile.presetId == preset.id,
                     onClick = { editor.profile { it.applyBuiltInPreset(preset) } },
-                    label = { Text(stringResource(audioEffectsPresetNameRes(preset.id) ?: CoreCommonR.string.audio_effects_preset_custom)) }
+                    label = stringResource(audioEffectsPresetNameRes(preset.id) ?: CoreCommonR.string.audio_effects_preset_custom)
                 )
             }
         }

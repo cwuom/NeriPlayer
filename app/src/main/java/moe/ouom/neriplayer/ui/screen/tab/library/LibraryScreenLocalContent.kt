@@ -23,6 +23,13 @@ package moe.ouom.neriplayer.ui.screen.tab.library
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.ui.component.common.NeriSearchFieldGlass
+import moe.ouom.neriplayer.ui.component.common.CleanSearchField
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
+import androidx.compose.ui.graphics.Shape
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -269,6 +276,7 @@ internal fun LocalPlaylistList(
         displayedLocalArtists.chunked(localArtistColumnCount)
     }
 
+    val cardShape = neriRoundedShape(12.dp)
     LazyColumn(
         state = reorderState.listState,
         contentPadding = PaddingValues(
@@ -282,7 +290,6 @@ internal fun LocalPlaylistList(
             .fillMaxSize()
             .reorderable(reorderState)
     ) {
-        val cardShape = RoundedCornerShape(12.dp)
         item(key = "local_library_header") {
             LocalLibraryHeaderContent(
                 selectedLocalCategory = selectedLocalCategory,
@@ -593,7 +600,7 @@ internal fun LocalPlaylistList(
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
                                             .size(56.dp)
-                                            .clip(RoundedCornerShape(8.dp))
+                                            .clip(neriRoundedShape(8.dp))
                                     )
                                 } else {
                                     Icon(
@@ -703,7 +710,7 @@ internal fun LocalPlaylistList(
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
                                             .size(56.dp)
-                                            .clip(RoundedCornerShape(8.dp))
+                                            .clip(neriRoundedShape(8.dp))
                                     )
                                 } else {
                                     Icon(
@@ -879,7 +886,7 @@ internal fun LocalPlaylistList(
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
                                             .size(56.dp)
-                                            .clip(RoundedCornerShape(8.dp))
+                                            .clip(neriRoundedShape(8.dp))
                                     )
                                 } else {
                                     Icon(
@@ -949,13 +956,26 @@ internal fun LocalArtistSearchAndSortRow(
             .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (NeriDesign.isClean) {
+            CleanSearchField(
+                query = query,
+                onQueryChange = onQueryChange,
+                placeholder = stringResource(CoreCommonR.string.library_local_artist_search_hint),
+                modifier = Modifier.weight(1f)
+            )
+        } else NeriSearchFieldGlass(
+            modifier = Modifier.weight(1f),
+            shape = neriSearchFieldShape(LibrarySearchFieldShape)
+        ) {
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(stringResource(CoreCommonR.string.library_local_artist_search_hint)) },
             singleLine = true,
-            shape = LibrarySearchFieldShape,
+            shape = neriSearchFieldShape(LibrarySearchFieldShape),
+
+            colors = neriSearchFieldColors(),
             trailingIcon = {
                 if (query.isNotEmpty()) {
                     HapticIconButton(onClick = { onQueryChange("") }) {
@@ -968,6 +988,7 @@ internal fun LocalArtistSearchAndSortRow(
             },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
         )
+        }
         Box {
             HapticIconButton(onClick = { menuExpanded = true }) {
                 Icon(
@@ -1056,15 +1077,32 @@ internal fun LibraryInlineSearchField(
     onQueryChange: (String) -> Unit,
     placeholderResId: Int
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
+    if (NeriDesign.isClean) {
+        CleanSearchField(
+            query = query,
+            onQueryChange = onQueryChange,
+            placeholder = stringResource(placeholderResId),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+        )
+        return
+    }
+    NeriSearchFieldGlass(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = neriSearchFieldShape(LibrarySearchFieldShape)
+    ) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.fillMaxWidth(),
         placeholder = { Text(stringResource(placeholderResId)) },
         singleLine = true,
-        shape = LibrarySearchFieldShape,
+        shape = neriSearchFieldShape(LibrarySearchFieldShape),
+
+        colors = neriSearchFieldColors(),
         trailingIcon = {
             if (query.isNotEmpty()) {
                 HapticIconButton(onClick = { onQueryChange("") }) {
@@ -1077,6 +1115,7 @@ internal fun LibraryInlineSearchField(
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
     )
+    }
 }
 
 @Composable
@@ -1086,12 +1125,12 @@ internal fun LibrarySearchEmptyCard(
     iconIsArtist: Boolean
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
+        shape = neriRoundedShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .padding(horizontal = 8.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(neriRoundedShape(12.dp))
     ) {
         ListItem(
             headlineContent = { Text(stringResource(titleResId)) },

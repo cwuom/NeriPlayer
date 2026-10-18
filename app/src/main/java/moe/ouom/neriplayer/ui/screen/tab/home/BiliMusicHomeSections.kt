@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MusicNote
@@ -53,6 +52,8 @@ import moe.ouom.neriplayer.platform.bilibili.api.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeBiliMusicRankState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeSectionState
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.util.format.formatDurationSec
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -316,7 +317,7 @@ private fun BiliMusicRankSongCard(
     Column(
         modifier = Modifier
             .width(168.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(neriRoundedShape(12.dp))
             .clickable(enabled = song.isPlayable, onClick = onClick)
             .padding(4.dp)
     ) {
@@ -324,7 +325,7 @@ private fun BiliMusicRankSongCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(neriRoundedShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             if (thumbnailUrl.isNotBlank()) {
@@ -342,7 +343,7 @@ private fun BiliMusicRankSongCard(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(6.dp)
-                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.primary, neriRoundedShape(6.dp))
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             )
             Text(
@@ -352,7 +353,7 @@ private fun BiliMusicRankSongCard(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(6.dp)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), neriRoundedShape(4.dp))
                     .padding(horizontal = 4.dp, vertical = 1.dp)
             )
         }
@@ -464,7 +465,7 @@ private fun BiliMusicHotVideoCard(
     Column(
         modifier = Modifier
             .width(168.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(neriRoundedShape(12.dp))
             .clickable(enabled = video.isPlayable, onClick = onClick)
             .padding(4.dp)
     ) {
@@ -472,7 +473,7 @@ private fun BiliMusicHotVideoCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(neriRoundedShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             if (thumbnailUrl.isNotBlank()) {
@@ -490,7 +491,7 @@ private fun BiliMusicHotVideoCard(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(6.dp)
-                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.primary, neriRoundedShape(6.dp))
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             )
             Text(
@@ -500,7 +501,7 @@ private fun BiliMusicHotVideoCard(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(6.dp)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), neriRoundedShape(4.dp))
                     .padding(horizontal = 4.dp, vertical = 1.dp)
             )
         }

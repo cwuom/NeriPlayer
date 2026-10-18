@@ -30,9 +30,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,7 +38,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Bookmark
@@ -54,7 +51,6 @@ import androidx.compose.material.icons.outlined.SurroundSound
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
@@ -68,7 +64,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -129,8 +124,6 @@ internal fun SettingsPlaybackSection(
     onKeepPlaybackModeStateChange: (Boolean) -> Unit,
     stopOnBluetoothDisconnect: Boolean,
     onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
-    usbExclusivePlayback: Boolean,
-    onUsbExclusiveSettingsClick: () -> Unit,
     allowMixedPlayback: Boolean,
     onAllowMixedPlaybackChange: (Boolean) -> Unit,
     preemptAudioFocus: Boolean,
@@ -390,15 +383,6 @@ internal fun SettingsPlaybackSection(
                     onHighlightFinished = onHighlightFinished
                 )
 
-                UsbExclusiveSettingsEntry(
-                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.USB_EXCLUSIVE_PLAYBACK),
-                    enabled = usbExclusivePlayback,
-                    onClick = onUsbExclusiveSettingsClick,
-                    highlightTargetId = highlightTargetId,
-                    highlightPulse = highlightPulse,
-                    onHighlightFinished = onHighlightFinished
-                )
-
                 PlaybackSwitchItem(
                     setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.ALLOW_MIXED_PLAYBACK),
                     checked = allowMixedPlayback,
@@ -573,56 +557,6 @@ private fun PlaybackSettingsDivider() {
     HorizontalDivider(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)
-    )
-}
-
-@Composable
-private fun UsbExclusiveSettingsEntry(
-    setting: AutoSettingInfo,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    highlightTargetId: String?,
-    highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?
-) {
-    AutoSettingsListItem(
-        setting = setting,
-        leadingContent = {
-            Icon(
-                imageVector = Icons.Outlined.Usb,
-                contentDescription = stringResource(CoreCommonR.string.settings_usb_exclusive_playback),
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-        },
-        trailingContent = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = stringResource(
-                        if (enabled) {
-                            CoreCommonR.string.settings_usb_exclusive_state_enabled
-                        } else {
-                            CoreCommonR.string.settings_usb_exclusive_state_disabled
-                        }
-                    ),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.64f)
-                )
-            }
-        },
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished,
-        onClick = onClick
     )
 }
 

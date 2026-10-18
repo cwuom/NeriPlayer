@@ -24,8 +24,8 @@ package moe.ouom.neriplayer.ui.screen.debug
  */
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material3.Icon
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -46,6 +46,7 @@ fun LogListScreen(
         resolveDirectory = { NPLogger.getLogDirectory(context) },
         onBack = onBack,
         onLogFileClick = onLogFileClick,
-        fileIcon = { Icon(Icons.Outlined.Description, null) }
+        fileIcon = Icons.Rounded.Description,
+        fileHue = Color(0xFF0A84FF)
     )
 }

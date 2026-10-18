@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.appearance
 
+import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -139,7 +140,8 @@ internal fun ThemeModeSelectorListItem(
     ListItem(
         modifier = modifier,
         leadingContent = {
-            Icon(
+            SettingRowIcon(
+                key = "theme_mode",
                 imageVector = Icons.Outlined.Brightness4,
                 contentDescription = stringResource(CoreCommonR.string.settings_theme_mode),
                 modifier = Modifier.size(24.dp),
@@ -203,9 +205,11 @@ private fun ThemeAutoModeRow(
 ) {
     ListItem(
         leadingContent = {
-            Icon(
+            SettingRowIcon(
+                key = "theme_mode_auto",
                 imageVector = Icons.Outlined.BrightnessAuto,
                 contentDescription = stringResource(CoreCommonR.string.settings_theme_mode_auto),
+                fallbackHue = androidx.compose.ui.graphics.Color(0xFF5E5CE6),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )

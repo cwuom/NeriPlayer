@@ -22,6 +22,9 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2026/10/16
  */
 
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import java.util.Locale
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
@@ -38,32 +41,35 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
  */
 
 internal const val HomeScrollKeyContinueHeader = "home:continue:header"
-
 internal const val HomeScrollKeyContinueContent = "home:continue:content"
-
 internal const val HomeScrollKeyYtGuess = "home:ytmusic:guess"
-
 internal const val HomeScrollKeyYtDaily = "home:ytmusic:daily"
-
 internal const val HomeScrollKeyYtMoreHeader = "home:ytmusic:more:header"
-
 internal const val HomeScrollKeyYtMoreLoading = "home:ytmusic:more:loading"
-
 internal const val HomeScrollKeyYtMoreError = "home:ytmusic:more:error"
-
 internal const val HomeScrollKeyYtShelvesLoading = "home:ytmusic:shelves:loading"
-
 internal const val HomeScrollKeyYtShelvesError = "home:ytmusic:shelves:error"
-
 internal const val HomeScrollKeyYtEmptyFeedLoading = "home:ytmusic:empty-feed:loading"
-
 internal const val HomeScrollKeyYtEmptyFeedError = "home:ytmusic:empty-feed:error"
-
 internal const val HomeScrollKeyNeteaseRadarPlaylists = "home:netease:radar-playlists"
-
 internal const val HomeScrollKeyNeteaseRadarPlaylistsHeader = "$HomeScrollKeyNeteaseRadarPlaylists:header"
-
 internal const val HomeScrollKeyNeteaseRadarPlaylistsContent = "$HomeScrollKeyNeteaseRadarPlaylists:content"
+
+/**
+ * 首页 Clean 风格的手机网格：至少两列，避免 20dp 页边距下自适应格只剩一列。
+ */
+internal class HomePhoneGridCells(minSize: Dp) : GridCells {
+    private val adaptive = GridCells.Adaptive(minSize)
+    private val twoColumns = GridCells.Fixed(2)
+
+    override fun Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): List<Int> {
+        val sizes = with(adaptive) { calculateCrossAxisCellSizes(availableSize, spacing) }
+        // use the measured space so padding and fractional density cannot turn two tiles into one
+        return if (sizes.size == 1 && availableSize - spacing >= 2) {
+            with(twoColumns) { calculateCrossAxisCellSizes(availableSize, spacing) }
+        } else sizes
+    }
+}
 
 /**
  * 首页滚动锚点 key 生成规则。所有辅助函数都从原始 id / 标题派生 key，
