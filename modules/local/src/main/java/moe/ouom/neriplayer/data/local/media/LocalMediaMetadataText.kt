@@ -13,6 +13,7 @@ private val metadataSingleByteCharsets: List<Charset> by lazy {
 
 private val metadataChineseCharset: Charset? by lazy { supportedCharsetOrNull("GB18030") }
 private val legacyHighByteRun = Regex("[\\u0080-\\u00FF]{4,}")
+private val containerHighByteRun = Regex("[\\u0080-\\u00FF]+")
 
 internal fun repairLocalMetadataText(value: String): String {
     if (value.all { it.code < 0x80 }) return value
@@ -27,6 +28,17 @@ internal fun repairLocalMetadataText(value: String): String {
 }
 
 internal fun decodeLocalMetadataUtf8(bytes: ByteArray): String? = decodeMetadataBytes(bytes, UTF_8)
+
+internal fun decodeShortLegacyChineseContainer(bytes: ByteArray): String? {
+    if (bytes.any { it == 0.toByte() }) return null
+    val runs = containerHighByteRun.findAll(bytes.toString(ISO_8859_1)).toList()
+    // 短汉字可能被 ASCII 分隔，孤立重音字母和连续欧洲文字仍保留原有解释
+    if (runs.isEmpty() || runs.any { it.value.length != 2 }) return null
+    val charset = metadataChineseCharset ?: return null
+    return decodeMetadataBytes(bytes, charset)
+        ?.takeIf { text -> text.any { it.isCjkUnifiedIdeograph() } }
+        ?.takeIf { text -> text.toByteArray(charset).contentEquals(bytes) }
+}
 
 private fun recoverLegacyChineseMetadata(bytes: ByteArray): String? {
     // 连续高字节仍可能是正常欧洲文字，只对混杂符号或异常大小写的片段尝试旧中文编码

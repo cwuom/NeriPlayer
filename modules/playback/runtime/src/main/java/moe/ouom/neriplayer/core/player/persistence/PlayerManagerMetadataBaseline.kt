@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.persistence
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
@@ -56,12 +57,17 @@ internal suspend fun PlayerManager.preserveLocalSongMetadataOriginals(
         (song.originalLyric == null || song.originalTranslatedLyric == null ||
             song.originalRomanizedLyric == null)
     ) {
-        LocalMediaSupport.inspectLyricsFast(
-            context = application,
-            song = localSong,
-            includeStoredFallback = false,
-            forceRefresh = true
-        )
+        try {
+            LocalMediaSupport.inspectLyricsFast(
+                context = application,
+                song = localSong,
+                includeStoredFallback = false,
+                forceRefresh = true
+            )
+        } catch (error: SecurityException) {
+            NPLogger.w("PlayerManager", "本地原始歌词读取权限不可用: ${error.message}")
+            null
+        }
     } else {
         null
     }

@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.data.local.media
 
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets.ISO_8859_1
+import java.nio.charset.StandardCharsets.UTF_16BE
+import java.nio.charset.StandardCharsets.UTF_16LE
 import java.nio.charset.StandardCharsets.UTF_8
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -47,6 +49,39 @@ class LocalMediaMetadataEncodingTest {
                 assertEquals(value, value.toByteArray(ISO_8859_1).decodeContainerText())
             }
             assertEquals("许嵩", "许嵩".toByteArray(Charset.forName("GBK")).decodeContainerText())
+        }
+    }
+
+    @Test
+    fun `container text decodes a single gbk character without a long high byte run`() {
+        with(LocalMediaSupport) {
+            assertEquals("许", byteArrayOf(0xD0.toByte(), 0xED.toByte()).decodeContainerText())
+        }
+    }
+
+    @Test
+    fun `container text decodes gbk characters separated by ascii`() {
+        with(LocalMediaSupport) {
+            val bytes = byteArrayOf(0xD0.toByte(), 0xED.toByte(), 0x2D, 0x41, 0x2D, 0xE1.toByte(), 0xD4.toByte())
+
+            assertEquals("许-A-嵩", bytes.decodeContainerText())
+        }
+    }
+
+    @Test
+    fun `container legacy fallback preserves European names and accented runs`() {
+        with(LocalMediaSupport) {
+            listOf("Björk", "Mötley Crüe", "François", "ÄÖÜß", "éèêë").forEach { value ->
+                assertEquals(value, value.toByteArray(ISO_8859_1).decodeContainerText())
+            }
+        }
+    }
+
+    @Test
+    fun `container fallback keeps UTF16 without a bom when zero bytes identify it`() {
+        with(LocalMediaSupport) {
+            assertEquals("2024年", "2024年".toByteArray(UTF_16LE).decodeContainerText())
+            assertEquals("2024年", "2024年".toByteArray(UTF_16BE).decodeContainerText())
         }
     }
 }

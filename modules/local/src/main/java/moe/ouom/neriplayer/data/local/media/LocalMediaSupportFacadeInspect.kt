@@ -291,6 +291,8 @@ internal fun LocalMediaSupport.inspectLyricsFastImpl(
                 context = context,
                 references = knownSidecarReferences
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
@@ -302,6 +304,8 @@ internal fun LocalMediaSupport.inspectLyricsFastImpl(
             inspectLyricsFromDirectFile(
                 file = directFile
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
@@ -328,6 +332,8 @@ internal fun LocalMediaSupport.inspectLyricsFastImpl(
                     song = song
                 ) ?: source.lastPathSegment.orEmpty()
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
@@ -350,6 +356,8 @@ internal fun LocalMediaSupport.inspectLyricsFastImpl(
     val embedded = context?.takeIf { needsEmbeddedFallback }?.let { embeddedContext ->
         try {
             inspectEmbeddedLyrics(embeddedContext, song)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
@@ -417,6 +425,8 @@ internal fun LocalMediaSupport.inspectEmbeddedLyricsImpl(
                 uri = sourceUri,
                 allowDescriptorFallback = true
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (_: Exception) {
@@ -431,6 +441,8 @@ internal fun LocalMediaSupport.inspectEmbeddedLyricsImpl(
                 includeEmbeddedLyrics = options.includeEmbeddedLyrics,
                 includeAudioProperties = options.includeAudioProperties
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (_: Exception) {

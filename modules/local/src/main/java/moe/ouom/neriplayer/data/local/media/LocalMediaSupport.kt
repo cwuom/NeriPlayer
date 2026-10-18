@@ -592,6 +592,7 @@ object LocalMediaSupport {
                     ?: sourceUri.lastPathSegment.orEmpty()
                 val transaction = LocalMediaCompanionTransaction(context, sourceUri.toString())
                 var committed = false
+                var rollbackSucceeded = true
                 try {
                     val references = resolveContentSidecarReferences(
                         context, sourceUri, displayName, file, forMutation = true
@@ -624,14 +625,16 @@ object LocalMediaSupport {
                         if (transaction.record != null) transaction.commit()
                         committed = true
                     }
-                    committed
                 } finally {
                     if (!committed) {
-                        runCatching { transaction.rollback() }
+                        rollbackSucceeded = runCatching { transaction.rollback() }
                             .onFailure { error -> logEditableMetadataFailure("rollback_lyric_sidecars", sourceUri, error) }
+                            .getOrDefault(false)
                     }
                     clearLyricsLookupCache()
                 }
+                if (!rollbackSucceeded) return@withRecoveredTargets false
+                committed
             }
         }
         if (written) clearLyricsLookupCache()
@@ -1810,6 +1813,7 @@ object LocalMediaSupport {
         val latin1 = bytes.decodeContainerBytes(StandardCharsets.ISO_8859_1)
         val repaired = repairLocalMetadataText(latin1)
         if (repaired != latin1) return repaired
+        decodeShortLegacyChineseContainer(bytes)?.let { return it }
         return containerTextCharsets
             .filter { charset -> charset.isContainerFallbackCharset(bytes) }
             .maxByOrNull { charset -> scoreDecodedText(bytes.decodeContainerBytes(charset)) }

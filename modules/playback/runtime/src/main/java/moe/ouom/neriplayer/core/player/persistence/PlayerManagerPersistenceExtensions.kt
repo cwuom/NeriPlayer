@@ -1284,7 +1284,9 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             } else {
                 null
             }
-            val preservedOriginalCoverUrl = if (
+            val preservedOriginalCoverUrl = if (existingOriginalCoverUrl == "") {
+                ""
+            } else if (
                 coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
             ) {
                 if (restoreBaseCover) {

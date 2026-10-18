@@ -55,6 +55,8 @@ class LocalMediaLyricTransactionTest {
     private val rootChildren = uri("content://$AUTHORITY/tree/root/document/root/children")
     private val lyricChildren = uri("content://$AUTHORITY/tree/root/document/lyrics/children")
     private var createFailure: Throwable? = null
+    private var beforeCreateFailure: (() -> Unit)? = null
+    private var translationCreateAttempts = 0
     private var writeFailure: Throwable? = null
     private var failureTarget = "translated"
     private var beforeWriteFailure: (() -> Unit)? = null
@@ -218,6 +220,44 @@ class LocalMediaLyricTransactionTest {
         }
     }
 
+    @Test
+    fun `unresolved rollback stops fallback to another audio alias`() = runBlocking(Dispatchers.IO) {
+        fixture {
+            val alias = add("source-alias", "Song.flac", "root", "audio")
+            createFailure = IOException("translation creation failed")
+            beforeCreateFailure = {
+                documents.getValue("original").file!!.writeText("external owner")
+            }
+
+            assertFalse(LocalMediaSupport.writeLocalLyricsSidecars(
+                context, song().copy(localFilePath = alias.uri.toString())
+            ))
+
+            assertEquals(1, translationCreateAttempts)
+            assertEquals("external owner", documents.getValue("original").file!!.readText())
+            val journals = LocalMediaMetadataRecoveryStore.stagingDirectory(context)
+                .listFiles { file -> file.name.startsWith("recovery-") && file.extension == "json" }.orEmpty()
+            assertEquals(1, journals.size)
+            assertEquals("ROLLBACK_FAILED", JSONObject(journals.single().readText()).getString("stage"))
+        }
+    }
+
+    @Test
+    fun `completed rollback allows fallback to another audio alias`() = runBlocking(Dispatchers.IO) {
+        fixture {
+            val alias = add("source-alias", "Song.flac", "root", "audio")
+            createFailure = IOException("translation creation failed")
+
+            assertTrue(LocalMediaSupport.writeLocalLyricsSidecars(
+                context, song().copy(localFilePath = alias.uri.toString())
+            ))
+
+            assertEquals(2, translationCreateAttempts)
+            assertEquals("new original", documents.getValue("original").file!!.readText())
+            assertEquals("new translation", documents.getValue("translated").file!!.readText())
+        }
+    }
+
     private suspend fun fixture(block: suspend () -> Unit) {
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
         doReturn(context).`when`(context).applicationContext
@@ -272,7 +312,14 @@ class LocalMediaLyricTransactionTest {
                 }
                 contract.`when`<Uri> { DocumentsContract.createDocument(any(), any(), anyString(), anyString()) }.thenAnswer {
                     val name = it.getArgument<String>(3)
-                    if (name == "Song_trans.lrc") createFailure?.let { failure -> throw failure }
+                    if (name == "Song_trans.lrc") {
+                        translationCreateAttempts++
+                        createFailure?.let { failure ->
+                            createFailure = null
+                            beforeCreateFailure?.invoke()
+                            throw failure
+                        }
+                    }
                     val id = when (name) {
                         "Song.lrc" -> "original"
                         "Song_trans.lrc" -> "translated"
