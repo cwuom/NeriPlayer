@@ -32,6 +32,9 @@ import androidx.compose.ui.graphics.Shape
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.content.Context
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -74,6 +77,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -85,6 +89,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -115,6 +120,10 @@ import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.screen.playlist.reorder.LocalPlaylistReorderableItem
+import moe.ouom.neriplayer.ui.screen.playlist.reorder.localPlaylistDetectReorder
+import moe.ouom.neriplayer.ui.screen.playlist.reorder.localPlaylistReorderable
+import moe.ouom.neriplayer.ui.screen.playlist.reorder.rememberLocalPlaylistReorderState
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialogContent
@@ -122,10 +131,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import org.burnoutcrew.reorderable.ItemPosition
-import org.burnoutcrew.reorderable.ReorderableItem
-import org.burnoutcrew.reorderable.detectReorder
-import org.burnoutcrew.reorderable.rememberReorderableLazyListState
-import org.burnoutcrew.reorderable.reorderable
 @Composable
 internal fun LocalPlaylistList(
     playlists: List<LocalPlaylist>,
@@ -177,11 +182,34 @@ internal fun LocalPlaylistList(
         }
     }
 
+    val reorderState = rememberLocalPlaylistReorderState(
+        listState = listState,
+        onMove = { from: ItemPosition, to: ItemPosition ->
+            if (!selectionMode) return@rememberLocalPlaylistReorderState
+            val fromId = from.key as? Long ?: return@rememberLocalPlaylistReorderState
+            val toId = to.key as? Long ?: return@rememberLocalPlaylistReorderState
+            val fromIdx = reorderablePlaylists.indexOfFirst { it.id == fromId }
+            val toIdx = reorderablePlaylists.indexOfFirst { it.id == toId }
+            if (fromIdx != -1 && toIdx != -1 && fromIdx != toIdx) {
+                reorderablePlaylists.add(toIdx, reorderablePlaylists.removeAt(fromIdx))
+            }
+        },
+        canDragOver = { target, _ ->
+            selectionMode && target.key is Long
+        },
+        onDragEnd = { _, _ ->
+            if (selectionMode) {
+                onReorder(reorderablePlaylists.map { it.id })
+            }
+        }
+    )
+
     LaunchedEffect(showDialog) {
         if (showDialog && autoShowKeyboard) focusRequester.requestFocus()
     }
 
     fun exitSelection() {
+        reorderState.endDrag()
         selectionMode = false
         selectedIds = emptySet()
         showDeleteSelectedConfirm = false
@@ -236,27 +264,6 @@ internal fun LocalPlaylistList(
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val favoritesPlaylist = playlists.firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
     val localFilesPlaylist = playlists.firstOrNull { LocalFilesPlaylist.isSystemPlaylist(it, context) }
-    val reorderState = rememberReorderableLazyListState(
-        listState = listState,
-        onMove = { from: ItemPosition, to: ItemPosition ->
-            if (!selectionMode) return@rememberReorderableLazyListState
-            val fromId = from.key as? Long ?: return@rememberReorderableLazyListState
-            val toId = to.key as? Long ?: return@rememberReorderableLazyListState
-            val fromIdx = reorderablePlaylists.indexOfFirst { it.id == fromId }
-            val toIdx = reorderablePlaylists.indexOfFirst { it.id == toId }
-            if (fromIdx != -1 && toIdx != -1 && fromIdx != toIdx) {
-                reorderablePlaylists.add(toIdx, reorderablePlaylists.removeAt(fromIdx))
-            }
-        },
-        canDragOver = { _, over ->
-            selectionMode && over.key is Long
-        },
-        onDragEnd = { _, _ ->
-            if (selectionMode) {
-                onReorder(reorderablePlaylists.map { it.id })
-            }
-        }
-    )
 
     val displayedFavoritesPlaylist = favoritesPlaylist
         ?.takeIf { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
@@ -268,6 +275,16 @@ internal fun LocalPlaylistList(
         displayedFavoritesPlaylist != null ||
             displayedPlaylists.isNotEmpty() ||
             displayedLocalFilesPlaylist != null
+    SideEffect {
+        val playlistStartIndex = 1 +
+            (if (selectionMode) 1 else 0) +
+            (if (localSearchQuery.isBlank()) 1 else 0) +
+            (if (displayedFavoritesPlaylist != null) 1 else 0)
+        reorderState.updatePresentedOrder { key ->
+            displayedPlaylists.indexOfFirst { it.id == key }
+                .takeIf { it >= 0 }?.plus(playlistStartIndex) ?: -1
+        }
+    }
     val windowWidthDp = currentWindowWidthDp()
     val localArtistColumnCount = remember(windowWidthDp) {
         ((windowWidthDp.value - 16f + 10f) / 130f).toInt().coerceAtLeast(1)
@@ -288,7 +305,7 @@ internal fun LocalPlaylistList(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier
             .fillMaxSize()
-            .reorderable(reorderState)
+            .localPlaylistReorderable(reorderState)
     ) {
         item(key = "local_library_header") {
             LocalLibraryHeaderContent(
@@ -621,7 +638,12 @@ internal fun LocalPlaylistList(
                 items = displayedPlaylists,
                 key = { it.id }
             ) { pl ->
-            ReorderableItem(state = reorderState, key = pl.id) { _ ->
+            LocalPlaylistReorderableItem(state = reorderState, key = pl.id) { isDragging ->
+                val rowScale by animateFloatAsState(
+                    targetValue = if (isDragging) 1.02f else 1f,
+                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                    label = "local-playlist-row-scale"
+                )
                 val systemPlaylist = SystemLocalPlaylists.resolve(pl.id, pl.name, context)
                 val displayName = systemPlaylist?.currentName ?: pl.name
                 val isSystemPlaylist = systemPlaylist != null
@@ -647,7 +669,10 @@ internal fun LocalPlaylistList(
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier
                         .padding(horizontal = 8.dp, vertical = 4.dp)
-                        .animateItem()
+                        .graphicsLayer {
+                            scaleX = rowScale
+                            scaleY = rowScale
+                        }
                         .clip(cardShape)
                         .combinedClickable(
                             onClick = {
@@ -726,7 +751,7 @@ internal fun LocalPlaylistList(
                             if (selectionMode && !isSystemPlaylist) {
                                 Box(
                                     modifier = Modifier
-                                        .detectReorder(reorderState)
+                                        .localPlaylistDetectReorder(reorderState, pl.id)
                                         .padding(8.dp)
                                 ) {
                                     Icon(
