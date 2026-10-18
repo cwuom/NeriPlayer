@@ -16,6 +16,7 @@ import android.view.MotionEvent
 import android.view.ViewTreeObserver
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.state.ToggleableState
@@ -381,25 +382,64 @@ class SettingsExternalLyricsPageTouchTest {
         viewport: SemanticsNodeInteraction,
         avoidMiniPlayer: Boolean
     ) {
-        repeat(28) {
-            val bounds = viewport.getUnclippedBoundsInRoot()
-            val bottom = if (avoidMiniPlayer) minOf(bounds.bottom,
-                composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).getUnclippedBoundsInRoot().top)
-            else bounds.bottom
-            if (target.isDisplayed()) {
-                val row = target.getUnclippedBoundsInRoot()
-                if (row.top >= bounds.top && row.bottom <= bottom - 4.dp) return
-            }
+        var lastGeometry = "not sampled"
+        repeat(28) { attempt ->
             val node = viewport.fetchSemanticsNode()
-            val targetBounds = runCatching { target.getUnclippedBoundsInRoot() }.getOrNull()
-            val scrollDown = targetBounds == null || targetBounds.top >= bounds.top
-            val start = node.positionOnScreen + Offset(2f, node.size.height * if (scrollDown) 0.65f else 0.2f)
-            val end = node.positionOnScreen + Offset(2f, node.size.height * if (scrollDown) 0.2f else 0.65f)
-            nativeSwipe(start, end)
+            // 手势和可见性统一使用屏幕像素，避免应用缩放后的 dp 与原生坐标混用
+            val viewportBounds = node.boundsInRoot.translate(node.positionOnScreen - node.positionInRoot)
+            val bottom = if (avoidMiniPlayer) minOf(viewportBounds.bottom,
+                composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).fetchSemanticsNode().positionOnScreen.y)
+            else viewportBounds.bottom
+            val clearance = with(node.layoutInfo.density) { 4.dp.toPx() }
+            val safeBounds = Rect(viewportBounds.left, viewportBounds.top, viewportBounds.right, bottom - clearance)
+            assertTrue("原生滑动需要真实可用的页面区域: $safeBounds", safeBounds.width > 4f && safeBounds.height > 4f)
+            val targetBounds = runCatching { target.fetchSemanticsNode().unclippedScreenBounds() }.getOrNull()
+            if (targetBounds != null) {
+                assertTrue("目标无法完整放入迷你播放器上方: target=$targetBounds, safe=$safeBounds",
+                    targetBounds.height <= safeBounds.height)
+                if (targetBounds.top >= safeBounds.top && targetBounds.bottom <= safeBounds.bottom && target.isDisplayed()) {
+                    return
+                }
+            }
+            val correction = when {
+                targetBounds == null -> Float.POSITIVE_INFINITY
+                targetBounds.top < safeBounds.top -> targetBounds.top - safeBounds.top
+                else -> targetBounds.bottom - safeBounds.bottom
+            }
+            val scrollDown = correction > 0f
+            val x = safeBounds.left + 2f
+            val start = Offset(x, (node.positionOnScreen.y + node.size.height * if (scrollDown) 0.65f else 0.2f)
+                .coerceIn(safeBounds.top + 1f, safeBounds.bottom - 1f))
+            val end = Offset(x, (node.positionOnScreen.y + node.size.height * if (scrollDown) 0.2f else 0.65f)
+                .coerceIn(safeBounds.top + 1f, safeBounds.bottom - 1f))
+            val coarseDistance = abs(start.y - end.y)
+            val precise = targetBounds != null && abs(correction) <= coarseDistance
+            val (swipeStart, swipeEnd) = if (precise) {
+                val touchSlop = node.layoutInfo.viewConfiguration.touchSlop
+                val slack = (safeBounds.height - checkNotNull(targetBounds).height) / 2f
+                val distance = minOf(coarseDistance, abs(correction) + touchSlop + minOf(touchSlop, slack))
+                val half = distance / 2f * if (scrollDown) 1f else -1f
+                Offset(x, safeBounds.center.y + half) to Offset(x, safeBounds.center.y - half)
+            } else start to end
+            lastGeometry = "attempt=${attempt + 1}, target=$targetBounds, safe=$safeBounds, " +
+                "correction=$correction, precise=$precise, start=$swipeStart, end=$swipeEnd"
+            Log.i(DiagnosticTag, "density=$fixtureDensityScale, swipe=$lastGeometry")
+            nativeSwipe(swipeStart, swipeEnd, stopBeforeUp = precise)
             composeRule.waitForIdle()
             waitForStableTarget(target, viewport, requireTarget = false)
         }
-        fail("真实滑动后目标仍未完整露出迷你播放器上方")
+        fail("真实滑动后目标仍未完整露出迷你播放器上方: $lastGeometry")
+    }
+
+    private fun SemanticsNode.unclippedScreenBounds(): Rect? {
+        // LazyColumn 预组合节点的坐标只有在自身和祖先都已放置后才有意义
+        var layout = layoutInfo
+        while (true) {
+            if (!layout.isPlaced) return null
+            layout = layout.parentInfo ?: break
+        }
+        val position = positionOnScreen
+        return Rect(position.x, position.y, position.x + size.width, position.y + size.height)
     }
 
     private data class ScrollFrameSample(
@@ -483,12 +523,17 @@ class SettingsExternalLyricsPageTouchTest {
         injectTouch(downTime, MotionEvent.ACTION_UP, point)
     }
 
-    private fun nativeSwipe(start: Offset, end: Offset) {
+    private fun nativeSwipe(start: Offset, end: Offset, stopBeforeUp: Boolean) {
         val downTime = SystemClock.uptimeMillis()
         injectTouch(downTime, MotionEvent.ACTION_DOWN, start)
         for (step in 1..12) {
             SystemClock.sleep(20L)
             injectTouch(downTime, MotionEvent.ACTION_MOVE, start + (end - start) * (step / 12f))
+        }
+        if (stopBeforeUp) {
+            // 超过速度估计的历史窗口后补静止样本，避免末段微调在抬指后继续惯性滑动
+            SystemClock.sleep(120L)
+            injectTouch(downTime, MotionEvent.ACTION_MOVE, end)
         }
         injectTouch(downTime, MotionEvent.ACTION_UP, end)
     }
