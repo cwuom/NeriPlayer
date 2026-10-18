@@ -546,7 +546,7 @@ class LocalMediaSupportSafLyricsTest {
     }
 
     @Test
-    fun cachedManagedLyricsCreationDoesNotRescanAudioDirectory() = runBlocking {
+    fun staleManagedLyricsCreationRefreshesParentOnceAndReusesWarmCache() = runBlocking {
         val previousDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
         val treeUri = DocumentsContract.buildTreeDocumentUri(
             Issue339LyricsTestDocumentProvider.AUTHORITY,
@@ -631,7 +631,7 @@ class LocalMediaSupportSafLyricsTest {
             )
 
             assertEquals(LocalMediaMetadataWriteOutcome.SIDECAR_ONLY, outcome)
-            assertEquals(before, musicChildQueryCount())
+            assertEquals(before + 1, musicChildQueryCount())
             assertEquals(
                 "[00:01.00]new romanized lyric",
                 LocalMediaSupport.inspect(targetContext, audioUri).romanizedLyricContent
@@ -672,11 +672,20 @@ class LocalMediaSupportSafLyricsTest {
                     writeLyrics = true
                 )
             )
-            assertEquals(beforeIndexed, musicChildQueryCount())
+            assertEquals(beforeIndexed + 1, musicChildQueryCount())
             assertEquals(
                 "[00:01.00]new translated lyric",
                 LocalMediaSupport.inspect(targetContext, audioUri).translatedLyricContent
             )
+            val beforeWarmWrite = musicChildQueryCount()
+            assertEquals(
+                LocalMediaMetadataWriteOutcome.SIDECAR_ONLY,
+                LocalMediaSupport.writeEditableMetadata(
+                    context = targetContext, song = translatedSong,
+                    writeCover = false, writeLyrics = true
+                )
+            )
+            assertEquals(beforeWarmWrite, musicChildQueryCount())
         } finally {
             ManagedDownloadStorage.primeSettings(previousDirectoryUri, null)
         }

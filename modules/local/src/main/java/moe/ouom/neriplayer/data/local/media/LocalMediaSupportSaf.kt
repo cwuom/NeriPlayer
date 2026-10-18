@@ -912,6 +912,11 @@ internal fun LocalMediaSupport.resolveContentSidecarReferences(
     val baseUri = navigation.treeUri ?: navigation.baseUri
     val mutationParentChildren = if (forMutation) {
         queryDocumentChildrenForMutation(context, baseUri, parentDocumentId)
+            ?: return ContentSidecarReferences(
+                metadataReference = null,
+                lyricReferences = NearbyLyricReferences(null, null, null),
+                mutationParentChildren = emptyList()
+            )
     } else null
     val parentChildren = mutationParentChildren ?: queryDocumentChildren(
         context = context,
@@ -947,7 +952,8 @@ internal fun LocalMediaSupport.resolveContentSidecarReferences(
             romanized = nestedReferences.romanized ?: directReferences.romanized
                 ?: localFiles.romanized?.absolutePath
         ),
-        mutationParentChildren = mutationParentChildren
+        mutationParentChildren = mutationParentChildren,
+        mutationParentChildrenFresh = mutationParentChildren != null
     )
 }
 
@@ -1025,21 +1031,13 @@ internal fun LocalMediaSupport.resolveCachedEditableLyricsReferences(
     val navigation = resolveLocalDocumentNavigation(context, sourceUri) ?: return null
     val parentId = navigation.parentDocumentId ?: return null
     val baseUri = navigation.treeUri ?: navigation.baseUri
-    val cachedDirectoryUri = synchronized(documentChildrenCache) {
+    val cachedParentChildren = synchronized(documentChildrenCache) {
         documentChildrenCache[documentParentCacheKey(baseUri, parentId)]
+            ?.takeIf { entry -> entry.isComplete && entry.isFresh(System.currentTimeMillis()) }
             ?.children
-            ?.let { children -> findManagedSidecarDirectory(children, "Lyrics") }
-            ?.uri
-    }?.toUri()
-    val indexedDirectoryUri = LocalMediaHostAccess.downloads.cachedDownloadLibrarySnapshot(
-        context, restorePersisted = false
-    )?.lyricEntriesByName?.values
-        ?.firstOrNull { entry ->
-            entry.reference.startsWith("content://", ignoreCase = true) &&
-                entry.reference.toUri().authority == sourceUri.authority
-        }?.reference?.toUri()
-        ?.let { lyricUri -> findDocumentParentId(context, lyricUri) }
-        ?.let { directoryId -> buildDocumentReferenceUri(baseUri, directoryId) }
+    } ?: return null
+    val cachedDirectoryUri = findManagedSidecarDirectory(cachedParentChildren, "Lyrics")?.uri?.toUri()
+        ?: return null
     val sourceId = runCatching { DocumentsContract.getDocumentId(sourceUri) }
         .getOrNull() ?: return null
     val source = documentChildFromUri(context, sourceUri, false)
@@ -1048,18 +1046,35 @@ internal fun LocalMediaSupport.resolveCachedEditableLyricsReferences(
                 child.displayName == displayName
         } ?: return null
     if (findDocumentParentId(context, sourceUri) != parentId) return null
-    val lyricsDirectory = listOfNotNull(cachedDirectoryUri, indexedDirectoryUri)
-        .distinct()
-        .firstNotNullOfOrNull { candidate ->
-            documentChildFromUri(context, candidate, true)?.takeIf { child ->
-                child.isDirectory && isManagedSidecarDirectoryName(child.displayName, "Lyrics") &&
-                    findDocumentParentId(context, candidate) == parentId
-            }
-        } ?: return null
+    val lyricsDirectory = documentChildFromUri(context, cachedDirectoryUri, true)?.takeIf { child ->
+        child.isDirectory && isManagedSidecarDirectoryName(child.displayName, "Lyrics") &&
+            findDocumentParentId(context, cachedDirectoryUri) == parentId
+    } ?: return null
+    val verifiedParentChildren = cachedParentChildren.map { child ->
+        when (child.uri) {
+            source.uri -> source
+            lyricsDirectory.uri -> lyricsDirectory
+            else -> child
+        }
+    }
+    val adjacent = resolveDocumentLyricReferences(
+        verifiedParentChildren, displayName.substringBeforeLast('.', displayName)
+    )
+    fun validateCachedDocumentReference(reference: String): Boolean {
+        val expected = verifiedParentChildren.firstOrNull { it.uri == reference } ?: return false
+        val uri = reference.toUri()
+        if (uri.authority != sourceUri.authority) return false
+        val actual = documentChildFromUri(context, uri, false) ?: return false
+        return !actual.isDirectory && actual.documentId == expected.documentId &&
+            actual.displayName == expected.displayName && findDocumentParentId(context, uri) == parentId
+    }
+    if (listOfNotNull(adjacent.original, adjacent.translated, adjacent.romanized)
+            .distinct().any { !validateCachedDocumentReference(it) }
+    ) return null
     return ContentSidecarReferences(
         metadataReference = metadataReference,
-        lyricReferences = NearbyLyricReferences(null, null, null),
-        mutationParentChildren = listOf(source, lyricsDirectory)
+        lyricReferences = adjacent,
+        mutationParentChildren = verifiedParentChildren
     )
 }
 

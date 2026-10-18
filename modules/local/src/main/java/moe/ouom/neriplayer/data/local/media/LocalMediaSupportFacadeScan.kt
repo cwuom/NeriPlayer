@@ -99,7 +99,8 @@ internal fun LocalMediaSupport.inspectLyricsForScanImpl(
         hasRomanizedSidecar = nearbyFiles.romanized != null || nearbyReferences.romanized != null,
         embeddedLyric = embedded?.lyrics,
         embeddedTranslatedLyric = embedded?.translatedLyrics,
-        embeddedRomanizedLyric = embedded?.romanizedLyrics
+        embeddedRomanizedLyric = embedded?.romanizedLyrics,
+        embeddedSourceResolved = embedded != null
     )
 }
 

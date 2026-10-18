@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.isNeteaseManagedSourceStableKey
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
+import moe.ouom.neriplayer.data.local.media.repairLocalMetadataText
 import moe.ouom.neriplayer.data.model.SongItem
 import java.io.File
 import java.util.Locale
@@ -111,10 +112,10 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         reboundCover = reboundCover,
         metadataFallbackCover = metadataFallbackCover
     )
-    val resolvedOriginalCover = selectHydratedLocalCoverReference(
-        sidecarCover = sidecarCover,
+    val resolvedOriginalCover = if (metadata.originalCoverUrl == "") "" else selectHydratedLocalCoverReference(
+        sidecarCover = metadata.originalCoverUrl.normalizeImportedCoverReference(),
         existingCover = song.originalCoverUrl,
-        reboundCover = reboundCover,
+        reboundCover = null,
         metadataFallbackCover = firstMeaningfulMetadataValue(
             metadata.originalCoverUrl,
             metadata.coverUrl
@@ -134,7 +135,10 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
             metadata.audioId,
             metadata.stableKey
         ) != null
-    if (!hasIdentity && metadata.durationMs <= 0L && resolvedCover == null && metadata.sourceModifiedAtMs == null) return song
+    if (!hasIdentity && metadata.durationMs <= 0L && resolvedCover == null && metadata.sourceModifiedAtMs == null &&
+        metadata.originalLyric == null && metadata.originalTranslatedLyric == null &&
+        metadata.originalRomanizedLyric == null
+    ) return song
     return song.copy(
         sourceModifiedAtMs = metadata.sourceModifiedAtMs ?: song.sourceModifiedAtMs,
         id = metadata.songId ?: song.id,
@@ -164,6 +168,9 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         originalArtist = firstMeaningfulMetadataValue(metadata.originalArtist)
             ?: firstMeaningfulMetadataValue(song.originalArtist)
             ?: resolvedArtist,
+        originalLyric = metadata.originalLyric ?: song.originalLyric,
+        originalTranslatedLyric = metadata.originalTranslatedLyric ?: song.originalTranslatedLyric,
+        originalRomanizedLyric = metadata.originalRomanizedLyric ?: song.originalRomanizedLyric,
         customCoverUrl = firstMeaningfulMetadataValue(metadata.customCoverUrl)
             ?: song.customCoverUrl,
         channelId = metadata.channelId?.takeIf(String::isNotBlank) ?: song.channelId,
@@ -254,7 +261,7 @@ internal fun LocalAudioImportManager.isReadableQuickImportedTitle(title: String?
 }
 
 internal fun LocalAudioImportManager.normalizeQuickImportedMetadata(value: String?): String? {
-    val trimmed = value?.trim().orEmpty()
+    val trimmed = value?.trim()?.let(::repairLocalMetadataText).orEmpty()
     if (trimmed.isBlank() || isQuickMetadataPlaceholder(trimmed)) return null
     return trimmed
 }

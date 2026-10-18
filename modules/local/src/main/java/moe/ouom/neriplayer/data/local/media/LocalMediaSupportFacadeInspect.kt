@@ -142,7 +142,7 @@ internal fun LocalMediaSupport.needsLyricSidecarRepairImpl(
         ?: song.originalTranslatedLyric
     val expectedRomanized = song.matchedRomanizedLyric
         ?: song.originalRomanizedLyric
-    if (expectedOriginal == null && expectedTranslated == null && expectedRomanized == null) {
+    if (expectedOriginal.isNullOrBlank() && expectedTranslated.isNullOrBlank() && expectedRomanized.isNullOrBlank()) {
         return false
     }
     val inspected = runCatching {
@@ -158,9 +158,9 @@ internal fun LocalMediaSupport.needsLyricSidecarRepairImpl(
         return true
     }
     return shouldRebuildLyricSidecars(
-        expectedOriginal = expectedOriginal != null,
-        expectedTranslated = expectedTranslated != null,
-        expectedRomanized = expectedRomanized != null,
+        expectedOriginal = !expectedOriginal.isNullOrBlank(),
+        expectedTranslated = !expectedTranslated.isNullOrBlank(),
+        expectedRomanized = !expectedRomanized.isNullOrBlank(),
         hasOriginalSidecar = inspected.hasOriginalSidecar,
         hasTranslatedSidecar = inspected.hasTranslatedSidecar,
         hasRomanizedSidecar = inspected.hasRomanizedSidecar
@@ -379,7 +379,8 @@ internal fun LocalMediaSupport.inspectLyricsFastImpl(
         sourceResolved = isLocalLyricsSourceResolved(
             scannedSource = resolvedScan != null,
             embeddedSource = embedded != null
-        )
+        ),
+        embeddedSourceResolved = embedded != null
     )
     if (cacheable && !forceRefresh) {
         synchronized(localLyricsLookupCache) {
@@ -441,7 +442,8 @@ internal fun LocalMediaSupport.inspectEmbeddedLyricsImpl(
             romanizedLyric = metadata.romanizedLyrics,
             embeddedLyric = metadata.lyrics,
             embeddedTranslatedLyric = metadata.translatedLyrics,
-            embeddedRomanizedLyric = metadata.romanizedLyrics
+            embeddedRomanizedLyric = metadata.romanizedLyrics,
+            embeddedSourceResolved = true
         )
     }
     return null

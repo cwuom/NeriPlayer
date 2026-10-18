@@ -229,7 +229,7 @@ internal fun resolveEditSongBaselineFromSong(
 
 private fun resolveEditSongBaselineCover(
     originalCover: String?, songCover: String?, resolvedCover: String?
-): String = listOfNotNull(
+): String = if (originalCover == "") "" else listOfNotNull(
     usableEditCover(originalCover), usableEditCover(songCover), usableEditCover(resolvedCover)
 ).firstOrNull().orEmpty()
 

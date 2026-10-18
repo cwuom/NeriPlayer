@@ -349,7 +349,8 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
     song: SongItem,
     knownReferences: NearbyLyricReferences? = null,
     companionTransaction: LocalMediaCompanionTransaction? = null,
-    parentChildrenForMutation: List<LocalMediaSupport.DocumentChild>? = null
+    parentChildrenForMutation: List<LocalMediaSupport.DocumentChild>? = null,
+    parentChildrenFresh: Boolean = false
 ): Boolean {
     val contents = listOf(
         LyricKind.ORIGINAL to (song.matchedLyric ?: song.originalLyric),
@@ -379,13 +380,10 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
             legacyRoot = legacyRoot,
             isLegacyDownload = isLegacyDownload
         )
-        val needsDirectory = contents.any { (_, content) -> content != null }
-        if (needsDirectory && !targetDirectory.exists() && !targetDirectory.mkdirs()) {
-            return false
-        }
-        fun isInTargetDirectory(candidate: File): Boolean {
+        fun isInLyricsDirectory(candidate: File): Boolean {
             return runCatching {
-                candidate.canonicalFile.parentFile == targetDirectory.canonicalFile
+                val parent = candidate.canonicalFile.parentFile
+                parent == targetDirectory.canonicalFile || parent == localFile.canonicalFile.parentFile
             }.getOrDefault(false)
         }
         val plans = contents.mapNotNull { (kind, content) ->
@@ -393,11 +391,12 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
                 LyricKind.ORIGINAL -> nearby.original
                 LyricKind.TRANSLATED -> nearby.translated
                 LyricKind.ROMANIZED -> nearby.romanized
-            }?.takeIf(::isInTargetDirectory)
+            }?.takeIf(::isInLyricsDirectory)
             if (content == null) {
                 // null 表示调用方没有修改这一种歌词
                 return@mapNotNull null
             }
+            if (content.isBlank() && existing == null) return@mapNotNull null
             val contentValue = content
             val target = existing ?: File(
                 targetDirectory,
@@ -459,19 +458,17 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
             uri = sourceUri,
             displayName = displayName,
             requiredKinds = contents.mapNotNullTo(mutableSetOf()) { (kind, content) ->
-                val existing = when (kind) {
-                    LyricKind.ORIGINAL -> existingReferences.original
-                    LyricKind.TRANSLATED -> existingReferences.translated
-                    LyricKind.ROMANIZED -> existingReferences.romanized
-                }
-                kind.takeIf { content != null || existing != null }
+                kind.takeIf { content != null }
             },
             existing = existingReferences,
-            parentChildrenForMutation = parentChildrenForMutation
+            parentChildrenForMutation = parentChildrenForMutation,
+            createKinds = contents.mapNotNullTo(mutableSetOf()) { (kind, content) ->
+                kind.takeIf { !content.isNullOrBlank() }
+            },
+            onCreated = { child -> companionTransaction?.created(child.uri) },
+            parentChildrenFresh = parentChildrenFresh
         )
-        lyricResolution.createdReferences.keys.forEach { reference ->
-            companionTransaction?.created(reference)
-        }
+        if (!lyricResolution.lookupSucceeded) return@writeDocumentSidecars false
         val references = lyricResolution.references
         var invalidPlan = false
         val plans = contents.mapNotNull { (kind, content) ->
@@ -486,7 +483,7 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
                 LyricKind.ROMANIZED -> references.romanized
             }
             if (reference == null) {
-                invalidPlan = true
+                if (content.isNotBlank()) invalidPlan = true
                 return@mapNotNull null
             }
             val previous = readTextContent(context, reference)
@@ -497,7 +494,14 @@ internal fun LocalMediaSupport.writeLocalLyricsSidecars(
             }
             Triple(reference, contentValue, previous to existedBefore)
         }
-        if (invalidPlan) return@writeDocumentSidecars false
+        if (invalidPlan) {
+            if (companionTransaction == null) {
+                lyricResolution.createdReferences.values.forEach { created ->
+                    deleteDocumentReference(context, created)
+                }
+            }
+            return@writeDocumentSidecars false
+        }
         var written = true
         plans.forEach { (reference, content, _) ->
             val bytes = content.toByteArray(Charsets.UTF_8)
@@ -544,15 +548,21 @@ internal fun LocalMediaSupport.ensureDocumentLyricReferences(
     displayName: String,
     requiredKinds: Set<LyricKind>,
     existing: NearbyLyricReferences,
-    parentChildrenForMutation: List<LocalMediaSupport.DocumentChild>? = null
+    parentChildrenForMutation: List<LocalMediaSupport.DocumentChild>? = null,
+    createKinds: Set<LyricKind> = requiredKinds,
+    onCreated: ((DocumentChild) -> Unit)? = null,
+    parentChildrenFresh: Boolean = false
 ): DocumentLyricReferenceResolution {
     if (!uri.scheme.equals("content", ignoreCase = true) || requiredKinds.isEmpty()) {
         return DocumentLyricReferenceResolution(existing, emptyMap())
     }
+    val unresolved = DocumentLyricReferenceResolution(
+        NearbyLyricReferences(null, null, null), emptyMap(), lookupSucceeded = false
+    )
     val navigation = resolveLocalDocumentNavigation(context, uri)
-        ?: return DocumentLyricReferenceResolution(existing, emptyMap())
+        ?: return unresolved
     val parentId = navigation.parentDocumentId
-        ?: return DocumentLyricReferenceResolution(existing, emptyMap())
+        ?: return unresolved
     val baseUri = navigation.treeUri ?: navigation.baseUri
     val audioBaseName = displayName.substringBeforeLast('.', displayName)
     return withDocumentMutationLock(baseUri, parentId) {
@@ -560,7 +570,7 @@ internal fun LocalMediaSupport.ensureDocumentLyricReferences(
             context = context,
             baseUri = baseUri,
             parentDocumentId = parentId
-        ) ?: return@withDocumentMutationLock DocumentLyricReferenceResolution(existing, emptyMap())
+        ) ?: return@withDocumentMutationLock unresolved
         if (!documentChildrenContainSource(
                 parentChildren = parentChildren,
                 sourceUri = uri,
@@ -568,22 +578,54 @@ internal fun LocalMediaSupport.ensureDocumentLyricReferences(
                 parentDocumentId = parentId
             )
         ) {
-            return@withDocumentMutationLock DocumentLyricReferenceResolution(existing, emptyMap())
+            return@withDocumentMutationLock unresolved
         }
-        val lyricsDirectory = findManagedSidecarDirectory(parentChildren, "Lyrics")
-            ?: ensureDocumentSidecarDirectoryForMutation(
+        val existingLyricsDirectory = findManagedSidecarDirectory(parentChildren, "Lyrics")
+        val existingLyricsChildren = existingLyricsDirectory?.let { directory ->
+            queryDocumentChildrenForMutation(context, baseUri, directory.documentId)
+                ?: return@withDocumentMutationLock unresolved
+        }.orEmpty()
+        val nested = resolveDocumentLyricReferences(existingLyricsChildren, audioBaseName)
+        val adjacent = resolveDocumentLyricReferences(parentChildren, audioBaseName)
+        val resolved = NearbyLyricReferences(
+            original = (nested.original ?: adjacent.original)
+                .takeIf { LyricKind.ORIGINAL in requiredKinds || existing.original != null },
+            translated = (nested.translated ?: adjacent.translated)
+                .takeIf { LyricKind.TRANSLATED in requiredKinds || existing.translated != null },
+            romanized = (nested.romanized ?: adjacent.romanized)
+                .takeIf { LyricKind.ROMANIZED in requiredKinds || existing.romanized != null }
+        )
+        fun reference(kind: LyricKind): String? = when (kind) {
+            LyricKind.ORIGINAL -> resolved.original
+            LyricKind.TRANSLATED -> resolved.translated
+            LyricKind.ROMANIZED -> resolved.romanized
+        }
+        val missingKinds = requiredKinds.filterTo(mutableSetOf()) { kind ->
+            kind in createKinds && reference(kind) == null
+        }
+        if (missingKinds.isEmpty()) {
+            return@withDocumentMutationLock DocumentLyricReferenceResolution(resolved, emptyMap())
+        }
+        // 旧快照不能证明相邻歌词仍不存在，创建前重新确认一次父目录
+        if (parentChildrenForMutation != null && !parentChildrenFresh) {
+            return@withDocumentMutationLock ensureDocumentLyricReferences(
+                context, uri, displayName, requiredKinds, existing,
+                parentChildrenForMutation = null, createKinds = createKinds, onCreated = onCreated
+            )
+        }
+        val lyricsDirectory = existingLyricsDirectory ?: ensureDocumentSidecarDirectoryForMutation(
                 context = context,
                 baseUri = baseUri,
                 parentDocumentId = parentId,
                 directoryName = "Lyrics",
                 parentChildren
             )
-            ?: return@withDocumentMutationLock DocumentLyricReferenceResolution(existing, emptyMap())
-        val targetChildren = queryDocumentChildrenForMutation(
+            ?: return@withDocumentMutationLock unresolved
+        val targetChildren = if (existingLyricsDirectory != null) existingLyricsChildren else queryDocumentChildrenForMutation(
             context = context,
             baseUri = baseUri,
             parentDocumentId = lyricsDirectory.documentId
-        ) ?: return@withDocumentMutationLock DocumentLyricReferenceResolution(existing, emptyMap())
+        ) ?: return@withDocumentMutationLock unresolved
         val createdReferences = linkedMapOf<String, DocumentChild>()
         fun ensure(kind: LyricKind, existingReference: String?): String? {
             val name = lyricSidecarNames(
@@ -591,15 +633,10 @@ internal fun LocalMediaSupport.ensureDocumentLyricReferences(
                 kind = kind,
                 extensions = listOf("lrc")
             ).first()
-            val exactExisting = targetChildren.firstOrNull { child ->
-                child.uri == existingReference &&
-                    !child.isDirectory &&
-                    canonicalSafName(child.displayName) == canonicalSafName(name)
-            }?.uri
-            if (exactExisting != null || kind !in requiredKinds) {
-                return exactExisting
+            if (existingReference != null || kind !in missingKinds) {
+                return existingReference
             }
-            findExactDocumentSidecarChild(targetChildren, name)?.uri?.let { return it }
+            findDocumentSidecarChild(targetChildren, name)?.uri?.let { return it }
             return createDocumentSidecarForMutation(
                     context = context,
                     baseUri = baseUri,
@@ -607,15 +644,19 @@ internal fun LocalMediaSupport.ensureDocumentLyricReferences(
                     mimeType = "text/plain",
                     displayName = name,
                     targetChildren
-                )?.takeIf(DocumentChild::createdByCurrentMutation)
-                ?.also { createdReferences[it.uri] = it }
+                )?.also { child ->
+                    if (child.createdByCurrentMutation) {
+                        createdReferences[child.uri] = child
+                        onCreated?.invoke(child)
+                    }
+                }
                 ?.uri
         }
         DocumentLyricReferenceResolution(
             references = NearbyLyricReferences(
-                original = ensure(LyricKind.ORIGINAL, existing.original),
-                translated = ensure(LyricKind.TRANSLATED, existing.translated),
-                romanized = ensure(LyricKind.ROMANIZED, existing.romanized)
+                original = ensure(LyricKind.ORIGINAL, resolved.original),
+                translated = ensure(LyricKind.TRANSLATED, resolved.translated),
+                romanized = ensure(LyricKind.ROMANIZED, resolved.romanized)
             ),
             createdReferences = createdReferences
         )

@@ -694,8 +694,7 @@ object LocalAudioImportManager {
             }
         }
         val parsedFileName = parseFileNameMetadata(resolvedDisplayName)
-        val queriedTitle = seed.title
-            ?.trim()
+        val queriedTitle = normalizeQuickImportedMetadata(seed.title)
             ?.takeIf(::isReadableQuickImportedTitle)
         val resolvedParsedTitle = resolveParsedTitleFallback(
             currentTitle = queriedTitle,
@@ -843,7 +842,7 @@ object LocalAudioImportManager {
             originalArtist = normalizeQuickImportedMetadata(quickSong.originalArtist)
                 ?: normalizeQuickImportedMetadata(detailedSong.originalArtist)
                 ?: resolvedArtist,
-            originalCoverUrl = selectMergedImportedCoverReference(
+            originalCoverUrl = if (quickSong.originalCoverUrl == "" || detailedSong.originalCoverUrl == "") "" else selectMergedImportedCoverReference(
                 quickCover = quickSong.originalCoverUrl,
                 detailedCover = detailedSong.originalCoverUrl
             ) ?: resolvedCoverUrl,
@@ -998,7 +997,8 @@ object LocalAudioImportManager {
             NPLogger.w(TAG, "hydrate local text metadata failed for ${song.name}: ${it.message}")
         } ?: return song
         val existingCover = song.coverUrl.normalizeImportedCoverReference()
-        val originalCover = song.originalCoverUrl.normalizeImportedCoverReference()
+        val originalCover = if (song.originalCoverUrl == "") "" else
+            song.originalCoverUrl.normalizeImportedCoverReference()
         val knownCover = knownSidecarReferences?.cover.normalizeImportedCoverReference()
         val nearbyCover = if (knownCover != null) {
             knownCover
@@ -1028,18 +1028,18 @@ object LocalAudioImportManager {
         }
         return song.copy(
             coverUrl = knownCover ?: existingCover ?: nearbyCover,
-            originalCoverUrl = knownCover ?: originalCover ?: nearbyCover,
+            originalCoverUrl = originalCover ?: knownCover ?: nearbyCover,
             durationMs = durationMs,
             matchedLyric = lyricMetadata.lyric ?: song.matchedLyric,
             matchedTranslatedLyric = lyricMetadata.translatedLyric
                 ?: song.matchedTranslatedLyric,
             matchedRomanizedLyric = lyricMetadata.romanizedLyric
                 ?: song.matchedRomanizedLyric,
-            originalLyric = lyricMetadata.lyric ?: song.originalLyric,
-            originalTranslatedLyric = lyricMetadata.translatedLyric
-                ?: song.originalTranslatedLyric,
-            originalRomanizedLyric = lyricMetadata.romanizedLyric
-                ?: song.originalRomanizedLyric,
+            originalLyric = song.originalLyric ?: lyricMetadata.lyric,
+            originalTranslatedLyric = song.originalTranslatedLyric
+                ?: lyricMetadata.translatedLyric,
+            originalRomanizedLyric = song.originalRomanizedLyric
+                ?: lyricMetadata.romanizedLyric,
             matchedLyricSource = if (lyricMetadata.lyric != null) {
                 null
             } else {
@@ -1136,7 +1136,7 @@ object LocalAudioImportManager {
                 song = song.copy(
                     coverUrl = existingCover
                         ?.takeUnless { existingCoverValidation == CoverReferenceValidation.INVALID },
-                    originalCoverUrl = originalCover
+                    originalCoverUrl = if (song.originalCoverUrl == "") "" else originalCover
                         ?.takeUnless { originalCoverValidation == CoverReferenceValidation.INVALID }
                 ),
                 clearCoverUrl = existingCoverValidation == CoverReferenceValidation.INVALID,
@@ -1144,7 +1144,7 @@ object LocalAudioImportManager {
                     originalCoverValidation == CoverReferenceValidation.INVALID
             )
         }
-        val resolvedOriginalCover = originalCover
+        val resolvedOriginalCover = if (song.originalCoverUrl == "" || metadata?.originalCoverUrl == "") "" else originalCover
             ?.trim()
             ?.takeIf(String::isNotBlank)
             ?.takeIf { isUsableCoverReference(context, it) }

@@ -5,6 +5,7 @@ import android.graphics.Color
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.ui.viewmodel.buildLocalOriginalSongInfo
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongLyricsForSave
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.os.ParcelFileDescriptor
@@ -121,6 +122,52 @@ class DownloadedM4aStagingRegressionTest {
             assertTrue(properties.values.any { it.contains("[00:00.00]romanized") })
             assertTrue(TagLib.getPictures(fd.dup().detachFd()).any { it.data.contentEquals(covers[0].readBytes()) })
         }
+        assertEquals(payload, audioPayload(file))
+    }
+
+    @Test fun repeatedEditsAndRescanKeepOriginalLyricsWithoutEmptyCompanions() = fixture(false) { file ->
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val payload = audioPayload(file)
+        val original = SongItem(
+            id = 7L, name = "原始歌名", artist = "原始歌手", album = "本地专辑", albumId = 0L,
+            durationMs = 1000L, coverUrl = null, mediaUri = file.toURI().toString(),
+            localFilePath = file.absolutePath, localFileName = file.name, channelId = "local",
+            originalName = "原始歌名", originalArtist = "原始歌手",
+            originalLyric = "[00:00.00]原始歌词", originalTranslatedLyric = "",
+            originalRomanizedLyric = ""
+        )
+        repeat(2) { index ->
+            val edited = original.copy(
+                customName = "错误匹配$index", matchedLyric = "[00:00.00]错误歌词$index",
+                matchedTranslatedLyric = "", matchedRomanizedLyric = ""
+            )
+            assertEquals(LocalMediaMetadataWriteOutcome.SUCCESS, runBlocking {
+                LocalMediaSupport.writeEditableMetadata(context, edited, writeCover = false, writeLyrics = true)
+            })
+        }
+        val rescanned = LocalAudioImportManager.hydrateLocalSongTextMetadata(
+            context, original.copy(originalLyric = null, originalTranslatedLyric = null,
+                originalRomanizedLyric = null), resolveCoverFallback = false
+        )
+        assertEquals("[00:00.00]错误歌词1", rescanned.matchedLyric)
+        assertEquals("[00:00.00]原始歌词", rescanned.originalLyric)
+        assertEquals("", rescanned.originalTranslatedLyric)
+        val restored = rescanned.copy(
+            name = requireNotNull(rescanned.originalName), artist = requireNotNull(rescanned.originalArtist),
+            customName = null, customArtist = null, matchedLyric = rescanned.originalLyric,
+            matchedTranslatedLyric = rescanned.originalTranslatedLyric,
+            matchedRomanizedLyric = rescanned.originalRomanizedLyric
+        )
+        assertEquals(LocalMediaMetadataWriteOutcome.SUCCESS, runBlocking {
+            LocalMediaSupport.writeEditableMetadata(context, restored, writeCover = false, writeLyrics = true)
+        })
+        val inspected = requireNotNull(LocalMediaSupport.inspect(context, restored))
+        assertEquals("原始歌名", inspected.title)
+        assertEquals("原始歌手", inspected.artist)
+        assertEquals("[00:00.00]原始歌词", inspected.lyricContent)
+        assertFalse(File(file.parentFile, "${file.nameWithoutExtension}_trans.lrc").exists())
+        assertFalse(File(file.parentFile, "${file.nameWithoutExtension}_roma.lrc").exists())
+        assertEquals(1, file.parentFile!!.walkTopDown().count { it.extension == "lrc" })
         assertEquals(payload, audioPayload(file))
     }
 

@@ -14,6 +14,7 @@ import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.File
 import java.text.Normalizer
@@ -137,6 +138,8 @@ internal fun LocalMediaSupport.ensureDocumentSidecarDirectoryForMutation(
         )
     } catch (error: SecurityException) {
         throw error
+    } catch (error: CancellationException) {
+        throw error
     } catch (error: Exception) {
         NPLogger.w(TAG, "create sidecar directory failed for $parentUri: ${error.message}")
         null
@@ -212,6 +215,8 @@ internal fun LocalMediaSupport.createDocumentSidecarForMutation(
             displayName
         )
     } catch (error: SecurityException) {
+        throw error
+    } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
         NPLogger.w(TAG, "create sidecar document failed for $parentUri: ${error.message}")
@@ -865,9 +870,9 @@ internal fun LocalMediaSupport.pickReadableLocalTitle(
 }
 
 private fun LocalMediaSupport.readableLocalTitleOrNull(candidate: String?, sourceUri: Uri, fallbackTitle: String): String? {
-    val trimmed = candidate?.trim() ?: return null
+    val trimmed = candidate.takeMeaningfulLocalMetadata() ?: return null
     return trimmed.takeIf {
-        it.takeMeaningfulLocalMetadata() != null && isReadableLocalTitleCandidate(it, sourceUri, fallbackTitle)
+        isReadableLocalTitleCandidate(it, sourceUri, fallbackTitle)
     }
 }
 
@@ -929,6 +934,7 @@ internal fun LocalMediaSupport.decodeId3TextFrame(frameData: ByteArray): String?
     return content.toString(charset)
         .normalizeDecodedText()
         .trim(NUL_CHAR, ' ')
+        .let(::repairLocalMetadataText)
         .takeIf { it.isNotBlank() }
 }
 

@@ -9,11 +9,13 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongBaseline
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongBaselineReader
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.readManagedEditSongBaselineSnapshot
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveManagedEditSongBaselineAtRestore
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.toEditSongRestorableMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.fail
@@ -28,6 +30,26 @@ class NowPlayingSongEditRestoreSourcesTest {
         mediaUri = "content://media/external/audio/media/8"
     )
     private val baseline = EditSongBaseline("Base title", "Base artist", "base-cover", "base lyric", null, null)
+
+    @Test
+    fun `local metadata restores the durable originals including explicitly empty lyrics`() {
+        val local = requireNotNull(LocalMediaSupport.parseLocalMetadataSidecar(
+            "/music/song.mp3.npmeta.json",
+            """{"name":"Song","originalName":"Original title","originalArtist":"Original artist",
+                "originalCoverUrl":"/saved/original.jpg","customCoverUrl":"/saved/edited.jpg",
+                "originalLyric":"original lyric","originalTranslatedLyric":"",
+                "matchedLyric":"wrong online lyric","matchedTranslatedLyric":"wrong translation"}"""
+        ))
+
+        val restored = local.toEditSongRestorableMetadata()
+
+        assertEquals("Original title", restored.baseline.title)
+        assertEquals("Original artist", restored.baseline.artist)
+        assertEquals("/saved/original.jpg", restored.baseline.coverReference)
+        assertEquals("original lyric", restored.baseline.originalLyric)
+        assertEquals("", restored.baseline.translatedLyric)
+        assertEquals("wrong online lyric", restored.overrides.originalLyric)
+    }
 
     @Test
     fun `remote song keeps baseline without touching local readers`() = runTest {
@@ -52,6 +74,44 @@ class NowPlayingSongEditRestoreSourcesTest {
         assertEquals("sidecar lyric", result.lyric)
         assertEquals(1, reader.sidecarCalls)
         assertEquals(0, reader.localCalls)
+    }
+
+    @Test
+    fun `restore uses preserved originals instead of the edited sidecars`() = runTest {
+        val reader = FakeReader().apply {
+            sidecarValue = ManagedDownloadStorage.DownloadedLyricsBundle(
+                lyric = "wrong online lyric", translatedLyric = "wrong translation",
+                romanizedLyric = "wrong romanization", hasOriginalSidecar = true,
+                hasTranslatedSidecar = true, hasRomanizedSidecar = true
+            )
+        }
+        val song = localSong.copy(
+            originalLyric = "original lyric", originalTranslatedLyric = "",
+            originalRomanizedLyric = "original romanization"
+        )
+
+        val restored = resolveManagedEditSongBaselineAtRestore(context, song, baseline, reader)
+
+        assertEquals("original lyric", restored.lyric)
+        assertEquals("", restored.translatedLyric)
+        assertEquals("original romanization", restored.romanizedLyric)
+    }
+
+    @Test
+    fun `durable managed originals still win over an outdated song snapshot`() = runTest {
+        val reader = FakeReader().apply {
+            metadataValue = ManagedDownloadRestorableMetadata(
+                sourceStableKey = "stable",
+                baseline = ManagedDownloadRestorableMetadata.Baseline(originalLyric = "durable original"),
+                overrides = ManagedDownloadRestorableMetadata.Overrides(originalLyric = "wrong online lyric")
+            )
+        }
+
+        val restored = resolveManagedEditSongBaselineAtRestore(
+            context, localSong.copy(originalLyric = "outdated"), baseline, reader
+        )
+
+        assertEquals("durable original", restored.lyric)
     }
 
     @Test

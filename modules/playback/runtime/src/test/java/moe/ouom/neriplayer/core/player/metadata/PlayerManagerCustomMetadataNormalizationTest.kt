@@ -219,6 +219,21 @@ class PlayerManagerCustomMetadataNormalizationTest {
     }
 
     @Test
+    fun `restoring an explicitly empty original cover clears edited fallback covers`() {
+        for (localOnly in listOf(false, true)) {
+            assertNull(
+                resolveRestoredBaseCoverUrl(
+                    originalCoverUrl = "",
+                    baseCoverUrl = "file:///cache/edited-base.jpg",
+                    currentCustomCoverUrl = "file:///cache/edited-custom.jpg",
+                    preferredLocalCoverUrl = "file:///music/Covers/edited.jpg",
+                    localOnly = localOnly
+                )
+            )
+        }
+    }
+
+    @Test
     fun `restoring a remote base cover keeps it for display`() {
         assertEquals(
             "https://example.com/original-cover.jpg",

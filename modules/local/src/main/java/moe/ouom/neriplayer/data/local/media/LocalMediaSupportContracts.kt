@@ -193,7 +193,8 @@ data class LocalLyricsScanMetadata(
     val embeddedLyric: String? = null,
     val embeddedTranslatedLyric: String? = null,
     val embeddedRomanizedLyric: String? = null,
-    val sourceResolved: Boolean = false
+    val sourceResolved: Boolean = false,
+    val embeddedSourceResolved: Boolean = false
 )
 
 internal data class EmbeddedLyricsReadOptions(

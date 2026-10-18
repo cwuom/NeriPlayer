@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.media
 
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaCompanionTransaction
+import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaUriCandidates
 import moe.ouom.neriplayer.data.local.media.metadata.isStandaloneContentMetadataTarget
 import moe.ouom.neriplayer.data.local.media.metadata.logEditableMetadataWriteTiming
@@ -456,7 +457,8 @@ object LocalMediaSupport {
                         song = song,
                         knownReferences = knownSidecarReferences.lyricReferences,
                         companionTransaction = companionTransaction,
-                        parentChildrenForMutation = knownSidecarReferences.mutationParentChildren
+                        parentChildrenForMutation = knownSidecarReferences.mutationParentChildren,
+                        parentChildrenFresh = knownSidecarReferences.mutationParentChildrenFresh
                     )
                 } else {
                     true
@@ -572,23 +574,65 @@ object LocalMediaSupport {
 
     suspend fun writeLocalLyricsSidecars(
         context: Context,
-        song: SongItem
+        song: SongItem,
+        persistMetadata: Boolean = false
     ): Boolean = withContext(Dispatchers.IO) {
         val startedAtMs = SystemClock.elapsedRealtime()
         val candidates = editableLocalMediaUriCandidates(context, song)
         if (candidates.isEmpty()) return@withContext false
-        val written = candidates.any { sourceUri ->
-            currentCoroutineContext().ensureActive()
-            val file = resolveEditableSidecarFile(context, sourceUri)
-            writeLocalLyricsSidecars(
-                context = context,
-                sourceUri = sourceUri,
-                file = file,
-                displayName = song.localFileName
-                    ?.takeIf(String::isNotBlank)
-                    ?: sourceUri.lastPathSegment.orEmpty(),
-                song = song
-            )
+        val written = LocalMediaMetadataRecoveryStore.withRecoveredTargets(
+            context = context.applicationContext,
+            targetReferences = candidates.map(Uri::toString),
+            blockedResult = false
+        ) {
+            candidates.any { sourceUri ->
+                currentCoroutineContext().ensureActive()
+                val file = resolveEditableSidecarFile(context, sourceUri)
+                val displayName = song.localFileName?.takeIf(String::isNotBlank)
+                    ?: sourceUri.lastPathSegment.orEmpty()
+                val transaction = LocalMediaCompanionTransaction(context, sourceUri.toString())
+                var committed = false
+                try {
+                    val references = resolveContentSidecarReferences(
+                        context, sourceUri, displayName, file, forMutation = true
+                    )
+                    val lyricsWritten = writeLocalLyricsSidecars(
+                        context = context,
+                        sourceUri = sourceUri,
+                        file = file,
+                        displayName = displayName,
+                        song = song,
+                        knownReferences = references.lyricReferences,
+                        companionTransaction = transaction,
+                        parentChildrenForMutation = references.mutationParentChildren,
+                        parentChildrenFresh = references.mutationParentChildrenFresh
+                    )
+                    val metadataWritten = !persistMetadata || lyricsWritten && writeLocalLyricsMetadata(
+                        context = context,
+                        sourceUri = sourceUri,
+                        file = file,
+                        displayName = displayName,
+                        song = song,
+                        knownReference = references.metadataReference,
+                        writeFullMetadata = true,
+                        writeLyricFields = true,
+                        companionTransaction = transaction,
+                        parentChildrenForMutation = references.mutationParentChildren
+                    )
+                    if (lyricsWritten && metadataWritten) {
+                        currentCoroutineContext().ensureActive()
+                        if (transaction.record != null) transaction.commit()
+                        committed = true
+                    }
+                    committed
+                } finally {
+                    if (!committed) {
+                        runCatching { transaction.rollback() }
+                            .onFailure { error -> logEditableMetadataFailure("rollback_lyric_sidecars", sourceUri, error) }
+                    }
+                    clearLyricsLookupCache()
+                }
+            }
         }
         if (written) clearLyricsLookupCache()
         val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
@@ -754,7 +798,8 @@ object LocalMediaSupport {
 
     internal data class DocumentLyricReferenceResolution(
         val references: NearbyLyricReferences,
-        val createdReferences: Map<String, DocumentChild>
+        val createdReferences: Map<String, DocumentChild>,
+        val lookupSucceeded: Boolean = true
     )
 
 
@@ -1098,7 +1143,7 @@ object LocalMediaSupport {
 
 
 
-    internal fun readLocalMetadataSidecarFast(
+    fun readLocalMetadataSidecarFast(
         context: Context,
         song: SongItem,
         metadataReference: String? = null
@@ -1517,7 +1562,8 @@ object LocalMediaSupport {
     internal data class ContentSidecarReferences(
         val metadataReference: String?,
         val lyricReferences: NearbyLyricReferences,
-        val mutationParentChildren: List<DocumentChild>? = null
+        val mutationParentChildren: List<DocumentChild>? = null,
+        val mutationParentChildrenFresh: Boolean = false
     )
 
 
@@ -1713,7 +1759,7 @@ object LocalMediaSupport {
 
 
     internal fun String?.takeMeaningfulLocalMetadata(): String? {
-        val value = this?.trim().orEmpty()
+        val value = this?.trim()?.let(::repairLocalMetadataText).orEmpty()
         if (value.isBlank()) return null
         return value.takeUnless {
             it.lowercase(Locale.ROOT) in LOCAL_METADATA_PLACEHOLDERS
@@ -1760,9 +1806,19 @@ object LocalMediaSupport {
     }
 
     private fun decodeContainerBytesWithBestScore(bytes: ByteArray): String? {
+        decodeLocalMetadataUtf8(bytes)?.let { return it.normalizeDecodedText().trim(NUL_CHAR, ' ') }
+        val latin1 = bytes.decodeContainerBytes(StandardCharsets.ISO_8859_1)
+        val repaired = repairLocalMetadataText(latin1)
+        if (repaired != latin1) return repaired
         return containerTextCharsets
+            .filter { charset -> charset.isContainerFallbackCharset(bytes) }
             .maxByOrNull { charset -> scoreDecodedText(bytes.decodeContainerBytes(charset)) }
             ?.let { charset -> bytes.decodeContainerBytes(charset) }
+    }
+
+    private fun Charset.isContainerFallbackCharset(bytes: ByteArray): Boolean {
+        return this == StandardCharsets.ISO_8859_1 || name() == "windows-1252" ||
+            (bytes.any { it == 0.toByte() } && (this == StandardCharsets.UTF_16LE || this == StandardCharsets.UTF_16BE))
     }
 
 
