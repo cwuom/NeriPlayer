@@ -1060,6 +1060,7 @@ private fun MoreOptionsEncyclopediaPage(
     navigation: MoreOptionsSheetNavigation
 ) {
     if (targetState != MoreOptionsPage.ENCYCLOPEDIA) return
+    val actions = MoreOptionsEncyclopediaActions(owner, navigation)
     SongEncyclopediaContent(
         viewModel = viewModel,
         song = actualSong,
@@ -1067,37 +1068,46 @@ private fun MoreOptionsEncyclopediaPage(
         onDismiss = owner.onBack,
         // 半屏面板继续下拉超过阈值时，直接收起整个更多面板。
         onCloseSheet = owner.onDismissRequest,
-        // 百科页跳转艺人 / 歌单：导航发生在播放页覆盖层之下，必须先把更多面板收起、
-        // 再退出播放页，否则用户看不到任何变化。与 MoreOptionsMainActions.onAlbum 保持一致。
-        onEnterPlaylist = { playlist ->
-            owner.dismiss {
-                navigation.onEnterPlaylist(playlist)
-                navigation.onNavigateUp()
-            }
-        },
-        onEnterArtist = { artist ->
-            owner.dismiss {
-                navigation.onEnterArtist(artist)
-                navigation.onNavigateUp()
-            }
-        },
-        onPlaySongs = { songs, index ->
-            PlayerManager.playPlaylist(songs, index)
-        },
+        onEnterPlaylist = actions.onEnterPlaylist,
+        onEnterArtist = actions.onEnterArtist,
+        onPlaySongs = actions.onPlaySongs,
         // 先收起更多面板，再由宿主打开原生评论面板：不在百科之上再叠一层评论弹层。
-        onOpenComments = { source ->
-            openEncyclopediaComments(source, owner, navigation)
-        }
+        onOpenComments = actions.onOpenComments
     )
 }
 
-/** 先收起更多面板，再由宿主打开原生评论面板：不在百科之上再叠一层评论弹层。 */
-private fun openEncyclopediaComments(
-    source: CommentSource,
-    owner: MoreOptionsSheetOwner,
-    navigation: MoreOptionsSheetNavigation
+/**
+ * 百科页对外暴露的四个回调。
+ *
+ * 之所以把它们提成类字段、而不是直接写成 [MoreOptionsEncyclopediaPage] 里的 lambda 字面量：
+ * 字面量会捕获 owner / navigation，Compose 编译器会为它们生成记忆化分支，把该 composable
+ * 的圈复杂度推高到 CRAP 门禁之上；引用字段则不产生额外分支。
+ */
+private class MoreOptionsEncyclopediaActions(
+    private val owner: MoreOptionsSheetOwner,
+    private val navigation: MoreOptionsSheetNavigation
 ) {
-    owner.dismiss { navigation.onOpenComments(source) }
+    // 百科页跳转艺人 / 歌单：导航发生在播放页覆盖层之下，必须先把更多面板收起、
+    // 再退出播放页，否则用户看不到任何变化。与 MoreOptionsMainActions.onAlbum 保持一致。
+    val onEnterPlaylist: (PlaylistSummary) -> Unit = { playlist ->
+        owner.dismiss {
+            navigation.onEnterPlaylist(playlist)
+            navigation.onNavigateUp()
+        }
+    }
+    val onEnterArtist: (NeteaseArtistSummary) -> Unit = { artist ->
+        owner.dismiss {
+            navigation.onEnterArtist(artist)
+            navigation.onNavigateUp()
+        }
+    }
+    val onPlaySongs: (List<SongItem>, Int) -> Unit = { songs, index ->
+        PlayerManager.playPlaylist(songs, index)
+    }
+    // 先收起更多面板，再由宿主打开原生评论面板：不在百科之上再叠一层评论弹层。
+    val onOpenComments: (CommentSource) -> Unit = { source ->
+        owner.dismiss { navigation.onOpenComments(source) }
+    }
 }
 
 @Composable
