@@ -136,7 +136,7 @@ import moe.ouom.neriplayer.ui.component.download.DownloadedSongDeleteProgressCar
 import moe.ouom.neriplayer.ui.component.download.isDownloadedSongDeletionRunning
 import moe.ouom.neriplayer.ui.component.download.shouldShowDownloadedSongDeleteProgress
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
-import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionMoreMenu
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionActions
 import moe.ouom.neriplayer.ui.screen.playlist.curation.LocalCurationEntryAction
 import moe.ouom.neriplayer.ui.screen.playlist.curation.LocalCurationSheet
 import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertDialog
@@ -598,7 +598,7 @@ internal fun LocalPlaylistDetailModernContent(
                                         contentDescription = stringResource(CoreCommonR.string.common_delete_selected)
                                     )
                                 }
-                                PlaylistSelectionMoreMenu(
+                                PlaylistSelectionActions(
                                     allSelected = allSelected,
                                     onToggleSelectAll = {
                                         selectedKeysState.value = toggleDisplayedSongSelection(

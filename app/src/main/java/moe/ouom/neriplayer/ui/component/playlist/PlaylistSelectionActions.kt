@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.component.playlist
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.filled.CheckBox
@@ -23,7 +24,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 
 @Composable
-internal fun PlaylistSelectionMoreMenu(
+internal fun PlaylistSelectionActions(
     allSelected: Boolean,
     onToggleSelectAll: () -> Unit,
     canExport: Boolean,
@@ -35,31 +36,57 @@ internal fun PlaylistSelectionMoreMenu(
     canCurateLocalAssets: Boolean = false,
     onCurateLocalAssets: (() -> Unit)? = null
 ) {
+    Row {
+        HapticIconButton(onClick = onToggleSelectAll) {
+            Icon(
+                imageVector = if (allSelected) {
+                    Icons.Filled.CheckBox
+                } else {
+                    Icons.Filled.CheckBoxOutlineBlank
+                },
+                contentDescription = stringResource(
+                    if (allSelected) {
+                        CoreCommonR.string.action_deselect_all
+                    } else {
+                        CoreCommonR.string.action_select_all
+                    }
+                )
+            )
+        }
+        HapticIconButton(onClick = onExport, enabled = canExport) {
+            Icon(
+                Icons.AutoMirrored.Outlined.PlaylistAdd,
+                contentDescription = stringResource(CoreCommonR.string.cd_export_playlist)
+            )
+        }
+        if (onInsert != null || onCurateLocalAssets != null || onSync != null) {
+            PlaylistSelectionMoreMenu(
+                canSync = canSync,
+                onSync = onSync,
+                canInsert = canInsert,
+                onInsert = onInsert,
+                canCurateLocalAssets = canCurateLocalAssets,
+                onCurateLocalAssets = onCurateLocalAssets
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistSelectionMoreMenu(
+    canSync: Boolean,
+    onSync: (() -> Unit)?,
+    canInsert: Boolean,
+    onInsert: (() -> Unit)?,
+    canCurateLocalAssets: Boolean,
+    onCurateLocalAssets: (() -> Unit)?
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         HapticIconButton(onClick = { expanded = true }) {
             Icon(Icons.Filled.MoreVert, stringResource(CoreCommonR.string.cd_more_actions))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
-                text = {
-                    Text(stringResource(if (allSelected) {
-                        CoreCommonR.string.action_deselect_all
-                    } else {
-                        CoreCommonR.string.action_select_all
-                    }))
-                },
-                leadingIcon = {
-                    Icon(
-                        if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                        contentDescription = null
-                    )
-                },
-                onClick = {
-                    expanded = false
-                    onToggleSelectAll()
-                }
-            )
             if (onInsert != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(CoreCommonR.string.playlist_insert_action)) },
@@ -71,17 +98,6 @@ internal fun PlaylistSelectionMoreMenu(
                     }
                 )
             }
-            DropdownMenuItem(
-                text = { Text(stringResource(CoreCommonR.string.cd_export_playlist)) },
-                leadingIcon = {
-                    Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = null)
-                },
-                enabled = canExport,
-                onClick = {
-                    expanded = false
-                    onExport()
-                }
-            )
             if (onCurateLocalAssets != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(CoreCommonR.string.local_curation_entry)) },

@@ -118,7 +118,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
-import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionMoreMenu
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionActions
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
@@ -589,7 +589,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
                             )
                         }
-                        PlaylistSelectionMoreMenu(
+                        PlaylistSelectionActions(
                             allSelected = allSelected,
                             onToggleSelectAll = {
                                 if (allSelected) {
