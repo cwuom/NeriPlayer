@@ -1,5 +1,4 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.actions
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -22,9 +21,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.actions
  * File: moe.ouom.neriplayer.ui.screen.nowplaying.actions/SongEncyclopediaSimilarSongsSection
  * Created: 2025/10/17
  */
-
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,14 +33,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -54,9 +51,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaSimilarSong
-
+import androidx.compose.ui.Alignment
 private const val SIMILAR_SONG_EXPAND_THRESHOLD = 5
-
 /**
  * 模块七 喜欢这首歌的人也爱听。
  *
@@ -86,27 +82,29 @@ internal fun SongEncyclopediaSimilarSongsSection(
                 )
             }
             if (similarSongs.size > SIMILAR_SONG_EXPAND_THRESHOLD) {
-                SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.End
-            ) {
-                Text(
+                SongEncyclopediaActionSpacer()
+                SongEncyclopediaSectionActionRow {
+                    SongEncyclopediaExpandAction(
+                        expanded = expanded,
+                        onToggle = { expanded = !expanded }
+                    )
+                    SongEncyclopediaSectionAction(
+                        icon = Icons.Outlined.PlayArrow,
+                        text = stringResource(CoreCommonR.string.encyclopedia_action_play_all),
+                        onClick = onPlayAll
+                    )
+                }
+            } else {
+                SongEncyclopediaActionSpacer()
+                SongEncyclopediaSectionAction(
+                    icon = Icons.Outlined.PlayArrow,
                     text = stringResource(CoreCommonR.string.encyclopedia_action_play_all),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .encyclopediaClickable(onPlayAll)
-                        .padding(8.dp)
+                    onClick = onPlayAll
                 )
             }
         }
     }
 }
-
 @Composable
 private fun SongEncyclopediaSimilarSongRow(
     index: Int,
@@ -146,7 +144,6 @@ private fun SongEncyclopediaSimilarSongRow(
         }
     }
 }
-
 @Composable
 private fun SongEncyclopediaSongCover(coverUrl: String?) {
     val size = 40.dp
@@ -170,7 +167,6 @@ private fun SongEncyclopediaSongCover(coverUrl: String?) {
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
     )
 }
-
 /** 供模块八复用的封面占位逻辑（同尺寸）。 */
 @Composable
 internal fun SongEncyclopediaPlaylistCover(coverUrl: String?, size: androidx.compose.ui.unit.Dp) {

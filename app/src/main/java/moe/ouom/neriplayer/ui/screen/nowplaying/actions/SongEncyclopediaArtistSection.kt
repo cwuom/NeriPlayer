@@ -1,5 +1,4 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.actions
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -22,7 +21,6 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.actions
  * File: moe.ouom.neriplayer.ui.screen.nowplaying.actions/SongEncyclopediaArtistSection
  * Created: 2025/10/17
  */
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,13 +34,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -52,10 +49,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo
-
+import androidx.compose.ui.Alignment
 private const val ENCYCLOPEDIA_ARTIST_BRIEF_MAX_LINES = 4
 private const val ENCYCLOPEDIA_ARTIST_AVATAR_SIZE_DP = 48
-
 /**
  * 模块五 关于艺人。
  *
@@ -104,7 +100,6 @@ internal fun SongEncyclopediaArtistSection(
         SongEncyclopediaArtistBrief(artist)
     }
 }
-
 @Composable
 private fun SongEncyclopediaArtistAvatar(artist: EncyclopediaArtistInfo) {
     val size = ENCYCLOPEDIA_ARTIST_AVATAR_SIZE_DP.dp
@@ -128,7 +123,6 @@ private fun SongEncyclopediaArtistAvatar(artist: EncyclopediaArtistInfo) {
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
     )
 }
-
 @Composable
 private fun SongEncyclopediaArtistBrief(artist: EncyclopediaArtistInfo) {
     val brief = artist.briefDesc?.takeIf { it.isNotBlank() }
@@ -145,9 +139,9 @@ private fun SongEncyclopediaArtistBrief(artist: EncyclopediaArtistInfo) {
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.fillMaxWidth()
     )
+    SongEncyclopediaActionSpacer()
     SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
 }
-
 private fun buildEncyclopediaArtistMeta(
     context: android.content.Context,
     artist: EncyclopediaArtistInfo

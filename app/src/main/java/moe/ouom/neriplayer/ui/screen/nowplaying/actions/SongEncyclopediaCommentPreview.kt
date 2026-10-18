@@ -2,13 +2,9 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.actions
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,7 +13,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -27,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentSource
 import moe.ouom.neriplayer.ui.component.comment.CommentItem
+import moe.ouom.neriplayer.ui.component.comment.CommentLoadingBlock
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentViewModel
 
@@ -63,28 +59,25 @@ internal fun SongEncyclopediaCommentPreview(
     ) {
         when (ui.status) {
             CommentListStatus.IDLE,
-            CommentListStatus.LOADING -> Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-            }
+            CommentListStatus.LOADING -> CommentLoadingBlock()
 
             CommentListStatus.EMPTY -> {
-                SongEncyclopediaEmptyHint(CoreCommonR.string.comment_empty)
-                SongEncyclopediaCommentShowAll(onOpenAll)
+                SongEncyclopediaActionSpacer()
+                SongEncyclopediaSectionAction(
+                    icon = Icons.Outlined.Forum,
+                    text = stringResource(CoreCommonR.string.encyclopedia_comment_show_all),
+                    onClick = onOpenAll
+                )
             }
 
             CommentListStatus.ERROR -> Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = stringResource(CoreCommonR.string.encyclopedia_comment_preview_failed),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
+                SongEncyclopediaRetryAction(onRetry = { commentViewModel.retry() })
+                SongEncyclopediaActionSpacer()
+                SongEncyclopediaSectionAction(
+                    icon = Icons.Outlined.Forum,
+                    text = stringResource(CoreCommonR.string.encyclopedia_comment_show_all),
+                    onClick = onOpenAll
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    SongEncyclopediaExpandAction(expanded = false, onToggle = { commentViewModel.retry() })
-                    SongEncyclopediaCommentShowAll(onOpenAll)
-                }
             }
 
             CommentListStatus.SUCCESS -> {
@@ -119,21 +112,13 @@ internal fun SongEncyclopediaCommentPreview(
                         }
                     }
                 }
-                SongEncyclopediaCommentShowAll(onOpenAll)
+                SongEncyclopediaActionSpacer()
+                SongEncyclopediaSectionAction(
+                    icon = Icons.Outlined.Forum,
+                    text = stringResource(CoreCommonR.string.encyclopedia_comment_show_all),
+                    onClick = onOpenAll
+                )
             }
         }
     }
-}
-
-/** 「查看全部评论」入口，复用百科统一的文字按钮样式。 */
-@Composable
-private fun SongEncyclopediaCommentShowAll(onClick: () -> Unit) {
-    Text(
-        text = stringResource(CoreCommonR.string.encyclopedia_comment_show_all),
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier
-            .encyclopediaClickable(onClick)
-            .padding(vertical = 8.dp)
-    )
 }

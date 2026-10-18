@@ -53,4 +53,32 @@ class MoreOptionsSheetBackTargetTest {
         owner.back()
         assertEquals(MoreOptionsPage.EDIT_INFO, owner.page)
     }
+
+    @Test
+    fun `main page lets the sheet own the back gesture for its dismiss animation`() {
+        assertTrue(owner().canPredictiveDismiss)
+    }
+
+    @Test
+    fun `sub pages keep the back gesture with the animated page transition`() {
+        val owner = owner()
+        owner.open(MoreOptionsPage.ENCYCLOPEDIA)
+
+        assertFalse(owner.canPredictiveDismiss)
+    }
+
+    @Test
+    fun `a sheet opened straight on a sub page owns the back gesture because it dismisses`() {
+        val owner = owner(initialPage = MoreOptionsPage.LYRIC_BEHAVIOR)
+
+        assertTrue(owner.canPredictiveDismiss)
+    }
+
+    @Test
+    fun `saving song info disables the predictive dismiss gesture`() {
+        val owner = owner()
+        owner.setEditSaving(true)
+
+        assertFalse(owner.canPredictiveDismiss)
+    }
 }

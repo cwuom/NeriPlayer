@@ -52,6 +52,7 @@ internal fun SongEncyclopediaSongDetailSection(data: SongEncyclopedia) {
     ) {
         visible.forEach { (labelRes, value) -> SongEncyclopediaRow(labelRes, value) }
         if (rows.size > SONG_DETAIL_COLLAPSED_COUNT) {
+            SongEncyclopediaActionSpacer()
             SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
         }
     }

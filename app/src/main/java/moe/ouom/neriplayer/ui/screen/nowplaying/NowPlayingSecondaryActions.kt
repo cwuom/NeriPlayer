@@ -1074,9 +1074,18 @@ private fun MoreOptionsEncyclopediaPage(
         },
         // 先收起更多面板，再由宿主打开原生评论面板：不在百科之上再叠一层评论弹层。
         onOpenComments = { source ->
-            owner.dismiss { navigation.onOpenComments(source) }
+            openEncyclopediaComments(source, owner, navigation)
         }
     )
+}
+
+/** 先收起更多面板，再由宿主打开原生评论面板：不在百科之上再叠一层评论弹层。 */
+private fun openEncyclopediaComments(
+    source: CommentSource,
+    owner: MoreOptionsSheetOwner,
+    navigation: MoreOptionsSheetNavigation
+) {
+    owner.dismiss { navigation.onOpenComments(source) }
 }
 
 @Composable

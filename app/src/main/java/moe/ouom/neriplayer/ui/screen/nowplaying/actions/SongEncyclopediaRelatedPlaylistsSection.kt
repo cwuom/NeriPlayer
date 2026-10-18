@@ -1,5 +1,4 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.actions
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -22,7 +21,6 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.actions
  * File: moe.ouom.neriplayer.ui.screen.nowplaying.actions/SongEncyclopediaRelatedPlaylistsSection
  * Created: 2025/10/17
  */
-
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,22 +31,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaRelatedPlaylist
-
+import androidx.compose.ui.Alignment
 private const val RELATED_PLAYLIST_EXPAND_THRESHOLD = 3
 private val ENCYCLOPEDIA_PLAYLIST_COVER_SIZE = 48.dp
-
 /**
  * 模块八 相关歌单。
  *
@@ -75,12 +71,15 @@ internal fun SongEncyclopediaRelatedPlaylistsSection(
                 )
             }
             if (playlists.size > RELATED_PLAYLIST_EXPAND_THRESHOLD) {
-                SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
+                SongEncyclopediaActionSpacer()
+                SongEncyclopediaExpandAction(
+                    expanded = expanded,
+                    onToggle = { expanded = !expanded }
+                )
             }
         }
     }
 }
-
 @Composable
 private fun SongEncyclopediaRelatedPlaylistRow(
     playlist: EncyclopediaRelatedPlaylist,

@@ -1,5 +1,4 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.actions
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -22,7 +21,6 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.actions
  * File: moe.ouom.neriplayer.ui.screen.nowplaying.actions/SongEncyclopediaContent
  * Created: 2025/10/16
  */
-
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
@@ -45,12 +43,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -66,6 +61,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.encyclopedia.SongEncyclopedia
@@ -74,9 +70,8 @@ import moe.ouom.neriplayer.data.model.encyclopedia.encyclopediaSongKey
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.SongEncyclopediaUiState
-
+import androidx.compose.ui.Alignment
 internal const val SONG_ENCYCLOPEDIA_TEST_TAG = "song_encyclopedia_content"
-
 /**
  * 歌曲百科二级页。
  *
@@ -97,16 +92,13 @@ internal fun SongEncyclopediaContent(
 ) {
     val state by viewModel.encyclopediaState.collectAsStateWithLifecycle()
     val songKey = song.encyclopediaSongKey()
-
     LaunchedEffect(songKey) {
         viewModel.loadEncyclopedia(song)
     }
     DisposableEffect(Unit) {
         onDispose { viewModel.cancelEncyclopediaLoad() }
     }
-
     val commentSource = remember(song) { resolveCommentSource(song) }
-
     SongEncyclopediaStateContent(
         state = state.forSongKey(songKey),
         songKey = songKey,
@@ -123,7 +115,6 @@ internal fun SongEncyclopediaContent(
         onCloseSheet = onCloseSheet
     )
 }
-
 @Composable
 private fun SongEncyclopediaStateContent(
     state: SongEncyclopediaUiState,
@@ -192,7 +183,6 @@ private fun SongEncyclopediaStateContent(
         }
     }
 }
-
 @Composable
 private fun SongEncyclopediaHeader(
     onDismiss: () -> Unit,
@@ -236,7 +226,6 @@ private fun SongEncyclopediaHeader(
         }
     }
 }
-
 @Composable
 private fun SongEncyclopediaLoading() {
     Box(
@@ -256,7 +245,6 @@ private fun SongEncyclopediaLoading() {
         }
     }
 }
-
 @Composable
 private fun SongEncyclopediaMessage(messageRes: Int) {
     Box(
@@ -272,7 +260,6 @@ private fun SongEncyclopediaMessage(messageRes: Int) {
         )
     }
 }
-
 @Composable
 private fun SongEncyclopediaFailure(onRetry: () -> Unit) {
     Row(
@@ -297,7 +284,6 @@ private fun SongEncyclopediaFailure(onRetry: () -> Unit) {
         )
     }
 }
-
 /** 模块三歌曲详情 + 模块二听歌记录 + 模块五艺人 + 模块六评论 + 模块七/八。 */
 @Composable
 private fun SongEncyclopediaBody(
@@ -360,7 +346,6 @@ private fun SongEncyclopediaBody(
     }
     SongEncyclopediaSourceNote()
 }
-
 @Composable
 private fun SongEncyclopediaSourceNote() {
     Spacer(Modifier.height(12.dp))
@@ -371,7 +356,6 @@ private fun SongEncyclopediaSourceNote() {
     )
     Spacer(Modifier.height(8.dp))
 }
-
 /** 供相邻文件复用的空态文案。 */
 @Composable
 internal fun SongEncyclopediaEmptyHint(textRes: Int) {
@@ -382,26 +366,8 @@ internal fun SongEncyclopediaEmptyHint(textRes: Int) {
         modifier = Modifier.padding(vertical = 8.dp)
     )
 }
-
-/** 供相邻文件复用的「展开全部 / 收起」入口。 */
-@Composable
-internal fun SongEncyclopediaExpandAction(expanded: Boolean, onToggle: () -> Unit) {
-    Text(
-        text = stringResource(
-            if (expanded) CoreCommonR.string.encyclopedia_action_collapse
-            else CoreCommonR.string.encyclopedia_action_expand
-        ),
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier
-            .clickable(onClick = onToggle)
-            .padding(vertical = 8.dp)
-    )
-}
-
 internal fun Modifier.encyclopediaClickable(onClick: () -> Unit): Modifier =
     this.then(Modifier.clickable(onClick = onClick))
-
 /**
  * 模块七 播放队列构造：把相似歌曲转成可播放的 [SongItem]。
  *
@@ -427,13 +393,11 @@ internal fun buildEncyclopediaSimilarQueue(
         )
     }
 }
-
 /** 发行日期只显示到「年月日」，且使用数据源给出的毫秒时间戳。 */
 internal fun formatEncyclopediaDate(epochMs: Long): String {
     val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     return formatter.format(Date(epochMs))
 }
-
 /** 播放量按「万」取整展示，接口给 0 时也如实显示 0。 */
 internal fun formatEncyclopediaPlayCount(playCount: Long): String {
     return if (playCount >= 10_000L) {
