@@ -1067,8 +1067,20 @@ private fun MoreOptionsEncyclopediaPage(
         onDismiss = owner.onBack,
         // 半屏面板继续下拉超过阈值时，直接收起整个更多面板。
         onCloseSheet = owner.onDismissRequest,
-        onEnterPlaylist = navigation.onEnterPlaylist,
-        onEnterArtist = navigation.onEnterArtist,
+        // 百科页跳转艺人 / 歌单：导航发生在播放页覆盖层之下，必须先把更多面板收起、
+        // 再退出播放页，否则用户看不到任何变化。与 MoreOptionsMainActions.onAlbum 保持一致。
+        onEnterPlaylist = { playlist ->
+            owner.dismiss {
+                navigation.onEnterPlaylist(playlist)
+                navigation.onNavigateUp()
+            }
+        },
+        onEnterArtist = { artist ->
+            owner.dismiss {
+                navigation.onEnterArtist(artist)
+                navigation.onNavigateUp()
+            }
+        },
         onPlaySongs = { songs, index ->
             PlayerManager.playPlaylist(songs, index)
         },
