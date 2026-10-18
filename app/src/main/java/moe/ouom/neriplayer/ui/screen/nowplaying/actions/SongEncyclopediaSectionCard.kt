@@ -51,7 +51,7 @@ import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 /** 卡片之间的标准间距，保证各模块在视觉上彼此分离。 */
 internal val SongEncyclopediaSectionSpacing: Dp
     @Composable @ReadOnlyComposable
-    get() = NeriDesign.tokens.sectionSpacing
+    get() = if (NeriDesign.isClean) NeriDesign.tokens.sectionSpacing else 12.dp
 
 /**
  * 百科模块独立容器。
