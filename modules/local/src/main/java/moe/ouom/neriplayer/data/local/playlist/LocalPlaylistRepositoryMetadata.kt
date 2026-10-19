@@ -109,6 +109,7 @@ internal fun LocalPlaylistRepository.mergeSongMetadataForPersistence(
     clearCoverUrl: Boolean = false,
     clearOriginalCoverUrl: Boolean = false
 ): SongItem {
+    val restoreEmptyBaseCover = newSongInfo.originalCoverUrl == "" && newSongInfo.coverUrl == null
     val mergedSong = newSongInfo.copy(
         addedAt = currentSong.addedAt,
         sourceModifiedAtMs = currentSong.sourceModifiedAtMs ?: newSongInfo.sourceModifiedAtMs,
@@ -120,7 +121,7 @@ internal fun LocalPlaylistRepository.mergeSongMetadataForPersistence(
             ?: newSongInfo.createdAtConfidence,
         membershipAddedAtMs = currentSong.membershipAddedAtMs
             ?: newSongInfo.membershipAddedAtMs,
-        coverUrl = if (clearCoverUrl) {
+        coverUrl = if (clearCoverUrl || restoreEmptyBaseCover) {
             null
         } else {
             newSongInfo.coverUrl.takeIf { !it.isNullOrBlank() }
@@ -129,7 +130,7 @@ internal fun LocalPlaylistRepository.mergeSongMetadataForPersistence(
         originalCoverUrl = if (clearOriginalCoverUrl) {
             null
         } else {
-            newSongInfo.originalCoverUrl.takeIf { !it.isNullOrBlank() }
+            newSongInfo.originalCoverUrl.takeIf { it == "" || !it.isNullOrBlank() }
                 ?: currentSong.originalCoverUrl
                 ?: currentSong.coverUrl.takeUnless { clearCoverUrl }
         },

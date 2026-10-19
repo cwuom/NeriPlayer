@@ -762,48 +762,56 @@ class DownloadCorePublicationInstrumentedTest {
 
     @Test
     fun safPreparedFinalizationRecoveryScansEachRootOnlyOnce() = runBlocking {
-        withStorage(true) {
-            val root = ManagedDownloadStorage.resolveRootBlocking(context)
-            val journalRoot = ManagedDownloadStorage.terminalTemporaryWriteCleanupJournalRoot(root)
-            val preferences = context.getSharedPreferences(
-                "terminal_temporary_write_cleanup_v1",
-                Context.MODE_PRIVATE
-            )
-            assertTrue(preferences.edit().clear().commit())
-            try {
-                repeat(64) { index ->
-                    assertTrue(
-                        PersistentTerminalTemporaryWriteCleanupJournal.prepareFinalizationTargets(
-                            context = context,
-                            root = journalRoot,
-                            pendingAudioName = "pending-$index.mp3",
-                            finalAudioName = "final-$index.mp3",
-                            expectedOperationId = "operation-$index",
-                            targets = listOf(
-                                TerminalTemporaryWriteCleanupTarget("final-$index.mp3.npmeta.json")
+        GlobalDownloadManager.startupRecoveryMutex.withLock {
+            GlobalDownloadManager.pendingDownloadRecoverySlot.withLock {
+                awaitConcurrentCatalogReadersIdle()
+                withStorage(saf = true, startupRecoveryLockHeld = true) {
+                    withTerminalTemporaryWriteCleanupPaused {
+                        val root = ManagedDownloadStorage.resolveRootBlocking(context)
+                        val journalRoot = ManagedDownloadStorage.terminalTemporaryWriteCleanupJournalRoot(root)
+                        val preferences = context.getSharedPreferences(
+                            "terminal_temporary_write_cleanup_v1",
+                            Context.MODE_PRIVATE
+                        )
+                        assertTrue(preferences.edit().clear().commit())
+                        try {
+                            repeat(64) { index ->
+                                assertTrue(
+                                    PersistentTerminalTemporaryWriteCleanupJournal.prepareFinalizationTargets(
+                                        context = context,
+                                        root = journalRoot,
+                                        pendingAudioName = "pending-$index.mp3",
+                                        finalAudioName = "final-$index.mp3",
+                                        expectedOperationId = "operation-$index",
+                                        targets = listOf(
+                                            TerminalTemporaryWriteCleanupTarget("final-$index.mp3.npmeta.json")
+                                        )
+                                    ) != null
+                                )
+                            }
+                            val provider = (root as ManagedDownloadRootHandle.TreeRoot).tree.uri
+                            awaitConcurrentCatalogReadersIdle()
+                            ManagedDownloadStorage.treeChildRegistry.clear()
+                            fun queryCount() = requireNotNull(
+                                context.contentResolver.call(
+                                    provider,
+                                    ManagedDownloadMigrationTestDocumentProvider.QUERY_COUNT,
+                                    null,
+                                    null
+                                )
+                            ).getInt("count")
+                            val before = queryCount()
+                            ManagedDownloadStorage.recoverPreparedTerminalTemporaryWriteFinalizations(context)
+                            assertEquals(
+                                "recovery cost must depend on roots instead of preparation count",
+                                1,
+                                queryCount() - before
                             )
-                        ) != null
-                    )
+                        } finally {
+                            assertTrue(preferences.edit().clear().commit())
+                        }
+                    }
                 }
-                val provider = (root as ManagedDownloadRootHandle.TreeRoot).tree.uri
-                ManagedDownloadStorage.treeChildRegistry.clear()
-                fun queryCount() = requireNotNull(
-                    context.contentResolver.call(
-                        provider,
-                        ManagedDownloadMigrationTestDocumentProvider.QUERY_COUNT,
-                        null,
-                        null
-                    )
-                ).getInt("count")
-                val before = queryCount()
-                ManagedDownloadStorage.recoverPreparedTerminalTemporaryWriteFinalizations(context)
-                assertEquals(
-                    "recovery cost must depend on roots instead of preparation count",
-                    1,
-                    queryCount() - before
-                )
-            } finally {
-                assertTrue(preferences.edit().clear().commit())
             }
         }
     }

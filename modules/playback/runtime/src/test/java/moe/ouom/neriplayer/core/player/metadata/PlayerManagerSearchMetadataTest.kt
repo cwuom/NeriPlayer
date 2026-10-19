@@ -17,6 +17,45 @@ import org.junit.Test
 class PlayerManagerSearchMetadataTest {
 
     @Test
+    fun `manual matching keeps prepared unknown originals separate from metadata overrides`() {
+        for (customOverride in listOf(false, true)) {
+            val original = SongItem(1L, "song", "artist", "netease", 0L, 1L, null,
+                matchedLyric = "metadata edit", matchedTranslatedLyric = "metadata translation",
+                matchedRomanizedLyric = "metadata romanization")
+
+            val matched = applyManualSearchMetadata(
+                original, "selected song", "selected artist", null, "selected lyric", "selected translation",
+                MusicPlatform.CLOUD_MUSIC, "selected", customOverride,
+                captureMatchedOriginals = false
+            )
+
+            assertNull(matched.originalLyric)
+            assertNull(matched.originalTranslatedLyric)
+            assertNull(matched.originalRomanizedLyric)
+        }
+    }
+
+    @Test
+    fun `repeated manual matches do not promote the first match to an unknown original`() {
+        for (customOverride in listOf(false, true)) {
+            val original = SongItem(1L, "song", "artist", "netease", 0L, 1L, null)
+            val firstMatch = applyManualSearchMetadata(
+                original, "first song", "first artist", null, "first lyric", "first translation",
+                MusicPlatform.CLOUD_MUSIC, "first", customOverride
+            )
+
+            val secondMatch = applyManualSearchMetadata(
+                firstMatch, "second song", "second artist", null, "second lyric", "second translation",
+                MusicPlatform.QQ_MUSIC, "second", customOverride
+            )
+
+            assertNull(secondMatch.originalLyric)
+            assertNull(secondMatch.originalTranslatedLyric)
+            assertNull(secondMatch.originalRomanizedLyric)
+        }
+    }
+
+    @Test
     fun `manual replacement clears the old romanized track while retaining its restoration baseline`() {
         for (customOverride in listOf(false, true)) {
             for (baseline in listOf(null, "", "[00:01.00]first baseline")) {

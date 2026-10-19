@@ -8,13 +8,18 @@ import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.annotation.RequiresApi
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.download.naming.ParsedManagedDownloadFileName
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
+import moe.ouom.neriplayer.data.local.media.LOCAL_METADATA_SUFFIX
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.isNeteaseManagedSourceStableKey
+import moe.ouom.neriplayer.data.local.media.isMediaStoreSidecarReference
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
+import moe.ouom.neriplayer.data.local.media.repairLocalMetadataText
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
 import java.io.File
 import java.util.Locale
 
@@ -49,15 +54,64 @@ internal fun LocalAudioImportManager.hydrateLocalSongFastIdentity(
     song: SongItem,
     metadataReference: String? = null
 ): SongItem {
-    if (!shouldHydrateLocalSongFastIdentity(song, metadataReference)) {
+    val shouldReadSidecar = shouldHydrateLocalSongFastIdentity(song, metadataReference)
+    if (!isRawId3IdentityCandidate(song) && !shouldReadSidecar) {
         return song
     }
-    val sidecarHydrated = hydrateLocalSongFromMetadataSidecar(
-        context = context,
-        song = song,
-        metadataReference = metadataReference
+    val rawMetadata = readRawId3Identity(context, song)
+    val adjacentMetadata = song.localFilePath?.takeUnless { it.startsWith("content://", ignoreCase = true) }
+        ?.let(::File)?.let { file -> File(file.parentFile, file.name + LOCAL_METADATA_SUFFIX) }
+        ?.takeIf(File::isFile)?.absolutePath
+    val reference = metadataReference ?: adjacentMetadata
+    val sidecarHydrated = if (shouldReadSidecar || reference != null) {
+        hydrateLocalSongFromMetadataSidecar(context, song, reference)
+    } else {
+        song
+    }
+    return repairQuickIdentityFromFileName(hydrateLocalSongRawId3Identity(sidecarHydrated, rawMetadata, song))
+}
+
+internal fun LocalAudioImportManager.toImportedSongItem(context: Context, details: LocalMediaDetails): SongItem {
+    val mapped = LocalMediaSupport.toSongItem(details)
+    if (mapped.matchedLyric == null && mapped.matchedTranslatedLyric == null && mapped.matchedRomanizedLyric == null) {
+        return mapped
+    }
+    val metadata = LocalMediaSupport.readLocalMetadataSidecarFast(context, mapped)
+    val lyrics = runCatching {
+        LocalMediaSupport.inspectLyricsFast(
+            context = context,
+            song = mapped,
+            includeStoredFallback = false,
+            forceRefresh = true
+        )
+    }.getOrRethrowCancellation {
+        NPLogger.w(TAG, "import original lyrics unavailable: ${it.message}")
+    }
+    return mapped.copy(
+        originalLyric = metadata?.originalLyric ?: lyrics?.originalLyricBaseline,
+        originalTranslatedLyric = metadata?.originalTranslatedLyric ?: lyrics?.translatedLyricBaseline,
+        originalRomanizedLyric = metadata?.originalRomanizedLyric ?: lyrics?.romanizedLyricBaseline
     )
-    return repairQuickIdentityFromFileName(sidecarHydrated)
+}
+
+internal fun LocalAudioImportManager.hydrateScannedSongRawIdentity(context: Context, song: SongItem): SongItem {
+    return hydrateLocalSongRawId3Identity(song, readRawId3Identity(context, song), originalSnapshot = song)
+}
+
+internal fun LocalAudioImportManager.hydrateLocalSongFromIndexedMetadataSidecar(
+    context: Context,
+    song: SongItem,
+    metadataReference: String?
+): SongItem {
+    val reference = metadataReference?.trim()?.takeIf(String::isNotBlank)
+        ?.takeUnless(::isMediaStoreSidecarReference) ?: return song
+    val metadata = runCatching {
+        LocalMediaSupport.readTextContent(context, reference)
+            ?.let { LocalMediaSupport.parseLocalMetadataSidecar(reference, it) }
+    }.getOrRethrowCancellation {
+        NPLogger.w(TAG, "indexed metadata sidecar unavailable: ${it.message}")
+    } ?: return song
+    return hydrateLocalSongFromMetadataSidecar(song, metadata)
 }
 
 internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
@@ -72,6 +126,13 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
             metadataReference = metadataReference
         )
     }.getOrNull() ?: return song
+    return hydrateLocalSongFromMetadataSidecar(song, metadata)
+}
+
+private fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
+    song: SongItem,
+    metadata: LocalMetadataSidecar
+): SongItem {
     val resolvedName = firstMeaningfulMetadataValue(
         metadata.customName,
         metadata.name,
@@ -111,10 +172,10 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         reboundCover = reboundCover,
         metadataFallbackCover = metadataFallbackCover
     )
-    val resolvedOriginalCover = selectHydratedLocalCoverReference(
-        sidecarCover = sidecarCover,
+    val resolvedOriginalCover = if (metadata.originalCoverUrl == "") "" else selectHydratedLocalCoverReference(
+        sidecarCover = metadata.originalCoverUrl.normalizeImportedCoverReference(),
         existingCover = song.originalCoverUrl,
-        reboundCover = reboundCover,
+        reboundCover = null,
         metadataFallbackCover = firstMeaningfulMetadataValue(
             metadata.originalCoverUrl,
             metadata.coverUrl
@@ -134,7 +195,10 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
             metadata.audioId,
             metadata.stableKey
         ) != null
-    if (!hasIdentity && metadata.durationMs <= 0L && resolvedCover == null && metadata.sourceModifiedAtMs == null) return song
+    if (!hasIdentity && metadata.durationMs <= 0L && resolvedCover == null && metadata.sourceModifiedAtMs == null &&
+        metadata.originalLyric == null && metadata.originalTranslatedLyric == null &&
+        metadata.originalRomanizedLyric == null
+    ) return song
     return song.copy(
         sourceModifiedAtMs = metadata.sourceModifiedAtMs ?: song.sourceModifiedAtMs,
         id = metadata.songId ?: song.id,
@@ -164,6 +228,9 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         originalArtist = firstMeaningfulMetadataValue(metadata.originalArtist)
             ?: firstMeaningfulMetadataValue(song.originalArtist)
             ?: resolvedArtist,
+        originalLyric = metadata.originalLyric ?: song.originalLyric,
+        originalTranslatedLyric = metadata.originalTranslatedLyric ?: song.originalTranslatedLyric,
+        originalRomanizedLyric = metadata.originalRomanizedLyric ?: song.originalRomanizedLyric,
         customCoverUrl = firstMeaningfulMetadataValue(metadata.customCoverUrl)
             ?: song.customCoverUrl,
         channelId = metadata.channelId?.takeIf(String::isNotBlank) ?: song.channelId,
@@ -254,7 +321,7 @@ internal fun LocalAudioImportManager.isReadableQuickImportedTitle(title: String?
 }
 
 internal fun LocalAudioImportManager.normalizeQuickImportedMetadata(value: String?): String? {
-    val trimmed = value?.trim().orEmpty()
+    val trimmed = value?.trim()?.let(::repairLocalMetadataText).orEmpty()
     if (trimmed.isBlank() || isQuickMetadataPlaceholder(trimmed)) return null
     return trimmed
 }

@@ -20,17 +20,21 @@ internal fun SongItem.withUpdatedLyricsPreservingOriginal(
     newTranslatedLyric: String? = matchedTranslatedLyric,
     newRomanizedLyric: String? = matchedRomanizedLyric,
     userEdited: Boolean = true,
-    revision: Long = if (userEdited) nextLyricSyncRevision(lyricSyncRevision, System.currentTimeMillis()) else lyricSyncRevision
+    revision: Long = if (userEdited) nextLyricSyncRevision(lyricSyncRevision, System.currentTimeMillis()) else lyricSyncRevision,
+    captureMatchedOriginals: Boolean = true
 ): SongItem {
+    val canCaptureMatchedLyrics = captureMatchedOriginals && (!userEdited || lyricSyncEdited != true)
     return copy(
         matchedLyric = newLyrics,
         matchedTranslatedLyric = newTranslatedLyric,
         matchedRomanizedLyric = newRomanizedLyric,
         lyricSyncEdited = userEdited,
         lyricSyncRevision = revision,
-        originalLyric = originalLyric ?: matchedLyric,
-        originalTranslatedLyric = originalTranslatedLyric ?: matchedTranslatedLyric,
-        originalRomanizedLyric = originalRomanizedLyric ?: matchedRomanizedLyric
+        originalLyric = originalLyric ?: matchedLyric.takeIf { canCaptureMatchedLyrics },
+        originalTranslatedLyric = originalTranslatedLyric
+            ?: matchedTranslatedLyric.takeIf { canCaptureMatchedLyrics },
+        originalRomanizedLyric = originalRomanizedLyric
+            ?: matchedRomanizedLyric.takeIf { canCaptureMatchedLyrics }
     )
 }
 
@@ -98,6 +102,7 @@ internal fun resolveRestoredBaseCoverUrl(
     requestedRestoreCoverUrl: String? = null,
     localOnly: Boolean = false
 ): String? {
+    if (originalCoverUrl == "") return null
     val requestedRestoreCover = requestedRestoreCoverUrl
         ?.trim()
         ?.takeIf { it.isNotBlank() }
@@ -176,11 +181,19 @@ internal fun applyManualSearchMetadata(
     matchedSongId: String,
     useCustomOverride: Boolean,
     preserveExistingMatchedLyrics: Boolean = false,
-    lyricRevision: Long = nextLyricSyncRevision(originalSong.lyricSyncRevision, System.currentTimeMillis())
+    lyricRevision: Long = nextLyricSyncRevision(originalSong.lyricSyncRevision, System.currentTimeMillis()),
+    captureMatchedOriginals: Boolean = true
 ): SongItem {
     val originalName = originalSong.originalName ?: originalSong.name
     val originalArtist = originalSong.originalArtist ?: originalSong.artist
     val originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl
+    val canCaptureMatchedLyrics = captureMatchedOriginals && originalSong.lyricSyncEdited != true
+    val originalLyric = originalSong.originalLyric
+        ?: originalSong.matchedLyric.takeIf { canCaptureMatchedLyrics }
+    val originalTranslatedLyric = originalSong.originalTranslatedLyric
+        ?: originalSong.matchedTranslatedLyric.takeIf { canCaptureMatchedLyrics }
+    val originalRomanizedLyric = originalSong.originalRomanizedLyric
+        ?: originalSong.matchedRomanizedLyric.takeIf { canCaptureMatchedLyrics }
     val hasExistingMatchedLyrics = originalSong.matchedLyric != null ||
         originalSong.matchedTranslatedLyric != null
     val keepExistingMatch = preserveExistingMatchedLyrics && hasExistingMatchedLyrics
@@ -219,9 +232,9 @@ internal fun applyManualSearchMetadata(
             originalName = originalName,
             originalArtist = originalArtist,
             originalCoverUrl = originalCoverUrl,
-            originalLyric = originalSong.originalLyric ?: originalSong.matchedLyric,
-            originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric,
-            originalRomanizedLyric = originalSong.originalRomanizedLyric ?: originalSong.matchedRomanizedLyric
+            originalLyric = originalLyric,
+            originalTranslatedLyric = originalTranslatedLyric,
+            originalRomanizedLyric = originalRomanizedLyric
         )
     } else {
         originalSong.copy(
@@ -241,9 +254,9 @@ internal fun applyManualSearchMetadata(
             originalName = originalName,
             originalArtist = originalArtist,
             originalCoverUrl = originalCoverUrl,
-            originalLyric = originalSong.originalLyric ?: originalSong.matchedLyric,
-            originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric,
-            originalRomanizedLyric = originalSong.originalRomanizedLyric ?: originalSong.matchedRomanizedLyric
+            originalLyric = originalLyric,
+            originalTranslatedLyric = originalTranslatedLyric,
+            originalRomanizedLyric = originalRomanizedLyric
         )
     }
 }

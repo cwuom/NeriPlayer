@@ -71,7 +71,9 @@ internal fun LocalMediaSupport.findNearbyLyricFilesImpl(
                 kind = LyricKind.ROMANIZED,
                 extensions = extensions
             )
-        )
+        ),
+        lookupComplete = parent.canRead() && parent.canExecute() &&
+            searchDirectories.all { it.canRead() && it.canExecute() }
     )
 }
 

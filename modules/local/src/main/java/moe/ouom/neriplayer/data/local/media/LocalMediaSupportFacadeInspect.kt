@@ -142,7 +142,7 @@ internal fun LocalMediaSupport.needsLyricSidecarRepairImpl(
         ?: song.originalTranslatedLyric
     val expectedRomanized = song.matchedRomanizedLyric
         ?: song.originalRomanizedLyric
-    if (expectedOriginal == null && expectedTranslated == null && expectedRomanized == null) {
+    if (expectedOriginal.isNullOrBlank() && expectedTranslated.isNullOrBlank() && expectedRomanized.isNullOrBlank()) {
         return false
     }
     val inspected = runCatching {
@@ -158,9 +158,9 @@ internal fun LocalMediaSupport.needsLyricSidecarRepairImpl(
         return true
     }
     return shouldRebuildLyricSidecars(
-        expectedOriginal = expectedOriginal != null,
-        expectedTranslated = expectedTranslated != null,
-        expectedRomanized = expectedRomanized != null,
+        expectedOriginal = !expectedOriginal.isNullOrBlank(),
+        expectedTranslated = !expectedTranslated.isNullOrBlank(),
+        expectedRomanized = !expectedRomanized.isNullOrBlank(),
         hasOriginalSidecar = inspected.hasOriginalSidecar,
         hasTranslatedSidecar = inspected.hasTranslatedSidecar,
         hasRomanizedSidecar = inspected.hasRomanizedSidecar
@@ -291,6 +291,8 @@ internal fun LocalMediaSupport.inspectLyricsFastImpl(
                 context = context,
                 references = knownSidecarReferences
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
@@ -302,6 +304,8 @@ internal fun LocalMediaSupport.inspectLyricsFastImpl(
             inspectLyricsFromDirectFile(
                 file = directFile
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
@@ -328,6 +332,8 @@ internal fun LocalMediaSupport.inspectLyricsFastImpl(
                     song = song
                 ) ?: source.lastPathSegment.orEmpty()
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
@@ -350,6 +356,8 @@ internal fun LocalMediaSupport.inspectLyricsFastImpl(
     val embedded = context?.takeIf { needsEmbeddedFallback }?.let { embeddedContext ->
         try {
             inspectEmbeddedLyrics(embeddedContext, song)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
@@ -379,6 +387,19 @@ internal fun LocalMediaSupport.inspectLyricsFastImpl(
         sourceResolved = isLocalLyricsSourceResolved(
             scannedSource = resolvedScan != null,
             embeddedSource = embedded != null
+        ),
+        embeddedSourceResolved = embedded != null,
+        originalLyricBaseline = originalLocalLyricBaseline(
+            resolvedScan?.original, resolvedScan?.originalSidecarResolved == true,
+            embedded?.embeddedLyric, embedded?.embeddedSourceResolved == true
+        ),
+        translatedLyricBaseline = originalLocalLyricBaseline(
+            resolvedScan?.translated, resolvedScan?.translatedSidecarResolved == true,
+            embedded?.embeddedTranslatedLyric, embedded?.embeddedSourceResolved == true
+        ),
+        romanizedLyricBaseline = originalLocalLyricBaseline(
+            resolvedScan?.romanized, resolvedScan?.romanizedSidecarResolved == true,
+            embedded?.embeddedRomanizedLyric, embedded?.embeddedSourceResolved == true
         )
     )
     if (cacheable && !forceRefresh) {
@@ -416,6 +437,8 @@ internal fun LocalMediaSupport.inspectEmbeddedLyricsImpl(
                 uri = sourceUri,
                 allowDescriptorFallback = true
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (_: Exception) {
@@ -430,6 +453,8 @@ internal fun LocalMediaSupport.inspectEmbeddedLyricsImpl(
                 includeEmbeddedLyrics = options.includeEmbeddedLyrics,
                 includeAudioProperties = options.includeAudioProperties
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (_: Exception) {
@@ -441,7 +466,8 @@ internal fun LocalMediaSupport.inspectEmbeddedLyricsImpl(
             romanizedLyric = metadata.romanizedLyrics,
             embeddedLyric = metadata.lyrics,
             embeddedTranslatedLyric = metadata.translatedLyrics,
-            embeddedRomanizedLyric = metadata.romanizedLyrics
+            embeddedRomanizedLyric = metadata.romanizedLyrics,
+            embeddedSourceResolved = true
         )
     }
     return null

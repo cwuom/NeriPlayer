@@ -94,12 +94,28 @@ internal fun LocalMediaSupport.inspectLyricsForScanImpl(
         romanizedLyric = nearbyRomanizedLyric
             ?: embedded?.romanizedLyrics
             ?: localMetadata?.takeIf { it.hasRomanizedLyricOverride }?.romanizedLyric,
-        hasOriginalSidecar = nearbyFiles.original != null || nearbyReferences.original != null,
-        hasTranslatedSidecar = nearbyFiles.translated != null || nearbyReferences.translated != null,
-        hasRomanizedSidecar = nearbyFiles.romanized != null || nearbyReferences.romanized != null,
+        hasOriginalSidecar = nearbyLyric != null,
+        hasTranslatedSidecar = nearbyTranslatedLyric != null,
+        hasRomanizedSidecar = nearbyRomanizedLyric != null,
         embeddedLyric = embedded?.lyrics,
         embeddedTranslatedLyric = embedded?.translatedLyrics,
-        embeddedRomanizedLyric = embedded?.romanizedLyrics
+        embeddedRomanizedLyric = embedded?.romanizedLyrics,
+        embeddedSourceResolved = embedded != null,
+        originalLyricBaseline = originalLocalLyricBaseline(
+            nearbyLyric, nearbyLyric != null ||
+                nearbyReferences.original == null && nearbyFiles.original == null && nearbyReferences.lookupComplete,
+            embedded?.lyrics, embedded != null
+        ),
+        translatedLyricBaseline = originalLocalLyricBaseline(
+            nearbyTranslatedLyric, nearbyTranslatedLyric != null ||
+                nearbyReferences.translated == null && nearbyFiles.translated == null && nearbyReferences.lookupComplete,
+            embedded?.translatedLyrics, embedded != null
+        ),
+        romanizedLyricBaseline = originalLocalLyricBaseline(
+            nearbyRomanizedLyric, nearbyRomanizedLyric != null ||
+                nearbyReferences.romanized == null && nearbyFiles.romanized == null && nearbyReferences.lookupComplete,
+            embedded?.romanizedLyrics, embedded != null
+        )
     )
 }
 

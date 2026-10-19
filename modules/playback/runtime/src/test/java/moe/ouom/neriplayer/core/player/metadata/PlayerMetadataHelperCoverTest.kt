@@ -66,6 +66,61 @@ class PlayerMetadataHelperCoverTest {
     }
 
     @Test
+    fun `later manual edits do not turn a previous edit into an unknown original`() {
+        val firstEdit = song.withUpdatedLyricsPreservingOriginal(
+            newLyrics = "first edit",
+            newTranslatedLyric = "first translation",
+            newRomanizedLyric = "first romanization"
+        )
+
+        val secondEdit = firstEdit.withUpdatedLyricsPreservingOriginal(
+            newLyrics = "second edit",
+            newTranslatedLyric = "second translation",
+            newRomanizedLyric = "second romanization"
+        )
+
+        assertNull(secondEdit.originalLyric)
+        assertNull(secondEdit.originalTranslatedLyric)
+        assertNull(secondEdit.originalRomanizedLyric)
+    }
+
+    @Test
+    fun `automatic cache retains unknown original lyrics until a manual edit`() {
+        val cached = song.withUpdatedLyricsPreservingOriginal(
+            newLyrics = "cached original",
+            newTranslatedLyric = "cached translation",
+            newRomanizedLyric = "cached romanization",
+            userEdited = false
+        )
+
+        assertNull(cached.originalLyric)
+        assertNull(cached.originalTranslatedLyric)
+        assertNull(cached.originalRomanizedLyric)
+
+        val edited = cached.withUpdatedLyricsPreservingOriginal(newLyrics = "manual edit")
+
+        assertEquals("cached original", edited.originalLyric)
+        assertEquals("cached translation", edited.originalTranslatedLyric)
+        assertEquals("cached romanization", edited.originalRomanizedLyric)
+    }
+
+    @Test
+    fun `prepared unknown originals are not captured from current metadata overrides`() {
+        val updated = song.copy(
+            matchedLyric = "metadata edit",
+            matchedTranslatedLyric = "metadata translation",
+            matchedRomanizedLyric = "metadata romanization"
+        ).withUpdatedLyricsPreservingOriginal(
+            newLyrics = "next edit",
+            captureMatchedOriginals = false
+        )
+
+        assertNull(updated.originalLyric)
+        assertNull(updated.originalTranslatedLyric)
+        assertNull(updated.originalRomanizedLyric)
+    }
+
+    @Test
     fun `youtube tracks never auto match external lyrics through metadata replacement`() {
         assertFalse(shouldAutoMatchExternalLyrics(song, isYouTubeMusicTrack = false))
         assertFalse(shouldAutoMatchExternalLyrics(song, isYouTubeMusicTrack = true))

@@ -986,7 +986,8 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     private fun shouldHydrateScanPreviewMetadata(song: SongItem): Boolean {
         return shouldHydrateLocalScanMetadata(
             song = song,
-            unknownArtist = app.getString(moe.ouom.neriplayer.common.R.string.music_unknown_artist)
+            unknownArtist = app.getString(moe.ouom.neriplayer.common.R.string.music_unknown_artist),
+            identityPending = song.stableKey() in _scanPreviewState.value.metadataPendingKeys
         )
     }
 }
@@ -1002,9 +1003,13 @@ internal fun hasMeaningfulLocalScanMetadata(
         song.hasLocalScanCover()
 }
 
-internal fun shouldHydrateLocalScanMetadata(song: SongItem, unknownArtist: String): Boolean {
-    // 文件名或下载 metadata 已经给出有效艺术家时, 不再为首屏重复打开音频容器
-    return isPlaceholderLocalScanArtist(song.artist, unknownArtist)
+internal fun shouldHydrateLocalScanMetadata(
+    song: SongItem,
+    unknownArtist: String,
+    identityPending: Boolean = false
+): Boolean {
+    // 延后的身份仍需核对原始标签，系统提供的可读歌手也可能解码错误
+    return identityPending || isPlaceholderLocalScanArtist(song.artist, unknownArtist)
 }
 
 private val LOCAL_SCAN_PLACEHOLDER_ARTISTS = listOf(

@@ -229,7 +229,7 @@ internal fun resolveEditSongBaselineFromSong(
 
 private fun resolveEditSongBaselineCover(
     originalCover: String?, songCover: String?, resolvedCover: String?
-): String = listOfNotNull(
+): String = if (originalCover == "") "" else listOfNotNull(
     usableEditCover(originalCover), usableEditCover(songCover), usableEditCover(resolvedCover)
 ).firstOrNull().orEmpty()
 
@@ -237,16 +237,17 @@ internal fun resolveManagedEditSongBaseline(
     current: EditSongBaseline,
     metadata: ManagedDownloadRestorableMetadata?,
     coverReference: String?,
-    sidecarLyrics: ManagedDownloadStorage.DownloadedLyricsBundle? = null
+    sidecarLyrics: ManagedDownloadStorage.DownloadedLyricsBundle? = null,
+    retainedOriginals: SongItem? = null
 ): EditSongBaseline {
     val baseline = metadata?.baseline
     return current.copy(
         title = managedEditSongTitle(baseline, current.title),
         artist = managedEditSongArtist(baseline, current.artist),
         coverUrl = managedEditSongCover(coverReference, baseline, current.coverUrl),
-        lyric = managedOriginalLyric(baseline, sidecarLyrics, current.lyric),
-        translatedLyric = managedTranslatedLyric(baseline, sidecarLyrics, current.translatedLyric),
-        romanizedLyric = managedRomanizedLyric(baseline, sidecarLyrics, current.romanizedLyric)
+        lyric = managedOriginalLyric(baseline, sidecarLyrics, current.lyric, retainedOriginals?.originalLyric),
+        translatedLyric = managedTranslatedLyric(baseline, sidecarLyrics, current.translatedLyric, retainedOriginals?.originalTranslatedLyric),
+        romanizedLyric = managedRomanizedLyric(baseline, sidecarLyrics, current.romanizedLyric, retainedOriginals?.originalRomanizedLyric)
     )
 }
 
@@ -271,32 +272,35 @@ private fun managedEditSongCover(
 private fun managedOriginalLyric(
     baseline: ManagedDownloadRestorableMetadata.Baseline?,
     sidecar: ManagedDownloadStorage.DownloadedLyricsBundle?,
-    current: String?
+    current: String?,
+    retained: String?
 ): String? = restoredManagedLyric(
-    baseline?.originalLyric, current, sidecar?.lyric, sidecar?.hasOriginalSidecar == true
+    baseline?.originalLyric, retained, current, sidecar?.lyric, sidecar?.hasOriginalSidecar == true
 )
 
 private fun managedTranslatedLyric(
     baseline: ManagedDownloadRestorableMetadata.Baseline?,
     sidecar: ManagedDownloadStorage.DownloadedLyricsBundle?,
-    current: String?
+    current: String?,
+    retained: String?
 ): String? = restoredManagedLyric(
-    baseline?.translatedLyric, current, sidecar?.translatedLyric,
+    baseline?.translatedLyric, retained, current, sidecar?.translatedLyric,
     sidecar?.hasTranslatedSidecar == true
 )
 
 private fun managedRomanizedLyric(
     baseline: ManagedDownloadRestorableMetadata.Baseline?,
     sidecar: ManagedDownloadStorage.DownloadedLyricsBundle?,
-    current: String?
+    current: String?,
+    retained: String?
 ): String? = restoredManagedLyric(
-    baseline?.romanizedLyric, current, sidecar?.romanizedLyric,
+    baseline?.romanizedLyric, retained, current, sidecar?.romanizedLyric,
     sidecar?.hasRomanizedSidecar == true
 )
 
 private fun restoredManagedLyric(
-    baseline: String?, current: String?, sidecar: String?, sidecarPresent: Boolean
-): String? = baseline ?: sidecar.takeIf { sidecarPresent } ?: current
+    baseline: String?, retained: String?, current: String?, sidecar: String?, sidecarPresent: Boolean
+): String? = baseline ?: retained ?: sidecar.takeIf { sidecarPresent } ?: current
 
 internal data class EditSongLyricsRestorePlan(
     val shouldClearLyrics: Boolean,

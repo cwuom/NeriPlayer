@@ -144,6 +144,8 @@ internal fun LocalMediaSupport.readTextContentImpl(context: Context, reference: 
     val bytes = when {
         reference.startsWith("/") -> try {
             readLimitedTextFile(File(reference))
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
@@ -153,6 +155,8 @@ internal fun LocalMediaSupport.readTextContentImpl(context: Context, reference: 
         else -> try {
             context.contentResolver.openInputStream(reference.toUri())
                 ?.use(::readLimitedTextStream)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {

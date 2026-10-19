@@ -48,13 +48,15 @@ internal suspend fun PlayerManager.embedLocalSongAssetsImpl(
     if (!embedding.writesLyrics && !embedding.writesCover) return LocalMediaMetadataWriteOutcome.SUCCESS
     val base = latestSongCopy(song)
     if (!LocalSongSupport.isLocalSong(base, application)) return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
+    val prepared = preserveLocalSongMetadataOriginals(base)
     // 原封面必须在改写文件前备份，写入后再取就只能拿到新封面
-    val originalCoverBackup = if (embedding.writesCover) backupOriginalCoverBeforeEmbedding(base) else null
-    val target = base.copy(
-        matchedLyric = if (embedding.writesLyrics) embedding.lyrics else base.matchedLyric,
-        matchedTranslatedLyric = if (embedding.writesLyrics) embedding.translatedLyrics else base.matchedTranslatedLyric,
-        matchedRomanizedLyric = if (embedding.writesLyrics) embedding.romanizedLyrics else base.matchedRomanizedLyric,
-        customCoverUrl = embedding.coverReference ?: base.customCoverUrl
+    val originalCoverBackup = if (embedding.writesCover) backupOriginalCoverBeforeEmbedding(prepared) else null
+    val target = prepared.copy(
+        matchedLyric = if (embedding.writesLyrics) embedding.lyrics else prepared.matchedLyric,
+        matchedTranslatedLyric = if (embedding.writesLyrics) embedding.translatedLyrics else prepared.matchedTranslatedLyric,
+        matchedRomanizedLyric = if (embedding.writesLyrics) embedding.romanizedLyrics else prepared.matchedRomanizedLyric,
+        customCoverUrl = embedding.coverReference ?: prepared.customCoverUrl,
+        originalCoverUrl = originalCoverBackup ?: prepared.originalCoverUrl
     )
     val outcome = writeLocalEditableMetadata(
         song = target,
@@ -65,7 +67,17 @@ internal suspend fun PlayerManager.embedLocalSongAssetsImpl(
     if (outcome != LocalMediaMetadataWriteOutcome.SUCCESS) return outcome
     return runSongMetadataMutation {
         val latest = latestSongCopy(song)
-        val updated = withEmbeddedAssets(latest, embedding, originalCoverBackup)
+        val withOriginals = latest.copy(
+            originalLyric = latest.originalLyric ?: prepared.originalLyric,
+            originalTranslatedLyric = latest.originalTranslatedLyric ?: prepared.originalTranslatedLyric,
+            originalRomanizedLyric = latest.originalRomanizedLyric ?: prepared.originalRomanizedLyric,
+            originalCoverUrl = if (latest.originalCoverUrl == base.originalCoverUrl) {
+                target.originalCoverUrl
+            } else {
+                latest.originalCoverUrl ?: target.originalCoverUrl
+            }
+        )
+        val updated = withEmbeddedAssets(withOriginals, embedding)
         val repairOutcome = if (latest != base) {
             rewriteTagsEditedDuringEmbedding(updated)
         } else {
@@ -106,8 +118,7 @@ private suspend fun PlayerManager.rewriteTagsEditedDuringEmbedding(
 
 private suspend fun PlayerManager.withEmbeddedAssets(
     latest: SongItem,
-    embedding: LocalSongAssetEmbedding,
-    originalCoverBackup: String?
+    embedding: LocalSongAssetEmbedding
 ): SongItem {
     val withLyrics = if (embedding.writesLyrics) {
         val revision = if (embedding.userEditedLyrics) {
@@ -121,15 +132,15 @@ private suspend fun PlayerManager.withEmbeddedAssets(
             newRomanizedLyric = embedding.romanizedLyrics,
             // 嵌入现有歌词不改变来源，用户改过的歌词仍要受保护，不能被之后的自动匹配或同步覆盖
             userEdited = embedding.userEditedLyrics || latest.lyricSyncEdited == true,
-            revision = revision
+            revision = revision,
+            captureMatchedOriginals = false
         ).withLyricProvenance(embedding)
     } else {
         latest
     }
     if (!embedding.writesCover) return withLyrics
     return withLyrics.copy(
-        customCoverUrl = normalizeCustomMetadataValue(embedding.coverReference, withLyrics.coverUrl),
-        originalCoverUrl = originalCoverBackup ?: withLyrics.originalCoverUrl
+        customCoverUrl = normalizeCustomMetadataValue(embedding.coverReference, withLyrics.coverUrl)
     )
 }
 
@@ -152,6 +163,10 @@ private fun PlayerManager.latestSongCopy(song: SongItem): SongItem {
 
 /** 与单曲编辑一致的原封面来源顺序；备份按歌曲身份只保留第一份，多次替换仍能恢复最初的封面 */
 private suspend fun PlayerManager.backupOriginalCoverBeforeEmbedding(song: SongItem): String? {
+    if (song.originalCoverUrl == "") return ""
+    song.originalCoverUrl?.takeUnless(::isMediaStoreCoverReference)?.let { original ->
+        return CustomSongCoverStorage.persistOriginalCover(application, song, original) ?: original
+    }
     val discovered = withContext(Dispatchers.IO) {
         sequenceOf(
             { PlayerDependencies.downloads.peekLocalCoverUri(song) },
@@ -164,6 +179,9 @@ private suspend fun PlayerManager.backupOriginalCoverBeforeEmbedding(song: SongI
                 !isMediaStoreCoverReference(reference)
         }
     }
-    return CustomSongCoverStorage.persistOriginalCover(application, song, discovered)
-        ?.takeUnless(CustomSongCoverStorage::isRemoteReference)
+    return confirmLocalCoverBaseline(
+        song,
+        CustomSongCoverStorage.persistOriginalCover(application, song, discovered)
+            ?.takeUnless(CustomSongCoverStorage::isRemoteReference)
+    )
 }

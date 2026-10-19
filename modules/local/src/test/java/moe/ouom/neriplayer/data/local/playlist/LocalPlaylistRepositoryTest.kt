@@ -997,6 +997,44 @@ class LocalPlaylistRepositoryTest : LocalPlaylistRepositoryTestSupport() {
     }
 
     @Test
+    fun `restoring an explicitly empty original cover clears the persisted edited cover`() = runTest {
+        val original = localSong(164).copy(
+            coverUrl = "file:///edited-cover.jpg",
+            originalCoverUrl = "file:///edited-cover.jpg",
+            customCoverUrl = "file:///custom-cover.jpg"
+        )
+        val file = File(tempFolder.root, "restore-empty-original-cover.json")
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = file,
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = 165L, name = "Local", songs = mutableListOf(original)))
+        )
+
+        repository.updateSongMetadata(
+            originalSong = original,
+            newSongInfo = original.copy(coverUrl = null, originalCoverUrl = "", customCoverUrl = null)
+        )
+
+        val updated = repository.playlists.value.single().songs.single()
+        assertNull(updated.coverUrl)
+        assertEquals("", updated.originalCoverUrl)
+        assertNull(updated.customCoverUrl)
+
+        val reloaded = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = file,
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        ).playlists.value.single().songs.single()
+        assertNull(reloaded.coverUrl)
+        assertEquals("", reloaded.originalCoverUrl)
+    }
+
+    @Test
     fun `user metadata update schedules auto sync when requested`() = runTest {
         val playlistId = 156L
         val original = remoteNeteaseSong(id = 157L)

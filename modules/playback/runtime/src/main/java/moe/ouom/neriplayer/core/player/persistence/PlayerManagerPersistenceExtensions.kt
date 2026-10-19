@@ -972,8 +972,12 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
                             coverUrl
                         }
                     }
+                    val preparedOriginalSong = preserveLocalSongMetadataOriginals(
+                        song = latestOriginalSong,
+                        preserveCover = true
+                    )
                     applyManualSearchMetadata(
-                        originalSong = latestOriginalSong,
+                        originalSong = preparedOriginalSong,
                         songName = newDetails.songName,
                         singer = newDetails.singer,
                         coverUrl = selectedCoverUrl,
@@ -983,7 +987,8 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
                         matchedSongId = selectedSong.id,
                         useCustomOverride = shouldApplySearchMetadataAsCustomOverride(latestOriginalSong),
                         preserveExistingMatchedLyrics = usedSearchSummaryFallback,
-                        lyricRevision = localRepo.nextUserLyricSyncRevision(latestOriginalSong)
+                        lyricRevision = localRepo.nextUserLyricSyncRevision(latestOriginalSong),
+                        captureMatchedOriginals = !LocalSongSupport.isLocalSong(preparedOriginalSong, application)
                     )
                 }
 
@@ -1081,17 +1086,9 @@ internal suspend fun PlayerManager.writeLocalEditableMetadata(
     writeCover: Boolean = coverReference != null,
     writeLyrics: Boolean = false
 ): LocalMediaMetadataWriteOutcome {
-    val writableReference = resolveLocalMetadataWriteReference(song)
+    val writableSong = resolveLocalSidecarWriteSong(song)
+        ?.takeIf { LocalSongSupport.isLocalSong(it, application) }
         ?: return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
-    val writableSong = song.copy(
-        mediaUri = writableReference,
-        localFilePath = if (writableReference.startsWith('/')) writableReference else null,
-        localFileName = song.localFileName
-            ?: writableReference.substringAfterLast('/').takeIf(String::isNotBlank)
-    )
-    if (!LocalSongSupport.isLocalSong(writableSong, application)) {
-        return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
-    }
     val playbackSnapshot = parkCurrentPlaybackForLocalMetadataWrite(song)
     return try {
         LocalMediaSupport.writeEditableMetadata(
@@ -1129,7 +1126,7 @@ private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
     return PlayerDependencies.downloads.getLocalPlaybackUri(application, song)
 }
 
-private suspend fun PlayerManager.resolveLocalSidecarWriteSong(song: SongItem): SongItem? {
+internal suspend fun PlayerManager.resolveLocalSidecarWriteSong(song: SongItem): SongItem? {
     val playbackReference = resolveLocalMetadataWriteReference(song) ?: return null
     return song.copy(
         mediaUri = playbackReference,
@@ -1186,9 +1183,10 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 "updateSongCustomInfo: id=${originalSong.id}, album='${originalSong.album}', customName=${customName?.take(32)}, customArtist=${customArtist?.take(32)}, customCoverUrl=${customCoverUrl?.take(64)}, restoreBase=[$restoreBaseName,$restoreBaseArtist,$restoreBaseCover], clearMatched=$clearMatchedMetadata, stack=[${debugStackHint()}]"
             )
 
-            val currentSong = currentPlaylist.firstOrNull { it.sameIdentityAs(originalSong) }
+            val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(originalSong) }
                 ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(originalSong) }
                 ?: originalSong
+            val currentSong = preserveLocalSongMetadataOriginals(latestSong)
             val isLocalSong = LocalSongSupport.isLocalSong(currentSong, application)
 
             val baseName = currentSong.name
@@ -1229,7 +1227,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             val lightweightOriginalCoverUrl = existingOriginalCoverUrl
                 ?.takeIf { it != currentSong.customCoverUrl }
                 ?: baseCoverUrl?.takeIf { it != currentSong.customCoverUrl }
-            val shouldResolveLocalCover = LocalSongSupport.isLocalSong(currentSong, application) &&
+            val shouldResolveLocalCover = isLocalSong &&
                 (coverChanged || restoreBaseCover)
             val discoveredLocalCoverUrl = if (shouldResolveLocalCover) {
                 sequenceOf(
@@ -1246,10 +1244,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             } else {
                 null
             }
-            val legacyOriginalCoverUrl = if (
-                coverChanged &&
-                    LocalSongSupport.isLocalSong(currentSong, application)
-            ) {
+            val legacyOriginalCoverUrl = if (coverChanged && isLocalSong) {
                 CustomSongCoverStorage.resolveLegacyOriginalCoverReference(
                     context = application,
                     song = currentSong,
@@ -1261,9 +1256,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             } else {
                 null
             }
-            val originalCoverReference = if (
-                coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
-            ) {
+            val originalCoverReference = if (coverChanged && isLocalSong) {
                 if (writeLocalMetadata) {
                     discoveredLocalCoverUrl ?: lightweightOriginalCoverUrl
                 } else {
@@ -1279,17 +1272,20 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             } else {
                 null
             }
-            val preservedOriginalCoverUrl = if (
-                coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
-            ) {
+            val preservedOriginalCoverUrl = if (existingOriginalCoverUrl == "") {
+                ""
+            } else if (coverChanged && isLocalSong) {
                 if (restoreBaseCover) {
                     existingOriginalCoverUrl
                 } else {
-                    legacyOriginalCoverUrl ?: CustomSongCoverStorage.persistOriginalCover(
-                        context = application,
-                        song = currentSong,
-                        reference = originalCoverReference
-                    ) ?: existingOriginalCoverUrl
+                    confirmLocalCoverBaseline(
+                        currentSong,
+                        legacyOriginalCoverUrl ?: CustomSongCoverStorage.persistOriginalCover(
+                            context = application,
+                            song = currentSong,
+                            reference = originalCoverReference
+                        ) ?: existingOriginalCoverUrl
+                    )
                 }
             } else {
                 existingOriginalCoverUrl
@@ -1385,7 +1381,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 return@runSongMetadataMutation true
             }
 
-            if (writeLocalMetadata && LocalSongSupport.isLocalSong(currentSong, application)) {
+            if (writeLocalMetadata && isLocalSong) {
                 val localWriteOutcome = writeLocalEditableMetadata(
                     song = updatedSong,
                     coverReference = coverWriteReference,
@@ -1400,7 +1396,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                     )
                     return@runSongMetadataMutation false
                 }
-            } else if (LocalSongSupport.isLocalSong(currentSong, application)) {
+            } else if (isLocalSong) {
                 val sidecarSong = resolveLocalSidecarWriteSong(updatedSong)
                 if (sidecarSong == null) {
                     showLocalEditableMetadataWriteFeedback(
@@ -1619,31 +1615,36 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
         "NERI-PlayerManager",
         "updateSongLyrics: song=${songToUpdate.name}, id=${songToUpdate.id}, lyricLength=${newLyrics?.length ?: 0}"
     )
-    val currentSong = currentQueueSnapshot().playlist.firstOrNull { it.sameIdentityAs(songToUpdate) }
+    val latestQueueSong = currentQueueSnapshot().playlist.firstOrNull { it.sameIdentityAs(songToUpdate) }
         ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
         ?: songToUpdate
+    val currentSong = preserveLocalSongMetadataOriginals(latestQueueSong)
+    val captureMatchedOriginals = !LocalSongSupport.isLocalSong(currentSong, application)
     recordUserLyricEditThenPublish(
         prepare = {
             currentSong.withUpdatedLyricsPreservingOriginal(
                 newLyrics = newLyrics,
-                revision = localRepo.nextUserLyricSyncRevision(currentSong)
+                revision = localRepo.nextUserLyricSyncRevision(currentSong),
+                captureMatchedOriginals = captureMatchedOriginals
             )
         },
         record = localRepo::recordLyricSyncState
     ) { updatedSong ->
         val revision = updatedSong.lyricSyncRevision
         updateQueuedSong(songToUpdate) { current ->
-            current.withUpdatedLyricsPreservingOriginal(
+            current.withOriginalLyricsFrom(updatedSong).withUpdatedLyricsPreservingOriginal(
                 newLyrics = newLyrics,
-                revision = revision
+                revision = revision,
+                captureMatchedOriginals = captureMatchedOriginals
             )
         }
 
         if (isCurrentSong(songToUpdate)) {
             setCurrentSongForPlayback(
-                _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
+                _currentSongFlow.value?.withOriginalLyricsFrom(updatedSong)?.withUpdatedLyricsPreservingOriginal(
                     newLyrics = newLyrics,
-                    revision = revision
+                    revision = revision,
+                    captureMatchedOriginals = captureMatchedOriginals
                 )
             )
         }
@@ -1680,31 +1681,36 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
         "NERI-PlayerManager",
         "updateSongTranslatedLyrics: song=${songToUpdate.name}, id=${songToUpdate.id}, translatedLength=${newTranslatedLyrics?.length ?: 0}"
     )
-    val currentSong = currentQueueSnapshot().playlist.firstOrNull { it.sameIdentityAs(songToUpdate) }
+    val latestQueueSong = currentQueueSnapshot().playlist.firstOrNull { it.sameIdentityAs(songToUpdate) }
         ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
         ?: songToUpdate
+    val currentSong = preserveLocalSongMetadataOriginals(latestQueueSong)
+    val captureMatchedOriginals = !LocalSongSupport.isLocalSong(currentSong, application)
     recordUserLyricEditThenPublish(
         prepare = {
             currentSong.withUpdatedLyricsPreservingOriginal(
                 newTranslatedLyric = newTranslatedLyrics,
-                revision = localRepo.nextUserLyricSyncRevision(currentSong)
+                revision = localRepo.nextUserLyricSyncRevision(currentSong),
+                captureMatchedOriginals = captureMatchedOriginals
             )
         },
         record = localRepo::recordLyricSyncState
     ) { updatedSong ->
         val revision = updatedSong.lyricSyncRevision
         updateQueuedSong(songToUpdate) { current ->
-            current.withUpdatedLyricsPreservingOriginal(
+            current.withOriginalLyricsFrom(updatedSong).withUpdatedLyricsPreservingOriginal(
                 newTranslatedLyric = newTranslatedLyrics,
-                revision = revision
+                revision = revision,
+                captureMatchedOriginals = captureMatchedOriginals
             )
         }
 
         if (isCurrentSong(songToUpdate)) {
             setCurrentSongForPlayback(
-                _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
+                _currentSongFlow.value?.withOriginalLyricsFrom(updatedSong)?.withUpdatedLyricsPreservingOriginal(
                     newTranslatedLyric = newTranslatedLyrics,
-                    revision = revision
+                    revision = revision,
+                    captureMatchedOriginals = captureMatchedOriginals
                 )
             )
         }
@@ -1742,10 +1748,16 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     syncDownloadedMetadata: Boolean = true,
     userEdited: Boolean = true
 ) : Boolean = runSongMetadataMutation {
-    val currentQueueSong = currentQueueSnapshot().playlist
+    val latestQueueSong = currentQueueSnapshot().playlist
         .firstOrNull { it.sameIdentityAs(songToUpdate) }
         ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
         ?: songToUpdate
+    val currentQueueSong = if (userEdited) {
+        preserveLocalSongMetadataOriginals(latestQueueSong)
+    } else {
+        latestQueueSong
+    }
+    val captureMatchedOriginals = !userEdited || !LocalSongSupport.isLocalSong(currentQueueSong, application)
     val effectiveLyrics = newLyrics ?: currentQueueSong.matchedLyric
     val effectiveTranslatedLyrics = newTranslatedLyrics
         ?: currentQueueSong.matchedTranslatedLyric
@@ -1777,7 +1789,8 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         newTranslatedLyric = effectiveTranslatedLyrics,
         newRomanizedLyric = effectiveRomanizedLyrics,
         userEdited = userEdited,
-        revision = revision
+        revision = revision,
+        captureMatchedOriginals = captureMatchedOriginals
     )
     val isLocalSong = LocalSongSupport.isLocalSong(updatedSong, application)
     val sidecarsWritten = if (isLocalSong && writeLocalMetadata) {
@@ -1811,14 +1824,10 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
             false
         } else {
             try {
-                val lyricsWritten = LocalMediaSupport.writeLocalLyricsSidecars(
-                    context = application,
-                    song = sidecarSong
-                )
-                lyricsWritten && LocalMediaSupport.writeLocalMetadataSidecar(
+                LocalMediaSupport.writeLocalLyricsSidecars(
                     context = application,
                     song = sidecarSong,
-                    writeLyrics = true
+                    persistMetadata = true
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -1846,12 +1855,13 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     localRepo.recordLyricSyncState(updatedSong)
 
     val updatedQueueSong = updateQueuedSong(songToUpdate) { current ->
-        current.withUpdatedLyricsPreservingOriginal(
+        current.withOriginalLyricsFrom(updatedSong).withUpdatedLyricsPreservingOriginal(
             newLyrics = effectiveLyrics,
             newTranslatedLyric = effectiveTranslatedLyrics,
             newRomanizedLyric = effectiveRomanizedLyrics,
             userEdited = userEdited,
-            revision = revision
+            revision = revision,
+            captureMatchedOriginals = captureMatchedOriginals
         )
     }
     if (updatedQueueSong != null) {
@@ -1860,12 +1870,13 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     val activeSong = _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
     if (activeSong != null) {
         setCurrentSongForPlayback(
-            activeSong.withUpdatedLyricsPreservingOriginal(
+            activeSong.withOriginalLyricsFrom(updatedSong).withUpdatedLyricsPreservingOriginal(
                 newLyrics = effectiveLyrics,
                 newTranslatedLyric = effectiveTranslatedLyrics,
                 newRomanizedLyric = effectiveRomanizedLyrics,
                 userEdited = userEdited,
-                revision = revision
+                revision = revision,
+                captureMatchedOriginals = captureMatchedOriginals
             )
         )
     }

@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
 
@@ -23,7 +24,11 @@ internal interface EditSongBaselineReader {
 
 internal object DefaultEditSongBaselineReader : EditSongBaselineReader {
     override suspend fun metadata(context: Context, song: SongItem) =
-        GlobalDownloadManager.readManagedRestorableMetadata(context, song)
+        readEditSongRestoreValue { GlobalDownloadManager.readManagedRestorableMetadata(context, song) }
+            ?: song.takeIf { it.isLocalSong() }?.let {
+                LocalMediaSupport.readLocalMetadataSidecarFast(context, it)
+                    ?.toEditSongRestorableMetadata()
+            }
 
     override suspend fun cover(context: Context, metadata: ManagedDownloadRestorableMetadata) =
         GlobalDownloadManager.resolveManagedRestorableCoverReference(
@@ -44,6 +49,27 @@ internal object DefaultEditSongBaselineReader : EditSongBaselineReader {
             forceRefresh = true
         )
 }
+
+internal fun LocalMetadataSidecar.toEditSongRestorableMetadata() = ManagedDownloadRestorableMetadata(
+    sourceStableKey = stableKey,
+    baseline = ManagedDownloadRestorableMetadata.Baseline(
+        title = originalName ?: name,
+        artist = originalArtist ?: artist,
+        album = album,
+        coverReference = originalCoverUrl,
+        originalLyric = originalLyric,
+        translatedLyric = originalTranslatedLyric,
+        romanizedLyric = originalRomanizedLyric
+    ),
+    overrides = ManagedDownloadRestorableMetadata.Overrides(
+        title = customName,
+        artist = customArtist,
+        coverReference = customCoverUrl,
+        originalLyric = matchedLyric,
+        translatedLyric = matchedTranslatedLyric,
+        romanizedLyric = matchedRomanizedLyric
+    )
+)
 
 internal data class ManagedEditSongBaselineSnapshot(
     val metadata: ManagedDownloadRestorableMetadata,
@@ -81,7 +107,8 @@ internal suspend fun resolveManagedEditSongBaselineAtRestore(
         current = current,
         metadata = metadata,
         coverReference = cover,
-        sidecarLyrics = sidecar ?: local?.asDownloadedLyricsBundle()
+        sidecarLyrics = sidecar ?: local?.asDownloadedLyricsBundle(),
+        retainedOriginals = song
     )
 }
 

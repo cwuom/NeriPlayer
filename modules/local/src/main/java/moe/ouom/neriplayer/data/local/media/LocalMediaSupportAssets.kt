@@ -14,6 +14,7 @@ import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.File
 import java.text.Normalizer
@@ -137,6 +138,8 @@ internal fun LocalMediaSupport.ensureDocumentSidecarDirectoryForMutation(
         )
     } catch (error: SecurityException) {
         throw error
+    } catch (error: CancellationException) {
+        throw error
     } catch (error: Exception) {
         NPLogger.w(TAG, "create sidecar directory failed for $parentUri: ${error.message}")
         null
@@ -212,6 +215,8 @@ internal fun LocalMediaSupport.createDocumentSidecarForMutation(
             displayName
         )
     } catch (error: SecurityException) {
+        throw error
+    } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
         NPLogger.w(TAG, "create sidecar document failed for $parentUri: ${error.message}")
@@ -449,6 +454,8 @@ internal fun LocalMediaSupport.queryDocumentChildrenDirect(
                 resolvedParentId
             )
         }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (error: SecurityException) {
         throw error
     } catch (error: Exception) {
@@ -474,6 +481,7 @@ internal fun LocalMediaSupport.queryDocumentChildrenDirect(
                 return@use null
             }
             var truncated = false
+            var malformedRows = false
             val children = buildList {
                 while (cursor.moveToNext()) {
                     if (hasReachedDocumentChildrenQueryLimit(size, maxChildren)) {
@@ -482,10 +490,13 @@ internal fun LocalMediaSupport.queryDocumentChildrenDirect(
                         break
                     }
                     val childId = cursor.getString(idIndex)
-                    if (childId.isNullOrBlank()) continue
                     val childName = cursor.getString(nameIndex)
-                    if (childName.isNullOrBlank()) continue
+                    if (childId.isNullOrBlank() || childName.isNullOrBlank()) {
+                        malformedRows = true
+                        continue
+                    }
                     val mimeType = cursor.getString(mimeIndex).orEmpty()
+                    if (mimeType.isBlank()) malformedRows = true
                     val child = DocumentChild(
                         documentId = childId,
                         displayName = childName,
@@ -500,9 +511,11 @@ internal fun LocalMediaSupport.queryDocumentChildrenDirect(
             val providerError = extras?.getString(DocumentsContract.EXTRA_ERROR)
             DocumentChildrenQueryResult(
                 children = children,
-                isComplete = !loading && providerError.isNullOrBlank() && !truncated
+                isComplete = !loading && providerError.isNullOrBlank() && !truncated && !malformedRows
             )
         }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (error: SecurityException) {
         throw error
     } catch (error: Exception) {
@@ -865,9 +878,9 @@ internal fun LocalMediaSupport.pickReadableLocalTitle(
 }
 
 private fun LocalMediaSupport.readableLocalTitleOrNull(candidate: String?, sourceUri: Uri, fallbackTitle: String): String? {
-    val trimmed = candidate?.trim() ?: return null
+    val trimmed = candidate.takeMeaningfulLocalMetadata() ?: return null
     return trimmed.takeIf {
-        it.takeMeaningfulLocalMetadata() != null && isReadableLocalTitleCandidate(it, sourceUri, fallbackTitle)
+        isReadableLocalTitleCandidate(it, sourceUri, fallbackTitle)
     }
 }
 
@@ -929,6 +942,7 @@ internal fun LocalMediaSupport.decodeId3TextFrame(frameData: ByteArray): String?
     return content.toString(charset)
         .normalizeDecodedText()
         .trim(NUL_CHAR, ' ')
+        .let(::repairLocalMetadataText)
         .takeIf { it.isNotBlank() }
 }
 

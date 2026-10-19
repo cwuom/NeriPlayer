@@ -25,6 +25,16 @@ import org.junit.Test
 
 class NowPlayingManagedRestoreBaselineTest {
     @Test
+    fun `an explicitly absent original cover is not replaced by the edited display cover`() {
+        val song = SongItem(1L, "Song", "Artist", "Album", 0L, 1000L, "/edited.jpg",
+            originalCoverUrl = "")
+
+        val baseline = resolveEditSongBaselineFromSong(song, "/edited.jpg", null, null, null)
+
+        assertEquals("", baseline.coverUrl)
+    }
+
+    @Test
     fun `managed restore baseline wins over current edited fields`() {
         val current = EditSongBaseline(
             title = "Edited title",

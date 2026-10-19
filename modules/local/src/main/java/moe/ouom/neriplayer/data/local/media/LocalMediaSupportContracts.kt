@@ -168,13 +168,15 @@ internal val LOCAL_METADATA_PLACEHOLDERS = setOf(
 internal data class NearbyLyricFiles(
     val original: File?,
     val translated: File?,
-    val romanized: File? = null
+    val romanized: File? = null,
+    val lookupComplete: Boolean = false
 )
 
 data class NearbyLyricReferences(
     val original: String?,
     val translated: String?,
-    val romanized: String?
+    val romanized: String?,
+    val lookupComplete: Boolean = false
 )
 
 data class LocalKnownSidecarReferences(
@@ -193,8 +195,23 @@ data class LocalLyricsScanMetadata(
     val embeddedLyric: String? = null,
     val embeddedTranslatedLyric: String? = null,
     val embeddedRomanizedLyric: String? = null,
-    val sourceResolved: Boolean = false
+    val sourceResolved: Boolean = false,
+    val embeddedSourceResolved: Boolean = false,
+    val originalLyricBaseline: String? = null,
+    val translatedLyricBaseline: String? = null,
+    val romanizedLyricBaseline: String? = null
 )
+
+internal fun originalLocalLyricBaseline(
+    sidecarLyric: String?,
+    sidecarSourceResolved: Boolean,
+    embeddedLyric: String?,
+    embeddedSourceResolved: Boolean
+): String? {
+    if (sidecarLyric != null) return sidecarLyric
+    if (!sidecarSourceResolved) return null
+    return embeddedLyric ?: "".takeIf { embeddedSourceResolved }
+}
 
 internal data class EmbeddedLyricsReadOptions(
     val includeEmbeddedAssets: Boolean,
@@ -222,7 +239,10 @@ internal data class DirectLocalLyricsInspection(
     val metadataRomanized: String?,
     val hasOriginalSidecar: Boolean,
     val hasTranslatedSidecar: Boolean,
-    val hasRomanizedSidecar: Boolean
+    val hasRomanizedSidecar: Boolean,
+    val originalSidecarResolved: Boolean = hasOriginalSidecar,
+    val translatedSidecarResolved: Boolean = hasTranslatedSidecar,
+    val romanizedSidecarResolved: Boolean = hasRomanizedSidecar
 )
 
 data class LocalMetadataSidecar(

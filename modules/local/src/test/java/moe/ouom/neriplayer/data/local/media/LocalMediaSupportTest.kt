@@ -1135,6 +1135,7 @@ class LocalMediaSupportTest {
         )
         assertNull(cleared.lyric)
         assertEquals(true, cleared.sourceResolved)
+        assertFalse(cleared.embeddedSourceResolved)
     }
 
     @Test

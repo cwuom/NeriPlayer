@@ -64,7 +64,7 @@ class LocalMediaContentLyricInspectionTest {
         }
 
         assertEquals(
-            expected(translated = TRANSLATED_LYRIC, hasTranslatedSidecar = true),
+            expected(translated = TRANSLATED_LYRIC, hasTranslatedSidecar = true, originalSidecarResolved = false),
             inspection
         )
     }
@@ -84,7 +84,8 @@ class LocalMediaContentLyricInspectionTest {
         original: String? = null,
         translated: String? = null,
         hasOriginalSidecar: Boolean = false,
-        hasTranslatedSidecar: Boolean = false
+        hasTranslatedSidecar: Boolean = false,
+        originalSidecarResolved: Boolean = true
     ) = DirectLocalLyricsInspection(
         original = original,
         translated = translated,
@@ -94,7 +95,10 @@ class LocalMediaContentLyricInspectionTest {
         metadataRomanized = null,
         hasOriginalSidecar = hasOriginalSidecar,
         hasTranslatedSidecar = hasTranslatedSidecar,
-        hasRomanizedSidecar = false
+        hasRomanizedSidecar = false,
+        originalSidecarResolved = originalSidecarResolved,
+        translatedSidecarResolved = true,
+        romanizedSidecarResolved = true
     )
 
     private fun <T> withDocumentTree(block: () -> T): T {
