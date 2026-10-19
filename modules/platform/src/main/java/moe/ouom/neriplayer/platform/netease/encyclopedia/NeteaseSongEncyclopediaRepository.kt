@@ -111,7 +111,7 @@ class NeteaseSongEncyclopediaRepository internal constructor(
             basicInfo = EncyclopediaBasicInfo(
                 name = song.name,
                 artists = song.artist.split("/").map(String::trim).filter(String::isNotEmpty),
-                album = song.album.takeIf { it.isNotBlank() }
+                album = detail?.albumName ?: song.encyclopediaAlbumName()
             ),
             musicInfo = EncyclopediaMusicInfo(
                 genres = summary.genres,
@@ -224,3 +224,12 @@ internal fun resolveNeteaseSongId(song: SongItem): Long? {
 }
 
 private fun String?.toPositiveLongOrNull(): Long? = this?.toLongOrNull()?.takeIf { it > 0L }
+
+private fun SongItem.encyclopediaAlbumName(): String? {
+    val name = if (album.startsWith(NETEASE_SOURCE_TAG)) {
+        album.removePrefix(NETEASE_SOURCE_TAG).trim().trimStart('-', ':', '_', '|')
+    } else {
+        album
+    }
+    return name.trim().takeIf { it.isNotEmpty() }
+}

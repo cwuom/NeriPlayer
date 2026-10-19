@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaCreditRole
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaRelatedPlaylist
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaSimilarSong
+import java.io.IOException
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -30,11 +31,12 @@ internal data class NeteaseEncyclopediaSummary(
  * 解析 `SONG_PLAY_ABOUT_SONG_BASIC` 板块。
  *
  * 歌曲不存在时接口同样返回 code=200，但不会带该板块，此时返回 null 表示「暂无资料」。
- * 响应不是合法 JSON 时抛异常，由调用方判定为可重试的失败。
+ * 业务失败或非法 JSON 向上抛出，由调用方提供重试
  */
 internal fun parseNeteaseEncyclopediaSummary(raw: String): NeteaseEncyclopediaSummary? {
     val root = JSONObject(raw)
-    if (root.optInt("code", -1) != 200) return null
+    val code = root.optInt("code", -1)
+    if (code != 200) throw IOException("NetEase encyclopedia request failed: code=$code")
     val blocks = root.optJSONObject("data")?.optJSONArray("blocks") ?: return null
     val basic = blocks.firstObjectOrNull { it.optTrimmedString("code") == BASIC_BLOCK_CODE }
         ?: return null

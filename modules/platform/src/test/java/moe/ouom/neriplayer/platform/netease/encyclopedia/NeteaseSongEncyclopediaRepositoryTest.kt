@@ -146,6 +146,24 @@ class NeteaseSongEncyclopediaRepositoryTest {
     }
 
     @Test
+    fun `business error returns failed and a later request can recover`() = runBlocking {
+        var unavailable = true
+        val api = FakeEncyclopediaApi(
+            summary = { if (unavailable) """{"code":500,"message":"busy"}""" else SUMMARY_JSON },
+            creators = { CREATORS_JSON }
+        )
+        val repository = repository(api)
+        val item = song(id = 88L)
+
+        assertTrue(repository.getEncyclopedia(item) is SongEncyclopediaResult.Failed)
+        unavailable = false
+        val recovered = repository.getEncyclopedia(item)
+
+        assertTrue(recovered is SongEncyclopediaResult.Success)
+        assertEquals(61, (recovered as SongEncyclopediaResult.Success).data.musicInfo?.bpm)
+    }
+
+    @Test
     fun `invalid summary payload becomes a failed result instead of not available`() = runBlocking {
         val api = FakeEncyclopediaApi(summary = { "not json" })
         val repository = repository(api)
@@ -272,7 +290,7 @@ class NeteaseSongEncyclopediaRepositoryTest {
         // 基础信息来自 SongItem：artist 以 / 分隔并 trim，空段丢弃
         assertEquals("起风了", data.basicInfo.name)
         assertEquals(listOf("买辣椒也用券", "米果"), data.basicInfo.artists)
-        assertEquals("Netease|起风了", data.basicInfo.album)
+        assertEquals("起风了", data.basicInfo.album)
 
         // 音乐属性来自接口原文
         assertEquals(listOf("流行-华语流行"), data.musicInfo?.genres)
@@ -293,6 +311,52 @@ class NeteaseSongEncyclopediaRepositoryTest {
         assertEquals(listOf(EncyclopediaAward(title = "第2届网易云音乐原创盛典", detail = "获 年度十大歌曲")), data.awards)
         assertEquals(listOf("综艺《舞蹈风暴 第一季》插曲"), data.appearances)
         assertNull(data.description)
+    }
+
+    @Test
+    fun `song detail album replaces the tagged fallback without changing cache identity`() = runBlocking {
+        val api = FakeEncyclopediaApi(
+            summary = { SUMMARY_JSON },
+            creators = { CREATORS_JSON },
+            songDetail = { SONG_DETAIL_JSON },
+            artist = { ARTIST_JSON }
+        )
+        val repository = repository(api)
+        val item = song(id = 5L, album = "Netease过期专辑名")
+
+        val first = (repository.getEncyclopedia(item) as SongEncyclopediaResult.Success).data
+        val cached = (repository.getEncyclopedia(item) as SongEncyclopediaResult.Success).data
+
+        assertEquals("起风了", first.basicInfo.album)
+        assertEquals("5|Netease过期专辑名|", first.songKey)
+        assertEquals(first, cached)
+        assertEquals(listOf(5L), api.summarySongIds)
+    }
+
+    @Test
+    fun `source tag alone is not displayed as an album after detail failure`() = runBlocking {
+        val api = FakeEncyclopediaApi(summary = { SUMMARY_JSON }, creators = { CREATORS_JSON })
+        val repository = repository(api)
+
+        val data = (
+            repository.getEncyclopedia(song(id = 5L, album = "Netease")) as SongEncyclopediaResult.Success
+            ).data
+
+        assertNull(data.basicInfo.album)
+    }
+
+    @Test
+    fun `untagged album remains intact after detail failure`() = runBlocking {
+        val api = FakeEncyclopediaApi(summary = { SUMMARY_JSON }, creators = { CREATORS_JSON })
+        val repository = repository(api)
+
+        val data = (
+            repository.getEncyclopedia(
+                song(id = 5L, album = "-真实专辑名", channelId = "netease")
+            ) as SongEncyclopediaResult.Success
+            ).data
+
+        assertEquals("-真实专辑名", data.basicInfo.album)
     }
 
     @Test

@@ -69,40 +69,43 @@ internal fun SongEncyclopediaArtistSection(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .encyclopediaClickable(onOpenArtist)
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            SongEncyclopediaArtistAvatar(artist)
+            SongEncyclopediaArtistAvatar(artist, Modifier.encyclopediaClickable(onOpenArtist))
             Spacer(Modifier.size(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = artist.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = artist.name,
+                        modifier = Modifier.weight(1f).encyclopediaClickable(onOpenArtist),
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    SongEncyclopediaArtistFollowButton(artist, Modifier.padding(start = 8.dp))
+                }
                 val meta = buildEncyclopediaArtistMeta(artist)
                 if (meta != null) {
                     Text(
                         text = meta,
+                        modifier = Modifier.fillMaxWidth().encyclopediaClickable(onOpenArtist),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
-        SongEncyclopediaArtistFollowButton(artist)
         SongEncyclopediaArtistBrief(artist)
     }
 }
 @Composable
-private fun SongEncyclopediaArtistAvatar(artist: EncyclopediaArtistInfo) {
+private fun SongEncyclopediaArtistAvatar(artist: EncyclopediaArtistInfo, modifier: Modifier = Modifier) {
     val size = ENCYCLOPEDIA_ARTIST_AVATAR_SIZE_DP.dp
     val url = artist.picUrl
     if (url.isNullOrBlank()) {
         Box(
-            modifier = Modifier
+            modifier = modifier
                 .size(size)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
@@ -113,7 +116,7 @@ private fun SongEncyclopediaArtistAvatar(artist: EncyclopediaArtistInfo) {
         model = url,
         contentDescription = null,
         contentScale = ContentScale.Crop,
-        modifier = Modifier
+        modifier = modifier
             .size(size)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)

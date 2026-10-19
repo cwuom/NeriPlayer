@@ -55,8 +55,8 @@ data class BiliMusicRankSong(
     /**
      * 官方 MV（接口 mv_* 字段）。
      *
-     * 列表接口的 mv_aid 恒为 0，需要在加载榜单时按 mv_bvid 补全 aid 才能进入现有播放解析链路；
-     * 补全失败时会退回榜单授权投稿（creation_*）。
+     * 列表可能缺少 mv_aid，加载榜单时按 mv_bvid 补全身份和官方 MV 元信息
+     * 补全失败时保留已有身份，缺少有效身份才回退到榜单授权投稿
      */
     val mvAid: Long = 0L,
     val mvBvid: String = "",

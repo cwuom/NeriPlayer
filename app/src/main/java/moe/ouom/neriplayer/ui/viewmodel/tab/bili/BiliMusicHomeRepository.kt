@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.viewmodel.tab.bili
 
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -10,6 +11,7 @@ import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicHotVideo
 import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankPeriod
 import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankSong
 import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankType
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 
 /** 榜单快照：期数与曲目必须来自同一期，避免切换榜单时串期 */
 data class BiliMusicRankSnapshot(
@@ -111,8 +113,8 @@ object BiliMusicHomeRepository {
     /**
      * 按 mv_bvid 补全官方 MV 的 aid（顺带取回 MV 真实时长、上传账号与封面）。
      *
-     * 榜单接口的 mv_aid 实测恒为 0，而现有 B 站播放链路要求条目带有效 avid；
-     * 单个曲目补全失败时保持原样（上层会回退到授权投稿播放），不影响整期榜单。
+     * 榜单可能已有 mv_aid，但官方 MV 的时长、账号与封面仍需单独补全
+     * 单个曲目补全失败时保留已有身份，缺少有效身份才回退到授权投稿
      *
      * 补全需要逐条调用 WBI view 接口，因此按 [MV_ENRICH_PARALLELISM] 分块串行推进：
      * 与 [moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient] 的其它分页批处理保持一致，
@@ -122,8 +124,9 @@ object BiliMusicHomeRepository {
      * 此时立刻停止并把剩余曲目原样返回：用户马上就能看到榜单（回退到榜单授权投稿），
      * 而不是等所有批次依次超时后仍然一无所获。
      */
-    private suspend fun resolveOfficialMvIds(
-        songs: List<BiliMusicRankSong>
+    internal suspend fun resolveOfficialMvIds(
+        songs: List<BiliMusicRankSong>,
+        loadVideo: suspend (String) -> VideoBasicInfo = { client.getVideoBasicInfoByBvid(it) }
     ): List<BiliMusicRankSong> {
         if (songs.none { it.needsMvEnrichment }) return songs
         val resolved = ArrayList<BiliMusicRankSong>(songs.size)
@@ -132,15 +135,15 @@ object BiliMusicHomeRepository {
             val chunkEnd = minOf(cursor + MV_ENRICH_PARALLELISM, songs.size)
             val chunk = songs.subList(cursor, chunkEnd)
             val outcomes = coroutineScope {
-                chunk.map { song -> async { enrichOfficialMv(song) to song.needsMvEnrichment } }.awaitAll()
+                chunk.map { song -> async { song to enrichOfficialMv(song, loadVideo) } }.awaitAll()
             }
             var attempted = 0
             var enriched = 0
-            outcomes.forEach { (song, needed) ->
-                resolved += song
-                if (needed) {
+            outcomes.forEach { (song, enrichedSong) ->
+                resolved += enrichedSong ?: song
+                if (song.needsMvEnrichment) {
                     attempted++
-                    if (!song.needsMvEnrichment) enriched++
+                    if (enrichedSong != null) enriched++
                 }
             }
             if (attempted > 0 && enriched == 0) {
@@ -152,15 +155,22 @@ object BiliMusicHomeRepository {
         return resolved
     }
 
-    /** 单条曲目是否还需要补全官方 MV 的 aid 等媒体身份 */
+    /** 已有 aid 仍可能缺少官方 MV 的元信息，不能借用授权投稿的数据 */
     private val BiliMusicRankSong.needsMvEnrichment: Boolean
-        get() = mvBvid.isNotBlank() && mvAid <= 0L
+        get() = mvBvid.isNotBlank() &&
+            (mvAid <= 0L || mvDurationSec <= 0 || mvUploader.isBlank() || mvCoverUrl.isBlank())
 
-    /** 补全单条曲目的官方 MV 身份；无需补全或补全失败时原样返回 */
-    private suspend fun enrichOfficialMv(song: BiliMusicRankSong): BiliMusicRankSong {
-        if (!song.needsMvEnrichment) return song
-        val info = runCatching { client.getVideoBasicInfoByBvid(song.mvBvid) }.getOrNull()
-        return if (info != null && info.aid > 0L) {
+    /** 返回成功取得的 MV 数据，让批次停发只依据请求失败判断 */
+    private suspend fun enrichOfficialMv(
+        song: BiliMusicRankSong,
+        loadVideo: suspend (String) -> VideoBasicInfo
+    ): BiliMusicRankSong? {
+        if (!song.needsMvEnrichment) return null
+        val info = runCatching { loadVideo(song.mvBvid) }.getOrElse { error ->
+            if (error is CancellationException) throw error
+            return null
+        }
+        return if (info.aid > 0L) {
             song.copy(
                 mvAid = info.aid,
                 mvDurationSec = info.durationSec,
@@ -168,7 +178,7 @@ object BiliMusicHomeRepository {
                 mvCoverUrl = normalizeVideoCover(info.coverUrl)
             )
         } else {
-            song
+            null
         }
     }
 

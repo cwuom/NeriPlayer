@@ -1637,8 +1637,7 @@ class BiliClient(
                 uploaderMid = item.optLong("creation_up", 0L),
                 heat = item.optLong("heat", 0L),
                 canListen = item.optInt("can_listen", 0) == 1,
-                // 官方 MV：这里的 mv_aid 实测恒为 0，只有 mv_bvid 有效，
-                // aid 由上层按 bvid 补全后才可用于播放。
+                // 先保留榜单给出的 MV 身份，上层再按 bvid 补全缺失身份与元信息
                 mvAid = item.optLong("mv_aid", 0L),
                 mvBvid = item.optString("mv_bvid").trim()
             )

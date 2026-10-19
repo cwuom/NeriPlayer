@@ -86,6 +86,7 @@ internal fun SongEncyclopediaContent(
     onDismiss: () -> Unit,
     onEnterPlaylist: (PlaylistSummary) -> Unit = {},
     onEnterArtist: (NeteaseArtistSummary) -> Unit = {},
+    onPlaySong: (SongItem) -> Unit = {},
     onPlaySongs: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onOpenComments: (CommentSource) -> Unit = {},
     onCloseSheet: () -> Unit = onDismiss,
@@ -110,6 +111,7 @@ internal fun SongEncyclopediaContent(
         onCommentClick = { commentSource?.let(onOpenComments) },
         onEnterPlaylist = onEnterPlaylist,
         onEnterArtist = onEnterArtist,
+        onPlaySong = onPlaySong,
         onPlaySongs = onPlaySongs,
         onRetry = { viewModel.retryEncyclopediaLoad(song) },
         onDismiss = onDismiss,
@@ -126,6 +128,7 @@ private fun SongEncyclopediaStateContent(
     onCommentClick: () -> Unit,
     onEnterPlaylist: (PlaylistSummary) -> Unit,
     onEnterArtist: (NeteaseArtistSummary) -> Unit,
+    onPlaySong: (SongItem) -> Unit,
     onPlaySongs: (List<SongItem>, Int) -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
@@ -177,6 +180,7 @@ private fun SongEncyclopediaStateContent(
                             onCommentClick = onCommentClick,
                             onEnterPlaylist = onEnterPlaylist,
                             onEnterArtist = onEnterArtist,
+                            onPlaySong = onPlaySong,
                             onPlaySongs = onPlaySongs
                         )
                     } else {
@@ -298,6 +302,7 @@ private fun SongEncyclopediaBody(
     onCommentClick: () -> Unit,
     onEnterPlaylist: (PlaylistSummary) -> Unit,
     onEnterArtist: (NeteaseArtistSummary) -> Unit,
+    onPlaySong: (SongItem) -> Unit,
     onPlaySongs: (List<SongItem>, Int) -> Unit
 ) {
     // 每个模块自带卡片与标题栏，这里只负责在模块之间留出统一间距。
@@ -323,9 +328,7 @@ private fun SongEncyclopediaBody(
         SongEncyclopediaSimilarSongsSection(
             similarSongs = data.similarSongs,
             onPlaySong = { similar ->
-                val queue = buildEncyclopediaSimilarQueue(data.similarSongs)
-                val index = queue.indexOfFirst { it.id == similar.songId }
-                if (index >= 0) onPlaySongs(queue, index)
+                buildEncyclopediaSimilarQueue(listOf(similar)).firstOrNull()?.let(onPlaySong)
             },
             onPlayAll = {
                 val queue = buildEncyclopediaSimilarQueue(data.similarSongs)

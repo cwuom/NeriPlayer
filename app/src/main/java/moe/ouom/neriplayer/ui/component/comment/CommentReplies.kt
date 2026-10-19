@@ -67,6 +67,7 @@ private val ReplyAvatarSize = 24.dp
  * @param onReply 点击回复时回调回复目标
  * @param modifier 外部修饰符
  * @param shape 外层裁剪形状, 一级评论与楼中楼各自传入
+ * @param showReplyAction 是否提供回复菜单项，百科预览只提供复制
  * @param content 被包裹的评论内容
  */
 @Composable
@@ -77,6 +78,7 @@ internal fun CommentActionBox(
     onReply: (CommentReplyTarget) -> Unit,
     modifier: Modifier = Modifier,
     shape: Shape = MaterialTheme.shapes.extraLarge,
+    showReplyAction: Boolean = true,
     content: @Composable () -> Unit
 ) {
     var expanded by remember(comment.id) { mutableStateOf(false) }
@@ -98,11 +100,13 @@ internal fun CommentActionBox(
                     scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("comment", comment.content))) }
                 }
             )
-            DropdownMenuItem(
-                text = { Text(stringResource(CoreCommonR.string.comment_reply)) },
-                enabled = replyEnabled,
-                onClick = { expanded = false; reply() }
-            )
+            if (showReplyAction) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(CoreCommonR.string.comment_reply)) },
+                    enabled = replyEnabled,
+                    onClick = { expanded = false; reply() }
+                )
+            }
         }
     }
 }
@@ -150,6 +154,7 @@ internal fun CommentQuotes(quotes: List<CommentQuote>) {
  * @param isLiking 本条的点赞请求是否在途
  * @param likeEnabled 点赞按钮是否可用
  * @param onLike 点击点赞 / 取消点赞
+ * @param showReplyAction 是否提供回复菜单项，默认保留完整评论面板的行为
  */
 @Composable
 internal fun CommentReplyItem(
@@ -161,14 +166,18 @@ internal fun CommentReplyItem(
     offlineMode: Boolean = false,
     isLiking: Boolean = false,
     likeEnabled: Boolean = true,
-    onLike: () -> Unit = {}
+    onLike: () -> Unit = {},
+    showReplyAction: Boolean = true
 ) {
     val context = LocalContext.current
     // 楼中楼配图的放大预览 (与一级评论各自独立)
     var previewIndex by remember(comment.id) { mutableStateOf<Int?>(null) }
     val avatarUrl = comment.avatarUrl
 
-    CommentActionBox(comment, rootId, replyEnabled, onReply, modifier, MaterialTheme.shapes.medium) {
+    CommentActionBox(
+        comment, rootId, replyEnabled, onReply, modifier, MaterialTheme.shapes.medium,
+        showReplyAction = showReplyAction
+    ) {
         Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(12.dp),

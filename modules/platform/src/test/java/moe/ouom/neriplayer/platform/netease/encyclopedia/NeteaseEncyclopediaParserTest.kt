@@ -33,8 +33,16 @@ class NeteaseEncyclopediaParserTest {
     }
 
     @Test
-    fun `non success code and missing data return null`() {
-        assertNull(parseNeteaseEncyclopediaSummary("""{"code":400,"data":null}"""))
+    fun `business error is retryable instead of empty data`() {
+        val failure = runCatching {
+            parseNeteaseEncyclopediaSummary("""{"code":500,"message":"busy","data":null}""")
+        }.exceptionOrNull()
+
+        assertTrue(failure != null)
+    }
+
+    @Test
+    fun `successful response without data remains unavailable`() {
         assertNull(parseNeteaseEncyclopediaSummary("""{"code":200}"""))
     }
 

@@ -39,7 +39,7 @@ import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LibraryMusic
-import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SkipNext
@@ -189,7 +189,7 @@ internal fun MoreOptionsMainContent(
             PlaybackStatsAction(originalSong)
             MoreOptionsItem(
                 title = stringResource(CoreCommonR.string.encyclopedia_title),
-                icon = Icons.Outlined.MenuBook,
+                icon = Icons.AutoMirrored.Outlined.MenuBook,
                 hue = MoreHueViolet,
                 onClick = onOpenEncyclopedia
             )

@@ -677,7 +677,7 @@ private fun MoreOptionsPages(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun MoreOptionsSheetSurface(
+internal fun MoreOptionsSheetSurface(
     owner: MoreOptionsSheetOwner,
     sheetState: SheetState,
     snackbarHostState: SnackbarHostState,
@@ -685,12 +685,12 @@ private fun MoreOptionsSheetSurface(
 ) {
     val presentation = owner.windowPresentation(isCompactEditSongLandscape())
     LaunchedEffect(presentation.expandToFit, sheetState, block = owner.expansionEffect(presentation))
-    // 主页返回时让整个面板跟手缩小、圆角并滑出，和播放页 overlay 的关闭手感一致；
-    // 子页返回主页仍由 MoreOptionsAnimatedPage 的转场处理。
+    // 面板在外层 modifier 之后才向下定位，圆角应由定位后的 Surface 统一裁剪
+    // 子页返回主页仍由 MoreOptionsAnimatedPage 的转场处理
     val dismissState = rememberPredictiveDismissState()
     ModalBottomSheet(
         onDismissRequest = owner.onDismissRequest,
-        modifier = Modifier.predictiveDismissTransform(dismissState),
+        modifier = Modifier.predictiveDismissTransform(dismissState, clipToShape = false),
         sheetState = sheetState,
         sheetGesturesEnabled = presentation.gesturesEnabled,
         dragHandle = if (presentation.showDragHandle) {
@@ -1070,6 +1070,7 @@ private fun MoreOptionsEncyclopediaPage(
         onCloseSheet = owner.onDismissRequest,
         onEnterPlaylist = actions.onEnterPlaylist,
         onEnterArtist = actions.onEnterArtist,
+        onPlaySong = actions.onPlaySong,
         onPlaySongs = actions.onPlaySongs,
         // 先收起更多面板，再由宿主打开原生评论面板：不在百科之上再叠一层评论弹层。
         onOpenComments = actions.onOpenComments
@@ -1077,7 +1078,7 @@ private fun MoreOptionsEncyclopediaPage(
 }
 
 /**
- * 百科页对外暴露的四个回调。
+ * 百科页对外的导航、播放和评论回调
  *
  * 之所以把它们提成类字段、而不是直接写成 [MoreOptionsEncyclopediaPage] 里的 lambda 字面量：
  * 字面量会捕获 owner / navigation，Compose 编译器会为它们生成记忆化分支，把该 composable
@@ -1100,6 +1101,9 @@ private class MoreOptionsEncyclopediaActions(
             navigation.onEnterArtist(artist)
             navigation.onNavigateUp()
         }
+    }
+    val onPlaySong: (SongItem) -> Unit = { song ->
+        PlayerManager.replaceCurrentInQueueAndPlay(song)
     }
     val onPlaySongs: (List<SongItem>, Int) -> Unit = { songs, index ->
         PlayerManager.playPlaylist(songs, index)
