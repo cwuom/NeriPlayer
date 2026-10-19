@@ -35,7 +35,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -82,9 +81,6 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
-import moe.ouom.neriplayer.ui.component.common.PredictiveDismissHandler
-import moe.ouom.neriplayer.ui.component.common.predictiveDismissTransform
-import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
@@ -407,15 +403,6 @@ internal class MoreOptionsSheetOwner(
         isEditSongSaving = saving
     }
 
-    /**
-     * 是否由面板自身接管返回手势（跟手缩小关闭）。
-     *
-     * 主页返回由这里处理；子页返回主页仍走 [MoreOptionsAnimatedPage] 的转场，
-     * 两者互斥，保证任何一页都只有一个返回处理者。
-     */
-    val canPredictiveDismiss: Boolean
-        get() = !isEditSongSaving && !canGoBackToMainPage
-
     fun updateSheetImeVisibility(visible: Boolean) {
         sheetImeVisible = visible
     }
@@ -685,28 +672,21 @@ private fun MoreOptionsSheetSurface(
 ) {
     val presentation = owner.windowPresentation(isCompactEditSongLandscape())
     LaunchedEffect(presentation.expandToFit, sheetState, block = owner.expansionEffect(presentation))
-    // 主页返回时让整个面板跟手缩小、圆角并滑出，和播放页 overlay 的关闭手感一致；
-    // 子页返回主页仍由 MoreOptionsAnimatedPage 的转场处理。
-    val dismissState = rememberPredictiveDismissState()
+    // 关闭面板、子页返回主页都交给 Material 弹层 / MoreOptionsAnimatedPage 自带的预测性返回，
+    // 面板外不再叠加自定义的跟手缩放裁剪：外层四角圆角会把只带顶部圆角的 sheet 底部也切掉一角
+    // （真机反馈：预测返回时面板缺角）。
     ModalBottomSheet(
         onDismissRequest = owner.onDismissRequest,
-        modifier = Modifier.predictiveDismissTransform(dismissState),
         sheetState = sheetState,
         sheetGesturesEnabled = presentation.gesturesEnabled,
         dragHandle = if (presentation.showDragHandle) {
             { BottomSheetDefaults.DragHandle() }
         } else null,
-        containerColor = MaterialTheme.colorScheme.surface,
-        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false)
+        containerColor = MaterialTheme.colorScheme.surface
     ) {
         // Sheet 使用独立窗口，键盘可见性应从它自己的 composition 读取
         val imeVisible = WindowInsets.isImeVisible
         SideEffect { owner.updateSheetImeVisibility(imeVisible) }
-        PredictiveDismissHandler(
-            state = dismissState,
-            enabled = owner.canPredictiveDismiss,
-            onDismiss = owner.onDismissRequest
-        )
         MoreOptionsBackHandlers(owner)
         MoreOptionsSheetBody(owner.page, snackbarHostState, content)
     }
