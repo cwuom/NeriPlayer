@@ -2,6 +2,8 @@
 
 package moe.ouom.neriplayer.core.player.persistence
 
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
+import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatModeState
 import moe.ouom.neriplayer.core.player.runtime.persistence.PlaybackStatePersistenceCoordinator
 
 import android.os.SystemClock
@@ -31,7 +33,10 @@ internal fun PlayerManager.prepareStatePersist(
             mediaUrl = _currentMediaUrl.value.takeUnless { isCurrentListenTogetherFallbackMediaUrl() },
             positionMs = if (keepLastPlaybackProgressEnabled) positionMs.coerceAtLeast(0L) else 0L,
             shouldResumePlayback = shouldResumePlayback && !suppressAutoResumeForCurrentSession,
-            repeatMode = if (keepPlaybackModeStateEnabled) repeatModeSetting else Player.REPEAT_MODE_OFF
+            repeatMode = if (keepPlaybackModeStateEnabled) repeatModeSetting else Player.REPEAT_MODE_OFF,
+            // 心动模式是用户显式功能开关，不是循环/随机那种瞬态播放模式，
+            // 因此不受 keepPlaybackModeStateEnabled 管，照样落盘；恢复侧见 applyRestoredStateSnapshot。
+            heartbeatMode = HeartbeatMode.normalized(heartbeatModeState)
         ),
         keepShuffleMode = keepPlaybackModeStateEnabled
     )

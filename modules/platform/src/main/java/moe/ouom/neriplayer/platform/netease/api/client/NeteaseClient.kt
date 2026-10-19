@@ -1516,4 +1516,59 @@ class NeteaseClient(
             method = "GET",
         )
     }
+
+    /**
+     * 心动模式（playmode/intelligence/list）下一首推荐。
+     *
+     * 走 **eapi** 加密：官方 `createOption(query)` 未指定 crypto，Enhanced 默认
+     * `APP_CONF.encrypt = true`，因此该接口实际以 eapi 发出。
+     *
+     * - 路径推导：NCM 客户端在 eapi 模式下把 `/api/xxx` 改写为 `/eapi/` + `uri.substr(5)`，
+     *   即 `/api/playmode/intelligence/list` -> `/eapi/playmode/intelligence/list`。
+     *   [callEApi] 会自动补 `/eapi` 前缀，所以这里必须传 `"/playmode/intelligence/list"`；
+     *   加密 uri 由 [NeteaseCrypto.eApiEncrypt] 内部再把 `/eapi` 换回 `/api` 参与签名，两端才对得上。
+     * - 为什么不能用 `CryptoMode.API` 明文：官方接口对 api 模式有额外校验。
+     * - 为什么不能用 `callWeApi`：该接口不走 weapi。
+     * - 为什么不能明文 POST `/eapi/...`：实测不加密直接 POST 只返回空 body，eapi 必须正确加密。
+     *
+     * 匿名请求返回 code=301，由解析层识别为「需要登录」，不视为错误。
+     * 与 [getSongDownloadUrl] / [getLyricNew] 保持一致：已登录却拿到 301 时先预热会话再重试一次。
+     */
+    suspend fun getPlaymodeIntelligenceListCancellable(
+        songId: Long,
+        playlistId: Long,
+        startMusicId: Long,
+        count: Int = 1,
+    ): String {
+        require(songId > 0L) { "songId 必须为正数" }
+        // 红线：只接受真实红心歌单 id；0 仅是匿名探测用的占位值，生产环境不得使用
+        require(playlistId > 0L) { "playlistId 必须是真实红心歌单 id，不得用 0 占位" }
+        require(count in 1..10) { "count 必须在 1..10 之间" }
+        val params = mapOf(
+            "songId" to songId.toString(),
+            "type" to "fromPlayOne",
+            "playlistId" to playlistId.toString(),
+            "startMusicId" to startMusicId.toString(),
+            "count" to count.toString(),
+        )
+        fun call(usePersistedCookies: Boolean): String = callEApi(
+            "/playmode/intelligence/list",
+            params,
+            usePersistedCookies = usePersistedCookies,
+            retryHttp1OnStreamReset = true,
+        )
+
+        val preferPersistedCookies = hasLogin()
+        var resp = call(usePersistedCookies = preferPersistedCookies)
+        return try {
+            val code = JSONObject(resp).optInt("code", -1)
+            if (code == 301 && hasLogin()) {
+                try { ensureWeapiSession() } catch (_: Exception) {}
+                resp = call(usePersistedCookies = true)
+            }
+            resp
+        } catch (_: Exception) {
+            resp
+        }
+    }
 }

@@ -76,6 +76,7 @@ import moe.ouom.neriplayer.data.local.platform.bilibili.BiliVideoSkipRepositoryP
 import moe.ouom.neriplayer.platform.netease.NeteasePlaylistCacheRepository
 import moe.ouom.neriplayer.platform.netease.encyclopedia.NeteaseSongEncyclopediaRepository
 import moe.ouom.neriplayer.platform.netease.encyclopedia.SongEncyclopediaRepository
+import moe.ouom.neriplayer.platform.netease.playmode.NeteasePlaymodeIntelligenceRepository
 import moe.ouom.neriplayer.platform.youtube.playlist.YouTubeMusicPlaylistCacheRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
@@ -380,6 +381,11 @@ object AppContainer {
         NeteaseSongEncyclopediaRepository(neteaseClient)
     }
 
+    /** 心动模式官方推荐仓库；未登录或接口不可用时由本地降级接管。 */
+    val heartbeatOfficialRepository: NeteasePlaymodeIntelligenceRepository by lazy {
+        NeteasePlaymodeIntelligenceRepository(neteaseClient)
+    }
+
     private val commentCache = CommentMemoryCache()
     private val neteaseComments = NeteaseCommentRepository(commentCache) { neteaseClient }
     private val biliComments = BiliCommentRepository(commentCache) { biliClient }
@@ -522,6 +528,7 @@ object AppContainer {
         initialized = true
         moe.ouom.neriplayer.core.integration.download.installDownloadDependencies()
         moe.ouom.neriplayer.core.di.player.installPlayerDependencies(app)
+        moe.ouom.neriplayer.core.di.player.installHeartbeatDependencies(app)
         moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess.bind(
             downloads = moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaDownloads,
             covers = moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaCovers,

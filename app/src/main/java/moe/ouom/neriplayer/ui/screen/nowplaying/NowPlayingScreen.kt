@@ -1264,7 +1264,7 @@ fun NowPlayingScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                val controlsLayout = resolveNowPlayingMainControlsLayout(
+                                val controlsLayout = resolveNowPlayingMainControlsLayoutWithHeartbeat(
                                     availableWidth = maxWidth,
                                     secondaryButtonSize = secondaryControlButtonSize,
                                     primaryButtonSize = primaryControlButtonSize,
@@ -1381,6 +1381,14 @@ fun NowPlayingScreen(
                                             }
                                         )
                                     }
+
+                                    NowPlayingHeartbeatControl(
+                                        buttonSize = controlsLayout.secondaryButtonSize,
+                                        iconSize = secondaryIconSize,
+                                        activeTint = nowPlayingActiveIconColor,
+                                        snackbarHostState = snackbarHostState,
+                                        scope = screenScope
+                                    )
                                 }
                             }
                         }

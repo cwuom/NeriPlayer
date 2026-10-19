@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+  Copyright (C) 2025-2025 NeriPlayer developers
+  https://github.com/cwuom/NeriPlayer
+
+  This software is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This software is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this software.
+  If not, see <https://www.gnu.org/licenses/>.
+
+  File: drawable/ic_heartbeat_pulse_24
+
+  心动模式开关图标：24dp 心跳脉冲折线，无填充爱心。
+  播放栏的爱心语义已被「收藏」占用（NowPlayingCoverTopBar / LyricsScreen /
+  NowPlayingQueueSheet / RecentScreen 都用 Icons.Favorite），因此这里改用
+  中性脉冲线，避免用户误以为是在收藏当前歌曲。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#303238">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M2,12 h4.2 l2.1,-6.4 l3.1,11.6 l2.3,-7.4 l1.9,4.4 h4.4" />
+</vector>
