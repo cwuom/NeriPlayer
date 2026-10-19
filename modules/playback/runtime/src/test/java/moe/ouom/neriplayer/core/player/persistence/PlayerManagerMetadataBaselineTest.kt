@@ -15,7 +15,14 @@ class PlayerManagerMetadataBaselineTest {
     fun `resolved empty local lyrics stay empty after repeated manual edits`() {
         val prepared = song.withLocalMetadataOriginals(
             metadata = null,
-            lyrics = LocalLyricsScanMetadata(null, null, null, sourceResolved = true, embeddedSourceResolved = true)
+            lyrics = LocalLyricsScanMetadata(
+                null, null, null,
+                sourceResolved = true,
+                embeddedSourceResolved = true,
+                originalLyricBaseline = "",
+                translatedLyricBaseline = "",
+                romanizedLyricBaseline = ""
+            )
         )
 
         val updated = prepared.withUpdatedLyricsPreservingOriginal(
@@ -54,6 +61,48 @@ class PlayerManagerMetadataBaselineTest {
     }
 
     @Test
+    fun `legacy metadata overrides do not replace a confirmed empty embedded baseline`() {
+        val prepared = song.withLocalMetadataOriginals(
+            metadata = metadata().copy(
+                originalLyric = null,
+                originalTranslatedLyric = null,
+                originalRomanizedLyric = null
+            ),
+            lyrics = LocalLyricsScanMetadata(
+                "edited lyric", "edited translation", "edited romanization",
+                sourceResolved = true,
+                embeddedSourceResolved = true,
+                originalLyricBaseline = "",
+                translatedLyricBaseline = "",
+                romanizedLyricBaseline = ""
+            )
+        )
+
+        assertEquals("", prepared.originalLyric)
+        assertEquals("", prepared.originalTranslatedLyric)
+        assertEquals("", prepared.originalRomanizedLyric)
+    }
+
+    @Test
+    fun `empty legacy metadata overrides do not confirm unknown original lyrics`() {
+        val prepared = song.copy(
+            matchedLyric = "",
+            matchedTranslatedLyric = "",
+            matchedRomanizedLyric = ""
+        ).withLocalMetadataOriginals(
+            metadata = metadata().copy(
+                matchedLyric = "", matchedTranslatedLyric = "", matchedRomanizedLyric = "",
+                originalLyric = null, originalTranslatedLyric = null, originalRomanizedLyric = null
+            ),
+            lyrics = LocalLyricsScanMetadata("", "", "", sourceResolved = true)
+        )
+
+        assertNull(prepared.originalLyric)
+        assertNull(prepared.originalTranslatedLyric)
+        assertNull(prepared.originalRomanizedLyric)
+    }
+
+    @Test
     fun `an unreadable sidecar does not become an empty original after an embedded probe`() {
         val prepared = song.withLocalMetadataOriginals(
             metadata = null,
@@ -61,7 +110,10 @@ class PlayerManagerMetadataBaselineTest {
                 null, null, null,
                 hasOriginalSidecar = true,
                 sourceResolved = true,
-                embeddedSourceResolved = true
+                embeddedSourceResolved = true,
+                originalLyricBaseline = null,
+                translatedLyricBaseline = "",
+                romanizedLyricBaseline = ""
             )
         )
 
@@ -86,7 +138,16 @@ class PlayerManagerMetadataBaselineTest {
     fun `first local edit preserves lyrics read before replacement`() {
         val prepared = song.withLocalMetadataOriginals(
             metadata = null,
-            lyrics = LocalLyricsScanMetadata("local lyric", "local translation", "local romanization", sourceResolved = true)
+            lyrics = LocalLyricsScanMetadata(
+                "local lyric", "local translation", "local romanization",
+                hasOriginalSidecar = true,
+                hasTranslatedSidecar = true,
+                hasRomanizedSidecar = true,
+                sourceResolved = true,
+                originalLyricBaseline = "local lyric",
+                translatedLyricBaseline = "local translation",
+                romanizedLyricBaseline = "local romanization"
+            )
         )
 
         val updated = prepared.withUpdatedLyricsPreservingOriginal(newLyrics = "edited lyric")
@@ -104,7 +165,13 @@ class PlayerManagerMetadataBaselineTest {
             lyricSyncEdited = true
         ).withLocalMetadataOriginals(
             metadata = metadata(),
-            lyrics = LocalLyricsScanMetadata("edited lyric", "edited translation", "edited romanization", sourceResolved = true)
+            lyrics = LocalLyricsScanMetadata(
+                "edited lyric", "edited translation", "edited romanization",
+                sourceResolved = true,
+                originalLyricBaseline = "edited lyric",
+                translatedLyricBaseline = "edited translation",
+                romanizedLyricBaseline = "edited romanization"
+            )
         )
 
         assertEquals("base lyric", prepared.originalLyric)
@@ -117,7 +184,13 @@ class PlayerManagerMetadataBaselineTest {
     fun `confirmed edits with missing originals do not recapture edited sidecars`() {
         val prepared = song.copy(lyricSyncEdited = true).withLocalMetadataOriginals(
             metadata = null,
-            lyrics = LocalLyricsScanMetadata("edited lyric", "edited translation", "edited romanization", sourceResolved = true)
+            lyrics = LocalLyricsScanMetadata(
+                "edited lyric", "edited translation", "edited romanization",
+                sourceResolved = true,
+                originalLyricBaseline = "edited lyric",
+                translatedLyricBaseline = "edited translation",
+                romanizedLyricBaseline = "edited romanization"
+            )
         )
 
         assertNull(prepared.originalLyric)

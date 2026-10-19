@@ -20,9 +20,10 @@ internal fun SongItem.withUpdatedLyricsPreservingOriginal(
     newTranslatedLyric: String? = matchedTranslatedLyric,
     newRomanizedLyric: String? = matchedRomanizedLyric,
     userEdited: Boolean = true,
-    revision: Long = if (userEdited) nextLyricSyncRevision(lyricSyncRevision, System.currentTimeMillis()) else lyricSyncRevision
+    revision: Long = if (userEdited) nextLyricSyncRevision(lyricSyncRevision, System.currentTimeMillis()) else lyricSyncRevision,
+    captureMatchedOriginals: Boolean = true
 ): SongItem {
-    val canCaptureMatchedLyrics = !userEdited || lyricSyncEdited != true
+    val canCaptureMatchedLyrics = captureMatchedOriginals && (!userEdited || lyricSyncEdited != true)
     return copy(
         matchedLyric = newLyrics,
         matchedTranslatedLyric = newTranslatedLyric,
@@ -180,12 +181,13 @@ internal fun applyManualSearchMetadata(
     matchedSongId: String,
     useCustomOverride: Boolean,
     preserveExistingMatchedLyrics: Boolean = false,
-    lyricRevision: Long = nextLyricSyncRevision(originalSong.lyricSyncRevision, System.currentTimeMillis())
+    lyricRevision: Long = nextLyricSyncRevision(originalSong.lyricSyncRevision, System.currentTimeMillis()),
+    captureMatchedOriginals: Boolean = true
 ): SongItem {
     val originalName = originalSong.originalName ?: originalSong.name
     val originalArtist = originalSong.originalArtist ?: originalSong.artist
     val originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl
-    val canCaptureMatchedLyrics = originalSong.lyricSyncEdited != true
+    val canCaptureMatchedLyrics = captureMatchedOriginals && originalSong.lyricSyncEdited != true
     val originalLyric = originalSong.originalLyric
         ?: originalSong.matchedLyric.takeIf { canCaptureMatchedLyrics }
     val originalTranslatedLyric = originalSong.originalTranslatedLyric

@@ -23,21 +23,16 @@ internal fun SongItem.withLocalMetadataOriginals(
         originalArtist = metadata?.originalArtist ?: originalArtist,
         originalCoverUrl = metadata?.originalCoverUrl ?: originalCoverUrl,
         originalLyric = metadata?.originalLyric ?: originalLyric
-            ?: resolvedLyrics?.originalLyricBaseline(resolvedLyrics.lyric, resolvedLyrics.hasOriginalSidecar)
-            ?: matchedLyric.takeIf { canCaptureLocalLyrics && it == "" },
+            ?: resolvedLyrics?.originalLyricBaseline
+            ?: matchedLyric.takeIf { canCaptureLocalLyrics && metadata?.hasLyricOverride != true && it == "" },
         originalTranslatedLyric = metadata?.originalTranslatedLyric ?: originalTranslatedLyric
-            ?: resolvedLyrics?.originalLyricBaseline(resolvedLyrics.translatedLyric, resolvedLyrics.hasTranslatedSidecar)
-            ?: matchedTranslatedLyric.takeIf { canCaptureLocalLyrics && it == "" },
+            ?: resolvedLyrics?.translatedLyricBaseline
+            ?: matchedTranslatedLyric.takeIf { canCaptureLocalLyrics && metadata?.hasTranslatedLyricOverride != true && it == "" },
         originalRomanizedLyric = metadata?.originalRomanizedLyric ?: originalRomanizedLyric
-            ?: resolvedLyrics?.originalLyricBaseline(resolvedLyrics.romanizedLyric, resolvedLyrics.hasRomanizedSidecar)
-            ?: matchedRomanizedLyric.takeIf { canCaptureLocalLyrics && it == "" }
+            ?: resolvedLyrics?.romanizedLyricBaseline
+            ?: matchedRomanizedLyric.takeIf { canCaptureLocalLyrics && metadata?.hasRomanizedLyricOverride != true && it == "" }
     )
 }
-
-private fun LocalLyricsScanMetadata.originalLyricBaseline(
-    scannedLyric: String?,
-    hasSidecar: Boolean
-): String? = scannedLyric ?: "".takeIf { embeddedSourceResolved && !hasSidecar }
 
 internal fun SongItem.withOriginalLyricsFrom(baseline: SongItem): SongItem = copy(
     originalLyric = baseline.originalLyric ?: originalLyric,

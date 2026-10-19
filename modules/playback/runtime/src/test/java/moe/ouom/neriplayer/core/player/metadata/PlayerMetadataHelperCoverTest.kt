@@ -105,6 +105,22 @@ class PlayerMetadataHelperCoverTest {
     }
 
     @Test
+    fun `prepared unknown originals are not captured from current metadata overrides`() {
+        val updated = song.copy(
+            matchedLyric = "metadata edit",
+            matchedTranslatedLyric = "metadata translation",
+            matchedRomanizedLyric = "metadata romanization"
+        ).withUpdatedLyricsPreservingOriginal(
+            newLyrics = "next edit",
+            captureMatchedOriginals = false
+        )
+
+        assertNull(updated.originalLyric)
+        assertNull(updated.originalTranslatedLyric)
+        assertNull(updated.originalRomanizedLyric)
+    }
+
+    @Test
     fun `youtube tracks never auto match external lyrics through metadata replacement`() {
         assertFalse(shouldAutoMatchExternalLyrics(song, isYouTubeMusicTrack = false))
         assertFalse(shouldAutoMatchExternalLyrics(song, isYouTubeMusicTrack = true))

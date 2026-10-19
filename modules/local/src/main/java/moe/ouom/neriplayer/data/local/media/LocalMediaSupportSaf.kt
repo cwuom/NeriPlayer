@@ -422,6 +422,11 @@ internal fun LocalMediaSupport.readId3v1FileMetadata(raf: RandomAccessFile): Con
     raf.seek(raf.length() - 128L)
     val tag = ByteArray(128)
     raf.readFully(tag)
+    return parseId3v1Metadata(tag)
+}
+
+internal fun LocalMediaSupport.parseId3v1Metadata(tag: ByteArray): ContainerMetadata? {
+    if (tag.size != 128) return null
     if (tag.readAscii(0, 3) != "TAG") return null
 
     val metadata = ContainerMetadata(
@@ -547,7 +552,7 @@ private fun isId3TagHeader(bytes: ByteArray): Boolean {
     return bytes.size >= ID3_HEADER_SIZE && bytes.readAscii(0, 3) == "ID3"
 }
 
-private fun id3FirstFrameOffset(bytes: ByteArray, majorVersion: Int, limit: Int): Int? {
+internal fun id3FirstFrameOffset(bytes: ByteArray, majorVersion: Int, limit: Int): Int? {
     if (!id3HasExtendedHeader(bytes, majorVersion)) return ID3_HEADER_SIZE
     if (ID3_HEADER_SIZE + 4 > limit) return null
     val extendedSize = id3ExtendedHeaderSize(bytes, majorVersion)
@@ -557,7 +562,7 @@ private fun id3FirstFrameOffset(bytes: ByteArray, majorVersion: Int, limit: Int)
     return ID3_HEADER_SIZE + extendedSize.toInt()
 }
 
-private fun id3HasExtendedHeader(bytes: ByteArray, majorVersion: Int): Boolean {
+internal fun id3HasExtendedHeader(bytes: ByteArray, majorVersion: Int): Boolean {
     return majorVersion > 2 && (bytes[5].toInt() and 0x40) != 0
 }
 
@@ -572,9 +577,9 @@ private fun id3ExtendedHeaderSize(bytes: ByteArray, majorVersion: Int): Long {
 
 private fun id3MinimumExtendedHeaderSize(majorVersion: Int): Long = if (majorVersion >= 4) 6L else 10L
 
-private fun id3FrameHeaderSize(majorVersion: Int): Int = if (majorVersion == 2) 6 else 10
+internal fun id3FrameHeaderSize(majorVersion: Int): Int = if (majorVersion == 2) 6 else 10
 
-private fun id3FrameId(bytes: ByteArray, offset: Int, majorVersion: Int): String? {
+internal fun id3FrameId(bytes: ByteArray, offset: Int, majorVersion: Int): String? {
     val frameId = if (majorVersion == 2) {
         bytes.readAscii(offset, 3)
     } else {
@@ -583,7 +588,7 @@ private fun id3FrameId(bytes: ByteArray, offset: Int, majorVersion: Int): String
     return frameId?.takeIf(String::isNotBlank)
 }
 
-private fun id3FrameSize(bytes: ByteArray, offset: Int, majorVersion: Int): Int {
+internal fun id3FrameSize(bytes: ByteArray, offset: Int, majorVersion: Int): Int {
     return when {
         majorVersion >= 4 -> bytes.readSynchsafeInt(offset + 4)
         majorVersion == 2 -> bytes.readBigEndianInt24(offset + 3)
@@ -890,7 +895,8 @@ internal fun LocalMediaSupport.resolveContentSidecarReferences(
     val localReferences = NearbyLyricReferences(
         original = localFiles.original?.absolutePath,
         translated = localFiles.translated?.absolutePath,
-        romanized = localFiles.romanized?.absolutePath
+        romanized = localFiles.romanized?.absolutePath,
+        lookupComplete = localFiles.lookupComplete
     )
     if (!sourceUri.scheme.equals("content", ignoreCase = true)) {
         return ContentSidecarReferences(
@@ -929,14 +935,11 @@ internal fun LocalMediaSupport.resolveContentSidecarReferences(
         baseName = audioBaseName
     )
     val lyricsDirectory = findManagedSidecarDirectory(parentChildren, "Lyrics")
+    val nestedChildren = lyricsDirectory?.let {
+        queryDocumentChildren(context, baseUri, it.documentId)
+    }.orEmpty()
     val nestedReferences = resolveDocumentLyricReferences(
-        children = lyricsDirectory?.let {
-            queryDocumentChildren(
-                context = context,
-                baseUri = baseUri,
-                parentDocumentId = it.documentId
-            )
-        }.orEmpty(),
+        children = nestedChildren,
         baseName = audioBaseName
     )
     val metadataName = displayName + LOCAL_METADATA_SUFFIX
@@ -950,7 +953,9 @@ internal fun LocalMediaSupport.resolveContentSidecarReferences(
             translated = nestedReferences.translated ?: directReferences.translated
                 ?: localFiles.translated?.absolutePath,
             romanized = nestedReferences.romanized ?: directReferences.romanized
-                ?: localFiles.romanized?.absolutePath
+                ?: localFiles.romanized?.absolutePath,
+            lookupComplete = isDocumentChildrenLookupComplete(baseUri, parentDocumentId) &&
+                (lyricsDirectory == null || isDocumentChildrenLookupComplete(baseUri, lyricsDirectory.documentId))
         ),
         mutationParentChildren = mutationParentChildren,
         mutationParentChildrenFresh = mutationParentChildren != null
@@ -1403,6 +1408,13 @@ internal fun LocalMediaSupport.cachedDocumentChildren(
             }
             ?.children
             .orEmpty()
+    }
+}
+
+private fun LocalMediaSupport.isDocumentChildrenLookupComplete(baseUri: Uri, parentDocumentId: String): Boolean {
+    val cacheKey = documentParentCacheKey(baseUri, parentDocumentId)
+    return synchronized(documentChildrenCache) {
+        documentChildrenCache[cacheKey]?.let { it.isComplete && it.isFresh(System.currentTimeMillis()) } == true
     }
 }
 

@@ -73,7 +73,10 @@ internal fun LocalMediaSupport.inspectLyricsFromDirectFile(
             ?.romanizedLyric,
         hasOriginalSidecar = nearbyFiles.original != null && nearbyLyric != null,
         hasTranslatedSidecar = nearbyFiles.translated != null && nearbyTranslatedLyric != null,
-        hasRomanizedSidecar = nearbyFiles.romanized != null && nearbyRomanizedLyric != null
+        hasRomanizedSidecar = nearbyFiles.romanized != null && nearbyRomanizedLyric != null,
+        originalSidecarResolved = nearbyLyric != null || nearbyFiles.original == null && nearbyFiles.lookupComplete,
+        translatedSidecarResolved = nearbyTranslatedLyric != null || nearbyFiles.translated == null && nearbyFiles.lookupComplete,
+        romanizedSidecarResolved = nearbyRomanizedLyric != null || nearbyFiles.romanized == null && nearbyFiles.lookupComplete
     )
 }
 
@@ -100,7 +103,13 @@ internal fun LocalMediaSupport.mergeLyricsInspections(
         metadataRomanized = primary.metadataRomanized ?: fallback.metadataRomanized,
         hasOriginalSidecar = primary.hasOriginalSidecar || fallback.hasOriginalSidecar,
         hasTranslatedSidecar = primary.hasTranslatedSidecar || fallback.hasTranslatedSidecar,
-        hasRomanizedSidecar = primary.hasRomanizedSidecar || fallback.hasRomanizedSidecar
+        hasRomanizedSidecar = primary.hasRomanizedSidecar || fallback.hasRomanizedSidecar,
+        originalSidecarResolved = if (primary.hasOriginalSidecar) primary.originalSidecarResolved
+            else primary.originalSidecarResolved && fallback.originalSidecarResolved,
+        translatedSidecarResolved = if (primary.hasTranslatedSidecar) primary.translatedSidecarResolved
+            else primary.translatedSidecarResolved && fallback.translatedSidecarResolved,
+        romanizedSidecarResolved = if (primary.hasRomanizedSidecar) primary.romanizedSidecarResolved
+            else primary.romanizedSidecarResolved && fallback.romanizedSidecarResolved
     )
 }
 
@@ -143,8 +152,10 @@ internal fun LocalMediaSupport.inspectLyricsFromContentUri(
         hasOriginalSidecar = references.lyricReferences.original != null && original != null,
         hasTranslatedSidecar = references.lyricReferences.translated != null &&
             translated != null,
-        hasRomanizedSidecar = references.lyricReferences.romanized != null &&
-            romanized != null
+        hasRomanizedSidecar = references.lyricReferences.romanized != null && romanized != null,
+        originalSidecarResolved = original != null || references.lyricReferences.original == null && references.lyricReferences.lookupComplete,
+        translatedSidecarResolved = translated != null || references.lyricReferences.translated == null && references.lyricReferences.lookupComplete,
+        romanizedSidecarResolved = romanized != null || references.lyricReferences.romanized == null && references.lyricReferences.lookupComplete
     )
 }
 

@@ -1813,7 +1813,7 @@ object LocalMediaSupport {
         val latin1 = bytes.decodeContainerBytes(StandardCharsets.ISO_8859_1)
         val repaired = repairLocalMetadataText(latin1)
         if (repaired != latin1) return repaired
-        decodeShortLegacyChineseContainer(bytes)?.let { return it }
+        decodeLegacyChineseContainer(bytes)?.let { return it }
         return containerTextCharsets
             .filter { charset -> charset.isContainerFallbackCharset(bytes) }
             .maxByOrNull { charset -> scoreDecodedText(bytes.decodeContainerBytes(charset)) }

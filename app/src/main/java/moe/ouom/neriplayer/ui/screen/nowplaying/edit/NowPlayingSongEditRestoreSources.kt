@@ -103,19 +103,12 @@ internal suspend fun resolveManagedEditSongBaselineAtRestore(
     val cover = metadata?.let { readEditSongRestoreValue { reader.cover(context, it) } }
     val sidecar = readEditSongRestoreValue { reader.sidecar(context, song) }
     val local = if (sidecar == null) readEditSongRestoreValue { reader.local(context, song) } else null
-    val resolved = resolveManagedEditSongBaseline(
+    return resolveManagedEditSongBaseline(
         current = current,
         metadata = metadata,
         coverReference = cover,
-        sidecarLyrics = sidecar ?: local?.asDownloadedLyricsBundle()
-    )
-    // 相邻歌词已经可能被编辑覆盖，保留的原始值也包括明确无歌词的空串
-    return resolved.copy(
-        lyric = metadata?.baseline?.originalLyric ?: song.originalLyric ?: resolved.lyric,
-        translatedLyric = metadata?.baseline?.translatedLyric
-            ?: song.originalTranslatedLyric ?: resolved.translatedLyric,
-        romanizedLyric = metadata?.baseline?.romanizedLyric
-            ?: song.originalRomanizedLyric ?: resolved.romanizedLyric
+        sidecarLyrics = sidecar ?: local?.asDownloadedLyricsBundle(),
+        retainedOriginals = song
     )
 }
 

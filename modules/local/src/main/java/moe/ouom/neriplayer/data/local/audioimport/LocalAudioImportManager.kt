@@ -836,11 +836,13 @@ object LocalAudioImportManager {
             matchedLyric = detailedSong.matchedLyric,
             matchedTranslatedLyric = detailedSong.matchedTranslatedLyric,
             matchedRomanizedLyric = detailedSong.matchedRomanizedLyric,
-            originalName = quickSong.originalName?.takeIf { it.isNotBlank() }
-                ?: detailedSong.originalName?.takeIf { it.isNotBlank() }
+            originalName = resolveImportedOriginalText(
+                quickSong.originalName, quickSong.name, detailedSong.originalName, quickSong.customName
+            )
                 ?: resolvedName,
-            originalArtist = normalizeQuickImportedMetadata(quickSong.originalArtist)
-                ?: normalizeQuickImportedMetadata(detailedSong.originalArtist)
+            originalArtist = resolveImportedOriginalText(
+                quickSong.originalArtist, quickSong.artist, detailedSong.originalArtist, quickSong.customArtist
+            )
                 ?: resolvedArtist,
             originalCoverUrl = if (quickSong.originalCoverUrl == "" || detailedSong.originalCoverUrl == "") "" else selectMergedImportedCoverReference(
                 quickCover = quickSong.originalCoverUrl,
@@ -880,7 +882,7 @@ object LocalAudioImportManager {
 
         return mergeImportedSongMetadata(
             quickSong = song,
-            detailedSong = LocalMediaSupport.toSongItem(details)
+            detailedSong = toImportedSongItem(context, details)
         )
     }
 
@@ -907,7 +909,7 @@ object LocalAudioImportManager {
         } ?: return sidecarHydrated
         return mergeImportedSongMetadata(
             quickSong = sidecarHydrated,
-            detailedSong = LocalMediaSupport.toSongItem(details)
+            detailedSong = toImportedSongItem(context, details)
         )
     }
 
@@ -1035,11 +1037,11 @@ object LocalAudioImportManager {
                 ?: song.matchedTranslatedLyric,
             matchedRomanizedLyric = lyricMetadata.romanizedLyric
                 ?: song.matchedRomanizedLyric,
-            originalLyric = song.originalLyric ?: lyricMetadata.lyric,
+            originalLyric = song.originalLyric ?: lyricMetadata.originalLyricBaseline,
             originalTranslatedLyric = song.originalTranslatedLyric
-                ?: lyricMetadata.translatedLyric,
+                ?: lyricMetadata.translatedLyricBaseline,
             originalRomanizedLyric = song.originalRomanizedLyric
-                ?: lyricMetadata.romanizedLyric,
+                ?: lyricMetadata.romanizedLyricBaseline,
             matchedLyricSource = if (lyricMetadata.lyric != null) {
                 null
             } else {

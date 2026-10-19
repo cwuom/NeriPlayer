@@ -62,7 +62,7 @@ class LocalMediaSidecarLookupRulesTest {
         File(album, "song.lrc").writeText("[00:01]shadowed")
         val translated = File(album, "song_trans.txt").apply { writeText("translated") }
 
-        assertEquals(NearbyLyricFiles(original, translated, null), LocalMediaSupport.findNearbyLyricFilesImpl(audio))
+        assertEquals(NearbyLyricFiles(original, translated, null, lookupComplete = true), LocalMediaSupport.findNearbyLyricFilesImpl(audio))
     }
 
     @Test

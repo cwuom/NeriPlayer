@@ -422,7 +422,7 @@ internal suspend fun LocalAudioImportManager.completeScannedSongs(
             threshold = COMPLETE_SCAN_METADATA_DEFER_THRESHOLD
         )
     ) {
-        // 大批量扫描先读取轻量 metadata 侧车, 音频容器解析放到播放或编辑时
+        // 大批量扫描只补轻量侧车和有界 ID3 文本，封面与音轨仍延后解析
         val dispatcher = Dispatchers.IO.limitedParallelism(COMPLETE_SCAN_PARALLELISM)
         val sidecarHydrated = coroutineScope {
             val hydrated = ArrayList<SongItem>(total)
@@ -434,13 +434,11 @@ internal suspend fun LocalAudioImportManager.completeScannedSongs(
                         val metadataReference = song.mediaUri
                             ?.let(indexedSidecarReferences::get)
                             ?.metadata
-                        // 大目录首屏只消费目录行和已经建立的侧车索引
-                        // 没有侧车时探测 SAF 音频本身会退化为每首一次
-                        // DocumentsProvider 查询，将嵌入元信息留到后续详情页
+                        // MediaStore 的可读 Unicode 也可能已被系统误解码，MP3 需要核对原始标签
                         val canHydrateWithoutAudioProbe = metadataReference != null ||
-                            !song.localFilePath.isNullOrBlank()
+                            !song.localFilePath.isNullOrBlank() || isRawId3IdentityCandidate(song)
                         if (!canHydrateWithoutAudioProbe ||
-                            !shouldHydrateLocalSongFastIdentity(song, metadataReference)
+                            !isRawId3IdentityCandidate(song) && !shouldHydrateLocalSongFastIdentity(song, metadataReference)
                         ) {
                             song
                         } else {

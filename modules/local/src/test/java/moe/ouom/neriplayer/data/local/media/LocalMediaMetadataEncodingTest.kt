@@ -69,9 +69,18 @@ class LocalMediaMetadataEncodingTest {
     }
 
     @Test
+    fun `container text decodes adjacent gb18030 characters whose latin1 form is uppercase`() {
+        with(LocalMediaSupport) {
+            val bytes = byteArrayOf(0xD6.toByte(), 0xD0.toByte(), 0xCE.toByte(), 0xC4.toByte())
+
+            assertEquals("中文", bytes.decodeContainerText())
+        }
+    }
+
+    @Test
     fun `container legacy fallback preserves European names and accented runs`() {
         with(LocalMediaSupport) {
-            listOf("Björk", "Mötley Crüe", "François", "ÄÖÜß", "éèêë").forEach { value ->
+            listOf("Björk", "Mötley Crüe", "François", "ÄÖÜß", "éèêë", "éè").forEach { value ->
                 assertEquals(value, value.toByteArray(ISO_8859_1).decodeContainerText())
             }
         }

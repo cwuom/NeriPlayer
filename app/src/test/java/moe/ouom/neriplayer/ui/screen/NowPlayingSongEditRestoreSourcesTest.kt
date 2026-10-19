@@ -115,6 +115,33 @@ class NowPlayingSongEditRestoreSourcesTest {
     }
 
     @Test
+    fun `all durable lyric tracks take precedence over song originals and edited sidecars`() = runTest {
+        val reader = FakeReader().apply {
+            metadataValue = ManagedDownloadRestorableMetadata(
+                sourceStableKey = "stable",
+                baseline = ManagedDownloadRestorableMetadata.Baseline(
+                    originalLyric = "", translatedLyric = "durable translation",
+                    romanizedLyric = "durable romanization"
+                ),
+                overrides = ManagedDownloadRestorableMetadata.Overrides()
+            )
+            sidecarValue = ManagedDownloadStorage.DownloadedLyricsBundle(
+                "edited lyric", "edited translation", "edited romanization", true, true, true
+            )
+        }
+        val song = localSong.copy(
+            originalLyric = "stale lyric", originalTranslatedLyric = "stale translation",
+            originalRomanizedLyric = "stale romanization"
+        )
+
+        val restored = resolveManagedEditSongBaselineAtRestore(context, song, baseline, reader)
+
+        assertEquals("", restored.lyric)
+        assertEquals("durable translation", restored.translatedLyric)
+        assertEquals("durable romanization", restored.romanizedLyric)
+    }
+
+    @Test
     fun `unavailable managed sidecar falls back to real local sidecar`() = runTest {
         val reader = FakeReader().apply {
             sidecarFailure = IllegalStateException("stale index")

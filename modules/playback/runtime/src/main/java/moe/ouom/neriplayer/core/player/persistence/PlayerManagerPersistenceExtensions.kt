@@ -987,7 +987,8 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
                         matchedSongId = selectedSong.id,
                         useCustomOverride = shouldApplySearchMetadataAsCustomOverride(latestOriginalSong),
                         preserveExistingMatchedLyrics = usedSearchSummaryFallback,
-                        lyricRevision = localRepo.nextUserLyricSyncRevision(latestOriginalSong)
+                        lyricRevision = localRepo.nextUserLyricSyncRevision(latestOriginalSong),
+                        captureMatchedOriginals = !LocalSongSupport.isLocalSong(preparedOriginalSong, application)
                     )
                 }
 
@@ -1085,17 +1086,9 @@ internal suspend fun PlayerManager.writeLocalEditableMetadata(
     writeCover: Boolean = coverReference != null,
     writeLyrics: Boolean = false
 ): LocalMediaMetadataWriteOutcome {
-    val writableReference = resolveLocalMetadataWriteReference(song)
+    val writableSong = resolveLocalSidecarWriteSong(song)
+        ?.takeIf { LocalSongSupport.isLocalSong(it, application) }
         ?: return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
-    val writableSong = song.copy(
-        mediaUri = writableReference,
-        localFilePath = if (writableReference.startsWith('/')) writableReference else null,
-        localFileName = song.localFileName
-            ?: writableReference.substringAfterLast('/').takeIf(String::isNotBlank)
-    )
-    if (!LocalSongSupport.isLocalSong(writableSong, application)) {
-        return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
-    }
     val playbackSnapshot = parkCurrentPlaybackForLocalMetadataWrite(song)
     return try {
         LocalMediaSupport.writeEditableMetadata(
@@ -1630,11 +1623,13 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
         ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
         ?: songToUpdate
     val currentSong = preserveLocalSongMetadataOriginals(latestQueueSong)
+    val captureMatchedOriginals = !LocalSongSupport.isLocalSong(currentSong, application)
     recordUserLyricEditThenPublish(
         prepare = {
             currentSong.withUpdatedLyricsPreservingOriginal(
                 newLyrics = newLyrics,
-                revision = localRepo.nextUserLyricSyncRevision(currentSong)
+                revision = localRepo.nextUserLyricSyncRevision(currentSong),
+                captureMatchedOriginals = captureMatchedOriginals
             )
         },
         record = localRepo::recordLyricSyncState
@@ -1643,7 +1638,8 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
         updateQueuedSong(songToUpdate) { current ->
             current.withOriginalLyricsFrom(updatedSong).withUpdatedLyricsPreservingOriginal(
                 newLyrics = newLyrics,
-                revision = revision
+                revision = revision,
+                captureMatchedOriginals = captureMatchedOriginals
             )
         }
 
@@ -1651,7 +1647,8 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
             setCurrentSongForPlayback(
                 _currentSongFlow.value?.withOriginalLyricsFrom(updatedSong)?.withUpdatedLyricsPreservingOriginal(
                     newLyrics = newLyrics,
-                    revision = revision
+                    revision = revision,
+                    captureMatchedOriginals = captureMatchedOriginals
                 )
             )
         }
@@ -1692,11 +1689,13 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
         ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
         ?: songToUpdate
     val currentSong = preserveLocalSongMetadataOriginals(latestQueueSong)
+    val captureMatchedOriginals = !LocalSongSupport.isLocalSong(currentSong, application)
     recordUserLyricEditThenPublish(
         prepare = {
             currentSong.withUpdatedLyricsPreservingOriginal(
                 newTranslatedLyric = newTranslatedLyrics,
-                revision = localRepo.nextUserLyricSyncRevision(currentSong)
+                revision = localRepo.nextUserLyricSyncRevision(currentSong),
+                captureMatchedOriginals = captureMatchedOriginals
             )
         },
         record = localRepo::recordLyricSyncState
@@ -1705,7 +1704,8 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
         updateQueuedSong(songToUpdate) { current ->
             current.withOriginalLyricsFrom(updatedSong).withUpdatedLyricsPreservingOriginal(
                 newTranslatedLyric = newTranslatedLyrics,
-                revision = revision
+                revision = revision,
+                captureMatchedOriginals = captureMatchedOriginals
             )
         }
 
@@ -1713,7 +1713,8 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
             setCurrentSongForPlayback(
                 _currentSongFlow.value?.withOriginalLyricsFrom(updatedSong)?.withUpdatedLyricsPreservingOriginal(
                     newTranslatedLyric = newTranslatedLyrics,
-                    revision = revision
+                    revision = revision,
+                    captureMatchedOriginals = captureMatchedOriginals
                 )
             )
         }
@@ -1760,6 +1761,7 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     } else {
         latestQueueSong
     }
+    val captureMatchedOriginals = !userEdited || !LocalSongSupport.isLocalSong(currentQueueSong, application)
     val effectiveLyrics = newLyrics ?: currentQueueSong.matchedLyric
     val effectiveTranslatedLyrics = newTranslatedLyrics
         ?: currentQueueSong.matchedTranslatedLyric
@@ -1791,7 +1793,8 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         newTranslatedLyric = effectiveTranslatedLyrics,
         newRomanizedLyric = effectiveRomanizedLyrics,
         userEdited = userEdited,
-        revision = revision
+        revision = revision,
+        captureMatchedOriginals = captureMatchedOriginals
     )
     val isLocalSong = LocalSongSupport.isLocalSong(updatedSong, application)
     val sidecarsWritten = if (isLocalSong && writeLocalMetadata) {
@@ -1861,7 +1864,8 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
             newTranslatedLyric = effectiveTranslatedLyrics,
             newRomanizedLyric = effectiveRomanizedLyrics,
             userEdited = userEdited,
-            revision = revision
+            revision = revision,
+            captureMatchedOriginals = captureMatchedOriginals
         )
     }
     if (updatedQueueSong != null) {
@@ -1875,7 +1879,8 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
                 newTranslatedLyric = effectiveTranslatedLyrics,
                 newRomanizedLyric = effectiveRomanizedLyrics,
                 userEdited = userEdited,
-                revision = revision
+                revision = revision,
+                captureMatchedOriginals = captureMatchedOriginals
             )
         )
     }

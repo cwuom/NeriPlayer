@@ -12,8 +12,7 @@ private val metadataSingleByteCharsets: List<Charset> by lazy {
 }
 
 private val metadataChineseCharset: Charset? by lazy { supportedCharsetOrNull("GB18030") }
-private val legacyHighByteRun = Regex("[\\u0080-\\u00FF]{4,}")
-private val containerHighByteRun = Regex("[\\u0080-\\u00FF]+")
+private val legacyHighByteRun = Regex("[\\u0080-\\u00FF]{2,}")
 
 internal fun repairLocalMetadataText(value: String): String {
     if (value.all { it.code < 0x80 }) return value
@@ -29,34 +28,31 @@ internal fun repairLocalMetadataText(value: String): String {
 
 internal fun decodeLocalMetadataUtf8(bytes: ByteArray): String? = decodeMetadataBytes(bytes, UTF_8)
 
-internal fun decodeShortLegacyChineseContainer(bytes: ByteArray): String? {
+internal fun decodeLegacyChineseContainer(bytes: ByteArray): String? {
     if (bytes.any { it == 0.toByte() }) return null
-    val runs = containerHighByteRun.findAll(bytes.toString(ISO_8859_1)).toList()
-    // 短汉字可能被 ASCII 分隔，孤立重音字母和连续欧洲文字仍保留原有解释
-    if (runs.isEmpty() || runs.any { it.value.length != 2 }) return null
-    val charset = metadataChineseCharset ?: return null
-    return decodeMetadataBytes(bytes, charset)
-        ?.takeIf { text -> text.any { it.isCjkUnifiedIdeograph() } }
-        ?.takeIf { text -> text.toByteArray(charset).contentEquals(bytes) }
+    return recoverLegacyChineseMetadata(bytes, minimumCjkCharacters = 1)
 }
 
-private fun recoverLegacyChineseMetadata(bytes: ByteArray): String? {
-    // 连续高字节仍可能是正常欧洲文字，只对混杂符号或异常大小写的片段尝试旧中文编码
+private fun recoverLegacyChineseMetadata(bytes: ByteArray, minimumCjkCharacters: Int = 2): String? {
+    // 字节可逆不能证明编码，纯小写重音和自然的欧洲字母串继续保留 Latin1 解释
     val latin1 = bytes.toString(ISO_8859_1)
     if (legacyHighByteRun.findAll(latin1).none { it.value.hasLegacyChineseSignals() }) return null
     val charset = metadataChineseCharset ?: return null
     return decodeMetadataBytes(bytes, charset)
-        ?.takeIf { text -> text.count { it.isCjkUnifiedIdeograph() } >= 2 }
+        ?.takeIf { text -> text.count { it.isCjkUnifiedIdeograph() } >= minimumCjkCharacters }
         ?.takeIf { text -> text.toByteArray(charset).contentEquals(bytes) }
 }
 
 private fun String.hasLegacyChineseSignals(): Boolean {
+    if (any { !it.isLetter() }) return true
+    if (length == 2) return first().isUpperCase() && last().isLowerCase()
     var seenLowercase = false
-    return any { char ->
-        val suspicious = !char.isLetter() || (seenLowercase && char.isUpperCase())
+    val mixedCase = any { char ->
+        val suspicious = seenLowercase && char.isUpperCase()
         if (char.isLowerCase()) seenLowercase = true
         suspicious
     }
+    return mixedCase || (length >= 4 && all(Char::isUpperCase))
 }
 
 private fun decodeMetadataBytes(bytes: ByteArray, charset: Charset): String? {

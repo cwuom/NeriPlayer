@@ -388,7 +388,19 @@ internal fun LocalMediaSupport.inspectLyricsFastImpl(
             scannedSource = resolvedScan != null,
             embeddedSource = embedded != null
         ),
-        embeddedSourceResolved = embedded != null
+        embeddedSourceResolved = embedded != null,
+        originalLyricBaseline = originalLocalLyricBaseline(
+            resolvedScan?.original, resolvedScan?.originalSidecarResolved == true,
+            embedded?.embeddedLyric, embedded?.embeddedSourceResolved == true
+        ),
+        translatedLyricBaseline = originalLocalLyricBaseline(
+            resolvedScan?.translated, resolvedScan?.translatedSidecarResolved == true,
+            embedded?.embeddedTranslatedLyric, embedded?.embeddedSourceResolved == true
+        ),
+        romanizedLyricBaseline = originalLocalLyricBaseline(
+            resolvedScan?.romanized, resolvedScan?.romanizedSidecarResolved == true,
+            embedded?.embeddedRomanizedLyric, embedded?.embeddedSourceResolved == true
+        )
     )
     if (cacheable && !forceRefresh) {
         synchronized(localLyricsLookupCache) {

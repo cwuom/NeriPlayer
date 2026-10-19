@@ -881,7 +881,10 @@ internal fun LocalMediaSupport.inspectLyricsFromKnownReferences(
             ?.romanizedLyric,
         hasOriginalSidecar = references.lyrics.original != null && original != null,
         hasTranslatedSidecar = references.lyrics.translated != null && translated != null,
-        hasRomanizedSidecar = references.lyrics.romanized != null && romanized != null
+        hasRomanizedSidecar = references.lyrics.romanized != null && romanized != null,
+        originalSidecarResolved = original != null || references.lyrics.original == null && references.lyrics.lookupComplete,
+        translatedSidecarResolved = translated != null || references.lyrics.translated == null && references.lyrics.lookupComplete,
+        romanizedSidecarResolved = romanized != null || references.lyrics.romanized == null && references.lyrics.lookupComplete
     )
 }
 

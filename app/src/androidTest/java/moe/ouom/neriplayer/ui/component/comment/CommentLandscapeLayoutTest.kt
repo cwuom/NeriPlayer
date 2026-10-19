@@ -1,8 +1,13 @@
 package moe.ouom.neriplayer.ui.component.comment
 
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.os.Build
+import android.os.ParcelFileDescriptor
+import android.view.Display
 import android.view.View
+import androidx.activity.ComponentActivity
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -13,7 +18,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToIndex
@@ -30,7 +35,7 @@ import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -41,17 +46,72 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class CommentLandscapeLayoutTest {
     @get:Rule
-    val composeRule = createComposeRule()
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var sheetView: View
+    private var originalRequestedOrientation: Int? = null
+    private var originalOrientation = Configuration.ORIENTATION_UNDEFINED
+    private var hostDisplayId = Display.DEFAULT_DISPLAY
+    private var originalIgnoreOrientationRequest: Boolean? = null
 
     @Before
     fun requireLandscapeHost() {
         assumeComposeHostAvailable()
-        val configuration = InstrumentationRegistry.getInstrumentation().targetContext.resources.configuration
-        assumeTrue("需要至少 720dp 宽的横屏宿主验证真实评论弹层",
-            configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && configuration.screenWidthDp >= 720)
+        composeRule.activityRule.scenario.onActivity { activity ->
+            originalRequestedOrientation = activity.requestedOrientation
+            originalOrientation = activity.resources.configuration.orientation
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                hostDisplayId = requireNotNull(activity.display).displayId
+            }
+        }
+        // 部分系统镜像会忽略应用方向请求，测试需要先允许宿主真实旋转
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            originalIgnoreOrientationRequest = readIgnoreOrientationRequest()
+            if (originalIgnoreOrientationRequest == true) setIgnoreOrientationRequest(false)
+        }
+        composeRule.activityRule.scenario.onActivity {
+            it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            val configuration = composeRule.activity.resources.configuration
+            configuration.orientation == Configuration.ORIENTATION_LANDSCAPE && configuration.screenWidthDp >= 720
+        }
     }
+
+    @After
+    fun restoreHostOrientation() {
+        try {
+            originalRequestedOrientation?.let { requested ->
+                composeRule.activityRule.scenario.onActivity { it.requestedOrientation = requested }
+            }
+        } finally {
+            originalIgnoreOrientationRequest?.let(::setIgnoreOrientationRequest)
+        }
+        if (originalRequestedOrientation == null) return
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.activity.resources.configuration.orientation == originalOrientation
+        }
+    }
+
+    private fun readIgnoreOrientationRequest(): Boolean {
+        val output = shell("wm get-ignore-orientation-request -d $hostDisplayId")
+        return when (output) {
+            "ignoreOrientationRequest true for displayId=$hostDisplayId" -> true
+            "ignoreOrientationRequest false for displayId=$hostDisplayId" -> false
+            else -> error("无法读取宿主方向策略: $output")
+        }
+    }
+
+    private fun setIgnoreOrientationRequest(ignore: Boolean) {
+        val output = shell("wm set-ignore-orientation-request -d $hostDisplayId $ignore")
+        assertTrue("设置宿主方向策略失败: $output", output.isEmpty())
+        assertEquals(ignore, readIgnoreOrientationRequest())
+    }
+
+    private fun shell(command: String): String = InstrumentationRegistry.getInstrumentation()
+        .uiAutomation.executeShellCommand(command).use { descriptor ->
+            ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText().trim() }
+        }
 
     @Test
     fun landscapeCommentsUseWideSurfaceAndKeepListVisible() {
@@ -61,7 +121,7 @@ class CommentLandscapeLayoutTest {
         surface.assertIsDisplayed()
         assertTrue("横屏评论应突破竖屏弹层的 640dp 宽度限制",
             surface.fetchSemanticsNode().boundsInRoot.width / scale > 640f)
-        val configuration = InstrumentationRegistry.getInstrumentation().targetContext.resources.configuration
+        val configuration = composeRule.activity.resources.configuration
         if (configuration.smallestScreenWidthDp >= 600) {
             val screenLocation = IntArray(2)
             val windowLocation = IntArray(2)
