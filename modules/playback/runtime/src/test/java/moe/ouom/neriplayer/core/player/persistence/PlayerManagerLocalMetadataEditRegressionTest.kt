@@ -22,6 +22,7 @@ import moe.ouom.neriplayer.core.player.host.PlayerPresentationHost
 import moe.ouom.neriplayer.core.player.host.PlayerRepositoryDependencies
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
+import moe.ouom.neriplayer.data.local.media.curation.LocalCoverBaselineInspector
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.local.media.source.CrashLogCleanup
@@ -164,6 +165,123 @@ class PlayerManagerLocalMetadataEditRegressionTest {
 
         assertEquals("", manager.currentPlaylist.single().originalCoverUrl)
         assertEquals("", JSONObject(File(audio.path + ".npmeta.json").readText()).getString("originalCoverUrl"))
+    }
+
+    @Test
+    fun `first cover edit survives reopening and another edit before restoring no artwork`() = runTest {
+        val audio = temporaryFolder.newFile("first-cover.mp3").apply { writeText("audio") }
+        val firstCover = cover("first-selected.png", Color.BLUE)
+        val secondCover = cover("second-selected.png", Color.GREEN)
+        val song = localSong(audio.path).copy(
+            originalLyric = "", originalTranslatedLyric = "", originalRomanizedLyric = ""
+        )
+        manager.publishCurrentQueue(listOf(song), 0)
+
+        withConfirmedCoverAbsence(true) {
+            assertTrue(manager.updateSongCustomInfoImpl(song, firstCover.toURI().toString(), null, null))
+            val firstBaseline = manager.currentPlaylist.single().originalCoverUrl
+            val firstStored = JSONObject(File(audio.path + ".npmeta.json").readText())
+            val reopened = LocalAudioImportManager.hydrateLocalSongCoverMetadata(application, song)
+            manager.publishCurrentQueue(listOf(reopened), 0)
+            assertTrue(manager.updateSongCustomInfoImpl(reopened, secondCover.toURI().toString(), null, null))
+            val secondBaseline = manager.currentPlaylist.single().originalCoverUrl
+
+            assertTrue(manager.updateSongCustomInfoImpl(
+                manager.currentPlaylist.single(), null, null, null, restoreBaseCover = true
+            ))
+
+            assertEquals("", firstBaseline)
+            assertEquals("", firstStored.opt("originalCoverUrl"))
+            assertEquals("", reopened.originalCoverUrl)
+            assertEquals("", secondBaseline)
+            assertEquals("", manager.currentPlaylist.single().originalCoverUrl)
+            assertNull(manager.currentPlaylist.single().customCoverUrl)
+            assertNull(manager.currentPlaylist.single().coverUrl)
+            assertEquals("", JSONObject(File(audio.path + ".npmeta.json").readText()).getString("originalCoverUrl"))
+        }
+    }
+
+    @Test
+    fun `bulk first cover edit preserves confirmed absence across reopening and restoration`() = runTest {
+        val audio = temporaryFolder.newFile("first-bulk-cover.mp3").apply { writeText("audio") }
+        val firstCover = cover("bulk-first-selected.png", Color.BLUE)
+        val secondCover = cover("bulk-second-selected.png", Color.GREEN)
+        val song = localSong(audio.path).copy(
+            originalLyric = "", originalTranslatedLyric = "", originalRomanizedLyric = ""
+        )
+        manager.publishCurrentQueue(listOf(song), 0)
+        val persistWrittenCover: (SongItem) -> Unit = { written ->
+            File(audio.path + ".npmeta.json").writeText(JSONObject()
+                .put("originalCoverUrl", written.originalCoverUrl ?: JSONObject.NULL)
+                .put("coverPath", written.customCoverUrl)
+                .toString())
+        }
+
+        withConfirmedCoverAbsence(true) {
+            withSuccessfulAssetWrite(afterFirstWrite = persistWrittenCover) {
+                assertEquals(LocalMediaMetadataWriteOutcome.SUCCESS, manager.embedLocalSongAssetsImpl(
+                    song, LocalSongAssetEmbedding(coverReference = firstCover.toURI().toString())
+                ))
+            }
+            val firstBaseline = manager.currentPlaylist.single().originalCoverUrl
+            val reopened = LocalAudioImportManager.hydrateLocalSongCoverMetadata(application, song)
+            manager.publishCurrentQueue(listOf(reopened), 0)
+            withSuccessfulAssetWrite(afterFirstWrite = persistWrittenCover) {
+                assertEquals(LocalMediaMetadataWriteOutcome.SUCCESS, manager.embedLocalSongAssetsImpl(
+                    reopened, LocalSongAssetEmbedding(coverReference = secondCover.toURI().toString())
+                ))
+            }
+            val secondBaseline = manager.currentPlaylist.single().originalCoverUrl
+            assertTrue(manager.updateSongCustomInfoImpl(
+                manager.currentPlaylist.single(), null, null, null, restoreBaseCover = true
+            ))
+
+            assertEquals("", firstBaseline)
+            assertEquals("", reopened.originalCoverUrl)
+            assertEquals("", secondBaseline)
+            assertEquals("", manager.currentPlaylist.single().originalCoverUrl)
+            assertNull(manager.currentPlaylist.single().coverUrl)
+            assertNull(manager.currentPlaylist.single().customCoverUrl)
+        }
+    }
+
+    @Test
+    fun `uncertain original artwork stays unknown for first single and bulk replacements`() = runTest {
+        val audio = temporaryFolder.newFile("unknown-cover.mp3").apply { writeText("audio") }
+        val selected = cover("unknown-selected.png")
+        val song = localSong(audio.path).copy(
+            originalLyric = "", originalTranslatedLyric = "", originalRomanizedLyric = ""
+        )
+
+        withConfirmedCoverAbsence(false) {
+            manager.publishCurrentQueue(listOf(song), 0)
+            withSuccessfulAssetWrite { writes ->
+                assertEquals(LocalMediaMetadataWriteOutcome.SUCCESS, manager.embedLocalSongAssetsImpl(
+                    song, LocalSongAssetEmbedding(coverReference = selected.toURI().toString())
+                ))
+                assertNull(writes.single().originalCoverUrl)
+                assertNull(manager.currentPlaylist.single().originalCoverUrl)
+            }
+            manager.publishCurrentQueue(listOf(song), 0)
+            assertTrue(manager.updateSongCustomInfoImpl(song, selected.toURI().toString(), null, null))
+            assertNull(manager.currentPlaylist.single().originalCoverUrl)
+            assertTrue(JSONObject(File(audio.path + ".npmeta.json").readText()).isNull("originalCoverUrl"))
+        }
+    }
+
+    @Test
+    fun `manual match preparation records only confirmed no-artwork baselines`() = runTest {
+        val audio = temporaryFolder.newFile("manual-empty-cover.mp3").apply { writeText("audio") }
+        val song = localSong(audio.path).copy(
+            originalLyric = "", originalTranslatedLyric = "", originalRomanizedLyric = ""
+        )
+
+        for (confirmed in listOf(false, true)) {
+            withConfirmedCoverAbsence(confirmed) {
+                val prepared = manager.preserveLocalSongMetadataOriginals(song, preserveCover = true)
+                assertEquals(if (confirmed) "" else null, prepared.originalCoverUrl)
+            }
+        }
     }
 
     @Test
@@ -432,6 +550,14 @@ class PlayerManagerLocalMetadataEditRegressionTest {
         lyrics = "replacement lyric", translatedLyrics = "replacement translation",
         romanizedLyrics = "replacement romanization"
     )
+
+    private suspend fun withConfirmedCoverAbsence(confirmed: Boolean, block: suspend () -> Unit) =
+        withContext(Dispatchers.IO) {
+            mockStatic(LocalCoverBaselineInspector::class.java, Answer { invocation ->
+                if (invocation.method.name == "hasConfirmedNoOriginalCover") confirmed
+                else invocation.callRealMethod()
+            }).use { block() }
+        }
 
     private suspend fun <T> withRegularFileDescriptors(block: suspend () -> T): T = withContext(Dispatchers.IO) {
         // Robolectric 的 fstat 丢失路径，按真实打开文件补回类型和身份

@@ -13,6 +13,10 @@ private val metadataSingleByteCharsets: List<Charset> by lazy {
 
 private val metadataChineseCharset: Charset? by lazy { supportedCharsetOrNull("GB18030") }
 private val legacyHighByteRun = Regex("[\\u0080-\\u00FF]{2,}")
+private val ambiguousUtf8SymbolCategories = setOf(
+    CharCategory.CURRENCY_SYMBOL, CharCategory.MATH_SYMBOL,
+    CharCategory.MODIFIER_SYMBOL, CharCategory.OTHER_SYMBOL
+)
 
 internal fun repairLocalMetadataText(value: String): String {
     if (value.all { it.code < 0x80 }) return value
@@ -28,8 +32,10 @@ internal fun repairLocalMetadataText(value: String): String {
 
 internal fun decodeLocalMetadataUtf8(bytes: ByteArray): String? = decodeMetadataBytes(bytes, UTF_8)
 
-internal fun decodeLegacyChineseContainer(bytes: ByteArray): String? {
+internal fun decodeLegacyChineseContainer(bytes: ByteArray, utf8Text: String? = null): String? {
     if (bytes.any { it == 0.toByte() }) return null
+    // 字母、空白和格式字符不能作为 UTF8 解释错误的证据
+    if (utf8Text?.any { it.code >= 0x80 && (it.code > 0xFF || it.category !in ambiguousUtf8SymbolCategories) } == true) return null
     return recoverLegacyChineseMetadata(bytes, minimumCjkCharacters = 1)
 }
 

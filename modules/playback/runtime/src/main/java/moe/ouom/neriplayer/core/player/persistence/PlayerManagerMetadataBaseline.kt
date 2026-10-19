@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
+import moe.ouom.neriplayer.data.local.media.curation.LocalCoverBaselineInspector
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
@@ -39,6 +40,11 @@ internal fun SongItem.withOriginalLyricsFrom(baseline: SongItem): SongItem = cop
     originalTranslatedLyric = baseline.originalTranslatedLyric ?: originalTranslatedLyric,
     originalRomanizedLyric = baseline.originalRomanizedLyric ?: originalRomanizedLyric
 )
+
+internal suspend fun PlayerManager.confirmLocalCoverBaseline(song: SongItem, reference: String?): String? =
+    reference ?: withContext(Dispatchers.IO) {
+        "".takeIf { LocalCoverBaselineInspector.hasConfirmedNoOriginalCover(application, song) }
+    }
 
 internal suspend fun PlayerManager.preserveLocalSongMetadataOriginals(
     song: SongItem,
@@ -79,5 +85,5 @@ internal suspend fun PlayerManager.preserveLocalSongMetadataOriginals(
         song = song,
         reference = originalCover
     )
-    prepared.copy(originalCoverUrl = preservedCover ?: prepared.originalCoverUrl)
+    prepared.copy(originalCoverUrl = confirmLocalCoverBaseline(localSong, preservedCover ?: prepared.originalCoverUrl))
 }

@@ -454,6 +454,8 @@ internal fun LocalMediaSupport.queryDocumentChildrenDirect(
                 resolvedParentId
             )
         }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (error: SecurityException) {
         throw error
     } catch (error: Exception) {
@@ -479,6 +481,7 @@ internal fun LocalMediaSupport.queryDocumentChildrenDirect(
                 return@use null
             }
             var truncated = false
+            var malformedRows = false
             val children = buildList {
                 while (cursor.moveToNext()) {
                     if (hasReachedDocumentChildrenQueryLimit(size, maxChildren)) {
@@ -487,10 +490,13 @@ internal fun LocalMediaSupport.queryDocumentChildrenDirect(
                         break
                     }
                     val childId = cursor.getString(idIndex)
-                    if (childId.isNullOrBlank()) continue
                     val childName = cursor.getString(nameIndex)
-                    if (childName.isNullOrBlank()) continue
+                    if (childId.isNullOrBlank() || childName.isNullOrBlank()) {
+                        malformedRows = true
+                        continue
+                    }
                     val mimeType = cursor.getString(mimeIndex).orEmpty()
+                    if (mimeType.isBlank()) malformedRows = true
                     val child = DocumentChild(
                         documentId = childId,
                         displayName = childName,
@@ -505,9 +511,11 @@ internal fun LocalMediaSupport.queryDocumentChildrenDirect(
             val providerError = extras?.getString(DocumentsContract.EXTRA_ERROR)
             DocumentChildrenQueryResult(
                 children = children,
-                isComplete = !loading && providerError.isNullOrBlank() && !truncated
+                isComplete = !loading && providerError.isNullOrBlank() && !truncated && !malformedRows
             )
         }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (error: SecurityException) {
         throw error
     } catch (error: Exception) {

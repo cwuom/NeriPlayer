@@ -179,6 +179,9 @@ private suspend fun PlayerManager.backupOriginalCoverBeforeEmbedding(song: SongI
                 !isMediaStoreCoverReference(reference)
         }
     }
-    return CustomSongCoverStorage.persistOriginalCover(application, song, discovered)
-        ?.takeUnless(CustomSongCoverStorage::isRemoteReference)
+    return confirmLocalCoverBaseline(
+        song,
+        CustomSongCoverStorage.persistOriginalCover(application, song, discovered)
+            ?.takeUnless(CustomSongCoverStorage::isRemoteReference)
+    )
 }

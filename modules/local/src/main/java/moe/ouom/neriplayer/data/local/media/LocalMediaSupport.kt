@@ -1809,7 +1809,13 @@ object LocalMediaSupport {
     }
 
     private fun decodeContainerBytesWithBestScore(bytes: ByteArray): String? {
-        decodeLocalMetadataUtf8(bytes)?.let { return it.normalizeDecodedText().trim(NUL_CHAR, ' ') }
+        decodeLocalMetadataUtf8(bytes)?.let { decoded ->
+            val utf8 = decoded.normalizeDecodedText().trim(NUL_CHAR, ' ')
+            // 未声明编码的 UTF8 符号可能也是 GB18030，保留可逆中文候选的评分
+            return decodeLegacyChineseContainer(bytes, utf8)
+                ?.takeIf { scoreDecodedText(it) > scoreDecodedText(utf8) }
+                ?: utf8
+        }
         val latin1 = bytes.decodeContainerBytes(StandardCharsets.ISO_8859_1)
         val repaired = repairLocalMetadataText(latin1)
         if (repaired != latin1) return repaired

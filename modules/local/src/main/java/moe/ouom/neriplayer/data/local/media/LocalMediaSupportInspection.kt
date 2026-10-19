@@ -30,6 +30,7 @@ import android.provider.DocumentsContract
 import android.system.Os
 import com.kyant.taglib.PropertyMap
 import com.kyant.taglib.TagLib
+import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
@@ -724,11 +725,14 @@ private fun LocalMediaSupport.decodeTextWithBestScoringCharset(bytes: ByteArray)
 internal fun LocalMediaSupport.queryContentInfo(context: Context, uri: Uri): QueriedContentInfo {
     val resolver = context.contentResolver
     directFilePath(uri)?.let { filePath -> return directFileContentInfo(resolver, File(filePath)) }
-    return runCatching { queryProviderContentInfo(resolver, uri) }
-        .getOrElse {
-            NPLogger.w(TAG, "queryContentInfo failed for $uri: ${it.message}")
-            null
-        }
+    return try {
+        queryProviderContentInfo(resolver, uri)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Exception) {
+        NPLogger.w(TAG, "queryContentInfo failed for $uri: ${error.message}")
+        null
+    }
         ?: unknownContentInfo(resolver.getType(uri))
 }
 
@@ -1046,11 +1050,23 @@ private fun openLocalMediaDescriptor(
 }
 
 private fun openResolverDescriptor(context: Context, uri: Uri, mode: String): ParcelFileDescriptor? {
-    return runCatching { context.contentResolver.openFileDescriptor(uri, mode) }.getOrNull()
+    return try {
+        context.contentResolver.openFileDescriptor(uri, mode)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Exception) {
+        null
+    }
 }
 
 private fun openFileDescriptorOrNull(file: File?, mode: Int): ParcelFileDescriptor? {
-    return file?.let { runCatching { ParcelFileDescriptor.open(it, mode) }.getOrNull() }
+    return try {
+        file?.let { ParcelFileDescriptor.open(it, mode) }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Exception) {
+        null
+    }
 }
 
 internal fun LocalMediaSupport.loadTagLibPropertyMap(descriptor: ParcelFileDescriptor): PropertyMap? {

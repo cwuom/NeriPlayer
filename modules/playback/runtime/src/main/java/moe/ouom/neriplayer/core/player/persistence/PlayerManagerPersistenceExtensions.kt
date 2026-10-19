@@ -1227,7 +1227,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             val lightweightOriginalCoverUrl = existingOriginalCoverUrl
                 ?.takeIf { it != currentSong.customCoverUrl }
                 ?: baseCoverUrl?.takeIf { it != currentSong.customCoverUrl }
-            val shouldResolveLocalCover = LocalSongSupport.isLocalSong(currentSong, application) &&
+            val shouldResolveLocalCover = isLocalSong &&
                 (coverChanged || restoreBaseCover)
             val discoveredLocalCoverUrl = if (shouldResolveLocalCover) {
                 sequenceOf(
@@ -1244,10 +1244,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             } else {
                 null
             }
-            val legacyOriginalCoverUrl = if (
-                coverChanged &&
-                    LocalSongSupport.isLocalSong(currentSong, application)
-            ) {
+            val legacyOriginalCoverUrl = if (coverChanged && isLocalSong) {
                 CustomSongCoverStorage.resolveLegacyOriginalCoverReference(
                     context = application,
                     song = currentSong,
@@ -1259,9 +1256,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             } else {
                 null
             }
-            val originalCoverReference = if (
-                coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
-            ) {
+            val originalCoverReference = if (coverChanged && isLocalSong) {
                 if (writeLocalMetadata) {
                     discoveredLocalCoverUrl ?: lightweightOriginalCoverUrl
                 } else {
@@ -1279,17 +1274,18 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             }
             val preservedOriginalCoverUrl = if (existingOriginalCoverUrl == "") {
                 ""
-            } else if (
-                coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
-            ) {
+            } else if (coverChanged && isLocalSong) {
                 if (restoreBaseCover) {
                     existingOriginalCoverUrl
                 } else {
-                    legacyOriginalCoverUrl ?: CustomSongCoverStorage.persistOriginalCover(
-                        context = application,
-                        song = currentSong,
-                        reference = originalCoverReference
-                    ) ?: existingOriginalCoverUrl
+                    confirmLocalCoverBaseline(
+                        currentSong,
+                        legacyOriginalCoverUrl ?: CustomSongCoverStorage.persistOriginalCover(
+                            context = application,
+                            song = currentSong,
+                            reference = originalCoverReference
+                        ) ?: existingOriginalCoverUrl
+                    )
                 }
             } else {
                 existingOriginalCoverUrl
@@ -1385,7 +1381,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 return@runSongMetadataMutation true
             }
 
-            if (writeLocalMetadata && LocalSongSupport.isLocalSong(currentSong, application)) {
+            if (writeLocalMetadata && isLocalSong) {
                 val localWriteOutcome = writeLocalEditableMetadata(
                     song = updatedSong,
                     coverReference = coverWriteReference,
@@ -1400,7 +1396,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                     )
                     return@runSongMetadataMutation false
                 }
-            } else if (LocalSongSupport.isLocalSong(currentSong, application)) {
+            } else if (isLocalSong) {
                 val sidecarSong = resolveLocalSidecarWriteSong(updatedSong)
                 if (sidecarSong == null) {
                     showLocalEditableMetadataWriteFeedback(

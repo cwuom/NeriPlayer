@@ -157,6 +157,24 @@ class LocalMediaContainerTagParsingTest {
     }
 
     @Test
+    fun `id3v1 raw parser retains a scored gb18030 title whose bytes are also utf8 symbols`() {
+        val trailer = ByteArray(128).apply {
+            "TAG".toByteArray(Charsets.US_ASCII).copyInto(this)
+            byteArrayOf(0xC2.toByte(), 0xA5.toByte()).copyInto(this, 3)
+        }
+        val audio = file("ambiguous-gb18030.mp3", ByteArray(64) + trailer)
+
+        assertEquals("楼", LocalMediaSupport.parseContainerMetadata(audio)?.title)
+    }
+
+    @Test
+    fun `wave raw info parser retains a scored gb18030 title whose bytes are also utf8 symbols`() {
+        val chunk = "INAM".toByteArray(Charsets.US_ASCII) + littleEndian(2) + byteArrayOf(0xC2.toByte(), 0xA5.toByte())
+
+        assertEquals("楼", LocalMediaSupport.parseWaveInfoMetadata(chunk)?.title)
+    }
+
+    @Test
     fun `id3v1 trailers without a track byte keep the track unknown`() {
         assertEquals(null, readId3v1(file("zero.mp3", id3v1(track = 0)))?.trackNumber)
         assertEquals(null, readId3v1(file("comment.mp3", id3v1(track = 5, commentEndsAtTrack = true)))?.trackNumber)
