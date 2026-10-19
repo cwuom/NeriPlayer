@@ -59,6 +59,14 @@ class LocalScanPreviewPolicyTest {
     }
 
     @Test
+    fun `pending raw identity is hydrated even when the artist looks readable`() {
+        val deferred = song(id = 300L, name = "散场电影", fileName = "track300.mp3", artist = "ミ泣ャ", album = "Album")
+
+        assertTrue(shouldHydrateLocalScanMetadata(deferred, unknownArtist, identityPending = true))
+        assertFalse(shouldHydrateLocalScanMetadata(deferred, unknownArtist, identityPending = false))
+    }
+
+    @Test
     fun `hidden preview keys combine every active filter`() {
         val pending = song(id = 1L, name = "a", fileName = "a.mp3", artist = unknownArtist)
         val bare = song(id = 2L, name = "b", fileName = "b.mp3", artist = unknownArtist)

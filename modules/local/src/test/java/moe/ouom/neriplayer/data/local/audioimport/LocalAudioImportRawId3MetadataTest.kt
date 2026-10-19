@@ -11,7 +11,10 @@ import java.io.FileNotFoundException
 import java.io.ByteArrayInputStream
 import java.io.FilterInputStream
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalKnownSidecarReferences
+import moe.ouom.neriplayer.data.local.media.NearbyLyricReferences
 import moe.ouom.neriplayer.data.local.media.source.CrashLogCleanup
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaCoverAccess
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaDownloadAccess
@@ -20,6 +23,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertSame
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -30,6 +34,10 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
+import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.eq
 import org.robolectric.RobolectricTestRunner
@@ -168,6 +176,93 @@ class LocalAudioImportRawId3MetadataTest {
             assertEquals("寻宝游戏", song.album)
             assertEquals("许嵩", song.originalArtist)
         }
+    }
+
+    @Test
+    fun `deferred content rows do not open audio before later identity hydration reads every raw tag`(): Unit = runBlocking {
+        val audio = taggedFile("deferred-content.mp3", largeCoverFrame())
+        val resolver = mock(ContentResolver::class.java)
+        val songs = contentRows(audio)
+        doReturn(resolver).`when`(context).contentResolver
+        doAnswer { ParcelFileDescriptor.open(audio, ParcelFileDescriptor.MODE_READ_ONLY) }
+            .`when`(resolver).openFileDescriptor(any(Uri::class.java), eq("r"))
+
+        val result = completeContentRows(songs, null)
+
+        assertTrue(result.metadataDeferred)
+        assertEquals(songs.size, result.songs.size)
+        result.songs.forEachIndexed { index, song -> assertEquals(songs[index], song) }
+        verifyNoInteractions(resolver)
+
+        val hydrated = result.songs.map { LocalAudioImportManager.hydrateLocalSongIdentityMetadata(context, it) }
+
+        assertEquals(257, hydrated.size)
+        hydrated.forEach { song ->
+            assertEquals("散场电影", song.name)
+            assertEquals("许嵩", song.artist)
+            assertEquals("寻宝游戏", song.album)
+            assertEquals("许嵩", song.originalArtist)
+        }
+        verify(resolver, times(257)).openFileDescriptor(any(Uri::class.java), eq("r"))
+    }
+
+    @Test
+    fun `deferred content rows read only explicitly indexed metadata references`() = runBlocking {
+        val resolver = mock(ContentResolver::class.java)
+        val songs = contentRows(taggedFile("indexed-content.mp3"))
+        val reference = "content://indexed.sidecars/metadata.json"
+        val metadata = JSONObject().put("name", "indexed title").put("artist", "indexed artist")
+            .put("customName", "manual indexed title").put("originalName", "retained title")
+            .put("album", "indexed album").toString().toByteArray(Charsets.UTF_8)
+        doReturn(resolver).`when`(context).contentResolver
+        doAnswer { ByteArrayInputStream(metadata) }.`when`(resolver).openInputStream(Uri.parse(reference))
+
+        val result = completeContentRows(songs, reference)
+
+        assertTrue(result.metadataDeferred)
+        assertEquals(257, result.songs.size)
+        result.songs.forEach { song ->
+            assertEquals("manual indexed title", song.name)
+            assertEquals("indexed artist", song.artist)
+            assertEquals("indexed album", song.album)
+            assertEquals("retained title", song.originalName)
+        }
+        verify(resolver, times(257)).openInputStream(Uri.parse(reference))
+        verifyNoMoreInteractions(resolver)
+    }
+
+    @Test
+    fun `unreadable indexed metadata does not cause deferred audio probing`() = runBlocking {
+        val resolver = mock(ContentResolver::class.java)
+        val songs = contentRows(taggedFile("unreadable-indexed-content.mp3"))
+        val reference = "content://indexed.sidecars/unreadable.json"
+        doReturn(resolver).`when`(context).contentResolver
+        doThrow(FileNotFoundException("indexed sidecar unavailable"))
+            .`when`(resolver).openInputStream(Uri.parse(reference))
+
+        val result = completeContentRows(songs, reference)
+
+        assertTrue(result.metadataDeferred)
+        assertEquals(songs.size, result.songs.size)
+        result.songs.forEachIndexed { index, song -> assertEquals(songs[index], song) }
+        verify(resolver, times(257)).openInputStream(Uri.parse(reference))
+        verifyNoMoreInteractions(resolver)
+    }
+
+    @Test
+    fun `indexed metadata cancellation propagates instead of looking like an unreadable reference`() {
+        val resolver = mock(ContentResolver::class.java)
+        val song = contentRows(taggedFile("cancelled-indexed-content.mp3")).first()
+        val reference = "content://indexed.sidecars/cancelled.json"
+        val cancellation = CancellationException("indexed metadata read cancelled")
+        doReturn(resolver).`when`(context).contentResolver
+        doThrow(cancellation).`when`(resolver).openInputStream(Uri.parse(reference))
+
+        val failure = runCatching {
+            LocalAudioImportManager.hydrateLocalSongFromIndexedMetadataSidecar(context, song, reference)
+        }.exceptionOrNull()
+
+        assertSame(cancellation, failure)
     }
 
     @Test
@@ -361,6 +456,23 @@ class LocalAudioImportRawId3MetadataTest {
     private fun identitySnapshot(song: SongItem): JSONObject = JSONObject()
         .put("name", song.name).put("artist", song.artist).put("album", song.album)
         .put("originalName", song.originalName).put("originalArtist", song.originalArtist)
+
+    private fun contentRows(audio: File): List<SongItem> = (1L..257L).map { id ->
+        quickSong(audio, id).copy(localFilePath = null, mediaUri = "content://scan.rows/tree/root/document/track$id")
+    }
+
+    private suspend fun completeContentRows(songs: List<SongItem>, metadataReference: String?): CompletedScanSongs =
+        LocalAudioImportManager.completeScannedSongs(
+            context = context,
+            songs = songs,
+            progress = LocalAudioScanProgressEmitter(scanId = 1L, startedAt = 0L, onProgress = {}),
+            visitedDirectories = 1,
+            knownSidecarReferences = songs.associate { song ->
+                requireNotNull(song.mediaUri) to LocalKnownSidecarReferences(
+                    NearbyLyricReferences(null, null, null), metadata = metadataReference
+                )
+            }
+        )
 
     private fun taggedFile(
         name: String,

@@ -315,7 +315,7 @@ class LocalPlaylistRepository private constructor(
     suspend fun createPlaylistWithScannedSongs(name: String, songs: List<SongItem>): LocalPlaylist {
         return createPlaylistWithSongs(
             name = name,
-            songs = songs,
+            songs = hydrateScannedSongIdentitiesForPersistence(songs),
             hydrateLocalMetadata = false,
             preserveScannedSourceAddedAt = true
         )
@@ -783,7 +783,7 @@ class LocalPlaylistRepository private constructor(
     ): LocalPlaylistSongAddResult {
         return addSongsToPlaylistWithResult(
             playlistId = playlistId,
-            songs = songs,
+            songs = hydrateScannedSongIdentitiesForPersistence(songs),
             hydrateLocalMetadata = false,
             includeLocalMetadataFallback = true,
             preserveScannedSourceAddedAt = true
@@ -828,7 +828,7 @@ class LocalPlaylistRepository private constructor(
         songs: List<SongItem>
     ): LocalPlaylistSongAddResult {
         return addSongsToLocalFilesPlaylistWithResult(
-            songs = songs,
+            songs = hydrateScannedSongIdentitiesForPersistence(songs),
             hydrateLocalMetadata = false,
             preserveScannedSourceAddedAt = true
         )

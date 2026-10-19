@@ -12,6 +12,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
+import moe.ouom.neriplayer.data.local.audioimport.hydrateScannedSongRawIdentity
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
@@ -132,6 +133,29 @@ internal suspend fun LocalPlaylistRepository.hydrateLocalSongsForPersistence(
             hydrated += batch.map { song ->
                 async(hydrateDispatcher) {
                     LocalAudioImportManager.hydrateLocalSongMetadata(context, song)
+                }
+            }.awaitAll()
+        }
+        hydrated
+    }
+}
+
+internal suspend fun LocalPlaylistRepository.hydrateScannedSongIdentitiesForPersistence(
+    songs: List<SongItem>
+): List<SongItem> = withContext(Dispatchers.IO) {
+    if (songs.none { LocalSongSupport.isLocalSong(it, context) }) return@withContext songs
+    // 导入会取消预览补全，这里只补原始身份，避免把错误快照留在歌单
+    coroutineScope {
+        val identityDispatcher = Dispatchers.IO.limitedParallelism(4)
+        val hydrated = ArrayList<SongItem>(songs.size)
+        songs.chunked(LocalPlaylistRepository.LOCAL_METADATA_HYDRATE_BATCH_SIZE).forEach { batch ->
+            hydrated += batch.map { song ->
+                async(identityDispatcher) {
+                    if (LocalSongSupport.isLocalSong(song, context)) {
+                        LocalAudioImportManager.hydrateScannedSongRawIdentity(context, song)
+                    } else {
+                        song
+                    }
                 }
             }.awaitAll()
         }

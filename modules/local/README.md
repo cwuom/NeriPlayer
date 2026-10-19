@@ -29,6 +29,10 @@ Cache cleanup preserves downloaded audio, lyrics, and covers. `ExtraCacheClearRe
 
 Local edits preserve lyrics and artwork from before the first edit. Restoration prefers persisted originals, and rescanning keeps those originals separate from current sidecars. Unknown and explicitly empty values remain distinct; missing empty translation and romanization tracks do not create files, and existing lyric files are reused by type.
 
+大型扫描对仅有 content URI 的音频复用目录行和已知侧载索引，不逐首打开音频或查询文档。延后的身份信息在预览后台补全，提交导入前还会按有界批次核对所选 MP3 的原始身份，立即关闭预览也不会跳过这一步；歌词和封面基线保持原值。
+
+Large scans of content-only audio reuse directory rows and known sidecar indexes without opening each audio file or querying each document. Deferred identity is hydrated in the preview background, and selected MP3s undergo bounded raw identity checks before playlist persistence, even when the preview closes immediately. Existing lyric and artwork baselines are retained.
+
 收藏、历史和歌单使用统计在 IO 协程中加载。Room 读取失败与尚未迁移是不同状态，读取失败时保留原数据，相关写入、备份和同步等待成功加载后再继续；再次操作可重试，其他功能仍可使用。只有确认 Room 尚未接管且旧 JSON 完整可读时才导入，缺失文件与合法空列表仍支持首次迁移。保留 JSON 回退的仓库只有在主存标记也成功保存后才确认落盘；事务提交后取消会使内存基线失效，恢复时重新读取实际主存。
 
 Favorites, history, and playlist usage load on an IO coroutine. A failed Room read differs from an unmigrated store: original data is retained, and related writes, backups, and sync require a successful load. Later operations can retry while other features remain available. Legacy import requires confirmation that Room is not primary and that existing JSON is readable; missing files and valid empty lists still support first migration. Repositories retaining JSON fallback acknowledge persistence only after the primary-store marker is saved. Cancellation after commit invalidates the in-memory baseline; recovery reads the actual primary store again.

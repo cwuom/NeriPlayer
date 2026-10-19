@@ -422,7 +422,7 @@ internal suspend fun LocalAudioImportManager.completeScannedSongs(
             threshold = COMPLETE_SCAN_METADATA_DEFER_THRESHOLD
         )
     ) {
-        // 大批量扫描只补轻量侧车和有界 ID3 文本，封面与音轨仍延后解析
+        // 大批量 content 条目只消费目录行和已知侧载，音频字节留到后续身份补全
         val dispatcher = Dispatchers.IO.limitedParallelism(COMPLETE_SCAN_PARALLELISM)
         val sidecarHydrated = coroutineScope {
             val hydrated = ArrayList<SongItem>(total)
@@ -434,6 +434,17 @@ internal suspend fun LocalAudioImportManager.completeScannedSongs(
                         val metadataReference = song.mediaUri
                             ?.let(indexedSidecarReferences::get)
                             ?.metadata
+                        val directFile = song.localFilePath
+                            ?.takeUnless { it.startsWith("content://", ignoreCase = true) }
+                            ?.let(::File)
+                            ?.takeIf { it.isFile && it.canRead() }
+                        val contentOnly = directFile == null && (
+                            song.mediaUri?.startsWith("content://", ignoreCase = true) == true ||
+                                song.localFilePath?.startsWith("content://", ignoreCase = true) == true
+                            )
+                        if (contentOnly) {
+                            return@async hydrateLocalSongFromIndexedMetadataSidecar(context, song, metadataReference)
+                        }
                         // MediaStore 的可读 Unicode 也可能已被系统误解码，MP3 需要核对原始标签
                         val canHydrateWithoutAudioProbe = metadataReference != null ||
                             !song.localFilePath.isNullOrBlank() || isRawId3IdentityCandidate(song)

@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
 import moe.ouom.neriplayer.data.local.media.LOCAL_METADATA_SUFFIX
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.isNeteaseManagedSourceStableKey
+import moe.ouom.neriplayer.data.local.media.isMediaStoreSidecarReference
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
 import moe.ouom.neriplayer.data.local.media.repairLocalMetadataText
 import moe.ouom.neriplayer.data.model.SongItem
@@ -93,6 +94,26 @@ internal fun LocalAudioImportManager.toImportedSongItem(context: Context, detail
     )
 }
 
+internal fun LocalAudioImportManager.hydrateScannedSongRawIdentity(context: Context, song: SongItem): SongItem {
+    return hydrateLocalSongRawId3Identity(song, readRawId3Identity(context, song), originalSnapshot = song)
+}
+
+internal fun LocalAudioImportManager.hydrateLocalSongFromIndexedMetadataSidecar(
+    context: Context,
+    song: SongItem,
+    metadataReference: String?
+): SongItem {
+    val reference = metadataReference?.trim()?.takeIf(String::isNotBlank)
+        ?.takeUnless(::isMediaStoreSidecarReference) ?: return song
+    val metadata = runCatching {
+        LocalMediaSupport.readTextContent(context, reference)
+            ?.let { LocalMediaSupport.parseLocalMetadataSidecar(reference, it) }
+    }.getOrRethrowCancellation {
+        NPLogger.w(TAG, "indexed metadata sidecar unavailable: ${it.message}")
+    } ?: return song
+    return hydrateLocalSongFromMetadataSidecar(song, metadata)
+}
+
 internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
     context: Context,
     song: SongItem,
@@ -105,6 +126,13 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
             metadataReference = metadataReference
         )
     }.getOrNull() ?: return song
+    return hydrateLocalSongFromMetadataSidecar(song, metadata)
+}
+
+private fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
+    song: SongItem,
+    metadata: LocalMetadataSidecar
+): SongItem {
     val resolvedName = firstMeaningfulMetadataValue(
         metadata.customName,
         metadata.name,
