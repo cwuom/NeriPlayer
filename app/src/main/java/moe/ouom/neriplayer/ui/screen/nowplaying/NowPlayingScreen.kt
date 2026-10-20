@@ -1961,11 +1961,13 @@ fun NowPlayingScreen(
                 }
                 // 播放页自己的 Snackbar 挂载点。
                 // 此前本页没有任何 host，`snackbarHostState` 只被「更多选项」面板里的
-                // overlay host 渲染，导致心动开关等提示必须打开右上角菜单才看得到。
+                // overlay host 渲染，导致本页的提示必须打开右上角菜单才看得到。
                 // 更多面板打开时由它自己的 host 渲染，避免同一 hostState 被两处同时画出。
                 if (!showMoreOptions) {
                     NeriOverlaySnackbarHost(hostState = snackbarHostState)
                 }
+                // 心动模式的失败提示（成功不提示）。走上面这个 host 渲染成项目原有的
+                // 底部 Snackbar 样式，但只停留 1 秒。
                 NowPlayingHeartbeatFeedback(
                     snackbarHostState = snackbarHostState,
                     scope = screenScope
