@@ -39,6 +39,16 @@ interface HeartbeatCandidateProvider {
      */
     suspend fun recentPlayCounts(limit: Int = DEFAULT_HISTORY_LIMIT): Map<String, Int> = emptyMap()
 
+    /**
+     * 用户显式标记「不喜欢」的曲目身份键集合（任务书 §3.4 `notLikedWeight`）。
+     *
+     * key 必须是 [HeartbeatScorer.identityKey] 的产物，这样「标记时」与「选歌时」
+     * 算的是同一个键。返回空集表示用户没有标记过任何歌，属于正常情况。
+     *
+     * 数据只能来自本地：网易云没有「给单曲打不喜欢」的通用接口。
+     */
+    suspend fun dislikedIdentities(): Set<String> = emptySet()
+
     companion object {
         const val DEFAULT_HISTORY_LIMIT = 50
 

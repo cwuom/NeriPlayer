@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
+import moe.ouom.neriplayer.data.heartbeat.DislikedSongRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
@@ -31,6 +32,7 @@ class LocalHeartbeatCandidateProvider(
     private val localPlaylistRepository: LocalPlaylistRepository,
     private val context: Context,
     private val playbackStatsRepository: PlaybackStatsRepository? = null,
+    private val dislikedSongRepository: DislikedSongRepository? = null,
 ) : HeartbeatCandidateProvider {
 
     override suspend fun favorites(): List<SongItem> = withContext(Dispatchers.IO) {
@@ -92,6 +94,18 @@ class LocalHeartbeatCandidateProvider(
                 pageSize = limit.coerceIn(1, 256),
             ).tracks.associate { it.identityKey to it.playCount }
         }.getOrDefault(emptyMap())
+    }
+
+    /**
+     * 用户显式标记「不喜欢」的曲目身份键集合。
+     *
+     * 名单存在 `modules/local` 的 DataStore 里（网易云没有「打不喜欢」的通用接口，
+     * 只能本地记录），本类只负责把它转成 [HeartbeatCandidateProvider] 的接口形状。
+     * 读取失败按「没有标记」处理：名单读不出来不该让心动模式整体失效。
+     */
+    override suspend fun dislikedIdentities(): Set<String> = withContext(Dispatchers.IO) {
+        val repository = dislikedSongRepository ?: return@withContext emptySet()
+        runCatching { repository.snapshot() }.getOrDefault(emptySet())
     }
 
     /** 从统计库读「听过的曲」，用于扩充层级 3/4 的原料。 */

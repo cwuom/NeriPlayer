@@ -266,6 +266,69 @@ class LocalHeartbeatCandidateSourceTest {
         assertEquals(50L, source.selectNext(current, emptyList())?.id)
     }
 
+    // ---- 不喜欢标记 ----
+
+    @Test
+    fun `selectNext skips a disliked favorite when a clean candidate exists`() = runTest {
+        // 被标记的收藏歌必须让位给未标记的历史歌，这是标记的全部意义
+        val disliked = song(60, "收藏但不喜欢")
+        val clean = song(61, "历史正常")
+        val provider = DislikeProvider(
+            favorites = listOf(disliked),
+            history = listOf(clean),
+            dislikedKeys = setOf(HeartbeatScorer.identityKey(disliked)),
+        )
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        assertEquals(61L, source.selectNext(current, emptyList())?.id)
+    }
+
+    @Test
+    fun `selectNext returns null when every candidate is disliked`() = runTest {
+        val only = song(62, "全都不喜欢")
+        val provider = DislikeProvider(
+            favorites = listOf(only),
+            history = emptyList(),
+            dislikedKeys = setOf(HeartbeatScorer.identityKey(only)),
+        )
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        assertNull(source.selectNext(current, emptyList()))
+    }
+
+    @Test
+    fun `disliked keys are read on every selection not cached`() = runTest {
+        // 候选池有 5 分钟 TTL，但标记必须点完立刻生效，所以名单不能进缓存
+        val target = song(63, "刚被标记")
+        val provider = DislikeProvider(
+            favorites = listOf(target),
+            history = emptyList(),
+            dislikedKeys = emptySet(),
+        )
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        assertEquals(63L, source.selectNext(current, emptyList())?.id)
+
+        provider.dislikedKeys = setOf(HeartbeatScorer.identityKey(target))
+        assertNull(source.selectNext(current, emptyList()))
+        assertEquals(2, provider.dislikedCalls)
+    }
+
+    @Test
+    fun `disliked lookup failure is treated as no marks`() = runTest {
+        // 名单读不出来不该让心动模式整体失效
+        val target = song(64, "读名单失败")
+        val provider = object : HeartbeatCandidateProvider {
+            override suspend fun favorites(): List<SongItem> = listOf(target)
+            override suspend fun recentHistory(limit: Int): List<SongItem> = emptyList()
+            override suspend fun dislikedIdentities(): Set<String> =
+                throw IllegalStateException("datastore corrupted")
+        }
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        assertEquals(64L, source.selectNext(current, emptyList())?.id)
+    }
+
     // ---- 测试替身 ----
 
     private class StaticProvider(
@@ -309,6 +372,23 @@ class LocalHeartbeatCandidateSourceTest {
         override suspend fun recentHistory(limit: Int): List<SongItem> {
             observedLimit = limit
             return emptyList()
+        }
+    }
+
+    private class DislikeProvider(
+        private val favorites: List<SongItem>,
+        private val history: List<SongItem>,
+        var dislikedKeys: Set<String>,
+    ) : HeartbeatCandidateProvider {
+        var dislikedCalls: Int = 0
+            private set
+
+        override suspend fun favorites(): List<SongItem> = favorites
+        override suspend fun recentHistory(limit: Int): List<SongItem> = history
+
+        override suspend fun dislikedIdentities(): Set<String> {
+            dislikedCalls++
+            return dislikedKeys
         }
     }
 

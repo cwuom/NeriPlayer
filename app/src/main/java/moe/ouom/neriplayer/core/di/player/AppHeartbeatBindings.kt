@@ -21,10 +21,16 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
  * 从而避免 `logic` 反向依赖 `platform` / `local`。
  */
 internal fun installHeartbeatDependencies(application: Application) {
+    // 「不喜欢」名单：网易云没有对应接口，只能本地存；官方源与本地源共用这一份。
+    val dislikedSongRepository = AppContainer.dislikedSongRepo
+
     // 官方源：网易云心动接口。未登录或接口不可用时它自行返回 null，交棒给本地降级。
     val officialRepository = AppContainer.heartbeatOfficialRepository
     installHeartbeatOfficialRepository(officialRepository)
-    val officialSource = OfficialHeartbeatSource(officialRepository)
+    val officialSource = OfficialHeartbeatSource(
+        repository = officialRepository,
+        dislikedSongRepository = dislikedSongRepository,
+    )
 
     // 本地降级源：收藏 + 历史 + 统计库（层级 3/4 原料与播放次数）。
     val candidateProvider = LocalHeartbeatCandidateProvider(
@@ -32,6 +38,7 @@ internal fun installHeartbeatDependencies(application: Application) {
         localPlaylistRepository = LocalPlaylistRepository.getInstance(application),
         context = application,
         playbackStatsRepository = AppContainer.playbackStatsRepo,
+        dislikedSongRepository = dislikedSongRepository,
     )
     val localSource = LocalHeartbeatCandidateSource(
         provider = candidateProvider,

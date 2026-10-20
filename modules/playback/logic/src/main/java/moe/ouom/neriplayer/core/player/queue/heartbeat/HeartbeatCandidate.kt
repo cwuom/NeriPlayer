@@ -47,6 +47,14 @@ data class HeartbeatCandidate(
      * 默认 0 表示统计不可用，此时完全退回旧行为。
      */
     val recentPlayCount: Int = 0,
+    /**
+     * 用户是否显式标记了「不喜欢」（任务书 §3.4 `notLikedWeight * isNotLikedScore`）。
+     *
+     * 这是唯一由用户直接表达的负反馈信号，权重远高于任何隐式信号：
+     * 一条被标记的候选即使处在最高层级（收藏），也应该输给未被标记的最低层级。
+     * 标记只影响心动模式的选歌，不影响普通播放。
+     */
+    val notLiked: Boolean = false,
 ) {
     /** 评分用的有效重复次数：取显式次数与布尔标记中的较大者。 */
     val effectiveRepeatCount: Int

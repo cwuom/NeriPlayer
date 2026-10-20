@@ -114,4 +114,6 @@
     <string name="heartbeat_mode_disabled">Heartbeat mode off</string>
     <string name="heartbeat_candidates_insufficient">Not enough heartbeat candidates; reverted to the previous mode</string>
     <string name="heartbeat_mode_content_description">Heartbeat mode</string>
+    <string name="heartbeat_dislike_action">Don\'t like this song</string>
+    <string name="heartbeat_dislike_marked">Marked as disliked</string>
 </resources>

@@ -27,7 +27,7 @@ class LocalHeartbeatCandidateSource(
 
     override suspend fun selectNext(currentSong: SongItem, currentQueue: List<SongItem>): SongItem? {
         val cached = cache.getOrBuild { buildPool() }
-        val pool = withSupplementalTiers(cached, currentSong)
+        val pool = withDisliked(withSupplementalTiers(cached, currentSong))
         if (pool.isEmpty) return null
         return HeartbeatScorer.pickBest(
             pool = pool,
@@ -35,6 +35,34 @@ class LocalHeartbeatCandidateSource(
             currentQueue = currentQueue,
             excludedIdentities = excludedIdentities,
         )
+    }
+
+    /**
+     * 把用户标记的「不喜欢」名单打到候选上。
+     *
+     * 刻意**不放进** [buildPool] 的缓存里：候选池有 5 分钟 TTL，
+     * 而「标记不喜欢」是用户刚点完就要立刻生效的操作。
+     * 每次选歌读一次名单（DataStore 的小文件），比等缓存过期或手动失效更可靠。
+     *
+     * 读取失败时按「没有标记」处理：名单读不出来不应该让心动模式失效。
+     */
+    private suspend fun withDisliked(pool: HeartbeatCandidatePool): HeartbeatCandidatePool {
+        if (pool.isEmpty) return pool
+        val disliked = runCatching { provider.dislikedIdentities() }.getOrDefault(emptySet())
+        if (disliked.isEmpty()) return pool
+        val tiers = LinkedHashMap<Int, List<HeartbeatCandidate>>(pool.tiers.size)
+        for ((tier, candidates) in pool.tiers) {
+            tiers[tier] = candidates.map { candidate ->
+                if (candidate.notLiked) {
+                    candidate
+                } else if (HeartbeatScorer.identityKey(candidate.song) in disliked) {
+                    candidate.copy(notLiked = true)
+                } else {
+                    candidate
+                }
+            }
+        }
+        return pool.copy(tiers = tiers)
     }
 
     /**

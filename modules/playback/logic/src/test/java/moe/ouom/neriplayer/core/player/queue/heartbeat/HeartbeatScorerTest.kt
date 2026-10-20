@@ -263,6 +263,59 @@ class HeartbeatScorerTest {
         assertNotNull(HeartbeatScorer.pickBest(pool, current, emptyList()))
     }
 
+    // ---- 不喜欢标记（任务书 §3.4 notLikedWeight）----
+
+    @Test
+    fun `not liked penalty overrides even the highest tier`() {
+        // 收藏里被标记「不喜欢」的歌必须输给最低层级的未标记歌，
+        // 否则标记形同虚设——这是 NOT_LIKED_PENALTY 取 10000 的全部意义
+        val dislikedFavorite = candidate(
+            song(1, "收藏但不喜欢"),
+            tier = HeartbeatCandidateTier.FAVORITE,
+        ).copy(notLiked = true)
+        val plainRandom = candidate(
+            song(2, "随机未标记"),
+            tier = HeartbeatCandidateTier.RANDOM,
+        )
+
+        assertTrue(
+            HeartbeatScorer.score(dislikedFavorite, current) <
+                HeartbeatScorer.score(plainRandom, current)
+        )
+    }
+
+    @Test
+    fun `pickBest skips not liked candidate when a clean one exists`() {
+        val disliked = candidate(song(1, "不喜欢"), tier = HeartbeatCandidateTier.FAVORITE)
+            .copy(notLiked = true)
+        val clean = candidate(song(2, "正常"), tier = HeartbeatCandidateTier.RANDOM)
+        val pool = poolOf(disliked, clean)
+
+        assertEquals(clean.song.id, HeartbeatScorer.pickBest(pool, current, emptyList())?.id)
+    }
+
+    @Test
+    fun `pickBest returns null when every candidate is not liked`() {
+        // 整池都被标记时回退原有播放模式，而不是硬推一首用户明确拒绝的歌
+        val pool = poolOf(
+            candidate(song(1, "不喜欢1")).copy(notLiked = true),
+            candidate(song(2, "不喜欢2")).copy(notLiked = true),
+        )
+
+        assertNull(HeartbeatScorer.pickBest(pool, current, emptyList()))
+    }
+
+    @Test
+    fun `not liked candidates stay selectable in principle`() {
+        // 不硬排除而是减分：只要池里有未标记的候选，被标记的就不该被选中；
+        // 但 score() 本身仍给出有限数值，便于排查与测试
+        val disliked = candidate(song(1, "不喜欢")).copy(notLiked = true)
+        val score = HeartbeatScorer.score(disliked, current)
+
+        assertTrue(score.isFinite())
+        assertTrue(score < 0.0)
+    }
+
     // ---- 身份键 ----
 
     @Test

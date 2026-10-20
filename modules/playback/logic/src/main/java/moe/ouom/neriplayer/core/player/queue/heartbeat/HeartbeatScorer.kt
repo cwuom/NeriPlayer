@@ -41,6 +41,19 @@ object HeartbeatScorer {
     const val SHORT_TRACK_PENALTY = 0.8
 
     /**
+     * 用户标记「不喜欢」的扣分（任务书 §3.4 `notLikedWeight * isNotLikedScore`）。
+     *
+     * 取值必须能压过任何层级的最高可能得分，否则「收藏里被标记不喜欢的歌」
+     * 仍然会被推荐出来，标记就形同虚设。最高可能得分是层级 1 的基础分
+     * `TIER_BASE_SCORE * 4 = 4000` 加上同歌手/同专辑加分 180，所以取 10000
+     * 留足余量——被标记的候选必然排在所有未标记候选之后。
+     *
+     * 用**减分**而不是乘系数：乘系数只能把分数压小，压不到负值，
+     * 而层级差本身有 4 倍，小系数仍可能让高层级的被标记曲胜过低层级未标记曲。
+     */
+    const val NOT_LIKED_PENALTY = 10_000.0
+
+    /**
      * 计算单条候选的分数。分数越高越优先。
      *
      * @param candidate 待评分候选
@@ -62,6 +75,9 @@ object HeartbeatScorer {
         result *= repeatPenalty(candidate.effectiveRepeatCount)
         if (candidate.song.durationMs in 1 until SHORT_TRACK_THRESHOLD_MS) {
             result *= SHORT_TRACK_PENALTY
+        }
+        if (candidate.notLiked) {
+            result -= NOT_LIKED_PENALTY
         }
         return result
     }
@@ -93,6 +109,12 @@ object HeartbeatScorer {
      * - 已经存在于 [currentQueue] 中的歌曲（保持队列多样性）；
      * - 出现在 [excludedIdentities] 中的歌曲（本次会话内播放失败过的曲目，任务书 §八）。
      *
+     * 用户标记「不喜欢」的候选**不硬排除，只是扣分**（任务书 §3.4 的公式就是减分项）：
+     * 硬排除会让「标记了不喜欢」变成一个不可撤销的隐形黑名单，
+     * 而减分保留了「用户把整池都标了不喜欢」时仍有歌可播的可能性。
+     * 但如果扣分后最优候选仍是「不喜欢」的，说明整池都被标记过，
+     * 此时返回 null 让调用方回退原有播放模式，比硬推一首用户明确拒绝的歌更合理。
+     *
      * 分数相同时按候选池原始顺序取靠前者，保证结果稳定。
      */
     fun pickBest(
@@ -117,7 +139,10 @@ object HeartbeatScorer {
                 best = candidate
             }
         }
-        return best?.song
+        val picked = best ?: return null
+        // 整池都被标记「不喜欢」时回退原有模式，而不是硬推一首用户明确拒绝的歌
+        if (picked.notLiked) return null
+        return picked.song
     }
 
     /**

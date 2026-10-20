@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.ThumbDown as ThumbDownFilled
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -55,6 +56,7 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.material.icons.outlined.ThumbDown as ThumbDownOutlined
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -97,7 +99,9 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatScorer
 import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayItem
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
@@ -402,6 +406,7 @@ private fun NowPlayingQueueRow(
     song: SongItem,
     isCurrent: Boolean,
     isFavoriteSong: Boolean,
+    isDislikedSong: Boolean,
     offlineMode: Boolean,
     selectionMode: Boolean,
     selected: Boolean,
@@ -411,6 +416,7 @@ private fun NowPlayingQueueRow(
     onPlayNext: () -> Unit,
     onAddToEnd: () -> Unit,
     onFavoriteToggle: () -> Unit,
+    onDislikeToggle: () -> Unit,
     onRemoveFromQueue: () -> Unit,
     dragHandle: @Composable (() -> Unit)?
 ) {
@@ -448,9 +454,11 @@ private fun NowPlayingQueueRow(
             QueueRowTrailingActions(
                 selectionMode = selectionMode,
                 isFavoriteSong = isFavoriteSong,
+                isDislikedSong = isDislikedSong,
                 onPlayNext = onPlayNext,
                 onAddToEnd = onAddToEnd,
                 onFavoriteToggle = onFavoriteToggle,
+                onDislikeToggle = onDislikeToggle,
                 onRemoveFromQueue = onRemoveFromQueue,
                 dragHandle = dragHandle
             )
@@ -595,9 +603,11 @@ private fun QueueRowCurrentMarker(visible: Boolean) {
 private fun QueueRowTrailingActions(
     selectionMode: Boolean,
     isFavoriteSong: Boolean,
+    isDislikedSong: Boolean,
     onPlayNext: () -> Unit,
     onAddToEnd: () -> Unit,
     onFavoriteToggle: () -> Unit,
+    onDislikeToggle: () -> Unit,
     onRemoveFromQueue: () -> Unit,
     dragHandle: @Composable (() -> Unit)?
 ) {
@@ -606,9 +616,11 @@ private fun QueueRowTrailingActions(
     } else {
         QueueRowMoreMenu(
             isFavoriteSong = isFavoriteSong,
+            isDislikedSong = isDislikedSong,
             onPlayNext = onPlayNext,
             onAddToEnd = onAddToEnd,
             onFavoriteToggle = onFavoriteToggle,
+            onDislikeToggle = onDislikeToggle,
             onRemoveFromQueue = onRemoveFromQueue
         )
     }
@@ -642,9 +654,11 @@ private fun QueueRowReorderHandle(reorderState: ReorderableLazyListState) {
 @Composable
 private fun QueueRowMoreMenu(
     isFavoriteSong: Boolean,
+    isDislikedSong: Boolean,
     onPlayNext: () -> Unit,
     onAddToEnd: () -> Unit,
     onFavoriteToggle: () -> Unit,
+    onDislikeToggle: () -> Unit,
     onRemoveFromQueue: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -668,6 +682,7 @@ private fun QueueRowMoreMenu(
                 onClick = { onAddToEnd(); expanded = false }
             )
             QueueRowFavoriteAction(isFavoriteSong) { onFavoriteToggle(); expanded = false }
+            QueueRowDislikeAction(isDislikedSong) { onDislikeToggle(); expanded = false }
             QueueRowMenuAction(
                 label = stringResource(CoreCommonR.string.nowplaying_queue_remove),
                 icon = Icons.Outlined.DeleteOutline,
@@ -686,11 +701,29 @@ private fun QueueRowFavoriteAction(isFavoriteSong: Boolean, onClick: () -> Unit)
     )
 }
 
+@Composable
+private fun QueueRowDislikeAction(isDislikedSong: Boolean, onClick: () -> Unit) {
+    QueueRowMenuAction(
+        label = stringResource(
+            if (isDislikedSong) {
+                CoreCommonR.string.heartbeat_dislike_marked
+            } else {
+                CoreCommonR.string.heartbeat_dislike_action
+            }
+        ),
+        icon = queueDislikeIcon(isDislikedSong),
+        onClick = onClick
+    )
+}
+
 private fun queueFavoriteLabel(isFavoriteSong: Boolean): Int =
     if (isFavoriteSong) CoreCommonR.string.favorite_remove else CoreCommonR.string.favorite_add
 
 private fun queueFavoriteIcon(isFavoriteSong: Boolean): ImageVector =
     if (isFavoriteSong) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder
+
+private fun queueDislikeIcon(isDislikedSong: Boolean): ImageVector =
+    if (isDislikedSong) Icons.Filled.ThumbDownFilled else Icons.Outlined.ThumbDownOutlined
 
 @Composable
 private fun QueueRowMenuAction(label: String, icon: ImageVector, onClick: () -> Unit) {
@@ -926,6 +959,9 @@ internal fun NowPlayingQueueSheet(
     val context = LocalContext.current
     val screenScope = rememberCoroutineScope()
     val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
+    val dislikedSongRepo = remember { AppContainer.dislikedSongRepo }
+    val dislikedKeys by dislikedSongRepo.dislikedKeysFlow
+        .collectAsStateWithLifecycle(initialValue = emptySet())
     val snackbarHostState = remember { SnackbarHostState() }
     val playerPlaylists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
     val allLocalPlaylists by localPlaylistRepo.playlists.collectAsStateWithLifecycle(
@@ -1066,6 +1102,11 @@ internal fun NowPlayingQueueSheet(
                 localPlaylistRepo.addToFavorites(song)
             }
         }
+    }
+
+    fun toggleQueueSongDislike(song: SongItem) {
+        val key = HeartbeatScorer.identityKey(song)
+        screenScope.launch { dislikedSongRepo.toggle(key) }
     }
 
     LaunchedEffect(sourceEntries) {
@@ -1239,6 +1280,9 @@ internal fun NowPlayingQueueSheet(
                             val isFavoriteSong = remember(favoriteSongs, entry.song) {
                                 favoriteSongs.any { it.sameIdentityAs(entry.song) }
                             }
+                            val isDislikedSong = remember(dislikedKeys, entry.song) {
+                                HeartbeatScorer.identityKey(entry.song) in dislikedKeys
+                            }
                             val rowScale by animateFloatAsState(
                                 targetValue = queueRowScale(isDragging),
                                 animationSpec = spring(
@@ -1257,6 +1301,7 @@ internal fun NowPlayingQueueSheet(
                                 song = entry.song,
                                 isCurrent = entry.key == currentEntryKey,
                                 isFavoriteSong = isFavoriteSong,
+                                isDislikedSong = isDislikedSong,
                                 offlineMode = offlineMode,
                                 selectionMode = selectionMode,
                                 selected = entry.key in selectedKeys,
@@ -1273,6 +1318,9 @@ internal fun NowPlayingQueueSheet(
                                 onAddToEnd = { PlayerManager.addToQueueEnd(entry.song) },
                                 onFavoriteToggle = {
                                     toggleQueueSongFavorite(entry.song, isFavoriteSong)
+                                },
+                                onDislikeToggle = {
+                                    toggleQueueSongDislike(entry.song)
                                 },
                                 onRemoveFromQueue = {
                                     PlayerManager.removeQueueItem(entry.queueIndex)
