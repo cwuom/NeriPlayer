@@ -51,6 +51,22 @@ class HeartbeatNextTrackCoordinator(
             officialCircuitOpen = false
         }
         lastResultFromOfficial = false
+        (localSource as? LocalHeartbeatCandidateSource)?.resetFailures()
+    }
+
+    /**
+     * 记录一首播放失败的歌曲（任务书 §八）。
+     *
+     * 转交给本地源做会话级排除：失败的曲目不该被再次推荐，
+     * 否则「播放失败 → 自动换下一首 → 又选中同一首」会形成死循环。
+     */
+    fun markFailed(song: SongItem) {
+        (localSource as? LocalHeartbeatCandidateSource)?.markFailed(song)
+    }
+
+    /** 让本地候选池缓存失效（任务书 §3.6：退出心动模式 / 收藏变更时调用）。 */
+    fun invalidateLocalCandidates() {
+        (localSource as? LocalHeartbeatCandidateSource)?.invalidate()
     }
 
     /** 仅供测试与诊断 */

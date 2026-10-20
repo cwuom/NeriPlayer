@@ -39,7 +39,19 @@ data class HeartbeatCandidate(
     val weight: Double = 1.0,
     /** 是否刚刚播放过，用于避免立刻重复 */
     val recentlyPlayed: Boolean = false,
-)
+    /**
+     * 该曲在统计库里的累计播放次数（[moe.ouom.neriplayer.data.model.stats.TrackStat.playCount]）。
+     *
+     * 与 [recentlyPlayed] 并存而不替换它：前者是「播过没有」的布尔快照，
+     * 后者是「播过多少次」的强度信号，评分器取两者中更强的那个做衰减。
+     * 默认 0 表示统计不可用，此时完全退回旧行为。
+     */
+    val recentPlayCount: Int = 0,
+) {
+    /** 评分用的有效重复次数：取显式次数与布尔标记中的较大者。 */
+    val effectiveRepeatCount: Int
+        get() = maxOf(recentPlayCount, if (recentlyPlayed) 1 else 0)
+}
 
 /**
  * 本地候选池：按层级分组的一次性快照。
@@ -48,9 +60,17 @@ data class HeartbeatCandidate(
  */
 data class HeartbeatCandidatePool(
     val tiers: Map<Int, List<HeartbeatCandidate>> = emptyMap(),
+    /**
+     * 层级 3/4 的备用曲目（全库抽样）。
+     *
+     * 这两个层级必须相对**当前播放歌曲**才能判定（同歌手/同专辑、随机兜底），
+     * 而候选池是按 5 分钟 TTL 缓存的、与当前歌曲无关。因此这里只缓存「原料」，
+     * 由 [LocalHeartbeatCandidateSource.selectNext] 在每次选歌时按当前歌曲即时派生。
+     */
+    val supplemental: List<SongItem> = emptyList(),
 ) {
     val isEmpty: Boolean
-        get() = tiers.values.all { it.isEmpty() }
+        get() = tiers.values.all { it.isEmpty() } && supplemental.isEmpty()
 
     fun candidatesOf(tier: Int): List<HeartbeatCandidate> = tiers[tier].orEmpty()
 

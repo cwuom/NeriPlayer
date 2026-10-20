@@ -149,11 +149,36 @@ fun PlayerManager.setHeartbeatMode(
         heartbeatPending.clear()
         heartbeatCandidateExhaustion.reset()
         (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
+        // 任务书 §3.6：退出心动模式时让候选池缓存失效，
+        // 避免下次开启还沿用上次会话的收藏/历史快照。
+        invalidateHeartbeatCandidateCache()
     } else {
         heartbeatCandidateExhaustion.reset()
+        // 重新开启视为新会话：清空上一次会话的失败曲目黑名单（任务书 §3.5）
+        (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
         refreshHeartbeatOfficialAvailability()
         requestHeartbeatSelectionAsync("enable")
     }
+}
+
+/**
+ * 让本地候选池缓存失效（任务书 §3.6）。
+ *
+ * 退出心动模式、收藏/历史发生变更时调用；未安装本地源时静默无操作。
+ */
+internal fun PlayerManager.invalidateHeartbeatCandidateCache() {
+    val coordinator = heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator ?: return
+    coordinator.invalidateLocalCandidates()
+}
+
+/**
+ * 记录一首播放失败的歌曲，使其在本次心动会话内不再被推荐（任务书 §八）。
+ *
+ * 只影响本地降级候选的挑选；官方接口返回什么就播什么，不做客户端过滤（§1.3 红线）。
+ */
+internal fun PlayerManager.markHeartbeatSongFailed(song: SongItem) {
+    if (heartbeatModeState != HeartbeatMode.ON) return
+    (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.markFailed(song)
 }
 
 fun PlayerManager.cycleHeartbeatMode(
@@ -252,7 +277,12 @@ internal fun PlayerManager.insertHeartbeatSongAndPlay(
         val planned = queueEdits.insert(snapshot, song, _currentSongFlow.value, QueueInsertPlacement.NEXT)
             ?: return@updateCurrentQueue null
         insertedIndex = planned.insertedIndex
-        planned.queue
+        // 关键修复：把队列的当前下标指向刚插入的心动候选。
+        // `queueEdits.insert` 沿用「按 identity 找回原当前歌」的通用策略，
+        // 返回的 currentIndex 仍停在原歌上；若直接 playAtIndex(currentIndex)
+        // 就会把当前这首歌再播一遍——这正是真机实测到的
+        // 「开启心动后第一次点下一首是重复播放当前这首歌」的根因。
+        planned.queue.selecting(planned.insertedIndex)
     } ?: return
 
     consecutivePlayFailures = 0
@@ -269,4 +299,7 @@ internal fun PlayerManager.insertHeartbeatSongAndPlay(
         TAG,
         "insertHeartbeatSongAndPlay: song=${song.name}/${song.id}, insertIndex=$insertedIndex, queueSize=${updatedQueue.playlist.size}",
     )
+    // 立刻为「下一次切歌」预取，否则用户连续点两次下一首时第二次会命中空池
+    // 而回退到原有队列（真机表现为「第一次正确、第二次又播原队列下一首」）。
+    requestHeartbeatSelectionAsync("afterInsert")
 }

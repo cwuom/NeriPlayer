@@ -16,8 +16,17 @@ object HeartbeatScorer {
     /** 层级基础分：层级每降一级，基础分按此比例衰减 */
     const val TIER_BASE_SCORE = 1000.0
 
-    /** 最近播放过的候选扣分系数 */
-    const val RECENTLY_PLAYED_PENALTY = 0.35
+    /**
+     * 每次累计播放带来的额外衰减步长（任务书 §3.4「重复惩罚」）。
+     *
+     * 语义：播过 1 次的曲乘 0.85，2 次乘 0.7225……最低衰减到 [REPEAT_PENALTY_FLOOR]。
+     * 之所以用「系数连乘」而不是「线性扣分」，是因为前者不会把候选压成负数，
+     * 层级优先语义也不会被破坏。
+     */
+    const val REPEAT_PENALTY_STEP = 0.85
+
+    /** 重复惩罚的下限，防止老歌被压到彻底选不出来 */
+    const val REPEAT_PENALTY_FLOOR = 0.25
 
     /** 与当前歌曲同歌手的加分 */
     const val SAME_ARTIST_BONUS = 120.0
@@ -50,7 +59,7 @@ object HeartbeatScorer {
             if (sameArtist(candidate.song, currentSong)) result += SAME_ARTIST_BONUS
             if (sameAlbum(candidate.song, currentSong)) result += SAME_ALBUM_BONUS
         }
-        if (candidate.recentlyPlayed) result *= RECENTLY_PLAYED_PENALTY
+        result *= repeatPenalty(candidate.effectiveRepeatCount)
         if (candidate.song.durationMs in 1 until SHORT_TRACK_THRESHOLD_MS) {
             result *= SHORT_TRACK_PENALTY
         }
@@ -58,11 +67,31 @@ object HeartbeatScorer {
     }
 
     /**
+     * 重复播放惩罚系数（任务书 §3.4）。
+     *
+     * 0 次返回 1.0（无惩罚）；n 次返回 `REPEAT_PENALTY_STEP^n`，下限 [REPEAT_PENALTY_FLOOR]。
+     * 与旧的「播过就乘 0.35」相比，这里对「播过 1 次」更宽容（0.85 而非 0.35），
+     * 因为刚播过一次并不等于用户不喜欢——真正要压的是循环重播的那几首。
+     */
+    fun repeatPenalty(repeatCount: Int): Double {
+        if (repeatCount <= 0) return 1.0
+        var penalty = 1.0
+        repeat(repeatCount.coerceAtMost(MAX_REPEAT_PENALTY_STEPS)) {
+            penalty *= REPEAT_PENALTY_STEP
+        }
+        return penalty.coerceAtLeast(REPEAT_PENALTY_FLOOR)
+    }
+
+    /** 连乘步数上限，避免高播放次数时做无意义的循环 */
+    private const val MAX_REPEAT_PENALTY_STEPS = 32
+
+    /**
      * 从候选池中挑出分数最高的一首。
      *
      * 排除规则：
      * - 与 [currentSong] 同一首歌（不能把自己当作下一首）；
-     * - 已经存在于 [currentQueue] 中的歌曲（保持队列多样性）。
+     * - 已经存在于 [currentQueue] 中的歌曲（保持队列多样性）；
+     * - 出现在 [excludedIdentities] 中的歌曲（本次会话内播放失败过的曲目，任务书 §八）。
      *
      * 分数相同时按候选池原始顺序取靠前者，保证结果稳定。
      */
@@ -70,6 +99,7 @@ object HeartbeatScorer {
         pool: HeartbeatCandidatePool,
         currentSong: SongItem?,
         currentQueue: List<SongItem> = emptyList(),
+        excludedIdentities: Set<String> = emptySet(),
         sameIdentity: (SongItem, SongItem?) -> Boolean = ::defaultSameIdentity,
     ): SongItem? {
         if (pool.isEmpty) return null
@@ -78,7 +108,9 @@ object HeartbeatScorer {
         var bestScore = Double.NEGATIVE_INFINITY
         for (candidate in pool.flattenByPriority()) {
             if (sameIdentity(candidate.song, currentSong)) continue
-            if (identityKey(candidate.song) in queueKeys) continue
+            val key = identityKey(candidate.song)
+            if (key in queueKeys) continue
+            if (key in excludedIdentities) continue
             val score = score(candidate, currentSong)
             if (score > bestScore) {
                 bestScore = score
@@ -87,6 +119,14 @@ object HeartbeatScorer {
         }
         return best?.song
     }
+
+    /**
+     * 两条歌曲是否同歌手或同专辑。
+     *
+     * 供候选池派生层级 3 使用：层级 3 的定义依赖当前歌曲，无法在缓存期判定。
+     */
+    fun sameArtistOrAlbum(song: SongItem, other: SongItem): Boolean =
+        sameArtist(song, other) || sameAlbum(song, other)
 
     private fun sameArtist(song: SongItem, other: SongItem): Boolean {
         val left = artistKey(song)

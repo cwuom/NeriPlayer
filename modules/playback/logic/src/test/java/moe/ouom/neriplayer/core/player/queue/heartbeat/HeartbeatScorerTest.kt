@@ -89,6 +89,114 @@ class HeartbeatScorerTest {
         assertEquals(0.0, HeartbeatScorer.score(zero, current), 0.0001)
     }
 
+    // ---- 重复惩罚（任务书 §3.4）----
+
+    @Test
+    fun `repeat penalty is neutral for never played candidates`() {
+        assertEquals(1.0, HeartbeatScorer.repeatPenalty(0), 0.0001)
+        assertEquals(1.0, HeartbeatScorer.repeatPenalty(-5), 0.0001)
+    }
+
+    @Test
+    fun `repeat penalty decays with play count`() {
+        val once = HeartbeatScorer.repeatPenalty(1)
+        val thrice = HeartbeatScorer.repeatPenalty(3)
+
+        assertTrue("播得越多分数越低", once > thrice)
+        assertEquals(HeartbeatScorer.REPEAT_PENALTY_STEP, once, 0.0001)
+    }
+
+    @Test
+    fun `repeat penalty never drops below the floor`() {
+        assertEquals(
+            HeartbeatScorer.REPEAT_PENALTY_FLOOR,
+            HeartbeatScorer.repeatPenalty(10_000),
+            0.0001,
+        )
+    }
+
+    @Test
+    fun `recentPlayCount lowers the score`() {
+        val fresh = candidate(song(2, "没播过"), tier = HeartbeatCandidateTier.FAVORITE)
+        val played = candidate(song(3, "播过很多次"), tier = HeartbeatCandidateTier.FAVORITE)
+            .copy(recentPlayCount = 5)
+
+        assertTrue(HeartbeatScorer.score(fresh, current) > HeartbeatScorer.score(played, current))
+    }
+
+    @Test
+    fun `effective repeat count takes the stronger of boolean and counter`() {
+        val boolOnly = HeartbeatCandidate(song(2, "x"), HeartbeatCandidateTier.FAVORITE, recentlyPlayed = true)
+        val counterOnly = HeartbeatCandidate(song(3, "y"), HeartbeatCandidateTier.FAVORITE, recentPlayCount = 3)
+
+        assertEquals(1, boolOnly.effectiveRepeatCount)
+        assertEquals(3, counterOnly.effectiveRepeatCount)
+    }
+
+    @Test
+    fun `tier priority survives moderate repeat penalty`() {
+        // 层级基础分差距（3000）远大于中等重复次数造成的衰减，层级语义不得被破坏。
+        // 注意：重复到下限（0.25）时收藏会掉到与随机同分——这是刻意的设计，
+        // 「播爆了的老歌」本来就该和新歌机会均等，所以这里只断言中等次数。
+        val favoritePlayedThrice = candidate(song(2, "收藏播过三次"), tier = HeartbeatCandidateTier.FAVORITE)
+            .copy(recentPlayCount = 3)
+        val randomFresh = candidate(song(3, "随机但新鲜"), tier = HeartbeatCandidateTier.RANDOM)
+
+        assertTrue(
+            "收藏层级在中等重复次数下必须压过随机层级",
+            HeartbeatScorer.score(favoritePlayedThrice, current) >
+                HeartbeatScorer.score(randomFresh, current),
+        )
+    }
+
+    @Test
+    fun `repeat penalty floor equalizes heavily played favorites with fresh randoms`() {
+        // 明确固化「播爆了的老歌 == 随机新歌」这一语义，避免以后误以为是 bug
+        val favoritePlayedALot = candidate(song(2, "收藏但播爆了"), tier = HeartbeatCandidateTier.FAVORITE)
+            .copy(recentPlayCount = 20)
+        val randomFresh = candidate(song(3, "随机但新鲜"), tier = HeartbeatCandidateTier.RANDOM)
+
+        assertEquals(
+            HeartbeatScorer.score(randomFresh, current),
+            HeartbeatScorer.score(favoritePlayedALot, current),
+            0.0001,
+        )
+    }
+
+    // ---- 失败曲目排除（任务书 §八）----
+
+    @Test
+    fun `pickBest excludes songs marked as failed`() {
+        val failed = song(2, "播放失败过")
+        val ok = song(3, "正常")
+        val pool = poolOf(
+            candidate(failed, tier = HeartbeatCandidateTier.FAVORITE),
+            candidate(ok, tier = HeartbeatCandidateTier.HISTORY),
+        )
+
+        val picked = HeartbeatScorer.pickBest(
+            pool = pool,
+            currentSong = current,
+            excludedIdentities = setOf(HeartbeatScorer.identityKey(failed)),
+        )
+
+        assertEquals("失败曲目必须被硬排除，即使层级更高", 3L, picked?.id)
+    }
+
+    @Test
+    fun `pickBest returns null when every candidate failed`() {
+        val only = song(2, "唯一候选")
+        val pool = poolOf(candidate(only, tier = HeartbeatCandidateTier.FAVORITE))
+
+        assertNull(
+            HeartbeatScorer.pickBest(
+                pool = pool,
+                currentSong = current,
+                excludedIdentities = setOf(HeartbeatScorer.identityKey(only)),
+            )
+        )
+    }
+
     // ---- 挑选行为 ----
 
     @Test

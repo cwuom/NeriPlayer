@@ -26,11 +26,12 @@ internal fun installHeartbeatDependencies(application: Application) {
     installHeartbeatOfficialRepository(officialRepository)
     val officialSource = OfficialHeartbeatSource(officialRepository)
 
-    // 本地降级源：收藏 + 历史。数据源接口由 logic 层定义，实现在 runtime 层。
+    // 本地降级源：收藏 + 历史 + 统计库（层级 3/4 原料与播放次数）。
     val candidateProvider = LocalHeartbeatCandidateProvider(
         playHistoryRepository = PlayHistoryRepository.getInstance(application),
         localPlaylistRepository = LocalPlaylistRepository.getInstance(application),
         context = application,
+        playbackStatsRepository = AppContainer.playbackStatsRepo,
     )
     val localSource = LocalHeartbeatCandidateSource(
         provider = candidateProvider,

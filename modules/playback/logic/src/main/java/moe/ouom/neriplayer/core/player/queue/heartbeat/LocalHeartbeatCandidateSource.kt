@@ -26,17 +26,97 @@ class LocalHeartbeatCandidateSource(
 ) : HeartbeatNextTrackSelector {
 
     override suspend fun selectNext(currentSong: SongItem, currentQueue: List<SongItem>): SongItem? {
-        val pool = cache.getOrBuild { buildPool() }
+        val cached = cache.getOrBuild { buildPool() }
+        val pool = withSupplementalTiers(cached, currentSong)
         if (pool.isEmpty) return null
         return HeartbeatScorer.pickBest(
             pool = pool,
             currentSong = currentSong,
             currentQueue = currentQueue,
+            excludedIdentities = excludedIdentities,
         )
     }
 
+    /**
+     * 本次会话内播放失败过的曲目身份键。
+     *
+     * 任务书 §八 要求「播放失败的歌曲应被排除」。这里只做会话级内存记录，
+     * 不持久化：进程重启后重新开启心动模式即视为新会话，符合 §3.5 的语义。
+     */
+    private val failedIdentities = LinkedHashSet<String>()
+
+    /** 由播放失败路径调用，把该曲加入本次会话的黑名单。 */
+    fun markFailed(song: SongItem) {
+        synchronized(failedIdentities) {
+            failedIdentities.add(HeartbeatScorer.identityKey(song))
+        }
+    }
+
+    /** 重新开启心动模式时清空失败记录。 */
+    fun resetFailures() {
+        synchronized(failedIdentities) { failedIdentities.clear() }
+    }
+
+    private val excludedIdentities: Set<String>
+        get() = synchronized(failedIdentities) { failedIdentities.toSet() }
+
     /** 候选池因收藏/历史变化而失效时调用 */
     fun invalidate() = cache.invalidate()
+
+    /**
+     * 把缓存的层级 1/2 原料，按**当前歌曲**派生层级 3（同歌手/同专辑）与层级 4（随机兜底）。
+     *
+     * 为什么不在 [buildPool] 里做：候选池按 5 分钟 TTL 缓存，与当前歌曲无关；
+     * 而层级 3/4 的定义依赖当前歌曲。放进缓存会导致「切歌后仍按上一首的歌手推荐」。
+     */
+    private fun withSupplementalTiers(
+        cached: HeartbeatCandidatePool,
+        currentSong: SongItem,
+    ): HeartbeatCandidatePool {
+        if (cached.supplemental.isEmpty()) return cached
+
+        val knownKeys = HashSet<String>()
+        cached.tiers.values.forEach { list -> list.forEach { knownKeys.add(HeartbeatScorer.identityKey(it.song)) } }
+
+        val sameArtistOrAlbum = ArrayList<HeartbeatCandidate>()
+        val randomPool = ArrayList<HeartbeatCandidate>()
+        for (song in cached.supplemental) {
+            val key = HeartbeatScorer.identityKey(song)
+            if (key in knownKeys) continue
+            if (HeartbeatScorer.sameArtistOrAlbum(song, currentSong)) {
+                sameArtistOrAlbum.add(
+                    HeartbeatCandidate(
+                        song = song,
+                        tier = HeartbeatCandidateTier.SAME_ARTIST_OR_ALBUM,
+                        weight = 1.0,
+                        recentPlayCount = playCounts[key] ?: 0,
+                    )
+                )
+            } else {
+                randomPool.add(
+                    HeartbeatCandidate(
+                        song = song,
+                        tier = HeartbeatCandidateTier.RANDOM,
+                        weight = 1.0,
+                        recentPlayCount = playCounts[key] ?: 0,
+                    )
+                )
+            }
+        }
+
+        val tiers = LinkedHashMap(cached.tiers)
+        if (sameArtistOrAlbum.isNotEmpty()) {
+            tiers[HeartbeatCandidateTier.SAME_ARTIST_OR_ALBUM] = sameArtistOrAlbum
+        }
+        if (randomPool.isNotEmpty()) {
+            tiers[HeartbeatCandidateTier.RANDOM] = randomPool
+        }
+        return HeartbeatCandidatePool(tiers = tiers, supplemental = cached.supplemental)
+    }
+
+    /** 构建候选池时一并抓取的播放次数快照，供 [withSupplementalTiers] 复用。 */
+    @Volatile
+    private var playCounts: Map<String, Int> = emptyMap()
 
     /**
      * 构建候选池。
@@ -49,6 +129,13 @@ class LocalHeartbeatCandidateSource(
         val history = runCatching {
             provider.recentHistory(HeartbeatCandidateProvider.DEFAULT_HISTORY_LIMIT)
         }.getOrDefault(emptyList())
+        val samples = runCatching {
+            provider.librarySamples(HeartbeatCandidateProvider.DEFAULT_LIBRARY_SAMPLE_LIMIT)
+        }.getOrDefault(emptyList())
+        val counts = runCatching {
+            provider.recentPlayCounts(HeartbeatCandidateProvider.DEFAULT_HISTORY_LIMIT)
+        }.getOrDefault(emptyMap())
+        playCounts = counts
 
         val historyKeys = history.mapTo(HashSet()) { HeartbeatScorer.identityKey(it) }
         val tiers = LinkedHashMap<Int, List<HeartbeatCandidate>>()
@@ -61,6 +148,7 @@ class LocalHeartbeatCandidateSource(
                     // 收藏本身已是强信号，权重统一给 1.0，由评分器按层级拉开差距
                     weight = 1.0,
                     recentlyPlayed = HeartbeatScorer.identityKey(song) in historyKeys,
+                    recentPlayCount = counts[HeartbeatScorer.identityKey(song)] ?: 0,
                 )
             }
         }
@@ -73,14 +161,13 @@ class LocalHeartbeatCandidateSource(
                     // 越靠前（越近）的历史权重越高，线性衰减到 0.5 为止
                     weight = (1.0 - index * HISTORY_WEIGHT_STEP).coerceAtLeast(HISTORY_MIN_WEIGHT),
                     recentlyPlayed = true,
+                    recentPlayCount = counts[HeartbeatScorer.identityKey(song)] ?: 0,
                 )
             }
         }
 
-        // 层级 3（同歌手/同专辑）与层级 4（随机兜底）在本地数据源里没有额外数据可挖，
-        // 由第 1、2 层天然覆盖。此处显式留空，避免编造不存在的数据来源。
-
-        return HeartbeatCandidatePool(tiers)
+        // 层级 3/4 的原料在这里只缓存，真正分层在 withSupplementalTiers 里按当前歌曲派生
+        return HeartbeatCandidatePool(tiers = tiers, supplemental = samples)
     }
 
     private companion object {

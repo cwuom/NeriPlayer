@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.core.player.queue.heartbeat.consumeHeartbeatReadyNext
 import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatModeState
 import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatReadyNextSong
 import moe.ouom.neriplayer.core.player.queue.heartbeat.insertHeartbeatSongAndPlay
+import moe.ouom.neriplayer.core.player.queue.heartbeat.markHeartbeatSongFailed
 import moe.ouom.neriplayer.core.player.queue.heartbeat.requestHeartbeatSelectionAsync
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.queue.ListenTogetherTrackFinishPlan
@@ -171,9 +172,12 @@ private fun PlayerManager.heartbeatAdvanceOrFallback(
     }
     val ready = heartbeatReadyNextSong
     if (ready == null) {
-        // 没有就绪的预取结果：沿用原有推进，同时异步补一次选择，供下一次使用
-        requestHeartbeatSelectionAsync(reason)
+        // 没有就绪的预取结果：先沿用原有推进切到下一首，**再**补一次预取。
+        // 顺序不能反：预取以 `_currentSongFlow.value` 为基准歌曲，
+        // 若在 fallback 之前发起，请求会锚在即将被切走的那首歌上，
+        // 下一次切歌时又拿到不匹配的候选。
         fallback()
+        requestHeartbeatSelectionAsync(reason)
         return false
     }
     consumeHeartbeatReadyNextSong()
@@ -209,6 +213,9 @@ private fun PlayerManager.dispatchFailureAdvance(
         stopPlaybackPreservingQueue(clearMediaUrl = true)
         return
     }
+    // 任务书 §八：本次播放失败的曲目要记入本次心动会话的黑名单，
+    // 否则「失败 → 自动换下一首 → 又选中同一首」会无限循环。
+    _currentSongFlow.value?.let { markHeartbeatSongFailed(it) }
     // 播放失败时先用心动候选顶上（任务书 §3.5 步骤 5），拿不到才按原失败策略推进
     if (heartbeatAdvanceOrFallback(
             reason = "playbackFailure",

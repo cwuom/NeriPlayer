@@ -181,6 +181,91 @@ class LocalHeartbeatCandidateSourceTest {
         assertEquals(first, second)
     }
 
+    // ---- 层级 3/4（同歌手/同专辑、随机兜底）----
+
+    @Test
+    fun `same artist sample is picked when favorites and history are exhausted`() = runTest {
+        // 当前歌是歌手1；收藏/历史都已在队列里被排除，只剩同歌手的库内抽样可用
+        val provider = SampleProvider(
+            favorites = listOf(current),
+            history = emptyList(),
+            samples = listOf(
+                song(30, "同歌手曲").copy(artist = "歌手1"),
+                song(31, "别人曲").copy(artist = "歌手99"),
+            ),
+        )
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        assertEquals("层级 3 必须优先于层级 4", 30L, source.selectNext(current, emptyList())?.id)
+    }
+
+    @Test
+    fun `random tier is used when nothing shares artist or album`() = runTest {
+        val provider = SampleProvider(
+            favorites = listOf(current),
+            history = emptyList(),
+            samples = listOf(song(31, "无关曲").copy(artist = "歌手99", album = "别的专辑", albumId = 999)),
+        )
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        assertEquals(31L, source.selectNext(current, emptyList())?.id)
+    }
+
+    @Test
+    fun `samples already present in higher tiers are not duplicated`() = runTest {
+        val favorite = song(40, "收藏曲")
+        val provider = SampleProvider(
+            favorites = listOf(favorite),
+            history = emptyList(),
+            samples = listOf(favorite, song(41, "同歌手抽样").copy(artist = "歌手1")),
+        )
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        // 收藏层级更高，必须赢；抽样里重复出现的同一首歌不得造成两次候选
+        assertEquals(40L, source.selectNext(current, emptyList())?.id)
+    }
+
+    @Test
+    fun `library samples are not requested when provider default implementation is used`() = runTest {
+        // 默认实现返回空列表 → 层级 3/4 自然为空，不得崩溃
+        val provider = StaticProvider(favorites = emptyList(), history = emptyList())
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        assertNull(source.selectNext(current, emptyList()))
+    }
+
+    // ---- 失败曲目排除（任务书 §八）----
+
+    @Test
+    fun `failed song is excluded from later selections`() = runTest {
+        val failed = song(50, "会失败的")
+        val healthy = song(51, "健康的")
+        val provider = StaticProvider(
+            favorites = listOf(failed, healthy),
+            history = emptyList(),
+        )
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        assertEquals(50L, source.selectNext(current, emptyList())?.id)
+
+        source.markFailed(failed)
+
+        assertEquals("失败曲目必须被排除", 51L, source.selectNext(current, emptyList())?.id)
+    }
+
+    @Test
+    fun `resetFailures re-allows previously failed songs`() = runTest {
+        val failed = song(50, "会失败的")
+        val provider = StaticProvider(favorites = listOf(failed), history = emptyList())
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        source.markFailed(failed)
+        assertNull(source.selectNext(current, emptyList()))
+
+        source.resetFailures()
+        assertEquals(50L, source.selectNext(current, emptyList())?.id)
+    }
+
     // ---- 测试替身 ----
 
     private class StaticProvider(
@@ -189,6 +274,16 @@ class LocalHeartbeatCandidateSourceTest {
     ) : HeartbeatCandidateProvider {
         override suspend fun favorites(): List<SongItem> = favorites
         override suspend fun recentHistory(limit: Int): List<SongItem> = history
+    }
+
+    private class SampleProvider(
+        private val favorites: List<SongItem>,
+        private val history: List<SongItem>,
+        private val samples: List<SongItem>,
+    ) : HeartbeatCandidateProvider {
+        override suspend fun favorites(): List<SongItem> = favorites
+        override suspend fun recentHistory(limit: Int): List<SongItem> = history
+        override suspend fun librarySamples(limit: Int): List<SongItem> = samples
     }
 
     private class CountingProvider(
