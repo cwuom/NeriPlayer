@@ -87,6 +87,8 @@
     <string name="settings_playback_sleep_timer_finish_current_on_expiry_desc">When enabled, finish the current song before stopping after the countdown ends</string>
     <string name="settings_playback_crossfade_in_duration">Next Track Fade-in Duration</string>
     <string name="settings_playback_crossfade_out_duration">Current Track Fade-out Duration</string>
+    <string name="settings_heartbeat_section_title">Heartbeat Mode</string>
+    <string name="settings_heartbeat_section_desc">Signed in: uses the NetEase official heartbeat suggestions (based on your "Liked Songs" and the current track)\nSigned out: uses local suggestions (based on your favorites, play history, and tracks by the same artist or from the same album)</string>
     <string name="settings_playback_volume_normalization">Loudness Normalization</string>
     <string name="settings_playback_volume_normalization_desc">Balance song loudness; disabled for USB exclusive</string>
     <string name="settings_playback_high_resolution_output">32-bit High-resolution Output</string>
