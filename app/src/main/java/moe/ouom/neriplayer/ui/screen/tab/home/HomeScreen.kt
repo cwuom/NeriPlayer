@@ -172,6 +172,7 @@ fun HomeScreen(
     showTrendingCard: Boolean = true,
     showRadarCard: Boolean = true,
     showRecommendedCard: Boolean = true,
+    showBilibiliCard: Boolean = true,
     usageEntries: List<UsageEntry> = emptyList(),
     usageLoaded: Boolean = true,
     offlineMode: Boolean = false,
@@ -409,9 +410,7 @@ fun HomeScreen(
         }
     }
 
-    // B 站音乐模块不随网易云卡片开关隐藏，但仍受脱机模式限制（与 section 内部的渲染条件保持一致），
-    // 因此只要它在线且有内容、正在加载或报错，首页就不算「所有卡片已隐藏」。
-    val hasVisibleBiliMusicSections = showOnlineFeeds && (
+    val hasVisibleBiliMusicSections = showBilibiliCard && showOnlineFeeds && (
             ui.biliMusicRank.songs.isNotEmpty() ||
                     ui.biliMusicRank.loading ||
                     !ui.biliMusicRank.error.isNullOrBlank() ||
@@ -510,8 +509,8 @@ fun HomeScreen(
                 // Bilibili 音乐模块：版权音乐榜（热门榜/原创榜）与音乐分区热门视频
                 // 网易云模式：排在「私人雷达 / 雷达歌单」之后、「热力飙升 / 我的推荐」之前；
                 // 国际化模式：排在「猜你喜欢 / 每日发现」之后、「更多推荐」之前。
-                // 均只受脱机模式影响，不随网易云卡片开关隐藏。
-                val addBiliMusicSections: LazyGridScope.() -> Unit = {
+                val addBiliMusicSections: LazyGridScope.() -> Unit = biliSections@ {
+                    if (!showBilibiliCard) return@biliSections
                     addBiliMusicRankSection(
                         registerKey = ::registerGridItemKey,
                         state = ui.biliMusicRank,

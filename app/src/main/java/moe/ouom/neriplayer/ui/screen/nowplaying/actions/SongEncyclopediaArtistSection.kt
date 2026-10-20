@@ -22,7 +22,9 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.actions
  * Created: 2025/10/17
  */
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -42,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,6 +54,7 @@ import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo
 import androidx.compose.ui.Alignment
 private const val ENCYCLOPEDIA_ARTIST_BRIEF_MAX_LINES = 4
 private const val ENCYCLOPEDIA_ARTIST_AVATAR_SIZE_DP = 48
+private val ENCYCLOPEDIA_ARTIST_TEXT_FOLLOW_MIN_WIDTH = 320.dp
 /**
  * 模块五 关于艺人。
  *
@@ -66,34 +70,36 @@ internal fun SongEncyclopediaArtistSection(
         titleRes = CoreCommonR.string.encyclopedia_section_artist,
         icon = Icons.Outlined.Person
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            SongEncyclopediaArtistAvatar(artist, Modifier.encyclopediaClickable(onOpenArtist))
-            Spacer(Modifier.size(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            // 按文字缩放后的可用宽度收起按钮标签，给窄屏的姓名和数量留出空间
+            val compactFollow = maxWidth / LocalDensity.current.fontScale < ENCYCLOPEDIA_ARTIST_TEXT_FOLLOW_MIN_WIDTH
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SongEncyclopediaArtistAvatar(artist, Modifier.encyclopediaClickable(onOpenArtist))
+                Spacer(Modifier.size(12.dp))
+                Column(
+                    modifier = Modifier.weight(1f).encyclopediaClickable(onOpenArtist),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
                     Text(
                         text = artist.name,
-                        modifier = Modifier.weight(1f).encyclopediaClickable(onOpenArtist),
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    SongEncyclopediaArtistFollowButton(artist, Modifier.padding(start = 8.dp))
+                    val meta = buildEncyclopediaArtistMeta(artist)
+                    if (meta != null) {
+                        Text(
+                            text = meta,
+                            modifier = Modifier.fillMaxWidth(),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                val meta = buildEncyclopediaArtistMeta(artist)
-                if (meta != null) {
-                    Text(
-                        text = meta,
-                        modifier = Modifier.fillMaxWidth().encyclopediaClickable(onOpenArtist),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                SongEncyclopediaArtistFollowButton(artist, Modifier.padding(start = 8.dp), compact = compactFollow)
             }
         }
         SongEncyclopediaArtistBrief(artist)

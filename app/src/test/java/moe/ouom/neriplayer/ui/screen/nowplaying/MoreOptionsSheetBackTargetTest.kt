@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -81,4 +83,25 @@ class MoreOptionsSheetBackTargetTest {
 
         assertFalse(owner.canPredictiveDismiss)
     }
+
+    @Test
+    fun `an in flight dismissal owns back until the sheet is hidden`() {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val hidden = CompletableDeferred<Unit>()
+        var dismissals = 0
+        val owner = MoreOptionsSheetOwner(scope, hide = { hidden.await() }, expand = {}) { dismissals++ }
+        try {
+            assertTrue(owner.canPredictiveDismiss)
+            owner.dismiss()
+            assertTrue(owner.isDismissing)
+            assertFalse(owner.canPredictiveDismiss)
+            owner.dismiss()
+            hidden.complete(Unit)
+            assertEquals(1, dismissals)
+            assertFalse(owner.isDismissing)
+        } finally {
+            scope.cancel()
+        }
+    }
+
 }

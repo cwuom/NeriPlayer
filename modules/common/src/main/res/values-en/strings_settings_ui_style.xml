@@ -20,6 +20,8 @@
     <string name="settings_page_language_desc">Interface language and international content sources</string>
     <string name="settings_page_home_start">Home &amp; startup</string>
     <string name="settings_page_home_start_desc">Default start screen, home sections and input behavior</string>
+    <string name="settings_home_card_bilibili">Bilibili music</string>
+    <string name="settings_home_card_bilibili_desc">Show music charts and popular videos on Home; turning this off stops loading both sections</string>
     <string name="settings_page_now_playing">Now Playing</string>
     <string name="settings_page_now_playing_desc">Cover info, quality badges, control layout and immersive mode</string>
     <string name="settings_page_background">Background</string>

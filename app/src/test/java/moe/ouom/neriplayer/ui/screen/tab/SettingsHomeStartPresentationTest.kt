@@ -23,6 +23,12 @@ class SettingsHomeStartPresentationTest {
     }
 
     @Test
+    fun `Bilibili alone keeps home available until its own switch is disabled`() {
+        assertTrue(isSettingsHomeStartAvailable(false, false, false, false, false, showBilibili = true))
+        assertFalse(isSettingsHomeStartAvailable(false, false, false, false, false, showBilibili = false))
+    }
+
+    @Test
     fun `unavailable home redirects only a configured home destination`() {
         assertEquals("explore", effectiveSettingsStartDestination("home", false))
         assertEquals("home", effectiveSettingsStartDestination("home", true))

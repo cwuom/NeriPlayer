@@ -649,7 +649,7 @@ class BiliClient(
         scopeType?.let { params["type"] = it.toString() }
 
         val jo = getJson(FAV_RESOURCE_LIST, params)
-        val data = jo.optJSONObject("data") ?: JSONObject()
+        val data = jo.requireSuccessfulData("favorite folder contents")
         val info = data.optJSONObject("info") ?: JSONObject()
 
         val folder = FavFolder(
@@ -758,7 +758,7 @@ class BiliClient(
             "web_location" to "333.999"
         )
         val jo = getJsonWbi(COLLECTION_ARCHIVES_URL, params)
-        val data = jo.optJSONObject("data") ?: JSONObject()
+        val data = jo.requireSuccessfulData("collection archives")
         val metaObj = data.optJSONObject("meta") ?: JSONObject()
         val pageObj = data.optJSONObject("page") ?: JSONObject()
         val total = pageObj.optInt("total", metaObj.optInt("total"))
@@ -1353,9 +1353,8 @@ class BiliClient(
         val resp = execute()
         if (!resp.isSuccessful) {
             val code = resp.code
-            val text = resp.body.string()
             resp.close()
-            throw BiliHttpStatusException(code, text)
+            throw BiliHttpStatusException(code)
         }
         return resp
     }

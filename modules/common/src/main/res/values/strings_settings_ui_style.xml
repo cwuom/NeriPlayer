@@ -20,6 +20,8 @@
     <string name="settings_page_language_desc">界面语言与国际化内容源</string>
     <string name="settings_page_home_start">首页与启动</string>
     <string name="settings_page_home_start_desc">默认启动页、首页分区与输入行为</string>
+    <string name="settings_home_card_bilibili">哔哩哔哩音乐</string>
+    <string name="settings_home_card_bilibili_desc">显示首页音乐榜单和热门视频；关闭后停止加载这两个分区</string>
     <string name="settings_page_now_playing">播放页</string>
     <string name="settings_page_now_playing_desc">封面信息、音质标识、控件布局与沉浸模式</string>
     <string name="settings_page_background">背景</string>

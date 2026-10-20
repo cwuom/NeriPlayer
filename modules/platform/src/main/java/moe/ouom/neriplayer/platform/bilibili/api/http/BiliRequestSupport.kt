@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.platform.bilibili.api.http
 
 import java.io.IOException
+import moe.ouom.neriplayer.platform.bilibili.api.client.BiliHttpStatusException
 import okhttp3.Call
 import okhttp3.Request
 import okhttp3.Response
@@ -27,9 +28,8 @@ internal fun Call.executeBiliOrThrow(): Response {
     val response = execute()
     if (!response.isSuccessful) {
         val code = response.code
-        val body = response.body.string()
         response.close()
-        throw IOException("HTTP $code: $body")
+        throw BiliHttpStatusException(code)
     }
     return response
 }

@@ -105,7 +105,8 @@ internal data class AppHomeCardsSettingsState(
     val showHomeContinueCard: Boolean,
     val showHomeTrendingCard: Boolean,
     val showHomeRadarCard: Boolean,
-    val showHomeRecommendedCard: Boolean
+    val showHomeRecommendedCard: Boolean,
+    val showHomeBilibiliCard: Boolean
 )
 
 internal data class AppStorageSettingsState(
@@ -288,9 +289,10 @@ private fun homeCardsSettingsFlow(repo: SettingsRepository): Flow<AppHomeCardsSe
         repo.homeCardContinueFlow,
         repo.homeCardTrendingFlow,
         repo.homeCardRadarFlow,
-        repo.homeCardRecommendedFlow
-    ) { v0, v1, v2, v3 ->
-        AppHomeCardsSettingsState(v0, v1, v2, v3)
+        repo.homeCardRecommendedFlow,
+        repo.homeCardBilibiliFlow
+    ) { v0, v1, v2, v3, v4 ->
+        AppHomeCardsSettingsState(v0, v1, v2, v3, v4)
     }
 
 private fun storageSettingsFlow(repo: SettingsRepository): Flow<AppStorageSettingsState> =
@@ -430,7 +432,8 @@ internal fun initialAppSettingsRouteState(
             showHomeContinueCard = true,
             showHomeTrendingCard = true,
             showHomeRadarCard = true,
-            showHomeRecommendedCard = true
+            showHomeRecommendedCard = true,
+            showHomeBilibiliCard = true
         ),
         storage = AppStorageSettingsState(
             bypassProxy = true,

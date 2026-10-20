@@ -42,7 +42,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
@@ -84,6 +83,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -104,6 +104,7 @@ import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionActions
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistLoadErrorDialog
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
@@ -151,16 +152,23 @@ fun BiliPlaylistDetailScreen(
         }
     )
     val ui by vm.uiState.collectAsState()
+    val pageOwner = remember(playlist.mediaId, playlist.kind) { Any() }
+    LaunchedEffect(vm, pageOwner) { vm.start(playlist, owner = pageOwner, offlineMode = offlineMode) }
+    SideEffect { vm.updateOfflineMode(pageOwner, offlineMode) }
+    DisposableEffect(vm, pageOwner) { onDispose { vm.stop(pageOwner) } }
+    val loadError = ui.error
+    if (loadError != null) {
+        PlaylistLoadErrorDialog(
+            message = loadError,
+            onRetry = vm::retry,
+            onBack = { vm.stop(pageOwner); onBack() }
+        )
+        return
+    }
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
     val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
-    // 使用Unit作为key，确保每次进入都重新加载最新数据
-    LaunchedEffect(playlist.mediaId, playlist.kind) { vm.start(playlist) }
-    val errorWithVisibleVideos = ui.error?.takeIf { ui.videos.isNotEmpty() }
-    LaunchedEffect(errorWithVisibleVideos) {
-        errorWithVisibleVideos?.let { snackbarHostState.showNeriSnackbar(it) }
-    }
 
     // 保存最新的header和videos数据，用于在Screen销毁时更新使用记录
     var latestHeader by remember { mutableStateOf<BiliPlaylist?>(null) }
@@ -421,6 +429,7 @@ fun BiliPlaylistDetailScreen(
         keyboardController?.show()
     }
     fun playBiliPlaylist(shuffle: Boolean) {
+        if (vm.uiState.value.error != null) return
         val startIndex = resolvePlaylistPlaybackStartIndex(
             songCount = ui.videos.size,
             shuffleEnabled = shuffle,
@@ -712,36 +721,6 @@ fun BiliPlaylistDetailScreen(
                                     }
                                 }
                             }
-                            ui.error != null && ui.videos.isEmpty() -> {
-                                item {
-                                    PlaylistModernListItemSurface(
-                                        coverUrl = displayHeaderCoverUrl,
-                                        offlineMode = offlineMode
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.fillMaxWidth().padding(20.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Text(
-                                                text = stringResource(CoreCommonR.string.bili_load_failed, ui.error ?: ""),
-                                                color = MaterialTheme.colorScheme.error
-                                            )
-                                            Spacer(Modifier.height(8.dp))
-                                            Card(
-                                                onClick = { vm.retry() },
-                                                shape = RoundedCornerShape(50),
-                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                                            ) {
-                                                Text(
-                                                    stringResource(CoreCommonR.string.action_retry),
-                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                             else -> {
                                 itemsIndexed(
                                     displayedVideos,
@@ -778,7 +757,15 @@ fun BiliPlaylistDetailScreen(
                                             onClick = {
                                                 scope.launch {
                                                     try {
+                                                        if (offlineMode) {
+                                                            if (vm.uiState.value.error == null) {
+                                                                val fullList = ui.videos
+                                                                onPlayAudio(fullList, fullList.indexOfFirst { it.bvid == item.bvid })
+                                                            }
+                                                            return@launch
+                                                        }
                                                         val info = vm.getVideoInfo(item.bvid)
+                                                        if (vm.uiState.value.error != null) return@launch
                                                         if (info.pages.size <= 1) {
                                                             val fullList = ui.videos
                                                             val originalIndex =
@@ -788,6 +775,8 @@ fun BiliPlaylistDetailScreen(
                                                             partsInfo = info
                                                             showPartsSheet = true
                                                         }
+                                                    } catch (e: CancellationException) {
+                                                        throw e
                                                     } catch (e: Exception) {
                                                         NPLogger.e("BiliPlaylistDetail", composeResources.getString(CoreCommonR.string.bili_get_parts_failed), e)
                                                     }

@@ -29,6 +29,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -36,6 +39,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.platform.bilibili.api.client.BiliPagedItems
+import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
+import moe.ouom.neriplayer.platform.bilibili.cache.archive.BiliArchiveCacheRepository
+import moe.ouom.neriplayer.platform.bilibili.cache.favorite.BiliFavoriteFolderCacheRepository
 import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliPartSong
 import moe.ouom.neriplayer.data.model.bilibili.collection.CollectionArchiveItem
 import moe.ouom.neriplayer.data.model.bilibili.collection.FavResourceItem
@@ -52,7 +58,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.collections.mergeDistinctBy
-import java.io.IOException
+import moe.ouom.neriplayer.ui.component.playlist.playlistLoadErrorMessage
 
 private const val TAG = "NERI-BiliPlaylistVM"
 private const val BILI_RESOURCE_TYPE_VIDEO = 2
@@ -228,48 +234,117 @@ private data class BiliPlaylistContentLoad(
     val complete: Boolean = true
 )
 
-class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
-    private val client = AppContainer.biliClient
-    private val favoriteCacheRepo = AppContainer.biliFavoriteFolderCacheRepo
-    private val archiveCacheRepo = AppContainer.biliArchiveCacheRepo
+class BiliPlaylistDetailViewModel internal constructor(
+    application: Application,
+    private val client: BiliClient,
+    private val favoriteCacheRepo: BiliFavoriteFolderCacheRepository,
+    private val archiveCacheRepo: BiliArchiveCacheRepository
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(
+        application,
+        AppContainer.biliClient,
+        AppContainer.biliFavoriteFolderCacheRepo,
+        AppContainer.biliArchiveCacheRepo
+    )
 
     private val _uiState = MutableStateFlow(BiliPlaylistDetailUiState())
     val uiState: StateFlow<BiliPlaylistDetailUiState> = _uiState
 
-    private var mediaId: Long = 0L
     private var currentPlaylist: BiliPlaylist? = null
+    private var currentOwner: Any? = null
+    private var currentOfflineMode: Boolean = false
     private var archivePage: Int = 1
+    @Volatile private var loadGeneration: Long = 0L
+    private var contentJob: Job? = null
+    private var moreJob: Job? = null
+    private var uploaderJob: Job? = null
 
-    fun start(playlist: BiliPlaylist, forceRefresh: Boolean = false) {
+    fun start(
+        playlist: BiliPlaylist,
+        forceRefresh: Boolean = false,
+        owner: Any? = null,
+        offlineMode: Boolean = false
+    ) {
+        val previous = _uiState.value.takeIf { it.header?.sameIdentityAs(playlist) == true }
+        cancelLoads()
+        val generation = loadGeneration
         currentPlaylist = playlist
-        mediaId = playlist.mediaId
+        currentOwner = owner
+        currentOfflineMode = offlineMode
         archivePage = 1
 
         _uiState.value = BiliPlaylistDetailUiState(
             loading = true,
-            header = playlist
+            header = playlist,
+            videos = previous?.videos.orEmpty(),
+            hasMore = previous?.hasMore ?: false
         )
         NPLogger.d(
             TAG,
             "start load: mediaId=${playlist.mediaId}, kind=${playlist.kind}, forceRefresh=$forceRefresh"
         )
-        loadContent(forceRefresh = forceRefresh)
+        loadContent(playlist, generation, forceRefresh, offlineMode)
     }
 
     fun retry() {
-        (uiState.value.header ?: currentPlaylist)?.let { start(it, forceRefresh = true) }
+        (uiState.value.header ?: currentPlaylist)?.let {
+            start(it, forceRefresh = true, owner = currentOwner, offlineMode = currentOfflineMode)
+        }
     }
 
     fun refresh() {
-        (uiState.value.header ?: currentPlaylist)?.let { start(it, forceRefresh = true) }
+        if (_uiState.value.error != null) return
+        (uiState.value.header ?: currentPlaylist)?.let {
+            start(it, forceRefresh = true, owner = currentOwner, offlineMode = currentOfflineMode)
+        }
+    }
+
+    fun updateOfflineMode(owner: Any, offlineMode: Boolean) {
+        if (currentOwner !== owner) return
+        if (currentOfflineMode == offlineMode) return
+        currentOfflineMode = offlineMode
+        if (offlineMode) {
+            (_uiState.value.header ?: currentPlaylist)?.let {
+                start(it, owner = owner, offlineMode = true)
+            }
+        }
+    }
+
+    fun stop(owner: Any) {
+        if (currentOwner !== owner) return
+        stop()
+    }
+
+    fun stop() {
+        cancelLoads()
+        _uiState.update { it.copy(loading = false, loadingMore = false) }
+    }
+
+    private fun cancelLoads() {
+        loadGeneration += 1L
+        contentJob?.cancel()
+        moreJob?.cancel()
+        uploaderJob?.cancel()
+    }
+
+    private fun isCurrentLoad(playlist: BiliPlaylist, generation: Long): Boolean =
+        generation == loadGeneration && _uiState.value.header?.sameIdentityAs(playlist) == true
+
+    private fun blockContent(playlist: BiliPlaylist, generation: Long, message: String) {
+        if (!isCurrentLoad(playlist, generation)) return
+        cancelLoads()
+        _uiState.update { it.copy(loading = false, loadingMore = false, error = message) }
     }
 
     fun loadMoreVideos() {
         val state = _uiState.value
         val header = state.header ?: return
         if (
+            currentOfflineMode ||
             !header.kind.hasPagedArchives() ||
             header.mid <= 0L ||
+            state.loading ||
+            state.error != null ||
             state.loadingMore ||
             !state.hasMore
         ) {
@@ -277,6 +352,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         }
 
         val nextPage = archivePage + 1
+        val generation = loadGeneration
         _uiState.update { current ->
             if (current.header?.mediaId == header.mediaId) {
                 current.copy(loadingMore = true)
@@ -284,7 +360,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 current
             }
         }
-        viewModelScope.launch {
+        moreJob = viewModelScope.launch {
             try {
                 val merged = withContext(Dispatchers.IO) {
                     loadArchiveVideos(
@@ -293,7 +369,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                         existingVideos = state.videos,
                     )
                 }
-                if (_uiState.value.header?.mediaId != header.mediaId) return@launch
+                if (!isCurrentLoad(header, generation)) return@launch
 
                 archivePage = nextPage
                 _uiState.update { current ->
@@ -308,19 +384,15 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                     TAG,
                     "load more archives success: mediaId=${header.mediaId}, kind=${header.kind}, page=$nextPage, loaded=${merged.videos.size}, total=${merged.totalCount}"
                 )
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 NPLogger.e(
                     TAG,
                     "load more archives failed: mediaId=${header.mediaId}, kind=${header.kind}, page=$nextPage",
                     error
                 )
-                _uiState.update { current ->
-                    if (current.header?.mediaId == header.mediaId) {
-                        current.copy(loadingMore = false)
-                    } else {
-                        current
-                    }
-                }
+                blockContent(header, generation, playlistLoadErrorMessage(getApplication(), error))
             }
         }
     }
@@ -332,28 +404,69 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
      * @return 包含所有分P信息的 VideoBasicInfo 对象
      */
     suspend fun getVideoInfo(bvid: String): VideoBasicInfo {
-        return withContext(Dispatchers.IO) {
+        check(_uiState.value.error == null) { getApplication<Application>().getString(CoreCommonR.string.playlist_error_title) }
+        check(!currentOfflineMode) { getApplication<Application>().getString(CoreCommonR.string.playlist_error_network) }
+        val generation = loadGeneration
+        val info = withContext(Dispatchers.IO) {
             NPLogger.d(TAG, "getVideoInfo start: bvid=$bvid")
             runCatching { client.getVideoBasicInfoByBvid(bvid) }
                 .onSuccess {
                     NPLogger.d(TAG, "getVideoInfo success: bvid=$bvid, pages=${it.pages.size}")
                 }
                 .onFailure {
-                    NPLogger.e(TAG, "getVideoInfo failed: bvid=$bvid", it)
+                    if (it !is CancellationException) NPLogger.e(TAG, "getVideoInfo failed: bvid=$bvid", it)
                 }
                 .getOrThrow()
         }
+        if (generation != loadGeneration || _uiState.value.error != null) {
+            throw CancellationException("Playlist load superseded")
+        }
+        return info
     }
 
-    private fun loadContent(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(loading = true, error = null)
+    private fun loadContent(
+        header: BiliPlaylist,
+        generation: Long,
+        forceRefresh: Boolean,
+        offlineMode: Boolean
+    ) {
+        contentJob = viewModelScope.launch {
             try {
-                val header = uiState.value.header ?: return@launch
                 val cachedContent = withContext(Dispatchers.IO) {
-                    loadCachedContent(header, forceRefresh)
+                    loadCachedContent(header, forceRefresh = forceRefresh && !offlineMode)
                 }
-                if (cachedContent != null && _uiState.value.header?.sameIdentityAs(header) == true) {
+                if (!isCurrentLoad(header, generation)) return@launch
+                if (offlineMode) {
+                    val state = _uiState.value
+                    val offlineContent = if (header.kind.hasPagedArchives() && state.videos.isNotEmpty()) {
+                        BiliPlaylistContentLoad(
+                            videos = state.videos,
+                            totalCount = state.header?.count?.coerceAtLeast(state.videos.size) ?: state.videos.size,
+                            hasMore = state.hasMore
+                        )
+                    } else {
+                        cachedContent
+                    }
+                    if (offlineContent == null) {
+                        blockContent(
+                            header, generation,
+                            getApplication<Application>().getString(CoreCommonR.string.playlist_error_offline_no_cache)
+                        )
+                    } else {
+                        _uiState.update { current ->
+                            current.copy(
+                                loading = false,
+                                error = null,
+                                header = header.copy(count = offlineContent.totalCount),
+                                videos = offlineContent.videos,
+                                hasMore = offlineContent.hasMore,
+                                loadingMore = false
+                            )
+                        }
+                    }
+                    return@launch
+                }
+                if (cachedContent != null && _uiState.value.videos.isEmpty()) {
                     _uiState.update { current ->
                         current.copy(
                             loading = true,
@@ -388,7 +501,8 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                         BiliPlaylistKind.COLLECTED_FAVORITE -> {
                             val refresh = loadFavoriteFolderVideos(
                                 playlist = header,
-                                forceRefresh = forceRefresh
+                                forceRefresh = forceRefresh,
+                                generation = generation
                             )
                             BiliPlaylistContentLoad(
                                 videos = refresh.videos,
@@ -399,6 +513,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                     }
                 }
 
+                if (!isCurrentLoad(header, generation)) return@launch
                 archivePage = 1
                 _uiState.value = _uiState.value.copy(
                     loading = false,
@@ -412,52 +527,49 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                     hasMore = content.hasMore,
                     loadingMore = false
                 )
+                if (!content.complete) {
+                    blockContent(
+                        header, generation,
+                        getApplication<Application>().getString(CoreCommonR.string.bili_favorites_incomplete)
+                    )
+                    return@launch
+                }
                 if (header.kind.hasPagedArchives()) {
                     withContext(Dispatchers.IO) {
+                        currentCoroutineContext().ensureActive()
+                        if (!isCurrentLoad(header, generation)) return@withContext
                         archiveCacheRepo.save(content.toArchiveCache(header))
                     }
-                    resolveMissingArchiveUploader(header)
+                    if (isCurrentLoad(header, generation)) resolveMissingArchiveUploader(header, generation)
                 }
                 NPLogger.d(
                     TAG,
                     "loadContent success: mediaId=${header.mediaId}, kind=${header.kind}, loaded=${content.videos.size}, total=${content.totalCount}"
                 )
 
-            } catch (e: IOException) {
-                val hasCachedVideos = uiState.value.videos.isNotEmpty()
-                NPLogger.e(
-                    TAG,
-                    "loadContent network failed: mediaId=$mediaId, hasCachedVideos=$hasCachedVideos",
-                    e
-                )
-                _uiState.value = _uiState.value.copy(
-                    loading = false,
-                    error = if (hasCachedVideos) null else "Network error: ${e.message}"
-                )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                val hasCachedVideos = uiState.value.videos.isNotEmpty()
                 NPLogger.e(
                     TAG,
-                    "loadContent failed: mediaId=$mediaId, hasCachedVideos=$hasCachedVideos",
+                    "loadContent failed: mediaId=${header.mediaId}",
                     e
                 )
-                _uiState.value = _uiState.value.copy(
-                    loading = false,
-                    error = if (hasCachedVideos) null else "Load failed: ${e.message}"
-                )
+                blockContent(header, generation, playlistLoadErrorMessage(getApplication(), e))
             }
         }
     }
 
-    private fun resolveMissingArchiveUploader(playlist: BiliPlaylist) {
+    private fun resolveMissingArchiveUploader(playlist: BiliPlaylist, generation: Long) {
         if (
+            currentOfflineMode ||
             playlist.subtitle.isNotBlank() ||
             playlist.mid <= 0L ||
             !playlist.kind.hasPagedArchives()
         ) {
             return
         }
-        viewModelScope.launch {
+        uploaderJob = viewModelScope.launch {
             val uploader = try {
                 withContext(Dispatchers.IO) {
                     client.getUploaderProfile(playlist.mid).name.trim()
@@ -473,6 +585,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 return@launch
             }
             if (uploader.isBlank()) return@launch
+            if (!isCurrentLoad(playlist, generation)) return@launch
 
             var cache: BiliArchiveContentCache? = null
             _uiState.update { current ->
@@ -495,6 +608,8 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
             }
             cache?.let { resolvedCache ->
                 withContext(Dispatchers.IO) {
+                    currentCoroutineContext().ensureActive()
+                    if (!isCurrentLoad(playlist, generation)) return@withContext
                     archiveCacheRepo.save(resolvedCache)
                 }
             }
@@ -503,7 +618,8 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
 
     private suspend fun loadFavoriteFolderVideos(
         playlist: BiliPlaylist,
-        forceRefresh: Boolean
+        forceRefresh: Boolean,
+        generation: Long
     ): BiliFavoriteFolderRefresh {
         val cached = favoriteCacheRepo.read(playlist.mediaId)
         NPLogger.d(
@@ -516,13 +632,6 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 page = 1,
                 pageSize = BILI_FAVORITE_LATEST_PAGE_SIZE
             )
-        }
-        if (latestPageResult.isFailure && cached != null && !forceRefresh) {
-            NPLogger.w(
-                TAG,
-                "loadFavoriteFolderVideos fallback to cache: mediaId=${playlist.mediaId}, message=${latestPageResult.exceptionOrNull()?.message}"
-            )
-            return BiliFavoriteFolderRefresh(cached.videos.map { it.toVideoItem() }, complete = true)
         }
         latestPageResult.exceptionOrNull()?.let { error ->
             NPLogger.e(
@@ -557,6 +666,8 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
             )
             return refresh
         }
+        currentCoroutineContext().ensureActive()
+        if (!isCurrentLoad(playlist, generation)) throw CancellationException("Playlist load superseded")
         favoriteCacheRepo.save(
             BiliFavoriteFolderContentCache(
                 mediaId = playlist.mediaId,
@@ -579,7 +690,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         if (forceRefresh) return null
         return when {
             playlist.isFavoriteFolder() -> {
-                favoriteCacheRepo.read(playlist.mediaId)?.let { cache ->
+                favoriteCacheRepo.read(playlist.mediaId)?.takeIf { it.mediaId == playlist.mediaId }?.let { cache ->
                     BiliPlaylistContentLoad(
                         videos = cache.videos.map { it.toVideoItem() },
                         totalCount = cache.totalCount.coerceAtLeast(cache.videos.size)
@@ -587,7 +698,9 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 }
             }
             playlist.kind.hasPagedArchives() -> {
-                archiveCacheRepo.read(playlist.mediaId, playlist.kind.name)?.toContentLoad()
+                archiveCacheRepo.read(playlist.mediaId, playlist.kind.name)
+                    ?.takeIf { it.mediaId == playlist.mediaId && it.kind == playlist.kind.name }
+                    ?.toContentLoad()
             }
             else -> null
         }

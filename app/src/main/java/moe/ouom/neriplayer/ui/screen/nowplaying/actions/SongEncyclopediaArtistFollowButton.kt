@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -26,6 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
@@ -55,7 +58,8 @@ import java.io.IOException
 @Composable
 internal fun SongEncyclopediaArtistFollowButton(
     artist: EncyclopediaArtistInfo,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
     val context = LocalContext.current
     val authState by AppContainer.neteaseCookieRepo.authHealthFlow.collectAsStateWithLifecycle()
@@ -75,6 +79,9 @@ internal fun SongEncyclopediaArtistFollowButton(
         )
     }
     val followed = favorites.containsCreator(favorite)
+    val actionLabel = stringResource(
+        if (followed) CoreCommonR.string.artist_followed else CoreCommonR.string.artist_follow
+    )
 
     val scope = rememberCoroutineScope()
     var updating by remember(artist.artistId) { mutableStateOf(false) }
@@ -101,8 +108,12 @@ internal fun SongEncyclopediaArtistFollowButton(
                 }
             },
             enabled = !updating,
-            modifier = Modifier.heightIn(min = 40.dp),
-            shape = neriRoundedShape(18.dp),
+            modifier = if (compact) {
+                Modifier.size(48.dp).semantics { contentDescription = actionLabel }
+            } else {
+                Modifier.heightIn(min = 40.dp)
+            },
+            shape = if (compact) CircleShape else neriRoundedShape(18.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (followed) {
                     MaterialTheme.colorScheme.primaryContainer
@@ -115,7 +126,7 @@ internal fun SongEncyclopediaArtistFollowButton(
                     MaterialTheme.colorScheme.onPrimary
                 }
             ),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            contentPadding = if (compact) PaddingValues(0.dp) else PaddingValues(horizontal = 16.dp, vertical = 8.dp)
         ) {
             if (updating) {
                 CircularProgressIndicator(
@@ -127,17 +138,17 @@ internal fun SongEncyclopediaArtistFollowButton(
                 Icon(
                     imageVector = if (followed) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(if (compact) 20.dp else 16.dp)
                 )
             }
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = stringResource(
-                    if (followed) CoreCommonR.string.artist_followed else CoreCommonR.string.artist_follow
-                ),
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1
-            )
+            if (!compact) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1
+                )
+            }
         }
         error?.let { message ->
             Spacer(Modifier.height(6.dp))

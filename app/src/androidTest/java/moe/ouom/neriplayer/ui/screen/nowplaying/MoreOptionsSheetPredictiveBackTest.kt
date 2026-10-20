@@ -23,12 +23,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.unit.dp
@@ -41,6 +43,7 @@ import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.testing.TestComposeActivity
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.component.common.PREDICTIVE_DISMISS_CANCEL_DURATION_MS
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -64,6 +67,7 @@ class MoreOptionsSheetPredictiveBackTest {
     private var dismissals = 0
     private var surfaceColor = 0
     private var captureLabel = ""
+    private lateinit var sheetOwner: MoreOptionsSheetOwner
 
     @Before
     fun requireComposeHost() {
@@ -90,6 +94,79 @@ class MoreOptionsSheetPredictiveBackTest {
     fun cleanDarkKeepsTheSheetWholeThroughBackGestures() = verifyBackGestures(UiStyle.Clean, true)
 
     @Test
+    fun shortSheetKeepsItsBottomOutsideTheWindowThroughBackGestures() =
+        verifyBackGestures(UiStyle.Material, false, tall = false)
+
+    @Test
+    fun subPageOwnsBackBeforeTheNativeSheetDismisses() {
+        captureLabel = "sub-page-owner"
+        render(UiStyle.Material, false, startPage = MoreOptionsPage.FONT_SIZE)
+        composeRule.onNodeWithTag("$PageTag${MoreOptionsPage.FONT_SIZE.name}").assertIsDisplayed()
+        val idle = frame("idle")
+        composeRule.mainClock.autoAdvance = false
+
+        startGesture(NavigationEvent.EDGE_LEFT, 0.7f)
+        assertRestored(idle, frame("sub-page-progress"))
+        cancelGesture(idle, "sub-page-cancelled")
+        composeRule.runOnIdle {
+            assertEquals(MoreOptionsPage.FONT_SIZE, sheetOwner.page)
+            assertEquals(0, dismissals)
+        }
+
+        startGesture(NavigationEvent.EDGE_RIGHT, 0.8f)
+        composeRule.runOnIdle { gestureInput.complete() }
+        advance(600L)
+        composeRule.runOnIdle {
+            assertEquals(MoreOptionsPage.MAIN, sheetOwner.page)
+            assertTrue(visible)
+            assertEquals(0, dismissals)
+        }
+        composeRule.onNodeWithTag("$PageTag${MoreOptionsPage.MAIN.name}").assertIsDisplayed()
+        assertRestored(idle, frame("back-at-main"))
+
+        startGesture(NavigationEvent.EDGE_LEFT, 1f)
+        assertSheetPreview(idle, frame("native-sheet-progress"))
+        completeGesture()
+        composeRule.runOnIdle { assertEquals(1, dismissals) }
+    }
+
+    @Test
+    fun savingInterceptsWindowBackUntilTheEditPageIsUnlocked() {
+        captureLabel = "saving-back-owner"
+        render(UiStyle.Material, false, startPage = MoreOptionsPage.EDIT_INFO, saving = true)
+        composeRule.onNodeWithTag("$PageTag${MoreOptionsPage.EDIT_INFO.name}").assertIsDisplayed()
+        val idle = frame("idle")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        composeRule.waitForIdle()
+        composeRule.mainClock.autoAdvance = false
+
+        startGesture(NavigationEvent.EDGE_LEFT, 0.8f)
+        cancelGesture(idle, "saving-cancelled")
+        startGesture(NavigationEvent.EDGE_RIGHT, 1f)
+        composeRule.runOnIdle { gestureInput.complete() }
+        advance(500L)
+        assertRestored(idle, frame("saving-still-open"))
+        composeRule.runOnIdle {
+            assertEquals(MoreOptionsPage.EDIT_INFO, sheetOwner.page)
+            assertEquals(0, dismissals)
+            assertTrue(visible)
+            sheetOwner.setEditSaving(false)
+        }
+        advance(16L)
+
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        advance(600L)
+        composeRule.runOnIdle {
+            assertEquals(MoreOptionsPage.MAIN, sheetOwner.page)
+            assertEquals(0, dismissals)
+            assertTrue(visible)
+        }
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        awaitDismissal()
+        composeRule.runOnIdle { assertEquals(1, dismissals) }
+    }
+
+    @Test
     fun systemBackClosesTheRealSheetExactlyOnce() = verifySingleDismissal("system-back") {
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
     }
@@ -104,7 +181,7 @@ class MoreOptionsSheetPredictiveBackTest {
     private fun verifySingleDismissal(label: String, dismiss: () -> Unit) {
         captureLabel = label
         UiFailureDiagnostics.onFailure("more-options-$label") {
-            render(UiStyle.Material, false)
+            render(UiStyle.Material, false, tall = false)
             composeRule.onNodeWithTag(BodyTag).assertIsDisplayed()
             frame("idle")
 
@@ -118,48 +195,52 @@ class MoreOptionsSheetPredictiveBackTest {
         }
     }
 
-    private fun verifyBackGestures(style: UiStyle, dark: Boolean) {
-        captureLabel = "${style.name.lowercase()}-${if (dark) "dark" else "light"}"
+    private fun verifyBackGestures(style: UiStyle, dark: Boolean, tall: Boolean = true) {
+        captureLabel = "${style.name.lowercase()}-${if (dark) "dark" else "light"}-${if (tall) "tall" else "short"}"
         UiFailureDiagnostics.onFailure("more-options-back-$captureLabel") {
-            render(style, dark)
+            render(style, dark, tall)
             val idle = frame("idle")
-            assertTrue("夹具必须显示真实短面板", idle.height > 0)
+            assertTrue("夹具必须显示真实面板", idle.height > 0)
             composeRule.mainClock.autoAdvance = false
 
             startGesture(NavigationEvent.EDGE_LEFT, 1f)
             val left = frame("left-progress")
-            assertWholeBody(idle, left)
-            assertTrue("左侧返回应向右偏移", left.centerX > idle.centerX)
+            assertSheetPreview(idle, left)
 
-            cancelGesture()
-            assertRestored(idle, frame("left-cancelled"))
+            cancelGesture(idle, "left-cancelled")
 
             startGesture(NavigationEvent.EDGE_LEFT, 0.8f)
             composeRule.runOnIdle { gestureInput.cancel() }
             advance(48L)
             startGesture(NavigationEvent.EDGE_RIGHT, 0.6f)
+            val reversedStart = frame("reversed-start")
             advance(250L)
             val reversed = frame("reversed-before-cancel-settled")
-            assertWholeBody(idle, reversed)
-            assertTrue("反向手势必须取代前一次取消动画", reversed.centerX < idle.centerX)
+            assertSheetPreview(idle, reversed)
+            assertEquals("旧取消动画不能覆盖新手势", reversedStart.width, reversed.width)
+            assertTrue("部分进度应比完整手势缩得更少", reversed.width > left.width)
 
-            cancelGesture()
-            assertRestored(idle, frame("reversed-cancelled"))
+            cancelGesture(idle, "reversed-cancelled")
             composeRule.runOnIdle { assertEquals(0, dismissals) }
 
             startGesture(NavigationEvent.EDGE_RIGHT, 1f)
             val right = frame("right-progress")
-            assertWholeBody(idle, right)
-            assertTrue("右侧返回应向左偏移", right.centerX < idle.centerX)
-            composeRule.runOnIdle { gestureInput.complete() }
-            advance(500L)
+            assertSheetPreview(idle, right)
+            assertTrue("左右边缘应使用相同的面板缩放", abs(left.width - right.width) <= 2)
+            completeGesture()
             composeRule.runOnIdle { assertEquals(1, dismissals) }
             composeRule.onNodeWithTag(BodyTag).assertDoesNotExist()
             frame("committed")
         }
     }
 
-    private fun render(style: UiStyle, dark: Boolean) {
+    private fun render(
+        style: UiStyle,
+        dark: Boolean,
+        tall: Boolean = true,
+        startPage: MoreOptionsPage = MoreOptionsPage.MAIN,
+        saving: Boolean = false
+    ) {
         composeRule.setContent {
             NeriTheme(
                 followSystemDark = false,
@@ -177,19 +258,30 @@ class MoreOptionsSheetPredictiveBackTest {
                         MoreOptionsSheetOwner(scope, sheetState::hide, sheetState::expand) {
                             dismissals++
                             visible = false
+                        }.apply {
+                            open(startPage)
+                            setEditSaving(saving)
                         }
                     }
+                    SideEffect { sheetOwner = owner }
                     MoreOptionsSheetSurface(owner, sheetState, remember { SnackbarHostState() }) {
                         val view = LocalView.current
                         val dispatcher = requireNotNull(view.findViewTreeNavigationEventDispatcherOwner())
                             .navigationEventDispatcher
                         val color = MaterialTheme.colorScheme.surface
-                        SideEffect { surfaceColor = color.toArgb() }
+                        SideEffect {
+                            surfaceColor = color.toArgb()
+                        }
                         DisposableEffect(dispatcher) {
                             dispatcher.addInput(gestureInput)
                             onDispose { dispatcher.removeInput(gestureInput) }
                         }
-                        Box(Modifier.fillMaxWidth().height(160.dp).testTag(BodyTag))
+                        val bodyHeight = if (tall) LocalWindowInfo.current.containerDpSize.height * 0.75f else 160.dp
+                        MoreOptionsAnimatedPage(owner) { page ->
+                            Box(Modifier.fillMaxWidth().height(bodyHeight).testTag(BodyTag)) {
+                                Box(Modifier.fillMaxSize().testTag("$PageTag${page.name}"))
+                            }
+                        }
                     }
                 }
             }
@@ -206,9 +298,29 @@ class MoreOptionsSheetPredictiveBackTest {
         advance(16L)
     }
 
-    private fun cancelGesture() {
+    private fun cancelGesture(idle: Frame, stage: String) {
         composeRule.runOnIdle { gestureInput.cancel() }
-        advance(250L)
+        // 先推进完整虚拟回弹，避免逐帧截图耗尽墙钟等待时动画还没走完
+        composeRule.mainClock.advanceTimeByFrame()
+        advance(PREDICTIVE_DISMISS_CANCEL_DURATION_MS.toLong())
+        composeRule.waitUntil(timeoutMillis = 3_000L) {
+            advance(16L)
+            isRestored(idle, frame(stage, save = false))
+        }
+        assertRestored(idle, frame(stage))
+    }
+
+    private fun completeGesture() {
+        composeRule.runOnIdle { gestureInput.complete() }
+        awaitDismissal()
+    }
+
+    private fun awaitDismissal() {
+        composeRule.waitUntil(timeoutMillis = 3_000L) {
+            advance(16L)
+            !visible && composeRule.onAllNodesWithTag(BodyTag).fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onNodeWithTag(BodyTag).assertDoesNotExist()
     }
 
     private fun advance(duration: Long) {
@@ -216,33 +328,56 @@ class MoreOptionsSheetPredictiveBackTest {
         composeRule.waitForIdle()
     }
 
-    private fun assertWholeBody(idle: Frame, current: Frame) {
-        assertTrue("手势必须缩小真实面板", current.height < idle.height)
-        assertTrue("面板下缘不能被外层裁剪: idle=$idle current=$current", current.height >= idle.height * 0.85f)
+    private fun assertSheetPreview(idle: Frame, current: Frame) {
+        assertTrue("预测返回不能把面板底边拉进窗口: $current", current.bottomCovered)
+        assertEquals("面板必须保持对称居中", idle.centerX, current.centerX, 1f)
+        assertTrue("手势必须缩小整个面板", current.width in 1 until idle.width)
+        assertTrue("两侧顶角必须完整且保持圆角", current.topCornersComplete)
     }
 
     private fun assertRestored(idle: Frame, current: Frame) {
         assertTrue("取消后面板应恢复完整高度: idle=$idle current=$current", abs(current.height - idle.height) <= 2)
+        assertTrue("取消后面板应恢复完整宽度", abs(current.width - idle.width) <= 2)
         assertEquals(idle.centerX, current.centerX, 1f)
+        assertTrue("面板底部应持续覆盖窗口", current.bottomCovered)
+        assertTrue("恢复后顶角不能缺失", current.topCornersComplete)
     }
 
-    private fun frame(stage: String): Frame {
+    private fun isRestored(idle: Frame, current: Frame): Boolean =
+        abs(current.height - idle.height) <= 2 && abs(current.width - idle.width) <= 2 &&
+            abs(current.centerX - idle.centerX) <= 1f && current.bottomCovered && current.topCornersComplete
+
+    private fun frame(stage: String, save: Boolean = true): Frame {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val root = if (visible) composeRule.onNode(isDialog()) else composeRule.onNodeWithTag(HostTag)
         val bitmap = root.captureToImage().asAndroidBitmap()
         try {
             val prefix = InstrumentationRegistry.getArguments().getString("capturePrefix")
                 ?.replace(Regex("[^a-zA-Z0-9_-]"), "-")?.take(80)?.takeIf { it.isNotBlank() }
-            if (prefix != null) {
+            if (save && prefix != null) {
                 val file = File(checkNotNull(instrumentation.targetContext.getExternalFilesDir(null)),
                     "$prefix-$captureLabel-$stage.png")
                 file.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
             }
             val rows = (0 until bitmap.height).filter { matchesSurface(bitmap.getPixel(bitmap.width / 2, it)) }
-            if (rows.isEmpty()) return Frame(0, 0f)
-            val y = rows[rows.size / 2]
+            if (rows.isEmpty()) return Frame(0, 0, 0f, false, false)
+            val top = rows.first()
+            val bottom = rows.last()
+            val y = (top + bottom) / 2
             val columns = (0 until bitmap.width).filter { matchesSurface(bitmap.getPixel(it, y)) }
-            return Frame(rows.size, (columns.first() + columns.last()) / 2f)
+            val left = columns.first()
+            val right = columns.last()
+            val inset = with(composeRule.density) { 40.dp.roundToPx() }
+            val band = with(composeRule.density) { 16.dp.roundToPx() }
+            val bottomCovered = (bitmap.width / 2 - band..bitmap.width / 2 + band).all { x ->
+                matchesSurface(bitmap.getPixel(x, bitmap.height - 2))
+            }
+            val topCornersComplete = top + 2 < bitmap.height && right - left > inset * 2 &&
+                matchesSurface(bitmap.getPixel(left + inset, top + 2)) &&
+                matchesSurface(bitmap.getPixel(right - inset, top + 2)) &&
+                !matchesSurface(bitmap.getPixel(left + 1, top + 1)) &&
+                !matchesSurface(bitmap.getPixel(right - 1, top + 1))
+            return Frame(bottom - top + 1, right - left + 1, (left + right) / 2f, bottomCovered, topCornersComplete)
         } finally {
             bitmap.recycle()
         }
@@ -253,7 +388,13 @@ class MoreOptionsSheetPredictiveBackTest {
             abs(android.graphics.Color.green(pixel) - android.graphics.Color.green(surfaceColor)) <= 2 &&
             abs(android.graphics.Color.blue(pixel) - android.graphics.Color.blue(surfaceColor)) <= 2
 
-    private data class Frame(val height: Int, val centerX: Float)
+    private data class Frame(
+        val height: Int,
+        val width: Int,
+        val centerX: Float,
+        val bottomCovered: Boolean,
+        val topCornersComplete: Boolean
+    )
 
     private class GestureInput : NavigationEventInput() {
         fun start(edge: Int) = dispatchOnBackStarted(NavigationEvent(swipeEdge = edge))
@@ -266,5 +407,6 @@ class MoreOptionsSheetPredictiveBackTest {
     private companion object {
         const val BodyTag = "more-options-predictive-body"
         const val HostTag = "more-options-predictive-host"
+        const val PageTag = "more-options-predictive-page-"
     }
 }

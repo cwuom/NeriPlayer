@@ -76,6 +76,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistLoadErrorDialog
+import moe.ouom.neriplayer.ui.component.playlist.playlistLoadErrorMessage
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -170,6 +172,12 @@ fun YouTubeMusicPlaylistDetailScreen(
     val visibleTracks = if (hasRequestedPlaylistState) ui.tracks else emptyList()
     val requestedAllTracksLoaded = hasRequestedPlaylistState && ui.allTracksLoaded
     val requestedError = ui.error.takeIf { hasRequestedPlaylistState }
+    val pageOwner = remember(playlist.browseId) { Any() }
+    val retryPlaylist: () -> Unit = {
+        if (viewModel.uiState.value.playlist?.browseId == playlist.browseId) {
+            viewModel.retry(offlineMode = offlineMode, owner = pageOwner)
+        }
+    }
     val requestedTracksUnavailable = hasRequestedPlaylistState && ui.tracksUnavailable
     val isRequestedPlaylistLoading = shouldShowYouTubeMusicPlaylistDetailLoading(
         requestedBrowseId = playlist.browseId,
@@ -251,8 +259,19 @@ fun YouTubeMusicPlaylistDetailScreen(
         }
     }
 
-    LaunchedEffect(playlist.browseId) {
-        viewModel.start(playlist)
+    DisposableEffect(viewModel, pageOwner) {
+        viewModel.start(playlist, offlineMode = offlineMode, owner = pageOwner)
+        onDispose { viewModel.stop(pageOwner) }
+    }
+    LaunchedEffect(viewModel, pageOwner, offlineMode) { viewModel.updateOfflineMode(pageOwner, offlineMode) }
+
+    if (requestedError != null) {
+        PlaylistLoadErrorDialog(
+            message = playlistLoadErrorMessage(context, requestedError),
+            onRetry = retryPlaylist,
+            onBack = { viewModel.stop(pageOwner); onBack() }
+        )
+        return
     }
 
     var latestPlaylist by remember { mutableStateOf<YouTubeMusicPlaylist?>(playlist) }
@@ -490,7 +509,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 contentDescription = stringResource(CoreCommonR.string.cd_search_songs)
                             )
                         }
-                        HapticIconButton(onClick = viewModel::retry) {
+                        HapticIconButton(onClick = retryPlaylist) {
                             Icon(
                                 imageVector = Icons.Filled.Refresh,
                                 contentDescription = stringResource(CoreCommonR.string.action_refresh)
@@ -726,7 +745,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 coverUrl = resolvedPlaylist.coverUrl,
                                 offlineMode = offlineMode
                             ) {
-                                PartialPlaylistBlock(onRetry = viewModel::retry)
+                                PartialPlaylistBlock(onRetry = retryPlaylist)
                             }
                         }
                     }
@@ -743,22 +762,17 @@ fun YouTubeMusicPlaylistDetailScreen(
                             }
                         }
 
-                        (requestedError != null || requestedTracksUnavailable) &&
-                            visibleTracks.isEmpty() -> {
+                        requestedTracksUnavailable && visibleTracks.isEmpty() -> {
                             item {
                                 PlaylistModernListItemSurface(
                                     coverUrl = resolvedPlaylist.coverUrl,
                                     offlineMode = offlineMode
                                 ) {
                                     ErrorBlock(
-                                        message = if (requestedTracksUnavailable) {
-                                            stringResource(
-                                                CoreCommonR.string.youtube_music_playlist_tracks_unavailable
-                                            )
-                                        } else {
-                                            requestedError.orEmpty()
-                                        },
-                                        onRetry = viewModel::retry
+                                        message = stringResource(
+                                            CoreCommonR.string.youtube_music_playlist_tracks_unavailable
+                                        ),
+                                        onRetry = retryPlaylist
                                     )
                                 }
                             }

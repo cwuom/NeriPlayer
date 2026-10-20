@@ -30,7 +30,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -54,9 +53,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -81,10 +82,9 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
-import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.common.PredictiveDismissHandler
-import moe.ouom.neriplayer.ui.component.common.predictiveDismissTransform
 import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
+import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
@@ -407,14 +407,9 @@ internal class MoreOptionsSheetOwner(
         isEditSongSaving = saving
     }
 
-    /**
-     * 是否由面板自身接管返回手势（跟手缩小关闭）。
-     *
-     * 主页返回由这里处理；子页返回主页仍走 [MoreOptionsAnimatedPage] 的转场，
-     * 两者互斥，保证任何一页都只有一个返回处理者。
-     */
+    /** 子页转场、保存和关闭过程各自持有返回，其余状态由面板接管关闭手势 */
     val canPredictiveDismiss: Boolean
-        get() = !isEditSongSaving && !canGoBackToMainPage
+        get() = !isDismissing && !isEditSongSaving && !canGoBackToMainPage
 
     fun updateSheetImeVisibility(visible: Boolean) {
         sheetImeVisible = visible
@@ -683,32 +678,39 @@ internal fun MoreOptionsSheetSurface(
     snackbarHostState: SnackbarHostState,
     content: @Composable () -> Unit
 ) {
+    val predictiveDismissState = rememberPredictiveDismissState()
+    var sheetSize by remember { mutableStateOf(IntSize.Zero) }
     val presentation = owner.windowPresentation(isCompactEditSongLandscape())
     LaunchedEffect(presentation.expandToFit, sheetState, block = owner.expansionEffect(presentation))
-    // 面板在外层 modifier 之后才向下定位，圆角应由定位后的 Surface 统一裁剪
-    // 子页返回主页仍由 MoreOptionsAnimatedPage 的转场处理
-    val dismissState = rememberPredictiveDismissState()
     ModalBottomSheet(
         onDismissRequest = owner.onDismissRequest,
-        modifier = Modifier.predictiveDismissTransform(dismissState, clipToShape = false),
+        modifier = Modifier.onSizeChanged { sheetSize = it }
+            .moreOptionsSheetPredictiveBack(predictiveDismissState, sheetState),
         sheetState = sheetState,
         sheetGesturesEnabled = presentation.gesturesEnabled,
-        dragHandle = if (presentation.showDragHandle) {
-            { BottomSheetDefaults.DragHandle() }
-        } else null,
+        dragHandle = null,
         containerColor = MaterialTheme.colorScheme.surface,
         properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false)
     ) {
         // Sheet 使用独立窗口，键盘可见性应从它自己的 composition 读取
         val imeVisible = WindowInsets.isImeVisible
         SideEffect { owner.updateSheetImeVisibility(imeVisible) }
+        // 回弹使用独立作用域，避免运行时 Material 在已取消的手势协程中继续动画
         PredictiveDismissHandler(
-            state = dismissState,
-            enabled = owner.canPredictiveDismiss,
+            state = predictiveDismissState,
+            enabled = sheetState.isVisible && owner.canPredictiveDismiss,
             onDismiss = owner.onDismissRequest
         )
         MoreOptionsBackHandlers(owner)
-        MoreOptionsSheetBody(owner.page, snackbarHostState, content)
+        MoreOptionsSheetPredictiveContent(
+            state = predictiveDismissState,
+            containerSize = sheetSize,
+            sheetState = sheetState,
+            showDragHandle = presentation.showDragHandle,
+            onDismissRequest = owner.onDismissRequest
+        ) {
+            MoreOptionsSheetBody(owner.page, snackbarHostState, content)
+        }
     }
 }
 
@@ -741,7 +743,7 @@ internal fun shouldHideCompactEditSongHandle(compactEditSheet: Boolean, imeVisib
     compactEditSheet && imeVisible
 
 /**
- * 子页返回主页由 [MoreOptionsAnimatedPage] 的可拖动转场处理，关闭面板交给 Material 弹层自带的预测性返回；
+ * 子页返回主页由 [MoreOptionsAnimatedPage] 的可拖动转场处理，关闭面板由独立的预测性返回处理器接管；
  * 这里只在保存歌曲信息期间吞掉返回，避免面板被收起
  */
 @Composable
@@ -771,7 +773,7 @@ private fun BoxScope.MoreOptionsFeedbackHost(page: MoreOptionsPage, snackbarHost
 }
 
 @Composable
-private fun MoreOptionsAnimatedPage(
+internal fun MoreOptionsAnimatedPage(
     owner: MoreOptionsSheetOwner,
     content: @Composable (MoreOptionsPage) -> Unit
 ) {

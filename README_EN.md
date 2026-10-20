@@ -816,6 +816,8 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   `Home / Explore / Library / Settings` are the primary tabs.
 - `Home` is displayed dynamically based on available Home cards. `Debug` appears
   only after enabling developer mode.
+- Turn off Bilibili music in Home & startup to hide music charts and popular videos
+  on Home and stop loading both sections. The preference persists across restarts.
 - `MainTabLayerHost` retains outgoing and incoming main-tab scenes. Tablets use
   centered scale and opacity animations, while phones retain horizontal translation. Each scene owns
   saved state and its own

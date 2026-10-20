@@ -527,6 +527,18 @@ object AutoSettingsSchema {
         val homeCardRecommended = autoSetting(
             titleRes = CoreCommonR.string.settings_home_card_netease_recommended
         )
+
+        @AutoSetting(
+            key = "home_card_bilibili",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 70,
+            ui = SettingUiType.Custom
+        )
+        val homeCardBilibili = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_card_bilibili,
+            descriptionRes = CoreCommonR.string.settings_home_card_bilibili_desc
+        )
     }
 
     /*

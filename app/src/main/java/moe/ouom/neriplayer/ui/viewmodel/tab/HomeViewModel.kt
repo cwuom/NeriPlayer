@@ -253,6 +253,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var biliMusicRankGeneration: Long = 0L
     private var biliMusicHotGeneration: Long = 0L
     private var offlineMode = false
+    private var biliMusicHomeEnabled = false
 
     private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
 
@@ -360,6 +361,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         lastYouTubeAuthFingerprint = buildYouTubeAuthFingerprint(youtubeAuthRepo.getAuthOnce())
+
+        viewModelScope.launch {
+            AppContainer.settingsRepo.homeCardBilibiliFlow.collect { enabled ->
+                if (biliMusicHomeEnabled == enabled) return@collect
+                biliMusicHomeEnabled = enabled
+                if (enabled) {
+                    if (homeRecommendationsBootstrapped) loadBiliMusicHome()
+                } else {
+                    cancelBiliMusicJobs()
+                    _uiState.update { state ->
+                        state.copy(
+                            biliMusicRank = state.biliMusicRank.copy(loading = false, error = null),
+                            biliMusicHot = state.biliMusicHot.copy(loading = false, error = null)
+                        )
+                    }
+                }
+            }
+        }
 
         // 观察国际化设置变化, 切换推荐源
         viewModelScope.launch {
@@ -543,6 +562,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 切换版权榜类型：先清掉上一个榜的数据，避免串期显示 */
     fun selectBiliMusicRankType(type: BiliMusicRankType) {
+        if (!biliMusicHomeEnabled) return
         val current = _uiState.value.biliMusicRank
         if (current.type == type && current.songs.isNotEmpty()) return
 
@@ -564,6 +584,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadBiliMusicRank(force: Boolean = false) {
+        if (!biliMusicHomeEnabled) return
         val current = _uiState.value.biliMusicRank
         if (!force && (current.songs.isNotEmpty() || current.loading)) return
 
@@ -636,6 +657,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadBiliMusicHot(force: Boolean = false) {
+        if (!biliMusicHomeEnabled) return
         val current = _uiState.value.biliMusicHot
         if (!force && (current.items.isNotEmpty() || current.loading)) return
 
