@@ -615,12 +615,10 @@ private fun NeriAppContent(
         (usbExclusivePlayback && lifecycleResumed &&
             usbExclusiveBackgroundPermissionPromptSuppressed == false &&
             !usbExclusiveBackgroundPermissionPromptHandled)
-    SideEffect {
-        onGlobalDialogVisibilityChanged(
-            showUsbExclusiveBackgroundPermissionDialog || usbBackgroundPermissionCheckPending ||
-                pendingTrafficRiskDownloadRequest != null
-        )
-    }
+    // 在组合期读取待确认状态，让父级门控随弹窗请求更新
+    val globalDialogVisible = showUsbExclusiveBackgroundPermissionDialog ||
+        usbBackgroundPermissionCheckPending || pendingTrafficRiskDownloadRequest != null
+    SideEffect { onGlobalDialogVisibilityChanged(globalDialogVisible) }
     LaunchedEffect(Unit) {
         GlobalDownloadManager.trafficRiskDownloadRequests.collect { request ->
             pendingTrafficRiskDownloadRequest = request
