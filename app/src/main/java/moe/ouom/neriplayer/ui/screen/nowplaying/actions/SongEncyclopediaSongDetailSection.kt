@@ -36,7 +36,8 @@ import moe.ouom.neriplayer.data.model.encyclopedia.SongEncyclopedia
 private const val SONG_DETAIL_COLLAPSED_COUNT = 4
 
 /**
- * 模块三 歌曲详情：曲风 → 专辑 → 语种 → 发行日期 → BPM → 乐器 → 制作。
+ * 模块三 歌曲详情：曲风、语种、BPM、专辑、发行日期与发行公司
+ * 创作署名统一在创作团队分区展示
  *
  * 所有字段只在数据源真实给出时展示；缺失一律隐藏或显示「暂无信息」，不做任何推断。
  */
@@ -81,17 +82,5 @@ private fun buildSongDetailRows(data: SongEncyclopedia): List<Pair<Int, String>>
     data.albumCompany?.takeIf { it.isNotBlank() }?.let { company ->
         rows += CoreCommonR.string.encyclopedia_label_company to company
     }
-    val credits = data.credits
-    if (credits != null) {
-        appendCreditRow(rows, CoreCommonR.string.encyclopedia_label_lyricist, credits.lyricists)
-        appendCreditRow(rows, CoreCommonR.string.encyclopedia_label_composer, credits.composers)
-        appendCreditRow(rows, CoreCommonR.string.encyclopedia_label_arranger, credits.arrangers)
-        appendCreditRow(rows, CoreCommonR.string.encyclopedia_label_producer, credits.producers)
-    }
     return rows
-}
-
-private fun appendCreditRow(rows: MutableList<Pair<Int, String>>, labelRes: Int, names: List<String>) {
-    val text = names.filter { it.isNotBlank() }.joinToString("、")
-    if (text.isNotEmpty()) rows += labelRes to text
 }

@@ -37,11 +37,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaRelatedPlaylist
+import moe.ouom.neriplayer.util.format.formatPlayCount
 import androidx.compose.ui.Alignment
 private const val RELATED_PLAYLIST_EXPAND_THRESHOLD = 3
 private val ENCYCLOPEDIA_PLAYLIST_COVER_SIZE = 48.dp
@@ -108,7 +110,7 @@ private fun SongEncyclopediaRelatedPlaylistRow(
                 Text(
                     text = stringResource(
                         CoreCommonR.string.encyclopedia_playlist_play_count,
-                        formatEncyclopediaPlayCount(playCount)
+                        formatPlayCount(LocalContext.current, playCount)
                     ),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

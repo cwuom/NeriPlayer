@@ -57,7 +57,39 @@ class BiliMusicHomeRepositoryTest {
         assertEquals("BV-official-5", playback.bvid)
         assertEquals(180, playback.durationSec)
         assertEquals("官方账号", playback.uploader)
+        assertEquals(6L, playback.uploaderMid)
         assertEquals("https://example.com/official.jpg", playback.coverUrl)
+    }
+
+    @Test
+    fun `official mv owner id is enriched when other metadata is complete`() = runTest {
+        val song = completeSong().copy(mvBvid = "BV-official-1", mvUploaderMid = 0L)
+
+        val resolved = BiliMusicHomeRepository.resolveOfficialMvIds(listOf(song)) { bvid -> videoInfo(bvid) }
+        val playback = requireNotNull(resolved.single().toPlayableBiliVideoItem())
+
+        assertEquals("官方账号", playback.uploader)
+        assertEquals(6L, playback.uploaderMid)
+    }
+
+    @Test
+    fun `official mv with unknown owner id does not inherit the creation account`() = runTest {
+        val resolved = BiliMusicHomeRepository.resolveOfficialMvIds(incompleteSongs()) { bvid ->
+            videoInfo(bvid).copy(ownerMid = 0L)
+        }
+        val playback = requireNotNull(resolved.single { it.mvAid == 1L }.toPlayableBiliVideoItem())
+
+        assertEquals("官方账号", playback.uploader)
+        assertEquals(0L, playback.uploaderMid)
+    }
+
+    @Test
+    fun `creation fallback keeps its own uploader identity`() {
+        val playback = requireNotNull(completeSong().copy(mvAid = 0L, mvBvid = "").toPlayableBiliVideoItem())
+
+        assertEquals("BV-upload", playback.bvid)
+        assertEquals("投稿者", playback.uploader)
+        assertEquals(4L, playback.uploaderMid)
     }
 
     @Test
@@ -151,6 +183,7 @@ class BiliMusicHomeRepositoryTest {
         mvBvid = "BV-official",
         mvDurationSec = 180,
         mvUploader = "官方账号",
+        mvUploaderMid = 6L,
         mvCoverUrl = "https://example.com/official.jpg"
     )
 }

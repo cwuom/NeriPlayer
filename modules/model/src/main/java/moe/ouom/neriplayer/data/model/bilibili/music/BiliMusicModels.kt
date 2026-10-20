@@ -65,7 +65,9 @@ data class BiliMusicRankSong(
     /** 官方 MV 的上传账号名（补全时带回） */
     val mvUploader: String = "",
     /** 官方 MV 的视频封面（补全时带回，保证封面与播放源是同一支视频） */
-    val mvCoverUrl: String = ""
+    val mvCoverUrl: String = "",
+    /** 官方 MV 的账号 ID，未知时保留 0，不能借用授权投稿的账号 */
+    val mvUploaderMid: Long = 0L
 ) {
     /** 官方 MV 是否已具备完整媒体身份（aid + bvid） */
     val hasOfficialMv: Boolean
@@ -155,7 +157,7 @@ fun BiliMusicRankSong.toPlayableBiliVideoItem(): BiliVideoItem? {
             bvid = mvBvid,
             title = title.ifBlank { album },
             uploader = playbackUploader,
-            uploaderMid = uploaderMid,
+            uploaderMid = mvUploaderMid.coerceAtLeast(0L),
             coverUrl = videoCover,
             durationSec = displayDurationSec
         )

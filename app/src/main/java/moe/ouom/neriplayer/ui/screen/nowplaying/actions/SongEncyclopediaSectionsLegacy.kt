@@ -46,11 +46,11 @@ import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaCredits
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaMusicInfo
 import moe.ouom.neriplayer.data.model.encyclopedia.SongEncyclopedia
 
-/** 基本信息 + 音乐属性 + 创作团队 + 获奖收录（任务书模块 3、4 的子集），各自独立成卡。 */
+/** 基本信息、音乐标签、创作团队与获奖收录各自独立成卡，详情字段只在歌曲详情展示 */
 @Composable
 internal fun SongEncyclopediaLegacySections(data: SongEncyclopedia) {
     val basic = data.basicInfo
-    if (basic.name.isNotBlank() || basic.artists.isNotEmpty() || !basic.album.isNullOrBlank()) {
+    if (basic.name.isNotBlank() || basic.artists.isNotEmpty()) {
         SongEncyclopediaSectionCard(
             titleRes = CoreCommonR.string.encyclopedia_section_basic,
             icon = Icons.Outlined.Info
@@ -62,9 +62,6 @@ internal fun SongEncyclopediaLegacySections(data: SongEncyclopedia) {
                 labelRes = CoreCommonR.string.encyclopedia_label_artists,
                 values = basic.artists
             )
-            basic.album?.takeIf { it.isNotBlank() }?.let { album ->
-                SongEncyclopediaRow(CoreCommonR.string.encyclopedia_label_album, album)
-            }
         }
     }
 
@@ -86,23 +83,12 @@ internal fun SongEncyclopediaLegacySections(data: SongEncyclopedia) {
 
 @Composable
 private fun SongEncyclopediaMusicSection(musicInfo: EncyclopediaMusicInfo) {
-    val hasContent = musicInfo.genres.isNotEmpty() ||
-        musicInfo.tags.isNotEmpty() ||
-        !musicInfo.language.isNullOrBlank() ||
-        (musicInfo.bpm ?: 0) > 0
-    if (!hasContent) return
+    if (musicInfo.tags.none { it.isNotBlank() }) return
     SongEncyclopediaSectionCard(
         titleRes = CoreCommonR.string.encyclopedia_section_music,
         icon = Icons.Outlined.GraphicEq
     ) {
-        SongEncyclopediaRowIfAny(CoreCommonR.string.encyclopedia_label_genres, musicInfo.genres)
         SongEncyclopediaRowIfAny(CoreCommonR.string.encyclopedia_label_tags, musicInfo.tags)
-        musicInfo.language?.takeIf { it.isNotBlank() }?.let { language ->
-            SongEncyclopediaRow(CoreCommonR.string.encyclopedia_label_language, language)
-        }
-        musicInfo.bpm?.takeIf { it > 0 }?.let { bpm ->
-            SongEncyclopediaRow(CoreCommonR.string.encyclopedia_label_bpm, bpm.toString())
-        }
     }
 }
 

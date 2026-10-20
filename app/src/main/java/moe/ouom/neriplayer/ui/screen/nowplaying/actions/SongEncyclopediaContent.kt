@@ -405,11 +405,3 @@ internal fun formatEncyclopediaDate(epochMs: Long): String {
     val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     return formatter.format(Date(epochMs))
 }
-/** 播放量按「万」取整展示，接口给 0 时也如实显示 0。 */
-internal fun formatEncyclopediaPlayCount(playCount: Long): String {
-    return if (playCount >= 10_000L) {
-        "${playCount / 10_000L}万"
-    } else {
-        playCount.toString()
-    }
-}

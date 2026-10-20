@@ -158,7 +158,7 @@ object BiliMusicHomeRepository {
     /** 已有 aid 仍可能缺少官方 MV 的元信息，不能借用授权投稿的数据 */
     private val BiliMusicRankSong.needsMvEnrichment: Boolean
         get() = mvBvid.isNotBlank() &&
-            (mvAid <= 0L || mvDurationSec <= 0 || mvUploader.isBlank() || mvCoverUrl.isBlank())
+            (mvAid <= 0L || mvDurationSec <= 0 || mvUploader.isBlank() || mvCoverUrl.isBlank() || mvUploaderMid <= 0L)
 
     /** 返回成功取得的 MV 数据，让批次停发只依据请求失败判断 */
     private suspend fun enrichOfficialMv(
@@ -175,6 +175,7 @@ object BiliMusicHomeRepository {
                 mvAid = info.aid,
                 mvDurationSec = info.durationSec,
                 mvUploader = info.ownerName,
+                mvUploaderMid = info.ownerMid,
                 mvCoverUrl = normalizeVideoCover(info.coverUrl)
             )
         } else {
