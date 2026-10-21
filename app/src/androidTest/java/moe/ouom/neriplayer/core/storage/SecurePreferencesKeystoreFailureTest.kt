@@ -9,9 +9,12 @@ import androidx.security.crypto.MasterKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.security.KeyStore
+import java.security.MessageDigest
+import java.io.File
 import java.util.UUID
 import javax.crypto.KeyGenerator
 import moe.ouom.neriplayer.common.storage.SecurePreferencesOpener
+import moe.ouom.neriplayer.common.storage.AccountPreferencesOpener
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,6 +33,12 @@ class SecurePreferencesKeystoreFailureTest {
     fun tearDown() {
         KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }.deleteEntry(alias)
         context.deleteSharedPreferences(prefsName)
+        val identifier = MessageDigest.getInstance("SHA-256")
+            .digest(prefsName.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        listOf("key", "prefs").forEach { extension ->
+            val file = File(context.noBackupFilesDir, "account_preferences/$identifier.$extension")
+            check(!file.exists() || file.delete()) { "Cannot clean test account storage" }
+        }
     }
 
     @Test
@@ -59,6 +68,26 @@ class SecurePreferencesKeystoreFailureTest {
             MARKER_VALUE,
             context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).getString(MARKER_KEY, null)
         )
+    }
+
+    @Test
+    fun unusableMasterKeyKeepsOriginalFileAndUsesPersistentAccountEncryption() {
+        generateEncryptOnlyKey(alias)
+        context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit()
+            .putString(MARKER_KEY, MARKER_VALUE).commit()
+        val opened = AccountPreferencesOpener.open(
+            context = context,
+            name = prefsName,
+            create = ::createEncryptedPrefs,
+            delete = { error("account recovery must preserve the original encrypted file") }
+        )
+        assertTrue(AccountPreferencesOpener.isCompatibilityStorage(opened))
+        assertTrue(SecurePreferencesOpener.isPersistent(opened))
+        assertTrue(opened.edit().putString("synthetic_session", "synthetic-account-value").commit())
+        assertEquals("synthetic-account-value", opened.getString("synthetic_session", null))
+        assertEquals(MARKER_VALUE,
+            context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).getString(MARKER_KEY, null))
+        assertTrue(opened.edit().clear().commit())
     }
 
     private fun createEncryptedPrefs() = EncryptedSharedPreferences.create(

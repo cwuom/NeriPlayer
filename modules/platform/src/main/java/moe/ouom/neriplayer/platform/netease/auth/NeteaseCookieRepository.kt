@@ -28,16 +28,16 @@ package moe.ouom.neriplayer.platform.netease.auth
 import moe.ouom.neriplayer.data.model.netease.auth.NETEASE_LOGIN_COOKIE_KEYS
 import moe.ouom.neriplayer.data.model.netease.auth.NeteaseAuthBundle
 import moe.ouom.neriplayer.data.model.netease.auth.NeteaseCookieValidationResult
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.core.content.edit
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import moe.ouom.neriplayer.common.storage.AccountPreferencesOpener
 import moe.ouom.neriplayer.common.storage.SecurePreferencesOpener
-import moe.ouom.neriplayer.common.storage.VolatileSharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.common.logging.NPLogger
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 
 private const val NETEASE_AUTH_PREFS = "netease_auth_secure_prefs"
 private const val KEY_NETEASE_AUTH_BUNDLE = "netease_auth_bundle"
@@ -139,6 +140,12 @@ class NeteaseCookieRepository(private val context: Context) {
     val authHealthFlow: StateFlow<SavedCookieAuthHealth>
         get() = _authHealthFlow.asStateFlow()
 
+    val requiresCompatibilityStorageWarning: Boolean
+        get() = AccountPreferencesOpener.isCompatibilityStorage(encryptedPrefs)
+
+    val isAuthStoragePersistent: Boolean
+        get() = SecurePreferencesOpener.isPersistent(encryptedPrefs)
+
     init {
         encryptedPrefs = openEncryptedPrefsWithRecovery()
         val initialBundle = loadAuthBundle()
@@ -215,7 +222,7 @@ class NeteaseCookieRepository(private val context: Context) {
             cookies = validation.sanitizedCookies,
             savedAt = savedAt
         ).normalized(savedAt = savedAt)
-        writeAuthBundle(normalized)
+        if (!writeAuthBundle(normalized)) return false
         _authFlow.value = normalized
         _cookieFlow.value = normalized.cookies
         _authHealthFlow.value = evaluateNeteaseAuthHealth(normalized)
@@ -228,7 +235,9 @@ class NeteaseCookieRepository(private val context: Context) {
 
     fun clear() {
         synchronized(mutationLock) {
-            writeAuthBundle(null)
+            if (!writeAuthBundle(null)) {
+                throw IOException("Failed to clear NetEase account storage")
+            }
             val cleared = NeteaseAuthBundle()
             _authFlow.value = cleared
             _cookieFlow.value = cleared.cookies
@@ -253,13 +262,18 @@ class NeteaseCookieRepository(private val context: Context) {
                 "Failed to read NetEase secure prefs, recovering storage.",
                 error
             )
-            recoverUnreadableStorage(error)
-            ""
+            encryptedPrefs = AccountPreferencesOpener.fallback(context, NETEASE_AUTH_PREFS)
+            runCatching { encryptedPrefs.getString(KEY_NETEASE_AUTH_BUNDLE, null).orEmpty() }
+                .getOrDefault("")
         }
         if (raw.isNotBlank()) {
             return NeteaseAuthBundle.fromJson(raw)
         }
 
+        // 兼容存储的空墓碑同样代表退出登录，不能再从旧存储恢复账号
+        if (AccountPreferencesOpener.existing(context, NETEASE_AUTH_PREFS) != null) {
+            return NeteaseAuthBundle()
+        }
         return migrateLegacyCookies() ?: NeteaseAuthBundle()
     }
 
@@ -313,31 +327,25 @@ class NeteaseCookieRepository(private val context: Context) {
         return result
     }
 
-    private fun openEncryptedPrefsWithRecovery(): SharedPreferences = SecurePreferencesOpener.open(
+    private fun openEncryptedPrefsWithRecovery(): SharedPreferences = AccountPreferencesOpener.open(
+        context = context,
         name = NETEASE_AUTH_PREFS,
         create = { createEncryptedPrefs() },
         delete = { clearEncryptedStorage() },
         report = { event, error -> NPLogger.w("NERI-CookieRepo", "NetEase secure prefs $event", error) }
     )
 
-    /** Keystore 不可用时删除文件也读不回凭据，只有数据损坏才删除重建 */
-    private fun recoverUnreadableStorage(error: Throwable) {
-        encryptedPrefs = if (SecurePreferencesOpener.isKeystoreUnavailable(error)) {
-            VolatileSharedPreferences.shared(NETEASE_AUTH_PREFS)
-        } else {
-            clearEncryptedStorage()
-            openEncryptedPrefsWithRecovery()
-        }
-    }
-
+    @SuppressLint("UseKtx")
     private fun writeAuthBundle(bundle: NeteaseAuthBundle?): Boolean = runCatching {
-        encryptedPrefs.edit {
+        if (!isAuthStoragePersistent) return false
+        // ktx edit 不返回 commit 结果，只有落盘成功才发布新的账号状态
+        encryptedPrefs.edit().apply {
             if (bundle == null) remove(KEY_NETEASE_AUTH_BUNDLE)
             else putString(KEY_NETEASE_AUTH_BUNDLE, bundle.toJson())
-        }
+        }.commit()
     }.onFailure { error ->
         NPLogger.w("NERI-CookieRepo", "Failed to write NetEase secure prefs", error)
-    }.isSuccess
+    }.getOrDefault(false)
 
     private fun clearEncryptedStorage() {
         runCatching {

@@ -28,6 +28,7 @@ import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import java.io.IOException
 import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -191,7 +192,12 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearAuth() {
         viewModelScope.launch(Dispatchers.IO) {
-            authRepo.clear()
+            try {
+                authRepo.clear()
+            } catch (_: IOException) {
+                _ui.value = _ui.value.copy(status = string(CoreCommonR.string.auth_storage_clear_failed))
+                return@launch
+            }
             client.clearBootstrapCache()
             clearWebViewLoginState(
                 context = getApplication(),

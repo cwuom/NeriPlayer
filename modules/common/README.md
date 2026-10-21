@@ -8,6 +8,10 @@
 
 Sources are in `src/main/java/moe/ouom/neriplayer/common`, with resources in `src/main/res`. The module has no project implementation dependencies; shared business models belong to `:model`. Playback and download runtime libraries reuse `src/testFixtures`.
 
+账号凭据通过 `AccountPreferencesOpener` 打开系统加密存储。系统存储不可用时，兼容存储使用随机本地密钥和 AES-GCM；密钥与密文均位于 `noBackupFilesDir`，不提供 Keystore 硬件保护。兼容文件存在后优先读取，包括退出后的空状态，避免恢复旧登录。无法持久化时返回内存存储，登录入口据此阻止登录。同步凭据仍沿用 `SecurePreferencesOpener` 的原有恢复策略。
+
+Account credentials use `AccountPreferencesOpener`. When system encryption is unavailable, compatibility storage uses AES-GCM with a random local key; both key and ciphertext stay in `noBackupFilesDir`, without Keystore hardware protection. Existing compatibility storage, including an empty logout state, takes precedence over old credentials. Failed persistence falls back to memory so login can be blocked. Sync credentials retain the existing `SecurePreferencesOpener` recovery policy.
+
 ## 测试 / Tests
 
 ```bash

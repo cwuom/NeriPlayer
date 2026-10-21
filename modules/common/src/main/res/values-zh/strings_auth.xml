@@ -119,4 +119,12 @@
     <string name="settings_account_sign_in_again">重新登录</string>
     <string name="settings_account_avatar">%1$s 账号头像</string>
     <string name="web_login_webview_unavailable">系统 WebView 不可用，无法打开网页登录。请在系统设置中启用或更新 Android System WebView 后重试</string>
+    <string name="auth_storage_checking">正在检查账号存储…</string>
+    <string name="auth_storage_compatibility_title">账号存储保护已降级</string>
+    <string name="auth_storage_compatibility_message">此设备的系统安全存储不可用。继续登录后，账号凭据将改用软件加密保存在应用私有目录中，重启后仍可使用，但缺少系统 Keystore 和硬件级密钥保护。请仅在信任此设备时继续。</string>
+    <string name="auth_storage_compatibility_continue">了解风险并继续</string>
+    <string name="auth_storage_unavailable_title">无法保存账号</string>
+    <string name="auth_storage_unavailable_message">系统安全存储和兼容加密存储均不可用，当前无法在重启后保留账号。已阻止此次登录或导入，请恢复设备存储与系统安全服务后重试。</string>
+    <string name="auth_storage_save_failed">无法保存账号凭据，请检查设备存储与系统安全服务后重试</string>
+    <string name="auth_storage_clear_failed">无法清除已保存的账号，请检查设备存储后重试</string>
 </resources>
