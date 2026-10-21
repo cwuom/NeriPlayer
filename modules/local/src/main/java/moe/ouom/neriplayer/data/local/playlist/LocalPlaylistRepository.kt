@@ -60,6 +60,7 @@ import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPreviewAuthority
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
@@ -69,6 +70,7 @@ import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist
 import moe.ouom.neriplayer.platform.netease.playlist.NeteasePlaylistSync
 import moe.ouom.neriplayer.platform.netease.playlist.NeteasePlaylistSyncMessage
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.identity.identity
@@ -180,6 +182,15 @@ class LocalPlaylistRepository private constructor(
             initializationScope.launch {
                 completeInitialLoad()
             }
+        }
+    }
+
+    internal fun containsExplicitLocalFileReferenceCached(reference: String): Boolean? {
+        if (!_initializationReadyFlow.value) return null
+        if (!LocalSongSupport.isLocalMediaUri(reference)) return false
+        val localFiles = LocalFilesPlaylist.firstOrNull(_playlists.value) ?: return false
+        return localFiles.songs.any { song ->
+            preferredLocalMediaReference(song.localFilePath, song.mediaUri) == reference
         }
     }
 
@@ -1291,6 +1302,10 @@ class LocalPlaylistRepository private constructor(
         @SuppressLint("StaticFieldLeak")
         @Volatile
         private var INSTANCE: LocalPlaylistRepository? = null
+
+        /** 不触发仓库初始化，null 表示尚无可确认的手动导入缓存 */
+        fun peekExplicitLocalFileReference(reference: String): Boolean? =
+            INSTANCE?.containsExplicitLocalFileReferenceCached(reference)
 
         fun getInstance(context: Context): LocalPlaylistRepository {
             return INSTANCE ?: synchronized(this) {

@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.network.holdPlaybackForNetworkIfOffline
 import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
 import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
+import moe.ouom.neriplayer.core.player.url.playbackFailureSongDescription
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -78,7 +79,7 @@ internal val playbackFailureRecoveryOwner = PlaybackFailureRecoveryOwner(
 
         override fun reportResolutionFailure(failure: PlaybackResolutionFailure) {
             val songDescription = PlayerManager._currentSongFlow.value?.let {
-                "id=${it.id}, source=${it.album}"
+                playbackFailureSongDescription(it, PlayerManager.playbackRequestToken)
             } ?: "no current song"
             when (failure) {
                 PlaybackResolutionFailure.LOGIN_REQUIRED -> {
@@ -97,7 +98,7 @@ internal val playbackFailureRecoveryOwner = PlaybackFailureRecoveryOwner(
                     PlayerManager.clearPlaybackDemandCacheKey("play_at_index_failure")
                     NPLogger.e(
                         "NERI-PlayerManager",
-                        "获取播放地址失败: $songDescription"
+                        "获取播放地址失败: LocalPlaybackTrace stage=url_failure $songDescription"
                     )
                 }
             }

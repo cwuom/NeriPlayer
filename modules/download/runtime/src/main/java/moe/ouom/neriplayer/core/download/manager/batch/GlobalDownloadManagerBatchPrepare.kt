@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.core.player.download.network.currentDownloadParalleli
 import moe.ouom.neriplayer.core.player.download.network.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import moe.ouom.neriplayer.common.time.elapsedMillisSince
 
@@ -74,7 +75,8 @@ internal fun GlobalDownloadManager.startBatchDownload(
 
     val startupStartedAtNs = System.nanoTime()
     val appContext = context.applicationContext
-    var requestedSongs = songs.distinctBy(SongItem::stableKey)
+    var requestedSongs = songs.filterNot { LocalSongSupport.isLocalSong(it, appContext) }
+        .distinctBy(SongItem::stableKey)
     if (requestedSongs.isEmpty()) {
         return null
     }

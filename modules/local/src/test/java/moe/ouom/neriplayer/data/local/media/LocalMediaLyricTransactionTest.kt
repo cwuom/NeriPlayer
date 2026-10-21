@@ -21,10 +21,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.local.media.source.CrashLogCleanup
+import moe.ouom.neriplayer.data.local.media.source.LocalMediaCoverAccess
+import moe.ouom.neriplayer.data.local.media.source.LocalMediaDownloadAccess
+import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
 import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -40,6 +46,7 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockConstruction
 import org.mockito.Mockito.mockStatic
+import org.mockito.stubbing.Answer
 
 class LocalMediaLyricTransactionTest {
     @get:Rule
@@ -47,6 +54,8 @@ class LocalMediaLyricTransactionTest {
 
     private val resolver = mock(ContentResolver::class.java)
     private val context = mock(Context::class.java)
+    private val mediaAccessField = LocalMediaHostAccess::class.java.getDeclaredField("access").apply { isAccessible = true }
+    private val previousMediaAccess = mediaAccessField.get(null)
     private val documents = linkedMapOf<String, Document>()
     private val uris = linkedMapOf<String, Uri>()
     private val descriptors = IdentityHashMap<ParcelFileDescriptor, File>()
@@ -54,9 +63,11 @@ class LocalMediaLyricTransactionTest {
     private val treeUri = uri("content://$AUTHORITY/tree/root")
     private val rootChildren = uri("content://$AUTHORITY/tree/root/document/root/children")
     private val lyricChildren = uri("content://$AUTHORITY/tree/root/document/lyrics/children")
+    private val coverChildren = uri("content://$AUTHORITY/tree/root/document/covers/children")
     private var createFailure: Throwable? = null
     private var beforeCreateFailure: (() -> Unit)? = null
     private var translationCreateAttempts = 0
+    private var translationCreationReturnsNull = false
     private var writeFailure: Throwable? = null
     private var failureTarget = "translated"
     private var beforeWriteFailure: (() -> Unit)? = null
@@ -69,6 +80,7 @@ class LocalMediaLyricTransactionTest {
         LocalMediaSupport.invalidateSafReadCaches()
         LocalMediaSupport.clearLyricsLookupCache()
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+        mediaAccessField.set(null, previousMediaAccess)
     }
 
     @Test
@@ -258,8 +270,214 @@ class LocalMediaLyricTransactionTest {
         }
     }
 
+    @Test
+    fun `editable metadata stops audio alias fallback when sidecar rollback is unresolved`() = runBlocking(Dispatchers.IO) {
+        fixture {
+            val alias = add("source-alias", "Song.flac", "root", "audio")
+            translationCreationReturnsNull = true
+            beforeCreateFailure = {
+                documents.getValue("original").file!!.writeText("external owner")
+            }
+
+            val outcome = withSuccessfulEmbeddedWrites {
+                LocalMediaSupport.writeEditableMetadataInternal(
+                    context = context,
+                    song = song(),
+                    writeCover = false,
+                    writeLyrics = true,
+                    candidates = listOf(documents.getValue("source").uri, alias.uri)
+                )
+            }
+
+            assertEquals(LocalMediaMetadataWriteOutcome.FAILED, outcome)
+            assertEquals(1, translationCreateAttempts)
+            assertEquals("external owner", documents.getValue("original").file!!.readText())
+            val journals = LocalMediaMetadataRecoveryStore.stagingDirectory(context)
+                .listFiles { file -> file.name.startsWith("recovery-") && file.extension == "json" }.orEmpty()
+            assertEquals(1, journals.size)
+            assertEquals("ROLLBACK_FAILED", JSONObject(journals.single().readText()).getString("stage"))
+        }
+    }
+
+    @Test
+    fun `editable metadata permits audio alias fallback after a completed sidecar rollback`() = runBlocking(Dispatchers.IO) {
+        fixture {
+            val alias = add("source-alias", "Song.flac", "root", "audio")
+            translationCreationReturnsNull = true
+
+            val outcome = withSuccessfulEmbeddedWrites {
+                LocalMediaSupport.writeEditableMetadataInternal(
+                    context = context,
+                    song = song(),
+                    writeCover = false,
+                    writeLyrics = true,
+                    candidates = listOf(documents.getValue("source").uri, alias.uri)
+                )
+            }
+
+            assertEquals(LocalMediaMetadataWriteOutcome.SUCCESS, outcome)
+            assertEquals(2, translationCreateAttempts)
+            assertEquals("new original", documents.getValue("original").file!!.readText())
+            assertEquals("new translation", documents.getValue("translated").file!!.readText())
+        }
+    }
+
+    @Test
+    fun `editable metadata records the published SAF cover instead of the selected input`() = runBlocking(Dispatchers.IO) {
+        fixture {
+            add("covers", "Covers", "root")
+            val cover = temporaryFolder.newFile("selected.jpg").apply { writeBytes(JPEG_BYTES) }
+            uri(cover.absolutePath)
+
+            val outcome = withSuccessfulEmbeddedWrites {
+                LocalMediaSupport.writeEditableMetadataInternal(
+                    context = context,
+                    song = song(),
+                    coverReference = cover.absolutePath,
+                    writeCover = true,
+                    writeLyrics = true,
+                    candidates = listOf(documents.getValue("source").uri)
+                )
+            }
+
+            assertEquals(LocalMediaMetadataWriteOutcome.SUCCESS, outcome)
+            val sidecar = documents.getValue("cover-sidecar")
+            val metadata = JSONObject(documents.getValue("metadata").file!!.readText())
+            assertEquals(sidecar.uri.toString(), metadata.getString("coverPath"))
+            assertEquals("new original", documents.getValue("original").file!!.readText())
+            assertArrayEquals(JPEG_BYTES, sidecar.file!!.readBytes())
+        }
+    }
+
+    @Test
+    fun `sidecar metadata save publishes the cover and metadata together without changing audio`() = runBlocking(Dispatchers.IO) {
+        fixture {
+            add("covers", "Covers", "root")
+            val metadata = add("metadata", "Song.flac.npmeta.json", "root", "{\"unrelated\":17}").file!!
+            val cover = temporaryFolder.newFile("selected.jpg").apply { writeBytes(JPEG_BYTES) }
+            uri(cover.absolutePath)
+
+            assertTrue(LocalMediaSupport.writeLocalMetadataSidecar(context, song(), coverReference = cover.absolutePath))
+
+            assertTrue("the selected cover must be published beside the audio", documents.containsKey("cover-sidecar"))
+            val sidecar = documents.getValue("cover-sidecar")
+            assertArrayEquals(JPEG_BYTES, sidecar.file!!.readBytes())
+            assertEquals(sidecar.uri.toString(), JSONObject(metadata.readText()).getString("coverPath"))
+            assertEquals(17, JSONObject(metadata.readText()).getInt("unrelated"))
+            assertEquals("audio", documents.getValue("source").file!!.readText())
+        }
+    }
+
+    @Test
+    fun `sidecar metadata failure restores the previous cover and metadata`() = runBlocking(Dispatchers.IO) {
+        fixture {
+            add("covers", "Covers", "root")
+            val coverName = LocalMediaSupport.localCoverSidecarName("Song", "jpg", song().stableKey())
+            val previousCover = add("cover-sidecar", coverName, "covers", "old cover").file!!
+            val metadata = add("metadata", "Song.flac.npmeta.json", "root", "{\"customName\":\"keep me\"}").file!!
+            val previousMetadata = metadata.readText()
+            val cover = temporaryFolder.newFile("selected.jpg").apply { writeBytes(JPEG_BYTES) }
+            uri(cover.absolutePath)
+            val failure = SecurityException("metadata write permission revoked")
+            failureTarget = "metadata"
+            writeFailure = failure
+
+            val error = runCatching {
+                LocalMediaSupport.writeLocalMetadataSidecar(context, song(), coverReference = cover.absolutePath)
+            }.exceptionOrNull()
+
+            assertPropagated(failure, error)
+            assertEquals("old cover", previousCover.readText())
+            assertEquals(previousMetadata, metadata.readText())
+            assertEquals("audio", documents.getValue("source").file!!.readText())
+        }
+    }
+
+    @Test
+    fun `sidecar cover clear removes the cover only with the metadata update`() = runBlocking(Dispatchers.IO) {
+        fixture {
+            add("covers", "Covers", "root")
+            val coverName = LocalMediaSupport.localCoverSidecarName("Song", "jpg", song().stableKey())
+            val cover = add("cover-sidecar", coverName, "covers", "old cover")
+            val metadata = add("metadata", "Song.flac.npmeta.json", "root",
+                "{\"coverPath\":\"${cover.uri}\",\"unrelated\":17}").file!!
+
+            assertTrue(LocalMediaSupport.writeLocalMetadataSidecar(context, song(), clearCoverReference = true))
+
+            assertFalse(cover.file!!.exists())
+            assertFalse(JSONObject(metadata.readText()).has("coverPath"))
+            assertEquals(17, JSONObject(metadata.readText()).getInt("unrelated"))
+            assertEquals("audio", documents.getValue("source").file!!.readText())
+        }
+    }
+
+    @Test
+    fun `cancelled sidecar metadata save restores a cover written earlier in the attempt`() = runBlocking(Dispatchers.IO) {
+        fixture {
+            add("covers", "Covers", "root")
+            val coverName = LocalMediaSupport.localCoverSidecarName("Song", "jpg", song().stableKey())
+            val previousCover = add("cover-sidecar", coverName, "covers", "old cover").file!!
+            val metadata = add("metadata", "Song.flac.npmeta.json", "root", "{\"unrelated\":17}").file!!
+            val previousMetadata = metadata.readText()
+            val cover = temporaryFolder.newFile("selected.jpg").apply { writeBytes(JPEG_BYTES) }
+            uri(cover.absolutePath)
+            val cancellation = CancellationException("metadata write cancelled")
+            failureTarget = "metadata"
+            writeFailure = cancellation
+
+            val error = runCatching {
+                LocalMediaSupport.writeLocalMetadataSidecar(context, song(), coverReference = cover.absolutePath)
+            }.exceptionOrNull()
+
+            assertPropagated(cancellation, error)
+            assertEquals("old cover", previousCover.readText())
+            assertEquals(previousMetadata, metadata.readText())
+            assertEquals("audio", documents.getValue("source").file!!.readText())
+        }
+    }
+
+    @Test
+    fun `failed sidecar metadata save keeps a cover pending deletion`() = runBlocking(Dispatchers.IO) {
+        fixture {
+            add("covers", "Covers", "root")
+            val coverName = LocalMediaSupport.localCoverSidecarName("Song", "jpg", song().stableKey())
+            val cover = add("cover-sidecar", coverName, "covers", "old cover")
+            val metadata = add("metadata", "Song.flac.npmeta.json", "root",
+                "{\"coverPath\":\"${cover.uri}\",\"unrelated\":17}").file!!
+            val previousMetadata = metadata.readText()
+            val failure = SecurityException("metadata write permission revoked")
+            failureTarget = "metadata"
+            writeFailure = failure
+
+            val error = runCatching {
+                LocalMediaSupport.writeLocalMetadataSidecar(context, song(), clearCoverReference = true)
+            }.exceptionOrNull()
+
+            assertPropagated(failure, error)
+            assertEquals("old cover", cover.file!!.readText())
+            assertEquals(previousMetadata, metadata.readText())
+            assertEquals("audio", documents.getValue("source").file!!.readText())
+        }
+    }
+
+    private suspend fun <T> withSuccessfulEmbeddedWrites(block: suspend () -> T): T =
+        mockStatic(Class.forName("moe.ouom.neriplayer.data.local.media.LocalMediaSupportLyricsKt"),
+            Answer<Any?> { invocation ->
+                when (invocation.method.name) {
+                    "writeEditableMetadataThroughStagedContentCopy" -> LocalMediaSupport.EditableMetadataWriteTransaction(
+                        LocalMediaMetadataWriteOutcome.SUCCESS
+                    )
+                    else -> invocation.callRealMethod()
+                }
+            }).use { block() }
+
     private suspend fun fixture(block: suspend () -> Unit) {
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+        LocalMediaHostAccess.bind(
+            downloads = mock(LocalMediaDownloadAccess::class.java),
+            covers = mock(LocalMediaCoverAccess::class.java),
+            crashLogs = CrashLogCleanup { false }
+        )
         doReturn(context).`when`(context).applicationContext
         doReturn(resolver).`when`(context).contentResolver
         doReturn(temporaryFolder.newFolder("no-backup")).`when`(context).noBackupFilesDir
@@ -273,6 +491,7 @@ class LocalMediaLyricTransactionTest {
             val rows = when (uri) {
                 rootChildren -> documents.values.filter { it.parent == "root" && it.exists() }
                 lyricChildren -> documents.values.filter { it.parent == "lyrics" && it.exists() }
+                coverChildren -> documents.values.filter { it.parent == "covers" && it.exists() }
                 else -> documents.values.filter { it.uri == uri && it.exists() }
             }
             cursor(rows)
@@ -303,7 +522,11 @@ class LocalMediaLyricTransactionTest {
                 contract.`when`<Uri> { DocumentsContract.buildDocumentUriUsingTree(any(), anyString()) }
                     .thenAnswer { documents.getValue(it.getArgument(1)).uri }
                 contract.`when`<Uri> { DocumentsContract.buildChildDocumentsUriUsingTree(any(), anyString()) }
-                    .thenAnswer { if (it.getArgument<String>(1) == "root") rootChildren else lyricChildren }
+                    .thenAnswer { when (it.getArgument<String>(1)) {
+                        "root" -> rootChildren
+                        "covers" -> coverChildren
+                        else -> lyricChildren
+                    } }
                 contract.`when`<DocumentsContract.Path> { DocumentsContract.findDocumentPath(any(), any()) }.thenAnswer {
                     val target = document(it.getArgument(1))
                     mock(DocumentsContract.Path::class.java).also { path ->
@@ -314,6 +537,11 @@ class LocalMediaLyricTransactionTest {
                     val name = it.getArgument<String>(3)
                     if (name == "Song_trans.lrc") {
                         translationCreateAttempts++
+                        if (translationCreationReturnsNull) {
+                            translationCreationReturnsNull = false
+                            beforeCreateFailure?.invoke()
+                            return@thenAnswer null
+                        }
                         createFailure?.let { failure ->
                             createFailure = null
                             beforeCreateFailure?.invoke()
@@ -323,7 +551,7 @@ class LocalMediaLyricTransactionTest {
                     val id = when (name) {
                         "Song.lrc" -> "original"
                         "Song_trans.lrc" -> "translated"
-                        else -> "metadata"
+                        else -> if (name.endsWith(".jpg")) "cover-sidecar" else "metadata"
                     }
                     add(id, name, document(it.getArgument(1)).id, "").uri
                 }
@@ -394,7 +622,11 @@ class LocalMediaLyricTransactionTest {
 
     private fun add(id: String, name: String, parent: String?, content: String? = null): Document {
         val file = content?.let {
-            val directory = if (parent == "lyrics") File(temporaryFolder.root, "Lyrics").apply { mkdirs() } else temporaryFolder.root
+            val directory = when (parent) {
+                "lyrics" -> File(temporaryFolder.root, "Lyrics").apply { mkdirs() }
+                "covers" -> File(temporaryFolder.root, "Covers").apply { mkdirs() }
+                else -> temporaryFolder.root
+            }
             File(directory, name).apply { writeText(content) }
         }
         return Document(id, name, parent, uri("content://$AUTHORITY/tree/root/document/$id"), file)
@@ -439,5 +671,6 @@ class LocalMediaLyricTransactionTest {
 
     private companion object {
         const val AUTHORITY = "com.android.externalstorage.documents"
+        val JPEG_BYTES = byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xe0.toByte(), 1, 2, 3)
     }
 }

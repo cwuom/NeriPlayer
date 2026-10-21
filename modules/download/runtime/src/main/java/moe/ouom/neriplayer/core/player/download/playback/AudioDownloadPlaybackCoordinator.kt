@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirector
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.playbackLogReference
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import kotlinx.coroutines.runBlocking
@@ -32,6 +33,7 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_SUFFIX
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import kotlin.time.Duration.Companion.milliseconds
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
@@ -45,7 +47,9 @@ internal class AudioDownloadPlaybackCoordinator(
     private val completedAudioReferenceRegistry: AudioDownloadReferenceRegistry,
     private val isSongDownloadActive: (String) -> Boolean,
     private val directoryMutationWaitMs: Long,
-    private val tag: String = "NERI-Downloader"
+    private val tag: String = "NERI-Downloader",
+    private val explicitLocalFileReference: (String) -> Boolean? =
+        LocalPlaylistRepository::peekExplicitLocalFileReference
 ) {
     private val LEGACY_INDEX_REFRESH_COOLDOWN_MS = 5_000L
     private val MANAGED_PLAYBACK_REBIND_COOLDOWN_MS = 1_500L
@@ -60,6 +64,89 @@ internal class AudioDownloadPlaybackCoordinator(
         val snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
         val audio: ManagedDownloadStorage.StoredEntry
     )
+
+    private class PlaybackDiagnostics(
+        private val tag: String,
+        private val stage: String,
+        private val song: SongItem,
+        var rawReference: String? = null
+    ) {
+        var managedFast: Boolean? = null
+        var managedFull: Boolean? = null
+        var configuredDirectory = "not_checked"
+        var rawReferenceCompatible: Boolean? = null
+        var explicitLocalFile = "not_checked"
+        var rawProbeExecuted = false
+        var rawEvidence: ManagedDownloadReferenceLookup.Result? = null
+        var explicitlyIncomplete: Boolean? = null
+        var verifiedReference: String? = null
+        var refreshedReference: String? = null
+        var refreshedEvidence: ManagedDownloadReferenceLookup.Result? = null
+        var fence = "not_checked"
+        var bridge = "not_checked"
+        var rebind = "not_attempted"
+        var errorType = "none"
+
+        fun finish(
+            resolution: LocalPlaybackReferenceResolution,
+            reason: String
+        ): LocalPlaybackReferenceResolution {
+            val message = message(resolution, reason)
+            if (resolution is LocalPlaybackReferenceResolution.Playable ||
+                resolution == LocalPlaybackReferenceResolution.NotIndexed
+            ) {
+                NPLogger.d(tag, message)
+            } else {
+                NPLogger.w(tag, message)
+            }
+            return resolution
+        }
+
+        private fun message(resolution: LocalPlaybackReferenceResolution, reason: String): String {
+            return "LocalPlaybackTrace stage=$stage id=${song.id} " +
+                "channel=${song.channelId} albumId=${song.albumId} " +
+                "managedFast=${managedFast ?: "not_checked"} " +
+                "managedFull=${managedFull ?: "not_checked"} " +
+                "configuredDirectory=$configuredDirectory " +
+                "rawReference=${playbackLogReference(rawReference)} " +
+                "rawReferenceCompatible=${rawReferenceCompatible ?: "not_checked"} " +
+                "explicitLocalFile=$explicitLocalFile " +
+                "rawProbeExecuted=$rawProbeExecuted " +
+                "rawEvidence=${evidenceName(rawEvidence)} rawErrorType=${evidenceErrorType(rawEvidence)} " +
+                "managedReferenceIsExplicitlyIncomplete=${explicitlyIncomplete ?: "not_checked"} " +
+                "verifiedReference=${playbackLogReference(verifiedReference)} " +
+                "refreshedReference=${playbackLogReference(refreshedReference)} " +
+                "refreshedEvidence=${evidenceName(refreshedEvidence)} " +
+                "refreshedErrorType=${evidenceErrorType(refreshedEvidence)} " +
+                "fence=$fence bridge=$bridge rebind=$rebind errorType=$errorType " +
+                "result=${resultName(resolution)} reason=$reason reference=" +
+                playbackLogReference((resolution as? LocalPlaybackReferenceResolution.Playable)?.reference)
+        }
+
+        private fun resultName(resolution: LocalPlaybackReferenceResolution): String = when (resolution) {
+            is LocalPlaybackReferenceResolution.Playable -> "playable"
+            LocalPlaybackReferenceResolution.Missing -> "missing"
+            LocalPlaybackReferenceResolution.NotIndexed -> "not_indexed"
+            is LocalPlaybackReferenceResolution.TemporarilyUnavailable -> "temporary"
+        }
+
+        companion object {
+            fun evidenceName(evidence: ManagedDownloadReferenceLookup.Result?): String = when (evidence) {
+                ManagedDownloadReferenceLookup.Result.Present -> "present"
+                ManagedDownloadReferenceLookup.Result.Missing -> "missing"
+                ManagedDownloadReferenceLookup.Result.OutOfScope -> "out_of_scope"
+                is ManagedDownloadReferenceLookup.Result.PermissionLost -> "permission_lost"
+                is ManagedDownloadReferenceLookup.Result.ProviderFailure -> "provider_failure"
+                null -> "not_checked"
+            }
+
+            fun evidenceErrorType(evidence: ManagedDownloadReferenceLookup.Result?): String = when (evidence) {
+                is ManagedDownloadReferenceLookup.Result.PermissionLost -> evidence.cause.javaClass.name
+                is ManagedDownloadReferenceLookup.Result.ProviderFailure -> evidence.cause.javaClass.name
+                else -> "none"
+            }
+        }
+    }
 
     private fun canBlockStorageLookup(): Boolean {
         return android.os.Looper.myLooper() != android.os.Looper.getMainLooper()
@@ -157,7 +244,7 @@ internal class AudioDownloadPlaybackCoordinator(
             NPLogger.d(
                 tag,
                 "目录切换后忽略缓存中的旧播放引用: " +
-                    "song=${song.name}, reference=$catalogPlaybackReference"
+                    "song=${song.name}, reference=${playbackLogReference(catalogPlaybackReference)}"
             )
         }
         resolveReadableManagedDownload(context, song)
@@ -196,28 +283,40 @@ internal class AudioDownloadPlaybackCoordinator(
         rawLocalReference: String?
     ): LocalPlaybackReferenceResolution = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
-        resolveIndependentExternalImportPlayback(appContext, song)?.let { return@withContext it }
+        val diagnostics = PlaybackDiagnostics(tag, "download_permitted", song, rawLocalReference)
+        resolveIndependentExternalImportPlayback(appContext, song, diagnostics)?.let {
+            return@withContext diagnostics.finish(it, "independent_import")
+        }
         val reference = rawLocalReference?.trim()?.takeIf(String::isNotBlank)
         if (reference == null) {
             // 队列恢复可能先拿到歌曲身份，再异步补齐引用
             getLocalPlaybackUri(appContext, song)?.let { verifiedReference ->
-                return@withContext LocalPlaybackReferenceResolution.Playable(
-                    verifiedReference
+                diagnostics.verifiedReference = verifiedReference
+                return@withContext diagnostics.finish(
+                    LocalPlaybackReferenceResolution.Playable(verifiedReference),
+                    "missing_raw_reference_recovered"
                 )
             }
-            return@withContext LocalPlaybackReferenceResolution.TemporarilyUnavailable(
-                ManagedDownloadReferenceLookup.Result.OutOfScope
+            return@withContext diagnostics.finish(
+                LocalPlaybackReferenceResolution.TemporarilyUnavailable(
+                    ManagedDownloadReferenceLookup.Result.OutOfScope
+                ),
+                "missing_raw_reference_unavailable"
             )
         }
+        diagnostics.rawReference = reference
         val managedDownloadHint = runCatching {
             ManagedDownloadStorage.isLikelyManagedDownloadSongFast(appContext, song)
         }.getOrDefault(false)
+        diagnostics.managedFast = managedDownloadHint
+        val mutationActive = runCatching {
+            ManagedDownloadDirectoryMutationFence.isActive(appContext)
+        }.getOrDefault(true)
+        diagnostics.fence = if (mutationActive) "active" else "open"
         if (
             shouldWaitForManagedPlaybackDirectoryMutation(
                 isManagedDownload = managedDownloadHint,
-                mutationActive = runCatching {
-                    ManagedDownloadDirectoryMutationFence.isActive(appContext)
-                }.getOrDefault(true)
+                mutationActive = mutationActive
             )
         ) {
             val opened = withTimeoutOrNull(directoryMutationWaitMs.milliseconds) {
@@ -225,53 +324,64 @@ internal class AudioDownloadPlaybackCoordinator(
                 true
             } == true
             if (!opened) {
-                NPLogger.d(
-                    tag,
-                    "目录迁移仍在进行，暂不使用旧播放引用: song=${song.name}"
-                )
-                return@withContext LocalPlaybackReferenceResolution.TemporarilyUnavailable(
-                    ManagedDownloadReferenceLookup.Result.OutOfScope
+                diagnostics.fence = "timeout"
+                return@withContext diagnostics.finish(
+                    LocalPlaybackReferenceResolution.TemporarilyUnavailable(
+                        ManagedDownloadReferenceLookup.Result.OutOfScope
+                    ),
+                    "directory_mutation_timeout"
                 )
             }
+            diagnostics.fence = "opened_after_wait"
+        }
+        val configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+        diagnostics.configuredDirectory = playbackLogReference(configuredDirectoryUri)
+        if (managedDownloadHint) {
+            resolveExplicitExternalFilePlayback(
+                appContext, song, reference, configuredDirectoryUri, diagnostics
+            )?.let { return@withContext it }
         }
         // core 提交桥已验证完整音频，必须在 SAF 查询前消费
         resolveRecentlyCommittedAudioReference(
             context = appContext,
             song = song,
-            rawReference = reference
+            rawReference = reference,
+            diagnostics = diagnostics
         )?.let { bridgedReference ->
-            return@withContext LocalPlaybackReferenceResolution.Playable(bridgedReference)
+            diagnostics.verifiedReference = bridgedReference
+            return@withContext diagnostics.finish(
+                LocalPlaybackReferenceResolution.Playable(bridgedReference),
+                "core_bridge"
+            )
         }
         val isManagedDownload = try {
             ManagedDownloadStorage.isLikelyManagedDownloadSong(appContext, song)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (error: Exception) {
+            diagnostics.errorType = error.javaClass.name
             NPLogger.w(
                 tag,
-                "识别受管本地音频失败，按内存线索保守处理: ${error.message}"
+                "LocalPlaybackTrace stage=download_classification_fallback id=${song.id} " +
+                    "channel=${song.channelId} errorType=${error.javaClass.name}"
             )
             ManagedDownloadStorage.isLikelyManagedDownloadSongFast(appContext, song)
         }
-        val configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+        diagnostics.managedFull = isManagedDownload
         val rawReferenceCompatible = !isManagedDownload ||
             isManagedPlaybackReferenceCompatibleWithConfiguredSaf(
                 reference = reference,
                 configuredDirectoryUri = configuredDirectoryUri
             )
-        if (isManagedDownload && !rawReferenceCompatible) {
-            NPLogger.d(
-                tag,
-                "目录切换后拒绝旧受管播放引用，准备重绑当前根: " +
-                    "song=${song.name}, reference=$reference"
-            )
-        }
+        diagnostics.rawReferenceCompatible = rawReferenceCompatible
         val rawEvidence = if (rawReferenceCompatible) {
+            diagnostics.rawProbeExecuted = true
             ManagedDownloadReferenceLookup.inspect(appContext, reference)
         } else {
             // 旧根引用不再探测 Provider，统一交给有界重绑定流程
             ManagedDownloadReferenceLookup.Result.Missing
         }
+        diagnostics.rawEvidence = rawEvidence
         val managedReferenceIsExplicitlyIncomplete = if (isManagedDownload && rawReferenceCompatible) {
             isManagedReferenceExplicitlyIncomplete(
                 context = appContext,
@@ -281,6 +391,7 @@ internal class AudioDownloadPlaybackCoordinator(
         } else {
             false
         }
+        diagnostics.explicitlyIncomplete = managedReferenceIsExplicitlyIncomplete
         if (
             rawReferenceCompatible && shouldUseDirectPresentLocalPlayback(
                 reference = reference,
@@ -293,15 +404,18 @@ internal class AudioDownloadPlaybackCoordinator(
                 NPLogger.d(
                     tag,
                     "正式下载引用已确认可读，跳过旧完成状态门禁: " +
-                        "song=${song.name}, reference=$reference"
+                        "song=${song.name}, reference=${playbackLogReference(reference)}"
                 )
             }
-            return@withContext selectPermittedLocalPlaybackResolution(
-                rawLocalReference = reference,
-                isManagedDownload = isManagedDownload,
-                verifiedManagedReference = null,
-                rawEvidence = rawEvidence,
-                managedReferenceIsExplicitlyIncomplete = false
+            return@withContext diagnostics.finish(
+                selectPermittedLocalPlaybackResolution(
+                    rawLocalReference = reference,
+                    isManagedDownload = isManagedDownload,
+                    verifiedManagedReference = null,
+                    rawEvidence = rawEvidence,
+                    managedReferenceIsExplicitlyIncomplete = false
+                ),
+                "direct_present_reference"
             )
         }
         val verifiedManagedReference = if (isManagedDownload) {
@@ -309,7 +423,8 @@ internal class AudioDownloadPlaybackCoordinator(
                 ?: if (rawEvidence == ManagedDownloadReferenceLookup.Result.Missing) {
                     forceResolveManagedPlaybackAfterMissing(
                         context = appContext,
-                        song = song
+                        song = song,
+                        diagnostics = diagnostics
                     )
                 } else {
                     null
@@ -317,36 +432,95 @@ internal class AudioDownloadPlaybackCoordinator(
         } else {
             null
         }
+        diagnostics.verifiedReference = verifiedManagedReference
         // 已验证的新引用不能再被旧 pending 标记覆盖
         val effectiveIncomplete = if (verifiedManagedReference != null) {
             false
         } else {
             managedReferenceIsExplicitlyIncomplete
         }
-        selectPermittedLocalPlaybackResolution(
-            rawLocalReference = reference,
-            isManagedDownload = isManagedDownload,
-            verifiedManagedReference = verifiedManagedReference,
-            rawEvidence = rawEvidence,
-            managedReferenceIsExplicitlyIncomplete = effectiveIncomplete,
-            missingIsTransient = isRecentManagedPlaybackReference(
-                song = song,
-                reference = reference
-            )
+        diagnostics.finish(
+            selectPermittedLocalPlaybackResolution(
+                rawLocalReference = reference,
+                isManagedDownload = isManagedDownload,
+                verifiedManagedReference = verifiedManagedReference,
+                rawEvidence = rawEvidence,
+                managedReferenceIsExplicitlyIncomplete = effectiveIncomplete,
+                missingIsTransient = isRecentManagedPlaybackReference(
+                    song = song,
+                    reference = reference
+                )
+            ),
+            when {
+                verifiedManagedReference != null -> "verified_managed_reference"
+                !rawReferenceCompatible -> "incompatible_reference_unresolved"
+                effectiveIncomplete -> "managed_reference_incomplete"
+                else -> "raw_${PlaybackDiagnostics.evidenceName(rawEvidence)}"
+            }
         )
     }
+
+    private fun resolveExplicitExternalFilePlayback(
+        context: Context,
+        song: SongItem,
+        reference: String,
+        configuredDirectoryUri: String?,
+        diagnostics: PlaybackDiagnostics
+    ): LocalPlaybackReferenceResolution? {
+        if (isManagedPlaybackReferenceCompatibleWithConfiguredSaf(reference, configuredDirectoryUri)) {
+            return null
+        }
+        val explicit = explicitLocalFileReference(reference)
+        diagnostics.explicitLocalFile = explicit?.toString() ?: "unknown"
+        if (explicit == false) return null
+        diagnostics.rawReferenceCompatible = false
+        if (explicit == null) {
+            return diagnostics.finish(
+                LocalPlaybackReferenceResolution.TemporarilyUnavailable(ManagedDownloadReferenceLookup.Result.OutOfScope),
+                "explicit_local_evidence_unknown"
+            )
+        }
+        if (!isFormalManagedAudioReference(reference) || isPlaybackReferenceCancelled(context, song, reference)) {
+            diagnostics.explicitlyIncomplete = true
+            return diagnostics.finish(
+                LocalPlaybackReferenceResolution.TemporarilyUnavailable(ManagedDownloadReferenceLookup.Result.OutOfScope),
+                "explicit_local_reference_incomplete"
+            )
+        }
+        // 用户明确选中的独立文件不能被同来源下载的完成桥或新目录引用替换
+        val evidence = ManagedDownloadReferenceLookup.inspect(context, reference)
+        diagnostics.rawProbeExecuted = true
+        diagnostics.rawEvidence = evidence
+        return diagnostics.finish(
+            selectPermittedLocalPlaybackResolution(
+                rawLocalReference = reference,
+                isManagedDownload = false,
+                verifiedManagedReference = null,
+                rawEvidence = evidence
+            ),
+            "explicit_local_${PlaybackDiagnostics.evidenceName(evidence)}"
+        )
+    }
+
     private fun resolveIndependentExternalImportPlayback(
         context: Context,
-        song: SongItem
+        song: SongItem,
+        diagnostics: PlaybackDiagnostics? = null
     ): LocalPlaybackReferenceResolution? {
         val reference = ManagedDownloadStorage.resolveIndependentExternalImportReference(context, song)
             ?: return null
+        val evidence = ManagedDownloadReferenceLookup.inspect(context, reference)
+        diagnostics?.apply {
+            rawReference = reference
+            rawProbeExecuted = true
+            rawEvidence = evidence
+        }
         // 副本缺失时也不借用 content 别名或同来源下载的完成桥
         return selectPermittedLocalPlaybackResolution(
             rawLocalReference = reference,
             isManagedDownload = false,
             verifiedManagedReference = null,
-            rawEvidence = ManagedDownloadReferenceLookup.inspect(context, reference)
+            rawEvidence = evidence
         )
     }
     private fun resolveReadableManagedDownload(
@@ -402,7 +576,7 @@ internal class AudioDownloadPlaybackCoordinator(
                         tag,
                         "本地下载索引确认缺失，准备强制刷新: " +
                             "song=${song.name}, reference=" +
-                                "${playableReferenceForManagedAudio(audio)}"
+                                playbackLogReference(reference)
                     )
                     GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
                 }
@@ -413,8 +587,9 @@ internal class AudioDownloadPlaybackCoordinator(
                         tag,
                         "本地下载索引引用暂不可确认，保留并等待对账: " +
                             "song=${song.name}, reference=" +
-                                "${playableReferenceForManagedAudio(audio)}, " +
-                            "evidence=$evidence"
+                                "${playbackLogReference(reference)}, " +
+                            "evidence=${PlaybackDiagnostics.evidenceName(evidence)}, " +
+                            "errorType=${PlaybackDiagnostics.evidenceErrorType(evidence)}"
                     )
                     return null
                 }
@@ -476,7 +651,7 @@ internal class AudioDownloadPlaybackCoordinator(
                         tag,
                         "下载索引确认缺失，准备强制刷新: " +
                             "song=${song.name}, reference=" +
-                                "${playableReferenceForManagedAudio(indexedAudio)}"
+                                playbackLogReference(reference)
                     )
                     GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
                 }
@@ -487,8 +662,9 @@ internal class AudioDownloadPlaybackCoordinator(
                         tag,
                         "下载索引引用暂不可确认，保留并等待对账: " +
                             "song=${song.name}, reference=" +
-                                "${playableReferenceForManagedAudio(indexedAudio)}, " +
-                            "evidence=$evidence"
+                                "${playbackLogReference(reference)}, " +
+                            "evidence=${PlaybackDiagnostics.evidenceName(evidence)}, " +
+                            "errorType=${PlaybackDiagnostics.evidenceErrorType(evidence)}"
                     )
                     return null
                 }
@@ -682,34 +858,43 @@ internal class AudioDownloadPlaybackCoordinator(
     private fun resolveRecentlyCommittedAudioReference(
         context: Context,
         song: SongItem,
-        rawReference: String? = null
+        rawReference: String? = null,
+        diagnostics: PlaybackDiagnostics? = null
     ): String? {
         val songKey = song.stableKey()
+        diagnostics?.bridge = "miss"
         val audio = rawReference?.let { reference ->
             completedAudioReferenceRegistry.peekCompletedAudioReferenceByRawReference(reference)
         }
             ?: completedAudioReferenceRegistry.peekCompletedAudioReference(song)
             ?: return null
+        diagnostics?.bridge = "no_playable_reference"
         val reference = playableReferenceForManagedAudio(audio) ?: return null
         if (shouldDiscardCompletedReferenceForConfiguredSaf(
                 reference = reference,
-                configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+                configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri().also {
+                    diagnostics?.configuredDirectory = playbackLogReference(it)
+                }
             )
         ) {
+            diagnostics?.bridge = "discarded_configured_directory"
             completedAudioReferenceRegistry.invalidateCompletedAudioReference(song)
             NPLogger.d(
                 tag,
                 "目录已切换到 SAF，丢弃旧完成桥接引用并等待当前根重绑定: " +
-                    "songKey=$songKey, reference=$reference"
+                    "id=${song.id}, channel=${song.channelId}, " +
+                    "reference=${playbackLogReference(reference)}"
             )
             return null
         }
         if (isMissingFilePlaybackReference(reference)) {
+            diagnostics?.bridge = "discarded_missing_file"
             completedAudioReferenceRegistry.invalidateCompletedAudioReference(song)
             NPLogger.d(
                 tag,
                 "完成桥接引用已不存在，等待当前存储根重新绑定: " +
-                    "songKey=$songKey, reference=$reference"
+                    "id=${song.id}, channel=${song.channelId}, " +
+                    "reference=${playbackLogReference(reference)}"
             )
             return null
         }
@@ -718,12 +903,15 @@ internal class AudioDownloadPlaybackCoordinator(
                 downloadCancelled = GlobalDownloadManager.isSongCancelled(songKey)
             )
         ) {
+            diagnostics?.bridge = "rejected"
             return null
         }
+        diagnostics?.bridge = "used"
         NPLogger.d(
             tag,
             "core 音频已提交，目录回调尚未完成，直接使用已校验引用并后台校验: " +
-                "songKey=$songKey, reference=$reference"
+                "id=${song.id}, channel=${song.channelId}, " +
+                "reference=${playbackLogReference(reference)}"
         )
         // 这里不能同步查询 SAF。后台扫描只负责更新索引，Provider 短暂异常时保留桥接。
         GlobalDownloadManager.scanLocalFiles(context, forceRefresh = false)
@@ -736,7 +924,8 @@ internal class AudioDownloadPlaybackCoordinator(
     /** 旧 catalog 只剩失效路径时，单飞一次强制快照重绑到迁移后的引用 */
     private suspend fun forceResolveManagedPlaybackAfterMissing(
         context: Context,
-        song: SongItem
+        song: SongItem,
+        diagnostics: PlaybackDiagnostics? = null
     ): String? {
         val songKey = song.stableKey()
         val nowMs = System.currentTimeMillis()
@@ -750,8 +939,10 @@ internal class AudioDownloadPlaybackCoordinator(
             }
         }
         if (!shouldRefresh) {
+            diagnostics?.rebind = "cooldown"
             return null
         }
+        diagnostics?.rebind = "refreshing"
         val audio = try {
             ManagedDownloadStorage.findDownloadedAudio(
                 context = context,
@@ -761,20 +952,28 @@ internal class AudioDownloadPlaybackCoordinator(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (error: Throwable) {
+            diagnostics?.apply {
+                rebind = "failed"
+                errorType = error.javaClass.name
+            }
             NPLogger.w(
                 tag,
                 "旧本地引用缺失时强制重绑失败，保留目录等待重试: " +
-                    "song=${song.name}, error=${error.message}",
-                error
+                    "id=${song.id}, channel=${song.channelId}, errorType=${error.javaClass.name}"
             )
             return null
         }
         val reference = audio
             ?.let(::playableReferenceForManagedAudio)
             ?.takeIf { candidate ->
-                ManagedDownloadReferenceLookup.inspect(context, candidate) ==
-                    ManagedDownloadReferenceLookup.Result.Present
+                val evidence = ManagedDownloadReferenceLookup.inspect(context, candidate)
+                diagnostics?.apply {
+                    refreshedReference = candidate
+                    refreshedEvidence = evidence
+                }
+                evidence == ManagedDownloadReferenceLookup.Result.Present
             }
+        diagnostics?.rebind = if (reference != null) "resolved" else "unresolved"
         if (reference != null) {
             requestBackgroundDownloadIndexRefresh(context)
             return ManagedDownloadStorage.toPlayableUri(reference) ?: reference
@@ -799,9 +998,12 @@ internal class AudioDownloadPlaybackCoordinator(
         context: Context,
         song: SongItem
     ): LocalPlaybackReferenceResolution {
-        resolveIndependentExternalImportPlayback(context, song)?.let { return it }
+        val diagnostics = PlaybackDiagnostics(tag, "download_indexed", song)
+        resolveIndependentExternalImportPlayback(context, song, diagnostics)?.let {
+            return diagnostics.finish(it, "independent_import")
+        }
         if (!mayHaveIndexedLocalDownload(context, song)) {
-            return LocalPlaybackReferenceResolution.NotIndexed
+            return diagnostics.finish(LocalPlaybackReferenceResolution.NotIndexed, "no_local_index")
         }
         // mayHaveIndexedLocalDownload 可能刚从 Room/磁盘快照恢复了条目。
         // catalog 仍未发布时也要把该持久化引用带入后续完整性门禁。
@@ -811,6 +1013,7 @@ internal class AudioDownloadPlaybackCoordinator(
             restorePersisted = false
         )
         val verifiedReference = getLocalPlaybackUri(context, song)
+        diagnostics.verifiedReference = verifiedReference
         val indexedReference = listOfNotNull(
             GlobalDownloadManager.findDownloadedSongCached(song)
                 ?.let(::resolveDownloadedSongPlaybackReference),
@@ -820,14 +1023,19 @@ internal class AudioDownloadPlaybackCoordinator(
         ).firstOrNull { reference ->
             isManagedPlaybackReferenceCompatibleWithConfiguredSaf(
                 reference = reference,
-                configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+                configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri().also {
+                    diagnostics.configuredDirectory = playbackLogReference(it)
+                }
             )
         }
+        diagnostics.rawReference = indexedReference
         val indexedEvidence = if (verifiedReference == null && indexedReference != null) {
+            diagnostics.rawProbeExecuted = true
             ManagedDownloadReferenceLookup.inspect(context, indexedReference)
         } else {
             null
         }
+        diagnostics.rawEvidence = indexedEvidence
         if (
             verifiedReference == null &&
             indexedReference != null &&
@@ -842,9 +1050,12 @@ internal class AudioDownloadPlaybackCoordinator(
             NPLogger.d(
                 tag,
                 "索引中的正式下载音频已确认可读，跳过旧完成状态门禁: " +
-                    "song=${song.name}, reference=$indexedReference"
+                    "song=${song.name}, reference=${playbackLogReference(indexedReference)}"
             )
-            return LocalPlaybackReferenceResolution.Playable(indexedReference)
+            return diagnostics.finish(
+                LocalPlaybackReferenceResolution.Playable(indexedReference),
+                "direct_present_indexed_reference"
+            )
         }
         val indexedReferenceIsExplicitlyIncomplete = if (
             verifiedReference == null &&
@@ -859,14 +1070,23 @@ internal class AudioDownloadPlaybackCoordinator(
         } else {
             false
         }
-        return selectIndexedLocalPlaybackResolution(
-            verifiedReference = verifiedReference,
-            indexedReference = indexedReference,
-            indexedEvidence = indexedEvidence,
-            indexedReferenceIsExplicitlyIncomplete = indexedReferenceIsExplicitlyIncomplete,
-            missingIsTransient = indexedReference?.let {
-                isRecentManagedPlaybackReference(song = song, reference = it)
-            } == true
+        diagnostics.explicitlyIncomplete = indexedReferenceIsExplicitlyIncomplete
+        return diagnostics.finish(
+            selectIndexedLocalPlaybackResolution(
+                verifiedReference = verifiedReference,
+                indexedReference = indexedReference,
+                indexedEvidence = indexedEvidence,
+                indexedReferenceIsExplicitlyIncomplete = indexedReferenceIsExplicitlyIncomplete,
+                missingIsTransient = indexedReference?.let {
+                    isRecentManagedPlaybackReference(song = song, reference = it)
+                } == true
+            ),
+            when {
+                verifiedReference != null -> "verified_managed_reference"
+                indexedReference == null -> "no_compatible_indexed_reference"
+                indexedReferenceIsExplicitlyIncomplete -> "managed_reference_incomplete"
+                else -> "indexed_${PlaybackDiagnostics.evidenceName(indexedEvidence)}"
+            }
         )
     }
 
@@ -1040,7 +1260,8 @@ internal class AudioDownloadPlaybackCoordinator(
         } ?: return null
         NPLogger.d(
             tag,
-            "下载索引未命中，回退下载目录缓存播放: song=${song.name}, reference=$catalogPlaybackUri"
+            "下载索引未命中，回退下载目录缓存播放: " +
+                "song=${song.name}, reference=${playbackLogReference(catalogPlaybackUri)}"
         )
         return catalogPlaybackUri
     }

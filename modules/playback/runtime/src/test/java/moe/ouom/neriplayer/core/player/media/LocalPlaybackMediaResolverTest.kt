@@ -6,6 +6,7 @@ import android.content.UriPermission
 import android.content.pm.PackageManager
 import android.content.res.AssetFileDescriptor
 import android.net.Uri
+import android.provider.DocumentsContract
 import java.nio.file.Files
 import moe.ouom.neriplayer.core.player.policy.storage.RestorableLocalMediaState
 import moe.ouom.neriplayer.data.model.SongItem
@@ -83,6 +84,110 @@ class LocalPlaybackMediaResolverTest {
             }
         } finally {
             present.delete()
+        }
+    }
+
+    @Test
+    fun `folder grant recovers a media store reference without global audio access`() {
+        assertFolderGrantFallback("primary:Music", readGranted = true, expectedFallback = true)
+    }
+
+    @Test
+    fun `folder fallback requires read access to the same volume and directory`() {
+        assertFolderGrantFallback("primary:Music", readGranted = false, expectedFallback = false)
+        assertFolderGrantFallback("1234-ABCD:Music", readGranted = true, expectedFallback = false)
+        assertFolderGrantFallback("primary:Music/AlbumOther", readGranted = true, expectedFallback = false)
+    }
+
+    @Test
+    fun `restoring a path only song keeps audio accessible through its folder grant`() {
+        assertFolderGrantFallback("primary:Music", readGranted = true, expectedFallback = true, mediaStoreReference = false)
+        assertFolderGrantFallback("primary:Music", readGranted = false, expectedFallback = false, mediaStoreReference = false)
+    }
+
+    @Test
+    fun `raw and file uri records recover through the same folder grant`() {
+        val path = "/storage/emulated/0/Music/Album/song.mp3"
+        listOf(path, "file://$path").forEach { reference ->
+            assertFolderGrantFallback("primary:Music", readGranted = true, expectedFallback = true, storedMediaReference = reference)
+        }
+    }
+
+    @Test
+    fun `missing paths and invalid references never manufacture a folder source`() {
+        val resolver = mock(android.content.ContentResolver::class.java)
+        val uri = mock(Uri::class.java)
+        val invalidFileUri = mock(Uri::class.java)
+        `when`(context.contentResolver).thenReturn(resolver)
+        `when`(uri.scheme).thenReturn("content")
+        `when`(uri.authority).thenReturn("media")
+        `when`(invalidFileUri.scheme).thenReturn("file")
+        val reference = "content://media/external/audio/media/7"
+        mockStatic(Uri::class.java).use { uris ->
+            uris.`when`<Uri> { Uri.parse(reference) }.thenReturn(uri)
+            uris.`when`<Uri> { Uri.parse("file:") }.thenReturn(invalidFileUri)
+            uris.`when`<Uri> { Uri.parse("invalid") }.thenThrow(IllegalArgumentException("bad uri"))
+            assertEquals(null, LocalPlaybackMediaResolver.source(song(), context))
+            assertEquals(reference, LocalPlaybackMediaResolver.source(song(mediaUri = reference), context))
+            assertEquals("invalid", LocalPlaybackMediaResolver.source(song(mediaUri = "invalid"), context))
+            assertEquals("file:", LocalPlaybackMediaResolver.source(song(mediaUri = "file:"), context))
+        }
+    }
+
+    private fun assertFolderGrantFallback(
+        treeId: String,
+        readGranted: Boolean,
+        expectedFallback: Boolean,
+        mediaStoreReference: Boolean = true,
+        storedMediaReference: String? = null
+    ) {
+        val reference = "content://media/external/audio/media/7"
+        val recoveredReference = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FAlbum%2Fsong.mp3"
+        val mediaUri = mock(Uri::class.java)
+        val treeUri = mock(Uri::class.java)
+        val documentUri = mock(Uri::class.java)
+        val resolver = mock(android.content.ContentResolver::class.java)
+        val permission = mock(UriPermission::class.java)
+        val descriptor = mock(AssetFileDescriptor::class.java)
+        val fileUri = mock(Uri::class.java)
+        `when`(context.contentResolver).thenReturn(resolver)
+        `when`(resolver.persistedUriPermissions).thenReturn(listOf(permission))
+        `when`(permission.uri).thenReturn(treeUri)
+        `when`(permission.isReadPermission).thenReturn(readGranted)
+        `when`(treeUri.authority).thenReturn("com.android.externalstorage.documents")
+        `when`(mediaUri.scheme).thenReturn("content")
+        `when`(documentUri.scheme).thenReturn("content")
+        `when`(documentUri.toString()).thenReturn(recoveredReference)
+        `when`(fileUri.scheme).thenReturn("file")
+        `when`(fileUri.path).thenReturn("/storage/emulated/0/Music/Album/song.mp3")
+        `when`(resolver.openAssetFileDescriptor(mediaUri, "r")).thenThrow(SecurityException("audio permission denied"))
+        `when`(resolver.openAssetFileDescriptor(documentUri, "r")).thenReturn(descriptor)
+
+        mockStatic(Uri::class.java).use { uris ->
+            mockStatic(DocumentsContract::class.java).use { documents ->
+                uris.`when`<Uri> { Uri.parse(reference) }.thenReturn(mediaUri)
+                uris.`when`<Uri> { Uri.parse(recoveredReference) }.thenReturn(documentUri)
+                uris.`when`<Uri> { Uri.parse("file:///storage/emulated/0/Music/Album/song.mp3") }.thenReturn(fileUri)
+                documents.`when`<String> { DocumentsContract.getTreeDocumentId(treeUri) }.thenReturn(treeId)
+                documents.`when`<Uri> {
+                    DocumentsContract.buildDocumentUriUsingTree(treeUri, "primary:Music/Album/song.mp3")
+                }.thenReturn(documentUri)
+
+                val song = song(
+                    localFilePath = "/storage/emulated/0/Music/Album/song.mp3".takeIf { storedMediaReference == null },
+                    mediaUri = storedMediaReference ?: reference.takeIf { mediaStoreReference }
+                )
+                assertEquals(
+                    if (expectedFallback) recoveredReference else song.mediaUri ?: song.localFilePath,
+                    LocalPlaybackMediaResolver.source(song, context)
+                )
+                if (!mediaStoreReference || storedMediaReference != null) {
+                    assertEquals(
+                        if (expectedFallback) listOf(song) else emptyList<SongItem>(),
+                        LocalPlaybackMediaResolver.sanitizeRestoredPlaylist(listOf(song), context)
+                    )
+                }
+            }
         }
     }
 

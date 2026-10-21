@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_M
 import moe.ouom.neriplayer.core.download.execution.retry.ARTIFACT_LEASE_CONTENDED_ERROR_CODE
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
@@ -71,6 +72,7 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
     manualRetry: Boolean = false
 ) {
     val appContext = context.applicationContext
+    if (LocalSongSupport.isLocalSong(song, appContext)) return
     // 请求创建时记录代次，清空开始后旧协程只能退出不能重新登记任务
     val songKey = song.stableKey()
     val capturedAdmissionTicket = requestedAdmissionTicket

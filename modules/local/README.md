@@ -25,9 +25,13 @@ Room 数据由 `:database` 保存，平台账号和缓存由 `:platform` 管理�
 
 本地编辑保留首次修改前的歌词和封面，恢复时优先使用持久化原始值，重扫不会用当前侧载内容覆盖原始值。未知内容与明确为空分开处理；缺失且为空的翻译、罗马字歌词不会创建额外文件，已有歌词文件按类型复用。
 
+文件夹扫描优先保存授权树内的音频引用，不把路径存在当作 MediaStore 读取授权。旧引用不可读时，播放器可在同一存储卷和已授权目录内恢复同一文件的 SAF 引用，编辑回写也复用这一来源。封面和元数据侧载共用恢复事务，失败或取消时回滚；回滚未完成时停止尝试其它音频别名。
+
 Cache cleanup preserves downloaded audio, lyrics, and covers. `ExtraCacheClearResult` distinguishes freed file bytes from reusable Room space; deleting records does not immediately shrink the database file. Existing directories, index filenames, and sync Worker class names must remain compatible across upgrades.
 
 Local edits preserve lyrics and artwork from before the first edit. Restoration prefers persisted originals, and rescanning keeps those originals separate from current sidecars. Unknown and explicitly empty values remain distinct; missing empty translation and romanization tracks do not create files, and existing lyric files are reused by type.
+
+Folder scans prefer audio references within the granted document tree; an existing path does not establish MediaStore read access. When an old reference is unreadable, playback can recover a SAF reference to the same file within a granted directory on the same volume, and metadata edits reuse that source. Artwork and metadata sidecars share a recovery transaction. Failure or cancellation rolls back the changes, and an unresolved rollback stops further audio alias attempts.
 
 大型扫描对仅有 content URI 的音频复用目录行和已知侧载索引，不逐首打开音频或查询文档。延后的身份信息在预览后台补全，提交导入前还会按有界批次核对所选 MP3 的原始身份，立即关闭预览也不会跳过这一步；歌词和封面基线保持原值。
 

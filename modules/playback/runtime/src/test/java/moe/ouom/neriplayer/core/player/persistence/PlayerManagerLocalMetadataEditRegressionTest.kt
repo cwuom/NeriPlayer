@@ -87,6 +87,7 @@ class PlayerManagerLocalMetadataEditRegressionTest {
     private lateinit var application: Application
     private var lyricProbeFailure: RuntimeException? = null
     private var lyricProbeCount = 0
+    private var denyLocalPlayback = false
 
     @Before
     fun setUp() {
@@ -97,7 +98,7 @@ class PlayerManagerLocalMetadataEditRegressionTest {
         `when`(repositories.playlistUsageRepo).thenReturn(mock(PlaylistUsageRepository::class.java))
         val downloads = mock(PlayerDownloadAccess::class.java, Answer { invocation ->
             when (invocation.method.name) {
-                "resolvePermittedLocalPlaybackUri" -> invocation.getArgument<String?>(2)
+                "resolvePermittedLocalPlaybackUri" -> if (denyLocalPlayback) null else invocation.getArgument<String?>(2)
                 "downloadedSongs" -> emptyList<SongItem>()
                 else -> Answers.RETURNS_DEFAULTS.answer(invocation)
             }
@@ -141,6 +142,28 @@ class PlayerManagerLocalMetadataEditRegressionTest {
     }
 
     @Test
+    fun `local metadata editing uses a readable source instead of an inaccessible media store reference`() = runTest {
+        val audio = temporaryFolder.newFile("editable-source.mp3").apply { writeText("audio") }
+        val song = localSong(audio.path).copy(mediaUri = "content://media/external/audio/media/7")
+
+        val writable = manager.resolveLocalSidecarWriteSong(song)
+
+        assertEquals(audio.absolutePath, writable?.mediaUri)
+        assertEquals(audio.absolutePath, writable?.localFilePath)
+        assertEquals(song.id, writable?.id)
+        assertEquals(song.localFileName, writable?.localFileName)
+    }
+
+    @Test
+    fun `local metadata editing keeps the completion gate for a recovered source`() = runTest {
+        val audio = temporaryFolder.newFile("blocked-editable-source.mp3").apply { writeText("audio") }
+        val song = localSong(audio.path).copy(mediaUri = "content://media/external/audio/media/7")
+        denyLocalPlayback = true
+
+        assertNull(manager.resolveLocalSidecarWriteSong(song))
+    }
+
+    @Test
     fun `later cover replacement preserves a no-artwork baseline loaded from metadata`() = runTest {
         val audio = temporaryFolder.newFile("song.mp3").apply { writeText("audio") }
         val editedCover = cover("edited.png")
@@ -156,12 +179,14 @@ class PlayerManagerLocalMetadataEditRegressionTest {
         )
         manager.publishCurrentQueue(listOf(song), 0)
 
-        assertTrue(manager.updateSongCustomInfoImpl(
-            originalSong = song,
-            customCoverUrl = newCover.toURI().toString(),
-            customName = null,
-            customArtist = null
-        ))
+        withRegularFileDescriptors {
+            assertTrue(manager.updateSongCustomInfoImpl(
+                originalSong = song,
+                customCoverUrl = newCover.toURI().toString(),
+                customName = null,
+                customArtist = null
+            ))
+        }
 
         assertEquals("", manager.currentPlaylist.single().originalCoverUrl)
         assertEquals("", JSONObject(File(audio.path + ".npmeta.json").readText()).getString("originalCoverUrl"))
@@ -552,7 +577,7 @@ class PlayerManagerLocalMetadataEditRegressionTest {
     )
 
     private suspend fun withConfirmedCoverAbsence(confirmed: Boolean, block: suspend () -> Unit) =
-        withContext(Dispatchers.IO) {
+        withRegularFileDescriptors {
             mockStatic(LocalCoverBaselineInspector::class.java, Answer { invocation ->
                 if (invocation.method.name == "hasConfirmedNoOriginalCover") confirmed
                 else invocation.callRealMethod()

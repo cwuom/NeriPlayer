@@ -190,6 +190,9 @@ internal fun LocalPlaylistDetailModernContent(
         var insertInProgress by remember(playlistId) { mutableStateOf(false) }
         var curationSongs by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
         val curatableTabSongs = remember(tabSongs) { tabSongs.filter { it.isLocalSong() } }
+        val selectedDownloadableSongs = remember(selectedSongsForAction) {
+            playlistDownloadCandidates(selectedSongsForAction)
+        }
         LaunchedEffect(selectionMode, canReorderCurrentSongs) {
             if (!selectionMode || !canReorderCurrentSongs) showInsertDialog = false
         }
@@ -562,24 +565,26 @@ internal fun LocalPlaylistDetailModernContent(
                                 }
                             },
                             actions = {
-                                HapticIconButton(
-                                    onClick = {
-                                        val selectedSongs = selectedSongsForAction
-                                        if (selectedSongs.isNotEmpty()) {
-                                            showDownloadManager = true
-                                            exitSelectionMode()
-                                            GlobalDownloadManager.startBatchDownload(
-                                                context,
-                                                selectedSongs
-                                            )
-                                        }
-                                    },
-                                    enabled = selectedSongsForAction.isNotEmpty() && !insertInProgress
-                                ) {
-                                    Icon(
-                                        Icons.Outlined.Download,
-                                        contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
-                                    )
+                                if (selectedDownloadableSongs.isNotEmpty()) {
+                                    HapticIconButton(
+                                        onClick = {
+                                            val selectedSongs = selectedDownloadableSongs
+                                            if (selectedSongs.isNotEmpty()) {
+                                                showDownloadManager = true
+                                                exitSelectionMode()
+                                                GlobalDownloadManager.startBatchDownload(
+                                                    context,
+                                                    selectedSongs
+                                                )
+                                            }
+                                        },
+                                        enabled = !insertInProgress
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.Download,
+                                            contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
+                                        )
+                                    }
                                 }
                                 HapticIconButton(
                                     onClick = {

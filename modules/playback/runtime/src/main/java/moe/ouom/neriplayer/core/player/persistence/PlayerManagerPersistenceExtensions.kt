@@ -58,7 +58,6 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
-import moe.ouom.neriplayer.data.local.media.isReadableLocalFile
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.lyrics.offset.rebaseLyricUserOffsetMs
@@ -1106,16 +1105,7 @@ internal suspend fun PlayerManager.writeLocalEditableMetadata(
 private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
     song: SongItem
 ): String? {
-    val mediaUri = song.mediaUri
-    val directReference = when {
-        mediaUri?.startsWith("content://", ignoreCase = true) == true -> mediaUri
-        song.localFilePath?.let(::File)?.let(::isReadableLocalFile) == true -> {
-            song.localFilePath
-        }
-        mediaUri?.startsWith("/", ignoreCase = false) == true &&
-            isReadableLocalFile(File(mediaUri)) -> mediaUri
-        else -> null
-    }
+    val directReference = localMediaSource(song)
     if (directReference != null) {
         return PlayerDependencies.downloads.resolvePermittedLocalPlaybackUri(
             context = application,
@@ -1406,17 +1396,6 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                     )
                     return@runSongMetadataMutation false
                 }
-                val coverSidecarWritten = if (shouldWriteCoverToAudio) {
-                    LocalMediaSupport.writeLocalCoverSidecar(
-                        context = application,
-                        song = sidecarSong,
-                        coverReference = coverWriteReference,
-                        writeCover = true,
-                        stableIdentityKey = sidecarSong.stableKey()
-                    )
-                } else {
-                    true
-                }
                 val metadataSidecarWritten = LocalMediaSupport.writeLocalMetadataSidecar(
                     context = application,
                     song = sidecarSong,
@@ -1425,11 +1404,10 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                     clearCoverReference = shouldWriteCoverToAudio &&
                         coverWriteReference.isNullOrBlank()
                 )
-                if (!coverSidecarWritten || !metadataSidecarWritten) {
+                if (!metadataSidecarWritten) {
                     NPLogger.w(
                         "PlayerManager",
-                        "本地侧载元数据写入未完成: cover=$coverSidecarWritten, " +
-                            "metadata=$metadataSidecarWritten"
+                        "本地侧载元数据写入未完成"
                     )
                     showLocalEditableMetadataWriteFeedback(
                         outcome = LocalMediaMetadataWriteOutcome.FAILED,

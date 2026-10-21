@@ -67,6 +67,7 @@ import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildTok
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexShardWriteResult
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryIndexEntry
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.playbackLogReference
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.identity.remoteDownloadIdentityOrNull
@@ -78,14 +79,16 @@ import java.util.Locale
 
 internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongImpl(context: Context, song: SongItem): Boolean {
     if (hasManagedDownloadIdentityHint(song)) {
-        return true
+        return traceManagedSongClassification(song, "slow", true, "identity_hint")
     }
     val defaultRoot = ManagedDownloadRootResolver.defaultRootDirectory(context)
-    if (song.independentExternalImportReference(defaultRoot) != null) {
-        return false
+    val independentImportReference = song.independentExternalImportReference(defaultRoot)
+    if (independentImportReference != null) {
+        return traceManagedSongClassification(song, "slow", false, "import_copy", independentImportReference)
     }
-    if (peekDownloadedAudio(song) != null) {
-        return true
+    val cachedAudio = peekDownloadedAudio(song)
+    if (cachedAudio != null) {
+        return traceManagedSongClassification(song, "slow", true, "catalog_snapshot", cachedAudio.reference)
     }
     val configuredRoot = defaultRoot.absolutePath
     val directPaths = listOfNotNull(song.localFilePath, song.mediaUri)
@@ -98,12 +101,13 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongImpl(context: Con
                 else -> null
             }
         }
-    if (directPaths.any { directPath ->
-            isPathInside(directPath, configuredRoot) ||
-                isPathInside(directPath, LEGACY_DOWNLOAD_ROOT_PATH)
+    for (directPath in directPaths) {
+        if (isPathInside(directPath, configuredRoot)) {
+            return traceManagedSongClassification(song, "slow", true, "private_path", directPath)
         }
-    ) {
-        return true
+        if (isPathInside(directPath, LEGACY_DOWNLOAD_ROOT_PATH)) {
+            return traceManagedSongClassification(song, "slow", true, "historical_root", directPath)
+        }
     }
     val configuredTree = settings.configuredDirectoryUri
         ?.takeIf(String::isNotBlank)
@@ -120,37 +124,49 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongImpl(context: Con
             treeDocumentId = treeDocumentId
         )
     ) {
-        return true
+        return traceManagedSongClassification(
+            song,
+            "slow",
+            true,
+            "media_store",
+            songReferences.firstOrNull { it.authority.equals("media", ignoreCase = true) }?.toString()
+        )
     }
-    if (songReferences.any { songReference ->
-            val documentId = runCatching {
-                DocumentsContract.getDocumentId(songReference)
-            }.getOrNull()
-            documentId != null && isKnownManagedDownloadDocumentId(
-                documentId = documentId,
-                treeDocumentId = treeDocumentId
-            )
-        }
-    ) {
-        return true
+    val currentTreeReference = songReferences.firstOrNull { songReference ->
+        val documentId = runCatching {
+            DocumentsContract.getDocumentId(songReference)
+        }.getOrNull()
+        documentId != null && isKnownManagedDownloadDocumentId(
+            documentId = documentId,
+            treeDocumentId = treeDocumentId
+        )
+    }
+    if (currentTreeReference != null) {
+        return traceManagedSongClassification(song, "slow", true, "current_tree", currentTreeReference.toString())
     }
     if (configuredTree != null && songReferences.isNotEmpty()) {
         if (!treeDocumentId.isNullOrBlank()) {
             val treeAuthority = configuredTree.authority
-            if (songReferences.any { songReference ->
-                    songReference.authority == treeAuthority &&
-                        isDocumentWithinManagedTree(
-                            context = context,
-                            songReference = songReference,
-                            treeDocumentId = treeDocumentId
-                        )
-                }
-            ) {
-                return true
+            val providerDocumentReference = songReferences.firstOrNull { songReference ->
+                songReference.authority == treeAuthority &&
+                    isDocumentWithinManagedTree(
+                        context = context,
+                        songReference = songReference,
+                        treeDocumentId = treeDocumentId
+                    )
+            }
+            if (providerDocumentReference != null) {
+                return traceManagedSongClassification(
+                    song,
+                    "slow",
+                    true,
+                    "provider_document_path",
+                    providerDocumentReference.toString()
+                )
             }
         }
     }
-    return false
+    return traceManagedSongClassification(song, "slow", false, "unmatched")
 }
 
 internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongFastImpl(
@@ -158,28 +174,38 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongFastImpl(
     song: SongItem
 ): Boolean {
     if (!LocalSongSupport.isLocalSong(song, null)) {
-        return false
+        return traceManagedSongClassification(song, "fast", false, "not_local")
     }
     if (hasManagedDownloadIdentityHint(song)) {
-        return true
+        return traceManagedSongClassification(song, "fast", true, "identity_hint")
     }
     val defaultRoot = runCatching {
         ManagedDownloadRootResolver.defaultRootDirectory(context)
     }.getOrNull()
-    if (defaultRoot != null && song.independentExternalImportReference(defaultRoot) != null) {
-        return false
+    val independentImportReference = defaultRoot?.let(song::independentExternalImportReference)
+    if (independentImportReference != null) {
+        return traceManagedSongClassification(song, "fast", false, "import_copy", independentImportReference)
     }
-    if (peekDownloadedAudio(song) != null) {
-        return true
+    val cachedAudio = peekDownloadedAudio(song)
+    if (cachedAudio != null) {
+        return traceManagedSongClassification(song, "fast", true, "catalog_snapshot", cachedAudio.reference)
     }
 
     val configuredRoot = settings.configuredDirectoryUri
         ?.takeIf(String::isNotBlank)
         ?.let { runCatching { it.toUri() }.getOrNull() }
     val songTree = listOfNotNull(song.mediaUri, song.localFilePath)
-        .firstNotNullOfOrNull(::managedDownloadTreeUri)
+        .firstNotNullOfOrNull { reference ->
+            managedDownloadTreeUri(reference)?.let { tree -> reference to tree }
+        }
     if (configuredRoot != null && songTree != null) {
-        return areEquivalentDirectoryUris(songTree.toString(), configuredRoot.toString())
+        return traceManagedSongClassification(
+            song,
+            "fast",
+            areEquivalentDirectoryUris(songTree.second.toString(), configuredRoot.toString()),
+            "current_tree",
+            songTree.first
+        )
     }
 
     val directPaths = listOfNotNull(song.localFilePath, song.mediaUri)
@@ -192,10 +218,36 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongFastImpl(
                 else -> null
             }
         }
-    return directPaths.any { path ->
-        (defaultRoot != null && isPathInside(path, defaultRoot.absolutePath)) ||
-            isPathInside(path, LEGACY_DOWNLOAD_ROOT_PATH)
+    for (path in directPaths) {
+        if (defaultRoot != null && isPathInside(path, defaultRoot.absolutePath)) {
+            return traceManagedSongClassification(song, "fast", true, "private_path", path)
+        }
+        if (isPathInside(path, LEGACY_DOWNLOAD_ROOT_PATH)) {
+            return traceManagedSongClassification(song, "fast", true, "historical_root", path)
+        }
     }
+    return traceManagedSongClassification(song, "fast", false, "unmatched")
+}
+
+private fun ManagedDownloadStorage.traceManagedSongClassification(
+    song: SongItem,
+    mode: String,
+    result: Boolean,
+    reason: String,
+    reference: String? = song.localFilePath ?: song.mediaUri
+): Boolean {
+    val channel = song.channelId?.filterNot { it.isISOControl() }?.take(80) ?: "none"
+    NPLogger.d(
+        TAG,
+        "LocalPlaybackTrace stage=managed_classification mode=$mode " +
+            "songId=${song.id} channel=$channel " +
+            "audioIdPresent=${!song.audioId.isNullOrBlank()} " +
+            "sourceStableKeyPresent=${!song.sourceStableKey.isNullOrBlank()} " +
+            "result=$result reason=$reason " +
+            "configuredRoot=${playbackLogReference(settings.configuredDirectoryUri)} " +
+            "reference=${playbackLogReference(reference)}"
+    )
+    return result
 }
 
 internal fun ManagedDownloadStorage.resolveIndependentExternalImportReferenceImpl(
