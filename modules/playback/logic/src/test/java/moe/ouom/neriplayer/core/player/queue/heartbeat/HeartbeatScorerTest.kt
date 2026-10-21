@@ -163,6 +163,58 @@ class HeartbeatScorerTest {
         )
     }
 
+    // ---- 跳过次数降权（任务书 §七 第三阶段）----
+
+    @Test
+    fun `skip count lowers the score`() {
+        val never = candidate(song(2, "没跳过"), tier = HeartbeatCandidateTier.FAVORITE)
+        val skipped = candidate(song(3, "被跳过几次"), tier = HeartbeatCandidateTier.FAVORITE)
+            .copy(skipCount = 3)
+
+        assertTrue(
+            "跳过次数越多分数越低",
+            HeartbeatScorer.score(never, current) > HeartbeatScorer.score(skipped, current),
+        )
+    }
+
+    @Test
+    fun `skip count joins the repeat penalty curve`() {
+        // 跳过与「播过一遍」共用同一条衰减曲线，不额外加权：
+        // 跳 2 次的效果应与播过 2 次完全相同
+        val skippedTwice = candidate(song(2, "跳过两次"), tier = HeartbeatCandidateTier.FAVORITE)
+            .copy(skipCount = 2)
+        val playedTwice = candidate(song(3, "播过两次"), tier = HeartbeatCandidateTier.FAVORITE)
+            .copy(recentPlayCount = 2)
+
+        assertEquals(
+            HeartbeatScorer.score(playedTwice, current),
+            HeartbeatScorer.score(skippedTwice, current),
+            0.0001,
+        )
+    }
+
+    @Test
+    fun `penalty repeat count adds skips on top of play count`() {
+        val candidate = HeartbeatCandidate(
+            song = song(2, "播过两次又跳过三次"),
+            tier = HeartbeatCandidateTier.FAVORITE,
+            recentPlayCount = 2,
+            skipCount = 3,
+        )
+
+        assertEquals(5, candidate.penaltyRepeatCount)
+    }
+
+    @Test
+    fun `skipped candidate still selectable when nothing else exists`() {
+        // 跳过不是硬排除：整池都被跳过时仍要能选出一首，否则心动模式会空转
+        val pool = poolOf(
+            candidate(song(2, "跳过一次"), tier = HeartbeatCandidateTier.FAVORITE).copy(skipCount = 1),
+        )
+
+        assertEquals(2L, HeartbeatScorer.pickBest(pool, current, emptyList())?.id)
+    }
+
     // ---- 失败曲目排除（任务书 §八）----
 
     @Test
