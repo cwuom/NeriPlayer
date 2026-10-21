@@ -270,8 +270,12 @@ class NeteaseCookieRepository(private val context: Context) {
             return NeteaseAuthBundle.fromJson(raw)
         }
 
-        // 兼容存储的空墓碑同样代表退出登录，不能再从旧存储恢复账号
-        if (AccountPreferencesOpener.existing(context, NETEASE_AUTH_PREFS) != null) {
+        // 仅新建兼容存储允许迁移，旧的空墓碑仍代表退出登录
+        val compatibilityPrefs = AccountPreferencesOpener.existing(context, NETEASE_AUTH_PREFS)
+        if (compatibilityPrefs != null && !runCatching {
+                compatibilityPrefs.getBoolean(AccountPreferencesOpener.LEGACY_MIGRATION_PENDING, false)
+            }.getOrDefault(false)
+        ) {
             return NeteaseAuthBundle()
         }
         return migrateLegacyCookies() ?: NeteaseAuthBundle()
@@ -340,6 +344,7 @@ class NeteaseCookieRepository(private val context: Context) {
         if (!isAuthStoragePersistent) return false
         // ktx edit 不返回 commit 结果，只有落盘成功才发布新的账号状态
         encryptedPrefs.edit().apply {
+            remove(AccountPreferencesOpener.LEGACY_MIGRATION_PENDING)
             if (bundle == null) remove(KEY_NETEASE_AUTH_BUNDLE)
             else putString(KEY_NETEASE_AUTH_BUNDLE, bundle.toJson())
         }.commit()

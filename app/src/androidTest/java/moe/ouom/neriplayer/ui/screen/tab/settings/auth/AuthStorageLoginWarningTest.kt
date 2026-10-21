@@ -5,14 +5,20 @@ import android.util.Log
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.closeSoftKeyboard
+import androidx.test.espresso.matcher.RootMatchers.isDialog
+import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -98,6 +104,7 @@ class AuthStorageLoginWarningTest {
     fun compatibilityCookieImportWaitsForConfirmation() {
         render(requiresWarning = true, initialTab = 1)
         enterCookie()
+        assertSaveTargetDisplayed("compat-cookie-before-first-save")
         action(string(CoreCommonR.string.login_save_cookie)).performNativeClick()
         awaitWarning()
         composeRule.runOnIdle { assertTrue(savedCookies.isEmpty()) }
@@ -150,11 +157,17 @@ class AuthStorageLoginWarningTest {
 
     @Test
     fun failedImportAllowsAnExplicitRetry() {
-        render(requiresWarning = false, initialTab = 1, importFailureMessage = "Synthetic import failure")
+        val failureMessage = "Synthetic import failure"
+        render(requiresWarning = false, initialTab = 1, importFailureMessage = failureMessage)
         enterCookie()
         action(string(CoreCommonR.string.login_save_cookie)).performClick()
+        composeRule.onNodeWithText(failureMessage).assertIsDisplayed()
+        action(string(CoreCommonR.string.login_save_cookie)).assertIsEnabled()
+        composeRule.runOnIdle { assertEquals(listOf(SYNTHETIC_COOKIE), savedCookies) }
+        composeRule.mainClock.advanceTimeBy(500L)
         composeRule.waitForIdle()
-        action(string(CoreCommonR.string.login_save_cookie)).performClick()
+        assertSaveTargetDisplayed("retry-before-second-save")
+        action(string(CoreCommonR.string.login_save_cookie)).assertIsEnabled().performNativeClick()
         composeRule.runOnIdle { assertEquals(listOf(SYNTHETIC_COOKIE, SYNTHETIC_COOKIE), savedCookies) }
     }
 
@@ -235,6 +248,13 @@ class AuthStorageLoginWarningTest {
 
     private fun enterCookie() {
         composeRule.onNodeWithText(cookieLabel).performTextInput(SYNTHETIC_COOKIE)
+        onView(isRoot()).inRoot(isDialog()).perform(closeSoftKeyboard())
+        composeRule.mainClock.advanceTimeBy(500L)
+        composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            action(string(CoreCommonR.string.login_save_cookie)).isDisplayed()
+        }
+        action(string(CoreCommonR.string.login_save_cookie)).assertIsDisplayed()
     }
 
     private fun awaitWarning() {
@@ -244,6 +264,19 @@ class AuthStorageLoginWarningTest {
     }
 
     private fun action(label: String) = composeRule.onNode(hasText(label) and hasClickAction())
+
+    private fun assertSaveTargetDisplayed(stage: String) {
+        capture(stage)
+        val target = action(string(CoreCommonR.string.login_save_cookie))
+        val node = target.fetchSemanticsNode()
+        val position = node.positionOnScreen
+        val size = node.size
+        Log.i(
+            "AuthStorageWarning",
+            "$stage savePosition=$position saveSize=$size center=(${position.x + size.width / 2f}, ${position.y + size.height / 2f})"
+        )
+        target.assertIsDisplayed()
+    }
 
     private fun string(resourceId: Int): String = composeRule.activity.getString(resourceId)
 

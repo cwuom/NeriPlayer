@@ -12,6 +12,10 @@ Sources are in `src/main/java/moe/ouom/neriplayer/common`, with resources in `sr
 
 Account credentials use `AccountPreferencesOpener`. When system encryption is unavailable, compatibility storage uses AES-GCM with a random local key; both key and ciphertext stay in `noBackupFilesDir`, without Keystore hardware protection. Existing compatibility storage, including an empty logout state, takes precedence over old credentials. Failed persistence falls back to memory so login can be blocked. Sync credentials retain the existing `SecurePreferencesOpener` recovery policy.
 
+兼容存储在第一次实际提交时才创建正式文件，打开失败或取消登录不会留下空文件遮挡恢复后的系统存储。新建兼容存储携带待迁移标记，只有这类空存储允许读取旧版 Cookie。保存或退出在同一次提交中移除标记，已有的空退出状态保持有效。首次创建使用独立的初始化标记，中断后可沿用原密钥重试；已有密文损坏、缺少密钥或无初始化标记的残缺文件仍会被保留并拒绝打开。
+
+Compatibility files are created only on the first actual commit, so opening failures or cancelled sign-ins cannot leave empty files masking recovered system storage. New compatibility storage records pending legacy migration, allowing old cookies to be read only for newly initialized empty storage. Saving or signing out removes the marker in the same commit, preserving existing empty logout states. A separate initialization marker permits interrupted creation to resume with its original key. Damaged ciphertext, missing keys, and incomplete files without an initialization marker remain preserved and rejected.
+
 ## 测试 / Tests
 
 ```bash

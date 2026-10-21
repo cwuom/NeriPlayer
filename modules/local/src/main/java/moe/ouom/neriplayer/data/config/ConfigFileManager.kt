@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.config
 
 import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
+import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
 import moe.ouom.neriplayer.data.model.config.AppConfigBackup
 import moe.ouom.neriplayer.data.model.config.AppConfigImportResult
 import moe.ouom.neriplayer.data.model.config.LanguageConfigSnapshot
@@ -115,13 +116,26 @@ class ConfigFileManager(
         }
     }
 
-    suspend fun importConfig(uri: Uri): Result<AppConfigImportResult> = withContext(ioDispatcher) {
+    suspend fun importConfig(
+        uri: Uri,
+        confirmCompatibilityStorage: suspend () -> Boolean = { false }
+    ): Result<AppConfigImportResult> = withContext(ioDispatcher) {
         try {
             val raw = LimitedTextReader.readUtf8(context, uri, MAX_CONFIG_IMPORT_BYTES)
             val decoded = AppConfigBackupCodec.decodeForImport(raw)
             val payload = decoded.payload
             val sections = decoded.sections
-            SyncCoordinator.withExclusive { applyImport(payload, sections) }
+            val needsConfirmation = authImportRequiresConfirmation(payload, sections)
+            if (needsConfirmation && !confirmCompatibilityStorage()) {
+                return@withContext Result.failure(ConfigImportCancelledException())
+            }
+            currentCoroutineContext().ensureActive()
+            SyncCoordinator.withExclusive {
+                check(!authImportRequiresConfirmation(payload, sections) || needsConfirmation) {
+                    context.getString(CoreCommonR.string.auth_storage_compatibility_message)
+                }
+                applyImport(payload, sections, allowCompatibilityStorage = needsConfirmation)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -132,9 +146,39 @@ class ConfigFileManager(
 
     fun generateBackupFileName(): String = AppConfigBackupCodec.generateFileName()
 
-    private suspend fun applyImport(
+    private fun authImportRequiresConfirmation(
         payload: AppConfigBackup,
         sections: AppConfigBackupSections
+    ): Boolean {
+        var requiresConfirmation = false
+        if (sections.neteaseAuth) {
+            check(neteaseRepository.isAuthStoragePersistent) {
+                context.getString(CoreCommonR.string.auth_storage_unavailable_message)
+            }
+            requiresConfirmation = payload.neteaseAuth.hasData() && neteaseRepository.requiresCompatibilityStorageWarning
+        }
+        if (sections.biliAuth) {
+            check(biliRepository.isAuthStoragePersistent) {
+                context.getString(CoreCommonR.string.auth_storage_unavailable_message)
+            }
+            requiresConfirmation = requiresConfirmation ||
+                (payload.biliAuth.hasData() && biliRepository.requiresCompatibilityStorageWarning)
+        }
+        if (sections.youTubeAuth) {
+            check(youTubeRepository.isAuthStoragePersistent) {
+                context.getString(CoreCommonR.string.auth_storage_unavailable_message)
+            }
+            requiresConfirmation = requiresConfirmation ||
+                (payload.youTubeAuth.toAuthBundle().hasSavedAuthMaterial() &&
+                    youTubeRepository.requiresCompatibilityStorageWarning)
+        }
+        return requiresConfirmation
+    }
+
+    private suspend fun applyImport(
+        payload: AppConfigBackup,
+        sections: AppConfigBackupSections,
+        allowCompatibilityStorage: Boolean
     ): Result<AppConfigImportResult> {
         if (sections.touchesSyncTargets) {
             registerStartupSyncTargets()
@@ -145,7 +189,7 @@ class ConfigFileManager(
             listenTogetherRepository.restore(payload.listenTogether)
         }
         val languageChanged = restoreLanguageSection(payload, sections)
-        val restoredAuthCount = restoreAuth(payload, sections, warnings)
+        val restoredAuthCount = restoreAuth(payload, sections, warnings, allowCompatibilityStorage)
         restoreSyncSections(payload, sections)
 
         return Result.success(
@@ -231,11 +275,12 @@ class ConfigFileManager(
     private fun restoreAuth(
         payload: AppConfigBackup,
         sections: AppConfigBackupSections,
-        warnings: MutableList<String>
+        warnings: MutableList<String>,
+        allowCompatibilityStorage: Boolean
     ): Int = listOf(
         sections.neteaseAuth && restoreNeteaseAuth(payload.neteaseAuth, warnings),
         sections.biliAuth && restoreBiliAuth(payload.biliAuth),
-        sections.youTubeAuth && restoreYouTubeAuth(payload.youTubeAuth)
+        sections.youTubeAuth && restoreYouTubeAuth(payload.youTubeAuth, allowCompatibilityStorage)
     ).count { it }
 
     private fun restoreNeteaseAuth(snapshot: SavedCookieConfigSnapshot, warnings: MutableList<String>): Boolean {
@@ -262,12 +307,15 @@ class ConfigFileManager(
         return true
     }
 
-    private fun restoreYouTubeAuth(snapshot: YouTubeAuthConfigSnapshot): Boolean {
+    private fun restoreYouTubeAuth(
+        snapshot: YouTubeAuthConfigSnapshot,
+        allowCompatibilityStorage: Boolean
+    ): Boolean {
         if (!snapshot.hasData()) {
             youTubeRepository.clear()
             return false
         }
-        youTubeRepository.saveAuth(snapshot.toAuthBundle())
+        youTubeRepository.saveAuth(snapshot.toAuthBundle(), allowCompatibilityStorage)
         return true
     }
 
@@ -289,6 +337,8 @@ class ConfigFileManager(
     }
 
 }
+
+class ConfigImportCancelledException : Exception()
 
 internal fun Preferences.toTypedPreferenceSnapshot(): TypedPreferenceSnapshot {
     val values = asMap()

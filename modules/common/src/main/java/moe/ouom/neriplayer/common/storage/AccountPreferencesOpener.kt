@@ -6,6 +6,9 @@ import java.io.File
 
 /** 账户在系统密钥不可用时使用本机软件加密，兼容文件一旦存在便优先读取，防止旧凭据复活 */
 object AccountPreferencesOpener {
+    /** 新兼容文件保留旧凭据迁移机会，历史无标记空文件仍表示退出 */
+    const val LEGACY_MIGRATION_PENDING = "__neriplayer_legacy_migration_pending"
+
     private val lock = Any()
     private val sharedByPath = HashMap<String, SharedPreferences>()
 
@@ -23,6 +26,7 @@ object AccountPreferencesOpener {
                 create = create,
                 delete = delete,
                 rebuildCorrupted = false,
+                retryVolatile = true,
                 report = report
             )
         } catch (_: Exception) {
@@ -37,9 +41,8 @@ object AccountPreferencesOpener {
         report: (SecurePreferencesEvent, Throwable) -> Unit = { _, _ -> }
     ): SharedPreferences = synchronized(lock) {
         val storage = storage(context, name)
-        sharedByPath.getOrPut(storage.dataFile.absolutePath) {
-            openCompatibility(storage, report)
-        }
+        sharedByPath[storage.dataFile.absolutePath]?.takeIf(SecurePreferencesOpener::isPersistent)
+            ?: openCompatibility(storage, report).also { sharedByPath[storage.dataFile.absolutePath] = it }
     }
 
     fun existing(
@@ -48,8 +51,11 @@ object AccountPreferencesOpener {
         report: (SecurePreferencesEvent, Throwable) -> Unit = { _, _ -> }
     ): SharedPreferences? = synchronized(lock) {
         val storage = storage(context, name)
-        sharedByPath[storage.dataFile.absolutePath]?.let { return@synchronized it }
-        if (!storage.hasArtifacts()) return@synchronized null
+        if (!storage.hasArtifacts() || storage.hasUnpublishedInitialization()) return@synchronized null
+        if (storage.dataFile.exists()) {
+            sharedByPath[storage.dataFile.absolutePath]?.takeIf(SecurePreferencesOpener::isPersistent)
+                ?.let { return@synchronized it }
+        }
         openCompatibility(storage, report).also { sharedByPath[storage.dataFile.absolutePath] = it }
     }
 
@@ -63,7 +69,7 @@ object AccountPreferencesOpener {
         storage: CompatibilityPreferencesFile,
         report: (SecurePreferencesEvent, Throwable) -> Unit
     ): SharedPreferences = try {
-        storage.open()
+        storage.openDeferred()
     } catch (error: Exception) {
         report(SecurePreferencesEvent.OPEN_FAILED, error)
         report(SecurePreferencesEvent.VOLATILE_FALLBACK, error)

@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.platform.youtube.auth
  */
 
 import moe.ouom.neriplayer.platform.youtube.api.auth.fromJson
+import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
 import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import moe.ouom.neriplayer.platform.youtube.api.auth.toJson
 import android.annotation.SuppressLint
@@ -86,7 +87,15 @@ class YouTubeAuthRepository(private val context: Context) : YouTubeAuthProvider 
     ): YouTubeAuthHealth = evaluateYouTubeAuthHealth(_authFlow.value, now)
 
     fun saveAuth(bundle: YouTubeAuthBundle) {
+        saveAuth(bundle, allowCompatibilityStorage = true)
+    }
+
+    fun saveAuth(bundle: YouTubeAuthBundle, allowCompatibilityStorage: Boolean) {
         synchronized(authMutationLock) {
+            // 与写入共用账号锁，避免预检查后退出操作切换到兼容存储
+            if (!allowCompatibilityStorage && requiresCompatibilityStorageWarning && bundle.hasSavedAuthMaterial()) {
+                throw IOException("YouTube compatibility account storage requires confirmation")
+            }
             saveAuthLocked(bundle)
         }
     }

@@ -165,7 +165,10 @@ class AccountPreferencesOpenerTest {
                 preferences
             } }).map { it.get() }
             opened.forEach { assertSame(opened.first(), it) }
-            assertEquals(20, file(context).open().all.size)
+            val persisted = file(context).open()
+            assertEquals((0 until 20).map { "key-$it" }.toSet(),
+                persisted.all.keys - AccountPreferencesOpener.LEGACY_MIGRATION_PENDING)
+            assertTrue(persisted.getBoolean(AccountPreferencesOpener.LEGACY_MIGRATION_PENDING, false))
             val source = mutableSetOf("one")
             assertTrue(opened.first().edit().putStringSet("set", source).commit())
             source += "two"

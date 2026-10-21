@@ -22,33 +22,93 @@ internal class CompatibilityPreferencesFile(private val directory: File, name: S
         .digest(name.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
     val dataFile = File(directory, "$identifier.prefs")
     val keyFile = File(directory, "$identifier.key")
+    private val initializationFile = File(directory, "$identifier.initializing")
     private lateinit var key: SecretKeySpec
+    private var initializationPending = false
 
-    fun hasArtifacts(): Boolean = dataFile.exists() || keyFile.exists()
+    fun hasArtifacts(): Boolean = dataFile.exists() || keyFile.exists() || initializationFile.exists()
+
+    fun hasUnpublishedInitialization(): Boolean {
+        if (dataFile.exists() || !initializationFile.exists()) return false
+        return try {
+            val encoded = readKey(initializationFile)
+            !keyFile.exists() || MessageDigest.isEqual(encoded, readKey(keyFile))
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     fun open(): SharedPreferences {
-        if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Cannot create account storage")
-        val existing = hasArtifacts()
-        key = if (existing) {
-            if (!dataFile.isFile || !keyFile.isFile) throw IOException("Incomplete account storage")
-            if (keyFile.length() != KEY_BYTES.toLong()) throw IOException("Invalid account storage key")
-            val encoded = keyFile.readBytes()
-            if (encoded.size != KEY_BYTES) throw IOException("Invalid account storage key")
-            SecretKeySpec(encoded, "AES")
+        ensureDirectory()
+        val values = if (initializationFile.exists() || !hasArtifacts()) {
+            initialize(initialValues())
         } else {
-            val encoded = ByteArray(KEY_BYTES).also { SecureRandom().nextBytes(it) }
-            if (!keyFile.createNewFile()) throw IOException("Account storage key already exists")
-            FileOutputStream(keyFile).use { output ->
-                output.write(encoded)
-                output.fd.sync()
-            }
-            SecretKeySpec(encoded, "AES")
+            if (!dataFile.isFile || !keyFile.isFile) throw IOException("Incomplete account storage")
+            key = SecretKeySpec(readKey(keyFile), "AES")
+            read()
         }
-        val values = if (existing) read() else emptyMap<String?, Any>().also { write(it) }
+        initializationPending = false
         return SoftwareEncryptedSharedPreferences(this, values)
     }
 
+    fun openDeferred(): SharedPreferences {
+        if (hasArtifacts() && !hasUnpublishedInitialization()) return open()
+        ensureDirectory()
+        val probe = File.createTempFile(".$identifier.", ".probe", directory)
+        try {
+            FileOutputStream(probe).use { it.fd.sync() }
+        } finally {
+            if (!probe.delete()) throw IOException("Cannot remove account storage probe")
+        }
+        initializationPending = true
+        return SoftwareEncryptedSharedPreferences(this, initialValues())
+    }
+
+    private fun ensureDirectory() {
+        if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Cannot create account storage")
+    }
+
+    private fun initialValues(): Map<String?, Any> =
+        mapOf(AccountPreferencesOpener.LEGACY_MIGRATION_PENDING to true)
+
+    private fun initialize(initialValues: Map<String?, Any>): Map<String?, Any> {
+        if (!initializationFile.exists()) {
+            writeAtomically(initializationFile, ByteArray(KEY_BYTES).also { SecureRandom().nextBytes(it) })
+        }
+        val encoded = readKey(initializationFile)
+        if (dataFile.exists() && !keyFile.isFile) throw IOException("Incomplete account storage")
+        if (!keyFile.exists()) writeAtomically(keyFile, encoded)
+        if (!MessageDigest.isEqual(encoded, readKey(keyFile))) throw IOException("Account storage key changed")
+        key = SecretKeySpec(encoded, "AES")
+        val values = if (dataFile.exists()) {
+            read()
+        } else {
+            writeReady(initialValues)
+            initialValues
+        }
+        // 已发布的数据只认证并保留，避免把中断前成功写入的凭据重置为空
+        if (!initializationFile.delete()) throw IOException("Cannot finish account storage initialization")
+        return values
+    }
+
+    private fun readKey(file: File): ByteArray {
+        if (!file.isFile || file.length() != KEY_BYTES.toLong()) throw IOException("Invalid account storage key")
+        return file.readBytes().also {
+            if (it.size != KEY_BYTES) throw IOException("Invalid account storage key")
+        }
+    }
+
     fun write(values: Map<String?, Any>) {
+        if (initializationPending) {
+            if (hasArtifacts() && !initializationFile.exists()) throw IOException("Account storage appeared before first write")
+            if (initialize(values) != values) throw IOException("Account storage changed during initialization")
+            initializationPending = false
+            return
+        }
+        writeReady(values)
+    }
+
+    private fun writeReady(values: Map<String?, Any>) {
         if (!keyFile.isFile || keyFile.length() != KEY_BYTES.toLong() ||
             !MessageDigest.isEqual(key.encoded, keyFile.readBytes())
         ) throw IOException("Account storage key changed")
@@ -58,16 +118,21 @@ internal class CompatibilityPreferencesFile(private val directory: File, name: S
         val cipher = cipher(Cipher.ENCRYPT_MODE, nonce)
         val encrypted = HEADER + nonce + cipher.doFinal(encode(values))
         if (encrypted.size > MAX_FILE_BYTES) throw IOException("Account storage is too large")
+        writeAtomically(dataFile, encrypted)
+    }
+
+    private fun writeAtomically(destination: File, bytes: ByteArray) {
         val pending = File.createTempFile(".$identifier.", ".pending", directory)
         try {
             FileOutputStream(pending).use { output ->
-                output.write(encrypted)
+                output.write(bytes)
                 output.fd.sync()
             }
             try {
-                Files.move(pending.toPath(), dataFile.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(pending.toPath(), dataFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                Files.move(pending.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (error: AtomicMoveNotSupportedException) {
+                if (destination != dataFile || initializationFile.exists()) throw error
+                Files.move(pending.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
         } finally {
             if (pending.exists()) pending.delete()

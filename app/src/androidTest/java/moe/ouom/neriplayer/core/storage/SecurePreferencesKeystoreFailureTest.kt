@@ -35,7 +35,7 @@ class SecurePreferencesKeystoreFailureTest {
         context.deleteSharedPreferences(prefsName)
         val identifier = MessageDigest.getInstance("SHA-256")
             .digest(prefsName.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-        listOf("key", "prefs").forEach { extension ->
+        listOf("key", "prefs", "initializing").forEach { extension ->
             val file = File(context.noBackupFilesDir, "account_preferences/$identifier.$extension")
             check(!file.exists() || file.delete()) { "Cannot clean test account storage" }
         }

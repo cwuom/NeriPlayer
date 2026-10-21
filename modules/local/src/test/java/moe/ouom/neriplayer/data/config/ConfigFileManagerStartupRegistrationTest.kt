@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.model.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.config.ListenTogetherConfigSnapshot
 import moe.ouom.neriplayer.data.model.config.WebDavSyncConfigSnapshot
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
@@ -45,6 +46,9 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyBoolean
+import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.ArgumentMatchers.anyMap
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockConstruction
@@ -235,6 +239,9 @@ class ConfigFileManagerStartupRegistrationTest {
 
         init {
             `when`(context.applicationContext).thenReturn(context)
+            `when`(netease.isAuthStoragePersistent).thenReturn(true)
+            `when`(bili.isAuthStoragePersistent).thenReturn(true)
+            `when`(youtube.isAuthStoragePersistent).thenReturn(true)
             `when`(context.contentResolver).thenReturn(resolver)
             `when`(context.getSharedPreferences("language_settings", Context.MODE_PRIVATE)).thenReturn(languagePreferences)
             `when`(languagePreferences.getString("selected_language", "")).thenReturn("")
@@ -264,7 +271,14 @@ class ConfigFileManagerStartupRegistrationTest {
 
         fun assertNoRestore() {
             assertEquals(0, restoreCount)
-            verifyNoInteractions(listenTogether, netease, bili, youtube, languagePreferences)
+            verifyNoInteractions(listenTogether, languagePreferences)
+            verify(netease, never()).clear()
+            verify(bili, never()).clear()
+            verify(youtube, never()).clear()
+            verify(netease, never()).saveCookies(anyMap(), anyLong())
+            verify(bili, never()).saveCookies(anyMap(), anyLong())
+            verify(youtube, never()).saveAuth(any(YouTubeAuthBundle::class.java) ?: YouTubeAuthBundle())
+            verify(youtube, never()).saveAuth(any(YouTubeAuthBundle::class.java) ?: YouTubeAuthBundle(), anyBoolean())
             verify(context, never()).filesDir
             githubConstruction.constructed().forEach { storage ->
                 verify(storage, never()).restore(any(GitHubSyncConfigSnapshot::class.java) ?: importedGithub)
