@@ -258,10 +258,9 @@ object LyriconManager {
                 lyrics = lyriconLyrics
             )
 
-            provider?.player?.setSong(lyriconSong)
-
-            // 有翻译时才让第三方歌词组件展示翻译
+            // 先同步显示选项，避免接收方按占位歌词或上一首的设置处理本次歌词
             provider?.player?.setDisplayTranslation(translatedLyrics?.isNotEmpty() == true)
+            provider?.player?.setSong(lyriconSong)
 
         } catch (e: Exception) {
             NPLogger.e("LyriconManager", "updateSong failed", e)
