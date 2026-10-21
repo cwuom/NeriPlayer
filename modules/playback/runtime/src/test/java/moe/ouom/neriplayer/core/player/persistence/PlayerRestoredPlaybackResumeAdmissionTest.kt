@@ -39,16 +39,22 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
 import moe.ouom.neriplayer.data.model.playback.RestoredPlaybackState
+import moe.ouom.neriplayer.data.model.playback.storage.PlayerLocalPlaybackResolution
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockStatic
+import org.mockito.Answers
+import org.mockito.stubbing.Answer
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
@@ -56,6 +62,9 @@ import org.robolectric.annotation.Config
 @Config(sdk = [28], manifest = Config.NONE)
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerRestoredPlaybackResumeAdmissionTest {
+    @get:Rule
+    val directory = TemporaryFolder()
+
     @Test
     fun `folder recovery runs on IO before consuming progress and starting playback on main`() = withFixture {
         assertEquals(PositionMs, manager.resumeRestoredPlaybackIfNeeded())
@@ -495,6 +504,109 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
     }
 
     @Test
+    fun `restored managed playback accepts a readable replacement from the permitted resolver`() = withFixture {
+        readable.set(false)
+        val replacement = directory.newFile("migrated.mp3").apply { writeText("audio") }
+        permittedResolution.set(PlayerLocalPlaybackResolution.Playable(replacement.path))
+
+        scheduleResume().join()
+
+        assertEquals(listOf(true), playbackThreads)
+        assertSame(RestoredPlaybackState.None, manager.restoredPlaybackSnapshot())
+        assertTrue(sourceUnavailableThreads.isEmpty())
+        assertPermittedResolutionOnIO()
+        val request = resolutionRequests.single()
+        assertEquals(song, request.song)
+        assertEquals(song.localFilePath, request.reference)
+        assertEquals(song.localFilePath, request.source?.anchorFor(song, request.reference))
+    }
+
+    @Test
+    fun `bootstrap validation accepts managed rebinds without playing or consuming progress`() = withFixture {
+        readable.set(false)
+        val replacement = directory.newFile("bootstrap-migrated.mp3").apply { writeText("audio") }
+        permittedResolution.set(PlayerLocalPlaybackResolution.Playable(replacement.path))
+        val pending = manager.restoredPlaybackSnapshot()
+
+        scheduleValidation().join()
+
+        assertSame(pending, manager.restoredPlaybackSnapshot())
+        assertTrue(sourceUnavailableThreads.isEmpty())
+        assertTrue(playbackThreads.isEmpty())
+        assertTrue(persistedResumeIntent.isEmpty())
+        assertPermittedResolutionOnIO()
+    }
+
+    @Test
+    fun `a readable raw source cannot bypass unavailable permitted playback admission`() {
+        unavailablePermittedResolutions().forEach { resolution ->
+            withFixture {
+                permittedResolution.set(resolution)
+
+                assertUnavailableKeepsPending()
+
+                assertPermittedResolutionOnIO()
+            }
+        }
+    }
+
+    @Test
+    fun `bootstrap validation honors unavailable permitted playback admission`() {
+        unavailablePermittedResolutions().forEach { resolution ->
+            withFixture {
+                permittedResolution.set(resolution)
+
+                assertUnavailableKeepsPending { scheduleValidation() }
+
+                assertPermittedResolutionOnIO()
+            }
+        }
+    }
+
+    @Test
+    fun `a permitted replacement still has to open before restored progress is consumed`() = withFixture {
+        val replacement = directory.root.resolve("missing-replacement.mp3")
+        permittedResolution.set(PlayerLocalPlaybackResolution.Playable(replacement.path))
+
+        assertUnavailableKeepsPending()
+
+        assertPermittedResolutionOnIO()
+    }
+
+    @Test
+    fun `permitted playback resolver failures retain restored progress`() {
+        listOf(SecurityException("catalog grant unavailable"), IllegalStateException("catalog unavailable")).forEach { failure ->
+            withFixture {
+                permittedFailure.set(failure)
+
+                assertUnavailableKeepsPending { scheduleValidation() }
+
+                assertPermittedResolutionOnIO()
+            }
+        }
+    }
+
+    @Test
+    fun `a newer request during managed resolution prevents stale service cleanup`() = withFixture {
+        permittedResolution.set(PlayerLocalPlaybackResolution.Missing)
+        val barrier = ProbeBarrier()
+        beforeResolution = barrier::awaitRelease
+        val pending = manager.restoredPlaybackSnapshot()
+        val request = scheduleValidation()
+        try {
+            barrier.entered.await()
+            manager.playbackRequestToken += 1
+        } finally {
+            barrier.release.countDown()
+        }
+        request.join()
+
+        assertSame(pending, manager.restoredPlaybackSnapshot())
+        assertTrue(sourceUnavailableThreads.isEmpty())
+        assertTrue(playbackThreads.isEmpty())
+    }
+
+    @Test
     fun `bootstrap source validation skips remote media without consuming pending progress`() = withFixture {
         val pending = manager.restoredPlaybackSnapshot()
         val remote = song.copy(localFilePath = null, mediaUri = null)
@@ -697,6 +809,18 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
         IllegalStateException("provider unavailable")
     )
 
+    private fun unavailablePermittedResolutions(): List<PlayerLocalPlaybackResolution> = listOf(
+        PlayerLocalPlaybackResolution.NotIndexed, PlayerLocalPlaybackResolution.Missing,
+        PlayerLocalPlaybackResolution.TemporarilyUnavailable("catalog warming up")
+    )
+
+    private data class LocalResolutionRequest(
+        val song: SongItem,
+        val reference: String?,
+        val source: ResolvedLocalMediaSource?,
+        val onMain: Boolean
+    )
+
     private class ResumeFixture(private val scope: CoroutineScope) : CoroutineScope by scope {
         val manager = PlayerManager
         val application = mock(Application::class.java)
@@ -711,6 +835,10 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
         val playbackThreads = mutableListOf<Boolean>()
         val persistedResumeIntent = mutableListOf<Boolean>()
         val sourceUnavailableThreads = mutableListOf<Boolean>()
+        val permittedResolution = AtomicReference<PlayerLocalPlaybackResolution?>()
+        val permittedFailure = AtomicReference<RuntimeException?>()
+        val resolutionRequests = ConcurrentLinkedQueue<LocalResolutionRequest>()
+        var beforeResolution: (() -> Unit)? = null
         var resumedCallbacks = 0
         val session = MutableStateFlow(ListenTogetherSessionState())
         var beforeOpen: (() -> Unit)? = null
@@ -750,12 +878,31 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
             assertTrue(openProbeThreads.none { it })
         }
 
+        fun assertPermittedResolutionOnIO() {
+            assertTrue("必须经过受准入策略保护的本地播放解析", resolutionRequests.isNotEmpty())
+            assertTrue(resolutionRequests.none { it.onMain })
+        }
+
         fun environment(): PlayerEnvironment {
             val listenTogether = mock(PlayerListenTogetherAccess::class.java)
             doReturn(session).`when`(listenTogether).sessionState
             doReturn(MutableStateFlow<ListenTogetherRoomState?>(null)).`when`(listenTogether).roomState
             return PlayerEnvironment(
-                application, mock(PlayerRepositoryDependencies::class.java), mock(PlayerDownloadAccess::class.java),
+                application, mock(PlayerRepositoryDependencies::class.java), mock(PlayerDownloadAccess::class.java, Answer { invocation ->
+                    if (invocation.method.name != "resolvePermittedLocalPlayback") {
+                        Answers.RETURNS_DEFAULTS.answer(invocation)
+                    } else {
+                        val reference = invocation.getArgument<String?>(2)
+                        resolutionRequests += LocalResolutionRequest(
+                            invocation.getArgument(1), reference, invocation.getArgument(3),
+                            Looper.myLooper() == Looper.getMainLooper()
+                        )
+                        beforeResolution?.invoke()
+                        permittedFailure.get()?.let { throw it }
+                        permittedResolution.get() ?: reference?.let(PlayerLocalPlaybackResolution::Playable)
+                            ?: PlayerLocalPlaybackResolution.NotIndexed
+                    }
+                }),
                 listenTogether, mock(PlayerPresentationHost::class.java), { true }, { Job().apply { complete() } }
             )
         }

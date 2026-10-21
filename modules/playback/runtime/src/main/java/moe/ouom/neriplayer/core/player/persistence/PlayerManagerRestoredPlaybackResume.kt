@@ -10,11 +10,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.data.ltw.playback.ListenTogetherRestoredPlaybackAction
 import moe.ouom.neriplayer.data.ltw.playback.resolveListenTogetherRestoredPlaybackAction
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.RestoredPlaybackState
+import moe.ouom.neriplayer.data.model.playback.storage.PlayerLocalPlaybackResolution
 import kotlin.coroutines.coroutineContext
 
 private data class RestoredPlaybackResumeCandidate(
@@ -86,7 +88,13 @@ private suspend fun PlayerManager.probeCurrentRestoredSource(candidate: Restored
 private suspend fun PlayerManager.restoredSourceAvailable(song: SongItem): Boolean {
     if (!isLocalSong(song)) return true
     return try {
-        withContext(Dispatchers.IO) { isReadableLocalMediaUri(localMediaSource(song)) }.also { available ->
+        withContext(Dispatchers.IO) {
+            val source = localMediaSourceContext(song)
+            val resolution = PlayerDependencies.downloads.resolvePermittedLocalPlayback(
+                application, song, source?.reference, source
+            )
+            resolution is PlayerLocalPlaybackResolution.Playable && isReadableLocalMediaUri(resolution.reference)
+        }.also { available ->
             if (!available) NPLogger.w(
                 "NERI-PlayerManager",
                 "resumeRestoredPlaybackIfNeeded(): keep restored local progress because media is not readable yet, song=${song.name}"
