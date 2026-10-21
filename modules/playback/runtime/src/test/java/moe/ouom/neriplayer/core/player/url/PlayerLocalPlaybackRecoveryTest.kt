@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.url
 
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -40,6 +41,51 @@ class PlayerLocalPlaybackRecoveryTest {
     @Test
     fun `missing reference cannot establish permission for remote recovery`() {
         assertNull(recoverNeteaseSourceAfterMissingLocal(song(), null) { false })
+    }
+
+    @Test
+    fun `a history snapshot keeps its exact manual source after playlist membership is removed`() {
+        val selected = song().copy(explicitLocalSourceReference = selectedReference)
+
+        assertNull(recoverNeteaseSourceAfterMissingLocal(selected, selectedReference) { false })
+    }
+
+    @Test
+    fun `a valid snapshot source does not depend on unknown playlist membership`() {
+        val selected = song().copy(explicitLocalSourceReference = selectedReference)
+        val queried = mutableListOf<String>()
+
+        val recovered = recoverNeteaseSourceAfterMissingLocal(selected, selectedReference) {
+            queried += it
+            null
+        }
+
+        assertNull(recovered)
+        assertEquals(emptyList<String>(), queried)
+    }
+
+    @Test
+    fun `a snapshot marker cannot establish manual evidence for another failed reference`() {
+        val selected = song().copy(explicitLocalSourceReference = selectedReference)
+        val failedReference = "content://provider/document/another-file.flac"
+        val queried = mutableListOf<String>()
+
+        val recovered = recoverNeteaseSourceAfterMissingLocal(selected, failedReference) {
+            queried += it
+            false
+        }
+
+        assertNotNull(recovered)
+        assertEquals(listOf(failedReference), queried)
+    }
+
+    @Test
+    fun `stale and invalid snapshot markers retain ordinary nonmanual recovery`() {
+        listOf("content://provider/document/old-file.flac", "https://example.com/song.flac", "", " ").forEach { marker ->
+            val stale = song().copy(explicitLocalSourceReference = marker)
+
+            assertNotNull(recoverNeteaseSourceAfterMissingLocal(stale, selectedReference) { false })
+        }
     }
 
     private fun song() = SongItem(

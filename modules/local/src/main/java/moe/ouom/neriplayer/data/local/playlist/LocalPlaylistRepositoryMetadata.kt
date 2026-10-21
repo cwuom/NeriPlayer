@@ -181,13 +181,8 @@ internal fun LocalPlaylistRepository.mergeSongMetadataForPersistence(
     )
 }
 
-internal fun SongItem.validExplicitLocalSourceReference(): String? {
-    val reference = explicitLocalSourceReference ?: return null
-    return reference.takeIf {
-        LocalSongSupport.isLocalMediaUri(it) &&
-            preferredLocalMediaReference(localFilePath, mediaUri) == it
-    }
-}
+internal fun SongItem.validExplicitLocalSourceReference(): String? =
+    LocalSongSupport.validExplicitLocalSourceReference(this)
 
 internal fun LocalPlaylistRepository.shouldPreserveEntryPlaybackSource(
     currentSong: SongItem,

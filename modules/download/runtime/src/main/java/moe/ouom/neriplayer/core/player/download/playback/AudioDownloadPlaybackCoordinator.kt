@@ -341,7 +341,7 @@ internal class AudioDownloadPlaybackCoordinator(
         val configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
         diagnostics.configuredDirectory = playbackLogReference(configuredDirectoryUri)
         val unverifiedDeclaredReference = sourceContext?.unverifiedDeclaredReferenceFor(song, reference)
-        if (unverifiedDeclaredReference != null && explicitLocalFileReference(unverifiedDeclaredReference) != false) {
+        if (unverifiedDeclaredReference != null && explicitLocalSourceEvidence(song, unverifiedDeclaredReference) != false) {
             return@withContext diagnostics.finish(
                 LocalPlaybackReferenceResolution.TemporarilyUnavailable(ManagedDownloadReferenceLookup.Result.OutOfScope),
                 "unverified_declared_source"
@@ -482,7 +482,7 @@ internal class AudioDownloadPlaybackCoordinator(
         val verifiedAnchor = sourceContext?.anchorFor(song, reference)
         val compatible = isManagedPlaybackReferenceCompatibleWithConfiguredSaf(reference, configuredDirectoryUri)
         val provenanceReference = verifiedAnchor ?: reference
-        val explicit = explicitLocalFileReference(provenanceReference)
+        val explicit = explicitLocalSourceEvidence(song, provenanceReference)
         diagnostics.explicitLocalFile = explicit?.toString() ?: "unknown"
         if (explicit == false) return null
         diagnostics.rawReferenceCompatible = compatible
@@ -513,6 +513,10 @@ internal class AudioDownloadPlaybackCoordinator(
             "explicit_local_${PlaybackDiagnostics.evidenceName(evidence)}"
         )
     }
+
+    private fun explicitLocalSourceEvidence(song: SongItem, reference: String): Boolean? =
+        if (LocalSongSupport.validExplicitLocalSourceReference(song) == reference) true
+        else explicitLocalFileReference(reference)
 
     private fun resolveIndependentExternalImportPlayback(
         context: Context,

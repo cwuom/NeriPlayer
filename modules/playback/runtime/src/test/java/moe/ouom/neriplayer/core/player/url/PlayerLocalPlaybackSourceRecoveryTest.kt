@@ -89,7 +89,39 @@ class PlayerLocalPlaybackSourceRecoveryTest {
         assertNotNull(recoverNeteaseSourceAfterMissingLocal(song, source.reference, source) { false })
     }
 
-    private fun recoveredSource(): ResolvedLocalMediaSource {
+    @Test
+    fun `a verified history alias retains its manual snapshot after all playlist membership is gone`() {
+        val selected = song.copy(explicitLocalSourceReference = original)
+        val source = recoveredSource(selected)
+        val queried = mutableListOf<String>()
+
+        val recovered = recoverNeteaseSourceAfterMissingLocal(selected, source.reference, source) {
+            queried += it
+            false
+        }
+
+        assertNull(recovered)
+        assertEquals(emptyList<String>(), queried)
+    }
+
+    @Test
+    fun `an unverified alias cannot bypass a manual snapshot after playlist membership is gone`() {
+        val selected = song.copy(explicitLocalSourceReference = original)
+        val source = ResolvedLocalMediaSource.direct(selected, requireNotNull(selected.localFilePath))
+
+        assertNull(recoverNeteaseSourceAfterMissingLocal(selected, source.reference, source) { false })
+    }
+
+    @Test
+    fun `a different song snapshot cannot borrow an old verified alias with a manual marker`() {
+        val selected = song.copy(explicitLocalSourceReference = original)
+        val source = recoveredSource(selected)
+        val changed = selected.copy(id = 8L)
+
+        assertNotNull(recoverNeteaseSourceAfterMissingLocal(changed, source.reference, source) { false })
+    }
+
+    private fun recoveredSource(sourceSong: SongItem = song): ResolvedLocalMediaSource {
         val context = mock(Context::class.java)
         val resolver = mock(ContentResolver::class.java)
         val permission = mock(UriPermission::class.java)
@@ -103,6 +135,6 @@ class PlayerLocalPlaybackSourceRecoveryTest {
         doAnswer {
             MatrixCursor(arrayOf("_data")).apply { addRow(arrayOf(song.localFilePath)) }
         }.`when`(resolver).query(eq(Uri.parse(original)), any(), any(), any(), any())
-        return requireNotNull(ResolvedLocalMediaSource.recoverFromFolderGrant(context, song))
+        return requireNotNull(ResolvedLocalMediaSource.recoverFromFolderGrant(context, sourceSong))
     }
 }

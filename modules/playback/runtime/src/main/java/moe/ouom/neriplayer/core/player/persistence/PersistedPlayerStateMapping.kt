@@ -63,7 +63,8 @@ internal fun SongItem.toPersistedSongItem(includeLyrics: Boolean = true): Persis
         audioId = audioId,
         subAudioId = subAudioId,
         playlistContextId = playlistContextId,
-        streamUrl = streamUrl
+        streamUrl = streamUrl,
+        explicitLocalSourceReference = LocalSongSupport.validExplicitLocalSourceReference(this)
     )
 }
 
@@ -131,6 +132,9 @@ fun PersistedSongItem.toSongItem(): SongItem {
         audioId = inferredAudioId,
         subAudioId = subAudioId,
         playlistContextId = playlistContextId,
-        streamUrl = streamUrl
+        streamUrl = streamUrl,
+        explicitLocalSourceReference = LocalSongSupport.validExplicitLocalSourceReference(
+            localFilePath, mediaUri, explicitLocalSourceReference
+        )
     )
 }

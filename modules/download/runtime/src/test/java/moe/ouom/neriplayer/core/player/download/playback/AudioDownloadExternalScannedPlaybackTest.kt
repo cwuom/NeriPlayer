@@ -369,6 +369,90 @@ class AudioDownloadExternalScannedPlaybackTest {
     }
 
     @Test
+    fun `a history snapshot keeps its selected source after the last playlist membership is removed`() = runBlocking {
+        val song = scannedSong(explicit = false).let { it.copy(explicitLocalSourceReference = it.mediaUri) }
+        rememberCurrentBridge(song)
+
+        val result = coordinator.resolvePermittedLocalPlayback(context, song, song.mediaUri)
+
+        assertEquals(LocalPlaybackReferenceResolution.Playable(audioUri.toString()), result)
+    }
+
+    @Test
+    fun `a history snapshot can play its exact source while global playlist membership is unknown`() = runBlocking {
+        val song = scannedSong(explicit = false).let { it.copy(explicitLocalSourceReference = it.mediaUri) }
+        explicitReferencesKnown = false
+        rememberCurrentBridge(song)
+
+        val result = coordinator.resolvePermittedLocalPlayback(context, song, song.mediaUri)
+
+        assertEquals(LocalPlaybackReferenceResolution.Playable(audioUri.toString()), result)
+    }
+
+    @Test
+    fun `a missing manual history source cannot be replaced by its remote identity bridge`() = runBlocking {
+        val song = scannedSong(explicit = false).let { it.copy(explicitLocalSourceReference = it.mediaUri) }
+        rememberCurrentBridge(song)
+        externalAudioMissing = true
+        val previousRootQueries = currentRootQueries.get()
+
+        val result = coordinator.resolvePermittedLocalPlayback(context, song, song.mediaUri)
+
+        assertEquals(LocalPlaybackReferenceResolution.Missing, result)
+        assertEquals(previousRootQueries, currentRootQueries.get())
+    }
+
+    @Test
+    fun `a verified history alias uses its snapshot without current playlist membership`() = runBlocking {
+        val (song, source) = recoveredLegacySource(snapshotMarker = true)
+        explicitReferences.remove(requireNotNull(song.mediaUri))
+        explicitReferencesKnown = false
+        rememberCurrentBridge(song)
+
+        val result = coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source)
+
+        assertEquals(LocalPlaybackReferenceResolution.Playable(audioUri.toString()), result)
+    }
+
+    @Test
+    fun `an unverified alias cannot replace a manual history snapshot with a bridge`() = runBlocking {
+        val (song, verified) = recoveredLegacySource(snapshotMarker = true)
+        explicitReferences.remove(requireNotNull(song.mediaUri))
+        val source = ResolvedLocalMediaSource.direct(song, verified.reference)
+        rememberCurrentBridge(song)
+        val previousQueries = audioQueries.get()
+
+        val result = coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source)
+
+        assertUnknown(result)
+        assertEquals(previousQueries, audioQueries.get())
+    }
+
+    @Test
+    fun `invalid history markers retain ordinary managed bridge recovery`() = runBlocking {
+        val scanned = scannedSong(explicit = false)
+        listOf(alternateAudioUri.toString(), "https://example.com/song.flac", "", " ").forEach { marker ->
+            val song = scanned.copy(explicitLocalSourceReference = marker)
+            rememberCurrentBridge(song)
+
+            val result = coordinator.resolvePermittedLocalPlayback(context, song, song.mediaUri)
+
+            assertEquals(LocalPlaybackReferenceResolution.Playable(currentAudioUri.toString()), result)
+        }
+    }
+
+    @Test
+    fun `a stale history marker cannot override unknown global membership for a different source`() = runBlocking {
+        val song = scannedSong(explicit = false).copy(explicitLocalSourceReference = alternateAudioUri.toString())
+        explicitReferencesKnown = false
+        rememberCurrentBridge(song)
+        val previousQueries = audioQueries.get()
+
+        assertUnknown(coordinator.resolvePermittedLocalPlayback(context, song, song.mediaUri))
+        assertEquals(previousQueries, audioQueries.get())
+    }
+
+    @Test
     fun `a verified manual alias in the current root keeps its selected file instead of a song bridge`() = runBlocking {
         val (song, source) = recoveredLegacySource()
         configureSelectedRootWithBridge(song)
@@ -697,11 +781,12 @@ class AudioDownloadExternalScannedPlaybackTest {
         assertEquals(previousQueries, audioQueries.get())
     }
 
-    private suspend fun recoveredLegacySource(): Pair<SongItem, ResolvedLocalMediaSource> {
+    private suspend fun recoveredLegacySource(snapshotMarker: Boolean = false): Pair<SongItem, ResolvedLocalMediaSource> {
         val original = "content://media/external/audio/media/859470"
         val song = scannedSong(explicit = false).copy(
             mediaUri = original,
-            localFilePath = "/storage/emulated/0/NeriPlayer-Download2/$AUDIO_NAME"
+            localFilePath = "/storage/emulated/0/NeriPlayer-Download2/$AUDIO_NAME",
+            explicitLocalSourceReference = original.takeIf { snapshotMarker }
         )
         explicitReferences.add(original)
         return song to requireNotNull(ResolvedLocalMediaSource.recoverFromFolderGrant(context, song))

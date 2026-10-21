@@ -80,6 +80,18 @@ object LocalSongSupport {
     fun isLocalMediaUri(mediaUri: String?): Boolean =
         moe.ouom.neriplayer.data.sync.policy.isLocalMediaUri(mediaUri)
 
+    fun validExplicitLocalSourceReference(song: SongItem): String? = validExplicitLocalSourceReference(
+        song.localFilePath, song.mediaUri, song.explicitLocalSourceReference
+    )
+
+    fun validExplicitLocalSourceReference(
+        localFilePath: String?,
+        mediaUri: String?,
+        explicitReference: String?
+    ): String? = explicitReference?.takeIf {
+        isLocalMediaUri(it) && preferredLocalMediaReference(localFilePath, mediaUri) == it
+    }
+
     fun sanitizeMediaUriForSync(mediaUri: String?): String? {
         return mediaUri?.takeUnless { isLocalMediaUri(it) }
     }
