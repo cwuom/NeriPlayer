@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.SongComment
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.util.format.formatDate
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -71,9 +72,10 @@ private val CommentActionContentPadding = PaddingValues(horizontal = 14.dp, vert
  * @param repliesExpanded 楼中楼当前是否展开
  * @param hasReplyThread 是否已有楼中楼数据, 为 true 时不再平铺预览回复
  * @param replyEnabled 回复按钮是否可用
+ * @param modifier 外部修饰符
  * @param likingIds 点赞在途的评论 id 集合, 用于楼中楼点赞按钮的加载态
  * @param onLikeReply 点击楼中楼点赞, 参数是该回复的评论 id
- * @param modifier 外部修饰符
+ * @param showReplyActions 是否显示回复和楼中楼入口，百科预览只保留点赞
  */
 @Composable
 internal fun CommentItem(
@@ -88,9 +90,10 @@ internal fun CommentItem(
     repliesExpanded: Boolean,
     hasReplyThread: Boolean,
     replyEnabled: Boolean,
+    modifier: Modifier = Modifier,
     likingIds: Set<String> = emptySet(),
     onLikeReply: (String) -> Unit = {},
-    modifier: Modifier = Modifier
+    showReplyActions: Boolean = true
 ) {
     val context = LocalContext.current
     val anonymous = stringResource(CoreCommonR.string.comment_anonymous_user)
@@ -101,11 +104,20 @@ internal fun CommentItem(
     // 当前放大的配图下标, null 表示未打开预览
     var previewIndex by remember(comment.id) { mutableStateOf<Int?>(null) }
 
-    CommentActionBox(comment, comment.id, replyEnabled, onReply, modifier.fillMaxWidth()) {
+    CommentActionBox(
+        comment, comment.id, replyEnabled, onReply, modifier.fillMaxWidth(),
+        showReplyAction = showReplyActions
+    ) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainer
+            // Clean 下 surfaceContainer 与 sheet 底 surfaceContainerLow 只差一点点，
+            // 评论卡片会糊成一片，改用墨色半透明拉开层次。
+            color = if (NeriDesign.isClean) {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            }
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -178,47 +190,50 @@ internal fun CommentItem(
                             offlineMode = offlineMode,
                             isLiking = reply.id in likingIds,
                             likeEnabled = likeEnabled && !offlineMode,
-                            onLike = { onLikeReply(reply.id) }
+                            onLike = { onLikeReply(reply.id) },
+                            showReplyAction = showReplyActions
                         )
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // 「回复 / N 条回复」与「点赞」相邻靠右成组: 左侧留白, 两者固定间隔 8dp (真机反馈 #2)
                     Spacer(Modifier.weight(1f))
-                    if ((comment.replyCount ?: 0L) > 0L || comment.previewReplies.isNotEmpty() || hasReplyThread) {
-                        // 外框与点赞按钮保持一致: 原来没有底色, 看起来不像可点的按钮
-                        HapticTextButton(
-                            onClick = onToggleReplies,
-                            enabled = hasReplyThread || !offlineMode,
-                            modifier = Modifier.heightIn(min = CommentActionMinHeight),
-                            colors = ButtonDefaults.textButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                contentColor = MaterialTheme.colorScheme.primary
-                            ),
-                            contentPadding = CommentActionContentPadding
-                        ) {
-                            Text(
-                                text = if (repliesExpanded) stringResource(CoreCommonR.string.comment_collapse_replies)
-                                    else stringResource(CoreCommonR.string.comment_reply_count_format,
-                                        formatPlayCount(context, comment.replyCount ?: comment.previewReplies.size.toLong())),
-                                style = MaterialTheme.typography.labelLarge
-                            )
+                    if (showReplyActions) {
+                        if ((comment.replyCount ?: 0L) > 0L || comment.previewReplies.isNotEmpty() || hasReplyThread) {
+                            // 外框与点赞按钮保持一致: 原来没有底色, 看起来不像可点的按钮
+                            HapticTextButton(
+                                onClick = onToggleReplies,
+                                enabled = hasReplyThread || !offlineMode,
+                                modifier = Modifier.heightIn(min = CommentActionMinHeight),
+                                colors = ButtonDefaults.textButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                ),
+                                contentPadding = CommentActionContentPadding
+                            ) {
+                                Text(
+                                    text = if (repliesExpanded) stringResource(CoreCommonR.string.comment_collapse_replies)
+                                        else stringResource(CoreCommonR.string.comment_reply_count_format,
+                                            formatPlayCount(context, comment.replyCount ?: comment.previewReplies.size.toLong())),
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
+                        } else {
+                            HapticTextButton(
+                                onClick = { onReply(CommentReplyTarget(comment.id, comment.id, username)) },
+                                enabled = replyEnabled,
+                                modifier = Modifier.heightIn(min = CommentActionMinHeight),
+                                colors = ButtonDefaults.textButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                ),
+                                contentPadding = CommentActionContentPadding
+                            ) {
+                                Text(stringResource(CoreCommonR.string.comment_reply), style = MaterialTheme.typography.labelLarge)
+                            }
                         }
-                    } else {
-                        HapticTextButton(
-                            onClick = { onReply(CommentReplyTarget(comment.id, comment.id, username)) },
-                            enabled = replyEnabled,
-                            modifier = Modifier.heightIn(min = CommentActionMinHeight),
-                            colors = ButtonDefaults.textButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                contentColor = MaterialTheme.colorScheme.primary
-                            ),
-                            contentPadding = CommentActionContentPadding
-                        ) {
-                            Text(stringResource(CoreCommonR.string.comment_reply), style = MaterialTheme.typography.labelLarge)
-                        }
+                        Spacer(Modifier.width(8.dp))
                     }
-                    Spacer(Modifier.width(8.dp))
                     HapticTextButton(
                         onClick = onLike,
                         enabled = likeEnabled && !isLiking && !offlineMode,

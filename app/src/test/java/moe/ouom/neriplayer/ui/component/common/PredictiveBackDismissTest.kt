@@ -5,7 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -79,6 +79,29 @@ class PredictiveBackDismissTest {
 
         assertEquals(0, dismissals)
         assertEquals(0f, state.progress, 0.001f)
+    }
+
+    @Test
+    fun `opposite edge gesture interrupts a cancelled gesture without stale progress writes`() {
+        setHandler()
+        composeRule.mainClock.autoAdvance = false
+        startGesture(0.8f)
+        composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
+
+        startGesture(0.4f, BackEventCompat.EDGE_RIGHT)
+        composeRule.mainClock.advanceTimeBy(300L)
+        composeRule.waitForIdle()
+
+        assertEquals(0.4f, state.progress, 0.001f)
+        assertEquals(BackEventCompat.EDGE_RIGHT, state.swipeEdge)
+        assertEquals(0, dismissals)
+
+        composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
+        composeRule.mainClock.advanceTimeBy(300L)
+        composeRule.waitForIdle()
+
+        assertEquals(0f, state.progress, 0.001f)
+        assertEquals(0, dismissals)
     }
 
     @Test

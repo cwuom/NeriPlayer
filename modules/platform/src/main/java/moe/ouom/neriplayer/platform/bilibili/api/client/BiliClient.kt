@@ -49,6 +49,9 @@ import moe.ouom.neriplayer.data.model.bilibili.collection.FavFolder
 import moe.ouom.neriplayer.data.model.bilibili.collection.FavResourceItem
 import moe.ouom.neriplayer.data.model.bilibili.collection.FavResourcePage
 import moe.ouom.neriplayer.data.model.bilibili.collection.SeriesArchivePage
+import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicHotVideo
+import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankPeriod
+import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankSong
 import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.model.bilibili.playback.DashStream
 import moe.ouom.neriplayer.data.model.bilibili.playback.DolbyAudio
@@ -120,6 +123,21 @@ class BiliClient(
             "https://api.bilibili.com/x/polymer/web-space/seasons_series_list"
         private const val SERIES_ARCHIVES_URL = "https://api.bilibili.com/x/series/archives"
         private const val PAGELIST_URL = "https://api.bilibili.com/x/player/pagelist"
+        private const val MUSIC_RANK_PERIOD_URL =
+            "https://api.bilibili.com/x/copyright-music-publicity/toplist/all_period"
+        private const val MUSIC_RANK_SONGS_URL =
+            "https://api.bilibili.com/x/copyright-music-publicity/toplist/music_list"
+        /**
+         * 音乐分区热门视频榜。
+         *
+         * 注意：Web 端 `x/web-interface/ranking/v2?rid=3` 的分区榜已停止更新
+         * （实测数据冻结在 2025-04），必须改用移动端分区榜接口。
+         */
+        private const val MUSIC_HOT_RANK_URL = "https://app.bilibili.com/x/v2/rank/region"
+        private const val MUSIC_ZONE_RID = 3
+
+        /** 移动端分区榜单页上限（实测 ps=100 可一次取回 100 条） */
+        private const val MUSIC_HOT_RANK_PAGE_SIZE = 100
 
         /** 默认 UA (Web) */
         private const val DEFAULT_WEB_UA = BILI_WEB_USER_AGENT
@@ -631,7 +649,7 @@ class BiliClient(
         scopeType?.let { params["type"] = it.toString() }
 
         val jo = getJson(FAV_RESOURCE_LIST, params)
-        val data = jo.optJSONObject("data") ?: JSONObject()
+        val data = jo.requireSuccessfulData("favorite folder contents")
         val info = data.optJSONObject("info") ?: JSONObject()
 
         val folder = FavFolder(
@@ -740,7 +758,7 @@ class BiliClient(
             "web_location" to "333.999"
         )
         val jo = getJsonWbi(COLLECTION_ARCHIVES_URL, params)
-        val data = jo.optJSONObject("data") ?: JSONObject()
+        val data = jo.requireSuccessfulData("collection archives")
         val metaObj = data.optJSONObject("meta") ?: JSONObject()
         val pageObj = data.optJSONObject("page") ?: JSONObject()
         val total = pageObj.optInt("total", metaObj.optInt("total"))
@@ -1110,6 +1128,21 @@ class BiliClient(
         return optJSONObject("data") ?: JSONObject()
     }
 
+    /**
+     * 校验响应 code，并返回数组形态的 `data`。
+     *
+     * 移动端接口（如 `app.bilibili.com/x/v2/rank/region`）的 `data` 是数组而非对象，
+     * 与 [requireSuccessfulData] 区分开。
+     */
+    private fun JSONObject.requireSuccessfulArray(endpoint: String): JSONArray {
+        val code = optInt("code", -1)
+        if (code != 0) {
+            val message = optString("message").ifBlank { optString("msg") }
+            throw IOException("Bili $endpoint failed: code=$code, message=$message")
+        }
+        return optJSONArray("data") ?: JSONArray()
+    }
+
     // Wbi 签名 //
 
     private val keyMutex = Mutex()
@@ -1320,9 +1353,8 @@ class BiliClient(
         val resp = execute()
         if (!resp.isSuccessful) {
             val code = resp.code
-            val text = resp.body.string()
             resp.close()
-            throw BiliHttpStatusException(code, text)
+            throw BiliHttpStatusException(code)
         }
         return resp
     }
@@ -1341,6 +1373,16 @@ class BiliClient(
     private fun ensureHttps(url: String?): String {
         if (url.isNullOrBlank()) return ""
         return if (url.startsWith("//")) "https:$url" else url
+    }
+
+    /** 封面链接统一为 https（榜单接口可能返回 http 图片） */
+    private fun normalizeCoverUrl(url: String?): String {
+        val normalized = ensureHttps(url)
+        return if (normalized.startsWith("http://")) {
+            "https://" + normalized.removePrefix("http://")
+        } else {
+            normalized
+        }
     }
 
     private fun stripHtml(html: String): String {
@@ -1480,6 +1522,49 @@ class BiliClient(
     }
 
     /**
+     * 版权音乐榜期数列表（一次返回全部年份，调用方自行选取最新期）
+     */
+    suspend fun getCopyrightMusicRankPeriods(listType: Int): List<BiliMusicRankPeriod> =
+        withContext(Dispatchers.IO) {
+            val data = getJson(
+                baseUrl = MUSIC_RANK_PERIOD_URL,
+                params = mapOf("list_type" to listType.toString())
+            ).requireSuccessfulData("copyright music periods")
+            parseMusicRankPeriods(data)
+        }
+
+    /**
+     * 指定期数的版权音乐榜单曲目
+     */
+    suspend fun getCopyrightMusicRankSongs(listId: Long): List<BiliMusicRankSong> =
+        withContext(Dispatchers.IO) {
+            val data = getJson(
+                baseUrl = MUSIC_RANK_SONGS_URL,
+                params = mapOf("list_id" to listId.toString())
+            ).requireSuccessfulData("copyright music songs")
+            parseMusicRankSongs(data)
+        }
+
+    /**
+     * 音乐分区（rid=3）热门视频榜。
+     *
+     * 走移动端分区榜接口，`data` 直接是数组（不是 Web 版的 `data.list`），
+     * 且每条只给 avid（`param`），bvid 在本地用 [BiliVideoIdCodec] 换算。
+     */
+    suspend fun getMusicHotRankVideos(): List<BiliMusicHotVideo> = withContext(Dispatchers.IO) {
+        val list = getJson(
+            baseUrl = MUSIC_HOT_RANK_URL,
+            params = mapOf(
+                "rid" to MUSIC_ZONE_RID.toString(),
+                "type" to "all",
+                "pn" to "1",
+                "ps" to MUSIC_HOT_RANK_PAGE_SIZE.toString()
+            )
+        ).requireSuccessfulArray("music hot videos")
+        parseMusicHotVideos(list)
+    }
+
+    /**
      * 解析分页列表响应
      */
     private fun parsePageListResponse(jo: JSONObject): List<VideoPage> {
@@ -1500,6 +1585,97 @@ class BiliClient(
         }
 
         return pages
+    }
+
+    /**
+     * 解析期数响应：data.list 为「年份 -> 期数数组」的对象
+     */
+    private fun parseMusicRankPeriods(data: JSONObject): List<BiliMusicRankPeriod> {
+        val list = data.optJSONObject("list") ?: return emptyList()
+        val periods = ArrayList<BiliMusicRankPeriod>()
+        list.keys().forEach { year ->
+            val arr = list.optJSONArray(year) ?: return@forEach
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                val id = item.optLong("ID", 0L)
+                if (id <= 0L) continue
+                periods += BiliMusicRankPeriod(
+                    id = id,
+                    periodNumber = item.optInt("priod", 0),
+                    publishTimeSec = item.optLong("publish_time", 0L)
+                )
+            }
+        }
+        return periods
+    }
+
+    /**
+     * 解析版权音乐榜单曲响应
+     */
+    private fun parseMusicRankSongs(data: JSONObject): List<BiliMusicRankSong> {
+        val arr = data.optJSONArray("list") ?: return emptyList()
+        val songs = ArrayList<BiliMusicRankSong>(arr.length())
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val creationTitle = stripHtml(item.optString("creation_title"))
+            val mvCover = normalizeCoverUrl(item.optString("mv_cover"))
+            val creationCover = normalizeCoverUrl(item.optString("creation_cover"))
+            songs += BiliMusicRankSong(
+                musicId = item.optString("music_id"),
+                rank = item.optInt("rank", i + 1),
+                title = stripHtml(item.optString("music_title")).ifBlank { creationTitle },
+                singer = item.optString("singer"),
+                album = stripHtml(item.optString("album")),
+                coverUrl = mvCover.ifBlank { creationCover },
+                videoCoverUrl = creationCover,
+                creationAid = item.optLong("creation_aid", 0L),
+                creationBvid = item.optString("creation_bvid").trim(),
+                creationCid = item.optLong("creation_first_cid", 0L),
+                creationDurationSec = item.optInt("creation_duration", 0),
+                uploader = stripHtml(item.optString("creation_nickname")),
+                uploaderMid = item.optLong("creation_up", 0L),
+                heat = item.optLong("heat", 0L),
+                canListen = item.optInt("can_listen", 0) == 1,
+                // 先保留榜单给出的 MV 身份，上层再按 bvid 补全缺失身份与元信息
+                mvAid = item.optLong("mv_aid", 0L),
+                mvBvid = item.optString("mv_bvid").trim()
+            )
+        }
+        return songs
+    }
+
+    /**
+     * 解析音乐分区热门视频响应。
+     *
+     * 移动端分区榜每条的结构与 Web 版完全不同：
+     * - `param` 是 avid 的字符串形式，没有 `bvid` 字段 → 本地用 [BiliVideoIdCodec] 换算
+     * - `pub_date` 才是发布时间（Web 版是 `pubdate`）
+     * - UP 主信息与统计数据是平铺字段（`name`/`mid`/`play`/`danmaku`），不在 `owner`/`stat` 里
+     * - `rname` 等价于 Web 版的 `tname`
+     */
+    private fun parseMusicHotVideos(arr: JSONArray): List<BiliMusicHotVideo> {
+        val videos = ArrayList<BiliMusicHotVideo>(arr.length())
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val aid = item.optString("param").trim().toLongOrNull() ?: 0L
+            val bvid = BiliVideoIdCodec.aidToBvid(aid)
+            if (aid <= 0L || bvid.isBlank()) continue
+            videos += BiliMusicHotVideo(
+                aid = aid,
+                bvid = bvid,
+                cid = item.optLong("cid", 0L),
+                title = stripHtml(item.optString("title")),
+                coverUrl = normalizeCoverUrl(item.optString("cover")),
+                durationSec = item.optInt("duration", 0),
+                uploader = stripHtml(item.optString("name")),
+                uploaderMid = item.optLong("mid", 0L),
+                viewCount = item.optLong("play", 0L),
+                danmakuCount = item.optLong("danmaku", 0L),
+                pubdateSec = item.optLong("pub_date", 0L),
+                tname = item.optString("rname")
+            )
+        }
+        return videos
     }
 
     suspend fun getVideoComments(

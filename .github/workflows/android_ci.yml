@@ -67,6 +67,7 @@ jobs:
             **/build/test-results/**/*.xml
             **/build/reports/lint-results-debug.html
             **/build/reports/crap/**
+            **/build/reports/problems/**
           if-no-files-found: ignore
 
   listen-together-tests:

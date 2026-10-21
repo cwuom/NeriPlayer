@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_error_title">Unable to load playlist</string>
+    <string name="playlist_error_bili_risk_control">Bilibili has temporarily restricted requests (HTTP 412). Try again later.</string>
+    <string name="playlist_error_http">The platform cannot provide this playlist right now (HTTP %1$d). Try again later.</string>
+    <string name="playlist_error_network">Unable to connect to the platform. Check your connection and retry.</string>
+    <string name="playlist_error_unknown">Unable to load this playlist right now. Try again later.</string>
+    <string name="playlist_error_offline_no_cache">You are offline. No cached copy of this playlist is available.</string>
+</resources>

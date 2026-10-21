@@ -114,8 +114,11 @@ internal fun PredictiveDismissHandler(
     }
 }
 
-/** 只在绘制层读取进度，拖动手势不会触发重组 */
-internal fun Modifier.predictiveDismissTransform(state: PredictiveDismissState): Modifier =
+/** 只在绘制层读取进度，拖动手势不会触发重组；已有裁剪的面板可交回自身 Surface 处理圆角 */
+internal fun Modifier.predictiveDismissTransform(
+    state: PredictiveDismissState,
+    clipToShape: Boolean = true
+): Modifier =
     graphicsLayer {
         val transform = predictiveDismissTransform(
             progress = state.progress,
@@ -128,5 +131,5 @@ internal fun Modifier.predictiveDismissTransform(state: PredictiveDismissState):
         scaleY = transform.scale
         translationX = transform.translationX
         shape = RoundedCornerShape(transform.cornerRadius)
-        clip = transform.cornerRadius > 0f
+        clip = clipToShape && transform.cornerRadius > 0f
     }

@@ -156,6 +156,7 @@ import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsScreen
@@ -476,6 +477,7 @@ fun NowPlayingScreen(
     onEnterArtist: (NeteaseArtistSummary) -> Unit = {},
     onEnterBiliUploader: (BiliUploaderSummary) -> Unit = {},
     onEnterYouTubeCreator: (YouTubeMusicCreatorSummary) -> Unit = {},
+    onEnterPlaylist: (PlaylistSummary) -> Unit = {},
     lyricBlurEnabled: Boolean,
     lyricBlurAmount: Float,
     lyricFontScales: LyricFontScales,
@@ -1777,7 +1779,11 @@ fun NowPlayingScreen(
                                     onEnterAlbum = onEnterAlbum,
                                     onNavigateUp = onNavigateUp,
                                     onShowQualitySwitch = { showQualitySwitchDialog = true },
-                                    startWithLyricBehavior = startMoreOptionsWithLyricBehavior
+                                    startWithLyricBehavior = startMoreOptionsWithLyricBehavior,
+                                    onEnterArtist = onEnterArtist,
+                                    onEnterPlaylist = onEnterPlaylist,
+                                    // 更多面板已收起，这里直接打开原生评论面板。
+                                    onOpenComments = { showCommentSheet = true }
                                 ),
                                 snackbarHostState = snackbarHostState,
                                 fontSettings = MoreOptionsFontSettings(

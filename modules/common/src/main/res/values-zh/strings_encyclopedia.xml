@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Song Encyclopedia -->
+    <string name="encyclopedia_title">歌曲百科</string>
+    <string name="encyclopedia_loading">正在加载百科…</string>
+    <string name="encyclopedia_empty">暂无相关资料</string>
+    <string name="encyclopedia_not_supported">当前歌曲暂无百科来源</string>
+    <string name="encyclopedia_failed">百科加载失败</string>
+    <string name="encyclopedia_retry">重试</string>
+    <string name="encyclopedia_source_note">数据来自网易云音乐，仅供参考</string>
+    <string name="encyclopedia_section_basic">基本信息</string>
+    <string name="encyclopedia_section_music">音乐属性</string>
+    <string name="encyclopedia_section_credits">创作团队</string>
+    <string name="encyclopedia_section_awards">获奖与收录</string>
+    <string name="encyclopedia_section_listen_history">听歌记录</string>
+    <string name="encyclopedia_section_artist">关于艺人</string>
+    <string name="encyclopedia_section_comments">歌曲评论</string>
+    <string name="encyclopedia_section_similar_songs">相似歌曲</string>
+    <string name="encyclopedia_section_related_playlists">相关歌单</string>
+    <string name="encyclopedia_section_song_detail">歌曲详情</string>
+    <string name="encyclopedia_label_song">歌曲</string>
+    <string name="encyclopedia_label_artists">歌手</string>
+    <string name="encyclopedia_label_album">专辑</string>
+    <string name="encyclopedia_label_genres">曲风</string>
+    <string name="encyclopedia_label_tags">标签</string>
+    <string name="encyclopedia_label_language">语种</string>
+    <string name="encyclopedia_label_bpm">BPM</string>
+    <string name="encyclopedia_label_lyricist">作词</string>
+    <string name="encyclopedia_label_composer">作曲</string>
+    <string name="encyclopedia_label_arranger">编曲</string>
+    <string name="encyclopedia_label_producer">制作人</string>
+    <string name="encyclopedia_label_appearance">影视节目</string>
+    <string name="encyclopedia_label_publish_date">发行日期</string>
+    <string name="encyclopedia_label_company">发行公司</string>
+    <string name="encyclopedia_label_first_listened">首次收听</string>
+    <string name="encyclopedia_label_total_listen_time">累计收听</string>
+    <string name="encyclopedia_label_play_count_times">累计播放</string>
+    <string name="encyclopedia_play_count_value">%1$d 次</string>
+    <string name="encyclopedia_total_listen_hours">%1$d 小时 %2$d 分</string>
+    <string name="encyclopedia_total_listen_minutes">%1$d 分钟</string>
+    <string name="encyclopedia_total_listen_seconds">%1$d 秒</string>
+    <string name="encyclopedia_history_source_note">听歌记录来自本机播放统计，并非账号完整历史</string>
+    <string name="encyclopedia_artist_bio_note">%1$d 张专辑 · %2$d 首单曲</string>
+    <string name="encyclopedia_action_play_all">播放全部</string>
+    <string name="encyclopedia_action_expand">展开</string>
+    <string name="encyclopedia_action_collapse">收起</string>
+    <string name="encyclopedia_similar_index">%1$d</string>
+    <string name="encyclopedia_playlist_play_count">%1$s 次播放</string>
+    <string name="encyclopedia_comment_preview_failed">评论加载失败</string>
+    <string name="encyclopedia_comment_show_all">查看全部评论</string>
+</resources>

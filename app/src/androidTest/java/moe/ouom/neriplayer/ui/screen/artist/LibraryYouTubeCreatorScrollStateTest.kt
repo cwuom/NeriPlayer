@@ -33,6 +33,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorDetail
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorHeader
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
@@ -51,7 +53,6 @@ import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicUiDependencies
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -89,7 +90,22 @@ class LibraryYouTubeCreatorScrollStateTest {
         val factory = LibraryCreatorFixtureFactory(creators, nonce)
         val gateway = EmptyScrollPlaylistGateway(nonce)
         val previousGateway = YouTubeMusicUiDependencies.libraryGateway
+        val cacheRepository = AppContainer.youtubeMusicPlaylistCacheRepo
+        val childBrowseId = "VLui_scroll_playlist_${nonce}_B_section_11"
+        val childCache = CachedYouTubeMusicPlaylistDetail(
+            browseId = childBrowseId,
+            playlistId = childBrowseId.removePrefix("VL"),
+            title = SCROLL_CHILD_PLAYLIST_TITLE,
+            subtitle = "Synthetic child playlist",
+            creatorName = creators[1].title,
+            coverUrl = "",
+            trackCount = 0,
+            firstPageSignature = "",
+            tracks = emptyList()
+        )
         try {
+            cacheRepository.save(childCache)
+            assertEquals("脱机往返前应已保存完整的子歌单缓存", childCache, cacheRepository.read(childBrowseId))
             runBlocking {
                 check(repository.awaitInitialized())
                 creators.forEach { creator ->
@@ -176,7 +192,7 @@ class LibraryYouTubeCreatorScrollStateTest {
             compose.onNodeWithText("B section playlist 11").performClick()
 
             waitForText(SCROLL_CHILD_PLAYLIST_TITLE)
-            assertTrue(gateway.requests.get() > 0)
+            assertEquals(0, gateway.requests.get())
             goBack()
             assertVerticalOffset(savedBVerticalOffset)
             compose.onNode(verticalList).performScrollToIndex(0)
@@ -207,8 +223,10 @@ class LibraryYouTubeCreatorScrollStateTest {
             creators.forEach { creator ->
                 assertEquals(1, factory.loads.getValue(creator.browseId).get())
             }
+            assertEquals(0, gateway.requests.get())
         } finally {
             YouTubeMusicUiDependencies.libraryGateway = previousGateway
+            cacheRepository.clear(childBrowseId)
             runBlocking {
                 creators.forEach { creator ->
                     repository.removeFavorite(
@@ -285,18 +303,15 @@ private class LibraryCreatorFixtureFactory(
 private class EmptyScrollPlaylistGateway(private val nonce: String) : YouTubeMusicLibraryGateway {
     val requests = AtomicInteger()
 
-    override suspend fun getLibraryPlaylists(): List<YouTubeMusicPlaylist> = emptyList()
+    override suspend fun getLibraryPlaylists(): List<YouTubeMusicPlaylist> {
+        requests.incrementAndGet()
+        error("offline scroll fixture must not request library playlists")
+    }
 
     override suspend fun getPlaylistDetail(browseId: String): YouTubeMusicPlaylistDetail {
-        check(browseId.startsWith("VLui_scroll_playlist_${nonce}_"))
         requests.incrementAndGet()
-        return YouTubeMusicPlaylistDetail(
-            playlistId = browseId.removePrefix("VL"),
-            title = SCROLL_CHILD_PLAYLIST_TITLE,
-            coverUrl = "",
-            trackCount = 0,
-            tracks = emptyList()
-        )
+        check(browseId.startsWith("VLui_scroll_playlist_${nonce}_"))
+        error("offline scroll fixture must not request playlist detail")
     }
 
     override suspend fun getPlaylistDetailPreview(browseId: String): YouTubeMusicPlaylistDetail =

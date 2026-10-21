@@ -28,6 +28,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -47,6 +49,9 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicTrack
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicUiDependencies
+import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway
+import moe.ouom.neriplayer.ui.component.playlist.playlistLoadErrorMessage
+import moe.ouom.neriplayer.common.R as CoreCommonR
 
 private const val YOUTUBE_MUSIC_PLAYLIST_SIGNATURE_TRACK_LIMIT = 100
 internal const val YOUTUBE_MUSIC_PLAYLIST_CACHE_FRESHNESS_MS = 6L * 60L * 60L * 1000L
@@ -115,15 +120,31 @@ private fun SongItem.withCreatorArtistFallback(creatorName: String): SongItem {
 
 private fun SongItem.hasDisplayArtist(): Boolean = artist.isNotBlank() || !customArtist.isNullOrBlank()
 
-class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
+class YouTubeMusicPlaylistDetailViewModel internal constructor(
+    application: Application,
+    private val localPlaylistRepo: LocalPlaylistRepository,
+    private val playlistCacheRepo: YouTubeMusicPlaylistCacheRepository,
+    private val libraryGateway: () -> YouTubeMusicLibraryGateway?,
+    private val prefetchQueue: (List<SongItem>, Int, String) -> Unit
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(
+        application,
+        LocalPlaylistRepository.getInstance(application),
+        AppContainer.youtubeMusicPlaylistCacheRepo,
+        { YouTubeMusicUiDependencies.libraryGateway },
+        { tracks, index, source -> PlayerManager.prefetchYouTubeQueueWindow(tracks, index, source) }
+    )
+
     private val _uiState = MutableStateFlow(YouTubeMusicPlaylistDetailUiState())
     val uiState: StateFlow<YouTubeMusicPlaylistDetailUiState> = _uiState
 
-    private val localPlaylistRepo = LocalPlaylistRepository.getInstance(application)
-    private val playlistCacheRepo: YouTubeMusicPlaylistCacheRepository = AppContainer.youtubeMusicPlaylistCacheRepo
     private var currentPlaylist: YouTubeMusicPlaylist? = null
+    private var currentOfflineMode: Boolean = false
+    private var currentOwner: Any? = null
+    private var playlistLoadJob: Job? = null
 
-    fun start(playlist: YouTubeMusicPlaylist, forceRefresh: Boolean = false) {
+    fun start(playlist: YouTubeMusicPlaylist, forceRefresh: Boolean = false, offlineMode: Boolean = false, owner: Any? = null) {
+        playlistLoadJob?.cancel()
         val previous = _uiState.value.takeIf {
             it.playlist?.browseId == playlist.browseId
         }
@@ -132,6 +153,8 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
             previousPlaylist = previous?.playlist
         )
         currentPlaylist = resolvedPlaylist
+        currentOfflineMode = offlineMode
+        currentOwner = owner
         _uiState.value = YouTubeMusicPlaylistDetailUiState(
             loading = true,
             playlist = resolvedPlaylist,
@@ -144,13 +167,42 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
         loadPlaylist(forceRefresh = forceRefresh)
     }
 
-    fun retry() {
-        currentPlaylist?.let { start(it, forceRefresh = true) }
+    fun updateOfflineMode(owner: Any, offlineMode: Boolean) {
+        if (currentOwner !== owner || currentOfflineMode == offlineMode) return
+        currentOfflineMode = offlineMode
+        if (offlineMode) retry(offlineMode = true, owner = owner)
+    }
+
+    fun stop(owner: Any) {
+        if (currentOwner !== owner) return
+        playlistLoadJob?.cancel()
+        currentOwner = null
+        currentPlaylist = null
+        _uiState.value = _uiState.value.copy(loading = false)
+    }
+
+    fun retry(offlineMode: Boolean = currentOfflineMode, owner: Any? = currentOwner) {
+        if (currentOwner !== owner) return
+        currentPlaylist?.let { start(it, forceRefresh = true, offlineMode = offlineMode, owner = owner) }
     }
 
     private fun loadPlaylist(forceRefresh: Boolean) {
         val playlist = currentPlaylist ?: return
-        val gateway = YouTubeMusicUiDependencies.libraryGateway
+        if (currentOfflineMode) {
+            playlistLoadJob = viewModelScope.launch {
+                val cached = withContext(Dispatchers.IO) { playlistCacheRepo.read(playlist.browseId) }
+                if (cached != null) {
+                    publishCachedPlaylist(cached, playlist, allowPrefetch = false)
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        loading = false,
+                        error = getApplication<Application>().getString(CoreCommonR.string.playlist_error_offline_no_cache)
+                    )
+                }
+            }
+            return
+        }
+        val gateway = libraryGateway()
         if (gateway == null) {
             _uiState.value = _uiState.value.copy(
                 loading = false,
@@ -158,23 +210,26 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
             )
             return
         }
-        viewModelScope.launch {
+        playlistLoadJob = viewModelScope.launch {
             var previewPublished = false
             try {
                 val cached = withContext(Dispatchers.IO) {
                     if (forceRefresh) null else playlistCacheRepo.read(playlist.browseId)
                 }
                 if (cached != null) {
-                    publishCachedPlaylist(cached, playlist)
-                    if (isYouTubeMusicPlaylistCacheFresh(cached)) {
+                    val cacheFresh = isYouTubeMusicPlaylistCacheFresh(cached)
+                    // 旧缓存等待远端确认后再预取，避免请求失败时继续加载内容
+                    publishCachedPlaylist(cached, playlist, loading = !cacheFresh)
+                    if (cacheFresh) {
                         return@launch
                     }
                     val preview = runCatching {
                         withContext(Dispatchers.IO) {
                             gateway.getPlaylistDetailPreview(playlist.browseId)
                         }
-                    }.getOrElse {
-                        publishCachedPlaylist(cached, playlist)
+                    }.getOrElse { error ->
+                        if (error is CancellationException) throw error
+                        publishCachedPlaylist(cached, playlist, error = playlistLoadErrorMessage(getApplication(), error))
                         return@launch
                     }
                     if (!preview.hasUsableTracks() ||
@@ -258,24 +313,26 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                         allTracksLoaded = false
                     )
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 val cached = withContext(Dispatchers.IO) {
                     playlistCacheRepo.read(playlist.browseId)
                 }
                 if (cached != null) {
-                    publishCachedPlaylist(cached, playlist)
+                    publishCachedPlaylist(cached, playlist, error = playlistLoadErrorMessage(getApplication(), error))
                     return@launch
                 }
                 if (previewPublished) {
                     _uiState.value = _uiState.value.copy(
                         loading = false,
-                        error = error.message ?: error.javaClass.simpleName
+                        error = playlistLoadErrorMessage(getApplication(), error)
                     )
                     return@launch
                 }
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = error.message ?: error.javaClass.simpleName
+                    error = playlistLoadErrorMessage(getApplication(), error)
                 )
             }
         }
@@ -284,7 +341,9 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
     private suspend fun publishCachedPlaylist(
         cached: CachedYouTubeMusicPlaylistDetail,
         fallback: YouTubeMusicPlaylist,
-        loading: Boolean = false
+        loading: Boolean = false,
+        error: String? = null,
+        allowPrefetch: Boolean = true
     ) {
         val localPlaylists = localPlaylistsSnapshot()
         val cachedState = withContext(Dispatchers.Default) {
@@ -294,18 +353,15 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                 .map { overlayUserEdits(it, localPlaylists) }
             YouTubeMusicPlaylistDetailUiState(
                 loading = loading,
+                error = error,
                 playlist = cachedPlaylist,
                 tracks = cachedTracks,
                 allTracksLoaded = true
             )
         }
         _uiState.value = cachedState
-        if (cachedState.tracks.isNotEmpty()) {
-            PlayerManager.prefetchYouTubeQueueWindow(
-                playlist = cachedState.tracks,
-                startIndex = 0,
-                source = "yt_playlist_detail_cached"
-            )
+        if (allowPrefetch && !loading && error == null && cachedState.tracks.isNotEmpty()) {
+            prefetchQueue(cachedState.tracks, 0, "yt_playlist_detail_cached")
         }
     }
 
@@ -341,17 +397,9 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
             return
         }
         if (detail.fullyLoaded && !loading) {
-            PlayerManager.prefetchYouTubeQueueWindow(
-                playlist = resolvedTracks,
-                startIndex = 0,
-                source = prefetchSource
-            )
+            prefetchQueue(resolvedTracks, 0, prefetchSource)
         } else {
-            PlayerManager.prefetchYouTubeQueueWindow(
-                playlist = resolvedTracks,
-                startIndex = 0,
-                source = prefetchSource
-            )
+            prefetchQueue(resolvedTracks, 0, prefetchSource)
         }
     }
 

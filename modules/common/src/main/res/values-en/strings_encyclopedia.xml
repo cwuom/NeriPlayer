@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Song Encyclopedia -->
+    <string name="encyclopedia_title">Song Encyclopedia</string>
+    <string name="encyclopedia_loading">Loading encyclopedia…</string>
+    <string name="encyclopedia_empty">No information available</string>
+    <string name="encyclopedia_not_supported">No encyclopedia source for this song</string>
+    <string name="encyclopedia_failed">Failed to load encyclopedia</string>
+    <string name="encyclopedia_retry">Retry</string>
+    <string name="encyclopedia_source_note">Data from NetEase Cloud Music, for reference only</string>
+    <string name="encyclopedia_section_basic">Basic Info</string>
+    <string name="encyclopedia_section_music">Music Attributes</string>
+    <string name="encyclopedia_section_credits">Credits</string>
+    <string name="encyclopedia_section_awards">Awards &amp; Appearances</string>
+    <string name="encyclopedia_section_listen_history">Listening History</string>
+    <string name="encyclopedia_section_artist">About the Artist</string>
+    <string name="encyclopedia_section_comments">Comments</string>
+    <string name="encyclopedia_section_similar_songs">Similar Songs</string>
+    <string name="encyclopedia_section_related_playlists">Related Playlists</string>
+    <string name="encyclopedia_section_song_detail">Song Detail</string>
+    <string name="encyclopedia_label_song">Song</string>
+    <string name="encyclopedia_label_artists">Artist</string>
+    <string name="encyclopedia_label_album">Album</string>
+    <string name="encyclopedia_label_genres">Genre</string>
+    <string name="encyclopedia_label_tags">Tags</string>
+    <string name="encyclopedia_label_language">Language</string>
+    <string name="encyclopedia_label_bpm">BPM</string>
+    <string name="encyclopedia_label_lyricist">Lyricist</string>
+    <string name="encyclopedia_label_composer">Composer</string>
+    <string name="encyclopedia_label_arranger">Arranger</string>
+    <string name="encyclopedia_label_producer">Producer</string>
+    <string name="encyclopedia_label_appearance">Media</string>
+    <string name="encyclopedia_label_publish_date">Release date</string>
+    <string name="encyclopedia_label_company">Label</string>
+    <string name="encyclopedia_label_first_listened">First listened</string>
+    <string name="encyclopedia_label_total_listen_time">Total listening</string>
+    <string name="encyclopedia_label_play_count_times">Play count</string>
+    <string name="encyclopedia_play_count_value">%1$d times</string>
+    <string name="encyclopedia_total_listen_hours">%1$d h %2$d m</string>
+    <string name="encyclopedia_total_listen_minutes">%1$d m</string>
+    <string name="encyclopedia_total_listen_seconds">%1$d s</string>
+    <string name="encyclopedia_history_source_note">Listening history comes from this device\'s playback statistics, not your full account history</string>
+    <string name="encyclopedia_artist_bio_note">%1$d albums · %2$d songs</string>
+    <string name="encyclopedia_action_play_all">Play all</string>
+    <string name="encyclopedia_action_expand">Expand</string>
+    <string name="encyclopedia_action_collapse">Collapse</string>
+    <string name="encyclopedia_similar_index">%1$d</string>
+    <string name="encyclopedia_playlist_play_count">%1$s plays</string>
+    <string name="encyclopedia_comment_preview_failed">Could not load comments</string>
+    <string name="encyclopedia_comment_show_all">Show all comments</string>
+</resources>

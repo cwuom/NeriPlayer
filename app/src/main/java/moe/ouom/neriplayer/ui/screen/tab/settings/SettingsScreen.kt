@@ -266,7 +266,8 @@ internal fun SettingsScreen(
         showRadar = otherState.homeCards.showHomeRadarCard,
         showRecommended = otherState.homeCards.showHomeRecommendedCard,
         showContinue = otherState.homeCards.showHomeContinueCard,
-        hasRecentUsage = environment.homeHasRecentUsage
+        hasRecentUsage = environment.homeHasRecentUsage,
+        showBilibili = otherState.homeCards.showHomeBilibiliCard
     )
     val homeStartAvailable = homeStartPresentation.available
     val homeCardCopy = homeStartPresentation.copy
@@ -580,6 +581,8 @@ internal fun SettingsScreen(
                                     onShowHomeRadarCardChange = homeActions.onShowHomeRadarCardChange,
                                     showHomeRecommendedCard = otherState.homeCards.showHomeRecommendedCard,
                                     onShowHomeRecommendedCardChange = homeActions.onShowHomeRecommendedCardChange,
+                                    showHomeBilibiliCard = otherState.homeCards.showHomeBilibiliCard,
+                                    onShowHomeBilibiliCardChange = homeActions.onShowHomeBilibiliCardChange,
                                     highlightTargetId = settingsHighlightTargetId,
                                     highlightPulse = settingsHighlightPulse,
                                     onHighlightFinished = onSettingsHighlightFinished

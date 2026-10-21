@@ -557,15 +557,15 @@
       "class": "moe.ouom.neriplayer.ui.NeriAppKt",
       "methods": [
         "NeriAppContent",
-        "NeriAppContent$lambda$178",
-        "NeriAppContent$lambda$178$RenderMainTabRoute",
-        "NeriAppContent$lambda$178$RenderMainTabRoute$24",
-        "NeriAppContent$lambda$178$RenderMainTabRoute$25",
-        "NeriAppContent$lambda$178$RenderMainTabRoute$26",
-        "NeriAppContent$lambda$178$RenderMainTabRoute$27",
-        "NeriAppContent$lambda$178$RenderMainTabRoute$28",
-        "NeriAppContent$lambda$178$RenderMainTabRoute$28$1",
-        "NeriAppContent$lambda$178$30"
+        "NeriAppContent$lambda$179",
+        "NeriAppContent$lambda$179$RenderMainTabRoute",
+        "NeriAppContent$lambda$179$RenderMainTabRoute$24",
+        "NeriAppContent$lambda$179$RenderMainTabRoute$25",
+        "NeriAppContent$lambda$179$RenderMainTabRoute$26",
+        "NeriAppContent$lambda$179$RenderMainTabRoute$27",
+        "NeriAppContent$lambda$179$RenderMainTabRoute$28",
+        "NeriAppContent$lambda$179$RenderMainTabRoute$28$1",
+        "NeriAppContent$lambda$179$30"
       ]
     },
     {
@@ -1107,17 +1107,17 @@
         "NowPlayingScreen",
         "NowPlayingImmersivePortraitLayout-EUb7tLY",
         "resolveNowPlayingCoverPagePresentation",
-        "NowPlayingScreen$lambda$154$1$0$1",
-        "NowPlayingScreen$lambda$154$1$0$1$21",
-        "NowPlayingScreen$lambda$154$1$0$1$22",
-        "NowPlayingScreen$lambda$154$1$0$1$23",
-        "NowPlayingScreen$lambda$154$1$0$1$24",
-        "NowPlayingScreen$lambda$154$1$0$1$25",
-        "NowPlayingScreen$lambda$154$1$0$1$26",
-        "NowPlayingScreen$lambda$154$1$0$1$27",
-        "NowPlayingScreen$lambda$154$1$0$1$28",
-        "NowPlayingScreen$lambda$154$1$0$1$29",
-        "NowPlayingScreen$lambda$154$1$0$1$23$0"
+        "NowPlayingScreen$lambda$155$1$0$1",
+        "NowPlayingScreen$lambda$155$1$0$1$21",
+        "NowPlayingScreen$lambda$155$1$0$1$22",
+        "NowPlayingScreen$lambda$155$1$0$1$23",
+        "NowPlayingScreen$lambda$155$1$0$1$24",
+        "NowPlayingScreen$lambda$155$1$0$1$25",
+        "NowPlayingScreen$lambda$155$1$0$1$26",
+        "NowPlayingScreen$lambda$155$1$0$1$27",
+        "NowPlayingScreen$lambda$155$1$0$1$28",
+        "NowPlayingScreen$lambda$155$1$0$1$29",
+        "NowPlayingScreen$lambda$155$1$0$1$23$0"
       ]
     },
     {

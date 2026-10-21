@@ -353,7 +353,8 @@ private val PersonalizationHomeTargets = setOf(
     "setting:home_card_continue",
     "setting:home_card_trending",
     "setting:home_card_radar",
-    "setting:home_card_recommended"
+    "setting:home_card_recommended",
+    "setting:home_card_bilibili"
 )
 
 private val PersonalizationPlaybackInfoTargets = setOf(
@@ -930,6 +931,7 @@ private val SettingSearchAliases = mapOf(
     "default_start_destination" to listOf("start page", "home", "tab", "qidongye"),
     "auto_show_keyboard" to listOf("keyboard", "input", "shurufa", "jianpan"),
     "home_card_continue" to listOf("continue", "recent", "jixu"),
+    "home_card_bilibili" to listOf("bilibili", "bili", "哔哩哔哩", "B站", "音乐榜", "热门视频"),
     "home_card_trending" to listOf(
         "trending",
         "charts",

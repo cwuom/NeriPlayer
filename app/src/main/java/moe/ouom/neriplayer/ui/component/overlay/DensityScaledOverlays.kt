@@ -135,7 +135,10 @@ internal fun DensityScaledModalBottomSheet(
     sheetState: SheetState = rememberModalBottomSheetState(),
     sheetMaxWidth: Dp = BottomSheetDefaults.SheetMaxWidth,
     sheetGesturesEnabled: Boolean = true,
-    shape: Shape = BottomSheetDefaults.ExpandedShape,
+    // 显式接 tokens.sheetShape，让 sheet 圆角与 NeriDesign 体系同源。material3 的
+    // ExpandedShape 目前派生自 MaterialTheme.shapes.extraLarge（Clean 下同为 30dp
+    // 连续圆角，故两者等价），但不依赖这层内部映射，避免 material3 升级后圆角走样。
+    shape: Shape = if (NeriDesign.isClean) NeriDesign.tokens.sheetShape else BottomSheetDefaults.ExpandedShape,
     containerColor: Color = BottomSheetDefaults.ContainerColor,
     contentColor: Color = contentColorFor(containerColor),
     tonalElevation: Dp = 0.dp,

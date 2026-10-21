@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -53,4 +55,53 @@ class MoreOptionsSheetBackTargetTest {
         owner.back()
         assertEquals(MoreOptionsPage.EDIT_INFO, owner.page)
     }
+
+    @Test
+    fun `main page lets the sheet own the back gesture for its dismiss animation`() {
+        assertTrue(owner().canPredictiveDismiss)
+    }
+
+    @Test
+    fun `sub pages keep the back gesture with the animated page transition`() {
+        val owner = owner()
+        owner.open(MoreOptionsPage.ENCYCLOPEDIA)
+
+        assertFalse(owner.canPredictiveDismiss)
+    }
+
+    @Test
+    fun `a sheet opened straight on a sub page owns the back gesture because it dismisses`() {
+        val owner = owner(initialPage = MoreOptionsPage.LYRIC_BEHAVIOR)
+
+        assertTrue(owner.canPredictiveDismiss)
+    }
+
+    @Test
+    fun `saving song info disables the predictive dismiss gesture`() {
+        val owner = owner()
+        owner.setEditSaving(true)
+
+        assertFalse(owner.canPredictiveDismiss)
+    }
+
+    @Test
+    fun `an in flight dismissal owns back until the sheet is hidden`() {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val hidden = CompletableDeferred<Unit>()
+        var dismissals = 0
+        val owner = MoreOptionsSheetOwner(scope, hide = { hidden.await() }, expand = {}) { dismissals++ }
+        try {
+            assertTrue(owner.canPredictiveDismiss)
+            owner.dismiss()
+            assertTrue(owner.isDismissing)
+            assertFalse(owner.canPredictiveDismiss)
+            owner.dismiss()
+            hidden.complete(Unit)
+            assertEquals(1, dismissals)
+            assertFalse(owner.isDismissing)
+        } finally {
+            scope.cancel()
+        }
+    }
+
 }

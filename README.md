@@ -631,6 +631,7 @@ python3 -B tools_pub/quality/module_boundaries.py
 - 主界面是 **Compose NavHost + 动态底栏**：
   `Home / Explore / Library / Settings` 为主路径。
 - `Home` 会根据首页卡片可用性动态显示；`Debug` 仅开发者模式开启后显示。
+- 在“首页与启动”中可关闭哔哩哔哩音乐，隐藏首页音乐榜单和热门视频，并停止加载这两个分区；设置会保留到下次启动。
 - 主标签内容由 `MainTabLayerHost` 保留出场/入场双场景，平板以居中缩放和淡入淡出切换，手机保留横向位移；
   每个场景独立持有可保存状态和高级玻璃 owner，快速反向切换也会从当前进度继续。
 - 详情页默认使用背景轻微下沉、前景自下而上展开的抽屉式反馈；

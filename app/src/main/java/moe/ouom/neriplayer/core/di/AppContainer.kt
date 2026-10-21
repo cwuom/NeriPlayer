@@ -74,6 +74,8 @@ import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.platform.bilibili.cache.BiliCacheRepositories
 import moe.ouom.neriplayer.data.local.platform.bilibili.BiliVideoSkipRepositoryProvider
 import moe.ouom.neriplayer.platform.netease.NeteasePlaylistCacheRepository
+import moe.ouom.neriplayer.platform.netease.encyclopedia.NeteaseSongEncyclopediaRepository
+import moe.ouom.neriplayer.platform.netease.encyclopedia.SongEncyclopediaRepository
 import moe.ouom.neriplayer.platform.youtube.playlist.YouTubeMusicPlaylistCacheRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
@@ -372,6 +374,11 @@ object AppContainer {
     }
 
     val biliClient by lazy { BiliClient(biliCookieRepo, client = sharedOkHttpClient) }
+
+    /** 歌曲百科仓库；数据源为网易云，其它来源返回 NotSupported。 */
+    val songEncyclopediaRepository: SongEncyclopediaRepository by lazy {
+        NeteaseSongEncyclopediaRepository(neteaseClient)
+    }
 
     private val commentCache = CommentMemoryCache()
     private val neteaseComments = NeteaseCommentRepository(commentCache) { neteaseClient }

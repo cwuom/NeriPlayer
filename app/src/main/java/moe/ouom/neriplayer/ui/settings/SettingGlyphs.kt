@@ -167,6 +167,7 @@ internal fun settingGlyphFor(key: String): SettingGlyph? = when (key) {
     "home_card_trending" -> g(Icons.Rounded.Whatshot, Orange)
     "home_card_radar" -> g(Icons.Rounded.Radar, Teal)
     "home_card_recommended" -> g(Icons.Rounded.Recommend, Pink)
+    "home_card_bilibili" -> g(Icons.Rounded.LiveTv, Pink)
     "always_use_new_tab_style" -> g(Icons.Rounded.Tab, Indigo)
     // now playing
     "show_cover_source_badge" -> g(Icons.Rounded.Sell, Teal)

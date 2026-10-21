@@ -347,6 +347,10 @@ internal class AppHomeSettingsActions(
     val onShowHomeRecommendedCardChange: (Boolean) -> Unit = { enabled ->
             scope.launch { repo.setHomeCardRecommended(enabled) }
         }
+
+    val onShowHomeBilibiliCardChange: (Boolean) -> Unit = { enabled ->
+            scope.launch { repo.setHomeCardBilibili(enabled) }
+        }
 }
 
 internal class AppStorageSettingsActions(

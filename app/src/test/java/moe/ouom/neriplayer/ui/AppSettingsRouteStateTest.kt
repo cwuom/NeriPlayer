@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.ui.settings.owner.AppUsbExclusiveSettingsActions
 import moe.ouom.neriplayer.ui.settings.route.AppAppearanceSettingsActions
+import moe.ouom.neriplayer.ui.settings.route.AppHomeSettingsActions
 import moe.ouom.neriplayer.ui.settings.route.appSettingsRouteStateFlow
 import moe.ouom.neriplayer.ui.settings.route.initialAppSettingsRouteState
 import org.junit.Assert.assertEquals
@@ -90,14 +91,17 @@ class AppSettingsRouteStateTest {
         AppAppearanceSettingsActions(repository, this) {}
             .onInternationalizationEnabledChange(nextInternationalization)
         AppUsbExclusiveSettingsActions(repository, this).onBitPerfectChange(nextBitPerfect)
+        AppHomeSettingsActions(repository, this).onShowHomeBilibiliCardChange(false)
 
         val updated = withTimeout(10_000) {
             appSettingsRouteStateFlow(repository).first { state ->
                 state.other.internationalizationEnabled == nextInternationalization &&
-                    state.playback.usbExclusivePreferences.bitPerfect == nextBitPerfect
+                    state.playback.usbExclusivePreferences.bitPerfect == nextBitPerfect &&
+                    !state.other.homeCards.showHomeBilibiliCard
             }
         }
         assertEquals(nextInternationalization, updated.other.internationalizationEnabled)
         assertEquals(nextBitPerfect, updated.playback.usbExclusivePreferences.bitPerfect)
+        assertEquals(false, updated.other.homeCards.showHomeBilibiliCard)
     }
 }

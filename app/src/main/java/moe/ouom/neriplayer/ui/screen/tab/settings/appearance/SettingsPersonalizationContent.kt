@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.LiveTv
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.Star
@@ -136,6 +137,8 @@ internal fun SettingsPersonalizationHomeCard(
     onShowHomeRadarCardChange: (Boolean) -> Unit,
     showHomeRecommendedCard: Boolean,
     onShowHomeRecommendedCardChange: (Boolean) -> Unit,
+    showHomeBilibiliCard: Boolean,
+    onShowHomeBilibiliCardChange: (Boolean) -> Unit,
     highlightTargetId: String?,
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
@@ -192,6 +195,19 @@ internal fun SettingsPersonalizationHomeCard(
             onCheckedChange = onShowHomeRecommendedCardChange,
             enabled = true,
             targetId = "setting:home_card_recommended",
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
+        )
+
+        SettingsHomeCardSwitch(
+            title = stringResource(CoreCommonR.string.settings_home_card_bilibili),
+            description = stringResource(CoreCommonR.string.settings_home_card_bilibili_desc),
+            icon = Icons.Outlined.LiveTv,
+            checked = showHomeBilibiliCard,
+            onCheckedChange = onShowHomeBilibiliCardChange,
+            enabled = true,
+            targetId = "setting:home_card_bilibili",
             highlightTargetId = highlightTargetId,
             highlightPulse = highlightPulse,
             onHighlightFinished = onHighlightFinished

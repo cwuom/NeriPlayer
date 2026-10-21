@@ -108,7 +108,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -127,6 +126,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankType
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -140,12 +140,12 @@ import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeNeteasePlaylistSectionState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeNeteaseSongSectionState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeSectionState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
@@ -165,67 +165,6 @@ import kotlin.math.ceil
 import kotlin.math.min
 import java.util.Locale
 
-private const val HomeScrollKeyContinueHeader = "home:continue:header"
-private const val HomeScrollKeyContinueContent = "home:continue:content"
-private const val HomeScrollKeyYtGuess = "home:ytmusic:guess"
-private const val HomeScrollKeyYtDaily = "home:ytmusic:daily"
-private const val HomeScrollKeyYtMoreHeader = "home:ytmusic:more:header"
-private const val HomeScrollKeyYtMoreLoading = "home:ytmusic:more:loading"
-private const val HomeScrollKeyYtMoreError = "home:ytmusic:more:error"
-private const val HomeScrollKeyYtShelvesLoading = "home:ytmusic:shelves:loading"
-private const val HomeScrollKeyYtShelvesError = "home:ytmusic:shelves:error"
-private const val HomeScrollKeyYtEmptyFeedLoading = "home:ytmusic:empty-feed:loading"
-private const val HomeScrollKeyYtEmptyFeedError = "home:ytmusic:empty-feed:error"
-private const val HomeScrollKeyNeteaseRadarPlaylists = "home:netease:radar-playlists"
-private const val HomeScrollKeyNeteaseRadarPlaylistsHeader = "$HomeScrollKeyNeteaseRadarPlaylists:header"
-private const val HomeScrollKeyNeteaseRadarPlaylistsContent = "$HomeScrollKeyNeteaseRadarPlaylists:content"
-
-internal class HomePhoneGridCells(minSize: Dp) : GridCells {
-    private val adaptive = GridCells.Adaptive(minSize)
-    private val twoColumns = GridCells.Fixed(2)
-
-    override fun Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): List<Int> {
-        val sizes = with(adaptive) { calculateCrossAxisCellSizes(availableSize, spacing) }
-        // use the measured space so padding and fractional density cannot turn two tiles into one
-        return if (sizes.size == 1 && availableSize - spacing >= 2) {
-            with(twoColumns) { calculateCrossAxisCellSizes(availableSize, spacing) }
-        } else sizes
-    }
-}
-
-private fun homeNeteaseSongSectionKey(group: String, source: NeteaseHomeSongSource): String {
-    return "home:netease:$group:${source.name.lowercase(Locale.ROOT)}"
-}
-
-private fun homeNeteasePlaylistSectionKey(source: NeteaseHomePlaylistSource): String {
-    return "home:netease:playlist:${source.name.lowercase(Locale.ROOT)}"
-}
-
-internal fun homeNeteasePlaylistScrollKey(sectionKey: String, id: Long): String {
-    return "$sectionKey:playlist:$id"
-}
-
-internal fun homeNeteaseRadarPlaylistScrollKey(id: Long): String {
-    return "$HomeScrollKeyNeteaseRadarPlaylists:playlist:$id"
-}
-
-private fun homeYtMusicPlaylistScrollKey(playlist: YouTubeMusicPlaylist): String {
-    return "home:ytmusic:playlist:${playlist.favoriteId()}"
-}
-
-private fun homeYtMusicShelfScrollKey(shelfIndex: Int, title: String): String {
-    return "home:ytmusic:shelf:$shelfIndex:${title.hashCode()}"
-}
-
-private fun homeYtMusicHomeItemScrollKey(
-    shelfKey: String,
-    itemIndex: Int,
-    item: YouTubeMusicHomeItem
-): String {
-    val stableId = item.browseId.ifBlank { item.videoId }.ifBlank { item.title }
-    return "$shelfKey:item:$itemIndex:${stableId.hashCode()}"
-}
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
@@ -233,6 +172,7 @@ fun HomeScreen(
     showTrendingCard: Boolean = true,
     showRadarCard: Boolean = true,
     showRecommendedCard: Boolean = true,
+    showBilibiliCard: Boolean = true,
     usageEntries: List<UsageEntry> = emptyList(),
     usageLoaded: Boolean = true,
     offlineMode: Boolean = false,
@@ -245,7 +185,11 @@ fun HomeScreen(
     topAppBarState: TopAppBarState,
     onScrollAnchorIndexesChanged: (Map<String, Int>) -> Unit = {},
     onOpenRecent: (UsageEntry) -> Unit = {},
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onBiliMusicRankMore: (BiliMusicRankType) -> Unit = {},
+    onBiliMusicHotMore: () -> Unit = {},
+    onBiliMusicRankPlay: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> },
+    onBiliMusicHotPlay: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
@@ -466,8 +410,18 @@ fun HomeScreen(
         }
     }
 
+    val hasVisibleBiliMusicSections = showBilibiliCard && showOnlineFeeds && (
+            ui.biliMusicRank.songs.isNotEmpty() ||
+                    ui.biliMusicRank.loading ||
+                    !ui.biliMusicRank.error.isNullOrBlank() ||
+                    ui.biliMusicHot.items.isNotEmpty() ||
+                    ui.biliMusicHot.loading ||
+                    !ui.biliMusicHot.error.isNullOrBlank()
+            )
+
     val hasVisibleSections =
-            showContinue || (showOnlineFeeds && (showNeteaseTrending || showNeteaseRadar || showRecommendedCard || isInternational))
+            showContinue || hasVisibleBiliMusicSections ||
+                    (showOnlineFeeds && (showNeteaseTrending || showNeteaseRadar || showRecommendedCard || isInternational))
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -552,6 +506,30 @@ fun HomeScreen(
                     nextGridItemIndex += 1
                     return key
                 }
+                // Bilibili 音乐模块：版权音乐榜（热门榜/原创榜）与音乐分区热门视频
+                // 网易云模式：排在「私人雷达 / 雷达歌单」之后、「热力飙升 / 我的推荐」之前；
+                // 国际化模式：排在「猜你喜欢 / 每日发现」之后、「更多推荐」之前。
+                val addBiliMusicSections: LazyGridScope.() -> Unit = biliSections@ {
+                    if (!showBilibiliCard) return@biliSections
+                    addBiliMusicRankSection(
+                        registerKey = ::registerGridItemKey,
+                        state = ui.biliMusicRank,
+                        onTypeSelected = vm::selectBiliMusicRankType,
+                        onMoreClick = { onBiliMusicRankMore(ui.biliMusicRank.type) },
+                        onPlay = onBiliMusicRankPlay,
+                        onRetry = { vm.loadBiliMusicRank(force = true) },
+                        offlineMode = offlineMode
+                    )
+                    addBiliMusicHotSection(
+                        registerKey = ::registerGridItemKey,
+                        state = ui.biliMusicHot,
+                        onMoreClick = onBiliMusicHotMore,
+                        onPlay = onBiliMusicHotPlay,
+                        onRetry = { vm.loadBiliMusicHot(force = true) },
+                        offlineMode = offlineMode
+                    )
+                }
+
                 LazyVerticalGrid(
                     state = gridState,
                     columns = gridColumns,
@@ -626,6 +604,10 @@ fun HomeScreen(
                                     offlineMode = offlineMode
                                 )
                             }
+
+                            // Bilibili 音乐模块：国际化模式下排在「猜你喜欢 / 每日发现」之后、
+                            // 「更多推荐」之前，与网易云模式的相对位置保持一致。
+                            addBiliMusicSections()
 
                             if (showRecommendedCard) {
                                 item(
@@ -876,6 +858,11 @@ fun HomeScreen(
                                     }
                             }
 
+                            // Bilibili 音乐模块：版权音乐榜（热门榜/原创榜）与音乐分区热门视频。
+                            // 排在「私人雷达 / 雷达歌单」之后、「热力飙升 / 我的推荐」之前，
+                            // 使 B 站榜单与网易云榜单相邻，且不拆散网易云的雷达组合。
+                            addBiliMusicSections()
+
                             if (showNeteaseTrending) {
                                 ui.trendingSongSections.forEach { sectionState ->
                                     val sectionKey = homeNeteaseSongSectionKey(
@@ -915,6 +902,7 @@ fun HomeScreen(
                                     )
                                 }
                             }
+
                         }
                     }
                 }

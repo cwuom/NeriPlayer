@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_error_title">无法加载歌单</string>
+    <string name="playlist_error_bili_risk_control">哔哩哔哩暂时限制了请求（HTTP 412），请稍后重试</string>
+    <string name="playlist_error_http">平台暂时无法提供歌单（HTTP %1$d），请稍后重试</string>
+    <string name="playlist_error_network">无法连接到平台，请检查网络后重试</string>
+    <string name="playlist_error_unknown">暂时无法加载歌单，请稍后重试</string>
+    <string name="playlist_error_offline_no_cache">当前处于脱机模式，此歌单尚无可用缓存</string>
+</resources>

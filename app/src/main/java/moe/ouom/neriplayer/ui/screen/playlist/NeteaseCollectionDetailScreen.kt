@@ -98,6 +98,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistLoadErrorDialog
+import moe.ouom.neriplayer.ui.component.playlist.playlistLoadErrorMessage
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -202,8 +204,12 @@ fun NeteasePlaylistDetailScreen(
     )
 
     val ui by vm.uiState.collectAsState()
-    // 使用 Unit 作为 key, 确保每次进入都重新加载最新数据
-    LaunchedEffect(Unit) { vm.startPlaylist(playlist) }
+    val pageOwner = remember(playlist.id) { Any() }
+    DisposableEffect(vm, pageOwner) {
+        vm.startPlaylist(playlist, offlineMode = offlineMode, owner = pageOwner)
+        onDispose { vm.stop(pageOwner) }
+    }
+    LaunchedEffect(vm, pageOwner, offlineMode) { vm.updateOfflineMode(pageOwner, offlineMode) }
 
     // 保存最新的header数据, 用于在Screen销毁时更新使用记录
     var latestHeader by remember { mutableStateOf<NeteaseCollectionHeader?>(null) }
@@ -233,8 +239,12 @@ fun NeteasePlaylistDetailScreen(
         playlistId = playlist.id,
         playlistSource = "netease",
         initialCoverUrl = playlist.picUrl,
-        onRetry = vm::retry,
-        onBack = onBack,
+        onRetry = {
+            if (isNeteaseCollectionHeaderForRoute(vm.uiState.value.header, playlist.id, "netease")) {
+                vm.retry(offlineMode = offlineMode, owner = pageOwner)
+            }
+        },
+        onBack = { vm.stop(pageOwner); onBack() },
         onSongClick = onSongClick,
         offlineMode = offlineMode
     )
@@ -259,8 +269,12 @@ fun NeteaseAlbumDetailScreen(
     )
 
     val ui by vm.uiState.collectAsState()
-    // 使用 Unit 作为 key, 确保每次进入都重新加载最新数据
-    LaunchedEffect(Unit) { vm.startAlbum(album) }
+    val pageOwner = remember(album.id) { Any() }
+    DisposableEffect(vm, pageOwner) {
+        vm.startAlbum(album, offlineMode = offlineMode, owner = pageOwner)
+        onDispose { vm.stop(pageOwner) }
+    }
+    LaunchedEffect(vm, pageOwner, offlineMode) { vm.updateOfflineMode(pageOwner, offlineMode) }
 
     // 保存最新的header数据, 用于在Screen销毁时更新使用记录
     var latestHeader by remember { mutableStateOf<NeteaseCollectionHeader?>(null) }
@@ -290,8 +304,12 @@ fun NeteaseAlbumDetailScreen(
         playlistId = album.id,
         playlistSource = "neteaseAlbum",
         initialCoverUrl = album.picUrl,
-        onRetry = vm::retry,
-        onBack = onBack,
+        onRetry = {
+            if (isNeteaseCollectionHeaderForRoute(vm.uiState.value.header, album.id, "neteaseAlbum")) {
+                vm.retry(offlineMode = offlineMode, owner = pageOwner)
+            }
+        },
+        onBack = { vm.stop(pageOwner); onBack() },
         onSongClick = onSongClick,
         offlineMode = offlineMode
     )
@@ -311,6 +329,16 @@ fun DetailScreen(
 ) {
 
     val context = LocalContext.current
+
+    val loadFailure = ui.error
+    if (loadFailure != null && (ui.header == null || isNeteaseCollectionHeaderForRoute(ui.header, playlistId, playlistSource))) {
+        PlaylistLoadErrorDialog(
+            message = playlistLoadErrorMessage(context, loadFailure),
+            onRetry = onRetry,
+            onBack = onBack
+        )
+        return
+    }
 
     // 下载进度
     var showDownloadManager by remember { mutableStateOf(false) }
@@ -840,7 +868,7 @@ fun DetailScreen(
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
                                                 Text(
-                                                    text = stringResource(CoreCommonR.string.playlist_load_failed_format, loadError),
+                                                    text = playlistLoadErrorMessage(context, loadError),
                                                     color = MaterialTheme.colorScheme.error
                                                 )
                                                 Spacer(Modifier.height(8.dp))

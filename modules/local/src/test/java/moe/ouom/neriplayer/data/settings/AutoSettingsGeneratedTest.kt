@@ -25,6 +25,32 @@ import org.mockito.Mockito.`when`
 
 class AutoSettingsGeneratedTest {
     @Test
+    fun homeBilibiliVisibilityIsRegisteredForPersistenceAndBackup() {
+        val setting = AutoSettingsMetadata.setting("home_card_bilibili")
+        assertEquals(AutoSettingsSections.personalization, setting?.section)
+        assertTrue(AutoSettingsBackupKeys.booleanKeys.any { it.name == "home_card_bilibili" })
+    }
+
+    @Test
+    fun homeBilibiliVisibilityDefaultsOnAndRetainsAnExplicitOptOut() = runBlocking {
+        val filesDir = File.createTempFile("neriplayer-home-bilibili", "").apply {
+            delete()
+            mkdirs()
+            deleteOnExit()
+        }
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(filesDir)
+        `when`(context.applicationContext).thenReturn(context)
+        val repository = AutoSettingsRepository(context)
+
+        assertTrue(repository.homeCardBilibiliFlow.first())
+        repository.setHomeCardBilibili(false)
+        assertEquals(false, AutoSettingsRepository(context).homeCardBilibiliFlow.first())
+        repository.setHomeCardBilibili(true)
+        assertTrue(repository.homeCardBilibiliFlow.first())
+    }
+
+    @Test
     fun generatedBackupKeysCoverSettingsSchema() {
         val booleanKeyNames = AutoSettingsBackupKeys.booleanKeys.map { it.name }.toSet()
         val floatKeyNames = AutoSettingsBackupKeys.floatKeys.map { it.name }.toSet()

@@ -15,7 +15,6 @@ data class BiliPagedItems<T>(
         get() = missingPages == 0
 }
 
-internal class BiliHttpStatusException(
-    val statusCode: Int,
-    body: String
-) : IOException("HTTP $statusCode: $body")
+class BiliHttpStatusException(
+    val statusCode: Int
+) : IOException("HTTP $statusCode")
