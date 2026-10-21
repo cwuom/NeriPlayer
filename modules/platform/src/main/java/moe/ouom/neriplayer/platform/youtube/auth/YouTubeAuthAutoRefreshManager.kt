@@ -11,6 +11,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.webkit.ScriptHandler
+import java.io.IOException
 import java.net.URI
 import java.net.URLEncoder
 import kotlin.time.Duration.Companion.milliseconds
@@ -254,10 +255,10 @@ class YouTubeAuthAutoRefreshManager(
             NPLogger.d(TAG, "refresh skipped reason=$reason gate=${ForegroundWebLoginGuard.SKIP_REASON}")
             return YouTubeAuthAutoRefreshResult(reason = ForegroundWebLoginGuard.SKIP_REASON)
         }
-        return accessMutex.withLock {
+        return accessMutex.withLock refresh@{
             if (ForegroundWebLoginGuard.isActive) {
                 NPLogger.d(TAG, "refresh skipped reason=$reason gate=${ForegroundWebLoginGuard.SKIP_REASON}")
-                return@withLock YouTubeAuthAutoRefreshResult(reason = ForegroundWebLoginGuard.SKIP_REASON)
+                return@refresh YouTubeAuthAutoRefreshResult(reason = ForegroundWebLoginGuard.SKIP_REASON)
             }
             val currentAuth = authProvider().normalized()
             val currentHealth = authHealthProvider()
@@ -270,7 +271,7 @@ class YouTubeAuthAutoRefreshManager(
                 force = force
             )
             if (!gateDecision.allowed) {
-                return@withLock YouTubeAuthAutoRefreshResult(reason = gateDecision.reason)
+                return@refresh YouTubeAuthAutoRefreshResult(reason = gateDecision.reason)
             }
 
             // *PSIDTS 十分钟就换一次, 先走一次轻量轮换, 成了就完全不必起 WebView
@@ -281,13 +282,21 @@ class YouTubeAuthAutoRefreshManager(
                     force = force
                 )
                 if (outcome is YouTubeCookieRotationOutcome.Rotated) {
-                    rotatedCookieUpdater?.invoke(outcome.cookies) ?: authUpdater(
-                        mergeYouTubeAuthBundle(
-                            base = authProvider().normalized(),
-                            observedCookies = outcome.cookies,
-                            savedAt = System.currentTimeMillis()
+                    if (!persistAuthUpdate {
+                            rotatedCookieUpdater?.invoke(outcome.cookies) ?: authUpdater(
+                                mergeYouTubeAuthBundle(
+                                    base = authProvider().normalized(),
+                                    observedCookies = outcome.cookies,
+                                    savedAt = System.currentTimeMillis()
+                                )
+                            )
+                        }
+                    ) {
+                        return@refresh YouTubeAuthAutoRefreshResult(
+                            attempted = true,
+                            reason = "storage_unavailable"
                         )
-                    )
+                    }
                     syncRotatedCookiesToWebView(outcome.cookies)
                 }
                 outcome
@@ -298,7 +307,7 @@ class YouTubeAuthAutoRefreshManager(
                     TAG,
                     "refresh rotated cookies reason=$reason keys=${rotatedCookies.keys.joinToString()} nextIntervalMs=${cookieRotator.nextRotationIntervalMs()}"
                 )
-                return@withLock YouTubeAuthAutoRefreshResult(
+                return@refresh YouTubeAuthAutoRefreshResult(
                     attempted = true,
                     refreshed = true,
                     authChanged = true,
@@ -313,7 +322,7 @@ class YouTubeAuthAutoRefreshManager(
             )
 
             val activeWebView = ensureWebView()
-                ?: return@withLock YouTubeAuthAutoRefreshResult(reason = "webview_unavailable")
+                ?: return@refresh YouTubeAuthAutoRefreshResult(reason = "webview_unavailable")
             try {
                 syncCookies(activeWebView, currentAuth)
                 REFRESH_URLS.forEach { url ->
@@ -400,12 +409,20 @@ class YouTubeAuthAutoRefreshManager(
                             observedCookies = refreshedAuth.cookies
                         )
                         if (salvageableCookies.isNotEmpty()) {
-                            authUpdater(
-                                mergeYouTubeAuthBundle(
-                                    base = currentAuth,
-                                    observedCookies = salvageableCookies
+                            if (!persistAuthUpdate {
+                                    authUpdater(
+                                        mergeYouTubeAuthBundle(
+                                            base = currentAuth,
+                                            observedCookies = salvageableCookies
+                                        )
+                                    )
+                                }
+                            ) {
+                                return@refresh YouTubeAuthAutoRefreshResult(
+                                    attempted = true,
+                                    reason = "storage_unavailable"
                                 )
-                            )
+                            }
                             NPLogger.i(
                                 TAG,
                                 "refresh salvaged identity cookies reason=$reason url=$url keys=${salvageableCookies.keys.joinToString()}"
@@ -417,8 +434,11 @@ class YouTubeAuthAutoRefreshManager(
                     val shouldPersist = authChanged ||
                         currentHealth.state != refreshedHealth.state ||
                         currentHealth.state != YouTubeAuthState.Valid
-                    if (shouldPersist) {
-                        authUpdater(refreshedAuth)
+                    if (shouldPersist && !persistAuthUpdate { authUpdater(refreshedAuth) }) {
+                        return@refresh YouTubeAuthAutoRefreshResult(
+                            attempted = true,
+                            reason = "storage_unavailable"
+                        )
                     }
                     consecutiveFailures = 0
                     circuitOpenUntilMs = 0L
@@ -426,7 +446,7 @@ class YouTubeAuthAutoRefreshManager(
                         TAG,
                         "refresh success reason=$reason url=$url authChanged=$authChanged persisted=$shouldPersist state=${refreshedHealth.state} liveSession=$pageConfirmedSession"
                     )
-                    return@withLock YouTubeAuthAutoRefreshResult(
+                    return@refresh YouTubeAuthAutoRefreshResult(
                         attempted = true,
                         refreshed = true,
                         authChanged = shouldPersist,
@@ -451,6 +471,14 @@ class YouTubeAuthAutoRefreshManager(
                 releaseWebView()
             }
         }
+    }
+
+    private fun persistAuthUpdate(update: () -> Unit): Boolean = try {
+        update()
+        true
+    } catch (error: IOException) {
+        NPLogger.w(TAG, "Failed to persist refreshed authentication; keeping the saved account", error)
+        false
     }
 
     private data class RefreshGateDecision(

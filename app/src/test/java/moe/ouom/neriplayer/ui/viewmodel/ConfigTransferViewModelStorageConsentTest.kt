@@ -136,7 +136,7 @@ class ConfigTransferViewModelStorageConsentTest {
     }
 
     @Test
-    fun `leaving the host during a slow read cancels import before a confirmation can appear`() = runTest {
+    fun `explicit cancellation during a slow read prevents a later confirmation`() = runTest {
         fixture(Dispatchers.IO).use { fixture ->
             val releaseRead = CountDownLatch(1)
             fixture.readGate = releaseRead
@@ -145,14 +145,14 @@ class ConfigTransferViewModelStorageConsentTest {
             val importJob = fixture.viewModel.viewModelScope.coroutineContext[Job]!!.children.single()
 
             fixture.viewModel.cancelAuthStorageImport()
-            val stateAfterLeaving = fixture.viewModel.uiState.value
-            val cancelledByHost = importJob.isCancelled
+            val stateAfterCancellation = fixture.viewModel.uiState.value
+            val cancelledExplicitly = importJob.isCancelled
             importJob.cancel()
             releaseRead.countDown()
             importJob.join()
 
-            assertTrue(cancelledByHost)
-            assertFalse(stateAfterLeaving.isImporting)
+            assertTrue(cancelledExplicitly)
+            assertFalse(stateAfterCancellation.isImporting)
             assertFalse(fixture.viewModel.uiState.value.requiresAuthStorageConfirmation)
             assertTrue(fixture.savedAuth.isEmpty())
         }

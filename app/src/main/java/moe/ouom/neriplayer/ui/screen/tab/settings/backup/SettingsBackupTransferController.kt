@@ -8,7 +8,6 @@ import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
@@ -123,9 +122,6 @@ internal fun rememberSettingsBackupTransferController(
     val config: ConfigTransferViewModel = viewModel()
     val playlistState by playlists.uiState.collectAsStateWithLifecycleCompat()
     val configState by config.uiState.collectAsStateWithLifecycleCompat()
-    DisposableEffect(config) {
-        onDispose { config.cancelAuthStorageImport() }
-    }
     if (configState.requiresAuthStorageConfirmation) {
         SettingsConfigImportStorageWarning(
             onConfirm = config::confirmAuthStorageImport,
