@@ -109,6 +109,7 @@ import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNa
 import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.scheduleRestoredPlaybackResume
+import moe.ouom.neriplayer.core.player.persistence.scheduleRestoredLocalSourceValidation
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
@@ -236,7 +237,7 @@ internal fun shouldSkipRedundantSyncServiceStart(
     nowElapsedRealtime: Long,
     dedupeWindowMs: Long = 1500L
 ): Boolean {
-    if (source != "app_bootstrap") {
+    if (source != APP_BOOTSTRAP_START_SOURCE) {
         return false
     }
     if (lastSuccessfulStartElapsedRealtime <= 0L) {
@@ -1391,6 +1392,10 @@ class AudioPlayerService : Service() {
                 ) {
                     NPLogger.w("NERI-APS", "Restored playback after process restart")
                     updateAll()
+                }
+            } else if (action == ACTION_SYNC && startSource == APP_BOOTSTRAP_START_SOURCE) {
+                PlayerManager.scheduleRestoredLocalSourceValidation(serviceScope) {
+                    stopServiceForUnavailableRestoredSource(startId)
                 }
             }
         } else if (hasPlaybackSurfaceContent()) {

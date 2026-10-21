@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.core.player.service
 import android.os.Build
 import androidx.lifecycle.Lifecycle
 
+internal const val APP_BOOTSTRAP_START_SOURCE = "app_bootstrap"
+
 internal fun shouldUseForegroundServiceStart(
     sdkInt: Int,
     forceForeground: Boolean,

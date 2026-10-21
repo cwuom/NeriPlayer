@@ -108,7 +108,7 @@ class RestoredLocalPlaybackThreadTest {
     }
 
     @Test
-    fun noActionServiceStartStopsAfterMissingRestoredSourceWithoutDiscardingRetryState() {
+    fun serviceStartsStopAfterMissingRestoredSourcesWithoutDiscardingRetryState() {
         assumeTrue("仅在 API 35 模拟器运行", Build.VERSION.SDK_INT == 35 &&
             Build.HARDWARE in setOf("ranchu", "goldfish"))
         assumeFalse("已有服务时不干预其生命周期", AudioPlayerService.isInstanceActiveForDiagnostics())
@@ -125,8 +125,11 @@ class RestoredLocalPlaybackThreadTest {
         try {
             check(directory.mkdirs())
             ActivityScenario.launch(TestComposeActivity::class.java).use { scenario ->
-                listOf(false, true).forEach { fileUri ->
-                    val audio = File(directory, if (fileUri) "file.wav" else "raw.wav")
+                val starts = listOf(AudioPlayerService.ACTION_SYNC, null)
+                    .flatMap { action -> listOf(false, true).map { fileUri -> action to fileUri } }
+                starts.forEach { (action, fileUri) ->
+                    val sourceName = if (action == null) "restart" else "app_bootstrap"
+                    val audio = File(directory, "$sourceName-${if (fileUri) "file" else "raw"}.wav")
                     assertFalse(audio.exists())
                     val song = SongItem(
                         id = -System.nanoTime(), name = "Restored service fixture", artist = "Offline fixture",
@@ -181,9 +184,13 @@ class RestoredLocalPlaybackThreadTest {
                         callbackGeneration = service.field("mediaSessionCallback").field("requestGeneration") as Long
                     }
                     scenario.onActivity { activity ->
-                        assertNotNull(activity.startService(Intent(activity, AudioPlayerService::class.java)))
+                        val intent = Intent(activity, AudioPlayerService::class.java).setAction(action)
+                        if (action == AudioPlayerService.ACTION_SYNC) {
+                            intent.putExtra(AudioPlayerService.EXTRA_START_SOURCE, "app_bootstrap")
+                        }
+                        assertNotNull(activity.startService(intent))
                     }
-                    awaitServiceState("无 action 启动必须收到新的 AMS startId") {
+                    awaitServiceState("$sourceName 启动必须收到新的 AMS startId") {
                         val startId = service.field("latestStartId") as Int
                         startId > 0 && startId > previousStartId
                     }

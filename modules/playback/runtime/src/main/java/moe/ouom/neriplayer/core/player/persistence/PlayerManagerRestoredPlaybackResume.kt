@@ -33,16 +33,23 @@ internal fun PlayerManager.scheduleRestoredPlaybackResume(
         if (resumeRestoredPlaybackIfNeededImpl(onSourceUnavailable) != null) onResumed()
     }
 
+internal fun PlayerManager.scheduleRestoredLocalSourceValidation(
+    scope: CoroutineScope,
+    onSourceUnavailable: () -> Unit
+): Job = scope.launch(Dispatchers.Main.immediate) {
+    val candidate = pendingRestoredPlaybackResume() ?: return@launch
+    if (!isLocalSong(candidate.song) || isListenTogetherActive()) return@launch
+    val sourceAvailable = probeCurrentRestoredSource(candidate) ?: return@launch
+    if (!sourceAvailable && !isListenTogetherActive()) onSourceUnavailable()
+}
+
 internal suspend fun PlayerManager.resumeRestoredPlaybackIfNeededImpl(
     onSourceUnavailable: () -> Unit = {}
 ): Long? = withContext(Dispatchers.Main.immediate) {
     ensureInitialized()
     val candidate = pendingRestoredPlaybackResume() ?: return@withContext null
     if (!canResumeInCurrentListenTogetherRoom(candidate.restored)) return@withContext null
-    val sourceAvailable = restoredSourceAvailable(candidate.song)
-    coroutineContext.ensureActive()
-    // 探测期间用户可能换歌或暂停，旧结果不能消费新的恢复请求
-    if (!isCurrentRestoredPlaybackResume(candidate)) return@withContext null
+    val sourceAvailable = probeCurrentRestoredSource(candidate) ?: return@withContext null
     if (!canResumeInCurrentListenTogetherRoom(candidate.restored)) return@withContext null
     if (!sourceAvailable) {
         onSourceUnavailable()
@@ -68,10 +75,18 @@ private fun PlayerManager.pendingRestoredPlaybackResume(): RestoredPlaybackResum
     return RestoredPlaybackResumeCandidate(restored, song, index, playbackRequestToken)
 }
 
+private suspend fun PlayerManager.probeCurrentRestoredSource(candidate: RestoredPlaybackResumeCandidate): Boolean? {
+    val sourceAvailable = restoredSourceAvailable(candidate.song)
+    coroutineContext.ensureActive()
+    // 探测期间用户可能换歌或暂停，旧结果不能处理新的恢复请求
+    if (!isCurrentRestoredPlaybackResume(candidate)) return null
+    return sourceAvailable
+}
+
 private suspend fun PlayerManager.restoredSourceAvailable(song: SongItem): Boolean {
     if (!isLocalSong(song)) return true
     return try {
-        withContext(Dispatchers.IO) { isRestorableLocalSong(song) }.also { available ->
+        withContext(Dispatchers.IO) { isReadableLocalMediaUri(localMediaSource(song)) }.also { available ->
             if (!available) NPLogger.w(
                 "NERI-PlayerManager",
                 "resumeRestoredPlaybackIfNeeded(): keep restored local progress because media is not readable yet, song=${song.name}"

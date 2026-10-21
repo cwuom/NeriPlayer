@@ -6,6 +6,7 @@ import android.content.UriPermission
 import android.content.res.AssetFileDescriptor
 import android.os.Looper
 import android.provider.DocumentsContract
+import java.io.FileNotFoundException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -368,6 +369,264 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
         assertEquals(0, resumedCallbacks)
     }
 
+    @Test
+    fun `bootstrap source validation checks readable media on IO without resuming or consuming it`() = withFixture {
+        val pending = manager.restoredPlaybackSnapshot()
+        val persistedAt = manager.lastStatePersistAtMs
+
+        scheduleValidation().join()
+
+        assertTrue(providerThreads.isNotEmpty())
+        assertTrue(providerThreads.none { it })
+        assertSame(pending, manager.restoredPlaybackSnapshot())
+        assertEquals(PositionMs, manager._playbackPositionMs.value)
+        assertEquals(listOf(song), manager.currentQueueSnapshot().playlist)
+        assertEquals(song, manager.currentSongFlow.value)
+        assertEquals(persistedAt, manager.lastStatePersistAtMs)
+        assertTrue(sourceUnavailableThreads.isEmpty())
+        assertTrue(playbackThreads.isEmpty())
+        assertTrue(persistedResumeIntent.isEmpty())
+    }
+
+    @Test
+    fun `bootstrap source validation reports unavailable media without changing pending progress`() = withFixture {
+        readable.set(false)
+
+        assertUnavailableKeepsPending { scheduleValidation() }
+    }
+
+    @Test
+    fun `bootstrap source validation reports an unreadable file URI without changing pending progress`() = withFixture {
+        readable.set(false)
+        val fileSong = song.copy(localFilePath = "file://${song.localFilePath}")
+        manager.publishCurrentQueue(listOf(fileSong), 0)
+        manager._currentSongFlow.value = fileSong
+
+        assertUnavailableKeepsPending { scheduleValidation() }
+    }
+
+    @Test
+    fun `bootstrap source validation reports permission failures without consuming the pending intent`() = withFixture {
+        permissionFailure.set(SecurityException("grant unavailable"))
+
+        assertUnavailableKeepsPending { scheduleValidation() }
+    }
+
+    @Test
+    fun `bootstrap source validation reports provider exceptions without consuming the pending intent`() = withFixture {
+        permissionFailure.set(IllegalStateException("provider unavailable"))
+
+        assertUnavailableKeepsPending { scheduleValidation() }
+    }
+
+    @Test
+    fun `bootstrap source validation dispatches its unavailable callback on main even from an IO scope`() = withFixture {
+        readable.set(false)
+
+        assertUnavailableKeepsPending { scheduleValidation(CoroutineScope(coroutineContext + Dispatchers.IO)) }
+
+        assertTrue(providerThreads.isNotEmpty())
+        assertTrue(providerThreads.none { it })
+    }
+
+    @Test
+    fun `bootstrap validation can recheck authorization without automatically playing readable media`() = withFixture {
+        readable.set(false)
+        assertUnavailableKeepsPending { scheduleValidation() }
+        val pending = manager.restoredPlaybackSnapshot()
+
+        readable.set(true)
+        scheduleValidation().join()
+
+        assertEquals(listOf(true), sourceUnavailableThreads)
+        assertSame(pending, manager.restoredPlaybackSnapshot())
+        assertEquals(PositionMs, manager._playbackPositionMs.value)
+        assertTrue(playbackThreads.isEmpty())
+        assertTrue(persistedResumeIntent.isEmpty())
+    }
+
+    @Test
+    fun `bootstrap validation opens granted content before treating it as available`() {
+        contentOpenFailures().forEach { failure ->
+            withFixture {
+                selectGrantedContentSource()
+                readable.set(false)
+                openFailure.set(failure)
+
+                assertUnavailableKeepsPending { scheduleValidation() }
+
+                assertContentOpenedOnIO()
+            }
+        }
+    }
+
+    @Test
+    fun `restored resume preserves granted content progress when the document cannot open`() {
+        contentOpenFailures().forEach { failure ->
+            withFixture {
+                selectGrantedContentSource()
+                readable.set(false)
+                openFailure.set(failure)
+
+                assertUnavailableKeepsPending()
+
+                assertContentOpenedOnIO()
+            }
+        }
+    }
+
+    @Test
+    fun `granted readable content validates without consuming progress and resumes on request`() = withFixture {
+        selectGrantedContentSource()
+        val pending = manager.restoredPlaybackSnapshot()
+
+        scheduleValidation().join()
+
+        assertContentOpenedOnIO()
+        assertSame(pending, manager.restoredPlaybackSnapshot())
+        assertTrue(sourceUnavailableThreads.isEmpty())
+        assertTrue(playbackThreads.isEmpty())
+        assertTrue(persistedResumeIntent.isEmpty())
+        assertEquals(PositionMs, manager.resumeRestoredPlaybackIfNeeded())
+        assertContentOpenedOnIO()
+        assertSame(RestoredPlaybackState.None, manager.restoredPlaybackSnapshot())
+        assertEquals(listOf(true), playbackThreads)
+        assertTrue(sourceUnavailableThreads.isEmpty())
+    }
+
+    @Test
+    fun `bootstrap source validation skips remote media without consuming pending progress`() = withFixture {
+        val pending = manager.restoredPlaybackSnapshot()
+        val remote = song.copy(localFilePath = null, mediaUri = null)
+        manager.publishCurrentQueue(listOf(remote), 0)
+        manager._currentSongFlow.value = remote
+
+        scheduleValidation().join()
+
+        assertSame(pending, manager.restoredPlaybackSnapshot())
+        assertTrue(providerThreads.isEmpty())
+        assertTrue(sourceUnavailableThreads.isEmpty())
+        assertTrue(playbackThreads.isEmpty())
+        assertTrue(persistedResumeIntent.isEmpty())
+    }
+
+    @Test
+    fun `bootstrap source validation skips absent paused and unselected restore states`() = withFixture {
+        manager.clearRestoredPlayback()
+        scheduleValidation().join()
+        assertSame(RestoredPlaybackState.None, manager.restoredPlaybackSnapshot())
+        manager.setRestoredPlayback(PositionMs, false)
+        val paused = manager.restoredPlaybackSnapshot()
+        scheduleValidation().join()
+        assertSame(paused, manager.restoredPlaybackSnapshot())
+        manager.setRestoredPlayback(PositionMs, true)
+        val pending = manager.restoredPlaybackSnapshot()
+        manager.publishCurrentQueue(emptyList(), -1)
+        scheduleValidation().join()
+        assertSame(pending, manager.restoredPlaybackSnapshot())
+
+        assertTrue(providerThreads.isEmpty())
+        assertTrue(sourceUnavailableThreads.isEmpty())
+        assertTrue(playbackThreads.isEmpty())
+        assertTrue(persistedResumeIntent.isEmpty())
+    }
+
+    @Test
+    fun `a newer playback token rejects a failed bootstrap validation`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true, validationOnly = true) { manager.playbackRequestToken += 1 }
+    }
+
+    @Test
+    fun `a different selected index rejects a failed bootstrap validation`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true, validationOnly = true) {
+            manager.publishCurrentQueue(listOf(song, song.copy(id = 552L)), 1)
+        }
+    }
+
+    @Test
+    fun `a replacement queued source rejects a failed bootstrap validation`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true, validationOnly = true) {
+            manager.publishCurrentQueue(listOf(song.copy(localFilePath = "/new/source.mp3")), 0)
+        }
+    }
+
+    @Test
+    fun `a replacement current song rejects a failed bootstrap validation`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true, validationOnly = true) {
+            manager._currentSongFlow.value = song.copy(localFilePath = "/new/source.mp3")
+        }
+    }
+
+    @Test
+    fun `an equal replacement pending state rejects a failed bootstrap validation`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true, validationOnly = true) {
+            manager.setRestoredPlayback(PositionMs, true)
+        }
+    }
+
+    @Test
+    fun `pausing rejects a failed bootstrap validation without consuming the paused state`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true, validationOnly = true) { manager.suppressRestoredAutoResume() }
+        assertEquals(RestoredPlaybackState.Paused(PositionMs), manager.restoredPlaybackSnapshot())
+    }
+
+    @Test
+    fun `releasing the player rejects a failed bootstrap validation`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true, validationOnly = true) { manager.initialized = false }
+    }
+
+    @Test
+    fun `bootstrap source validation skips active rooms without consuming their pending restore`() {
+        listOf("listener", "controller").forEach { role ->
+            withFixture {
+                session.value = ListenTogetherSessionState(roomId = "room", role = role)
+                val pending = manager.restoredPlaybackSnapshot()
+
+                scheduleValidation().join()
+
+                assertSame(pending, manager.restoredPlaybackSnapshot())
+                assertTrue(providerThreads.isEmpty())
+                assertTrue(sourceUnavailableThreads.isEmpty())
+                assertTrue(playbackThreads.isEmpty())
+                assertTrue(persistedResumeIntent.isEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun `joining a room during bootstrap validation protects the service without consuming pending progress`() {
+        listOf("listener", "controller").forEach { role ->
+            withFixture {
+                assertRejectedAfterProbe(unavailable = true, validationOnly = true) {
+                    session.value = ListenTogetherSessionState(roomId = "room", role = role)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `cancelling bootstrap source validation cannot report an unavailable source`() = withFixture {
+        readable.set(false)
+        val barrier = ProbeBarrier()
+        beforeOpen = barrier::awaitRelease
+        val pending = manager.restoredPlaybackSnapshot()
+        val request = scheduleValidation()
+        try {
+            barrier.entered.await()
+            request.cancel()
+        } finally {
+            barrier.release.countDown()
+        }
+        request.cancelAndJoin()
+
+        assertSame(pending, manager.restoredPlaybackSnapshot())
+        assertEquals(PositionMs, manager._playbackPositionMs.value)
+        assertEquals(listOf(song), manager.currentQueueSnapshot().playlist)
+        assertTrue(sourceUnavailableThreads.isEmpty())
+        assertTrue(playbackThreads.isEmpty())
+        assertTrue(persistedResumeIntent.isEmpty())
+    }
+
     private fun withFixture(block: suspend ResumeFixture.() -> Unit) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
@@ -433,12 +692,22 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
         }
     }
 
+    private fun contentOpenFailures(): List<Exception?> = listOf(
+        null, FileNotFoundException("document deleted"), SecurityException("document access denied"),
+        IllegalStateException("provider unavailable")
+    )
+
     private class ResumeFixture(private val scope: CoroutineScope) : CoroutineScope by scope {
         val manager = PlayerManager
         val application = mock(Application::class.java)
         val readable = AtomicBoolean(true)
         val permissionFailure = AtomicReference<RuntimeException?>()
+        val openFailure = AtomicReference<Exception?>()
         val providerThreads = ConcurrentLinkedQueue<Boolean>()
+        private val openProbeThreads = ConcurrentLinkedQueue<Boolean>()
+        private val permission = mock(UriPermission::class.java)
+        private val tree = DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", "primary:Music")
+        private val document = DocumentsContract.buildDocumentUriUsingTree(tree, "primary:Music/Album/restore.mp3")
         val playbackThreads = mutableListOf<Boolean>()
         val persistedResumeIntent = mutableListOf<Boolean>()
         val sourceUnavailableThreads = mutableListOf<Boolean>()
@@ -452,9 +721,6 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
 
         init {
             val resolver = mock(ContentResolver::class.java)
-            val permission = mock(UriPermission::class.java)
-            val tree = DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", "primary:Music")
-            val document = DocumentsContract.buildDocumentUriUsingTree(tree, "primary:Music/Album/restore.mp3")
             doReturn(resolver).`when`(application).contentResolver
             doReturn(tree).`when`(permission).uri
             doReturn(true).`when`(permission).isReadPermission
@@ -465,9 +731,23 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
             }.`when`(resolver).persistedUriPermissions
             doAnswer {
                 providerThreads += Looper.myLooper() == Looper.getMainLooper()
+                openProbeThreads += Looper.myLooper() == Looper.getMainLooper()
                 beforeOpen?.invoke()
+                openFailure.get()?.let { throw it }
                 if (readable.get()) mock(AssetFileDescriptor::class.java) else null
             }.`when`(resolver).openAssetFileDescriptor(document, "r")
+        }
+
+        fun selectGrantedContentSource() {
+            doReturn(document).`when`(permission).uri
+            val contentSong = song.copy(localFilePath = null, mediaUri = document.toString())
+            manager.publishCurrentQueue(listOf(contentSong), 0)
+            manager._currentSongFlow.value = contentSong
+        }
+
+        fun assertContentOpenedOnIO() {
+            assertTrue("必须实际打开文档而非只检查授权", openProbeThreads.isNotEmpty())
+            assertTrue(openProbeThreads.none { it })
         }
 
         fun environment(): PlayerEnvironment {
@@ -485,14 +765,18 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
             onSourceUnavailable = { sourceUnavailableThreads += Looper.myLooper() == Looper.getMainLooper() }
         ) { resumedCallbacks++ }
 
-        suspend fun assertUnavailableKeepsPending() {
+        fun scheduleValidation(scope: CoroutineScope = this): Job = manager.scheduleRestoredLocalSourceValidation(scope) {
+            sourceUnavailableThreads += Looper.myLooper() == Looper.getMainLooper()
+        }
+
+        suspend fun assertUnavailableKeepsPending(schedule: () -> Job = { scheduleResume() }) {
             val pending = manager.restoredPlaybackSnapshot()
             val queue = manager.currentQueueSnapshot()
             val current = manager._currentSongFlow.value
             val position = manager._playbackPositionMs.value
             val persisted = persistedResumeIntent.toList()
 
-            scheduleResume().join()
+            schedule().join()
 
             assertEquals(listOf(true), sourceUnavailableThreads)
             assertEquals(0, resumedCallbacks)
@@ -504,13 +788,17 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
             assertTrue(playbackThreads.isEmpty())
         }
 
-        suspend fun assertRejectedAfterProbe(unavailable: Boolean = false, mutate: () -> Unit) {
+        suspend fun assertRejectedAfterProbe(
+            unavailable: Boolean = false,
+            validationOnly: Boolean = false,
+            mutate: () -> Unit
+        ) {
             if (unavailable) readable.set(false)
             val barrier = ProbeBarrier()
             beforeOpen = barrier::awaitRelease
             val request = async(start = CoroutineStart.UNDISPATCHED) {
-                if (unavailable) {
-                    scheduleResume().join()
+                if (unavailable || validationOnly) {
+                    if (validationOnly) scheduleValidation().join() else scheduleResume().join()
                     null
                 } else manager.resumeRestoredPlaybackIfNeeded()
             }
