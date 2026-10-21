@@ -11,6 +11,7 @@
 Sources are in `src/main/java/moe/ouom/neriplayer/data`.
 
 - `local`：媒体、导入与歌单 / media, imports, and playlists
+- `local/media/curation`、`local/media/metadata`：批量整理的写入授权、内嵌资源检查与元数据恢复事务 / write authorization, embedded asset inspection, and metadata recovery transactions for batch curation
 - `local/storage`：占用统计、扫描与清理 / storage accounting, scans, and cleanup
 - `settings`、`config`：设置与配置，KSP 在本库运行 / settings and configuration, with KSP run in this library
 - `history`、`stats`、`playlist`：历史与使用统计 / history and usage statistics
@@ -25,17 +26,13 @@ Room 数据由 `:database` 保存，平台账号和缓存由 `:platform` 管理�
 
 本地编辑保留首次修改前的歌词和封面，恢复时优先使用持久化原始值，重扫不会用当前侧载内容覆盖原始值。未知内容与明确为空分开处理；缺失且为空的翻译、罗马字歌词不会创建额外文件，已有歌词文件按类型复用。
 
-文件夹扫描优先保存授权树内的音频引用，不把路径存在当作 MediaStore 读取授权。旧引用不可读时，播放器可在同一存储卷和已授权目录内恢复同一文件的 SAF 引用，编辑回写也复用这一来源。封面和元数据侧载共用恢复事务，失败或取消时回滚；回滚未完成时停止尝试其它音频别名。
-
 Cache cleanup preserves downloaded audio, lyrics, and covers. `ExtraCacheClearResult` distinguishes freed file bytes from reusable Room space; deleting records does not immediately shrink the database file. Existing directories, index filenames, and sync Worker class names must remain compatible across upgrades.
 
 Local edits preserve lyrics and artwork from before the first edit. Restoration prefers persisted originals, and rescanning keeps those originals separate from current sidecars. Unknown and explicitly empty values remain distinct; missing empty translation and romanization tracks do not create files, and existing lyric files are reused by type.
 
-Folder scans prefer audio references within the granted document tree; an existing path does not establish MediaStore read access. When an old reference is unreadable, playback can recover a SAF reference to the same file within a granted directory on the same volume, and metadata edits reuse that source. Artwork and metadata sidecars share a recovery transaction. Failure or cancellation rolls back the changes, and an unresolved rollback stops further audio alias attempts.
+`LocalMediaWriteAccess` 在写入前规划授权：Android 11 及以上对尚不可写的 MediaStore 条目分批请求系统同意，Android 10 对其他应用创建的文件引导授予所在文件夹。音频与歌词、封面伴随文件的修改由恢复日志记录写入意图、原始备份和对象身份，读回确认后才提交；恢复遇到对象替换或内容冲突时保留日志，避免覆盖外部更改。
 
-从扫描预览创建或加入普通歌单时，持久化用户明确选择的本地引用，保留旁车恢复的远端身份。本机播放仅接受与当前首选引用完全一致的来源标记；同步投影清除此标记和本地地址。旧记录没有扫描来源证据时不自动推断，再次显式扫描导入同一远端条目可以更新它的本地来源。
-
-Creating or updating an ordinary playlist from scan results persists the explicitly selected local reference while retaining remote identity recovered from sidecars. Local playback accepts provenance only when it exactly matches the current preferred reference; remote sync projections remove provenance and local addresses. Records without scan provenance remain unclassified until the user explicitly imports a scanned source again.
+`LocalMediaWriteAccess` plans authorization before writes: Android 11 and later request system consent in batches for MediaStore items that are not yet writable; Android 10 requests a folder grant for files created by other apps. Recovery journals track write intent, original backups, and object identity for audio and lyric/artwork companions, committing only after read-back verification. Replaced objects or content conflicts retain their journals rather than overwriting external changes.
 
 大型扫描对仅有 content URI 的音频复用目录行和已知侧载索引，不逐首打开音频或查询文档。延后的身份信息在预览后台补全，提交导入前还会按有界批次核对所选 MP3 的原始身份，立即关闭预览也不会跳过这一步；歌词和封面基线保持原值。
 
@@ -52,6 +49,16 @@ Track playback statistics use Room as their primary store, without loading all t
 带事件 ID 的歌单播放增量只有在 Room 计数和回执共用事务时才能确认。旧 JSON 导入失败时保留该事件，恢复后先确认实际主存再重试迁移，避免进程重启后重复计数。没有事件 ID 的既有歌单写入仍支持 JSON 回退。
 
 Playlist play increments carrying event IDs are acknowledged only when Room persists the count and receipt in one transaction. Failed legacy JSON promotion leaves the event pending; recovery confirms the actual primary store before retrying promotion, preventing duplicate counts after process restart. Existing playlist writes without event IDs retain JSON fallback.
+
+## 扫描与本地播放 / Scans and local playback
+
+文件夹扫描优先保存授权树内的音频引用，不把路径存在当作 MediaStore 读取授权。旧引用不可读时，播放器可在同一存储卷和已授权目录内恢复同一文件的 SAF 引用，编辑回写也复用这一来源。封面和元数据侧载共用恢复事务，失败或取消时回滚；回滚未完成时停止尝试其它音频别名。
+
+Folder scans prefer audio references within the granted document tree; an existing path does not establish MediaStore read access. When an old reference is unreadable, playback can recover a SAF reference to the same file within a granted directory on the same volume, and metadata edits reuse that source. Artwork and metadata sidecars share a recovery transaction. Failure or cancellation rolls back the changes, and an unresolved rollback stops further audio alias attempts.
+
+从扫描预览创建或加入普通歌单时，持久化用户明确选择的本地引用，保留旁车恢复的远端身份。本机播放仅接受与当前首选引用完全一致的来源标记；同步投影清除此标记和本地地址。旧记录没有扫描来源证据时不自动推断，再次显式扫描导入同一远端条目可以更新它的本地来源。
+
+Creating or updating an ordinary playlist from scan results persists the explicitly selected local reference while retaining remote identity recovered from sidecars. Local playback accepts provenance only when it exactly matches the current preferred reference; remote sync projections remove provenance and local addresses. Records without scan provenance remain unclassified until the user explicitly imports a scanned source again.
 
 ## 测试 / Tests
 
