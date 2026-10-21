@@ -381,9 +381,10 @@ class SettingsExternalLyricsPageTouchTest {
         target: SemanticsNodeInteraction,
         viewport: SemanticsNodeInteraction,
         avoidMiniPlayer: Boolean
-    ) {
+    ): SemanticsNode {
         var lastGeometry = "not sampled"
         repeat(28) { attempt ->
+            waitForStableTarget(target, viewport, requireTarget = false)
             val node = viewport.fetchSemanticsNode()
             // 手势和可见性统一使用屏幕像素，避免应用缩放后的 dp 与原生坐标混用
             val viewportBounds = node.boundsInRoot.translate(node.positionOnScreen - node.positionInRoot)
@@ -393,12 +394,13 @@ class SettingsExternalLyricsPageTouchTest {
             val clearance = with(node.layoutInfo.density) { 4.dp.toPx() }
             val safeBounds = Rect(viewportBounds.left, viewportBounds.top, viewportBounds.right, bottom - clearance)
             assertTrue("原生滑动需要真实可用的页面区域: $safeBounds", safeBounds.width > 4f && safeBounds.height > 4f)
-            val targetBounds = runCatching { target.fetchSemanticsNode().unclippedScreenBounds() }.getOrNull()
+            val targetNode = runCatching { target.fetchSemanticsNode() }.getOrNull()
+            val targetBounds = targetNode?.unclippedScreenBounds()
             if (targetBounds != null) {
                 assertTrue("目标无法完整放入迷你播放器上方: target=$targetBounds, safe=$safeBounds",
                     targetBounds.height <= safeBounds.height)
                 if (targetBounds.top >= safeBounds.top && targetBounds.bottom <= safeBounds.bottom && target.isDisplayed()) {
-                    return
+                    return checkNotNull(targetNode)
                 }
             }
             val correction = when {
@@ -426,9 +428,8 @@ class SettingsExternalLyricsPageTouchTest {
             Log.i(DiagnosticTag, "density=$fixtureDensityScale, swipe=$lastGeometry")
             nativeSwipe(swipeStart, swipeEnd, stopBeforeUp = precise)
             composeRule.waitForIdle()
-            waitForStableTarget(target, viewport, requireTarget = false)
         }
-        fail("真实滑动后目标仍未完整露出迷你播放器上方: $lastGeometry")
+        throw AssertionError("真实滑动后目标仍未完整露出迷你播放器上方: $lastGeometry")
     }
 
     private fun SemanticsNode.unclippedScreenBounds(): Rect? {
@@ -447,7 +448,9 @@ class SettingsExternalLyricsPageTouchTest {
         val maxValue: Float,
         val targetPosition: Offset?,
         val targetSize: IntSize?,
-        val targetBounds: Rect?
+        val targetBounds: Rect?,
+        val viewportBounds: Rect,
+        val miniPlayerBounds: Rect?
     )
 
     private fun waitForStableTarget(
@@ -460,16 +463,20 @@ class SettingsExternalLyricsPageTouchTest {
         var stableSamples = 0
         while (SystemClock.uptimeMillis() < deadline) {
             awaitHardwareFrame(deadline)
-            val scroll = viewport.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+            val viewportNode = viewport.fetchSemanticsNode()
+            val scroll = viewportNode.config[SemanticsProperties.VerticalScrollAxisRange]
             val node = runCatching { target.fetchSemanticsNode() }.getOrNull()
+            val miniPlayer = composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).fetchSemanticsNode()
             val sample = ScrollFrameSample(scroll.value(), scroll.maxValue(),
-                node?.positionOnScreen, node?.size, node?.boundsInRoot)
+                node?.positionOnScreen, node?.size, node?.boundsInRoot,
+                viewportNode.boundsInRoot.translate(viewportNode.positionOnScreen - viewportNode.positionInRoot),
+                miniPlayer.unclippedScreenBounds())
             stableSamples = if (sample == previous) stableSamples + 1 else 1
             Log.i(DiagnosticTag, "density=$fixtureDensityScale, settling=$sample, stableFrames=$stableSamples")
             if (stableSamples >= 3 && (!requireTarget || node != null)) return
             previous = sample
         }
-        fail("真实渲染帧中滚动值及目标坐标未连续三次稳定: last=$previous, stableFrames=$stableSamples")
+        fail("真实渲染帧中滚动、目标、页面及迷你播放器未连续三次稳定: last=$previous, stableFrames=$stableSamples")
     }
 
     private fun awaitHardwareFrame(deadline: Long) {
@@ -692,9 +699,7 @@ class SettingsExternalLyricsPageTouchTest {
 
     private fun dragSlider(spec: SliderCase, viewport: SemanticsNodeInteraction) {
         val target = slider(spec.title)
-        swipeUntilVisible(target, viewport, avoidMiniPlayer = true)
-        waitForStableTarget(target, viewport, requireTarget = true)
-        val node = target.fetchSemanticsNode()
+        val node = swipeUntilVisible(target, viewport, avoidMiniPlayer = true)
         val range = node.config[SemanticsProperties.ProgressBarRangeInfo]
         val initialTolerance = if (range.steps > 0) {
             (range.range.endInclusive - range.range.start) / (range.steps + 1) / 2f + 0.0001f
@@ -706,11 +711,14 @@ class SettingsExternalLyricsPageTouchTest {
         val next = if (toEnd) range.range.endInclusive else range.range.start
         val fraction = ((range.current - range.range.start) / (range.range.endInclusive - range.range.start))
             .coerceIn(0.05f, 0.95f)
-        val start = node.positionOnScreen + Offset(node.size.width * fraction, node.size.height / 2f)
-        val end = node.positionOnScreen + Offset(if (toEnd) node.size.width - 1f else 1f, node.size.height / 2f)
+        logTouchGeometry(spec.title, viewport, "slider-before", target, fraction)
+        // 离线提示可能在诊断期间抬高迷你播放器，下发手势前重新确认目标没有被遮挡
+        val touchNode = swipeUntilVisible(target, viewport, avoidMiniPlayer = true)
+        val start = touchNode.positionOnScreen + Offset(touchNode.size.width * fraction, touchNode.size.height / 2f)
+        val end = touchNode.positionOnScreen + Offset(
+            if (toEnd) touchNode.size.width - 1f else 1f, touchNode.size.height / 2f)
         val downTime = SystemClock.uptimeMillis()
         var released = false
-        logTouchGeometry(spec.title, viewport, "slider-before", target, fraction)
         try {
             injectTouch(downTime, MotionEvent.ACTION_DOWN, start)
             for (step in 1..12) {
