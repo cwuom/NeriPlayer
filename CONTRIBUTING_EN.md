@@ -14,7 +14,7 @@ implementation**. Keep documentation aligned with the source code and runtime be
 - Online source capabilities mainly come from **NetEase Cloud Music**,
   **Bilibili**, and **YouTube Music**.
 - Playback metadata and lyrics completion currently use **NetEase + QQ Music**,
-  with LRCLIB available as an external lyrics source.
+  with LRCLIB, Kugou, and AMLL TTML as external lyrics sources.
 - Data is local by default. GitHub / WebDAV sync is **optional** and syncs
   metadata such as playlists, favorites, recent plays, and playback stats,
   not media files.
@@ -58,7 +58,7 @@ If it affects extension paths, tests, or module boundaries, update CONTRIBUTING.
 ### Development Environment
 
 - **Android Studio**: latest stable version
-- **JDK**: 17
+- **JDK**: 17 for builds; 21 additionally for `:playback:runtime` JVM tests
 - **Kotlin**: 2.4.10, JVM target 17
 - **AGP**: 9.4.1
 - **Gradle**: 9.6.1
@@ -73,9 +73,12 @@ Additional notes:
 
 - The repository uses Git submodules. Clone with `--recursive`, or run
   `git submodule update --init --recursive`.
-- `buildSrc`, `ksp-annotations`, and `ksp-processor` use JDK 17 toolchains.
+- `build-logic` targets Java/Kotlin 17; `ksp-annotations` and `ksp-processor` use JDK 17 toolchains.
   Install JDK 17; point the Android Studio Gradle JDK and command-line
   `JAVA_HOME` to it when possible.
+- `:playback:runtime` JVM tests use a Java toolchain with JDK 21 for the Android 16
+  Robolectric sandbox. Install a Gradle-discoverable JDK 21 before running those tests
+  or `verifyModularization`; production bytecode still targets Java 17.
 - The build script reads the Git short commit hash to generate the version name,
   so Git must be installed locally.
 - Dependency versions are managed by `gradle/libs.versions.toml` and module
@@ -107,6 +110,9 @@ NeriPlayer covers a broad product surface. Protect these paths first:
 - **Navigation and glass UI**: `MainTabLayerHost`, drawer/coherent detail feedback,
   interruptible main-tab switching, page-state retention, standardized Snackbar
   overlays, and Advanced Glass owner handoff.
+- **Themes and information sheets**: Material / Clean preview styles, light/dark
+  switching, predictive-back cancellation, and song encyclopedia identity checks,
+  request generations, and optional-section fallback.
 - **System entry points and desktop shell**: `LauncherShortcuts`, home-screen widgets,
   `USB_DEVICE_ATTACHED` handling, and playback-service control entry points.
 - **Storage and cache UI**: `StorageUsageAnalyzer`, cache cleanup options,
@@ -208,7 +214,7 @@ The root [README_EN.md](README_EN.md#module-layout) is the entry point for the c
 - Local data: `:local` groups settings, media, playlists, statistics, backup, traffic, and sync adapters. It owns business mappings, host interfaces, WorkManager adapters, and settings KSP; screen rendering stays in app.
 - Sync: `:sync` combines GitHub/WebDAV transport, encrypted credentials, device identity, causal counters, sessions, sanitization, merging, and Worker policies. Transport and calculation packages retain separate dependency allowlists; local repository adapters stay in `:local`. Deletion records and mutation versions commit atomically.
 - Listen Together: `:listentogether` owns protocol, transport, identity rules, and sessions. Protocol code uses only models, serialization, and the standard library; host interfaces provide playback, resources, and Android services.
-- App and tooling: `:app` owns Android entry points, Compose screens, and assembly. KSP tools, upstream lyric modules, `build-logic`, `buildSrc`, and the Listen Together server are outside the 14-library count. The vendored Miuix source/docs tree is outside the app graph.
+- App and tooling: `:app` owns Android entry points, Compose screens, and assembly. KSP tools, upstream lyric modules, `build-logic`, and the Listen Together server are outside the 14-library count. The vendored Miuix source/docs tree is outside the app graph.
 
 Libraries cannot reference app, screens, or `AppContainer`, and the graph must remain acyclic. `:playback:runtime` may use its own `PlayerManager`. Live settings use providers; the host injects HTTP, account, and device-token capabilities. Room business mappings belong to local/platform repositories; database and rule components must not depend on runtime implementations.
 
@@ -223,9 +229,13 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
     Lyricon, global downloads, and the shared image loader.
 
 - `app/src/main/java/moe/ouom/neriplayer/activity/`
-  - `MainActivity.kt`: the only external entry point. Handles safe mode, startup, disclaimer,
+  - `MainActivity.kt`: the main UI and audio-sharing/deep-link entry point. Handles safe mode, startup, disclaimer,
     onboarding, external audio imports, Listen Together deep links, and the top-level
     Compose host.
+  - `activity/car/BluetoothMediaValidationActivity.kt` handles system Bluetooth
+    media-capability validation; a USB attach Activity alias targets `MainActivity`.
+    The playback runtime Manifest declares the car browser service and artwork
+    provider. Maintain permissions and caller boundaries for each entry point.
   - Platform login activities live under `activity/auth/` and run in dedicated
     secondary processes. `activity/sync/` stores Activity-side sync warning state.
   - `UsbDeviceAttachHandling.kt` enables or disables the USB attach Activity alias
@@ -241,6 +251,11 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   - `MainTabLayerHost.kt` retains outgoing and incoming main-tab scenes,
     performs interruptible directional transitions, and preserves saveable state
     plus a glass owner for each scene.
+  - `ui/theme/NeriTheme.kt` switches Material / Clean through one content host.
+    `NeriDesign.kt` supplies style geometry; `CleanTheme.kt` supplies Clean colors
+    and typography. Theme changes must preserve navigation. `AppGlobalDialogHosts.kt`
+    displays global download traffic confirmations, while `globalDialogVisible`
+    coordinates their visibility with Now Playing and its More sheet.
   - `ui/feedback/` owns app-wide Snackbar/Toast feedback policy. Before adding a
     new global feedback surface, check `AppFeedback` and `ViewSnackbar` first.
 
@@ -297,6 +312,9 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   - `youtube/api`: YouTube Music clients, PoToken, JS Challenge, request/response parsing. Protocol models belong to `:model`. Authentication persistence and caches live in the same library under `platform/youtube`.
   - `lyrics/api`: LrcLib, Kugou, and AMLL service access; source repositories, matching, and fallback live in the same library under `platform/lyrics`.
   - `search/api`: `SearchApi`, NetEase, and QQ metadata search services. `SearchManager` lives in the same library under `platform/lyrics`, and shared music models belong to `modules/model`.
+  - `netease/encyclopedia`: song encyclopedia sources, parsing, and bounded memory
+    caching. Shared contracts live in `:model` under `data/model/encyclopedia`;
+    screens and request state remain in app.
   - `AppContainer` assembles clients and routing with HTTP, debug configuration, and live settings providers; libraries do not read the container or player singleton.
   - `PlainLyrics.kt` in `modules/lyrics` provides shared timeline conversion.
 
@@ -370,8 +388,10 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
     and USB-exclusive fallback handling.
   - `resolver/netease/PlayerManagerNeteaseAutoSourceSwitch.kt`: Bilibili fallback for NetEase
     tracks that are restricted, have no playable result, or only return previews.
-  - `resolver/youtube/YouTubeGoogleVideoRangeSupport.kt`, `YouTubeSeekRefreshPolicy.kt`, and
-    `prefetch/YouTubePrefetchRunner.kt`: YouTube Music playback compatibility policies.
+  - `YouTubeGoogleVideoRangeSupport.kt` belongs to `:platform` under
+    `platform/youtube/api/transport/range/`. Playback owns
+    `resolver/youtube/YouTubeSeekRefreshPolicy.kt` and
+    `prefetch/YouTubePrefetchRunner.kt` for YouTube Music playback compatibility.
   - `metadata/`: lyrics, metadata, and external Bluetooth lyrics handling.
   - Playback state contracts live in the `playback` package of `:model`; pure policy
     decisions belong to `:playback:logic`, while presentation adapters and effects
@@ -439,8 +459,10 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   - App supplies platform interfaces under `core/di/ltw`; the player supplies playback and song mapping under `core/player/ltw`. Production sources cannot remain in `app/listentogether`.
 
 - `modules/native/src/main/cpp/`
-  - Native crash handling lives under `crash/`. USB code is split across
-    `usb/exclusive/`, `usb/feedback/`, `usb/iso/`, `usb/pcm/`, `usb/uac1/`,
+  - Native crash handling lives under `crash/`, the PCM effects engine under `dsp/`,
+    and shared compile options under `cmake/`. DSP host tests under `tests/dsp/`
+    run separately from the USB host gate. USB code is split across
+    `usb/control/`, `usb/exclusive/`, `usb/feedback/`, `usb/iso/`, `usb/pcm/`, `usb/uac1/`,
     and `usb/uac2/`, with matching host tests under `tests/usb/`. Third-party libusb
     and its Android configuration live in `third_party/libusb/`. CMake targets link
     by responsibility; the `:native` AAR supplies `lib_neri.so`.
@@ -762,8 +784,9 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    `beforeOid` and `force=false` for staged publication, failing on conflicts.
    Keep the fast-path budgets documented in `modules/sync/README.md`; errors after
    sending a batch commit must not switch to another write flow.
-   Later WebDAV manifest writes require `If-Match` with a strong
-   ETag; stop publication when safe conditional writes are unavailable.
+   Later WebDAV manifest writes must revalidate the fingerprint first and use
+   `If-Match` when a strong ETag exists. Without one, reread after publication to
+   confirm the result; detected changes require a conflict retry and merge.
 8. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
    Do not store it in `DataStore` or plaintext JSON.
 9. Preference file names, keys, Worker class names, work names, and input keys are upgrade contracts and must remain stable across module moves.
@@ -791,6 +814,10 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    `DownloadParallelism.kt`, `AudioDownloadManager.kt`, and `GlobalDownloadManager.kt`.
 5. Changes to migration, delete semantics, resume checkpoints, or sidecar writes
    must update or add unit tests.
+6. High-risk mobile-data download confirmation reaches `NeriApp`'s global dialog
+   host through `GlobalDownloadManager.trafficRiskDownloadRequests`. Check visibility
+   and input above Now Playing and its More sheet, and retain actual-entry-point
+   coverage in `MainActivityTrafficRiskDownloadTest`.
 
 #### 9. Modify lyrics display, sharing, or phonetics
 
@@ -909,6 +936,15 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 6. At minimum, check `NeriAppMainTabTransitionPolicyTest`,
    `AdvancedGlassNavigationTransitionTest`, `NeriAppNavigationTransitionTest`,
    and `HostNavigationTransitionGeometryTest`.
+7. Reuse geometry from `ui/theme/NeriDesign.kt` and colors/typography from
+   `MaterialTheme`; dialogs use the existing `ui/component/overlay/` entry points.
+   Theme-selection changes also need `SettingsThemeControls.kt`, theme snapshots,
+   and preview-prompt state to stay aligned.
+8. Verify light/dark Material and Clean on phone and tablet layouts separately.
+   Back/drag changes need system back, predictive-back completion/cancellation/reversal,
+   sheet dragging, and content scrolling. Static screenshots do not prove touch or
+   navigation behavior; record screenshots, recordings, emulator results, and
+   physical-device results as separate evidence.
 
 #### 15. Modify home-screen widgets, launcher shortcuts, or global feedback
 
@@ -929,6 +965,23 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    Changes in any of these areas should also check `PlaylistExportSheetTest`,
    `AppFeedbackPolicyTest`, `LocalPlaylistRepositoryTest`, and
    `SyncPlaylistDeletionPolicyTest`.
+
+#### 16. Modify song encyclopedia
+
+1. Shared contracts live in `:model` under `data/model/encyclopedia/`; the NetEase
+   implementation and parsers live in `:platform` under `platform/netease/encyclopedia/`.
+   Requests currently require a recognizable NetEase song.
+2. `SongEncyclopediaRepository` distinguishes success, unsupported songs, missing
+   data, and failure. Cancellation propagates; failures in optional requests such
+   as credits and artist details degrade only their corresponding sections.
+3. App's `NowPlayingViewModel` uses `RequestGeneration` to reject stale requests.
+   `SongEncyclopediaUiState.forSongKey` checks identity again before rendering;
+   review track changes, closure, and retries together.
+4. `ui/screen/nowplaying/actions/SongEncyclopediaContent.kt` composes the sections.
+   `NowPlayingSecondaryActions.kt` owns sheet, artist, playlist, and comment navigation;
+   avoid stacking another overlay over the encyclopedia.
+5. Check repository, parser, cache, and ViewModel unit tests, plus device tests for
+   section layout, comment navigation, and gestures when changing this feature.
 
 ---
 
@@ -1003,6 +1056,14 @@ Before submitting, consider at least these checks:
    The host gate runs one fixed CTest inventory. The Android build must also
    produce non-empty `lib_neri.so` outputs for `arm64-v8a`, `armeabi-v7a`,
    `x86`, and `x86_64`.
+   DSP changes also need their separate host suite:
+   ```bash
+   cmake -S modules/native/src/main/cpp/tests/dsp -B .tmp/dsp-host -DCMAKE_BUILD_TYPE=Release
+   cmake --build .tmp/dsp-host --parallel
+   ctest --test-dir .tmp/dsp-host --output-on-failure
+   ```
+   Use a separate build directory with `-DDSP_TEST_SANITIZER=asan-ubsan` for memory
+   and undefined-behavior checks. USB sanitizer profiles do not run DSP tests.
 7. If you changed the Listen Together Worker:
    ```bash
    npm ci --prefix np-submodule/NeriPlayer-LTW
@@ -1080,6 +1141,8 @@ Existing focused tests cover areas such as:
   audio-focus policies
 - Dual-scene main-tab transitions, rapid reverse switching, drawer/coherent
   detail feedback, glass-owner isolation, and unlaid-out scene geometry filtering
+- Material / Clean themes and preview prompts, predictive back, encyclopedia
+  request identity and sections, and mobile-data download confirmation above Now Playing
 - Home-screen widget state/color/RemoteViews resources, launcher shortcut mapping,
   and app-wide Snackbar overlays
 - Download metadata, naming, directory migration, snapshot caches, `.nomedia`, delete semantics, and startup recovery

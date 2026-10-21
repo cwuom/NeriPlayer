@@ -65,11 +65,19 @@ Chunking and content reuse reduce incremental traffic. Initial archive size and 
 ./gradlew :local:verifySyncIntegrationCrap
 ```
 
+`SyncArchiveScaleTest` 默认跳过；显式设置 `-DrunSyncScale=true` 才运行百万歌单成员的容量拒绝和千万统计记录的归档测试。这些测试只验证归档层，不能替代完整 Android 同步流程的内存验证。
+
+`SyncArchiveScaleTest` is skipped by default. Set `-DrunSyncScale=true` explicitly to test capacity rejection for a million playlist members and archiving ten million statistics records. These tests cover the archive layer and do not replace memory validation of the complete Android sync flow.
+
+```bash
+./gradlew :sync:testDebugUnitTest --tests '*SyncArchiveScaleTest' -DrunSyncScale=true
+```
+
 ### 🔌 本地 WebDAV 兼容测试 / Local WebDAV compatibility tests
 
-真实服务测试使用独立临时目录，覆盖首次 V4 发布、冷缓存重开、V3 升级、歌词与分页统计完整性、陈旧发布拒绝，以及中文目录续租、锁竞争和释放后重取。服务必须绑定 loopback 并允许匿名访问；未配置环境变量时跳过这两类外部测试。
+真实服务测试使用独立临时目录，覆盖首次 V4 发布、冷缓存重开、V3 升级、歌词与分页统计完整性、陈旧发布拒绝，以及中文目录续租、锁竞争和释放后重取。服务必须绑定 loopback 并允许匿名访问，地址不能带凭据、query 或 fragment。租约测试只读取 `NERIPLAYER_WEBDAV_COMPAT_URLS`；完整同步测试同时读取该变量和 `NERIPLAYER_WEBDAV_COMPAT_UNLOCKED_URLS`，没有配置对应地址时跳过。
 
-Real provider tests use isolated temporary collections to verify fresh V4 publication, cold-cache reopening, V3 migration, complete lyrics and paged statistics, stale publication rejection, encoded collection refresh, contention, and reacquisition after release. Providers must bind to loopback and allow anonymous access. These two external test classes are skipped when the environment variable is absent.
+Real provider tests use isolated temporary collections to verify fresh V4 publication, cold-cache reopening, V3 migration, complete lyrics and paged statistics, stale publication rejection, encoded collection refresh, contention, and reacquisition after release. Providers must bind to loopback and allow anonymous access, with no credentials, query, or fragment in their URLs. Lease tests read only `NERIPLAYER_WEBDAV_COMPAT_URLS`; full sync tests also read `NERIPLAYER_WEBDAV_COMPAT_UNLOCKED_URLS`. Tests without configured targets are skipped.
 
 本地验证服务为 WsgiDAV 4.3.5 + Cheroot 11.1.2、rclone 1.75.1 和 Apache 2.4.67 mod_dav。WsgiDAV 的裸令牌、rclone 的十进制令牌和续租目录规范化、Apache 省略的 lockroot 与缺失或弱 ETag 均有回归覆盖；不接受任意相对令牌或错误锁根。拒绝 LOCK 的服务（例如坚果云）放在 `NERIPLAYER_WEBDAV_COMPAT_UNLOCKED_URLS`，验证无锁指纹核对、弱或缺失 ETag 与忽略条件头的同步。
 

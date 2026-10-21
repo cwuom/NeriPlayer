@@ -97,7 +97,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   通常存在风控与行为采样机制，直接上报历史播放数据可能触发异常登录、异常播放
   或账号冻结等风险。出于保护账号安全的考虑，NeriPlayer 暂不向这些平台上传
   本地播放历史和播放统计。
-- **单 Activity + Compose 架构**：`MainActivity` 是唯一对外入口，
+- **Compose 主界面**：`MainActivity` 承载主导航与播放界面，
   UI 由 Compose `NavHost`、动态底栏、Mini Player 与 Now Playing 覆盖层组织。
 - **启动与恢复链路**：正常启动流程为
   `Loading -> Disclaimer -> Onboarding -> Main`；
@@ -116,7 +116,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   网络断开时仍能围绕本地文件、已下载音频、播放缓存、缓存封面和本地歌单继续使用。
 - **多源播放不是简单入口堆叠**：
   `PlayerManager` 负责音源解析、队列和失败恢复；网易云不可播、无可用播放结果或
-  只返回试听片段时，会先尝试音质降级，再由
+  只返回试听片段时，会先尝试音质降级；启用 Bilibili 兜底后，再由
   `PlayerManagerNeteaseAutoSourceSwitch` 按歌名、歌手和时长评分自动匹配
   Bilibili 音源兜底；播放异常时还会刷新当前链接，连续失败再跳过或停止。
 - **YouTube 播放兼容有多级回退**：
@@ -217,6 +217,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   平板上限按设备最小宽度动态计算，放大后仍保留至少 `600dp`，并向下取到 `0.05x` 档位，例如最小宽度 `800dp` 的平板最高为 `1.3x`。
   升级后或首次安装完成引导后，会询问一次是否启用预览版主题；启用后立即生效，
   也可随时在主题设置中切换，已启用或已作出选择后不再重复询问。
+  「界面风格」可选择默认的 Material You 或预览版「简洁（Clean）」；后者提供独立的明暗配色、
+  连续曲率圆角和控件样式，并可开启底栏与迷你播放器的液态玻璃效果。
   OnePlus 的高密度屏幕（系统 `densityDpi >= 500`）会自动叠加 `0.95x` UI 修正，
   普通密度机型不触发修正，用户手动设置值仍会作为额外乘数参与计算。
   “进阶高级模糊”和“连贯反馈”默认关闭；关闭连贯反馈时，歌单等详情页使用抽屉式展开；
@@ -252,9 +254,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 1. 前往 [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases)
 2. 如何选择版本？
-- 大部分手机请选择 `arm64-v8a`
-- 老旧 32 位设备请选择 `armeabi-v7a`
-- `x86` / `x86_64` 主要用于模拟器、英特尔设备或 Chromebook
+   - 大部分手机请选择 `arm64-v8a`
+   - 老旧 32 位设备请选择 `armeabi-v7a`
+   - `x86` / `x86_64` 主要用于模拟器、英特尔设备或 Chromebook
 
 > [!IMPORTANT]
 > Release 渠道不是严格意义上的稳定通道。版本通常在完成一批功能后手动发布，
@@ -276,7 +278,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
    cd NeriPlayer
    ```
 2. 安装 JDK 17，并使用 Android Studio 最新稳定版打开项目、同步依赖；
-   建议将 Gradle JDK 设为 17。
+   建议将 Gradle JDK 设为 17；运行 `:playback:runtime` JVM 测试或全量模块门禁时，另需可被 Gradle 发现的 JDK 21，生产字节码仍以 17 为目标。
 3. 构建调试版：
    ```bash
    ./gradlew :app:assembleDebug
@@ -313,6 +315,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - 🏠 **首页推荐与继续播放**：
   首页支持最近常用歌单、网易云动态推荐源、雷达歌单与推荐卡片；
   默认同时展示榜单、新歌、日推、私人 FM、精品歌单等可用来源，刷新会更新全部分区。
+  Bilibili 音乐分区提供热门榜、原创榜和热门视频，支持进入完整列表；榜单优先播放官方 MV，
+  缺少有效 MV 时使用榜单关联投稿，无有效音源的条目会明确标记。
   国际化模式下优先展示 YouTube Music 首页歌单与歌曲货架。
 - 🗂️ **媒体库分类浏览**：
   `Library` 提供本地、收藏、网易云、YouTube Music、Bilibili 等入口；
@@ -358,7 +362,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   「设置 → 音效与倍速」集中管理音效、倍速和音调。DSP 以 float 精度处理普通输出与
   32-bit 高解析输出，提供风格/音色/场景/设备四类内置音效、可拖动的 10 段均衡器、
   参数均衡与 AutoEQ 导入、自定义音效分享导入、扬声器优化，以及节能/均衡/高质量三档处理模式；
-  音效关闭或所有调节均为中性时完全旁路，不增加功耗。USB 独占默认保持 bit-perfect 旁路，
+  音效关闭或所有调节均为中性时旁路 DSP 处理。USB 独占默认旁路 DSP，
   可在高级选项中手动允许 USB 输出也应用音效。
   播放设置可开启按歌曲实时分析的响度均衡、声道平衡和 32-bit 高解析普通输出；
   高解析普通输出会旁路响度均衡、声道平衡、音频可视化和应用内倍速等处理。
@@ -443,6 +447,10 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - 🧺 **网易云歌单详情缓存**：
   歌单详情会缓存 header 与曲目列表，二次进入可先展示本地缓存；
   网络失败或解析失败时也能回退到最近一次成功加载的数据。
+- 📖 **歌曲百科**：
+  在播放页「更多 → 歌曲百科」查看网易云提供的曲风、语种、BPM、发行信息、创作团队、
+  艺人资料、评论预览、相似歌曲、相关歌单与获奖收录；仅展示数据源实际返回的内容。
+  听歌记录来自本机统计，并非网易云账号完整历史；非网易云歌曲会显示暂不支持，失败时可重试。
 - ☁️ **GitHub / WebDAV 同步**：
   可选同步本地歌单、收藏歌单、最近播放、歌曲与歌单播放统计和删除记录，
   使用 `WorkManager` 做延迟与周期同步，数据保存在用户自己的远端。
@@ -474,7 +482,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   控制事件按客户端顺序过滤，`REQUEST_SET_TRACK` 只能选择当前队列歌曲，并继续校验稳定
   曲目键和服务端时钟。
 - 🌈 **个性化与主题**：
-  支持自动/浅色/深色模式、动态取色、种子色、主题风格、UI 缩放、
+  支持 Material You 与预览版简洁（Clean）界面风格、自动/浅色/深色模式、动态取色、种子色、主题配色、UI 缩放、
   自定义背景图、触感反馈、歌词字号（封面页和歌词页可分别调整）、
   歌词模糊、默认启动页和首页卡片开关；
   Android 13+ 还可按需开启默认关闭的“进阶高级模糊”，增强顶部/底部 Tab
@@ -540,12 +548,13 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - **网易云音乐**：
   登录、歌曲搜索、精选歌单、专辑、歌单/专辑列表搜索、播放、下载、歌词、播放页元数据补全，
   无权限播放兜底、本地收藏同步到网易云我喜欢的音乐、艺术家详情、
-  热门歌曲/专辑分页和艺术家关注；播放页评论支持热门（默认）、最新、推荐排序、被回复内容和楼中楼展开、
+  热门歌曲/专辑分页、艺术家关注和歌曲百科；播放页评论支持热门（默认）、最新、推荐排序、被回复内容和楼中楼展开、
   长按复制，以及登录后的点赞、取消点赞、发评论和回复。发送失败保留草稿，网络结果不确定时不自动重发。
   评论优先显示当前登录会话的内存缓存，后台核对一致时不显示刷新动画；打开评论区不会自动唤起键盘。
 - **Bilibili**：
   Web 登录、二维码登录、视频搜索、创建收藏夹、订阅收藏夹、合集、
   收藏夹/合集列表搜索、分 P 转音频播放、下载；
+  首页提供音乐热门榜、原创榜和音乐分区热门视频，可打开完整列表并播放有效音源；
   链接识别会保留选中的分 P，并能从 `season_id` 或视频详情恢复合集上下文；
   播放页评论支持热门（默认）和最新排序，以及登录后的点赞和取消点赞；最新列表及后续分页可能需要登录。
   评论楼号按当前列表顺序显示，支持楼中楼分页、长按复制，以及登录后的发评论和回复。
@@ -568,7 +577,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `compileSdk = 37`
 - `targetSdk = 36`
 - `minSdk = 28`
-- Java 17 / Kotlin JVM 17
+- Java 17 / Kotlin JVM 17；Kotlin `2.4.10` / KSP `2.3.10`
 - AGP `9.4.1` / Gradle `9.6.1`
 - NDK `27.0.12077973`
 - CMake `3.22.1`，由 Android 构建脚本固定指定
@@ -588,9 +597,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - [`:network`](modules/network/README.md)：通用 HTTP、Range、网络解析和 Web 登录基础能力。
 - [`:model`](modules/model/README.md)：按业务分类的数据模型、枚举和跨模块状态契约，不依赖项目实现。
 - [`:database`](modules/database/README.md)：Room 数据库、实体、DAO、历史 schema 与版本升级。
-- [`:native`](modules/native/README.md)：Native 崩溃处理、USB 协议与 PCM 计算、独占传输和第三方 libusb，生成并打包 `lib_neri.so`。
+- [`:native`](modules/native/README.md)：Native 崩溃处理、DSP 音效、USB 协议与 PCM 计算、独占传输和第三方 libusb，生成并打包 `lib_neri.so`。
 - [`:playback:logic`](modules/playback/logic/README.md)：播放 policy、状态协调 runtime、PCM/audio 和队列 queue 规则，保持包级隔离。
-- [`:playback:runtime`](modules/playback/runtime/README.md)：Media3 引擎、播放服务、音源解析、USB 输出、系统音效、浮窗与蓝牙歌词及宿主接入。
+- [`:playback:runtime`](modules/playback/runtime/README.md)：Media3 引擎、播放服务、音源解析、USB 输出、Native DSP 接入、浮窗与蓝牙歌词及宿主接入。
 - [`:download:logic`](modules/download/logic/README.md)：下载准入、状态迁移、重试、调度、传输槽位、所有权、提交与元数据规则。
 - [`:download:runtime`](modules/download/runtime/README.md)：下载执行、Room 队列、受管文件、迁移与恢复，以及 Worker 和 JobService。
 - [`:lyrics`](modules/lyrics/README.md)：LRC/YRC/TTML 解析、转换、时间轴、翻译对齐、时间偏移，以及词幕（Lyricon）和 SuperLyric 接入。
@@ -599,7 +608,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - [`:sync`](modules/sync/README.md)：GitHub/WebDAV 传输、加密凭据状态、会话、兼容编解码、合并、并发保护与 Worker 策略。
 - [`:listentogether`](modules/listentogether/README.md)：一起听协议、HTTP/WebSocket 传输、身份规则、会话、连接恢复、控制与播放同步。
 
-`:app` 维护 Android 入口、Compose 页面和跨领域依赖组装。设置项生成由 `:ksp-annotations` / `:ksp-processor` 维护，上游歌词子模块为 `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`；`build-logic` 和 `buildSrc` 提供构建逻辑。`np-submodule/NeriPlayer-LTW` 是一起听 Cloudflare Workers 服务端，`np-submodule/miuix` 是未参与主应用构建的上游源码与文档树。这些不计入 14 个自有 Android 库。
+`:app` 维护 Android 入口、Compose 页面和跨领域依赖组装。设置项生成由 `:ksp-annotations` / `:ksp-processor` 维护，上游歌词子模块为 `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`；`:hidden-api` 只为播放运行模块提供编译期接口桩，不随应用打包；`build-logic` 提供构建逻辑。`np-submodule/NeriPlayer-LTW` 是一起听 Cloudflare Workers 服务端，`np-submodule/miuix` 是未参与主应用构建的上游源码与文档树。这些不计入 14 个自有 Android 库。
 
 依赖按实际职责维护，不由目录分类推导层级。`:model` 不依赖项目实现，`:common` 不依赖业务领域；数据库、存储计算、歌词解析与播放/下载规则不得反向依赖仓库或 Android 运行实现。`:platform` 内的业务仓库消费对应协议，API 不反向读取账号仓库、Room 或播放器状态，各平台仍保持包级依赖边界。`:local` 消费数据库与领域服务，客户端的账号、凭据刷新和存储能力通过窄接口注入。所有库禁止依赖 app 或形成循环。
 
@@ -624,8 +633,9 @@ python3 -B tools_pub/quality/module_boundaries.py
 
 ### 入口与导航
 
-- `MainActivity` 是唯一对外入口，同时处理启动流程、通知权限、
+- `MainActivity` 是主界面入口，同时处理启动流程、通知权限、
   外部音频导入、USB 设备插入事件和 `neriplayer://listen-together/join` 深链。
+  网页登录使用独立 Activity；蓝牙媒体验证入口和 `CarMediaBrowserService` 分别处理车载能力验证与曲库浏览。
 - 如果上次启动发生 JVM / Native 崩溃或系统 ANR，会优先进入 `Safe Mode`，
   只开放日志预览导出、配置导出、登录重置、设置重置和恢复正常启动。
 - 主界面是 **Compose NavHost + 动态底栏**：
@@ -658,7 +668,8 @@ python3 -B tools_pub/quality/module_boundaries.py
   平板保留宽松双栏，手机使用紧凑双栏，隐藏辅助工具栏并缩小播放按钮；手机横屏返回后保持竖屏，重新打开播放页再允许旋转。
   横屏歌词区域保持透明，给封面保留上下间距；仅手机横屏隐藏音频规格信息，平板遵循已有显示设置。
   手机横屏将播放控制与进度固定在右下方，歌曲操作位于右上方；平板和竖屏保留播放控制位置偏好。
-  横屏歌词页与封面页共用布局，保留各自字体和按钮尺寸设置，左右滑动可以切换两页。
+  手机横屏歌词页与封面页共用布局，保留各自字体和按钮尺寸设置，左右滑动可以切换两页；
+  平板横屏固定显示完整歌词分栏，不通过横滑切换歌词样式。
   手机短横屏的歌曲编辑面板使用紧凑封面与独立滚动表单，表单滚动不会拖动面板。
   歌曲和歌词编辑面板按可用高度安排输入与操作区，键盘或大字体压缩空间时可滚动访问全部操作。
   保留方形封面。打开播放页会结束底层输入焦点和文字选择菜单。
@@ -708,6 +719,10 @@ python3 -B tools_pub/quality/module_boundaries.py
   搜索历史保存在本地，可在“设置 > 通用”中独立关闭显示和记录。
 - **元数据补全**：
   播放页通过 `SearchManager` 使用网易云与 QQ 音乐补全封面、歌词和曲目信息。
+- **歌曲百科**：
+  `NeteaseSongEncyclopediaRepository` 根据网易云歌曲身份加载百科，并使用限时内存缓存；
+  曲目切换会取消旧请求并校验请求代次，避免旧歌结果覆盖新歌。艺人和创作团队等附加数据
+  加载失败时只降级对应内容；本机听歌记录与在线百科分别展示。
 - **歌词来源**：
   除平台歌词外，还包含 LRCLIB 外部歌词客户端；歌词编辑器提供单独的
   “匹配”入口，可修改匹配关键字，先选择平台再搜索，并按平台临时缓存
@@ -916,6 +931,10 @@ NeriPlayer 支持将本地元数据同步到 **用户自己的 GitHub 仓库**�
 
 ### 近期已落地
 
+- [x] Material You / 简洁（Clean）双界面风格、明暗主题和可选液态玻璃
+- [x] 网易云歌曲百科、评论预览、相似歌曲与相关歌单
+- [x] Bilibili 音乐热门榜、原创榜、热门视频与完整列表
+- [x] 本地歌曲批量词图匹配和嵌入、候选核对与失败重试
 - [x] 主标签双场景横向转场、可打断反向切换、玻璃 owner 接力和默认抽屉式详情反馈
 - [x] 标准化 Snackbar 反馈覆盖层、歌单删除撤销和批量导出撤销
 - [x] 桌面小组件与启动器快捷方式
@@ -1118,7 +1137,7 @@ NeriPlayer 使用 **GPL-3.0** 开源许可证发布。
 
 - ✅ 你可以自由使用、修改和分发本软件。
 - ⚠️ 按根目录 GPL-3.0 分发修改版时，须继续遵守 GPL-3.0。
-- 🧩 `modules/native/src/main/cpp/README.md` 仅为其中列出的 NeriPlayer 自有 Native 源码
+- 🧩 [Native 源码授权说明](modules/native/src/main/cpp/README.md) 仅为其中列出的 NeriPlayer 自有 Native 源码
   提供附带署名条件的替代授权；第三方源码和未列入范围的仓库内容不适用。
 - ✍️ 外部 Native 贡献不会因提交 PR 自动进入替代授权范围，
   只有贡献者明确记录双授权同意时才适用。

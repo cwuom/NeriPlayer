@@ -22,6 +22,7 @@ Sources are in [src/main/cpp](src/main/cpp). CMake assigns portable USB protocol
 | `third_party/libusb/` | libusb 及其 Android 构建配置 / libusb and its Android build configuration |
 | `tests/usb/` | 可移植 USB 模型的 host 测试与门禁配置 / Host tests and gate configuration for portable USB models |
 | `tests/dsp/` | 音效 DSP 的 host 测试 / Host tests for the audio effects DSP |
+| `cmake/`、各级 `CMakeLists.txt` | 自有目标的共享编译规则、目标拆分和构建适配 / Shared compile rules, target composition, and build adapters for owned code |
 
 会话的 Kotlin 接入和播放策略属于 [`:playback:runtime`](../playback/runtime/README.md)；Native 源码不反向读取播放器、Room 或账号仓库。JNI 类全名、方法签名与 `_neri` 加载名必须保持兼容。第三方源码保留原许可证；自有源码的替代授权范围见 [Native 源码授权说明](src/main/cpp/README.md)。
 
@@ -54,3 +55,7 @@ done
 Host gate 使用 Ninja，每次创建独立构建目录，并检查断言、编译警告、测试结果、源码指纹及本次运行产生的资源。三组 profile 使用同一组测试，详见 [host gate contract](src/main/cpp/tests/usb/config/host-gate-contract.md)。host 模型测试和 ABI 编译不能证明真实 DAC 的播放、断连或恢复行为；这些仍需单独验证。
 
 The host gate uses Ninja and a fresh build directory for each attempt. It checks assertions, compiler warnings, test results, source fingerprints, and resources created by the attempt. All three profiles use the same inventory; see the [host gate contract](src/main/cpp/tests/usb/config/host-gate-contract.md). Host model tests and ABI compilation do not establish real-DAC playback, disconnect, or recovery behavior; those require separate validation.
+
+USB host gate 运行 31 个 Native 测试及 5 个 runner 自检/失败关闭检查，每项超时 60 秒；DSP host 测试由独立的 CMake 工程运行，超时 120 秒。目前 Native CI 自动执行 USB 三组 profile 和 Android ABI 编译，上面的 DSP 命令需要单独执行。
+
+The USB host gate runs 31 native tests and 5 runner self-check/fail-closed checks, each with a 60-second timeout. DSP host tests use a separate CMake project and a 120-second timeout. Native CI currently runs the three USB profiles and Android ABI compilation; run the DSP commands above separately.

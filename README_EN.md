@@ -110,7 +110,7 @@ Current positioning:
   behavior and could put an account at risk. To protect account safety,
   NeriPlayer does not upload local playback history or playback stats back to
   those platforms.
-- **Single Activity + Compose**: `MainActivity` is the only external entry point.
+- **Compose main UI**: `MainActivity` hosts the main navigation and playback UI.
   The UI is organized by Compose `NavHost`, a dynamic bottom bar, Mini Player,
   and the Now Playing overlay.
 - **Startup and recovery flow**: the normal startup path is
@@ -134,7 +134,7 @@ Current positioning:
 - **Multi-source playback is not just a list of entry points**:
   `PlayerManager` owns playback resolution, queues, and failure recovery. When a
   NetEase track is unavailable, has no playable result, or only returns a preview,
-  the player first tries a lower quality, then
+  the player first tries a lower quality. With Bilibili fallback enabled,
   `PlayerManagerNeteaseAutoSourceSwitch` scores Bilibili candidates by title,
   artist, and duration. Playback errors can also refresh the current URL before
   falling back to skip/stop behavior.
@@ -280,6 +280,9 @@ Current positioning:
   After upgrading or completing first-run onboarding, a one-time prompt offers the
   preview theme. It applies immediately and can be changed in Theme settings;
   users who already enabled it or answered the prompt are not asked again.
+  Interface style offers the default Material You design or the Clean preview,
+  with its own light/dark palette, continuous corners, and controls. Clean can also
+  apply optional liquid glass to the bottom bar and mini player.
   OnePlus devices with high-density displays (`densityDpi >= 500`) automatically apply
   an additional `0.95x` UI correction; normal-density devices skip it, while the
   user's manual scale remains an additional multiplier.
@@ -362,6 +365,8 @@ Current positioning:
    ```
 2. Install JDK 17, then open the project with the latest stable Android Studio
    and sync dependencies. Set the Gradle JDK to 17 when possible.
+   `:playback:runtime` JVM tests and aggregate module gates also require a
+   Gradle-discoverable JDK 21; production bytecode still targets 17.
 3. Build the Debug APK:
    ```bash
    ./gradlew :app:assembleDebug
@@ -404,6 +409,9 @@ For release build and signing details, see
   charts, new songs, daily picks, Private FM, high-quality playlists, and other
   feeds together; refreshing updates every section. International mode prioritizes
   YouTube Music home shelves.
+  Bilibili music sections add Hot and Original charts and popular music videos,
+  with full-list pages. Chart playback prefers an official MV, falls back to its
+  associated upload, and marks entries without a valid playback source.
 - 🗂️ **Categorized Library browsing**:
   `Library` includes Local, Favorites, NetEase, YouTube Music, and Bilibili areas.
   YouTube can be fully disabled under Settings > General, which hides its entry
@@ -482,8 +490,8 @@ For release build and signing details, see
   precision and offers style, tone, scene, and device presets, a draggable 10-band
   EQ, parametric EQ with AutoEQ import, shareable custom presets, speaker
   optimization, and Eco/Balanced/High processing modes. When effects are off or
-  every control is neutral, the DSP is fully bypassed and adds no power cost. USB
-  exclusive output stays bit-perfect by default; an advanced option can apply
+  every control is neutral, DSP processing is bypassed. USB
+  exclusive output bypasses the DSP by default; an advanced option can apply
   effects there as well. Playback settings also provide per-track real-time
   loudness normalization, channel balance, and 32-bit high-resolution system
   output; high-resolution system output bypasses loudness normalization, channel
@@ -539,7 +547,7 @@ For release build and signing details, see
   playback thread sleep. Settings
   report battery-optimization and background-permission limits. A retained service playback
   uses a background audio anchor that follows the system default route and writes a
-  zero-mean carrier only on the built-in speaker; the carrier remains inaudible user content.
+  zero-mean carrier only on the built-in speaker; the carrier is separate from user media.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
   cleanup for audio cache, image cache, share staging, and platform playlist
@@ -598,6 +606,13 @@ For release build and signing details, see
   playlist detail pages cache headers and track lists. Reopening a playlist can
   show local data first, and network or parse failures can fall back to the last
   successful load.
+- 📖 **Song encyclopedia**:
+  open **Now Playing > More > Song encyclopedia** for NetEase-provided genres,
+  language, BPM, release information, credits, artist profiles, comment previews,
+  similar songs, related playlists, and awards or appearances. Only available
+  source data is shown. Listening history comes from this device's statistics,
+  rather than the full NetEase account history. Other sources show an unsupported
+  state, and failed requests can be retried.
 - ☁️ **GitHub / WebDAV sync**:
   optional sync for local playlists, favorite playlists, recent plays, track and
   playlist playback stats, and deletion records through `WorkManager`, stored in the user's own
@@ -640,7 +655,8 @@ For release build and signing details, see
   repeat wraps position by track duration. Outdated client control events are filtered, and
   `REQUEST_SET_TRACK` can only choose a song already in the current queue.
 - 🌈 **Personalization and themes**:
-  auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
+  Material You and the Clean preview interface styles, auto/light/dark mode,
+  dynamic color, seed colors, palette styles, UI scaling,
   custom background image, haptic feedback, lyric font size (separate cover and
   lyrics-page controls), lyric blur, default start destination, and Home card
   toggles. Android 13+ can optionally
@@ -715,7 +731,7 @@ For release build and signing details, see
   login, song search, curated playlists, albums, playlist/album list search,
   playback, downloads, lyrics, playback metadata completion, playback fallback
   for restricted playback, syncing local favorites to NetEase Liked Songs,
-  artist pages, paged artist songs/albums, and artist follow support.
+  artist pages, paged artist songs/albums, artist follow support, and a song encyclopedia.
   Now Playing comments offer Popular (default), Newest, and Recommended sorting,
   quoted comments, expandable reply threads, and long-press copying, plus like/unlike,
   posting, and replying when signed in. Failed submissions retain the draft; uncertain
@@ -725,6 +741,8 @@ For release build and signing details, see
   web login, QR login, video search, created favorites, subscribed favorites,
   collections, favorite/collection list search, multi-part video-to-audio
   playback, and downloads.
+  Home includes Hot and Original music charts and popular music videos, with
+  full-list pages and playback for entries with a valid source.
   Link recognition keeps the selected part and can recover collection context
   from `season_id` or video details.
   Now Playing comments offer Popular (default) and Newest sorting, plus signed-in
@@ -751,7 +769,7 @@ For release build and signing details, see
 - `compileSdk = 37`
 - `targetSdk = 36`
 - `minSdk = 28`
-- Java 17 / Kotlin JVM 17
+- Java 17 / Kotlin JVM 17; Kotlin `2.4.10` / KSP `2.3.10`
 - AGP `9.4.1` / Gradle `9.6.1`
 - NDK `27.0.12077973`
 - CMake `3.22.1`, pinned by the Android build script
@@ -771,7 +789,7 @@ The project owns 14 Android libraries, registered once in [gradle/owned-modules.
 - [`:network`](modules/network/README.md): HTTP, Range handling, network parsing, and Web login infrastructure.
 - [`:model`](modules/model/README.md): business models, enums, and cross-module state contracts without project implementation dependencies.
 - [`:database`](modules/database/README.md): Room database, entities, DAOs, historical schemas, and upgrades.
-- [`:native`](modules/native/README.md): Native crash handling, USB protocols and PCM calculations, exclusive transport, and third-party libusb; builds and packages `lib_neri.so`.
+- [`:native`](modules/native/README.md): Native crash handling, DSP effects, USB protocols and PCM calculations, exclusive transport, and third-party libusb; builds and packages `lib_neri.so`.
 - [`:playback:logic`](modules/playback/logic/README.md): policy decisions, runtime coordinators, PCM/audio processing, and queue rules with package-level isolation.
 - [`:playback:runtime`](modules/playback/runtime/README.md): Media3 engine, service, source resolution, USB output, effects, floating/Bluetooth lyrics, and host integration.
 - [`:download:logic`](modules/download/logic/README.md): admission, state transitions, retries, scheduling, permits, ownership, commit rules, and metadata codecs.
@@ -782,7 +800,7 @@ The project owns 14 Android libraries, registered once in [gradle/owned-modules.
 - [`:sync`](modules/sync/README.md): GitHub/WebDAV transport, encrypted credential state, sessions, compatible codecs, merges, concurrency protection, and Worker policies.
 - [`:listentogether`](modules/listentogether/README.md): protocol, HTTP/WebSocket transport, identity rules, sessions, reconnects, controls, and playback synchronization.
 
-`:app` owns Android entry points, Compose screens, and cross-domain assembly. `:ksp-annotations` / `:ksp-processor` generate settings metadata; `:accompanist-lyrics-core` / `:accompanist-lyrics-ui` are upstream lyric modules. `build-logic` and `buildSrc` supply build tooling. `np-submodule/NeriPlayer-LTW` is the Cloudflare Workers server; the vendored `np-submodule/miuix` source/docs tree is outside the app graph. These are not part of the 14 owned Android libraries.
+`:app` owns Android entry points, Compose screens, and cross-domain assembly. `:ksp-annotations` / `:ksp-processor` generate settings metadata; `:accompanist-lyrics-core` / `:accompanist-lyrics-ui` are upstream lyric modules. `:hidden-api` supplies compile-only API stubs for playback runtime and is not packaged in the app. `build-logic` supplies build tooling. `np-submodule/NeriPlayer-LTW` is the Cloudflare Workers server; the vendored `np-submodule/miuix` source/docs tree is outside the app graph. These are not part of the 14 owned Android libraries.
 
 Dependencies follow responsibilities rather than directory categories. `:model` has no project implementation dependencies, and `:common` has no business-domain dependencies. Database, storage calculations, lyric parsing, and playback/download rules must not depend on repository or Android runtime implementations. Repositories inside `:platform` consume their corresponding protocols; APIs cannot read account repositories, Room, or player state, and each platform retains its package dependency boundary. `:local` consumes the database and domain services. Clients receive account, credential-refresh, and storage capabilities through narrow injected interfaces. No library may depend on app, and the graph must remain acyclic.
 
@@ -807,9 +825,11 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 
 ### Entry point and navigation
 
-- `MainActivity` is the only external entry point. It handles startup, notification
+- `MainActivity` is the main UI entry point. It handles startup, notification
   permission, external audio imports, USB attach events, and
   `neriplayer://listen-together/join` links.
+  Web sign-in uses separate Activities; Bluetooth validation and `CarMediaBrowserService`
+  handle car capability validation and library browsing respectively.
 - If the previous launch ended with a JVM/native crash or system ANR, the app
   enters `Safe Mode` first and exposes only recovery and export actions.
 - The main UI is **Compose NavHost + dynamic bottom bar**:
@@ -863,8 +883,9 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   underlying input focus and text selection menu.
   Phone landscape places playback controls and progress at the bottom right and track
   actions at the top right; tablets and portrait keep control placement preferences.
-  Landscape cover and lyrics pages share the same layout while retaining separate
+  Phone landscape cover and lyrics pages share the same layout while retaining separate
   font and button-size preferences; horizontal swipes switch between the two pages.
+  Tablet landscape keeps a full lyrics pane without swipe-based lyric-style switching.
   Short phone landscape editing keeps a compact cover beside a scrollable form;
   scrolling the fields does not drag the sheet. Song and lyrics editing adapt to
   available height, with scrollable access to all actions when a keyboard or large text reduces space.
@@ -933,6 +954,12 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 - **Metadata completion**:
   the playback screen uses `SearchManager` with NetEase and QQ Music for cover,
   lyrics, and track metadata.
+- **Song encyclopedia**:
+  `NeteaseSongEncyclopediaRepository` resolves NetEase song identity and caches
+  results in memory with an expiry. Track changes cancel old requests and validate
+  request generations so stale results cannot replace the current song. Failures in
+  optional artist or credit data degrade that content separately; local listening
+  statistics remain distinct from online encyclopedia data.
 - **Lyrics**:
   besides platform lyrics, LRCLIB is available as an external lyrics client.
   The lyrics editor has a dedicated Match entry where the search keyword can be
@@ -1173,12 +1200,16 @@ These directions can change with maintainer bandwidth, platform availability,
 and community feedback. They are not fixed-date commitments.
 
 - [ ] Video playback
-- [x] Comment reading, sorting, and likes (NetEase / Bilibili)
+- [x] Comment reading, reply threads, copying, posting, replying, sorting, and likes (NetEase / Bilibili)
 - [ ] More third-party playback, library, and account capabilities
 - [ ] Fuller QQ Music account support, library data, and a more stable auth path
 
 ### Shipped recently
 
+- [x] Material You / Clean interface styles, light/dark palettes, and optional liquid glass
+- [x] NetEase song encyclopedia, comment previews, similar songs, and related playlists
+- [x] Bilibili Hot and Original music charts, popular music videos, and full-list pages
+- [x] Batch local lyrics/artwork matching and embedding, match review, and failure retries
 - [x] Dual-scene main-tab transitions, interruptible reverse switching,
   advanced-glass owner handoff, and drawer-style detail feedback by default
 - [x] Standardized Snackbar feedback overlays, playlist deletion undo, and batch export undo
@@ -1410,7 +1441,7 @@ This means:
 - ✅ You can freely use, modify, and distribute this software.
 - ⚠️ Modified distributions using the repository-root GPL-3.0 grant must keep
   complying with GPL-3.0.
-- 🧩 `modules/native/src/main/cpp/README.md` provides a conditional attribution-based
+- 🧩 The [native source license](modules/native/src/main/cpp/README.md) provides a conditional attribution-based
   alternative license only for the listed NeriPlayer-owned native source.
   Third-party code and repository content outside that scope are excluded.
 - ✍️ An external native contribution is not added to the alternative-license

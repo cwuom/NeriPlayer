@@ -2,7 +2,7 @@
 
 # 质量检查 / Quality checks
 
-这些工具检查方法复杂度、模块归属和依赖边界。需要 JDK 17、Android 构建环境和 Python 3；Python 脚本只使用标准库。
+这些工具检查方法复杂度、模块归属和依赖边界。需要 JDK 17、Android 构建环境和 Python 3；Python 脚本只使用标准库。包含 `:playback:runtime` JVM 测试的门禁还需可被 Gradle 发现的 JDK 21，生产编译目标仍为 17。
 
 | 检查 | 用途 |
 | --- | --- |
@@ -22,7 +22,7 @@
 
 `verifyModularization` 汇总结构检查、app 和自有 JVM 库的 Debug JVM 测试、合并 CRAP 报告、域依赖、lint 和构建逻辑测试。`:app:check` 包含 CRAP 与域依赖检查。`:app:crapReport` 保留输入校验，但不会因分数超限而失败。
 
-14 个自有库由 [gradle/owned-modules.txt](../../gradle/owned-modules.txt) 登记。`:native` 是纯 Native Android library，参与登记、结构与 lint 检查，不生成 JaCoCo 执行数据、不创建 CRAP 或 JVM 测试任务；原有 Kotlin/Java 模块仍完整收集覆盖率。Native host 三组 profile 和四 ABI 编译由独立 CI 验证，命令见 [Native 模块](../../modules/native/README.md)。只检查受影响模块时可使用：
+14 个自有库由 [gradle/owned-modules.txt](../../gradle/owned-modules.txt) 登记。`:native` 是纯 Native Android library，参与登记、结构与 lint 检查，不生成 JaCoCo 执行数据、不创建 CRAP 或 JVM 测试任务；原有 Kotlin/Java 模块仍完整收集覆盖率。Native USB host 三组 profile 和四 ABI 编译由独立 CI 验证；`tests/dsp/` 是另一套独立 CMake/CTest 测试，不在 USB host profile 或 JVM 门禁内，命令见 [Native 模块](../../modules/native/README.md)。只检查受影响模块时可使用：
 
 ```bash
 ./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
