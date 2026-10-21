@@ -76,6 +76,26 @@ fun installHeartbeatSelector(selector: HeartbeatNextTrackSelector) {
 }
 
 /**
+ * 跳过行为的落盘入口，由 `app` 的 DI 容器注入。
+ *
+ * 做成接口而不是直接依赖 `HeartbeatSkipRepository`：`playback/runtime`
+ * 虽然可以依赖 `local`，但心跳的其余数据都走 [HeartbeatNextTrackSelector]
+ * 抽象注入，这里保持一致，单测也好替换。
+ */
+fun interface HeartbeatSkipRecorder {
+    /** 给该曲的跳过次数 +1；实现方负责自己的异常处理与并发安全。 */
+    suspend fun recordSkip(identityKey: String)
+}
+
+@Volatile
+private var heartbeatSkipRecorder: HeartbeatSkipRecorder? = null
+
+/** 由 `app` 的 DI 容器在启动时安装一次；未安装时跳过行为不落盘。 */
+fun installHeartbeatSkipRecorder(recorder: HeartbeatSkipRecorder) {
+    heartbeatSkipRecorder = recorder
+}
+
+/**
  * 由 `app` 的 DI 容器在启动时安装一次官方仓库引用。
  *
  * 只有装上了官方仓库，[heartbeatOfficialAvailableFlow] 才有可能为 true；
@@ -179,6 +199,23 @@ internal fun PlayerManager.invalidateHeartbeatCandidateCache() {
 internal fun PlayerManager.markHeartbeatSongFailed(song: SongItem) {
     if (heartbeatModeState != HeartbeatMode.ON) return
     (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.markFailed(song)
+}
+
+/**
+ * 记录一次「用户在心动模式下主动跳过」（任务书 §七 第三阶段）。
+ *
+ * 与 [markHeartbeatSongFailed] 的区别：跳过不是失败，只是这一次不想听，
+ * 因此不排除该曲，只把次数交给候选源并入重复惩罚衰减。
+ * 只在心动模式开启时记录——关着的时候用户点下一首是普通操作，不该被算作负反馈。
+ */
+internal fun PlayerManager.recordHeartbeatSkip(song: SongItem) {
+    if (heartbeatModeState != HeartbeatMode.ON) return
+    val recorder = heartbeatSkipRecorder ?: return
+    val key = HeartbeatScorer.identityKey(song)
+    PlayerDependencies.launchBackgroundIo {
+        runCatching { recorder.recordSkip(key) }
+            .onFailure { NPLogger.w(TAG, "记录跳过失败：$key", it) }
+    }
 }
 
 fun PlayerManager.cycleHeartbeatMode(

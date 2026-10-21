@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.heartbeat.DislikedSongRepository
+import moe.ouom.neriplayer.data.heartbeat.HeartbeatSkipRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
@@ -33,6 +34,7 @@ class LocalHeartbeatCandidateProvider(
     private val context: Context,
     private val playbackStatsRepository: PlaybackStatsRepository? = null,
     private val dislikedSongRepository: DislikedSongRepository? = null,
+    private val heartbeatSkipRepository: HeartbeatSkipRepository? = null,
 ) : HeartbeatCandidateProvider {
 
     override suspend fun favorites(): List<SongItem> = withContext(Dispatchers.IO) {
@@ -106,6 +108,16 @@ class LocalHeartbeatCandidateProvider(
     override suspend fun dislikedIdentities(): Set<String> = withContext(Dispatchers.IO) {
         val repository = dislikedSongRepository ?: return@withContext emptySet()
         runCatching { repository.snapshot() }.getOrDefault(emptySet())
+    }
+
+    /**
+     * 用户在心动模式下主动跳过各曲的累计次数（任务书 §七 第三阶段）。
+     *
+     * 与 [dislikedIdentities] 一样是本地 DataStore 数据，读取失败按「没有跳过记录」处理。
+     */
+    override suspend fun skipCounts(): Map<String, Int> = withContext(Dispatchers.IO) {
+        val repository = heartbeatSkipRepository ?: return@withContext emptyMap()
+        runCatching { repository.snapshot() }.getOrDefault(emptyMap())
     }
 
     /** 从统计库读「听过的曲」，用于扩充层级 3/4 的原料。 */

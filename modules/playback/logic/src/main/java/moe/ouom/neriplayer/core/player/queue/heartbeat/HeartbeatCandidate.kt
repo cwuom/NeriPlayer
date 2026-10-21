@@ -55,10 +55,28 @@ data class HeartbeatCandidate(
      * 标记只影响心动模式的选歌，不影响普通播放。
      */
     val notLiked: Boolean = false,
+    /**
+     * 用户在心动模式下主动跳过该曲的累计次数（任务书 §七 第三阶段「记录用户跳过行为」）。
+     *
+     * 与 [notLiked] 的区别是**信号强度**：不喜欢是用户明确声明「以后都别推这首」，
+     * 跳过只是「这一次不想听」——可能只是现在不想听慢歌，并不代表讨厌。
+     * 因此跳过不参与硬性排除，只并入重复惩罚的衰减曲线（见 `HeartbeatScorer.score`）。
+     */
+    val skipCount: Int = 0,
 ) {
     /** 评分用的有效重复次数：取显式次数与布尔标记中的较大者。 */
     val effectiveRepeatCount: Int
         get() = maxOf(recentPlayCount, if (recentlyPlayed) 1 else 0)
+
+    /**
+     * 参与重复惩罚衰减的总次数。
+     *
+     * 跳过与「听过一遍」共享同一条衰减曲线：两者都是「已经给过这首歌机会」的证据。
+     * 不加额外倍率是因为曲线本身已经很温和（每次乘 0.85），
+     * 而跳过次数会一直累加，再加权会让偶尔跳过的歌迅速沉底。
+     */
+    val penaltyRepeatCount: Int
+        get() = effectiveRepeatCount + skipCount
 }
 
 /**

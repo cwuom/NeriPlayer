@@ -49,6 +49,17 @@ interface HeartbeatCandidateProvider {
      */
     suspend fun dislikedIdentities(): Set<String> = emptySet()
 
+    /**
+     * 用户在心动模式下主动跳过各曲的累计次数（任务书 §七 第三阶段）。
+     *
+     * key 与 [dislikedIdentities] 相同，必须是 [HeartbeatScorer.identityKey] 的产物。
+     * 返回空 map 表示没有跳过记录，属于正常情况。
+     *
+     * 与「不喜欢」分开是因为信号强度不同：不喜欢是明确拒绝（硬性沉底），
+     * 跳过只是这一次不想听（并入重复惩罚衰减，不排除）。
+     */
+    suspend fun skipCounts(): Map<String, Int> = emptyMap()
+
     companion object {
         const val DEFAULT_HISTORY_LIMIT = 50
 

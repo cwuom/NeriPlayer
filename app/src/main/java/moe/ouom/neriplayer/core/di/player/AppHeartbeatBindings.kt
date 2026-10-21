@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.core.player.queue.heartbeat.LocalHeartbeatCandidateSo
 import moe.ouom.neriplayer.core.player.queue.heartbeat.OfficialHeartbeatSource
 import moe.ouom.neriplayer.core.player.queue.heartbeat.installHeartbeatOfficialRepository
 import moe.ouom.neriplayer.core.player.queue.heartbeat.installHeartbeatSelector
+import moe.ouom.neriplayer.core.player.queue.heartbeat.installHeartbeatSkipRecorder
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 
@@ -23,6 +24,9 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 internal fun installHeartbeatDependencies(application: Application) {
     // 「不喜欢」名单：网易云没有对应接口，只能本地存；官方源与本地源共用这一份。
     val dislikedSongRepository = AppContainer.dislikedSongRepo
+    // 跳过次数：任务书 §七 第三阶段「记录用户跳过行为」，只并入重复惩罚，不做硬排除。
+    val skipRepository = AppContainer.heartbeatSkipRepo
+    installHeartbeatSkipRecorder { identityKey -> skipRepository.recordSkip(identityKey) }
 
     // 官方源：网易云心动接口。未登录或接口不可用时它自行返回 null，交棒给本地降级。
     val officialRepository = AppContainer.heartbeatOfficialRepository
@@ -39,6 +43,7 @@ internal fun installHeartbeatDependencies(application: Application) {
         context = application,
         playbackStatsRepository = AppContainer.playbackStatsRepo,
         dislikedSongRepository = dislikedSongRepository,
+        heartbeatSkipRepository = skipRepository,
     )
     val localSource = LocalHeartbeatCandidateSource(
         provider = candidateProvider,

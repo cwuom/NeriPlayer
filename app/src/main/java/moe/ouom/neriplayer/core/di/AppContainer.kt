@@ -71,6 +71,7 @@ import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.heartbeat.DislikedSongRepository
+import moe.ouom.neriplayer.data.heartbeat.HeartbeatSkipRepository
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.platform.bilibili.cache.BiliCacheRepositories
 import moe.ouom.neriplayer.data.local.platform.bilibili.BiliVideoSkipRepositoryProvider
@@ -288,6 +289,10 @@ object AppContainer {
     /** 心动模式「不喜欢」名单（本地 DataStore，无官方接口可同步）。 */
     val dislikedSongRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         DislikedSongRepository(application)
+    }
+    /** 心动模式「跳过」次数（本地 DataStore，只并入重复惩罚，不做硬排除）。 */
+    val heartbeatSkipRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        HeartbeatSkipRepository(application)
     }
     val biliFavoriteFolderCacheRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         BiliCacheRepositories.createFavoriteFolder(application)

@@ -27,7 +27,7 @@ class LocalHeartbeatCandidateSource(
 
     override suspend fun selectNext(currentSong: SongItem, currentQueue: List<SongItem>): SongItem? {
         val cached = cache.getOrBuild { buildPool() }
-        val pool = withDisliked(withSupplementalTiers(cached, currentSong))
+        val pool = withSkips(withDisliked(withSupplementalTiers(cached, currentSong)))
         if (pool.isEmpty) return null
         return HeartbeatScorer.pickBest(
             pool = pool,
@@ -35,6 +35,26 @@ class LocalHeartbeatCandidateSource(
             currentQueue = currentQueue,
             excludedIdentities = excludedIdentities,
         )
+    }
+
+    /**
+     * 把用户主动跳过的次数打到候选上（任务书 §七 第三阶段）。
+     *
+     * 与 [withDisliked] 一样不放进缓存：候选池有 5 分钟 TTL，
+     * 而「刚刚跳过这首」必须在下一次选歌就生效，否则用户会连着两次被推同一首。
+     */
+    private suspend fun withSkips(pool: HeartbeatCandidatePool): HeartbeatCandidatePool {
+        if (pool.isEmpty) return pool
+        val skips = runCatching { provider.skipCounts() }.getOrDefault(emptyMap())
+        if (skips.isEmpty()) return pool
+        val tiers = LinkedHashMap<Int, List<HeartbeatCandidate>>(pool.tiers.size)
+        for ((tier, candidates) in pool.tiers) {
+            tiers[tier] = candidates.map { candidate ->
+                val count = skips[HeartbeatScorer.identityKey(candidate.song)] ?: 0
+                if (count <= 0 || count == candidate.skipCount) candidate else candidate.copy(skipCount = count)
+            }
+        }
+        return pool.copy(tiers = tiers)
     }
 
     /**

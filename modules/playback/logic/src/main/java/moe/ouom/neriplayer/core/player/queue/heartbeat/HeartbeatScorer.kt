@@ -72,7 +72,7 @@ object HeartbeatScorer {
             if (sameArtist(candidate.song, currentSong)) result += SAME_ARTIST_BONUS
             if (sameAlbum(candidate.song, currentSong)) result += SAME_ALBUM_BONUS
         }
-        result *= repeatPenalty(candidate.effectiveRepeatCount)
+        result *= repeatPenalty(candidate.penaltyRepeatCount)
         if (candidate.song.durationMs in 1 until SHORT_TRACK_THRESHOLD_MS) {
             result *= SHORT_TRACK_PENALTY
         }
@@ -88,6 +88,10 @@ object HeartbeatScorer {
      * 0 次返回 1.0（无惩罚）；n 次返回 `REPEAT_PENALTY_STEP^n`，下限 [REPEAT_PENALTY_FLOOR]。
      * 与旧的「播过就乘 0.35」相比，这里对「播过 1 次」更宽容（0.85 而非 0.35），
      * 因为刚播过一次并不等于用户不喜欢——真正要压的是循环重播的那几首。
+     *
+     * 传入的是 [HeartbeatCandidate.penaltyRepeatCount] 而不是 `effectiveRepeatCount`：
+     * 用户在心动模式下主动跳过也算「已经给过这首歌机会」，并入同一条衰减曲线
+     * （任务书 §七 第三阶段验收「跳过不喜欢的歌曲后降低其权重」）。
      */
     fun repeatPenalty(repeatCount: Int): Double {
         if (repeatCount <= 0) return 1.0
