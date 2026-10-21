@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -88,6 +89,52 @@ class LocalSongSupportDuplicateKeysTest {
         assertFalse(LocalSongSupport.isLocalSong("Local Files", null, null, names))
         assertFalse(LocalSongSupport.isLocalSong(" ", null, 0L, setOf(" ")))
         assertFalse(LocalSongSupport.isLocalSong("Local Files", "https://cdn.example.com/a.mp3", 0L, names))
+    }
+
+    @Test
+    fun `explicit source evidence survives in snapshots only for their exact preferred local reference`() {
+        listOf(
+            "/music/selected.mp3",
+            "file:///music/selected.mp3",
+            "content://media/external/audio/media/7",
+            "android.resource://pkg/raw/song"
+        ).forEach { reference ->
+            val selected = song(mediaUri = reference).copy(explicitLocalSourceReference = reference)
+
+            assertEquals(reference, LocalSongSupport.validExplicitLocalSourceReference(selected))
+            assertEquals(reference, LocalSongSupport.validExplicitLocalSourceReference(null, reference, reference))
+        }
+    }
+
+    @Test
+    fun `an alternate declared file cannot borrow snapshot evidence from the preferred content source`() {
+        val preferred = "content://media/external/audio/media/7"
+        val file = "/music/selected.mp3"
+        val selected = song(localFilePath = file, mediaUri = preferred)
+
+        assertNull(LocalSongSupport.validExplicitLocalSourceReference(selected.copy(explicitLocalSourceReference = file)))
+        assertNull(LocalSongSupport.validExplicitLocalSourceReference(file, preferred, file))
+        assertEquals(preferred,
+            LocalSongSupport.validExplicitLocalSourceReference(selected.copy(explicitLocalSourceReference = preferred)))
+        assertEquals(file, LocalSongSupport.validExplicitLocalSourceReference(file, null, file))
+    }
+
+    @Test
+    fun `missing stale relative network and case changed snapshot markers establish no local evidence`() {
+        val preferred = "content://media/external/audio/media/7"
+        listOf(null, "", " ", "content://media/external/audio/media/8", "Content://media/external/audio/media/7")
+            .forEach { marker ->
+                val candidate = song(mediaUri = preferred).copy(explicitLocalSourceReference = marker)
+                assertNull(LocalSongSupport.validExplicitLocalSourceReference(candidate))
+                assertNull(LocalSongSupport.validExplicitLocalSourceReference(null, preferred, marker))
+            }
+        listOf("relative/selected.mp3", "https://cdn.example.com/selected.mp3").forEach { reference ->
+            assertNull(LocalSongSupport.validExplicitLocalSourceReference(
+                song(mediaUri = reference).copy(explicitLocalSourceReference = reference)
+            ))
+            assertNull(LocalSongSupport.validExplicitLocalSourceReference(null, reference, reference))
+        }
+        assertNull(LocalSongSupport.validExplicitLocalSourceReference(null, null, preferred))
     }
 
     private fun song(

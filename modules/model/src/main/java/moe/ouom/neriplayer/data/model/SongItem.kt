@@ -51,5 +51,7 @@ data class SongItem(
     val sourceModifiedAtMs: Long? = null,
     val lyricSyncRevision: Long = 0L,
     // null 表示旧数据尚未区分用户修改与网络缓存
-    val lyricSyncEdited: Boolean? = null
+    val lyricSyncEdited: Boolean? = null,
+    // 记录用户显式扫描选中的文件，不能由远端身份或侧载元数据推断
+    val explicitLocalSourceReference: String? = null
 ) : Parcelable

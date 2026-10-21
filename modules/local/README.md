@@ -50,6 +50,16 @@ Track playback statistics use Room as their primary store, without loading all t
 
 Playlist play increments carrying event IDs are acknowledged only when Room persists the count and receipt in one transaction. Failed legacy JSON promotion leaves the event pending; recovery confirms the actual primary store before retrying promotion, preventing duplicate counts after process restart. Existing playlist writes without event IDs retain JSON fallback.
 
+## 扫描与本地播放 / Scans and local playback
+
+文件夹扫描优先保存授权树内的音频引用，不把路径存在当作 MediaStore 读取授权。旧引用不可读时，播放器可在同一存储卷和已授权目录内恢复同一文件的 SAF 引用，编辑回写也复用这一来源。封面和元数据侧载共用恢复事务，失败或取消时回滚；回滚未完成时停止尝试其它音频别名。
+
+Folder scans prefer audio references within the granted document tree; an existing path does not establish MediaStore read access. When an old reference is unreadable, playback can recover a SAF reference to the same file within a granted directory on the same volume, and metadata edits reuse that source. Artwork and metadata sidecars share a recovery transaction. Failure or cancellation rolls back the changes, and an unresolved rollback stops further audio alias attempts.
+
+从扫描预览创建或加入普通歌单时，持久化用户明确选择的本地引用，保留旁车恢复的远端身份。本机播放仅接受与当前首选引用完全一致的来源标记；同步投影清除此标记和本地地址。旧记录没有扫描来源证据时不自动推断，再次显式扫描导入同一远端条目可以更新它的本地来源。
+
+Creating or updating an ordinary playlist from scan results persists the explicitly selected local reference while retaining remote identity recovered from sidecars. Local playback accepts provenance only when it exactly matches the current preferred reference; remote sync projections remove provenance and local addresses. Records without scan provenance remain unclassified until the user explicitly imports a scanned source again.
+
 ## 测试 / Tests
 
 ```bash

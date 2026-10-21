@@ -108,6 +108,8 @@ import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusivePlaybackRes
 import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
 import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.scheduleRestoredPlaybackResume
+import moe.ouom.neriplayer.core.player.persistence.scheduleRestoredLocalSourceValidation
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
@@ -198,20 +200,6 @@ internal fun shouldStopServiceForExternalPauseCommand(
     return stopServiceRequested && source != MEDIA_SESSION_STOP_SOURCE
 }
 
-internal fun shouldUseForegroundServiceStart(
-    sdkInt: Int,
-    forceForeground: Boolean,
-    shouldRunPlaybackServiceInForeground: Boolean,
-    callerHasResumedUi: Boolean
-): Boolean {
-    if (callerHasResumedUi) {
-        return false
-    }
-    return sdkInt >= Build.VERSION_CODES.O ||
-        forceForeground ||
-        shouldRunPlaybackServiceInForeground
-}
-
 internal fun shouldStartPlaybackWidgetActionInForeground(
     serviceInstanceActive: Boolean,
     serviceForegroundActive: Boolean,
@@ -242,32 +230,6 @@ private fun Intent.usbDeviceExtra(): UsbDevice? {
     }
 }
 
-fun canUseDirectPlaybackServiceStart(
-    isFinishing: Boolean,
-    isDestroyed: Boolean,
-    lifecycleState: Lifecycle.State?,
-    hasWindowFocus: Boolean
-): Boolean {
-    if (isFinishing || isDestroyed) {
-        return false
-    }
-    return lifecycleState?.isAtLeast(Lifecycle.State.RESUMED) == true && hasWindowFocus
-}
-
-internal fun isServiceStartNotAllowedFailure(error: Throwable): Boolean {
-    if (error !is IllegalStateException) {
-        return false
-    }
-    val simpleName = error::class.java.simpleName
-    if (
-        simpleName == "BackgroundServiceStartNotAllowedException" ||
-        simpleName == "ForegroundServiceStartNotAllowedException"
-    ) {
-        return true
-    }
-    return error.message?.contains("Not allowed to start service") == true
-}
-
 internal fun shouldSkipRedundantSyncServiceStart(
     source: String,
     lastSuccessfulSource: String?,
@@ -275,7 +237,7 @@ internal fun shouldSkipRedundantSyncServiceStart(
     nowElapsedRealtime: Long,
     dedupeWindowMs: Long = 1500L
 ): Boolean {
-    if (source != "app_bootstrap") {
+    if (source != APP_BOOTSTRAP_START_SOURCE) {
         return false
     }
     if (lastSuccessfulStartElapsedRealtime <= 0L) {
@@ -670,11 +632,22 @@ class AudioPlayerService : Service() {
             debounceMs = 0L,
         )
         flushPlaybackStatsSafely("service_idle_shutdown", "idle shutdown")
+        stopServiceKeepingPlayerRuntime(scheduledStartId, "idle_timeout")
+    }
+
+    private fun stopServiceForUnavailableRestoredSource(startId: Int) {
+        if (startId != latestStartId || !isEligibleForIdleShutdown()) return
+        stopServiceKeepingPlayerRuntime(startId, "restored_source_unavailable")
+    }
+
+    private fun stopServiceKeepingPlayerRuntime(startId: Int, reason: String) {
+        idleShutdownCoordinator.cancel()
         allowServiceRestart = false
+        hasReceivedStartCommand = false
         keepPlayerRuntimeAfterServiceStop = true
-        stopForegroundIfStarted("idle_timeout")
-        if (scheduledStartId > 0) {
-            stopSelfResult(scheduledStartId)
+        stopForegroundIfStarted(reason)
+        if (startId > 0) {
+            stopSelfResult(startId)
         } else {
             stopSelf()
         }
@@ -1413,10 +1386,16 @@ class AudioPlayerService : Service() {
                 return START_NOT_STICKY
             }
             if (action == null) {
-                val restoredPlaybackPositionMs = PlayerManager.resumeRestoredPlaybackIfNeeded()
-                if (restoredPlaybackPositionMs != null) {
+                PlayerManager.scheduleRestoredPlaybackResume(
+                    serviceScope,
+                    onSourceUnavailable = { stopServiceForUnavailableRestoredSource(startId) }
+                ) {
                     NPLogger.w("NERI-APS", "Restored playback after process restart")
                     updateAll()
+                }
+            } else if (action == ACTION_SYNC && startSource == APP_BOOTSTRAP_START_SOURCE) {
+                PlayerManager.scheduleRestoredLocalSourceValidation(serviceScope) {
+                    stopServiceForUnavailableRestoredSource(startId)
                 }
             }
         } else if (hasPlaybackSurfaceContent()) {
@@ -1692,7 +1671,7 @@ class AudioPlayerService : Service() {
 
     private fun releasePlayerRuntimeAfterServiceStop(preservePlaybackForRestart: Boolean) {
         if (keepPlayerRuntimeAfterServiceStop) {
-            NPLogger.i("NERI-APS", "Keeping paused player runtime after idle service shutdown")
+            NPLogger.i("NERI-APS", "Keeping player runtime after service shutdown")
             return
         }
         releasePlayerRuntimeUnlessKept(preservePlaybackForRestart)

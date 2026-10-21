@@ -107,6 +107,24 @@ class ManagedDownloadReferenceIoTest {
     }
 
     @Test
+    fun `media store audio is readable without document provider columns`() {
+        val rowCursor = mock(Cursor::class.java).also { `when`(it.moveToFirst()).thenReturn(true) }
+        val descriptor = mock(ParcelFileDescriptor::class.java).also { `when`(it.statSize).thenReturn(128L) }
+        `when`(resolver.query(any(Uri::class.java), any(), any(), any(), any())).thenAnswer { invocation ->
+            val projection = invocation.getArgument<Array<String>>(1)
+            if (DocumentsContract.Document.COLUMN_DOCUMENT_ID in projection) {
+                throw IllegalArgumentException("Invalid column document_id")
+            }
+            rowCursor
+        }
+        `when`(resolver.openFileDescriptor(documentUri, "r")).thenReturn(descriptor)
+
+        assertEquals(AccessResult.Accessible, ManagedDownloadReferenceIo.inspect(context, documentUri))
+        verify(descriptor).close()
+        verify(rowCursor).close()
+    }
+
+    @Test
     fun `document cursors decide between missing and readable documents`() {
         val emptyCursor = mock(Cursor::class.java)
         val rowCursor = mock(Cursor::class.java).also { `when`(it.moveToFirst()).thenReturn(true) }

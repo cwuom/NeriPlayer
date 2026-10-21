@@ -817,7 +817,8 @@ internal fun LocalPlaylistRepository.projectRemoteSourcePlaylistEntries(
     songs: List<SongItem>
 ): MutableList<SongItem> {
     return songs.mapTo(mutableListOf()) { song ->
-        song.toSyncableRemoteSongOrNull(context) ?: song
+        if (song.validExplicitLocalSourceReference() != null) song
+        else song.toSyncableRemoteSongOrNull(context) ?: song
     }
 }
 

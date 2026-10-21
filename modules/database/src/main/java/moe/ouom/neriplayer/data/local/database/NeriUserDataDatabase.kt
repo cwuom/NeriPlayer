@@ -69,6 +69,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
 
 import moe.ouom.neriplayer.data.local.database.migration.library.PlayHistoryMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.LyricSyncPersistenceMigration
+import moe.ouom.neriplayer.data.local.database.migration.library.LocalSourceProvenanceMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.PlaylistUsageMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.LocalPlaylistPlaybackMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackStatsMigration
@@ -86,7 +87,7 @@ import moe.ouom.neriplayer.data.local.database.migration.download.DownloadFinali
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadBatchMigration
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadRecoveryCursorMigration
 
-private const val NERI_USER_DATA_FINAL_VERSION = 20
+private const val NERI_USER_DATA_FINAL_VERSION = 21
 
 @Database(
     entities = [
@@ -226,7 +227,8 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
             MIGRATION_16_17,
             MIGRATION_17_18,
             MIGRATION_18_19,
-            MIGRATION_19_20
+            MIGRATION_19_20,
+            MIGRATION_20_21
         )
 
         private fun checkMainProcess(context: Context) {
@@ -257,6 +259,7 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
         val MIGRATION_17_18: Migration = DownloadRecoveryCursorMigration
         val MIGRATION_18_19: Migration = LyricSyncPersistenceMigration
         val MIGRATION_19_20: Migration = PlaybackStatsPagedMigration
+        val MIGRATION_20_21: Migration = LocalSourceProvenanceMigration
 
         const val FINAL_DB_VERSION = NERI_USER_DATA_FINAL_VERSION
     }

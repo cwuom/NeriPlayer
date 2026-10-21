@@ -79,5 +79,7 @@ data class PlayHistoryEntity(
     @ColumnInfo(name = "played_at")
     val playedAt: Long,
     @ColumnInfo(name = "lyric_sync_payload_json")
-    val lyricSyncPayloadJson: String? = null
+    val lyricSyncPayloadJson: String? = null,
+    @ColumnInfo(name = "explicit_local_source_reference")
+    val explicitLocalSourceReference: String? = null
 )

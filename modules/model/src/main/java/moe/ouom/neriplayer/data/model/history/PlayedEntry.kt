@@ -33,5 +33,6 @@ data class PlayedEntry(
     val matchedSongId: String? = null,
     val userLyricOffsetMs: Long = 0L,
     val lyricSyncRevision: Long = 0L,
-    val lyricSyncEdited: Boolean? = null
+    val lyricSyncEdited: Boolean? = null,
+    val explicitLocalSourceReference: String? = null
 )

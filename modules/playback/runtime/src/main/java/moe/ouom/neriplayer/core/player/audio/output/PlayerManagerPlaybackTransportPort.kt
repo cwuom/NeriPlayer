@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.core.player.runtime.transport.UsbFocusSnapshot
 import moe.ouom.neriplayer.core.player.usb.transport.hasHealthyTransport
 
 import android.os.Looper
+import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import kotlinx.coroutines.Job
@@ -20,6 +21,7 @@ import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 
 internal object PlayerManagerPlaybackTransportPort : PlaybackTransportPort {
     override fun ensureInitialized() = PlayerManager.ensureInitialized()
@@ -63,8 +65,18 @@ internal object PlayerManagerPlaybackTransportPort : PlaybackTransportPort {
     }
 
     private fun isRestorableCandidate(song: SongItem): Boolean {
-        if (!PlayerManager.isLocalSong(song)) return true
-        return PlayerManager.isRestorableLocalSong(song)
+        if (!LocalSongSupport.isLocalSong(song)) return true
+        // 这里只判断是否需要恢复准入，文件可读性由异步恢复流程确认
+        return listOfNotNull(song.localFilePath, song.mediaUri).any(::hasPotentialLocalReference)
+    }
+
+    private fun hasPotentialLocalReference(reference: String): Boolean {
+        if (reference.isBlank()) return false
+        if (reference.startsWith("/")) return true
+        val uri = reference.toUri()
+        val scheme = uri.scheme.orEmpty().lowercase()
+        if (scheme == "file") return !uri.path.isNullOrBlank()
+        return scheme in setOf("", "content", "android.resource")
     }
 
     override fun usbFocusSnapshot(includeHealth: Boolean, includeOpenGate: Boolean): UsbFocusSnapshot {
