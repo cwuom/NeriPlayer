@@ -4,7 +4,8 @@
 
 These tools check method complexity, source ownership, and dependency boundaries.
 Gradle tasks require JDK 17, an Android build environment, and Python 3. The Python
-scripts use only the standard library.
+scripts use only the standard library. Gates running `:playback:runtime` JVM tests
+also need a Gradle-discoverable JDK 21; production compilation still targets 17.
 
 | Check | Purpose |
 | --- | --- |
@@ -30,9 +31,10 @@ inputs, but does not fail for scores above the threshold.
 The 14 owned libraries are registered in [gradle/owned-modules.txt](../../gradle/owned-modules.txt).
 `:native` is a pure-native Android library included in registration, structural checks,
 and lint. It creates no JaCoCo execution data, CRAP tasks, or JVM test tasks; existing
-Kotlin/Java modules retain complete coverage collection. The independent native CI
+Kotlin/Java modules retain complete coverage collection. The independent native USB CI
 checks all three host profiles and four Android ABIs; commands are in the
-[Native module README](../../modules/native/README.md). For focused checks:
+[Native module README](../../modules/native/README.md). `tests/dsp/` is a separate
+CMake/CTest suite, outside USB host profiles and JVM gates. For focused checks:
 
 ```bash
 ./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap

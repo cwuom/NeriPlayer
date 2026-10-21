@@ -66,6 +66,7 @@ val elapsedMs = elapsedMillisSince(startedAtNanos)
 ## 播放器读取 / Player reads
 
 [`PlayerReadExtensions`](../modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/PlayerReadExtensions.kt) 提供 `currentPositionMsOr(fallbackMs)`、`durationMsOr(fallbackMs)` 和默认回退到零的属性。
+这些扩展为 `internal`，只供 `:playback:runtime` 内部使用；app 和其他库通过现有播放器宿主接口读取状态。
 
 ```kotlin
 val positionMs = player.currentPositionMsOr(-1L)
@@ -77,6 +78,7 @@ val durationMs = player.durationMsOr(previousDurationMs)
 ## 协程结果 / Coroutine results
 
 [`runCatchingNonCancellation`](../modules/common/src/main/java/moe/ouom/neriplayer/common/coroutines/RunCatchingNonCancellation.kt) 将普通 `Exception` 转为 `Result`，`CancellationException` 继续向上传播，`Error` 不被捕获。
+它及其 block 都是 `suspend`，需要在协程或其他挂起函数中调用；它本身不切换 dispatcher。
 
 ```kotlin
 return runCatchingNonCancellation {
@@ -94,6 +96,9 @@ return runCatchingNonCancellation {
 [`pcmAudioRequirements`](../modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/policy/offload/PlaybackAudioOffloadPolicy.kt) 将现有音源兼容规则与音频处理条件映射为 `Set<PcmAudioRequirement>`。调用方用 `isNotEmpty()` 判断是否需要禁用卸载，并可记录全部原因。
 
 新增条件时，在 [`PcmAudioRequirements`](../modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/policy/offload/PcmAudioRequirements.kt) 的对应规则中更新判断，通过 `pcmAudioRequirements` 统一返回原因，并为对应原因补测试。空集合只表示当前策略没有提出 PCM 要求，实际卸载能力仍由 Media3 和设备决定。音频路径的切换顺序继续保留在播放器调用点。
+
+当前还会返回 `AUDIO_EFFECTS` 和 `OFFLOAD_STALL_FALLBACK` 等原因。后者用于本次播放会话的卸载无声恢复，
+不能仅根据用户设置重新计算后将它清除；音效是否真正生效则由调用方传入 `audioEffectsActive`。
 
 ## JSON 对象数组映射 / JSON object array mapping
 

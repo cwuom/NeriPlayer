@@ -93,6 +93,8 @@ to milliseconds. The call site decides whether to clamp negative results to zero
 [`PlayerReadExtensions`](../modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/PlayerReadExtensions.kt)
 provides `currentPositionMsOr(fallbackMs)`, `durationMsOr(fallbackMs)`, and properties
 that default to a zero fallback.
+These extensions are `internal` to `:playback:runtime`; app and other libraries
+read state through the existing player host interfaces.
 
 ```kotlin
 val positionMs = player.currentPositionMsOr(-1L)
@@ -109,6 +111,8 @@ threads; callers must still follow the Player's application-thread requirements.
 [`runCatchingNonCancellation`](../modules/common/src/main/java/moe/ouom/neriplayer/common/coroutines/RunCatchingNonCancellation.kt)
 converts ordinary `Exception` instances into a `Result`, propagates
 `CancellationException`, and does not catch `Error`.
+Both the helper and its block are `suspend`, so call it from a coroutine or another
+suspending function. It does not switch dispatchers itself.
 
 ```kotlin
 return runCatchingNonCancellation {
@@ -136,6 +140,11 @@ keep `pcmAudioRequirements` as the common entry point for returning reasons, and
 add tests for the corresponding reason. An empty set only means the current policy
 has no PCM requirement; actual offload support still depends on Media3 and the device.
 Playback call sites retain the ordering of audio path changes.
+
+Current reasons also include `AUDIO_EFFECTS` and `OFFLOAD_STALL_FALLBACK`. The latter
+keeps PCM active after silent offload recovery for the current playback session;
+do not clear it by recomputing only user settings. The caller supplies
+`audioEffectsActive` to indicate whether effects actually require processing.
 
 ## JSON object array mapping
 

@@ -1,6 +1,6 @@
 # NeriPlayer Native Source License / Native 源码授权说明
 
-Last updated / 最后更新：2026-07-28
+Last updated / 最后更新：2026-10-21
 
 This directory contains NeriPlayer native source code, and also includes
 third-party native source code used by the build.
@@ -19,17 +19,33 @@ or otherwise has the right to offer this alternative license.
 源码和 native 测试文件。以后新增到这些路径的文件，也只有在 NeriPlayer
 项目作者拥有版权或有权提供本替代授权时，才会被纳入：
 
+All paths below are relative to `modules/native/src/main/cpp/`.
+
+以下路径均相对于 `modules/native/src/main/cpp/`：
+
 - `crash/`
+- `dsp/`
+- `usb/control/`
 - `usb/exclusive/`
 - `usb/feedback/`
 - `usb/iso/`
 - `usb/pcm/`
 - `usb/uac1/`
 - `usb/uac2/`
-- `tests/usb/`, for NeriPlayer-owned host tests and supporting test files
-- `tests/usb/`，仅限 NeriPlayer 自有的 host 测试及其配套测试文件
-- NeriPlayer-owned portions of `CMakeLists.txt` and `tests/usb/CMakeLists.txt`
-- `CMakeLists.txt` 和 `tests/usb/CMakeLists.txt` 中由 NeriPlayer 自有的部分
+- `tests/usb/` and `tests/dsp/`, for NeriPlayer-owned host tests and supporting test files
+- `tests/usb/` 和 `tests/dsp/`，仅限 NeriPlayer 自有的 host 测试及其配套测试文件
+- `cmake/`, for NeriPlayer-owned shared native build configuration
+- `cmake/`，仅限 NeriPlayer 自有的共享 native 构建配置
+- NeriPlayer-owned portions of the following CMake entry points and build adapters
+- 以下 CMake 入口和构建适配文件中由 NeriPlayer 自有的部分：
+  - `CMakeLists.txt`
+  - `crash/CMakeLists.txt`
+  - `dsp/CMakeLists.txt`
+  - `usb/CMakeLists.txt`
+  - `usb/exclusive/CMakeLists.txt`
+  - `tests/usb/CMakeLists.txt`
+  - `tests/dsp/CMakeLists.txt`
+  - `third_party/libusb/CMakeLists.txt`
 
 This alternative license does not automatically apply to Kotlin, Java,
 Android resources, scripts or tools outside this directory, generated build
@@ -49,6 +65,12 @@ copyright or license notice.
 - 带有独立声明的外部测试夹具、反馈轨迹、语料或规范资料
 - Any other file with an explicit third-party copyright or license notice
 - 其他明确标注了独立许可证或第三方版权信息的文件
+
+The entry for `third_party/libusb/CMakeLists.txt` covers only NeriPlayer's
+own build adapter. It does not relicense the libusb sources or headers.
+
+`third_party/libusb/CMakeLists.txt` 这一项仅覆盖 NeriPlayer 自有的构建适配，
+不会改变 libusb 源码或头文件的许可证。
 
 If a file contains both NeriPlayer-owned code and third-party code, the
 third-party parts still follow their original licenses. A file-specific
