@@ -45,14 +45,11 @@ import moe.ouom.neriplayer.core.player.metadata.shouldWriteLocalCoverMetadata
 import moe.ouom.neriplayer.core.player.metadata.toBasicSongDetails
 import moe.ouom.neriplayer.core.player.metadata.withUpdatedLyricsPreservingOriginal
 import moe.ouom.neriplayer.data.model.playback.PersistedState
-import moe.ouom.neriplayer.data.model.playback.RestoredPlaybackState
 import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.source.toSongItem
-import moe.ouom.neriplayer.data.ltw.playback.ListenTogetherRestoredPlaybackAction
-import moe.ouom.neriplayer.data.ltw.playback.resolveListenTogetherRestoredPlaybackAction
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -771,71 +768,6 @@ internal fun PlayerManager.restoreState() {
         keepPlaybackModeStateEnabled = keepPlaybackModeStateEnabled
     ) ?: return
     applyRestoredStateSnapshot(snapshot)
-}
-
-internal fun PlayerManager.resumeRestoredPlaybackIfNeededImpl(): Long? {
-    ensureInitialized()
-    if (!initialized) {
-        NPLogger.d("NERI-PlayerManager", "resumeRestoredPlaybackIfNeeded(): skipped, manager not initialized")
-        return null
-    }
-    val restored = restoredPlaybackSnapshot()
-    if (restored !is RestoredPlaybackState.ResumePending) {
-        NPLogger.d("NERI-PlayerManager", "resumeRestoredPlaybackIfNeeded(): skipped, restoredShouldResumePlayback=false")
-        return null
-    }
-    when (
-        resolveListenTogetherRestoredPlaybackAction(
-            restoredPlaybackRequested = true,
-            listenTogetherSessionActive = isListenTogetherActive(),
-            currentUserIsController = isCurrentUserControllerInListenTogether()
-        )
-    ) {
-        ListenTogetherRestoredPlaybackAction.SKIP -> return null
-        ListenTogetherRestoredPlaybackAction.RESUME_LOCAL_PLAYBACK -> Unit
-        ListenTogetherRestoredPlaybackAction.WAIT_FOR_AUTHORITATIVE_ROOM_STATE -> {
-            NPLogger.d(
-                "NERI-PlayerManager",
-                "resumeRestoredPlaybackIfNeeded(): defer active Listen Together listener until room state is authoritative"
-            )
-            if (!consumeRestoredPlayback(restored)) return null
-            scheduleStatePersist(
-                positionMs = _playbackPositionMs.value.coerceAtLeast(0L),
-                shouldResumePlayback = false,
-                debounceMs = 0L
-            )
-            return null
-        }
-    }
-    if (currentPlaylist.isEmpty() || currentIndex !in currentPlaylist.indices) {
-        NPLogger.w(
-            "NERI-PlayerManager",
-            "resumeRestoredPlaybackIfNeeded(): skipped, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex"
-        )
-        return null
-    }
-    val resumeIndex = currentIndex
-    val resumeSong = currentPlaylist[resumeIndex]
-    if (isLocalSong(resumeSong) && !isRestorableLocalSong(resumeSong)) {
-        NPLogger.w(
-            "NERI-PlayerManager",
-            "resumeRestoredPlaybackIfNeeded(): keep restored local progress because media is not readable yet, song=${resumeSong.name}"
-        )
-        return null
-    }
-    val resumePositionMs = restored.positionMs
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "resumeRestoredPlaybackIfNeeded(): resumeIndex=$resumeIndex, positionMs=$resumePositionMs, song=${resumeSong.name}, stack=[${debugStackHint()}]"
-    )
-    if (!consumeRestoredPlayback(restored)) return null
-    lastStatePersistAtMs = SystemClock.elapsedRealtime()
-    playAtIndex(
-        resumeIndex,
-        resumePositionMs = resumePositionMs,
-        forceStartupProtectionFade = true
-    )
-    return resumePositionMs
 }
 
 internal fun PlayerManager.suppressFutureAutoResumeForCurrentSessionImpl(

@@ -1836,7 +1836,7 @@ object PlayerManager {
     internal fun applyRemoteQueueUpdate(queue: List<SongItem>, currentIndexInQueue: Int) =
         applyRemoteQueueUpdateImpl(queue, currentIndexInQueue)
 
-    fun resumeRestoredPlaybackIfNeeded(): Long? = resumeRestoredPlaybackIfNeededImpl()
+    suspend fun resumeRestoredPlaybackIfNeeded(): Long? = resumeRestoredPlaybackIfNeededImpl()
 
     fun suppressFutureAutoResumeForCurrentSession(forcePersist: Boolean = false) =
         suppressFutureAutoResumeForCurrentSessionImpl(forcePersist)

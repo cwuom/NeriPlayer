@@ -108,6 +108,7 @@ import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusivePlaybackRes
 import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
 import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.scheduleRestoredPlaybackResume
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
@@ -1413,8 +1414,7 @@ class AudioPlayerService : Service() {
                 return START_NOT_STICKY
             }
             if (action == null) {
-                val restoredPlaybackPositionMs = PlayerManager.resumeRestoredPlaybackIfNeeded()
-                if (restoredPlaybackPositionMs != null) {
+                PlayerManager.scheduleRestoredPlaybackResume(serviceScope) {
                     NPLogger.w("NERI-APS", "Restored playback after process restart")
                     updateAll()
                 }
