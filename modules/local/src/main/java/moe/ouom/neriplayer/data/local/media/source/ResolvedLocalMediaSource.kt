@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.common.logging.playbackLogReference
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.curation.FolderArtworkLocator
 import moe.ouom.neriplayer.data.local.media.curation.StorageDocumentPath
+import moe.ouom.neriplayer.data.local.media.isReadableLocalFile
 import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.model.SongItem
 
@@ -38,6 +39,15 @@ class ResolvedLocalMediaSource private constructor(
     companion object {
         fun direct(song: SongItem, reference: String): ResolvedLocalMediaSource =
             ResolvedLocalMediaSource(reference, reference, song)
+
+        fun verifiedReadableDeclaredFile(context: Context, song: SongItem, reference: String): ResolvedLocalMediaSource? {
+            val anchor = preferredLocalMediaReference(song.localFilePath, song.mediaUri) ?: return null
+            if (reference == anchor) return null
+            val file = readableDeclaredDirectFile(song, reference) ?: return null
+            val anchorFile = referenceFile(context, anchor) ?: return null
+            if (file != anchorFile || hasConflictingDeclaredFile(song, anchorFile)) return null
+            return ResolvedLocalMediaSource(reference, anchor, song)
+        }
 
         fun recoverFromFolderGrant(context: Context, song: SongItem): ResolvedLocalMediaSource? {
             if (!LocalSongSupport.isLocalSong(song, context)) return null
@@ -99,6 +109,11 @@ class ResolvedLocalMediaSource private constructor(
             val file = directFile(reference) ?: contentReferenceFile(context, reference.toUri())
             file?.canonicalFile
         }.getOrNull()
+
+        private fun readableDeclaredDirectFile(song: SongItem, reference: String): File? {
+            if (reference !in listOf(song.localFilePath, song.mediaUri)) return null
+            return runCatching { directFile(reference)?.takeIf(::isReadableLocalFile)?.canonicalFile }.getOrNull()
+        }
 
         private fun contentReferenceFile(context: Context, uri: Uri): File? {
             if (!uri.scheme.equals("content", ignoreCase = true)) return null

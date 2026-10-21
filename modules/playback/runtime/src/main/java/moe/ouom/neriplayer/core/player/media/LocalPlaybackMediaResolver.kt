@@ -33,15 +33,22 @@ internal object LocalPlaybackMediaResolver {
                     )
                 }
             }
-        val conflicting = readable != null && readable != preferred &&
-            ResolvedLocalMediaSource.hasConflictingDeclaredFile(context, song)
-        val resolved = if (conflicting) null else {
-            readable?.let { ResolvedLocalMediaSource.direct(song, it) }
-                ?: ResolvedLocalMediaSource.recoverFromFolderGrant(context, song)
-        }
+        val resolved = resolveReadableSource(song, context, preferred, readable)
         val selected = resolved ?: preferred?.let { ResolvedLocalMediaSource.direct(song, it) }
         logSourceSelection(song, resolved, selected)
         return selected
+    }
+
+    private fun resolveReadableSource(
+        song: SongItem,
+        context: Context,
+        preferred: String?,
+        readable: String?
+    ): ResolvedLocalMediaSource? {
+        if (readable == null) return ResolvedLocalMediaSource.recoverFromFolderGrant(context, song)
+        if (readable != preferred && ResolvedLocalMediaSource.hasConflictingDeclaredFile(context, song)) return null
+        return ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, song, readable)
+            ?: ResolvedLocalMediaSource.direct(song, readable)
     }
 
     private fun logSourceSelection(

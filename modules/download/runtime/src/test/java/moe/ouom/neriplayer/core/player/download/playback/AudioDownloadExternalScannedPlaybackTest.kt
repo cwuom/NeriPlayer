@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.identity.stableKey
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -308,6 +309,63 @@ class AudioDownloadExternalScannedPlaybackTest {
         explicitReferencesKnown = false
 
         assertUnknown(coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source))
+    }
+
+    @Test
+    fun `verified readable declared files retain the preferred manual anchor instead of a completed bridge`() = runBlocking {
+        listOf(audio.absolutePath, Uri.fromFile(audio).toString()).forEach { reference ->
+            val (song, source) = verifiedDeclaredFileSource(reference)
+            val preferred = requireNotNull(song.mediaUri)
+            explicitReferences.add(preferred)
+            rememberCurrentBridge(song)
+            val bridge = requireNotNull(completedReferences.peekCompletedAudioReference(song))
+            val previousAudioQueries = audioQueries.get()
+            val previousRootQueries = currentRootQueries.get()
+
+            assertUnknown(coordinator.resolvePermittedLocalPlayback(
+                context, song, reference, ResolvedLocalMediaSource.direct(song, reference)
+            ))
+
+            val result = coordinator.resolvePermittedLocalPlayback(context, song, reference, source)
+
+            assertEquals(LocalPlaybackReferenceResolution.Playable(reference), result)
+            assertEquals(preferred, source.anchorFor(song, reference))
+            assertSame(bridge, completedReferences.peekCompletedAudioReference(song))
+            assertEquals(previousAudioQueries, audioQueries.get())
+            assertEquals(previousRootQueries, currentRootQueries.get())
+        }
+    }
+
+    @Test
+    fun `unknown preferred provenance blocks a verified readable declared file before provider probing`() = runBlocking {
+        val (song, source) = verifiedDeclaredFileSource()
+        unknownExplicitReferences.add(requireNotNull(song.mediaUri))
+        explicitReferences.add(source.reference)
+        rememberCurrentBridge(song)
+        val bridge = requireNotNull(completedReferences.peekCompletedAudioReference(song))
+        val previousAudioQueries = audioQueries.get()
+        val previousRootQueries = currentRootQueries.get()
+        val previousDirectoryQueries = directoryQueries.get()
+
+        val result = coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source)
+
+        assertUnknown(result)
+        assertSame(bridge, completedReferences.peekCompletedAudioReference(song))
+        assertEquals(previousAudioQueries, audioQueries.get())
+        assertEquals(previousRootQueries, currentRootQueries.get())
+        assertEquals(previousDirectoryQueries, directoryQueries.get())
+    }
+
+    @Test
+    fun `verified readable declared files preserve managed bridges when both references are nonmanual`() = runBlocking {
+        val (song, source) = verifiedDeclaredFileSource()
+        rememberCurrentBridge(song)
+        val bridge = requireNotNull(completedReferences.peekCompletedAudioReference(song))
+
+        val result = coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source)
+
+        assertEquals(LocalPlaybackReferenceResolution.Playable(currentAudioUri.toString()), result)
+        assertSame(bridge, completedReferences.peekCompletedAudioReference(song))
     }
 
     @Test
@@ -647,6 +705,33 @@ class AudioDownloadExternalScannedPlaybackTest {
         )
         explicitReferences.add(original)
         return song to requireNotNull(ResolvedLocalMediaSource.recoverFromFolderGrant(context, song))
+    }
+
+    private suspend fun verifiedDeclaredFileSource(reference: String = audio.absolutePath): Pair<SongItem, ResolvedLocalMediaSource> {
+        val preferred = Uri.parse("content://media/external/audio/media/859470")
+        val song = scannedSong(explicit = false).copy(mediaUri = preferred.toString(), localFilePath = reference)
+        val proofQueries = AtomicInteger()
+        val resolver = mock(ContentResolver::class.java)
+        val proofContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getContentResolver(): ContentResolver = resolver
+        }
+        doAnswer { invocation ->
+            assertEquals(preferred, invocation.getArgument<Uri>(0))
+            assertEquals(listOf("_data"), invocation.getArgument<Array<String>>(1).toList())
+            proofQueries.incrementAndGet()
+            MatrixCursor(arrayOf("_data")).apply { addRow(arrayOf(audio.canonicalPath)) }
+        }.`when`(resolver).query(any(), any(), any(), any(), any())
+        doAnswer {
+            throw FileNotFoundException("preferred MediaStore reference is unreadable")
+        }.`when`(resolver).openAssetFileDescriptor(eq(preferred), eq("r"))
+
+        val source = requireNotNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(proofContext, song, reference))
+
+        assertTrue("the declared file contains real readable bytes", audio.inputStream().use { it.read() >= 0 })
+        assertTrue("the preferred MediaStore row proves the same canonical file", proofQueries.get() > 0)
+        assertEquals(reference, source.reference)
+        return song to source
     }
 
     private suspend fun assertUnverifiedAliasBlocksBridge(manualSourceKnown: Boolean, sameRootBridge: Boolean = false) {

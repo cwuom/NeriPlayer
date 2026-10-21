@@ -7,13 +7,16 @@ import android.content.res.AssetFileDescriptor
 import android.database.MatrixCursor
 import android.net.Uri
 import android.provider.DocumentsContract
+import java.io.File
 import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.eq
@@ -28,6 +31,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
 class ResolvedLocalMediaSourceTest {
+    @get:Rule
+    val directory = TemporaryFolder()
+
     private val context = mock(Context::class.java)
     private val resolver = mock(ContentResolver::class.java)
     private val original = "content://media/external/audio/media/7"
@@ -68,6 +74,177 @@ class ResolvedLocalMediaSourceTest {
         assertNull(source.unverifiedDeclaredReferenceFor(song.copy(localFilePath = "$path.other"), path))
         assertNull(source.unverifiedDeclaredReferenceFor(song, original))
         assertNull(ResolvedLocalMediaSource.direct(song, original).unverifiedDeclaredReferenceFor(song, original))
+    }
+
+    @Test
+    fun `readable declared raw and file references retain the proven MediaStore preferred anchor`() {
+        val file = directory.newFile("declared.mp3").apply { writeText("audio") }
+        listOf(file.absolutePath, Uri.fromFile(file).toString()).forEach { reference ->
+            val candidate = readableDeclaredSong(file).copy(localFilePath = reference)
+
+            val source = requireNotNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, reference))
+
+            assertEquals(reference, source.reference)
+            assertEquals(original, source.anchorFor(candidate, reference))
+            assertNull(source.unverifiedDeclaredReferenceFor(candidate, reference))
+        }
+    }
+
+    @Test
+    fun `readable declared aliases compare complete canonical paths rather than their spelling`() {
+        val file = directory.newFile("canonical.mp3").apply { writeText("audio") }
+        val child = directory.newFolder("child")
+        val reference = File(child, "../${file.name}").absolutePath
+        val candidate = readableDeclaredSong(file).copy(localFilePath = reference)
+
+        val source = requireNotNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, reference))
+
+        assertEquals(original, source.anchorFor(candidate, reference))
+    }
+
+    @Test
+    fun `readable declared alias provenance remains bound to its complete song and actual reference`() {
+        val file = directory.newFile("bound.mp3").apply { writeText("audio") }
+        val candidate = readableDeclaredSong(file)
+        val source = requireNotNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, file.path))
+
+        listOf(candidate.copy(id = 8L), candidate.copy(localFilePath = "${file.path}.other"),
+            candidate.copy(mediaUri = "content://media/external/audio/media/8")).forEach { other ->
+            assertNull(source.anchorFor(other, file.path))
+            assertNull(source.unverifiedDeclaredReferenceFor(other, file.path))
+        }
+        assertNull(source.anchorFor(candidate, original))
+        assertNull(source.anchorFor(candidate, Uri.fromFile(file).toString()))
+    }
+
+    @Test
+    fun `an undeclared file or alternate spelling cannot acquire preferred provenance`() {
+        val file = directory.newFile("undeclared.mp3").apply { writeText("audio") }
+        val candidate = readableDeclaredSong(file)
+
+        assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context,
+            candidate.copy(localFilePath = null), file.path))
+        assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context,
+            candidate, Uri.fromFile(file).toString()))
+        assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, original))
+    }
+
+    @Test
+    fun `unknown unsupported or absent preferred paths cannot prove a readable declared alias`() {
+        val file = directory.newFile("unknown.mp3").apply { writeText("audio") }
+        val candidate = readableDeclaredSong(file)
+        listOf(null, " ", "content://other.documents/document/7", "https://example.org/song.mp3")
+            .forEach { preferred ->
+                assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context,
+                    candidate.copy(mediaUri = preferred), file.path))
+            }
+        assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context,
+            candidate.copy(localFilePath = null, mediaUri = null), file.path))
+        doReturn(null).`when`(resolver).query(eq(Uri.parse(original)), any(), any(), any(), any())
+        assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, file.path))
+    }
+
+    @Test
+    fun `Provider failures cannot prove a readable declared file alias`() {
+        val file = directory.newFile("provider-failure.mp3").apply { writeText("audio") }
+        val candidate = readableDeclaredSong(file)
+        listOf(SecurityException("read denied"), IllegalStateException("provider unavailable")).forEach { failure ->
+            doAnswer { throw failure }.`when`(resolver).query(eq(Uri.parse(original)), any(), any(), any(), any())
+
+            assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, file.path))
+        }
+    }
+
+    @Test
+    fun `collections and multiple MediaStore rows cannot prove a readable declared file alias`() {
+        val file = directory.newFile("ambiguous.mp3").apply { writeText("audio") }
+        val collection = "content://media/external/audio/media"
+        val candidate = readableDeclaredSong(file)
+        mediaStorePath(file.path, collection)
+        assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context,
+            candidate.copy(mediaUri = collection), file.path))
+        val cursor = MatrixCursor(arrayOf("_data")).apply {
+            addRow(arrayOf(file.path))
+            addRow(arrayOf(file.path))
+        }
+        doReturn(cursor).`when`(resolver).query(eq(Uri.parse(original)), any(), any(), any(), any())
+
+        assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, file.path))
+        assertTrue(cursor.isClosed)
+    }
+
+    @Test
+    fun `missing or relative MediaStore data cannot prove a readable declared file alias`() {
+        val file = directory.newFile("missing-data.mp3").apply { writeText("audio") }
+        val candidate = readableDeclaredSong(file)
+        listOf(MatrixCursor(arrayOf("_data")),
+            MatrixCursor(arrayOf("_data")).apply { addRow(arrayOf("Music/song.mp3")) },
+            MatrixCursor(arrayOf("_data")).apply { addRow(arrayOfNulls<String>(1)) }).forEach { cursor ->
+            doReturn(cursor).`when`(resolver).query(eq(Uri.parse(original)), any(), any(), any(), any())
+
+            assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, file.path))
+            assertTrue(cursor.isClosed)
+        }
+    }
+
+    @Test
+    fun `a different preferred file cannot lend provenance to a readable declared file`() {
+        val file = directory.newFile("actual.mp3").apply { writeText("audio") }
+        val other = directory.newFile("preferred.mp3").apply { writeText("other audio") }
+        val candidate = readableDeclaredSong(file)
+        mediaStorePath(other.path)
+
+        assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, file.path))
+        val document = DocumentsContract.buildDocumentUri(
+            "com.android.externalstorage.documents", "primary:Music/Album/song.mp3"
+        ).toString()
+        assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context,
+            candidate.copy(mediaUri = document), file.path))
+    }
+
+    @Test
+    fun `missing files and directories cannot acquire readable declared alias provenance`() {
+        listOf(File(directory.root, "missing.mp3"), directory.newFolder("not-audio")).forEach { file ->
+            val candidate = readableDeclaredSong(file)
+
+            assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, file.path))
+        }
+    }
+
+    @Test
+    fun `a readable canonical target cannot prove an unopenable declared path`() {
+        val file = directory.newFile("canonical-target.mp3").apply { writeText("audio") }
+        val reference = File(File(directory.root, "missing-directory"), "../${file.name}")
+        val candidate = readableDeclaredSong(file).copy(localFilePath = reference.path)
+        assertEquals(file.canonicalFile, reference.canonicalFile)
+        assertFalse(reference.isFile)
+
+        assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, reference.path))
+    }
+
+    @Test
+    fun `a declared file must actually open before it can carry preferred provenance`() {
+        val file = directory.newFile("unreadable.mp3").apply { writeText("audio") }
+        val candidate = readableDeclaredSong(file)
+        try {
+            assertTrue(file.setReadable(false, false))
+            assertFalse("测试文件必须实际不可读", file.canRead())
+
+            assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context, candidate, file.path))
+        } finally {
+            check(file.setReadable(true, false))
+        }
+    }
+
+    @Test
+    fun `declared provider references and malformed files cannot become ordinary file aliases`() {
+        val file = directory.newFile("invalid-reference.mp3").apply { writeText("audio") }
+        val candidate = readableDeclaredSong(file)
+        listOf("content://other.documents/document/7", "https://example.org/song.mp3", "relative.mp3", "file:",
+            "${file.path}\u0000").forEach { reference ->
+            assertNull(ResolvedLocalMediaSource.verifiedReadableDeclaredFile(context,
+                candidate.copy(localFilePath = reference), reference))
+        }
     }
 
     @Test
@@ -333,6 +510,12 @@ class ResolvedLocalMediaSourceTest {
 
             assertNull(ResolvedLocalMediaSource.recoverFromFolderGrant(context, song))
         }
+    }
+
+    private fun readableDeclaredSong(file: File): SongItem {
+        doReturn(resolver).`when`(context).contentResolver
+        mediaStorePath(file.canonicalPath)
+        return song.copy(localFilePath = file.path)
     }
 
     private fun grant(
