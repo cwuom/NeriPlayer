@@ -223,38 +223,149 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
 
     @Test
     fun `the service scheduling entry reports only an admitted restore`() = withFixture {
-        var resumed = 0
-        manager.scheduleRestoredPlaybackResume(this) { resumed++ }.join()
+        scheduleResume().join()
 
-        assertEquals(1, resumed)
+        assertEquals(1, resumedCallbacks)
         assertEquals(1, playbackThreads.size)
+        assertTrue(sourceUnavailableThreads.isEmpty())
     }
 
     @Test
-    fun `the service scheduling entry does not report an unreadable restore`() = withFixture {
+    fun `the service scheduling entry reports unavailable once and allows an authorization retry`() = withFixture {
         readable.set(false)
-        var resumed = 0
-        val pending = manager.restoredPlaybackSnapshot()
+        assertUnavailableKeepsPending()
 
-        manager.scheduleRestoredPlaybackResume(this) { resumed++ }.join()
+        readable.set(true)
+        scheduleResume().join()
 
-        assertEquals(0, resumed)
-        assertSame(pending, manager.restoredPlaybackSnapshot())
+        assertEquals(listOf(true), sourceUnavailableThreads)
+        assertEquals(1, resumedCallbacks)
+        assertEquals(1, playbackThreads.size)
+        assertSame(RestoredPlaybackState.None, manager.restoredPlaybackSnapshot())
+        assertTrue(persistedResumeIntent.isEmpty())
+    }
+
+    @Test
+    fun `a service restore reports lost provider permission without changing its pending state`() = withFixture {
+        permissionFailure.set(SecurityException("grant unavailable"))
+
+        assertUnavailableKeepsPending()
+    }
+
+    @Test
+    fun `a service restore reports a provider exception without changing its pending state`() = withFixture {
+        permissionFailure.set(IllegalStateException("provider unavailable"))
+
+        assertUnavailableKeepsPending()
+    }
+
+    @Test
+    fun `a failed old service probe cannot notify after a newer playback request`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true) { manager.playbackRequestToken += 1 }
+    }
+
+    @Test
+    fun `a failed old service probe cannot notify after the selected queue index changes`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true) {
+            manager.publishCurrentQueue(listOf(song, song.copy(id = 552L)), 1)
+        }
+    }
+
+    @Test
+    fun `a failed old service probe cannot notify after its queued source changes`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true) {
+            val replacement = song.copy(localFilePath = "/storage/emulated/0/Music/Other/replacement.mp3")
+            manager.publishCurrentQueue(listOf(replacement), 0)
+            manager._currentSongFlow.value = replacement
+        }
+    }
+
+    @Test
+    fun `a failed old service probe cannot notify after only the current song changes`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true) {
+            manager._currentSongFlow.value = song.copy(name = "New current song")
+        }
+    }
+
+    @Test
+    fun `a failed old service probe cannot notify for an equal replacement pending state`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true) { manager.setRestoredPlayback(PositionMs, true) }
+    }
+
+    @Test
+    fun `a failed service probe cannot notify after the user pauses`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true) { manager.suppressRestoredAutoResume() }
+        assertEquals(RestoredPlaybackState.Paused(PositionMs), manager.restoredPlaybackSnapshot())
+    }
+
+    @Test
+    fun `a failed service probe cannot notify after the player is released`() = withFixture {
+        assertRejectedAfterProbe(unavailable = true) { manager.initialized = false }
+    }
+
+    @Test
+    fun `joining a listener room during a failed probe defers without an unavailable notification`() = withFixture {
+        readable.set(false)
+        val barrier = ProbeBarrier()
+        beforeOpen = barrier::awaitRelease
+        val request = scheduleResume()
+        try {
+            barrier.entered.await()
+            session.value = ListenTogetherSessionState(roomId = "room", role = "listener")
+        } finally {
+            barrier.release.countDown()
+        }
+        request.join()
+
+        assertTrue(sourceUnavailableThreads.isEmpty())
+        assertEquals(0, resumedCallbacks)
         assertTrue(playbackThreads.isEmpty())
+        assertSame(RestoredPlaybackState.None, manager.restoredPlaybackSnapshot())
+        assertEquals(listOf(false), persistedResumeIntent)
+    }
+
+    @Test
+    fun `cancelling a failed service probe cannot notify that its source is unavailable`() = withFixture {
+        readable.set(false)
+        val barrier = ProbeBarrier()
+        beforeOpen = barrier::awaitRelease
+        val pending = manager.restoredPlaybackSnapshot()
+        val request = scheduleResume()
+        try {
+            barrier.entered.await()
+            request.cancel()
+        } finally {
+            barrier.release.countDown()
+        }
+        request.cancelAndJoin()
+
+        assertTrue(sourceUnavailableThreads.isEmpty())
+        assertEquals(0, resumedCallbacks)
+        assertTrue(playbackThreads.isEmpty())
+        assertSame(pending, manager.restoredPlaybackSnapshot())
+        assertEquals(listOf(song), manager.currentQueueSnapshot().playlist)
+        assertEquals(song, manager._currentSongFlow.value)
+        assertEquals(PositionMs, manager._playbackPositionMs.value)
+        assertTrue(persistedResumeIntent.isEmpty())
     }
 
     @Test
     fun `absent paused and unselected queues do not probe the provider`() = withFixture {
         manager.clearRestoredPlayback()
         assertNull(manager.resumeRestoredPlaybackIfNeeded())
+        scheduleResume().join()
         manager.setRestoredPlayback(PositionMs, false)
         assertNull(manager.resumeRestoredPlaybackIfNeeded())
+        scheduleResume().join()
         manager.setRestoredPlayback(PositionMs, true)
         manager.publishCurrentQueue(emptyList(), -1)
         assertNull(manager.resumeRestoredPlaybackIfNeeded())
+        scheduleResume().join()
 
         assertTrue(providerThreads.isEmpty())
         assertTrue(playbackThreads.isEmpty())
+        assertTrue(sourceUnavailableThreads.isEmpty())
+        assertEquals(0, resumedCallbacks)
     }
 
     private fun withFixture(block: suspend ResumeFixture.() -> Unit) = runTest {
@@ -330,6 +441,8 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
         val providerThreads = ConcurrentLinkedQueue<Boolean>()
         val playbackThreads = mutableListOf<Boolean>()
         val persistedResumeIntent = mutableListOf<Boolean>()
+        val sourceUnavailableThreads = mutableListOf<Boolean>()
+        var resumedCallbacks = 0
         val session = MutableStateFlow(ListenTogetherSessionState())
         var beforeOpen: (() -> Unit)? = null
         val song = SongItem(
@@ -367,20 +480,56 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
             )
         }
 
-        suspend fun assertRejectedAfterProbe(mutate: () -> Unit) {
+        fun scheduleResume(): Job = manager.scheduleRestoredPlaybackResume(
+            this,
+            onSourceUnavailable = { sourceUnavailableThreads += Looper.myLooper() == Looper.getMainLooper() }
+        ) { resumedCallbacks++ }
+
+        suspend fun assertUnavailableKeepsPending() {
+            val pending = manager.restoredPlaybackSnapshot()
+            val queue = manager.currentQueueSnapshot()
+            val current = manager._currentSongFlow.value
+            val position = manager._playbackPositionMs.value
+            val persisted = persistedResumeIntent.toList()
+
+            scheduleResume().join()
+
+            assertEquals(listOf(true), sourceUnavailableThreads)
+            assertEquals(0, resumedCallbacks)
+            assertSame(pending, manager.restoredPlaybackSnapshot())
+            assertEquals(queue, manager.currentQueueSnapshot())
+            assertEquals(current, manager._currentSongFlow.value)
+            assertEquals(position, manager._playbackPositionMs.value)
+            assertEquals(persisted, persistedResumeIntent)
+            assertTrue(playbackThreads.isEmpty())
+        }
+
+        suspend fun assertRejectedAfterProbe(unavailable: Boolean = false, mutate: () -> Unit) {
+            if (unavailable) readable.set(false)
             val barrier = ProbeBarrier()
             beforeOpen = barrier::awaitRelease
-            val request = async(start = CoroutineStart.UNDISPATCHED) { manager.resumeRestoredPlaybackIfNeeded() }
+            val request = async(start = CoroutineStart.UNDISPATCHED) {
+                if (unavailable) {
+                    scheduleResume().join()
+                    null
+                } else manager.resumeRestoredPlaybackIfNeeded()
+            }
             try {
                 barrier.entered.await()
                 mutate()
                 val restoredAfterMutation = manager.restoredPlaybackSnapshot()
                 val queueAfterMutation = manager.currentQueueSnapshot()
+                val currentAfterMutation = manager._currentSongFlow.value
+                val persistedAfterMutation = persistedResumeIntent.toList()
                 barrier.release.countDown()
                 assertNull(request.await())
                 assertSame(restoredAfterMutation, manager.restoredPlaybackSnapshot())
                 assertEquals(queueAfterMutation, manager.currentQueueSnapshot())
+                assertEquals(currentAfterMutation, manager._currentSongFlow.value)
+                assertEquals(persistedAfterMutation, persistedResumeIntent)
                 assertTrue(playbackThreads.isEmpty())
+                assertTrue(sourceUnavailableThreads.isEmpty())
+                assertEquals(0, resumedCallbacks)
                 assertEquals(PositionMs, manager._playbackPositionMs.value)
             } finally {
                 barrier.release.countDown()

@@ -24,20 +24,30 @@ private data class RestoredPlaybackResumeCandidate(
     val requestToken: Long
 )
 
-internal fun PlayerManager.scheduleRestoredPlaybackResume(scope: CoroutineScope, onResumed: () -> Unit): Job =
+internal fun PlayerManager.scheduleRestoredPlaybackResume(
+    scope: CoroutineScope,
+    onSourceUnavailable: () -> Unit = {},
+    onResumed: () -> Unit
+): Job =
     scope.launch {
-        if (resumeRestoredPlaybackIfNeeded() != null) onResumed()
+        if (resumeRestoredPlaybackIfNeededImpl(onSourceUnavailable) != null) onResumed()
     }
 
-internal suspend fun PlayerManager.resumeRestoredPlaybackIfNeededImpl(): Long? = withContext(Dispatchers.Main.immediate) {
+internal suspend fun PlayerManager.resumeRestoredPlaybackIfNeededImpl(
+    onSourceUnavailable: () -> Unit = {}
+): Long? = withContext(Dispatchers.Main.immediate) {
     ensureInitialized()
     val candidate = pendingRestoredPlaybackResume() ?: return@withContext null
     if (!canResumeInCurrentListenTogetherRoom(candidate.restored)) return@withContext null
-    if (!restoredSourceAvailable(candidate.song)) return@withContext null
+    val sourceAvailable = restoredSourceAvailable(candidate.song)
     coroutineContext.ensureActive()
     // 探测期间用户可能换歌或暂停，旧结果不能消费新的恢复请求
     if (!isCurrentRestoredPlaybackResume(candidate)) return@withContext null
     if (!canResumeInCurrentListenTogetherRoom(candidate.restored)) return@withContext null
+    if (!sourceAvailable) {
+        onSourceUnavailable()
+        return@withContext null
+    }
     val resumePositionMs = candidate.restored.positionMs
     NPLogger.d(
         "NERI-PlayerManager",
