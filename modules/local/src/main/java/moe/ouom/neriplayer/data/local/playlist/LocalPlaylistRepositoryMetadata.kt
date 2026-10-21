@@ -116,8 +116,8 @@ internal fun LocalPlaylistRepository.mergeSongMetadataForPersistence(
     val currentExplicitReference = currentSong.validExplicitLocalSourceReference()
     val updatedExplicitReference = newSongInfo.validExplicitLocalSourceReference()
     val updatedPlaybackReference = preferredLocalMediaReference(newSongInfo.localFilePath, newSongInfo.mediaUri)
-    val replacesRemoteSource = allowScannedSourceReplacement && updatedExplicitReference != null &&
-        !LocalSongSupport.isLocalSong(currentSong, null) && currentSong.sameIdentityAs(newSongInfo)
+    val replacesUnmarkedSource = allowScannedSourceReplacement && updatedExplicitReference != null &&
+        currentExplicitReference == null && currentSong.sameIdentityAs(newSongInfo)
     val restoreEmptyBaseCover = newSongInfo.originalCoverUrl == "" && newSongInfo.coverUrl == null
     val mergedSong = newSongInfo.copy(
         explicitLocalSourceReference = updatedExplicitReference
@@ -147,7 +147,7 @@ internal fun LocalPlaylistRepository.mergeSongMetadataForPersistence(
         },
         syncMembershipTokens = currentSong.syncMembershipTokens.normalizedSyncCausalTokens()
     )
-    if (replacesRemoteSource || !shouldPreserveEntryPlaybackSource(currentSong, newSongInfo)) {
+    if (replacesUnmarkedSource || !shouldPreserveEntryPlaybackSource(currentSong, newSongInfo)) {
         return mergedSong
     }
 

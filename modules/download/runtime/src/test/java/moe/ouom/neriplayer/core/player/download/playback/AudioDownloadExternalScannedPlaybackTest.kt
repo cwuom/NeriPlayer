@@ -63,6 +63,7 @@ class AudioDownloadExternalScannedPlaybackTest {
     private val stagingAudioUri = DocumentsContract.buildDocumentUriUsingTree(externalRoot, STAGING_AUDIO_ID)
     private val audioQueries = AtomicInteger()
     private val currentRootQueries = AtomicInteger()
+    private val directoryQueries = AtomicInteger()
     private val explicitReferences = mutableSetOf<String>()
     private val unknownExplicitReferences = mutableSetOf<String>()
     private var explicitReferencesKnown = true
@@ -114,6 +115,7 @@ class AudioDownloadExternalScannedPlaybackTest {
         doAnswer { invocation ->
             val uri = invocation.getArgument<Uri>(0)
             val projection = invocation.getArgument<Array<String>>(1)
+            if (uri.pathSegments.lastOrNull() == "children") directoryQueries.incrementAndGet()
             if (uri == Uri.parse("content://media/external/audio/media/859470")) {
                 return@doAnswer MatrixCursor(projection).apply {
                     addRow(projection.map { column ->
@@ -191,6 +193,104 @@ class AudioDownloadExternalScannedPlaybackTest {
     }
 
     @Test
+    fun `exact scanned sources in the current root keep the selected file before a song bridge`() = runBlocking {
+        assertExactScannedSourceKeepsFile(externalRoot.toString())
+    }
+
+    @Test
+    fun `exact scanned sources without a configured root keep the selected file before a song bridge`() = runBlocking {
+        assertExactScannedSourceKeepsFile(null)
+    }
+
+    @Test
+    fun `direct preferred source contexts keep the selected scanned file in compatible roots`() = runBlocking {
+        val song = scannedSong()
+        val reference = requireNotNull(song.mediaUri)
+        val source = ResolvedLocalMediaSource.direct(song, reference)
+        listOf(externalRoot.toString(), null).forEach { root ->
+            configureSelectedRootWithBridge(song, root)
+
+            assertEquals(LocalPlaybackReferenceResolution.Playable(reference),
+                coordinator.resolvePermittedLocalPlayback(context, song, reference, source))
+        }
+    }
+
+    @Test
+    fun `missing exact scanned sources in the current root cannot consume a bridge or rebind`() = runBlocking {
+        assertExactScannedSourceStaysMissing(externalRoot.toString())
+    }
+
+    @Test
+    fun `missing exact scanned sources without a configured root cannot consume a bridge or rebind`() = runBlocking {
+        assertExactScannedSourceStaysMissing(null)
+    }
+
+    @Test
+    fun `unknown exact scanned provenance in the current root blocks a bridge before probing`() = runBlocking {
+        assertUnknownExactScannedSourceBlocksBridge(externalRoot.toString())
+    }
+
+    @Test
+    fun `unknown exact scanned provenance without a configured root blocks a bridge before probing`() = runBlocking {
+        assertUnknownExactScannedSourceBlocksBridge(null)
+    }
+
+    @Test
+    fun `exact references with false scanned evidence retain managed bridges in compatible roots`() = runBlocking {
+        val song = scannedSong(explicit = false)
+        listOf(externalRoot.toString(), null).forEach { root ->
+            configureSelectedRootWithBridge(song, root)
+
+            assertEquals(LocalPlaybackReferenceResolution.Playable(alternateAudioUri.toString()),
+                coordinator.resolvePermittedLocalPlayback(context, song, song.mediaUri))
+        }
+    }
+
+    @Test
+    fun `explicit current root pending and staging sources cannot consume a bridge before probing`() = runBlocking {
+        val song = scannedSong()
+        configureSelectedRootWithBridge(song)
+        listOf(pendingAudioUri, stagingAudioUri).forEach { uri ->
+            val reference = uri.toString()
+            explicitReferences.add(reference)
+            val previousQueries = audioQueries.get()
+
+            assertUnknown(coordinator.resolvePermittedLocalPlayback(context,
+                song.copy(mediaUri = reference, localFilePath = null), reference))
+            assertEquals(previousQueries, audioQueries.get())
+        }
+    }
+
+    @Test
+    fun `cancelled exact current root scans cannot consume a bridge before probing`() = runBlocking {
+        val song = scannedSong()
+        configureSelectedRootWithBridge(song)
+        val key = song.stableKey()
+        val added = GlobalDownloadManager.cancelledSongKeys.add(key)
+        val previousQueries = audioQueries.get()
+        try {
+            assertUnknown(coordinator.resolvePermittedLocalPlayback(context, song, song.mediaUri))
+            assertEquals(previousQueries, audioQueries.get())
+        } finally {
+            if (added) GlobalDownloadManager.cancelledSongKeys.remove(key)
+        }
+    }
+
+    @Test
+    fun `exact current root scans wait behind the mutation fence before probing or using a bridge`() = runBlocking {
+        val song = scannedSong()
+        configureSelectedRootWithBridge(song)
+        val previousQueries = audioQueries.get()
+        val lease = ManagedDownloadDirectoryMutationFence.closeAndDrain()
+        try {
+            assertUnknown(coordinator.resolvePermittedLocalPlayback(context, song, song.mediaUri))
+            assertEquals(previousQueries, audioQueries.get())
+        } finally {
+            lease.close()
+        }
+    }
+
+    @Test
     fun `verified folder aliases retain original manual provenance instead of consuming a download bridge`() = runBlocking {
         val (song, source) = recoveredLegacySource()
         rememberCurrentBridge(song)
@@ -239,7 +339,7 @@ class AudioDownloadExternalScannedPlaybackTest {
     }
 
     @Test
-    fun `current root string references retain their bridge behavior without a source context`() = runBlocking {
+    fun `current root references without exact manual evidence retain their bridge without a source context`() = runBlocking {
         val (song, source) = recoveredLegacySource()
         configureSelectedRootWithBridge(song)
 
@@ -510,6 +610,35 @@ class AudioDownloadExternalScannedPlaybackTest {
             (result as LocalPlaybackReferenceResolution.TemporarilyUnavailable).evidence)
     }
 
+    private suspend fun assertExactScannedSourceKeepsFile(directoryUri: String?) {
+        val song = scannedSong()
+        configureSelectedRootWithBridge(song, directoryUri)
+
+        assertEquals(LocalPlaybackReferenceResolution.Playable(audioUri.toString()),
+            coordinator.resolvePermittedLocalPlayback(context, song, song.mediaUri))
+    }
+
+    private suspend fun assertExactScannedSourceStaysMissing(directoryUri: String?) {
+        val song = scannedSong()
+        configureSelectedRootWithBridge(song, directoryUri)
+        externalAudioMissing = true
+        val previousDirectoryQueries = directoryQueries.get()
+
+        assertEquals(LocalPlaybackReferenceResolution.Missing,
+            coordinator.resolvePermittedLocalPlayback(context, song, song.mediaUri))
+        assertEquals(previousDirectoryQueries, directoryQueries.get())
+    }
+
+    private suspend fun assertUnknownExactScannedSourceBlocksBridge(directoryUri: String?) {
+        val song = scannedSong(explicit = false)
+        unknownExplicitReferences.add(requireNotNull(song.mediaUri))
+        configureSelectedRootWithBridge(song, directoryUri)
+        val previousQueries = audioQueries.get()
+
+        assertUnknown(coordinator.resolvePermittedLocalPlayback(context, song, song.mediaUri))
+        assertEquals(previousQueries, audioQueries.get())
+    }
+
     private suspend fun recoveredLegacySource(): Pair<SongItem, ResolvedLocalMediaSource> {
         val original = "content://media/external/audio/media/859470"
         val song = scannedSong(explicit = false).copy(
@@ -530,8 +659,8 @@ class AudioDownloadExternalScannedPlaybackTest {
         assertUnknown(coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source))
     }
 
-    private fun configureSelectedRootWithBridge(song: SongItem) {
-        ManagedDownloadStorage.settings.updateDirectoryUri(externalRoot.toString())
+    private fun configureSelectedRootWithBridge(song: SongItem, directoryUri: String? = externalRoot.toString()) {
+        ManagedDownloadStorage.settings.updateDirectoryUri(directoryUri)
         ManagedDownloadStorage.snapshotCacheStore.invalidate()
         rememberCurrentBridge(song, alternateAudioUri)
     }

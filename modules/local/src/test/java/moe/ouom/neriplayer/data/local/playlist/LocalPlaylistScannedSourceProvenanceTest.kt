@@ -15,6 +15,8 @@ import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import moe.ouom.neriplayer.data.identity.toSyncableRemoteSongOrNull
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomMapper
+import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPreviewAuthority
+import moe.ouom.neriplayer.data.local.database.store.mockLocalPlaylistRoomStore
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
@@ -26,6 +28,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.sync.mapping.SyncLocalRestoreMapping
 import moe.ouom.neriplayer.data.sync.mapping.fromLocalPlaylist
 import moe.ouom.neriplayer.data.sync.mapping.fromSongItemOrNull
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -33,6 +36,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.anyList
+import org.mockito.Mockito.anyLong
+import org.mockito.Mockito.anyString
+import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.`when`
 
 class LocalPlaylistScannedSourceProvenanceTest : LocalPlaylistRepositoryTestSupport() {
@@ -84,6 +91,64 @@ class LocalPlaylistScannedSourceProvenanceTest : LocalPlaylistRepositoryTestSupp
     }
 
     @Test
+    fun `explicit rescanning replaces an unmarked legacy local source for the same remote identity`() = runTest {
+        val previous = legacyLocalSongWithRemoteIdentity()
+        val repository = roomRepository(playlist(12L, previous))
+        assertEquals(previous.mediaUri, repository.playlists.value.single { it.id == 12L }.songs.single().mediaUri)
+
+        val added = repository.addScannedSongsToPlaylistWithResult(12L, listOf(scannedSong()))
+
+        assertEquals(0, added.addedCount)
+        val restored = requireNotNull(repository.readFastPlaylist(12L)).songs.single()
+        assertSelectedSource(restored)
+        assertNull(restored.localFilePath)
+        assertEquals(previous.addedAt, restored.addedAt)
+        assertEquals(previous.membershipAddedAtMs, restored.membershipAddedAtMs)
+        assertEquals(previous.syncMembershipTokens, restored.syncMembershipTokens)
+        assertEquals(true, repository.containsExplicitLocalFileReferenceCached(reference))
+        assertEquals(false, repository.containsExplicitLocalFileReferenceCached(requireNotNull(previous.mediaUri)))
+    }
+
+    @Test
+    fun `explicit rescanning replaces a legacy local source whose saved marker is invalid`() = runTest {
+        val previous = legacyLocalSongWithRemoteIdentity().copy(explicitLocalSourceReference = reference)
+        val repository = roomRepository(playlist(12L, previous))
+        assertEquals(previous.mediaUri, repository.playlists.value.single { it.id == 12L }.songs.single().mediaUri)
+        assertEquals(false, repository.containsExplicitLocalFileReferenceCached(reference))
+
+        val added = repository.addScannedSongsToPlaylistWithResult(12L, listOf(scannedSong()))
+
+        assertEquals(0, added.addedCount)
+        val restored = requireNotNull(repository.readFastPlaylist(12L)).songs.single()
+        assertSelectedSource(restored)
+        assertNull(restored.localFilePath)
+        assertEquals(previous.addedAt, restored.addedAt)
+        assertEquals(previous.membershipAddedAtMs, restored.membershipAddedAtMs)
+        assertEquals(previous.syncMembershipTokens, restored.syncMembershipTokens)
+        assertEquals(true, repository.containsExplicitLocalFileReferenceCached(reference))
+    }
+
+    @Test
+    fun `prepared imports cannot replace an unmarked legacy local source using a selected file marker`() = runTest {
+        val previous = legacyLocalSongWithRemoteIdentity()
+        val repository = roomRepository(playlist(12L, previous))
+
+        val added = repository.addPreparedSongsToPlaylistWithResult(
+            12L, listOf(scannedSong().copy(explicitLocalSourceReference = reference))
+        )
+
+        assertEquals(0, added.addedCount)
+        val restored = requireNotNull(repository.readFastPlaylist(12L)).songs.single()
+        assertNull(restored.mediaUri)
+        assertNull(restored.localFilePath)
+        assertNull(restored.explicitLocalSourceReference)
+        assertEquals(previous.addedAt, restored.addedAt)
+        assertEquals(previous.membershipAddedAtMs, restored.membershipAddedAtMs)
+        assertEquals(previous.syncMembershipTokens, restored.syncMembershipTokens)
+        assertEquals(false, repository.containsExplicitLocalFileReferenceCached(reference))
+    }
+
+    @Test
     fun `rescanning another local file keeps the previously selected source and its evidence`() = runTest {
         val storage = storage()
         val repository = repository(storage)
@@ -100,6 +165,7 @@ class LocalPlaylistScannedSourceProvenanceTest : LocalPlaylistRepositoryTestSupp
         val restored = requireNotNull(repository.readFastPlaylist(created.id)).songs.single()
         assertSelectedSource(restored)
         assertEquals(before.addedAt, restored.addedAt)
+        assertEquals(before.membershipAddedAtMs, restored.membershipAddedAtMs)
         assertEquals(before.syncMembershipTokens, restored.syncMembershipTokens)
         val reopened = repository(storage)
         assertSelectedSource(reopened.playlists.value.single { it.id == created.id }.songs.single())
@@ -394,6 +460,37 @@ class LocalPlaylistScannedSourceProvenanceTest : LocalPlaylistRepositoryTestSupp
         sourceStableKey = "859470|netease|",
         addedAt = 1_000L
     )
+
+    private fun legacyLocalSongWithRemoteIdentity() = scannedSong().copy(
+        mediaUri = "content://provider/tree/old-managed/document/Legacy.flac",
+        localFileName = "Legacy.flac",
+        localFilePath = "/storage/emulated/0/OldManaged/Legacy.flac",
+        addedAt = 123L,
+        membershipAddedAtMs = 456L,
+        syncMembershipTokens = listOf(SyncCausalToken(deviceId = "legacy-device", counter = 42L))
+    )
+
+    private suspend fun roomRepository(initial: LocalPlaylist): LocalPlaylistRepository {
+        val room = mockLocalPlaylistRoomStore()
+        var persisted = listOf(playlist(LocalFilesPlaylist.SYSTEM_ID), initial)
+        `when`(room.readIfRoomPrimary()).thenAnswer { persisted }
+        `when`(room.readFastPlaylistAuthority(anyLong())).thenAnswer { invocation ->
+            LocalPlaylistPreviewAuthority.RoomPrimary(persisted.firstOrNull {
+                it.id == invocation.getArgument<Long>(0)
+            })
+        }
+        doAnswer { invocation ->
+            persisted = invocation.getArgument(1)
+            Unit
+        }.`when`(room).writeIncremental(anyList(), anyList(), anyString(), anyLong())
+        return LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "legacy_scanned_source.json"),
+            storage = RecordingStorage(primary = null),
+            syncMutationStore = RecordingSyncMutationStore(),
+            roomStore = room
+        )
+    }
 
     private fun playlist(id: Long, vararg songs: SongItem) = LocalPlaylist(
         id = id,

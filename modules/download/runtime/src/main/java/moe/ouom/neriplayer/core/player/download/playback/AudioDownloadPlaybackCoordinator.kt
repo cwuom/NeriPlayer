@@ -481,9 +481,6 @@ internal class AudioDownloadPlaybackCoordinator(
     ): LocalPlaybackReferenceResolution? {
         val verifiedAnchor = sourceContext?.anchorFor(song, reference)
         val compatible = isManagedPlaybackReferenceCompatibleWithConfiguredSaf(reference, configuredDirectoryUri)
-        if (compatible && (verifiedAnchor == null || verifiedAnchor == reference)) {
-            return null
-        }
         val provenanceReference = verifiedAnchor ?: reference
         val explicit = explicitLocalFileReference(provenanceReference)
         diagnostics.explicitLocalFile = explicit?.toString() ?: "unknown"
