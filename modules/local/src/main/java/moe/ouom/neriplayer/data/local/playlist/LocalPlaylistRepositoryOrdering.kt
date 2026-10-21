@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.audioimport.hydrateScannedSongRawIdentity
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -152,7 +153,11 @@ internal suspend fun LocalPlaylistRepository.hydrateScannedSongIdentitiesForPers
             hydrated += batch.map { song ->
                 async(identityDispatcher) {
                     if (LocalSongSupport.isLocalSong(song, context)) {
-                        LocalAudioImportManager.hydrateScannedSongRawIdentity(context, song)
+                        val hydratedSong = LocalAudioImportManager.hydrateScannedSongRawIdentity(context, song)
+                        val selectedReference = preferredLocalMediaReference(
+                            hydratedSong.localFilePath, hydratedSong.mediaUri
+                        )?.takeIf(LocalSongSupport::isLocalMediaUri)
+                        hydratedSong.copy(explicitLocalSourceReference = selectedReference)
                     } else {
                         song
                     }
@@ -399,6 +404,10 @@ internal fun LocalPlaylistRepository.mergeScannedMetadataIntoExistingSongs(
     return existingSongs.mapTo(mutableListOf()) existingSong@{ existingSong ->
         val scannedSong = scannedSongIndex.firstMatch(existingSong)
             ?: return@existingSong existingSong
-        mergeSongMetadataForPersistence(existingSong, scannedSong)
+        mergeSongMetadataForPersistence(
+            existingSong,
+            scannedSong,
+            allowScannedSourceReplacement = true
+        )
     }
 }

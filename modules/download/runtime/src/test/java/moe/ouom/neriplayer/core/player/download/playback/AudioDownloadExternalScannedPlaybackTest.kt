@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadRefere
 import moe.ouom.neriplayer.core.player.download.ownership.AudioDownloadReferenceRegistry
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import moe.ouom.neriplayer.data.local.media.source.CrashLogCleanup
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaCoverAccess
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaDownloadAccess
@@ -63,6 +64,7 @@ class AudioDownloadExternalScannedPlaybackTest {
     private val audioQueries = AtomicInteger()
     private val currentRootQueries = AtomicInteger()
     private val explicitReferences = mutableSetOf<String>()
+    private val unknownExplicitReferences = mutableSetOf<String>()
     private var explicitReferencesKnown = true
     private val mediaAccessField = LocalMediaHostAccess::class.java.getDeclaredField("access")
         .apply { isAccessible = true }
@@ -80,7 +82,9 @@ class AudioDownloadExternalScannedPlaybackTest {
         completedReferences,
         isSongDownloadActive = { false },
         directoryMutationWaitMs = 1L,
-        explicitLocalFileReference = { if (explicitReferencesKnown) it in explicitReferences else null }
+        explicitLocalFileReference = {
+            if (!explicitReferencesKnown || it in unknownExplicitReferences) null else it in explicitReferences
+        }
     )
 
     @Before
@@ -110,6 +114,13 @@ class AudioDownloadExternalScannedPlaybackTest {
         doAnswer { invocation ->
             val uri = invocation.getArgument<Uri>(0)
             val projection = invocation.getArgument<Array<String>>(1)
+            if (uri == Uri.parse("content://media/external/audio/media/859470")) {
+                return@doAnswer MatrixCursor(projection).apply {
+                    addRow(projection.map { column ->
+                        if (column == "_data") "/storage/emulated/0/NeriPlayer-Download2/$AUDIO_NAME" else null
+                    })
+                }
+            }
             when (uri) {
                 audioUri, alternateAudioUri, currentAudioUri, pendingAudioUri, stagingAudioUri -> audioQueries.incrementAndGet()
             }
@@ -177,6 +188,125 @@ class AudioDownloadExternalScannedPlaybackTest {
         assertEquals(LocalPlaybackReferenceResolution.Playable(audioUri.toString()), result)
         assertTrue("playback checks the selected document", audioQueries.get() > previousAudioQueries)
         assertRemoteIdentity(scanned)
+    }
+
+    @Test
+    fun `verified folder aliases retain original manual provenance instead of consuming a download bridge`() = runBlocking {
+        val (song, source) = recoveredLegacySource()
+        rememberCurrentBridge(song)
+        val previousRootQueries = currentRootQueries.get()
+
+        val result = coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source)
+
+        assertEquals(LocalPlaybackReferenceResolution.Playable(audioUri.toString()), result)
+        assertEquals(previousRootQueries, currentRootQueries.get())
+    }
+
+    @Test
+    fun `unknown verified alias provenance remains temporarily unavailable`() = runBlocking {
+        val (song, source) = recoveredLegacySource()
+        explicitReferencesKnown = false
+
+        assertUnknown(coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source))
+    }
+
+    @Test
+    fun `a verified manual alias in the current root keeps its selected file instead of a song bridge`() = runBlocking {
+        val (song, source) = recoveredLegacySource()
+        configureSelectedRootWithBridge(song)
+
+        assertEquals(LocalPlaybackReferenceResolution.Playable(audioUri.toString()),
+            coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source))
+    }
+
+    @Test
+    fun `a verified alias in the current root cannot consume a bridge while provenance is unknown`() = runBlocking {
+        val (song, source) = recoveredLegacySource()
+        unknownExplicitReferences.add(requireNotNull(song.mediaUri))
+        configureSelectedRootWithBridge(song)
+
+        assertUnknown(coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source))
+    }
+
+    @Test
+    fun `a verified alias in the current root retains its bridge when neither reference is manual`() = runBlocking {
+        val (song, source) = recoveredLegacySource()
+        explicitReferences.remove(requireNotNull(song.mediaUri))
+        configureSelectedRootWithBridge(song)
+
+        assertEquals(LocalPlaybackReferenceResolution.Playable(alternateAudioUri.toString()),
+            coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source))
+    }
+
+    @Test
+    fun `current root string references retain their bridge behavior without a source context`() = runBlocking {
+        val (song, source) = recoveredLegacySource()
+        configureSelectedRootWithBridge(song)
+
+        assertEquals(LocalPlaybackReferenceResolution.Playable(alternateAudioUri.toString()),
+            coordinator.resolvePermittedLocalPlayback(context, song, source.reference))
+    }
+
+    @Test
+    fun `the same recovered URI cannot borrow provenance from another source snapshot`() = runBlocking {
+        val (song, source) = recoveredLegacySource()
+        val otherSong = song.copy(localFilePath = "/storage/emulated/0/Other/Scanned Song.flac")
+
+        val result = coordinator.resolvePermittedLocalPlayback(context, otherSong, source.reference, source)
+
+        assertTrue(result !is LocalPlaybackReferenceResolution.Playable)
+    }
+
+    @Test
+    fun `unverified direct aliases cannot borrow the preferred reference provenance`() = runBlocking {
+        val (song, source) = recoveredLegacySource()
+        val unverified = ResolvedLocalMediaSource.direct(song, source.reference)
+
+        val result = coordinator.resolvePermittedLocalPlayback(context, song, source.reference, unverified)
+
+        assertTrue(result !is LocalPlaybackReferenceResolution.Playable)
+    }
+
+    @Test
+    fun `an unverified alias cannot consume a download bridge for a declared manual source`() = runBlocking {
+        assertUnverifiedAliasBlocksBridge(manualSourceKnown = true)
+    }
+
+    @Test
+    fun `an unverified alias cannot consume a download bridge while declared provenance is unknown`() = runBlocking {
+        assertUnverifiedAliasBlocksBridge(manualSourceKnown = false)
+    }
+
+    @Test
+    fun `an unverified current root alias cannot replace its declared manual source with a bridge`() = runBlocking {
+        assertUnverifiedAliasBlocksBridge(manualSourceKnown = true, sameRootBridge = true)
+    }
+
+    @Test
+    fun `an unverified current root alias cannot use a bridge while declared provenance is unknown`() = runBlocking {
+        assertUnverifiedAliasBlocksBridge(manualSourceKnown = false, sameRootBridge = true)
+    }
+
+    @Test
+    fun `an unverified alias retains managed recovery when neither reference is manual`() = runBlocking {
+        val song = scannedSong(explicit = false).copy(mediaUri = "content://media/external/audio/media/859470")
+        val source = ResolvedLocalMediaSource.direct(song, audioUri.toString())
+        rememberCurrentBridge(song)
+
+        assertEquals(LocalPlaybackReferenceResolution.Playable(currentAudioUri.toString()),
+            coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source))
+    }
+
+    @Test
+    fun `verified aliases still wait behind the directory mutation fence`() = runBlocking {
+        val (song, source) = recoveredLegacySource()
+        val lease = ManagedDownloadDirectoryMutationFence.closeAndDrain()
+        try {
+            assertTrue(coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source)
+                is LocalPlaybackReferenceResolution.TemporarilyUnavailable)
+        } finally {
+            lease.close()
+        }
     }
 
     @Test
@@ -380,12 +510,38 @@ class AudioDownloadExternalScannedPlaybackTest {
             (result as LocalPlaybackReferenceResolution.TemporarilyUnavailable).evidence)
     }
 
-    private fun rememberCurrentBridge(song: SongItem) {
-        val reference = currentAudioUri.toString()
+    private suspend fun recoveredLegacySource(): Pair<SongItem, ResolvedLocalMediaSource> {
+        val original = "content://media/external/audio/media/859470"
+        val song = scannedSong(explicit = false).copy(
+            mediaUri = original,
+            localFilePath = "/storage/emulated/0/NeriPlayer-Download2/$AUDIO_NAME"
+        )
+        explicitReferences.add(original)
+        return song to requireNotNull(ResolvedLocalMediaSource.recoverFromFolderGrant(context, song))
+    }
+
+    private suspend fun assertUnverifiedAliasBlocksBridge(manualSourceKnown: Boolean, sameRootBridge: Boolean = false) {
+        val original = "content://media/external/audio/media/859470"
+        val song = scannedSong(explicit = false).copy(mediaUri = original)
+        if (manualSourceKnown) explicitReferences.add(original) else unknownExplicitReferences.add(original)
+        val source = ResolvedLocalMediaSource.direct(song, audioUri.toString())
+        if (sameRootBridge) configureSelectedRootWithBridge(song) else rememberCurrentBridge(song)
+
+        assertUnknown(coordinator.resolvePermittedLocalPlayback(context, song, source.reference, source))
+    }
+
+    private fun configureSelectedRootWithBridge(song: SongItem) {
+        ManagedDownloadStorage.settings.updateDirectoryUri(externalRoot.toString())
+        ManagedDownloadStorage.snapshotCacheStore.invalidate()
+        rememberCurrentBridge(song, alternateAudioUri)
+    }
+
+    private fun rememberCurrentBridge(song: SongItem, uri: Uri = currentAudioUri) {
+        val reference = uri.toString()
         completedReferences.rememberCompletedAudioReference(
             song,
             ManagedDownloadStorage.StoredEntry(
-                name = AUDIO_NAME,
+                name = DocumentsContract.getDocumentId(uri).substringAfterLast('/'),
                 reference = reference,
                 mediaUri = reference,
                 localFilePath = null,

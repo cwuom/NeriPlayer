@@ -74,6 +74,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.logging.playbackLogReference
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.ltw.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
 import moe.ouom.neriplayer.core.player.ltw.toListenTogetherTrackOrNull
@@ -185,10 +186,11 @@ internal suspend fun PlayerManager.resolveSongUrl(
             listenerAudioLinkSharingActive = isListenTogetherAudioLinkFallbackEnabled()
         )
     if (isLocalSong(song)) {
-        val rawLocalReference = localMediaSource(song)
+        val sourceContext = localMediaSourceContext(song)
+        val rawLocalReference = sourceContext?.reference
         val localResolution = resolvePermittedLocalPlaybackWithRetry(
             song = song,
-            rawLocalReference = rawLocalReference
+            sourceContext = sourceContext
         )
         logLocalPlaybackResolution(
             song, playbackRequestTokenOverride ?: playbackRequestToken, rawLocalReference, localResolution
@@ -205,7 +207,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
             )
         }
         if (localResolution is LocalPlaybackReferenceResolution.Missing) {
-            recoverNeteaseSourceAfterMissingLocal(song, rawLocalReference)?.let { recoveredSong ->
+            recoverNeteaseSourceAfterMissingLocal(song, rawLocalReference, sourceContext)?.let { recoveredSong ->
                 NPLogger.w(
                     "NERI-PlayerManager",
                     "Downloaded reference is explicitly missing, retry as Netease: " +
@@ -1340,12 +1342,14 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
 
 private suspend fun PlayerManager.resolvePermittedLocalPlaybackWithRetry(
     song: SongItem,
-    rawLocalReference: String?
+    sourceContext: ResolvedLocalMediaSource?
 ): LocalPlaybackReferenceResolution {
+    val rawLocalReference = sourceContext?.reference
     var resolution = PlayerDependencies.downloads.resolvePermittedLocalPlayback(
         context = application,
         song = song,
-        rawLocalReference = rawLocalReference
+        rawLocalReference = rawLocalReference,
+        sourceContext = sourceContext
     )
     repeat(LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT) { retryIndex ->
         if (!shouldRetryLocalPlaybackResolution(song, resolution)) {
@@ -1361,7 +1365,8 @@ private suspend fun PlayerManager.resolvePermittedLocalPlaybackWithRetry(
         resolution = PlayerDependencies.downloads.resolvePermittedLocalPlayback(
             context = application,
             song = song,
-            rawLocalReference = rawLocalReference
+            rawLocalReference = rawLocalReference,
+            sourceContext = sourceContext
         )
     }
     return resolution

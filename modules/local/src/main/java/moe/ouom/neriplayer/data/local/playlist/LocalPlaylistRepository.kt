@@ -188,9 +188,16 @@ class LocalPlaylistRepository private constructor(
     internal fun containsExplicitLocalFileReferenceCached(reference: String): Boolean? {
         if (!_initializationReadyFlow.value) return null
         if (!LocalSongSupport.isLocalMediaUri(reference)) return false
-        val localFiles = LocalFilesPlaylist.firstOrNull(_playlists.value) ?: return false
-        return localFiles.songs.any { song ->
-            preferredLocalMediaReference(song.localFilePath, song.mediaUri) == reference
+        val playlists = _playlists.value
+        val localFiles = LocalFilesPlaylist.firstOrNull(playlists)
+        if (localFiles?.songs?.any { song ->
+                preferredLocalMediaReference(song.localFilePath, song.mediaUri) == reference
+            } == true
+        ) {
+            return true
+        }
+        return playlists.any { playlist ->
+            playlist.songs.any { song -> song.validExplicitLocalSourceReference() == reference }
         }
     }
 
@@ -1206,7 +1213,7 @@ class LocalPlaylistRepository private constructor(
                     return@commitPlaylistMutation false
                 }
                 publishLocked(
-                    playlists = mergeExternalPlaylists(playlists),
+                    playlists = mergeExternalPlaylists(playlists, preserveExplicitLocalSources = true),
                     triggerSync = false,
                     markLocalMutation = false
                 )

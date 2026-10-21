@@ -1105,12 +1105,14 @@ internal suspend fun PlayerManager.writeLocalEditableMetadata(
 private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
     song: SongItem
 ): String? {
-    val directReference = localMediaSource(song)
+    val sourceContext = localMediaSourceContext(song)
+    val directReference = sourceContext?.reference
     if (directReference != null) {
         return PlayerDependencies.downloads.resolvePermittedLocalPlaybackUri(
             context = application,
             song = song,
-            rawLocalReference = directReference
+            rawLocalReference = directReference,
+            sourceContext = sourceContext
         )
     }
     return PlayerDependencies.downloads.getLocalPlaybackUri(application, song)

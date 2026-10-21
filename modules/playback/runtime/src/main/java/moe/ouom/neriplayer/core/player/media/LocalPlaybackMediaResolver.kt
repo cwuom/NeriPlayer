@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Process
-import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import java.io.File
 import java.io.RandomAccessFile
@@ -14,13 +13,14 @@ import moe.ouom.neriplayer.common.logging.playbackLogReference
 import moe.ouom.neriplayer.core.player.policy.storage.RestorableLocalMediaState
 import moe.ouom.neriplayer.core.player.policy.storage.resolveRestorableLocalMediaState
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
-import moe.ouom.neriplayer.data.local.media.curation.FolderArtworkLocator
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal object LocalPlaybackMediaResolver {
-    fun source(song: SongItem, context: Context): String? {
+    fun source(song: SongItem, context: Context): String? = sourceContext(song, context)?.reference
+
+    fun sourceContext(song: SongItem, context: Context): ResolvedLocalMediaSource? {
         val preferred = preferredLocalMediaReference(song.localFilePath, song.mediaUri)
         val readable = listOfNotNull(preferred, song.localFilePath, song.mediaUri)
             .distinct()
@@ -33,59 +33,29 @@ internal object LocalPlaybackMediaResolver {
                     )
                 }
             }
-            ?: grantedDocumentSource(song, context)
+        val conflicting = readable != null && readable != preferred &&
+            ResolvedLocalMediaSource.hasConflictingDeclaredFile(context, song)
+        val resolved = if (conflicting) null else {
+            readable?.let { ResolvedLocalMediaSource.direct(song, it) }
+                ?: ResolvedLocalMediaSource.recoverFromFolderGrant(context, song)
+        }
+        val selected = resolved ?: preferred?.let { ResolvedLocalMediaSource.direct(song, it) }
+        logSourceSelection(song, resolved, selected)
+        return selected
+    }
+
+    private fun logSourceSelection(
+        song: SongItem,
+        resolved: ResolvedLocalMediaSource?,
+        selected: ResolvedLocalMediaSource?
+    ) {
         val message = "LocalPlaybackTrace stage=source id=${song.id} channel=${song.channelId} " +
-            "result=${if (readable != null) "readable" else "no_readable_source"} " +
+            "result=${if (resolved != null) "readable" else "no_readable_source"} " +
             "mediaUri=${playbackLogReference(song.mediaUri)} " +
             "localPath=${playbackLogReference(song.localFilePath)} " +
-            "selected=${playbackLogReference(readable ?: preferred)}"
-        if (readable != null) NPLogger.d("NERI-LocalPlayback", message)
+            "selected=${playbackLogReference(selected?.reference)}"
+        if (resolved != null) NPLogger.d("NERI-LocalPlayback", message)
         else NPLogger.w("NERI-LocalPlayback", message)
-        return readable ?: preferred
-    }
-
-    private fun grantedDocumentSource(song: SongItem, context: Context): String? {
-        val file = recoverableFile(song, context) ?: return null
-        val path = runCatching { FolderArtworkLocator.storagePathOf(file.canonicalPath) }
-            .getOrNull() ?: return null
-        // 目录授权不代表 MediaStore 授权，旧记录需要恢复同一文件的树内引用
-        return context.contentResolver.persistedUriPermissions.orEmpty().also { permissions ->
-            NPLogger.d(
-                "NERI-LocalPlayback",
-                "LocalPlaybackTrace stage=folder_grants id=${song.id} count=${permissions.size} " +
-                    "grants=${permissions.take(8).map { permission ->
-                        "${playbackLogReference(permission.uri.toString())}:read=${permission.isReadPermission}:write=${permission.isWritePermission}"
-                    }}"
-            )
-        }.asSequence()
-            .filter { it.isReadPermission }
-            .map { it.uri }
-            .filter { it.authority == "com.android.externalstorage.documents" }
-            .filter { tree ->
-                runCatching { DocumentsContract.getTreeDocumentId(tree) }.getOrNull()
-                    ?.let(path::isInside) == true
-            }
-            .mapNotNull { tree ->
-                runCatching {
-                    DocumentsContract.buildDocumentUriUsingTree(tree, path.documentId).toString()
-                }.getOrNull()
-            }
-            .firstOrNull { isReadable(it, context) }
-    }
-
-    private fun recoverableFile(song: SongItem, context: Context): File? {
-        for (reference in listOf(song.localFilePath, song.mediaUri)) {
-            directFile(reference)?.let { return it }
-        }
-        val uri = song.mediaUri?.let(::parseUri) ?: return null
-        return runCatching { LocalMediaSupport.resolveLocalFile(context, uri) }.getOrNull()
-    }
-
-    private fun directFile(reference: String?): File? = when {
-        reference == null -> null
-        reference.startsWith('/') -> File(reference)
-        reference.startsWith("file:", ignoreCase = true) -> parseUri(reference)?.path?.let(::File)
-        else -> null
     }
 
     fun playableUrl(mediaUri: String?): String? {
@@ -167,7 +137,7 @@ internal object LocalPlaybackMediaResolver {
         val preferred = preferredLocalMediaReference(song.localFilePath, song.mediaUri)
         return listOfNotNull(preferred, song.localFilePath, song.mediaUri)
             .distinct()
-            .any { isRestorable(it, context) } || grantedDocumentSource(song, context) != null
+            .any { isRestorable(it, context) } || ResolvedLocalMediaSource.recoverFromFolderGrant(context, song) != null
     }
 
     fun sanitizeRestoredPlaylist(playlist: List<SongItem>, context: Context): List<SongItem> =

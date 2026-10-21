@@ -3,6 +3,9 @@ package moe.ouom.neriplayer.data.local.playlist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository.SongMetadataUpdate
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository.SongMetadataUpdateIndex
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -107,10 +110,18 @@ internal fun LocalPlaylistRepository.mergeSongMetadataForPersistence(
     currentSong: SongItem,
     newSongInfo: SongItem,
     clearCoverUrl: Boolean = false,
-    clearOriginalCoverUrl: Boolean = false
+    clearOriginalCoverUrl: Boolean = false,
+    allowScannedSourceReplacement: Boolean = false
 ): SongItem {
+    val currentExplicitReference = currentSong.validExplicitLocalSourceReference()
+    val updatedExplicitReference = newSongInfo.validExplicitLocalSourceReference()
+    val updatedPlaybackReference = preferredLocalMediaReference(newSongInfo.localFilePath, newSongInfo.mediaUri)
+    val replacesRemoteSource = allowScannedSourceReplacement && updatedExplicitReference != null &&
+        !LocalSongSupport.isLocalSong(currentSong, null) && currentSong.sameIdentityAs(newSongInfo)
     val restoreEmptyBaseCover = newSongInfo.originalCoverUrl == "" && newSongInfo.coverUrl == null
     val mergedSong = newSongInfo.copy(
+        explicitLocalSourceReference = updatedExplicitReference
+            ?: currentExplicitReference?.takeIf { it == updatedPlaybackReference },
         addedAt = currentSong.addedAt,
         sourceModifiedAtMs = currentSong.sourceModifiedAtMs ?: newSongInfo.sourceModifiedAtMs,
         logicalCreatedAtMs = currentSong.logicalCreatedAtMs
@@ -136,7 +147,7 @@ internal fun LocalPlaylistRepository.mergeSongMetadataForPersistence(
         },
         syncMembershipTokens = currentSong.syncMembershipTokens.normalizedSyncCausalTokens()
     )
-    if (!shouldPreserveEntryPlaybackSource(currentSong, newSongInfo)) {
+    if (replacesRemoteSource || !shouldPreserveEntryPlaybackSource(currentSong, newSongInfo)) {
         return mergedSong
     }
 
@@ -164,9 +175,18 @@ internal fun LocalPlaylistRepository.mergeSongMetadataForPersistence(
         subAudioId = currentSong.subAudioId,
         playlistContextId = currentSong.playlistContextId,
         sourceStableKey = currentSong.sourceStableKey,
+        explicitLocalSourceReference = currentExplicitReference,
         streamUrl = currentSong.streamUrl,
         neteaseArtists = currentSong.neteaseArtists
     )
+}
+
+internal fun SongItem.validExplicitLocalSourceReference(): String? {
+    val reference = explicitLocalSourceReference ?: return null
+    return reference.takeIf {
+        LocalSongSupport.isLocalMediaUri(it) &&
+            preferredLocalMediaReference(localFilePath, mediaUri) == it
+    }
 }
 
 internal fun LocalPlaylistRepository.shouldPreserveEntryPlaybackSource(
@@ -199,10 +219,41 @@ internal fun LocalPlaylistRepository.saveCoverMapping(newSongInfo: SongItem) {
     }
 }
 
-internal fun LocalPlaylistRepository.mergeExternalPlaylists(playlists: List<LocalPlaylist>): MutableList<LocalPlaylist> {
-    val preservedLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
+internal fun LocalPlaylistRepository.mergeExternalPlaylists(
+    playlists: List<LocalPlaylist>,
+    preserveExplicitLocalSources: Boolean = false
+): MutableList<LocalPlaylist> {
+    val current = _playlists.value
+    val preservedLocalFiles = LocalFilesPlaylist.firstOrNull(current, context)
+    val sourcePlaylists = if (preserveExplicitLocalSources) current.associateBy { it.id } else emptyMap()
     return playlists
         .filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
+        .map { playlist ->
+            val existing = sourcePlaylists[playlist.id] ?: return@map playlist
+            preserveSyncedLocalSources(playlist, existing)
+        }
         .toMutableList()
         .apply { preservedLocalFiles?.let(::add) }
+}
+
+private fun preserveSyncedLocalSources(incoming: LocalPlaylist, current: LocalPlaylist): LocalPlaylist {
+    val sources = current.songs.filter { it.validExplicitLocalSourceReference() != null }
+        .associateBy { it.identity() }
+    if (sources.isEmpty()) return incoming
+    return incoming.copy(songs = incoming.songs.map { song ->
+        val source = sources[song.identity()] ?: return@map song
+        // 只保留当前歌单仍在同步结果中的成员来源，远端编辑和成员顺序沿用同步结果
+        song.copy(
+            mediaUri = source.mediaUri,
+            localFileName = source.localFileName,
+            localFilePath = source.localFilePath,
+            channelId = source.channelId,
+            audioId = source.audioId,
+            subAudioId = source.subAudioId,
+            playlistContextId = source.playlistContextId,
+            sourceStableKey = source.sourceStableKey,
+            explicitLocalSourceReference = source.explicitLocalSourceReference,
+            streamUrl = source.streamUrl
+        )
+    }.toMutableList())
 }

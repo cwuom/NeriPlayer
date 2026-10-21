@@ -106,6 +106,7 @@ import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirector
 import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.platform.youtube.api.transport.isTrustedYouTubeHost
 import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
@@ -1609,21 +1610,25 @@ object AudioDownloadManager {
     suspend fun resolvePermittedLocalPlaybackUri(
         context: Context,
         song: SongItem,
-        rawLocalReference: String?
+        rawLocalReference: String?,
+        sourceContext: ResolvedLocalMediaSource? = null
     ): String? = playbackCoordinator.resolvePermittedLocalPlaybackUri(
         context = context,
         song = song,
-        rawLocalReference = rawLocalReference
+        rawLocalReference = rawLocalReference,
+        sourceContext = sourceContext
     )
 
     suspend fun resolvePermittedLocalPlayback(
         context: Context,
         song: SongItem,
-        rawLocalReference: String?
+        rawLocalReference: String?,
+        sourceContext: ResolvedLocalMediaSource? = null
     ): LocalPlaybackReferenceResolution = playbackCoordinator.resolvePermittedLocalPlayback(
         context = context,
         song = song,
-        rawLocalReference = rawLocalReference
+        rawLocalReference = rawLocalReference,
+        sourceContext = sourceContext
     )
 
     fun resolveIndexedLocalPlaybackReference(

@@ -1,9 +1,15 @@
 package moe.ouom.neriplayer.core.player.persistence
 
 import android.app.Application
+import android.content.ContentResolver
+import android.content.UriPermission
+import android.content.res.AssetFileDescriptor
+import android.database.MatrixCursor
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.provider.DocumentsContract
 import android.system.Os
 import android.system.StructStat
 import androidx.test.core.app.ApplicationProvider
@@ -25,6 +31,7 @@ import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.curation.LocalCoverBaselineInspector
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import moe.ouom.neriplayer.data.local.media.source.CrashLogCleanup
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaCoverAccess
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaDownloadAccess
@@ -47,7 +54,9 @@ import org.junit.runner.RunWith
 import org.mockito.Answers
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.CALLS_REAL_METHODS
+import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockStatic
@@ -88,6 +97,7 @@ class PlayerManagerLocalMetadataEditRegressionTest {
     private var lyricProbeFailure: RuntimeException? = null
     private var lyricProbeCount = 0
     private var denyLocalPlayback = false
+    private var editSourceContext: ResolvedLocalMediaSource? = null
 
     @Before
     fun setUp() {
@@ -98,7 +108,10 @@ class PlayerManagerLocalMetadataEditRegressionTest {
         `when`(repositories.playlistUsageRepo).thenReturn(mock(PlaylistUsageRepository::class.java))
         val downloads = mock(PlayerDownloadAccess::class.java, Answer { invocation ->
             when (invocation.method.name) {
-                "resolvePermittedLocalPlaybackUri" -> if (denyLocalPlayback) null else invocation.getArgument<String?>(2)
+                "resolvePermittedLocalPlaybackUri" -> {
+                    editSourceContext = invocation.getArgument(3)
+                    if (denyLocalPlayback) null else invocation.getArgument<String?>(2)
+                }
                 "downloadedSongs" -> emptyList<SongItem>()
                 else -> Answers.RETURNS_DEFAULTS.answer(invocation)
             }
@@ -161,6 +174,34 @@ class PlayerManagerLocalMetadataEditRegressionTest {
         denyLocalPlayback = true
 
         assertNull(manager.resolveLocalSidecarWriteSong(song))
+    }
+
+    @Test
+    fun `local metadata editing carries verified folder provenance through the download host`() = runTest {
+        val original = "content://media/external/audio/media/7"
+        val song = localSong("/storage/emulated/0/Music/Album/song.mp3").copy(
+            mediaUri = original, channelId = "netease", audioId = "7", sourceStableKey = "7|netease|"
+        )
+        val tree = DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", "primary:Music")
+        val document = DocumentsContract.buildDocumentUriUsingTree(tree, "primary:Music/Album/song.mp3")
+        val resolver = mock(ContentResolver::class.java)
+        val permission = mock(UriPermission::class.java)
+        doReturn(resolver).`when`(application).contentResolver
+        doReturn(listOf(permission)).`when`(resolver).persistedUriPermissions
+        doReturn(tree).`when`(permission).uri
+        doReturn(true).`when`(permission).isReadPermission
+        doReturn(mock(AssetFileDescriptor::class.java)).`when`(resolver).openAssetFileDescriptor(document, "r")
+        doAnswer {
+            MatrixCursor(arrayOf("_data")).apply { addRow(arrayOf(song.localFilePath)) }
+        }.`when`(resolver).query(eq(Uri.parse(original)), any(), any(), any(), any())
+
+        val writable = manager.resolveLocalSidecarWriteSong(song)
+
+        assertEquals(document.toString(), writable?.mediaUri)
+        val sourceContext = requireNotNull(editSourceContext)
+        assertEquals(document.toString(), sourceContext.reference)
+        assertEquals(original, sourceContext.anchorFor(song, sourceContext.reference))
+        assertNull(sourceContext.anchorFor(song.copy(id = 8L), sourceContext.reference))
     }
 
     @Test

@@ -29,10 +29,12 @@ internal suspend fun PlayerManager.tryResolveNeteaseMatchedLocalSource(song: Son
     if (candidates.isEmpty()) return null
 
     for (candidate in candidates) {
+        val sourceContext = localMediaSourceContext(candidate)
         val localMediaUri = PlayerDependencies.downloads.resolvePermittedLocalPlaybackUri(
             context = application,
             song = candidate,
-            rawLocalReference = localMediaSource(candidate)
+            rawLocalReference = sourceContext?.reference,
+            sourceContext = sourceContext
         ) ?: continue
         if (!isReadableLocalMediaUri(localMediaUri)) continue
         val playableUrl = toPlayableLocalUrl(localMediaUri) ?: localMediaUri

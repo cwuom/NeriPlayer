@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_SUFFIX
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import kotlin.time.Duration.Companion.milliseconds
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
@@ -268,19 +269,22 @@ internal class AudioDownloadPlaybackCoordinator(
     suspend fun resolvePermittedLocalPlaybackUri(
         context: Context,
         song: SongItem,
-        rawLocalReference: String?
+        rawLocalReference: String?,
+        sourceContext: ResolvedLocalMediaSource? = null
     ): String? {
         return (resolvePermittedLocalPlayback(
             context = context,
             song = song,
-            rawLocalReference = rawLocalReference
+            rawLocalReference = rawLocalReference,
+            sourceContext = sourceContext
         ) as? LocalPlaybackReferenceResolution.Playable)?.reference
     }
 
     suspend fun resolvePermittedLocalPlayback(
         context: Context,
         song: SongItem,
-        rawLocalReference: String?
+        rawLocalReference: String?,
+        sourceContext: ResolvedLocalMediaSource? = null
     ): LocalPlaybackReferenceResolution = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
         val diagnostics = PlaybackDiagnostics(tag, "download_permitted", song, rawLocalReference)
@@ -336,9 +340,16 @@ internal class AudioDownloadPlaybackCoordinator(
         }
         val configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
         diagnostics.configuredDirectory = playbackLogReference(configuredDirectoryUri)
+        val unverifiedDeclaredReference = sourceContext?.unverifiedDeclaredReferenceFor(song, reference)
+        if (unverifiedDeclaredReference != null && explicitLocalFileReference(unverifiedDeclaredReference) != false) {
+            return@withContext diagnostics.finish(
+                LocalPlaybackReferenceResolution.TemporarilyUnavailable(ManagedDownloadReferenceLookup.Result.OutOfScope),
+                "unverified_declared_source"
+            )
+        }
         if (managedDownloadHint) {
             resolveExplicitExternalFilePlayback(
-                appContext, song, reference, configuredDirectoryUri, diagnostics
+                appContext, song, reference, configuredDirectoryUri, diagnostics, sourceContext
             )?.let { return@withContext it }
         }
         // core 提交桥已验证完整音频，必须在 SAF 查询前消费
@@ -465,15 +476,19 @@ internal class AudioDownloadPlaybackCoordinator(
         song: SongItem,
         reference: String,
         configuredDirectoryUri: String?,
-        diagnostics: PlaybackDiagnostics
+        diagnostics: PlaybackDiagnostics,
+        sourceContext: ResolvedLocalMediaSource?
     ): LocalPlaybackReferenceResolution? {
-        if (isManagedPlaybackReferenceCompatibleWithConfiguredSaf(reference, configuredDirectoryUri)) {
+        val verifiedAnchor = sourceContext?.anchorFor(song, reference)
+        val compatible = isManagedPlaybackReferenceCompatibleWithConfiguredSaf(reference, configuredDirectoryUri)
+        if (compatible && (verifiedAnchor == null || verifiedAnchor == reference)) {
             return null
         }
-        val explicit = explicitLocalFileReference(reference)
+        val provenanceReference = verifiedAnchor ?: reference
+        val explicit = explicitLocalFileReference(provenanceReference)
         diagnostics.explicitLocalFile = explicit?.toString() ?: "unknown"
         if (explicit == false) return null
-        diagnostics.rawReferenceCompatible = false
+        diagnostics.rawReferenceCompatible = compatible
         if (explicit == null) {
             return diagnostics.finish(
                 LocalPlaybackReferenceResolution.TemporarilyUnavailable(ManagedDownloadReferenceLookup.Result.OutOfScope),

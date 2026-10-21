@@ -49,6 +49,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomImportStatus
 import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomStore
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.store.preferences.SyncPreferences
@@ -110,7 +111,7 @@ fun PlayedEntry.toSongItem(): SongItem {
         album = album,
         durationMs = durationMs,
         coverUrl = coverUrl,
-        mediaUri = localFilePath ?: mediaUri,
+        mediaUri = preferredLocalMediaReference(localFilePath, mediaUri) ?: mediaUri,
         matchedLyric = matchedLyric,
         matchedTranslatedLyric = matchedTranslatedLyric,
         matchedRomanizedLyric = matchedRomanizedLyric,

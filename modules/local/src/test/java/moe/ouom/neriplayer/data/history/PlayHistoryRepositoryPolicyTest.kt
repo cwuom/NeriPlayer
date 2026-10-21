@@ -27,6 +27,23 @@ class PlayHistoryRepositoryPolicyTest {
     }
 
     @Test
+    fun `played entry keeps the preferred granted uri beside its filesystem alias`() {
+        val reference = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsong.flac"
+        val source = SongItem(
+            id = 42L, name = "Local title", artist = "Local artist", album = "Local album",
+            albumId = 0L, durationMs = 1_000L, coverUrl = null,
+            mediaUri = reference, localFilePath = "/storage/emulated/0/Music/song.flac",
+            channelId = "netease", audioId = "42", sourceStableKey = "42|netease|"
+        )
+
+        val restored = source.toPlayedEntry(now = 1_000L).toSongItem()
+
+        assertEquals(reference, restored.mediaUri)
+        assertEquals(source.localFilePath, restored.localFilePath)
+        assertEquals(source.stableKey(), restored.stableKey())
+    }
+
+    @Test
     fun `played entry round trip keeps local cover identity fields`() {
         val sourceSong = SongItem(
             id = 42L,

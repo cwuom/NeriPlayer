@@ -195,7 +195,7 @@ fun SongItem.isSyncableRemoteSong(context: Context? = null): Boolean {
 
 fun SongItem.toSyncableRemoteSongOrNull(context: Context? = null): SongItem? {
     if (!LocalSongSupport.isLocalSong(this, context)) {
-        return this
+        return if (explicitLocalSourceReference == null) this else copy(explicitLocalSourceReference = null)
     }
     val sourceIdentity = remoteSourceIdentityOrNull() ?: return null
     val source = syncableRemoteSource(sourceIdentity)
@@ -218,6 +218,7 @@ fun SongItem.toSyncableRemoteSongOrNull(context: Context? = null): SongItem? {
         channelId = source.channel,
         audioId = source.audioId,
         subAudioId = source.subAudioId,
+        explicitLocalSourceReference = null,
         streamUrl = null
     )
 }

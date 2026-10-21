@@ -4,8 +4,10 @@ import android.content.Context
 import moe.ouom.neriplayer.data.history.toSongItem
 import moe.ouom.neriplayer.data.history.toPlayedEntry
 import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.sync.identity.identity
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.playlist.validExplicitLocalSourceReference
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
@@ -61,7 +63,10 @@ internal class SyncLocalRestoreMapping(
         descriptor?.currentName ?: playlist.name
 
     private fun preservedLocalSongs(playlist: LocalPlaylist?): List<moe.ouom.neriplayer.data.model.SongItem> =
-        playlist?.songs.orEmpty().filter { LocalSongSupport.isLocalSong(it, localizedContext) }
+        playlist?.songs.orEmpty().filter {
+            LocalSongSupport.isLocalSong(it, localizedContext) &&
+                !(it.validExplicitLocalSourceReference() != null && it.remoteSourceIdentityOrNull() != null)
+        }
 
     fun history(data: SyncData, current: List<PlayedEntry>): List<PlayedEntry> {
         val candidates = mutableListOf<SyncSong>()

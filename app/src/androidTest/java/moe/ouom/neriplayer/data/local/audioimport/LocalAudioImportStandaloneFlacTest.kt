@@ -241,6 +241,68 @@ class LocalAudioImportStandaloneFlacTest {
     }
 
     @Test
+    fun ordinaryPlaylistKeepsScannedRemoteIdentitySourceAndDecodes() = runBlocking {
+        AudioDownloadManager.initialize(context)
+        val fixture = fixtures.first().copy(fileName = "ordinary-scan-${UUID.randomUUID()}.flac")
+        val sourceUri = createAudio(fixture)
+        val metadataUri = createDocument("${fixture.fileName}.npmeta.json", "application/json")
+        val metadata = JSONObject().apply {
+            put("songId", 859470L)
+            put("channelId", "netease")
+            put("audioId", "859470")
+            put("stableKey", "859470|netease|")
+            put("name", fixture.title)
+            put("artist", fixture.artist)
+            put("album", fixture.album)
+            put("downloadFinalized", true)
+        }
+        requireNotNull(context.contentResolver.openOutputStream(metadataUri)).use {
+            it.write(metadata.toString().toByteArray(Charsets.UTF_8))
+        }
+        ManagedDownloadStorage.updateCustomDirectoryUri(targetTreeUri.toString())
+        val scan = LocalAudioImportManager.scanFolderSongs(context, treeUri)
+        assertTrue(scan.completed)
+        assertEquals(0, scan.failedCount)
+        val scanned = scan.songs.single()
+        val selectedReference = requireNotNull(scanned.mediaUri)
+        assertSameDocument(sourceUri, Uri.parse(selectedReference))
+        assertEquals("netease", scanned.channelId)
+        assertEquals("859470", scanned.audioId)
+
+        val repository = LocalPlaylistRepository.getInstance(context)
+        assertTrue(repository.awaitInitialized())
+        val manualSourcesBefore = LocalFilesPlaylist.firstOrNull(repository.playlists.value)?.songs?.toList()
+        var ownedPlaylistId: Long? = null
+        try {
+            val playlist = repository.createPlaylistWithScannedSongs(
+                "Ordinary SAF regression ${UUID.randomUUID()}", listOf(scanned)
+            )
+            ownedPlaylistId = playlist.id
+            val restored = requireNotNull(repository.readFastPlaylist(playlist.id)).songs.single()
+            assertEquals(selectedReference, restored.mediaUri)
+            assertEquals(selectedReference, restored.explicitLocalSourceReference)
+            assertEquals("859470|netease|", restored.sourceStableKey)
+            assertEquals(true, LocalPlaylistRepository.peekExplicitLocalFileReference(selectedReference))
+            assertEquals(manualSourcesBefore, LocalFilesPlaylist.firstOrNull(repository.playlists.value)?.songs)
+
+            val resolution = AudioDownloadManager.resolvePermittedLocalPlayback(
+                context, restored, restored.mediaUri
+            )
+            assertEquals(LocalPlaybackReferenceResolution.Playable(selectedReference), resolution)
+            val player = MediaPlayer()
+            try {
+                player.setDataSource(context, Uri.parse((resolution as LocalPlaybackReferenceResolution.Playable).reference))
+                player.prepare()
+                assertTrue("the ordinary playlist must decode its scanned SAF source", player.duration > 0)
+            } finally {
+                player.release()
+            }
+        } finally {
+            ownedPlaylistId?.let { assertTrue(repository.deletePlaylist(it)) }
+        }
+    }
+
+    @Test
     fun manuallyScannedRemoteIdentitySidecarKeepsItsSafSourceAfterPersistence() = runBlocking {
         AudioDownloadManager.initialize(context)
         val fixtureId = UUID.randomUUID().toString()

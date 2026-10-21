@@ -215,6 +215,7 @@ import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.shouldTreatReadyAtStartAsUnhealthyPrepared
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.model.stableKey
@@ -1277,6 +1278,9 @@ object PlayerManager {
     internal fun localMediaSource(song: SongItem): String? {
         return LocalPlaybackMediaResolver.source(song, application)
     }
+
+    internal fun localMediaSourceContext(song: SongItem): ResolvedLocalMediaSource? =
+        LocalPlaybackMediaResolver.sourceContext(song, application)
 
     internal fun toPlayableLocalUrl(mediaUri: String?): String? =
         LocalPlaybackMediaResolver.playableUrl(mediaUri)

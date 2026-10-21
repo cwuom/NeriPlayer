@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.UriPermission
 import android.content.pm.PackageManager
 import android.content.res.AssetFileDescriptor
+import android.database.Cursor
 import android.net.Uri
 import android.provider.DocumentsContract
 import java.nio.file.Files
@@ -12,8 +13,10 @@ import moe.ouom.neriplayer.core.player.policy.storage.RestorableLocalMediaState
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.`when`
@@ -150,18 +153,25 @@ class LocalPlaybackMediaResolverTest {
         val permission = mock(UriPermission::class.java)
         val descriptor = mock(AssetFileDescriptor::class.java)
         val fileUri = mock(Uri::class.java)
+        val cursor = mock(Cursor::class.java)
         `when`(context.contentResolver).thenReturn(resolver)
         `when`(resolver.persistedUriPermissions).thenReturn(listOf(permission))
         `when`(permission.uri).thenReturn(treeUri)
         `when`(permission.isReadPermission).thenReturn(readGranted)
         `when`(treeUri.authority).thenReturn("com.android.externalstorage.documents")
         `when`(mediaUri.scheme).thenReturn("content")
+        `when`(mediaUri.authority).thenReturn("media")
+        `when`(mediaUri.pathSegments).thenReturn(listOf("external", "audio", "media", "7"))
         `when`(documentUri.scheme).thenReturn("content")
         `when`(documentUri.toString()).thenReturn(recoveredReference)
         `when`(fileUri.scheme).thenReturn("file")
         `when`(fileUri.path).thenReturn("/storage/emulated/0/Music/Album/song.mp3")
         `when`(resolver.openAssetFileDescriptor(mediaUri, "r")).thenThrow(SecurityException("audio permission denied"))
         `when`(resolver.openAssetFileDescriptor(documentUri, "r")).thenReturn(descriptor)
+        `when`(resolver.query(eq(mediaUri), any(), any(), any(), any())).thenReturn(cursor)
+        `when`(cursor.moveToFirst()).thenReturn(true)
+        `when`(cursor.getColumnIndex("_data")).thenReturn(0)
+        `when`(cursor.getString(0)).thenReturn("/storage/emulated/0/Music/Album/song.mp3")
 
         mockStatic(Uri::class.java).use { uris ->
             mockStatic(DocumentsContract::class.java).use { documents ->
@@ -181,6 +191,13 @@ class LocalPlaybackMediaResolverTest {
                     if (expectedFallback) recoveredReference else song.mediaUri ?: song.localFilePath,
                     LocalPlaybackMediaResolver.source(song, context)
                 )
+                val sourceContext = requireNotNull(LocalPlaybackMediaResolver.sourceContext(song, context))
+                assertEquals(
+                    if (expectedFallback) recoveredReference else song.mediaUri ?: song.localFilePath,
+                    sourceContext.reference
+                )
+                assertEquals(song.mediaUri ?: song.localFilePath, sourceContext.anchorFor(song, sourceContext.reference))
+                assertNull(sourceContext.anchorFor(song.copy(id = song.id + 1), sourceContext.reference))
                 if (!mediaStoreReference || storedMediaReference != null) {
                     assertEquals(
                         if (expectedFallback) listOf(song) else emptyList<SongItem>(),

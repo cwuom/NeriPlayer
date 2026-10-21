@@ -33,6 +33,10 @@ Local edits preserve lyrics and artwork from before the first edit. Restoration 
 
 Folder scans prefer audio references within the granted document tree; an existing path does not establish MediaStore read access. When an old reference is unreadable, playback can recover a SAF reference to the same file within a granted directory on the same volume, and metadata edits reuse that source. Artwork and metadata sidecars share a recovery transaction. Failure or cancellation rolls back the changes, and an unresolved rollback stops further audio alias attempts.
 
+从扫描预览创建或加入普通歌单时，持久化用户明确选择的本地引用，保留旁车恢复的远端身份。本机播放仅接受与当前首选引用完全一致的来源标记；同步投影清除此标记和本地地址。旧记录没有扫描来源证据时不自动推断，再次显式扫描导入同一远端条目可以更新它的本地来源。
+
+Creating or updating an ordinary playlist from scan results persists the explicitly selected local reference while retaining remote identity recovered from sidecars. Local playback accepts provenance only when it exactly matches the current preferred reference; remote sync projections remove provenance and local addresses. Records without scan provenance remain unclassified until the user explicitly imports a scanned source again.
+
 大型扫描对仅有 content URI 的音频复用目录行和已知侧载索引，不逐首打开音频或查询文档。延后的身份信息在预览后台补全，提交导入前还会按有界批次核对所选 MP3 的原始身份，立即关闭预览也不会跳过这一步；歌词和封面基线保持原值。
 
 Large scans of content-only audio reuse directory rows and known sidecar indexes without opening each audio file or querying each document. Deferred identity is hydrated in the preview background, and selected MP3s undergo bounded raw identity checks before playlist persistence, even when the preview closes immediately. Existing lyric and artwork baselines are retained.
