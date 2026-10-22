@@ -179,10 +179,23 @@ class NowPlayingManualPerformanceReplayTest {
                 measure(scenario, output, "recent-open") {
                     clickText(context.getString(CoreCommonR.string.library_recent_played))
                 }
-            } else {
-                clickText(playlist.name)
+                waitUntil("recent fixture songs visible") {
+                    nativeNodes(context.getString(CoreCommonR.string.recent_title)).isNotEmpty() &&
+                        nativeNodes(songs[1].name).isNotEmpty()
+                }
+                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+                waitUntil("library visible after recent back") {
+                    nativeNodes(playlist.name).any { it.text?.toString() == playlist.name } &&
+                        nativeNodes(context.getString(CoreCommonR.string.library_recent_played)).isNotEmpty()
+                }
             }
-            waitUntil("fixture songs visible after playlist click") { nativeNodes(songs[1].name).isNotEmpty() }
+            clickText(playlist.name)
+            val fixturePlaylistVisible = {
+                nativeNodes(playlist.name).any { it.text?.toString() == playlist.name } &&
+                    nativeNodes(songs[1].name).isNotEmpty() &&
+                    nativeNodes(context.getString(CoreCommonR.string.library_recent_played)).isEmpty()
+            }
+            waitUntil("created playlist '${playlist.name}' detail visible", fixturePlaylistVisible)
             scenario.onActivity {
                 PlayerManager.release()
                 PlayerManager.initialize(it.application)
@@ -194,7 +207,7 @@ class NowPlayingManualPerformanceReplayTest {
             SystemClock.sleep(1_000L)
             measure(scenario, output, "existing-mini-player") { clickText(songs[0].name, bottommost = true) }
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-            waitUntil("playlist visible after player back") { nativeNodes(songs[1].name).isNotEmpty() }
+            waitUntil("created playlist '${playlist.name}' visible after player back", fixturePlaylistVisible)
             SystemClock.sleep(700L)
             measure(scenario, output, "new-playlist-song") { clickText(songs[1].name) }
             waitUntil("second fixture song playing") {

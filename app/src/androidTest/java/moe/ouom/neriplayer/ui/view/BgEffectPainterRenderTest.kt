@@ -218,7 +218,13 @@ class BgEffectPainterRenderTest {
             composeRule.runOnIdle {
                 dark.value = !dark.value
             }
-            composeRule.mainClock.advanceTimeByFrame()
+            // 仅有颜色仍可能是旧深色帧，等待浅色调色板真正出帧
+            val lightFrame = awaitProductionFrame {
+                coloredPixelRatio(it, MinLightThemeColorChannel) >= MinColoredPixelRatio
+            }
+            val lightPixelRatio = coloredPixelRatio(lightFrame, MinLightThemeColorChannel)
+            assertTrue("浅色主题必须在隐藏前真实绘制，浅色像素比例=$lightPixelRatio",
+                lightPixelRatio >= MinColoredPixelRatio)
             composeRule.runOnIdle { visible.value = false }
             composeRule.mainClock.advanceTimeByFrame()
             composeRule.onNodeWithTag(ProductionTag).assertDoesNotExist()
@@ -383,14 +389,17 @@ class BgEffectPainterRenderTest {
         return changedPixels.toDouble() / comparedPixels
     }
 
-    private fun coloredPixelRatio(image: ImageBitmap): Double {
+    private fun coloredPixelRatio(
+        image: ImageBitmap,
+        minVisibleColorChannel: Float = MinVisibleColorChannel
+    ): Double {
         val pixels = image.toPixelMap()
         var coloredPixels = 0
         var comparedPixels = 0
         for (y in PixelInset until image.height - PixelInset) {
             for (x in PixelInset until image.width - PixelInset) {
                 val color = pixels[x, y]
-                if (max(color.red, max(color.green, color.blue)) > MinVisibleColorChannel) {
+                if (max(color.red, max(color.green, color.blue)) > minVisibleColorChannel) {
                     coloredPixels++
                 }
                 comparedPixels++
@@ -423,6 +432,7 @@ class BgEffectPainterRenderTest {
         const val MaxOutlierPixelRatio = 0.01
         const val MinChangedPixelRatio = 0.25
         const val MinVisibleColorChannel = 0.02f
+        const val MinLightThemeColorChannel = 0.5f
         const val MinColoredPixelRatio = 0.95
     }
 }

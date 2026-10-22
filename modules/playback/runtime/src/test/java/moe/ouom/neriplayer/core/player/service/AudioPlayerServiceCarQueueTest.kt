@@ -19,6 +19,7 @@ import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.anyList
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -78,14 +79,24 @@ class AudioPlayerServiceCarQueueTest {
         updateQueue()
         assertEquals(1, publications.size)
 
-        attachSession(newSession())
+        val replacementSession = newSession()
+        attachSession(replacementSession)
         updateQueue()
         updateQueue()
         assertEquals(2, publications.size)
+        val queueBeforeRelease = publications.last()
 
         invokeService("releaseMediaSessionForDestroy")
+        verify(replacementSession).release()
+        val recreatedSession = newSession()
+        attachSession(recreatedSession)
+        updateQueue()
         updateQueue()
         assertEquals(3, publications.size)
+        verify(replacementSession).setQueue(anyList())
+        verify(recreatedSession).setQueue(publications.last())
+        assertEquals(queueBeforeRelease.map { it.queueId }, publications.last().map { it.queueId })
+        assertEquals("Song 1", publications.last().single().description.title.toString())
     }
 
     @Test

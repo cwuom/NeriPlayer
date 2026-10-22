@@ -164,7 +164,7 @@ internal fun musicPlatformLabelResource(platform: MusicPlatform): Int = when (pl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EditSongSearchPlatforms(
+internal fun EditSongSearchPlatforms(
     selected: MusicPlatform,
     onSelect: (MusicPlatform) -> Unit
 ) {
@@ -236,7 +236,7 @@ private fun EditSongSearchResults(
 }
 
 @Composable
-private fun EditSongSearchResultCard(
+internal fun EditSongSearchResultCard(
     result: SongSearchInfo,
     offlineMode: Boolean,
     onSelect: () -> Unit

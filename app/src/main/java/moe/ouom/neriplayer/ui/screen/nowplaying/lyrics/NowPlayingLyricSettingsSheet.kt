@@ -291,7 +291,7 @@ private fun LyricBehaviorActionLayer(
 }
 
 @Composable
-private fun LyricBehaviorContent(
+internal fun LyricBehaviorContent(
     offsetState: LyricBehaviorSheetState,
     hasTranslationLyrics: Boolean,
     hasPhoneticLyrics: Boolean,
