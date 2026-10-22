@@ -58,7 +58,14 @@ internal fun rememberRecentSongs(history: List<PlayedEntry>): RecentSongsSnapsho
 
 private class RecentSearchIndex(
     val source: RecentSongsSnapshot,
+    val context: Context,
     val index: SearchTextMatcher.Index<RecentSongRowItem>
+)
+
+private class RecentSearchResult(
+    val index: RecentSearchIndex,
+    val query: String,
+    val snapshot: RecentSongsSnapshot
 )
 
 @Composable
@@ -75,6 +82,7 @@ internal fun rememberRecentSearchResults(
             val coroutineContext = currentCoroutineContext()
             RecentSearchIndex(
                 source = snapshot,
+                context = context,
                 index = SearchTextMatcher.index(snapshot.rows) { row ->
                     coroutineContext.ensureActive()
                     recentSongSearchTokens(row.song, context)
@@ -84,18 +92,23 @@ internal fun rememberRecentSearchResults(
     }
     if (query.isBlank()) return snapshot
 
-    val activeIndex = preparedIndex?.takeIf { it.source === snapshot }
-    val displayed by produceState(RecentSongsSnapshot.Empty, activeIndex, query) {
+    val activeIndex = preparedIndex?.takeIf { it.source === snapshot && it.context === context }
+    val displayed by produceState<RecentSearchResult?>(null, activeIndex, query) {
         value = if (activeIndex == null) {
-            RecentSongsSnapshot.Empty
+            null
         } else {
             withContext(Dispatchers.Default) {
                 val rows = activeIndex.index.filterAndRank(query)
-                RecentSongsSnapshot(rows = rows, songs = rows.map { it.song })
+                RecentSearchResult(
+                    index = activeIndex,
+                    query = query,
+                    snapshot = RecentSongsSnapshot(rows = rows, songs = rows.map { it.song })
+                )
             }
         }
     }
-    return displayed
+    return displayed?.takeIf { it.index === activeIndex && it.query == query }?.snapshot
+        ?: RecentSongsSnapshot.Empty
 }
 
 private fun recentSongSearchTokens(song: SongItem, context: Context): List<String> = listOfNotNull(

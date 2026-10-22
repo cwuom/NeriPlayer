@@ -24,6 +24,7 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit
 import java.util.Locale
 import moe.ouom.neriplayer.ui.screen.playlist.SongIdentityLookup
@@ -100,6 +101,34 @@ class RecentSongsStateComposeTest {
     }
 
     @Test
+    fun `changing the query never publishes songs from the previous query`() {
+        val history = listOf(entry(1L, "Alpha"), entry(2L, "Beta"))
+        var query by mutableStateOf("alpha")
+        val displayed = AtomicReference<RecentSongsSnapshot>()
+        val observations = ConcurrentLinkedQueue<Pair<String, List<Long>>>()
+        composeRule.setContent {
+            val snapshot = rememberRecentSongs(history)
+            val results = rememberRecentSearchResults(snapshot, query, context, searchVisible = true)
+            val currentQuery = query
+            SideEffect {
+                displayed.set(results)
+                observations.add(currentQuery to results.songs.map { it.id })
+            }
+            Text(results.songs.size.toString())
+        }
+
+        waitForSongs(displayed, listOf(1L))
+        composeRule.runOnIdle { query = "beta" }
+        waitForSongs(displayed, listOf(2L))
+
+        val betaResults = observations.filter { it.first == "beta" }.map { it.second }
+        assertEquals(false, betaResults.isEmpty())
+        betaResults.forEach { ids ->
+            assertEquals("A changed query must not expose the previous playback or deletion rows", false, 1L in ids)
+        }
+    }
+
+    @Test
     fun `local album search follows the current UI language`() {
         val chinese = context.createConfigurationContext(
             Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) }
@@ -128,6 +157,37 @@ class RecentSongsStateComposeTest {
             query = "local files"
         }
         waitForSongs(displayed, listOf(1L))
+    }
+
+    @Test
+    fun `changing the UI language never publishes matches from the previous language`() {
+        val chinese = context.createConfigurationContext(
+            Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) }
+        )
+        val english = context.createConfigurationContext(
+            Configuration(context.resources.configuration).apply { setLocale(Locale.ENGLISH) }
+        )
+        var displayContext by mutableStateOf(chinese)
+        val history = listOf(entry(1L, "Track").copy(album = "__local_files__"))
+        val displayed = AtomicReference<RecentSongsSnapshot>()
+        val englishResults = ConcurrentLinkedQueue<List<Long>>()
+        composeRule.setContent {
+            val snapshot = rememberRecentSongs(history)
+            val results = rememberRecentSearchResults(snapshot, "本地文件", displayContext, searchVisible = true)
+            val isEnglish = displayContext === english
+            SideEffect {
+                displayed.set(results)
+                if (isEnglish) englishResults.add(results.songs.map { it.id })
+            }
+            Text(results.songs.size.toString())
+        }
+
+        waitForSongs(displayed, listOf(1L))
+        composeRule.runOnIdle { displayContext = english }
+        waitForSongs(displayed, emptyList())
+
+        assertEquals(false, englishResults.isEmpty())
+        englishResults.forEach { ids -> assertEquals(emptyList<Long>(), ids) }
     }
 
     @Test

@@ -212,7 +212,7 @@ class BgEffectPainterRenderTest {
                 }
             }
         }
-        awaitProductionFrame { coloredPixelRatio(it) >= MinColoredPixelRatio }
+        awaitProductionFrame { darkPixelRatio(it) >= MinColoredPixelRatio }
 
         repeat(3) {
             composeRule.runOnIdle {
@@ -232,7 +232,12 @@ class BgEffectPainterRenderTest {
                 dark.value = !dark.value
                 visible.value = true
             }
-            awaitProductionFrame { coloredPixelRatio(it) >= MinColoredPixelRatio }
+            val reopenedDarkFrame = awaitProductionFrame {
+                darkPixelRatio(it) >= MinColoredPixelRatio
+            }
+            val reopenedDarkPixelRatio = darkPixelRatio(reopenedDarkFrame)
+            assertTrue("深色主题重显后必须真实绘制，深色像素比例=$reopenedDarkPixelRatio",
+                reopenedDarkPixelRatio >= MinColoredPixelRatio)
         }
     }
 
@@ -387,6 +392,11 @@ class BgEffectPainterRenderTest {
         }
 
         return changedPixels.toDouble() / comparedPixels
+    }
+
+    private fun darkPixelRatio(image: ImageBitmap): Double {
+        // 排除透明或纯黑底色，以及上一主题遗留的浅色帧
+        return coloredPixelRatio(image) - coloredPixelRatio(image, MinLightThemeColorChannel)
     }
 
     private fun coloredPixelRatio(
