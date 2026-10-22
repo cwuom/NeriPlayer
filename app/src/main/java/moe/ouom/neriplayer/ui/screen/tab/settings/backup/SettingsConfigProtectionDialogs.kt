@@ -33,6 +33,8 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 
+private const val MAX_CONFIG_EXPORT_PASSWORD_CHARACTERS = 1024
+
 @Composable
 internal fun SettingsConfigExportOptionsDialog(
     onConfirm: (includeLoginState: Boolean, password: String?) -> Unit,
@@ -42,7 +44,7 @@ internal fun SettingsConfigExportOptionsDialog(
     var encryptFile by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
-    val passwordValid = password.length >= 8 && password.isNotBlank()
+    val passwordValid = password.length in 8..MAX_CONFIG_EXPORT_PASSWORD_CHARACTERS && password.isNotBlank()
     val passwordsMatch = password == confirmation
     val dismiss = {
         password = ""

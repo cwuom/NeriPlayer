@@ -16,6 +16,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,9 +28,12 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
+import moe.ouom.neriplayer.data.config.ConfigExportOptions
+import moe.ouom.neriplayer.ui.screen.tab.settings.backup.SettingsConfigExportOptionsDialog
 
 @Composable
 internal fun SafeModeExportCard(
@@ -40,40 +44,78 @@ internal fun SafeModeExportCard(
     val composeResources = LocalResources.current
     val scope = rememberCoroutineScope()
     var exportingKind by remember { mutableStateOf<SafeModeExportKind?>(null) }
+    var showConfigExportOptions by remember { mutableStateOf(false) }
+    var configExportOptions by remember { mutableStateOf<ConfigExportOptions?>(null) }
+    var configExportPassword by remember { mutableStateOf<CharArray?>(null) }
     val isExporting = exportingKind != null
 
+    fun cancelConfigExport() {
+        configExportPassword?.fill('\u0000')
+        configExportPassword = null
+        configExportOptions = null
+        showConfigExportOptions = false
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { configExportPassword?.fill('\u0000') }
+    }
+
     fun exportData(kind: SafeModeExportKind, uri: Uri) {
-        scope.launch {
-            exportingKind = kind
-            val result = when (kind) {
-                SafeModeExportKind.Config -> SafeModeManager.exportConfigBackup(context, uri)
-                SafeModeExportKind.Playlists -> SafeModeManager.exportPlaylistBackup(context, uri)
-            }
-            result.fold(
-                onSuccess = { fileName ->
-                    onShowMessage(
-                        composeResources.getString(kind.successMessageRes, fileName),
-                        SnackbarDuration.Short
-                    )
-                },
-                onFailure = { error ->
-                    onShowMessage(
-                        composeResources.getString(
-                            CoreCommonR.string.safe_mode_export_failed,
-                            error.message ?: error.javaClass.simpleName
-                        ),
-                        SnackbarDuration.Long
-                    )
-                }
+        if (exportingKind != null) return
+        val options = configExportOptions
+        if (kind == SafeModeExportKind.Config && options == null) {
+            onShowMessage(
+                composeResources.getString(CoreCommonR.string.settings_config_export_options_expired),
+                SnackbarDuration.Long
             )
-            exportingKind = null
+            return
         }
+        val password = if (kind == SafeModeExportKind.Config) configExportPassword else null
+        if (kind == SafeModeExportKind.Config) {
+            configExportOptions = null
+            configExportPassword = null
+        }
+        exportingKind = kind
+        val job = scope.launch {
+            try {
+                val result = when (kind) {
+                    SafeModeExportKind.Config -> SafeModeManager.exportConfigBackup(
+                        context, uri, requireNotNull(options), password
+                    )
+                    SafeModeExportKind.Playlists -> SafeModeManager.exportPlaylistBackup(context, uri)
+                }
+                result.fold(
+                    onSuccess = { fileName ->
+                        onShowMessage(
+                            composeResources.getString(kind.successMessageRes, fileName),
+                            SnackbarDuration.Short
+                        )
+                    },
+                    onFailure = { error ->
+                        onShowMessage(
+                            composeResources.getString(
+                                CoreCommonR.string.safe_mode_export_failed,
+                                error.message ?: error.javaClass.simpleName
+                            ),
+                            SnackbarDuration.Long
+                        )
+                    }
+                )
+            } finally {
+                password?.fill('\u0000')
+                exportingKind = null
+            }
+        }
+        job.invokeOnCompletion { password?.fill('\u0000') }
     }
 
     val configExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri: Uri? ->
-        uri ?: return@rememberLauncherForActivityResult
+        if (uri == null) {
+            cancelConfigExport()
+            return@rememberLauncherForActivityResult
+        }
         exportData(SafeModeExportKind.Config, uri)
     }
 
@@ -82,6 +124,29 @@ internal fun SafeModeExportCard(
     ) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
         exportData(SafeModeExportKind.Playlists, uri)
+    }
+
+    if (showConfigExportOptions) {
+        SettingsConfigExportOptionsDialog(
+            onConfirm = { includeLoginState, password ->
+                if (showConfigExportOptions) {
+                    cancelConfigExport()
+                    configExportOptions = ConfigExportOptions(includeLoginState)
+                    configExportPassword = password?.toCharArray()
+                    try {
+                        configExportLauncher.launch(SafeModeManager.generateConfigBackupFileName(context))
+                    } catch (error: Exception) {
+                        cancelConfigExport()
+                        if (error is CancellationException) throw error
+                        onShowMessage(
+                            composeResources.getString(CoreCommonR.string.safe_mode_export_failed, error.javaClass.simpleName),
+                            SnackbarDuration.Long
+                        )
+                    }
+                }
+            },
+            onDismiss = ::cancelConfigExport
+        )
     }
 
     Card {
@@ -115,9 +180,10 @@ internal fun SafeModeExportCard(
             ) {
                 OutlinedButton(
                     onClick = {
-                        configExportLauncher.launch(SafeModeManager.generateConfigBackupFileName(context))
+                        cancelConfigExport()
+                        showConfigExportOptions = true
                     },
-                    enabled = !busy && !isExporting,
+                    enabled = !busy && !isExporting && configExportOptions == null,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(stringResource(CoreCommonR.string.safe_mode_export_config))
@@ -126,7 +192,7 @@ internal fun SafeModeExportCard(
                     onClick = {
                         playlistExportLauncher.launch(SafeModeManager.generatePlaylistBackupFileName(context))
                     },
-                    enabled = !busy && !isExporting,
+                    enabled = !busy && !isExporting && configExportOptions == null,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(stringResource(CoreCommonR.string.safe_mode_export_playlists))

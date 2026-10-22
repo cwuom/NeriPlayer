@@ -9,7 +9,7 @@
     <string name="settings_config_plaintext_login_warning">登录凭据将以明文写入文件。任何拿到文件的人都可能访问你的账号，请勿分享。</string>
     <string name="settings_config_password">密码</string>
     <string name="settings_config_confirm_password">确认密码</string>
-    <string name="settings_config_password_requirements">至少 8 个字符，不能全部为空白字符</string>
+    <string name="settings_config_password_requirements">8 到 1024 个字符，不能全部为空白字符</string>
     <string name="settings_config_password_mismatch">两次输入的密码不一致</string>
     <string name="settings_config_import_password_title">输入配置文件密码</string>
     <string name="settings_config_import_password_description">此文件已加密，请输入导出时设置的密码。密码不会保存。</string>

@@ -95,9 +95,10 @@ class ConfigFileManager(
                 language = LanguageConfigSnapshot(
                     code = LanguageManager.getCurrentLanguage(context).code
                 ),
-                syncPreferences = SyncPreferences(context).snapshot(
-                    gitHubStorage?.getLegacyPlayHistoryUpdateModeName()
-                )
+                syncPreferences = SyncPreferences(context).snapshot {
+                    if (gitHubStorage != null) gitHubStorage.getLegacyPlayHistoryUpdateModeName()
+                    else SecureTokenStorage.readLegacyPlayHistoryUpdateModeName(context)
+                }
             )
             val payload = if (gitHubStorage == null) base else base.copy(
                 neteaseAuth = neteaseRepository.run {

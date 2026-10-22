@@ -9,7 +9,7 @@
     <string name="settings_config_plaintext_login_warning">Login credentials will be written to the file as plain text. Anyone with the file may access your accounts. Do not share it.</string>
     <string name="settings_config_password">Password</string>
     <string name="settings_config_confirm_password">Confirm password</string>
-    <string name="settings_config_password_requirements">Use at least 8 characters, with at least one non-whitespace character</string>
+    <string name="settings_config_password_requirements">Use 8 to 1024 characters, with at least one non-whitespace character</string>
     <string name="settings_config_password_mismatch">The passwords do not match</string>
     <string name="settings_config_import_password_title">Enter configuration password</string>
     <string name="settings_config_import_password_description">This file is encrypted. Enter the password chosen when exporting it. Your password is never saved.</string>
