@@ -1245,7 +1245,8 @@ class NeteaseClient(
         return try {
             val root = JSONObject(raw)
             if (root.optInt("code", -1) != 200) return raw
-            val list = root.optJSONArray("playlist") ?: JSONArray()
+            val list = root.optJSONArray("playlist")
+                ?: return """{ "code": 500, "msg": "invalid playlist response" }"""
             var likedId: Long? = null
             for (i in 0 until list.length()) {
                 val pl = list.optJSONObject(i) ?: continue
@@ -1260,7 +1261,7 @@ class NeteaseClient(
             if (likedId != null) {
                 """{ "code": 200, "playlistId": $likedId }"""
             } else {
-                """{ "code": 404, "msg": "liked playlist not found" }"""
+                """{ "code": 404, "msg": "liked playlist not found", "neriplayerLikedPlaylistNotFound": true }"""
             }
         } catch (e: Exception) {
             """{ "code": 500, "msg": ${jsonQuote(e.message ?: "parse error")} }"""

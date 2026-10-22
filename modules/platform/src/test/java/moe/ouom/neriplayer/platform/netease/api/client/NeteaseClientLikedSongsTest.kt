@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.platform.netease.api.client
 
 import moe.ouom.neriplayer.data.model.netease.crypto.CryptoMode
+import moe.ouom.neriplayer.platform.netease.playlist.parseNeteaseLikedPlaylistId
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Protocol
 import okhttp3.Request
@@ -8,7 +9,10 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyBoolean
@@ -94,6 +98,38 @@ class NeteaseClientLikedSongsTest {
     }
 
     @Test
+    fun `a successful playlist lookup can confirm that the liked playlist is absent`() {
+        for (response in listOf(
+            """{"code":200,"playlist":[]}""",
+            """{"code":200,"playlist":[{"id":10,"specialType":0,"creator":{"userId":7}}]}"""
+        )) {
+            val raw = clientWithResponse(response).getLikedPlaylistId(7L)
+            val parsed = parseNeteaseLikedPlaylistId(raw)
+
+            assertEquals(404, JSONObject(raw).getInt("code"))
+            assertTrue(parsed.success)
+            assertNull(parsed.playlistId)
+        }
+    }
+
+    @Test
+    fun `a missing or malformed playlist list cannot confirm that favorites are absent`() {
+        for (response in listOf(
+            """{"code":200}""",
+            """{"code":200,"playlist":null}""",
+            """{"code":200,"playlist":{}}""",
+            """{"code":200,"playlist":"invalid"}"""
+        )) {
+            val raw = clientWithResponse(response).getLikedPlaylistId(7L)
+            val parsed = parseNeteaseLikedPlaylistId(raw)
+
+            assertEquals(500, JSONObject(raw).getInt("code"))
+            assertFalse(parsed.success)
+            assertNull(parsed.playlistId)
+        }
+    }
+
+    @Test
     fun `liked playlist without a positive id is not a usable write target`() {
         val client = clientWithResponse(
             """{"code":200,"playlist":[
@@ -113,6 +149,8 @@ class NeteaseClientLikedSongsTest {
             """{"code":301,"message":"session expired","playlist":[
               {"id":88,"specialType":5,"creator":{"userId":7}}
             ]}""",
+            """{"code":404,"message":"liked playlist not found"}""",
+            """{"code":503,"message":"service unavailable"}""",
             """{"code":500,"message":"service unavailable"}"""
         )
 

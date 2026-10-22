@@ -105,7 +105,11 @@ class NeteasePlaylistLikeFallbackTest {
 
     @Test
     fun `confirmed absent or different liked identity is cached without liking songs`() = runTest {
-        for (identity in listOf("""{"code":200}""", """{"code":200,"playlistId":92}""")) {
+        for (identity in listOf(
+            """{"code":200}""",
+            """{"code":200,"playlistId":92}""",
+            """{"code":404,"neriplayerLikedPlaylistNotFound":true}"""
+        )) {
             val client = mixedBatchClient()
             `when`(client.addSongsToPlaylist(eq(91L), anyList())).thenReturn(rejected)
             `when`(client.getLikedPlaylistId(0L)).thenReturn(identity)
@@ -198,6 +202,111 @@ class NeteasePlaylistLikeFallbackTest {
         assertEquals(listOf(1_000L), pauses)
         verify(client, times(2)).likeSong(2L)
         verify(client).getLikedPlaylistId(0L)
+    }
+
+    @Test
+    fun `persistent like outages leave healthy sibling ranges and later batches available`() = runTest {
+        for (response in listOf(null, "invalid", """{"code":503}""")) {
+            val client = mixedBatchClient()
+            `when`(client.addSongsToPlaylist(eq(91L), anyList())).thenAnswer { invocation ->
+                if (1L in invocation.getArgument<List<Long>>(1)) rejected else """{"code":200}"""
+            }
+            if (response == null) {
+                `when`(client.likeSong(1L)).thenThrow(IOException("persistent like outage"))
+            } else {
+                `when`(client.likeSong(1L)).thenReturn(response)
+            }
+            val pauses = mutableListOf<Long>()
+            val songs = (1L..100L).map { id ->
+                SongItem(id, "song-$id", "artist", "NeteaseAlbum", 7L, 1_000L, null,
+                    channelId = "netease", audioId = id.toString())
+            }
+
+            val result = NeteasePlaylistSync(pauses::add) { it.name }
+                .syncSongsToNeteasePlaylist(client, 91L, songs)
+
+            assertEquals(99, result.added)
+            assertEquals(1, result.failed)
+            assertEquals(listOf(1L), result.rejectedSongIds)
+            assertEquals("当前环境异常，已取消喜欢", result.rejectionMessage)
+            assertEquals(listOf(1_000L, 2_000L, 4_000L), pauses)
+            verify(client, times(4)).likeSong(1L)
+            verify(client).addSongsToPlaylist(91L, (51L..100L).toList())
+        }
+    }
+
+    @Test
+    fun `like recovery shares a retry budget without stopping healthy songs`() = runTest {
+        val client = mixedBatchClient()
+        `when`(client.addSongsToPlaylist(eq(91L), anyList())).thenAnswer { invocation ->
+            if (invocation.getArgument<List<Long>>(1).any { it <= 2L }) rejected else """{"code":200}"""
+        }
+        `when`(client.likeSong(1L)).thenReturn("""{"code":503}""")
+        `when`(client.likeSong(2L)).thenReturn("""{"code":503}""")
+        val pauses = mutableListOf<Long>()
+        val thirdSong = SongItem(3L, "song-3", "artist", "NeteaseAlbum", 7L, 1_000L, null,
+            channelId = "netease", audioId = "3")
+
+        val result = NeteasePlaylistSync(pauses::add) { it.name }
+            .syncSongsToNeteasePlaylist(client, 91L, songs() + thirdSong)
+
+        assertEquals(1, result.added)
+        assertEquals(2, result.failed)
+        assertEquals(listOf(1L, 2L), result.rejectedSongIds)
+        assertEquals(listOf(1_000L, 2_000L, 4_000L), pauses)
+        verify(client, times(4)).likeSong(1L)
+        verify(client).likeSong(2L)
+        verify(client).addSongsToPlaylist(91L, listOf(3L))
+    }
+
+    @Test
+    fun `switching accounts during like backoff keeps the original bound callback`() = runTest {
+        val client = mixedBatchClient()
+        val account = NeteaseClient { error("Comment token is outside this test") }
+        account.setPersistedCookies(mapOf("MUSIC_U" to "test-account-a"))
+        blockRequests(account)
+        `when`(client.createSongLiker()).thenAnswer {
+            val bound = account.createSongLiker()
+            var firstAttempt = true
+            { id: Long ->
+                if (firstAttempt) {
+                    firstAttempt = false
+                    """{"code":503}"""
+                } else {
+                    bound(id)
+                }
+            }
+        }
+        val pauses = mutableListOf<Long>()
+
+        val result = NeteasePlaylistSync({ delay ->
+            pauses += delay
+            account.setPersistedCookies(mapOf("MUSIC_U" to "test-account-b"))
+            blockRequests(account)
+        }) { it.name }.syncSongsToNeteasePlaylist(client, 91L, songs())
+
+        assertEquals(1, result.added)
+        assertEquals(1, result.failed)
+        assertEquals(listOf(2L), result.rejectedSongIds)
+        assertEquals("code 301", result.rejectionMessage)
+        assertEquals(listOf(1_000L), pauses)
+        verify(client).createSongLiker()
+        verify(client, never()).likeSong(2L)
+    }
+
+    @Test
+    fun `explicit like authorization rejection preserves the server reason without backoff`() = runTest {
+        val client = mixedBatchClient()
+        `when`(client.likeSong(2L)).thenReturn("""{"code":401,"message":"not authorized"}""")
+
+        val result = NeteasePlaylistSync(noPause) { it.name }
+            .syncSongsToNeteasePlaylist(client, 91L, songs())
+
+        assertEquals(1, result.added)
+        assertEquals(1, result.failed)
+        assertEquals(listOf(2L), result.rejectedSongIds)
+        assertEquals("not authorized", result.rejectionMessage)
+        verify(client).likeSong(2L)
     }
 
     @Test

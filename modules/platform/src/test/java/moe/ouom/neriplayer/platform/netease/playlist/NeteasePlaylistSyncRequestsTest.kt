@@ -140,7 +140,7 @@ class NeteasePlaylistSyncRequestsTest {
         `when`(client.createSongLiker()).thenReturn { """{"code":200}""" }
         `when`(client.addSongsToPlaylist(91L, listOf(1L))).thenReturn("""{"code":524}""")
         `when`(client.getLikedPlaylistId(0L)).thenReturn("invalid", """{"code":200,"playlistId":91}""")
-        val session = NeteasePlaylistAddSession(client, 91L)
+        val session = NeteasePlaylistAddSession(client, 91L) { error("unexpected backoff") }
 
         assertEquals(NeteasePlaylistAddOutcome.Rejected(524, null), session.add(listOf(1L)))
         assertEquals(NeteasePlaylistAddOutcome.Ok, session.add(listOf(1L)))
@@ -154,7 +154,7 @@ class NeteasePlaylistSyncRequestsTest {
         `when`(client.addSongsToPlaylist(91L, listOf(1L))).thenReturn("""{"code":524}""")
         `when`(client.getLikedPlaylistId(0L)).thenThrow(IllegalStateException("temporary identity outage"))
             .thenReturn("""{"code":200,"playlistId":91}""")
-        val session = NeteasePlaylistAddSession(client, 91L)
+        val session = NeteasePlaylistAddSession(client, 91L) { error("unexpected backoff") }
 
         assertEquals(NeteasePlaylistAddOutcome.Rejected(524, null), session.add(listOf(1L)))
         assertEquals(NeteasePlaylistAddOutcome.Ok, session.add(listOf(1L)))

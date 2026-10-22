@@ -109,6 +109,35 @@ class NeteasePlaylistSyncPolicyTest {
     }
 
     @Test
+    fun `only a locally confirmed absent liked playlist makes a 404 lookup successful`() {
+        val parsed = parseNeteaseLikedPlaylistId(
+            """{"code":404,"msg":"liked playlist not found","neriplayerLikedPlaylistNotFound":true}"""
+        )
+
+        assertTrue(parsed.success)
+        assertNull(parsed.playlistId)
+    }
+
+    @Test
+    fun `upstream errors and malformed absence markers remain unknown`() {
+        for (raw in listOf(
+            """{"code":404,"msg":"liked playlist not found"}""",
+            """{"code":404,"neriplayerLikedPlaylistNotFound":false}""",
+            """{"code":404,"neriplayerLikedPlaylistNotFound":"true"}""",
+            """{"code":404,"neriplayerLikedPlaylistNotFound":null}""",
+            """{"code":404,"neriplayerLikedPlaylistNotFound":true,"playlistId":42}""",
+            """{"code":301,"neriplayerLikedPlaylistNotFound":true}""",
+            """{"code":503,"neriplayerLikedPlaylistNotFound":true}""",
+            """{"neriplayerLikedPlaylistNotFound":true}"""
+        )) {
+            val parsed = parseNeteaseLikedPlaylistId(raw)
+
+            assertFalse(parsed.success)
+            assertNull(parsed.playlistId)
+        }
+    }
+
+    @Test
     fun `track ids retain remote order while dropping invalid and repeated ids`() {
         val parsed = parseNeteaseTrackIdsFromPlaylistDetail(
             """{"code":200,"playlist":{"trackIds":[{"id":3},{"id":0},{"id":2},{"id":3},{"id":-1},null]}}"""

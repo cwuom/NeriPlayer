@@ -9,12 +9,17 @@ internal const val NETEASE_SONG_DETAIL_BATCH_SIZE = 300
 internal const val NETEASE_COMPARE_FAILED_MESSAGE =
     "网易云云端比对失败，已停止同步以避免误同步"
 
+private const val NETEASE_LIKE_MAX_TRANSIENT_RETRIES = 3
+private const val NETEASE_LIKE_BACKOFF_MS = 1_000L
+
 internal class NeteasePlaylistAddSession(
     private val client: NeteaseClient,
-    private val playlistId: Long
+    private val playlistId: Long,
+    private val pause: (Long) -> Unit
 ) {
     private var likedPlaylistIdentity: ParsedNeteasePlaylistId? = null
     private val likeSong = client.createSongLiker()
+    private var likeTransientRetries = 0
 
     fun add(ids: List<Long>): NeteasePlaylistAddOutcome {
         val outcome = addNeteasePlaylistSongIdsBatch(client, playlistId, ids)
@@ -24,7 +29,23 @@ internal class NeteasePlaylistAddSession(
         val identity = likedPlaylistIdentity ?: resolveLikedNeteasePlaylist(client).also {
             if (it.success) likedPlaylistIdentity = it
         }
-        return if (identity.playlistId == playlistId) addNeteaseLikedSong(client, ids.single(), likeSong) else outcome
+        return if (identity.playlistId == playlistId) addLikedSong(ids.single(), outcome) else outcome
+    }
+
+    private fun addLikedSong(
+        songId: Long,
+        rejected: NeteasePlaylistAddOutcome.Rejected
+    ): NeteasePlaylistAddOutcome {
+        var outcome = addNeteaseLikedSong(client, songId, likeSong)
+        while (outcome is NeteasePlaylistAddOutcome.Transient &&
+            likeTransientRetries < NETEASE_LIKE_MAX_TRANSIENT_RETRIES
+        ) {
+            pause(NETEASE_LIKE_BACKOFF_MS shl likeTransientRetries)
+            likeTransientRetries += 1
+            outcome = addNeteaseLikedSong(client, songId, likeSong)
+        }
+        // 喜欢接口不可用时保留原始拒绝，避免中止仍能正常添加的其它歌曲
+        return if (outcome is NeteasePlaylistAddOutcome.Transient) rejected else outcome
     }
 }
 
