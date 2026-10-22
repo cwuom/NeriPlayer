@@ -3,8 +3,8 @@
     <!-- Sync & Backup -->
     <string name="settings_export_config">导出配置文件</string>
     <string name="settings_import_config">导入配置文件</string>
-    <string name="settings_export_config_desc">导出设置、登录信息和同步配置</string>
-    <string name="settings_import_config_desc">从配置文件恢复设置、登录信息和同步配置</string>
+    <string name="settings_export_config_desc">可选密码保护，以及是否包含登录态</string>
+    <string name="settings_import_config_desc">兼容加密配置和不含登录态的配置</string>
     <string name="settings_config_export_progress">配置导出进度</string>
     <string name="settings_config_import_progress">配置导入进度</string>
     <string name="settings_config_exporting">正在导出配置文件…</string>

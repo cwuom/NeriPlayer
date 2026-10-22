@@ -51,7 +51,6 @@ import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Error
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Timer
@@ -119,6 +118,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
+import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.WebDavCleartextWarning
 import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeSetting
 import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeWarning
 import moe.ouom.neriplayer.ui.sync.upgrade.rememberSyncProtocolUpgradeViewModel
@@ -225,7 +225,6 @@ internal fun SettingsBackupRestoreSection(
             syncUpgradeVm.requestSync(targetId) { performWebDavSync(targetId) }
         }
         var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
-        var showConfigExportWarningDialog by remember { mutableStateOf(false) }
         var currentMode by remember { mutableStateOf(PlayHistoryUpdateMode.IMMEDIATE) }
         var dataSaverMode by remember { mutableStateOf(true) }
         var pendingDataSaverMode by remember { mutableStateOf<Boolean?>(null) }
@@ -363,7 +362,7 @@ internal fun SettingsBackupRestoreSection(
                     ),
                     onExport = {
                         if (!configTransferUiState.isExporting) {
-                            showConfigExportWarningDialog = true
+                            onExportConfigClick()
                         }
                     },
                     onImport = onImportConfigClick
@@ -453,7 +452,7 @@ internal fun SettingsBackupRestoreSection(
                     )
                     .settingsItemClickable {
                         if (!configTransferUiState.isExporting) {
-                            showConfigExportWarningDialog = true
+                            onExportConfigClick()
                         }
                     },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -840,6 +839,13 @@ internal fun SettingsBackupRestoreSection(
 
             SyncProtocolUpgradeSetting(webDavTarget)
 
+            if (webDavState.isConfigured) {
+                WebDavCleartextWarning(
+                    serverUrl = webDavState.serverUrl,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+
             ListItem(
                 leadingContent = {
                     Icon(
@@ -1026,38 +1032,6 @@ internal fun SettingsBackupRestoreSection(
                         }
                     }
                     showPlayHistoryModeDialog = false
-                }
-            )
-        }
-
-        if (showConfigExportWarningDialog) {
-            MiuixSettingsDialog(
-                onDismissRequest = { showConfigExportWarningDialog = false },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Error,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                },
-                title = { Text(stringResource(CoreCommonR.string.settings_config_export_warning_title)) },
-                text = { Text(stringResource(CoreCommonR.string.settings_config_export_warning_message)) },
-                confirmButton = {
-                    MiuixSettingsTextButton(
-                        onClick = {
-                            showConfigExportWarningDialog = false
-                            onExportConfigClick()
-                        }
-                    ) {
-                        Text(stringResource(CoreCommonR.string.settings_config_export_warning_confirm))
-                    }
-                },
-                dismissButton = {
-                    MiuixSettingsTextButton(
-                        onClick = { showConfigExportWarningDialog = false }
-                    ) {
-                        Text(stringResource(CoreCommonR.string.action_cancel))
-                    }
                 }
             )
         }

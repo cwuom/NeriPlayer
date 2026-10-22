@@ -447,6 +447,97 @@ class ConfigFileManagerSectionImportTest {
         assertTrue(savedAuth.isEmpty())
     }
 
+    @Test
+    fun `cancelling an encrypted backup password changes no configuration or account`() = runTest {
+        input = encryptedInput()
+        var prompts = 0
+
+        val result = manager().importConfig(uri, requestPassword = { prompts++; null })
+
+        assertTrue(result.exceptionOrNull() is ConfigImportCancelledException)
+        assertEquals(1, prompts)
+        verifyNoInteractions(listenTogether, netease, bili, youtube, languagePreferences)
+        assertEquals(0, syncMutations)
+        assertTrue(savedAuth.isEmpty())
+    }
+
+    @Test
+    fun `wrong encrypted backup passwords are consumed before any configuration is changed`() = runTest {
+        input = encryptedInput()
+        val password = "wrong password".toCharArray()
+
+        val result = manager().importConfig(uri, requestPassword = { password })
+
+        assertTrue(result.exceptionOrNull() is ConfigBackupPasswordException)
+        assertTrue(password.all { it == '\u0000' })
+        verifyNoInteractions(listenTogether, netease, bili, youtube, languagePreferences)
+        assertEquals(0, syncMutations)
+        assertTrue(savedAuth.isEmpty())
+    }
+
+    @Test
+    fun `encrypted credential free backup preserves every existing account and uses the original input`() = runTest {
+        github = GitHubSyncConfigSnapshot(token = "existing", repoOwner = "owner", repoName = "repo")
+        webDav = WebDavSyncConfigSnapshot(serverUrl = "https://dav.example", username = "user", password = "existing")
+        val originalGithub = github
+        val originalWebDav = webDav
+        val restored = mutableListOf<ListenTogetherConfigSnapshot>()
+        doAnswer { restored += it.getArgument<ListenTogetherConfigSnapshot>(0); Unit }
+            .`when`(listenTogether).restore(any(ListenTogetherConfigSnapshot::class.java) ?: ListenTogetherConfigSnapshot())
+        input = encryptedInput()
+        val password = "fixture password".toCharArray()
+
+        val result = manager().importConfig(uri, requestPassword = {
+            input = "replaced while the password prompt was open"
+            password
+        }).getOrThrow()
+
+        assertEquals("original", restored.single().nickname)
+        assertEquals(0, result.restoredAuthCount)
+        assertEquals(0, result.restoredSyncCount)
+        assertEquals(originalGithub, github)
+        assertEquals(originalWebDav, webDav)
+        verifyNoInteractions(netease, bili, youtube)
+        verify(resolver, times(1)).openInputStream(uri)
+        assertEquals(0, syncMutations)
+        assertTrue(password.all { it == '\u0000' })
+    }
+
+    @Test
+    fun `unencrypted old backups never request passwords`() = runTest {
+        input = """{"kind":"moe.ouom.neriplayer.config","formatVersion":1,"listenTogether":{}}"""
+
+        val result = manager().importConfig(uri, requestPassword = { error("legacy JSON does not need a password") })
+
+        assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `decryption cannot bypass the existing compatibility storage confirmation`() = runTest {
+        doReturn(true).`when`(youtube).requiresCompatibilityStorageWarning
+        input = encryptedInput(""""listenTogether":{},"youTubeAuth":{"cookieHeader":"SID=synthetic-session"}""")
+        val password = "fixture password".toCharArray()
+        var confirmations = 0
+
+        val result = manager().importConfig(
+            uri,
+            requestPassword = { password },
+            confirmCompatibilityStorage = { confirmations++; false }
+        )
+
+        assertTrue(result.exceptionOrNull() is ConfigImportCancelledException)
+        assertEquals(1, confirmations)
+        verifyNoInteractions(listenTogether)
+        assertTrue(savedAuth.isEmpty())
+        assertTrue(password.all { it == '\u0000' })
+    }
+
+    private fun encryptedInput(sections: String = """"listenTogether":{"nickname":"original"}"""): String =
+        ConfigBackupEncryption.encrypt(
+            """{"kind":"moe.ouom.neriplayer.config","formatVersion":1,$sections}""",
+            "fixture password".toCharArray()
+        )
+
     private suspend fun TestScope.importSections(sections: String): AppConfigImportResult {
         return importResult(sections).getOrThrow()
     }
@@ -456,17 +547,18 @@ class ConfigFileManagerSectionImportTest {
         confirmCompatibilityStorage: suspend () -> Boolean = { false }
     ): Result<AppConfigImportResult> {
         input = """{"kind":"moe.ouom.neriplayer.config","formatVersion":1,$sections}"""
-        val manager = ConfigFileManager(
-            context,
-            listenTogether,
-            netease,
-            bili,
-            youtube,
-            SyncProtocolUpgradeRepository(MemoryPreferencesStore()),
-            UnconfinedTestDispatcher(testScheduler)
-        )
-        return manager.importConfig(uri, confirmCompatibilityStorage)
+        return manager().importConfig(uri, confirmCompatibilityStorage)
     }
+
+    private fun TestScope.manager(): ConfigFileManager = ConfigFileManager(
+        context,
+        listenTogether,
+        netease,
+        bili,
+        youtube,
+        SyncProtocolUpgradeRepository(MemoryPreferencesStore()),
+        UnconfinedTestDispatcher(testScheduler)
+    )
 
     private class MemoryPreferencesStore : DataStore<Preferences> {
         private val state = MutableStateFlow(emptyPreferences())

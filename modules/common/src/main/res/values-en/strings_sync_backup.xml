@@ -3,8 +3,8 @@
     <!-- Sync & Backup -->
     <string name="settings_export_config">Export Config File</string>
     <string name="settings_import_config">Import Config File</string>
-    <string name="settings_export_config_desc">Export settings, sign-in state, and sync config</string>
-    <string name="settings_import_config_desc">Restore settings, sign-in state, and sync config from a file</string>
+    <string name="settings_export_config_desc">Choose password protection and whether to include login state</string>
+    <string name="settings_import_config_desc">Import encrypted files or files without login state</string>
     <string name="settings_config_export_progress">Config Export Progress</string>
     <string name="settings_config_import_progress">Config Import Progress</string>
     <string name="settings_config_exporting">Exporting config file…</string>

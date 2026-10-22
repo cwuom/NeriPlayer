@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="webdav_cleartext_warning">HTTP sends your account, password, and sync data without encryption. They may be intercepted or changed. Use HTTPS whenever possible.</string>
+    <string name="webdav_cleartext_confirm_title">Use an insecure HTTP connection?</string>
+    <string name="webdav_cleartext_confirm_message">Validating the connection sends your WebDAV account and password immediately. HTTP does not encrypt them, so others on the network may obtain your credentials and sync data. Cancel and switch to HTTPS whenever possible.</string>
+    <string name="webdav_cleartext_confirm">Validate and save anyway</string>
+    <string name="webdav_cleartext_cancel">Go back and edit</string>
+</resources>

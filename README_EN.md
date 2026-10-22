@@ -1078,7 +1078,10 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   NeriPlayer still keeps management metadata, but stops writing tags, lyrics,
   and covers back into the audio file itself.
 - `BackupManager` supports playlist JSON export/import and diff analysis.
-- `ConfigFileManager` supports full config export/import for migration.
+- Configuration exports exclude login state by default. You can include music-service authorization
+  and GitHub/WebDAV credentials, and optionally encrypt the file with a password.
+  Imports accept legacy plaintext files; encrypted files require the original password. Files without
+  login state preserve existing accounts and sync credentials on the device.
 
 For implementation details, see [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md).
 
@@ -1187,6 +1190,8 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 - Automatic sync and manual sync are supported.
 - `WorkManager` handles delayed sync, periodic sync, network checks, and retries.
 - WebDAV URL, username, and password are stored in local encrypted storage.
+- HTTP addresses show a plaintext transport warning and require confirmation before validation and saving;
+  HTTPS is recommended.
 - WebDAV stores the V4 manifest and content objects beside the configured file, keeping the `neriplayer-sync-v3.manifest` filename.
   Subsequent manifest writes prefer a strong ETag condition; without one, the manifest fingerprint is
   verified before and after publication, and another device's write triggers a fresh merge instead of an overwrite.
@@ -1370,8 +1375,9 @@ We will keep improving the project over time.
 - For account safety, the app does not write local playback history or playback
   stats back to third-party music platforms, because that kind of reporting may
   be misclassified by platform risk-control systems.
-- Full config export files contain settings, auth data, and sync configuration.
-  They are intended for personal migration and should not be shared publicly.
+- Configuration exports exclude login state by default. Including it also exports auth and sync
+  credentials; use a password, store the file securely, and do not share it publicly.
+  Passwords are not stored in the file and cannot be recovered if forgotten.
 - Android system cloud backup / device transfer is disabled by default.
 - Third-party platform logs and risk-control behavior are governed by the
   corresponding platforms' privacy policies.

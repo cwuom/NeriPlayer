@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_config_export_options_title">Export configuration</string>
+    <string name="settings_config_export_options_description">Choose what to migrate and how to protect the file. Login state is excluded by default.</string>
+    <string name="settings_config_include_login_state">Include login state</string>
+    <string name="settings_config_include_login_state_description">Includes music platform cookies, GitHub tokens, and WebDAV credentials. For personal migration only.</string>
+    <string name="settings_config_encrypt_file">Encrypt with a password</string>
+    <string name="settings_config_encrypt_file_description">This password is required to import the file. It is never saved and cannot be recovered if lost.</string>
+    <string name="settings_config_plaintext_login_warning">Login credentials will be written to the file as plain text. Anyone with the file may access your accounts. Do not share it.</string>
+    <string name="settings_config_password">Password</string>
+    <string name="settings_config_confirm_password">Confirm password</string>
+    <string name="settings_config_password_requirements">Use 8 to 1024 characters, with at least one non-whitespace character</string>
+    <string name="settings_config_password_mismatch">The passwords do not match</string>
+    <string name="settings_config_import_password_title">Enter configuration password</string>
+    <string name="settings_config_import_password_description">This file is encrypted. Enter the password chosen when exporting it. Your password is never saved.</string>
+    <string name="settings_config_password_invalid">The password is incorrect or the file is damaged. Check the password and try again.</string>
+    <string name="settings_config_export_options_expired">Export options have expired. Choose the protection options and export again.</string>
+</resources>

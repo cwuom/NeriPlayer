@@ -82,6 +82,9 @@ class PlayHistorySyncPreferences(private val context: Context) {
         )
     }
 
+    fun snapshot(legacyModeName: () -> String?): SyncPreferencesConfigSnapshot =
+        snapshot(if (prefs.contains(KEY_UPDATE_MODE)) null else legacyModeName())
+
     fun restore(
         snapshot: SyncPreferencesConfigSnapshot,
         legacyModeName: String? = null

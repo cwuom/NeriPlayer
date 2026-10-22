@@ -39,6 +39,23 @@ class SafeModeScreenTest {
     private val events = mutableListOf<String>()
 
     @Test
+    fun `config recovery export offers login state and encryption before choosing a file`() {
+        composeRule.setContent {
+            MaterialTheme {
+                SafeModeExportCard(busy = false, onShowMessage = { _, _ -> })
+            }
+        }
+
+        button(CoreCommonR.string.safe_mode_export_config).performClick()
+
+        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_export_options_title)).assertExists()
+        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_include_login_state)).assertExists()
+        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_encrypt_file)).assertExists()
+        button(CoreCommonR.string.action_cancel).performClick()
+        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_export_options_title)).assertDoesNotExist()
+    }
+
+    @Test
     fun `screen without a pending crash opens and cancels both reset confirmations`() {
         composeRule.setContent {
             MaterialTheme {
