@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.SleepTimerMode
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 
 @Composable
 fun SleepTimerDialog(
@@ -69,8 +70,10 @@ fun SleepTimerDialog(
                 if (timerState.isActive) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
+                        shape = if (NeriDesign.isClean) NeriDesign.tokens.cardShape else CardDefaults.shape,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                            containerColor = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                                else MaterialTheme.colorScheme.primaryContainer
                         )
                     ) {
                         Column(
@@ -120,7 +123,7 @@ fun SleepTimerDialog(
                 Text(
                     text = stringResource(CoreCommonR.string.sleep_timer_countdown),
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary
+                    color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
                 )
 
                 Text(
@@ -160,7 +163,7 @@ fun SleepTimerDialog(
                 Text(
                     text = stringResource(CoreCommonR.string.sleep_timer_other_modes),
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary
+                    color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
                 )
 
                 OutlinedButton(

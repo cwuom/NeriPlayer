@@ -26,7 +26,6 @@ package moe.ouom.neriplayer.ui.screen.history
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
-import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -113,8 +112,6 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.history.toSongItem
-import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
@@ -122,7 +119,6 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
-import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
@@ -133,7 +129,6 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
-import moe.ouom.neriplayer.common.search.SearchTextMatcher
 import moe.ouom.neriplayer.ui.screen.playlist.shouldRequestPlaylistSearchFocus
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
@@ -148,10 +143,7 @@ fun RecentScreen(
     val repo = AppContainer.playHistoryRepo
     val history by repo.historyFlow.collectAsStateWithLifecycle()
 
-    // 可播放的 SongItem 列表
-    val baseSongs: List<SongItem> = remember(history) {
-        history.map { it.toSongItem() }
-    }
+    val recentSongs = rememberRecentSongs(history)
     val hasHistory = history.isNotEmpty()
 
     val context = LocalContext.current
@@ -167,6 +159,7 @@ fun RecentScreen(
     val favoriteSongs = remember(allLocalPlaylists, context) {
         FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)?.songs.orEmpty()
     }
+    val favoriteSongLookup = rememberRecentFavoriteLookup(favoriteSongs)
     val favoriteAddedText = stringResource(CoreCommonR.string.favorite_added)
     val favoriteRemovedText = stringResource(CoreCommonR.string.favorite_removed)
     fun toggleSongFavorite(song: SongItem, isFavoriteSong: Boolean) {
@@ -198,21 +191,8 @@ fun RecentScreen(
         initialValue = false
     )
 
-    val displayedSongs = remember(baseSongs, query, context) {
-        SearchTextMatcher.filterAndRank(query, baseSongs) { song ->
-            listOfNotNull(
-                song.name,
-                song.artist,
-                song.customName,
-                song.customArtist,
-                song.displayAlbum(context),
-                song.localFileName,
-                song.localFilePath,
-                song.originalName,
-                song.originalArtist
-            )
-        }
-    }
+    val displayed = rememberRecentSearchResults(recentSongs, query, context, showSearch)
+    val displayedSongs = displayed.songs
 
     // 多选
     var selectionMode by remember { mutableStateOf(false) }
@@ -328,35 +308,36 @@ fun RecentScreen(
                     contentPadding = PaddingValues(bottom = 16.dp + mini)
                 ) {
                     itemsIndexed(
-                        items = displayedSongs,
-                        key = { index, s -> s.id to index }
-                    ) { index, song ->
-                        val isFavoriteSong = favoriteSongs.any { it.sameIdentityAs(song) }
+                        items = displayed.rows,
+                        key = { _, row -> row.itemKey },
+                        contentType = { _, _ -> "recent_song" }
+                    ) { index, row ->
+                        val song = row.song
+                        val songKey = row.selectionKey
+                        val isFavoriteSong = favoriteSongLookup?.contains(song) == true
                         RecentRowRich(
                             index = index + 1,
                             song = song,
                             downloadPresenceVersion = downloadPresenceVersion,
                             selectionMode = selectionMode,
-                            selected = song.stableKey() in selectedKeys,
+                            selected = songKey in selectedKeys,
                             isCurrentSong = currentSong?.sameIdentityAs(song) == true,
                             isPlaying = currentSong?.sameIdentityAs(song) == true && isPlaying,
-                            onToggleSelect = { toggleSelect(song.stableKey()) },
+                            onToggleSelect = { toggleSelect(songKey) },
                             onLongPress = {
                                 if (!selectionMode) {
                                     selectionMode = true
-                                    selectedKeys = setOf(song.stableKey())
+                                    selectedKeys = setOf(songKey)
                                 } else {
-                                    toggleSelect(song.stableKey())
+                                    toggleSelect(songKey)
                                 }
                             },
                             onClick = {
                                 context.performHapticFeedback()
                                 if (selectionMode) {
-                                    toggleSelect(song.stableKey())
+                                    toggleSelect(songKey)
                                 } else {
-                                    val pos =
-                                        displayedSongs.indexOfFirst { it.sameIdentityAs(song) }
-                                    if (pos >= 0) onSongClick(displayedSongs, pos)
+                                    onSongClick(displayedSongs, index)
                                 }
                             },
                             moreMenu = {
@@ -403,6 +384,7 @@ fun RecentScreen(
                                             }
                                         )
                                         DropdownMenuItem(
+                                            enabled = favoriteSongLookup != null,
                                             text = {
                                                 Text(
                                                     stringResource(

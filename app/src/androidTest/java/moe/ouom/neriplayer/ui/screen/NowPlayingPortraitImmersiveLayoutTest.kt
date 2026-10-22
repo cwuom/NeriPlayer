@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.screen
 
 import android.content.res.Configuration
 import android.net.Uri
+import android.view.KeyEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.Preferences
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -169,6 +171,36 @@ class NowPlayingPortraitImmersiveLayoutTest {
     fun cleanImmersiveModeCanBeEnabledWithALoadedSongOnAShortPortraitWindow() =
         assertActionsReachable(height = 560, fontScale = 1.3f, placement = NowPlayingControlPlacement.LOWER,
             toggleAtRuntime = true)
+
+    @Test
+    fun cleanImmersiveModeLongPressTogglesWithoutSnackbarOrChangingPlayback() {
+        val settings = SettingsRepository(composeRule.activity.applicationContext)
+        runBlocking { settings.setNowPlayingImmersiveMode(false) }
+        render(height = 800, fontScale = 1f, style = UiStyle.Clean)
+        val transport = hasContentDescription(label(CoreCommonR.string.player_play)) or
+            hasContentDescription(label(CoreCommonR.string.player_pause)) or
+            hasContentDescription(label(CoreCommonR.string.player_restore_volume)) or
+            hasContentDescription(label(CoreCommonR.string.player_waiting))
+        val wasPlaying = PlayerManager.isPlayingFlow.value
+
+        for (enabled in listOf(true, false)) {
+            composeRule.onNode(transport and hasClickAction()).performTouchInput { longClick() }
+            composeRule.waitUntil(5_000) {
+                runBlocking { settings.nowPlayingImmersiveModeFlow.first() == enabled }
+            }
+            composeRule.waitForIdle()
+            // 播放页的提示会排队到更多面板挂载 host 后才显示
+            button(CoreCommonR.string.nowplaying_more_options).performTouchInput { click() }
+            composeRule.onNodeWithText(label(CoreCommonR.string.local_song_open_details)).assertIsDisplayed()
+            composeRule.onNodeWithText(label(CoreCommonR.string.nowplaying_immersive_mode_on))
+                .assertDoesNotExist()
+            composeRule.onNodeWithText(label(CoreCommonR.string.nowplaying_immersive_mode_off))
+                .assertDoesNotExist()
+            assertEquals("长按切换沉浸模式不能触发播放或暂停", wasPlaying, PlayerManager.isPlayingFlow.value)
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            composeRule.onNodeWithText(label(CoreCommonR.string.local_song_open_details)).assertDoesNotExist()
+        }
+    }
 
     private fun assertActionsReachable(
         height: Int,

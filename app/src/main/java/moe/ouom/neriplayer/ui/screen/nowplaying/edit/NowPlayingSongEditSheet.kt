@@ -52,7 +52,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -110,6 +109,10 @@ import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricsEditorSheet
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
@@ -739,6 +742,8 @@ internal fun EditSongEditableTextField(
         modifier = modifier.fillMaxWidth(),
         enabled = enabled,
         singleLine = true,
+        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+        colors = neriSearchFieldColors(),
         trailingIcon = {
             HapticIconButton(enabled = enabled, onClick = onRestore) {
                 Icon(Icons.Outlined.Refresh, contentDescription = restoreDescription)
@@ -785,7 +790,7 @@ internal fun EditSongCoverPreview(
             modifier = Modifier
                 .size(size)
                 .testTag("song-edit-cover-preview")
-                .clip(RoundedCornerShape(12.dp))
+                .clip(neriRoundedShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .clickable(enabled = state.clickable, onClick = onClick),
             contentAlignment = Alignment.Center

@@ -20,19 +20,23 @@ import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SkipNext
-import androidx.compose.material3.AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -46,6 +50,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -59,6 +64,9 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import moe.ouom.neriplayer.platform.bilibili.skip.policy.normalizeBiliVideoSkipIntervals
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 
 private const val MAX_BILI_VIDEO_SKIP_TIMESTAMP_MS = 24L * 60L * 60L * 1_000L
 internal const val BILI_VIDEO_SKIP_SMALL_SEEK_STEP_MS = 1_000L
@@ -318,6 +326,9 @@ internal fun BiliVideoSkipIntervalsContent(
                 val activeTarget = checkNotNull(selectedTarget)
                 Box(modifier = Modifier.fillMaxWidth()) {
                     ListItem(
+                        colors = if (NeriDesign.isClean) ListItemDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                        ) else ListItemDefaults.colors(),
                         headlineContent = { Text(activeTarget.label) },
                         supportingContent = {
                             if (activeTarget.durationMs > 0L) {
@@ -325,13 +336,16 @@ internal fun BiliVideoSkipIntervalsContent(
                             }
                         },
                         leadingContent = { Icon(Icons.Outlined.SkipNext, null) },
-                        modifier = Modifier.clickable(enabled = targetOptions.size > 1) {
+                        modifier = Modifier.then(
+                            if (NeriDesign.isClean) Modifier.clip(NeriDesign.tokens.cardShape) else Modifier
+                        ).clickable(enabled = targetOptions.size > 1) {
                             targetMenuExpanded = true
                         }
                     )
                     DropdownMenu(
                         expanded = targetMenuExpanded,
-                        onDismissRequest = { targetMenuExpanded = false }
+                        onDismissRequest = { targetMenuExpanded = false },
+                        shape = if (NeriDesign.isClean) NeriDesign.tokens.menuShape else MenuDefaults.shape
                     ) {
                         targetOptions.forEach { option ->
                             DropdownMenuItem(
@@ -359,6 +373,8 @@ internal fun BiliVideoSkipIntervalsContent(
                 ) {
                     OutlinedTextField(
                         value = startText,
+                        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+                        colors = neriSearchFieldColors(),
                         onValueChange = {
                             lockSelectedTargetForEditing()
                             startText = it
@@ -373,6 +389,8 @@ internal fun BiliVideoSkipIntervalsContent(
                     )
                     OutlinedTextField(
                         value = endText,
+                        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+                        colors = neriSearchFieldColors(),
                         onValueChange = {
                             lockSelectedTargetForEditing()
                             endText = it
@@ -564,6 +582,12 @@ internal fun BiliVideoSkipIntervalsContent(
                 } else {
                     draftIntervals.forEachIndexed { index, interval ->
                         ListItem(
+                            modifier = Modifier.then(
+                                if (NeriDesign.isClean) Modifier.clip(NeriDesign.tokens.cardShape) else Modifier
+                            ),
+                            colors = if (NeriDesign.isClean) ListItemDefaults.colors(
+                                containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                            ) else ListItemDefaults.colors(),
                             headlineContent = {
                                 Text(
                                     "${formatBiliVideoSkipTimestamp(interval.startMs)} - " +
@@ -584,7 +608,10 @@ internal fun BiliVideoSkipIntervalsContent(
                                 }
                             }
                         )
-                        if (index < draftIntervals.lastIndex) HorizontalDivider()
+                        if (index < draftIntervals.lastIndex) HorizontalDivider(
+                            color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = NeriDesign.tokens.hairlineAlpha)
+                                else DividerDefaults.color
+                        )
                     }
                 }
 

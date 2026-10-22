@@ -554,6 +554,9 @@ class AudioPlayerService : Service() {
     private val carPlaybackBinding = CarPlaybackBindingOwner {
         presentationOwner.sessionOrNull()?.sessionToken
     }
+    private var lastCarQueueSession: MediaSession? = null
+    private var lastCarQueueSongs: List<SongItem>? = null
+    private var lastCarQueueIndex = -1
     private val pendingStartCommands = ArrayDeque<PendingStartCommand>()
     private val pendingPlayerActions = ArrayDeque<() -> Unit>()
     private var latestStartId = 0
@@ -774,8 +777,15 @@ class AudioPlayerService : Service() {
     }
 
     private fun updateCarQueue() {
+        val session = presentationOwner.sessionOrNull() ?: return
         val queue = PlayerManager.currentQueueSnapshot()
-        presentationOwner.sessionOrNull()?.setQueue(carMediaSessionQueue(this, queue.playlist, queue.currentIndex))
+        // 队列和当前歌曲分别通知同一快照，只发布一次车机会话队列
+        if (lastCarQueueSession === session && lastCarQueueSongs === queue.playlist &&
+            lastCarQueueIndex == queue.currentIndex) return
+        session.setQueue(carMediaSessionQueue(this, queue.playlist, queue.currentIndex))
+        lastCarQueueSession = session
+        lastCarQueueSongs = queue.playlist
+        lastCarQueueIndex = queue.currentIndex
     }
 
     private fun dispatchMediaButtonIntent(intent: Intent?) {
@@ -1667,6 +1677,9 @@ class AudioPlayerService : Service() {
 
     private fun releaseMediaSessionForDestroy() {
         if (presentationOwnerDelegate.isInitialized()) presentationOwner.releaseSessionForDestroy()
+        lastCarQueueSession = null
+        lastCarQueueSongs = null
+        lastCarQueueIndex = -1
     }
 
     private fun releasePlayerRuntimeAfterServiceStop(preservePlaybackForRestart: Boolean) {
@@ -1803,6 +1816,9 @@ class AudioPlayerService : Service() {
         if (presentationOwnerDelegate.isInitialized()) {
             presentationOwner.releaseSessionAfterForegroundFailure(reason)
         }
+        lastCarQueueSession = null
+        lastCarQueueSongs = null
+        lastCarQueueIndex = -1
     }
 
     private fun releasePlayerAfterForegroundFailure(reason: String, preservePlayerRuntime: Boolean) {

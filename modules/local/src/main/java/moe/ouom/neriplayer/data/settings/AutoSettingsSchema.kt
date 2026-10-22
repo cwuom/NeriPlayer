@@ -155,7 +155,7 @@ object AutoSettingsSchema {
         @AutoSetting(order = 46)
         val preferHighRefreshRate = autoSwitchSetting(
             key = "prefer_high_refresh_rate",
-            defaultValue = false,
+            defaultValue = true,
             titleRes = CoreCommonR.string.settings_prefer_high_refresh_rate,
             descriptionRes = CoreCommonR.string.settings_prefer_high_refresh_rate_desc,
             icon = AutoSettingIcon.AutoAwesome

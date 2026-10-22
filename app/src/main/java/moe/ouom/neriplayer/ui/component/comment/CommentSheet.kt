@@ -37,6 +37,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SheetState
@@ -77,6 +78,7 @@ import moe.ouom.neriplayer.ui.component.sheet.HalfExpandableSheetPanel
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState
 import moe.ouom.neriplayer.ui.viewmodel.CommentViewModel
@@ -484,8 +486,10 @@ private fun CommentSortMenu(ui: CommentUiState, onSort: (CommentSort) -> Unit) {
             enabled = ui.source != null && ui.likingIds.isEmpty() && !ui.isSending,
             modifier = Modifier.semantics { contentDescription = description },
             colors = ButtonDefaults.textButtonColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                containerColor = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+                    else MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSecondaryContainer
             )
         ) {
             if (ui.pendingSort != null) {
@@ -497,7 +501,11 @@ private fun CommentSortMenu(ui: CommentUiState, onSort: (CommentSort) -> Unit) {
             Text(stringResource(commentSortTextRes(ui.pendingSort ?: ui.sort)))
             Icon(Icons.Outlined.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = if (NeriDesign.isClean) NeriDesign.tokens.menuShape else MenuDefaults.shape
+        ) {
             ui.source?.platform?.let { platform ->
                 CommentSort.supportedBy(platform).forEach { sort ->
                     DropdownMenuItem(
