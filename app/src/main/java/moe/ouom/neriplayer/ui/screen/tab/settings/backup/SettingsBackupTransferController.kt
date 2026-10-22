@@ -122,6 +122,12 @@ internal fun rememberSettingsBackupTransferController(
     val config: ConfigTransferViewModel = viewModel()
     val playlistState by playlists.uiState.collectAsStateWithLifecycleCompat()
     val configState by config.uiState.collectAsStateWithLifecycleCompat()
+    if (configState.requiresAuthStorageConfirmation) {
+        SettingsConfigImportStorageWarning(
+            onConfirm = config::confirmAuthStorageImport,
+            onDismiss = config::cancelAuthStorageImport
+        )
+    }
     val handler = BackupSafResultHandler(context, playlists, config)
     val exportPlaylist = rememberLauncherForActivityResult(
         contract = CreateDocument("application/json"),

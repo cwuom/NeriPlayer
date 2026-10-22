@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.viewmodel.debug
  */
 
 import android.app.Application
+import java.io.IOException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -115,8 +116,13 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun clearCookies() {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { api.logout() }
+            try {
+                cookieRepo.clear()
+            } catch (_: IOException) {
+                emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_storage_clear_failed))
+                return@launch
+            }
             cookieStore.clear()
-            cookieRepo.clear()
             clearWebViewLoginState(
                 context = getApplication(),
                 platform = WebLoginPlatform.NETEASE
@@ -221,7 +227,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                     }
 
                     if (!cookieRepo.saveCookies(cookieStore)) {
-                        emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_cookie_invalid))
+                        emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_storage_save_failed))
                         return@launch
                     }
 
@@ -256,7 +262,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
             cookieStore.putAll(validation.sanitizedCookies)
 
             if (!cookieRepo.saveCookies(cookieStore)) {
-                emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_cookie_invalid))
+                emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_storage_save_failed))
                 return@launch
             }
 

@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.viewmodel.auth
  */
 
 import android.app.Application
+import java.io.IOException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -99,7 +100,16 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearCookies() {
         viewModelScope.launch(Dispatchers.IO) {
-            repo.clear()
+            try {
+                repo.clear()
+            } catch (_: IOException) {
+                _events.send(
+                    BiliAuthEvent.ShowSnack(
+                        getApplication<Application>().getString(CoreCommonR.string.auth_storage_clear_failed)
+                    )
+                )
+                return@launch
+            }
             clearWebViewLoginState(
                 context = getApplication(),
                 platform = WebLoginPlatform.BILI
@@ -135,7 +145,16 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
 
-            repo.saveCookies(map)
+            try {
+                repo.saveCookies(map)
+            } catch (_: IOException) {
+                _events.send(
+                    BiliAuthEvent.ShowSnack(
+                        getApplication<Application>().getString(CoreCommonR.string.auth_storage_save_failed)
+                    )
+                )
+                return@launch
+            }
             _events.send(BiliAuthEvent.LoginSuccess)
         }
     }

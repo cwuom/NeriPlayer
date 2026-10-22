@@ -8,19 +8,24 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Base64
+import java.io.IOException
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.network.http.parsing.parseRawCookieText
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 
 class DebugCookieImportReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        when (intent.action) {
-            ACTION_IMPORT_AUTH -> handleImport(intent)
-            ACTION_CLEAR_AUTH -> handleClear(intent)
-            else -> {
-                resultCode = Activity.RESULT_CANCELED
-                resultData = "unsupported action"
+        try {
+            when (intent.action) {
+                ACTION_IMPORT_AUTH -> handleImport(intent)
+                ACTION_CLEAR_AUTH -> handleClear(intent)
+                else -> {
+                    resultCode = Activity.RESULT_CANCELED
+                    resultData = "unsupported action"
+                }
             }
+        } catch (_: IOException) {
+            fail(PERSISTENCE_FAILURE)
         }
     }
 
@@ -54,7 +59,10 @@ class DebugCookieImportReceiver : BroadcastReceiver() {
                     fail("invalid netease cookies")
                     return
                 }
-                AppContainer.neteaseCookieRepo.saveCookies(validation.sanitizedCookies)
+                if (!AppContainer.neteaseCookieRepo.saveCookies(validation.sanitizedCookies)) {
+                    fail(PERSISTENCE_FAILURE)
+                    return
+                }
                 succeed(platform, validation.sanitizedCookies.keys)
             }
 
@@ -122,6 +130,8 @@ class DebugCookieImportReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        private const val PERSISTENCE_FAILURE = "failed to persist auth"
+
         const val ACTION_IMPORT_AUTH = "moe.ouom.neriplayer.debug.IMPORT_AUTH"
         const val ACTION_CLEAR_AUTH = "moe.ouom.neriplayer.debug.CLEAR_AUTH"
 

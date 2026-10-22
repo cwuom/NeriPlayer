@@ -4,12 +4,20 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.job
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.config.AppConfigImportResult
 import moe.ouom.neriplayer.data.config.ConfigFileManager
+import moe.ouom.neriplayer.data.config.ConfigImportCancelledException
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.common.logging.NPLogger
 
@@ -19,6 +27,8 @@ class ConfigTransferViewModel : ViewModel() {
 
     private var configFileManager: ConfigFileManager? = null
     private var strings: ConfigTransferStrings? = null
+    private var pendingCompatibilityConfirmation: CompletableDeferred<Boolean>? = null
+    private var importJob: Job? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
@@ -67,37 +77,85 @@ class ConfigTransferViewModel : ViewModel() {
     }
 
     fun importConfig(uri: Uri) {
+        if (_uiState.value.isImporting) return
         val manager = configFileManager ?: return
         val resources = strings ?: return
 
         _uiState.value = _uiState.value.copy(
             isImporting = true,
-            importProgress = resources.importing
+            importProgress = resources.importing,
+            lastImportSuccess = null,
+            lastImportMessage = null
         )
 
-        viewModelScope.launch {
-            val result = manager.importConfig(uri)
-            result.fold(
-                onSuccess = { importResult ->
-                    _uiState.value = _uiState.value.copy(
-                        isImporting = false,
-                        importProgress = null,
-                        lastImportSuccess = true,
-                        lastImportMessage = resources.importSuccess(importResult),
-                        importRequiresActivityRecreate = importResult.requiresActivityRecreate
-                    )
-                },
-                onFailure = { exception ->
-                    _uiState.value = _uiState.value.copy(
-                        isImporting = false,
-                        importProgress = null,
-                        lastImportSuccess = false,
-                        lastImportMessage = resources.importFailed(exception.message),
-                        importRequiresActivityRecreate = false
-                    )
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val result = manager.importConfig(uri, ::awaitCompatibilityStorageConfirmation)
+                result.fold(
+                    onSuccess = { importResult ->
+                        _uiState.value = _uiState.value.copy(
+                            isImporting = false,
+                            importProgress = null,
+                            lastImportSuccess = true,
+                            lastImportMessage = resources.importSuccess(importResult),
+                            importRequiresActivityRecreate = importResult.requiresActivityRecreate
+                        )
+                    },
+                    onFailure = { exception ->
+                        val cancelled = exception is ConfigImportCancelledException
+                        _uiState.value = _uiState.value.copy(
+                            isImporting = false,
+                            importProgress = null,
+                            lastImportSuccess = if (cancelled) null else false,
+                            lastImportMessage = if (cancelled) null else resources.importFailed(exception.message),
+                            importRequiresActivityRecreate = false
+                        )
+                    }
+                )
+            } finally {
+                if (importJob === currentCoroutineContext().job) {
+                    importJob = null
+                    clearPendingImportState()
                 }
-            )
+            }
         }
+        importJob = job
+        job.start()
+    }
+
+    private suspend fun awaitCompatibilityStorageConfirmation(): Boolean = withContext(Dispatchers.Main.immediate) {
+        val confirmation = CompletableDeferred<Boolean>()
+        pendingCompatibilityConfirmation = confirmation
+        _uiState.value = _uiState.value.copy(requiresAuthStorageConfirmation = true)
+        try {
+            confirmation.await()
+        } finally {
+            if (pendingCompatibilityConfirmation === confirmation) {
+                pendingCompatibilityConfirmation = null
+                _uiState.value = _uiState.value.copy(requiresAuthStorageConfirmation = false)
+            }
+        }
+    }
+
+    fun confirmAuthStorageImport() {
+        pendingCompatibilityConfirmation?.complete(true)
+    }
+
+    fun cancelAuthStorageImport() {
+        val job = importJob ?: return
+        importJob = null
+        job.cancel()
+        pendingCompatibilityConfirmation?.cancel()
+        pendingCompatibilityConfirmation = null
+        clearPendingImportState()
+    }
+
+    private fun clearPendingImportState() {
+        _uiState.value = _uiState.value.copy(
+            isImporting = false,
+            importProgress = null,
+            requiresAuthStorageConfirmation = false
+        )
     }
 
     fun clearExportStatus() {
@@ -127,6 +185,7 @@ class ConfigTransferViewModel : ViewModel() {
     fun generateConfigFileName(): String = generateBackupFileName()
 
     override fun onCleared() {
+        cancelAuthStorageImport()
         configFileManager = null
         strings = null
     }
@@ -221,5 +280,6 @@ data class ConfigTransferUiState(
     val lastExportMessage: String? = null,
     val lastImportSuccess: Boolean? = null,
     val lastImportMessage: String? = null,
+    val requiresAuthStorageConfirmation: Boolean = false,
     val importRequiresActivityRecreate: Boolean = false
 )
