@@ -12,7 +12,6 @@ import moe.ouom.neriplayer.core.player.heartbeat.consumeHeartbeatReadyNextSong
 import moe.ouom.neriplayer.core.player.heartbeat.heartbeatModeState
 import moe.ouom.neriplayer.core.player.heartbeat.heartbeatReadyNextSong
 import moe.ouom.neriplayer.core.player.heartbeat.appendHeartbeatSongAndPlay
-import moe.ouom.neriplayer.core.player.heartbeat.clearHeartbeatPending
 import moe.ouom.neriplayer.core.player.heartbeat.isHeartbeatSourceSupported
 import moe.ouom.neriplayer.core.player.heartbeat.markHeartbeatSongFailed
 import moe.ouom.neriplayer.core.player.heartbeat.requestHeartbeatSelectionAsync
@@ -141,22 +140,19 @@ private fun PlayerManager.playAfterTrackCompletion(action: QueueTrackCompletion)
         return
     }
     // 心动模式优先：开启且能选出下一首时接管本次推进，否则完全沿用原有 nextStep 行为
-    if (heartbeatAdvanceOrFallback(
-            reason = "trackCompletion:$action",
-            fallback = {
-                // 必须走不带心动包装的推进：再调 nextImpl 会重新进入本函数，
-                // 一次切歌发起两次预取、甚至两条官方请求互相覆盖。
-                requestNextTrack(
-                    force = PlayerQueueNavigationOwner.forceWrapAfterCompletion(action),
-                    commandSource = activePlaybackCommandSource,
-                    bypassLoudVolumeWarning = true,
-                    allowRememberedLongFormPosition = false
-                )
-            }
-        )
-    ) {
-        return
-    }
+    heartbeatAdvanceOrFallback(
+        reason = "trackCompletion:$action",
+        fallback = {
+            // 必须走不带心动包装的推进：再调 nextImpl 会重新进入本函数，
+            // 一次切歌发起两次预取、甚至两条官方请求互相覆盖。
+            requestNextTrack(
+                force = PlayerQueueNavigationOwner.forceWrapAfterCompletion(action),
+                commandSource = activePlaybackCommandSource,
+                bypassLoudVolumeWarning = true,
+                allowRememberedLongFormPosition = false
+            )
+        }
+    )
 }
 
 /**
@@ -172,13 +168,7 @@ private fun PlayerManager.heartbeatAdvanceOrFallback(
     resetFailureCount: Boolean = true,
     fallback: () -> Unit,
 ): Boolean {
-    if (heartbeatModeState != HeartbeatMode.ON) {
-        fallback()
-        return false
-    }
-    // 外部音源（B 站 / YouTube）不下发到网易云接口，也不改动它们的队列
-    if (!isHeartbeatSourceSupported()) {
-        clearHeartbeatPending()
+    if (!useHeartbeatAdvance()) {
         fallback()
         return false
     }
@@ -196,6 +186,15 @@ private fun PlayerManager.heartbeatAdvanceOrFallback(
     appendHeartbeatSongAndPlay(ready, activePlaybackCommandSource, resetFailureCount)
     return true
 }
+
+/**
+ * 心动推进是否可用：开关开着，且当前歌不是 B 站 / YouTube 这类外部音源。
+ *
+ * 外部音源既不该发请求给网易云接口，也不该被心动逻辑改写队列，
+ * 因此直接交回原有推进逻辑。
+ */
+private fun PlayerManager.useHeartbeatAdvance(): Boolean =
+    heartbeatModeState == HeartbeatMode.ON && isHeartbeatSourceSupported()
 internal fun PlayerManager.advanceAfterPlaybackFailure(
     source: String,
     commandSource: PlaybackCommandSource = activePlaybackCommandSource
@@ -229,22 +228,19 @@ private fun PlayerManager.dispatchFailureAdvance(
     // 否则「失败 → 自动换下一首 → 又选中同一首」会无限循环。
     _currentSongFlow.value?.let { markHeartbeatSongFailed(it) }
     // 播放失败时先用心动候选顶上（任务书 §3.5 步骤 5），拿不到才按原失败策略推进
-    if (heartbeatAdvanceOrFallback(
-            reason = "playbackFailure",
-            resetFailureCount = false,
-            fallback = {
-                markAutoTrackAdvance()
-                requestNextTrack(
-                    force = PlayerQueueNavigationOwner.forceWrapAfterFailure(action),
-                    commandSource = commandSource,
-                    bypassLoudVolumeWarning = true,
-                    allowRememberedLongFormPosition = false
-                )
-            },
-        )
-    ) {
-        return
-    }
+    heartbeatAdvanceOrFallback(
+        reason = "playbackFailure",
+        resetFailureCount = false,
+        fallback = {
+            markAutoTrackAdvance()
+            requestNextTrack(
+                force = PlayerQueueNavigationOwner.forceWrapAfterFailure(action),
+                commandSource = commandSource,
+                bypassLoudVolumeWarning = true,
+                allowRememberedLongFormPosition = false
+            )
+        },
+    )
 }
 
 internal fun PlayerManager.publishShuffledCurrentSong(shuffledQueue: PlayerQueueSnapshot?) {
@@ -291,8 +287,21 @@ internal fun PlayerManager.nextImpl(
 ) {
     ensureInitialized()
     if (!initialized) return
-    // USB 独占音量确认必须在心动接管之前走一遍：命中预取候选时不会经过
-    // requestNextTrack → confirmNextTrackVolume，会绕过这道保护直接起播。
+    advanceWithGuards(force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition)
+}
+
+/**
+ * 下一首的统一入口：先过 USB 独占音量确认，再让心动模式尝试接管。
+ *
+ * USB 确认必须在心动接管之前：命中预取候选时不会经过
+ * [requestNextTrack] → [confirmNextTrackVolume]，会绕过这道保护直接起播。
+ */
+private fun PlayerManager.advanceWithGuards(
+    force: Boolean,
+    commandSource: PlaybackCommandSource,
+    bypassLoudVolumeWarning: Boolean,
+    allowRememberedLongFormPosition: Boolean,
+) {
     if (requestUsbExclusiveLoudPlaybackConfirmation(
             commandSource = commandSource,
             bypassWarning = bypassLoudVolumeWarning,
@@ -300,17 +309,16 @@ internal fun PlayerManager.nextImpl(
                 nextImpl(force, commandSource, bypassLoudVolumeWarning = true, allowRememberedLongFormPosition)
             }
         )
-    ) return
-    // 心动模式优先：用户主动跳过时也走心跳候选，避免「跳过一次就掉出心动歌流」（任务书 §3.5 步骤 6）
-    if (heartbeatAdvanceOrFallback(
-            reason = "userSkip",
-            fallback = {
-                requestNextTrack(force, commandSource, bypassLoudVolumeWarning = true, allowRememberedLongFormPosition)
-            },
-        )
     ) {
         return
     }
+    // 心动模式优先：用户主动跳过时也走心跳候选，避免「跳过一次就掉出心动歌流」（任务书 §3.5 步骤 6）
+    heartbeatAdvanceOrFallback(
+        reason = "userSkip",
+        fallback = {
+            requestNextTrack(force, commandSource, bypassLoudVolumeWarning = true, allowRememberedLongFormPosition)
+        },
+    )
 }
 
 private fun PlayerManager.requestNextTrack(

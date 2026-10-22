@@ -118,11 +118,6 @@ internal fun PlayerManager.consumeHeartbeatReadyNextSong(): SongItem? {
     return heartbeatPending.take(anchor)
 }
 
-/** 丢弃已经无意义的预取结果（音源切换、开关关闭等场景）。 */
-internal fun PlayerManager.clearHeartbeatPending() {
-    heartbeatPending.clear()
-}
-
 /** 由 `app` 的 DI 容器在启动时安装一次。 */
 fun installHeartbeatSelector(selector: HeartbeatNextTrackSelector) {
     heartbeatSelectorHolder = selector
