@@ -167,24 +167,39 @@ private fun PlayerManager.heartbeatAdvanceOrFallback(
     reason: String,
     resetFailureCount: Boolean = true,
     fallback: () -> Unit,
+): Boolean =
+    if (useHeartbeatAdvance()) {
+        advanceWithReadyHeartbeat(reason, resetFailureCount, fallback)
+    } else {
+        fallbackAndReturnFalse(fallback)
+    }
+
+/**
+ * 心动推进可用时的切歌：有就绪候选就插播，没有就沿用原有推进并补一次预取。
+ *
+ * 预取必须排在 [fallback] **之后**：预取以 `_currentSongFlow.value` 为基准歌曲，
+ * 若在 fallback 之前发起，请求会锚在即将被切走的那首歌上。
+ */
+private fun PlayerManager.advanceWithReadyHeartbeat(
+    reason: String,
+    resetFailureCount: Boolean,
+    fallback: () -> Unit,
 ): Boolean {
-    if (!useHeartbeatAdvance()) {
-        fallback()
-        return false
-    }
-    val ready = heartbeatReadyNextSong
-    if (ready == null) {
-        // 没有就绪的预取结果：先沿用原有推进切到下一首，**再**补一次预取。
-        // 顺序不能反：预取以 `_currentSongFlow.value` 为基准歌曲，
-        // 若在 fallback 之前发起，请求会锚在即将被切走的那首歌上，
-        // 下一次切歌时又拿到不匹配的候选。
-        fallback()
-        requestHeartbeatSelectionAsync(reason)
-        return false
-    }
+    val ready = heartbeatReadyNextSong ?: return missedReadyHeartbeat(reason, fallback)
     consumeHeartbeatReadyNextSong()
     appendHeartbeatSongAndPlay(ready, activePlaybackCommandSource, resetFailureCount)
     return true
+}
+
+private fun PlayerManager.missedReadyHeartbeat(reason: String, fallback: () -> Unit): Boolean {
+    fallback()
+    requestHeartbeatSelectionAsync(reason)
+    return false
+}
+
+private fun fallbackAndReturnFalse(fallback: () -> Unit): Boolean {
+    fallback()
+    return false
 }
 
 /**
@@ -193,8 +208,10 @@ private fun PlayerManager.heartbeatAdvanceOrFallback(
  * 外部音源既不该发请求给网易云接口，也不该被心动逻辑改写队列，
  * 因此直接交回原有推进逻辑。
  */
-private fun PlayerManager.useHeartbeatAdvance(): Boolean =
-    heartbeatModeState == HeartbeatMode.ON && isHeartbeatSourceSupported()
+private fun PlayerManager.useHeartbeatAdvance(): Boolean {
+    if (heartbeatModeState != HeartbeatMode.ON) return false
+    return isHeartbeatSourceSupported()
+}
 internal fun PlayerManager.advanceAfterPlaybackFailure(
     source: String,
     commandSource: PlaybackCommandSource = activePlaybackCommandSource
