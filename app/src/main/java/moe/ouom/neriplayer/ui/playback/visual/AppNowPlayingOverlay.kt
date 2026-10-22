@@ -178,6 +178,7 @@ internal fun AppNowPlayingOverlay(
         val morph = rememberNowPlayingMorphState(
             visible = visible,
             flight = sharedCoverFlight,
+            artwork = { resolveNowPlayingOverlayArtwork(cover.songKey, sharedCoverFlight) },
             backProgress = { if (backPreviewEnabled) dismissState.progress else 0f }
         )
         if (morph.mounted) {
@@ -185,7 +186,6 @@ internal fun AppNowPlayingOverlay(
                 morph = morph,
                 flight = sharedCoverFlight,
                 capsuleInWindow = { sharedCoverFlight?.miniPlayerContainerBounds },
-                artwork = { resolveNowPlayingOverlayArtwork(cover.songKey, sharedCoverFlight) },
                 cardColor = remember(theme.activeCoverSeedHex) {
                     nowPlayingMorphCardColor(theme.activeCoverSeedHex)
                 },

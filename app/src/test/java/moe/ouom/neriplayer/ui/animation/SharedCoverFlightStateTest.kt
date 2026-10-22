@@ -21,6 +21,27 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SharedCoverFlightStateTest {
     @Test
+    fun linkedMorphKeepsItsPreferredArtworkUntilTheNextHandoff() {
+        val state = SharedCoverFlightState()
+        val bounds = Rect(16f, 700f, 64f, 748f)
+        val mini = ImageBitmap(2, 2)
+        val preferred = ImageBitmap(4, 4)
+        val replacement = ImageBitmap(3, 3)
+        state.reportSource(bounds, 10f, mini)
+        state.beginLinked(preferred)
+        assertSame(preferred, state.linkedBitmap)
+
+        state.reportSource(bounds, 10f, replacement)
+        state.beginLinked(replacement)
+        assertSame(preferred, state.linkedBitmap)
+
+        state.endLinked()
+        assertNull(state.linkedBitmap)
+        state.beginLinked()
+        assertSame(replacement, state.linkedBitmap)
+    }
+
+    @Test
     fun placeholderClearsArtworkFromThePreviousSong() {
         val state = SharedCoverFlightState()
         val cover = ImageBitmap(2, 2)

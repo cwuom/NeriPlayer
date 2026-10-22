@@ -15,6 +15,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -85,9 +86,11 @@ internal class NowPlayingMorphState(initiallyVisible: Boolean) {
 internal fun rememberNowPlayingMorphState(
     visible: Boolean,
     flight: SharedCoverFlightState?,
+    artwork: () -> ImageBitmap? = { null },
     backProgress: () -> Float = { 0f }
 ): NowPlayingMorphState {
     val state = remember { NowPlayingMorphState(initiallyVisible = visible) }
+    val latestArtwork by rememberUpdatedState(artwork)
     val dragging = flight?.dragOpenProgress != null
     LaunchedEffect(visible, dragging) {
         val linked = flight
@@ -95,7 +98,7 @@ internal fun rememberNowPlayingMorphState(
             // the finger owns the morph; release hands over to the open or close branch
             state.closing = false
             state.mounted = true
-            linked.beginLinked()
+            linked.beginLinked(latestArtwork())
             snapshotFlow { linked.dragOpenProgress }.collect { dragProgress ->
                 if (dragProgress != null) state.progress.snapTo(dragProgress.coerceIn(0f, 1f))
             }
@@ -103,19 +106,19 @@ internal fun rememberNowPlayingMorphState(
             state.closing = false
             state.mounted = true
             if (state.progress.value < 1f) {
-                linked?.beginLinked()
+                linked?.beginLinked(latestArtwork())
                 if (state.progress.value <= 0f) repeat(MorphSettleFrames) { withFrameNanos { } }
                 state.progress.animateTo(1f, spring(MorphOpenDamping, MorphOpenStiffness, 0.001f))
             }
             linked?.endLinked()
             // a back gesture scrubs the close morph; commit continues it, cancel springs back
             snapshotFlow { backProgress().coerceIn(0f, 1f) }.collect { back ->
-                if (back > 0f) linked?.beginLinked() else linked?.endLinked()
+                if (back > 0f) linked?.beginLinked(latestArtwork()) else linked?.endLinked()
                 state.progress.snapTo(1f - back * MorphBackPreviewDepth)
             }
         } else if (state.mounted) {
             state.closing = true
-            linked?.beginLinked()
+            linked?.beginLinked(latestArtwork())
             state.progress.animateTo(0f, tween(MorphCloseDurationMillis, easing = FastOutSlowInEasing))
             state.mounted = false
             linked?.endLinked()
@@ -138,7 +141,6 @@ internal fun NowPlayingContainerMorph(
     morph: NowPlayingMorphState,
     flight: SharedCoverFlightState?,
     capsuleInWindow: () -> Rect?,
-    artwork: () -> ImageBitmap?,
     cardColor: Color = MorphCardColor,
     content: @Composable () -> Unit
 ) {
@@ -218,7 +220,7 @@ internal fun NowPlayingContainerMorph(
         Canvas(Modifier.fillMaxSize()) {
             if (flight?.linked != true || !flight.hidesCovers) return@Canvas
             val p = progress.value.coerceIn(0f, 1f)
-            val bitmap = artwork() ?: flight.linkedBitmap ?: return@Canvas
+            val bitmap = flight.linkedBitmap ?: return@Canvas
             val from = flight.miniCoverBounds?.translate(-geometry.origin) ?: return@Canvas
             val to = geometry.pageCover(flight.targetCoordinates) ?: return@Canvas
             val rect = lerp(from, to, p)

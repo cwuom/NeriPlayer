@@ -138,13 +138,13 @@ class SharedCoverFlightState {
         get() = flying || (linked && linkedBitmap != null && sourceBounds != null &&
             targetCoordinates?.isAttached == true)
 
-    fun beginLinked() {
+    fun beginLinked(preferredBitmap: ImageBitmap? = null) {
         if (linked) return
         // a Material flight must not keep painting its bitmap under the morph
         job?.cancel()
         flying = false
         // 固定本轮接管条件，避免图片回调在动画中途切换真实封面与替代封面
-        linkedBitmap = sourceBitmap
+        linkedBitmap = preferredBitmap ?: sourceBitmap
         linked = true
     }
 

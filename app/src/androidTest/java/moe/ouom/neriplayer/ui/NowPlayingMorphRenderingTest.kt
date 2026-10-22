@@ -147,6 +147,27 @@ class NowPlayingMorphRenderingTest {
         assertEquals("the flying cover must keep its position until handoff", before, coverBounds())
     }
 
+    @Test
+    fun replacingANonNullBitmapMidMorphKeepsTheCapturedArtwork() {
+        render(390.dp, 844.dp, hasSource = true, hasBitmap = true)
+        composeRule.runOnIdle { runBlocking { morph.progress.snapTo(0.5f) } }
+        val before = coverBounds()
+
+        composeRule.runOnIdle {
+            val replacement = ImageBitmap(48, 48).also {
+                Canvas(it).drawRect(Rect(0f, 0f, 48f, 48f), Paint().apply { color = Color.Green })
+            }
+            flight.reportSource(checkNotNull(flight.miniCoverBounds), 8f, replacement)
+        }
+
+        val frame = composeRule.onNodeWithTag("morphViewport").captureToImage().toPixelMap()
+        val pixel = frame[before.center.x.toInt(), before.center.y.toInt()]
+        assertTrue(
+            "a replacement bitmap must wait until the next linked morph",
+            pixel.red > 0.7f && pixel.blue > 0.7f && pixel.green < 0.2f
+        )
+    }
+
     private fun magentaBitmap() = ImageBitmap(48, 48).also {
         Canvas(it).drawRect(Rect(0f, 0f, 48f, 48f), Paint().apply { color = Color.Magenta })
     }
@@ -202,8 +223,7 @@ class NowPlayingMorphRenderingTest {
                         NowPlayingContainerMorph(
                             morph = morph,
                             flight = flight,
-                            capsuleInWindow = { flight.miniPlayerContainerBounds },
-                            artwork = { flight.miniCoverBitmap }
+                            capsuleInWindow = { flight.miniPlayerContainerBounds }
                         ) {
                             Box(Modifier.fillMaxSize().background(Color.Black)) {
                                 Box(
