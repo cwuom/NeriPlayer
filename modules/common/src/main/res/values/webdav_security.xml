@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="webdav_cleartext_warning">HTTP 不会加密传输，账号、密码和同步数据可能被窃听或篡改，建议使用 HTTPS</string>
+    <string name="webdav_cleartext_confirm_title">使用不安全的 HTTP 连接？</string>
+    <string name="webdav_cleartext_confirm_message">验证连接会立即发送 WebDAV 账号和密码。HTTP 不加密传输，网络中的其他人可能获取这些凭据和同步数据。建议取消并改用 HTTPS。</string>
+    <string name="webdav_cleartext_confirm">仍然验证并保存</string>
+    <string name="webdav_cleartext_cancel">返回修改</string>
+</resources>
