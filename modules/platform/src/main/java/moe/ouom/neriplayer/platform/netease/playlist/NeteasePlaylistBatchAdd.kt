@@ -25,8 +25,8 @@ package moe.ouom.neriplayer.platform.netease.playlist
 
 import moe.ouom.neriplayer.common.logging.NPLogger
 
-/** 整个请求被拒绝时拆小批次也会得到同样结果, #445 中逐首重试仍然返回 524 */
-private val NETEASE_WHOLE_BATCH_REJECTION_CODES = setOf(301, 401, 524)
+/** 登录失败无法通过拆分恢复，524 仍需隔离批次中的失败歌曲 */
+private val NETEASE_WHOLE_BATCH_REJECTION_CODES = setOf(301, 401)
 
 /** 限流或网络异常时整次同步最多退避重试的次数 */
 private const val NETEASE_PLAYLIST_ADD_MAX_TRANSIENT_RETRIES = 3

@@ -9,6 +9,24 @@ internal const val NETEASE_SONG_DETAIL_BATCH_SIZE = 300
 internal const val NETEASE_COMPARE_FAILED_MESSAGE =
     "网易云云端比对失败，已停止同步以避免误同步"
 
+internal class NeteasePlaylistAddSession(
+    private val client: NeteaseClient,
+    private val playlistId: Long
+) {
+    private var isLikedPlaylist: Boolean? = null
+    private val likeSong = client.createSongLiker()
+
+    fun add(ids: List<Long>): NeteasePlaylistAddOutcome {
+        val outcome = addNeteasePlaylistSongIdsBatch(client, playlistId, ids)
+        if (ids.size != 1 || outcome !is NeteasePlaylistAddOutcome.Rejected || outcome.code != 524) {
+            return outcome
+        }
+        val confirmedLikedPlaylist = isLikedPlaylist
+            ?: (resolveLikedNeteasePlaylistId(client) == playlistId).also { isLikedPlaylist = it }
+        return if (confirmedLikedPlaylist) addNeteaseLikedSong(client, ids.single(), likeSong) else outcome
+    }
+}
+
 internal fun fetchNeteasePlaylistTrackSnapshot(
     client: NeteaseClient,
     playlistId: Long
@@ -100,6 +118,33 @@ internal fun addNeteasePlaylistSongIdsBatch(
             "LocalPlaylistRepo",
             "addSongsToPlaylist returned $outcome for playlistId=$playlistId, size=${songIds.size}"
         )
+    }
+    return outcome
+}
+
+internal fun addNeteaseLikedSong(
+    client: NeteaseClient,
+    songId: Long,
+    likeSong: (Long) -> String
+): NeteasePlaylistAddOutcome {
+    val raw = runCatching { likeSong(songId) }
+        .getOrElse { error ->
+            NPLogger.e("LocalPlaylistRepo", "likeSong failed for songId=$songId: ${error.message}", error)
+            return NeteasePlaylistAddOutcome.Transient(-1, error.message)
+        }
+    val response = if (parseNeteaseCode(raw) == 301 && client.hasLogin()) {
+        retryNeteaseSessionRequest(
+            client = client,
+            ensureFailureMessage = "ensureWeapiSession retry failed",
+            retryFailureMessage = "likeSong retry failed for songId=$songId"
+        ) { likeSong(songId) }
+            ?: return NeteasePlaylistAddOutcome.Transient(-1, null)
+    } else {
+        raw
+    }
+    val outcome = parseNeteasePlaylistAddOutcome(response)
+    if (outcome != NeteasePlaylistAddOutcome.Ok) {
+        NPLogger.w("LocalPlaylistRepo", "likeSong returned $outcome for songId=$songId")
     }
     return outcome
 }

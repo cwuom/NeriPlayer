@@ -93,18 +93,36 @@ class NeteasePlaylistBatchAddTest {
 
     @Test
     fun `whole batch rejection codes reject every song without splitting`() {
-        val calls = mutableListOf<List<Long>>()
-        val noCopyright = NeteasePlaylistAddOutcome.Rejected(524, "no copyright")
+        for (code in listOf(301, 401)) {
+            val calls = mutableListOf<List<Long>>()
+            val rejected = NeteasePlaylistAddOutcome.Rejected(code, "login required")
+            val result = addNeteasePlaylistSongIdsInBatches(listOf(1L, 2L, 3L, 4L), 50, noPause) { ids ->
+                calls += ids.toList()
+                rejected
+            }
 
-        val result = addNeteasePlaylistSongIdsInBatches(listOf(1L, 2L, 3L, 4L), 50, noPause) { ids ->
+            assertEquals(listOf(listOf(1L, 2L, 3L, 4L)), calls)
+            assertEquals(emptySet<Long>(), result.addedIds)
+            assertEquals(setOf(1L, 2L, 3L, 4L), result.failedIds)
+            assertEquals((1L..4L).associateWith { rejected }, result.rejections)
+        }
+    }
+
+    @Test
+    fun `524 isolates rejected songs without blocking the rest of a mixed batch`() {
+        val calls = mutableListOf<List<Long>>()
+        val rejected = NeteasePlaylistAddOutcome.Rejected(524, "当前环境异常，已取消喜欢")
+
+        val result = addNeteasePlaylistSongIdsInBatches((1L..14L).toList(), 50, noPause) { ids ->
             calls += ids.toList()
-            noCopyright
+            if (4L in ids || 9L in ids) rejected else NeteasePlaylistAddOutcome.Ok
         }
 
-        assertEquals(listOf(listOf(1L, 2L, 3L, 4L)), calls)
-        assertEquals(emptySet<Long>(), result.addedIds)
-        assertEquals(setOf(1L, 2L, 3L, 4L), result.failedIds)
-        assertEquals((1L..4L).associateWith { noCopyright }, result.rejections)
+        assertEquals((1L..14L).toSet() - setOf(4L, 9L), result.addedIds)
+        assertEquals(setOf(4L, 9L), result.failedIds)
+        assertEquals(mapOf(4L to rejected, 9L to rejected), result.rejections)
+        assertTrue(listOf(4L) in calls)
+        assertTrue(listOf(9L) in calls)
     }
 
     @Test
@@ -138,6 +156,22 @@ class NeteasePlaylistBatchAddTest {
         assertEquals((1L..200L).toSet(), result.failedIds)
         assertTrue(result.rejections.keys.containsAll(calls.filter { it.size == 1 }.flatten()))
         assertTrue(result.rejections.size < 200)
+    }
+
+    @Test
+    fun `persistent 524 remains bounded and never marks unsent songs as rejected`() {
+        val calls = mutableListOf<List<Long>>()
+        val rejected = NeteasePlaylistAddOutcome.Rejected(524, "当前环境异常，已取消喜欢")
+
+        val result = addNeteasePlaylistSongIdsInBatches((1L..200L).toList(), 50, noPause) { ids ->
+            calls += ids.toList()
+            rejected
+        }
+
+        assertEquals(34, calls.size)
+        assertTrue(result.addedIds.isEmpty())
+        assertEquals((1L..200L).toSet(), result.failedIds)
+        assertEquals(calls.filter { it.size == 1 }.flatten().toSet(), result.rejections.keys)
     }
 
     @Test

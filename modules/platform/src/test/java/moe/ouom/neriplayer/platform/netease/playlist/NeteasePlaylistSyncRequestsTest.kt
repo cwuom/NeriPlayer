@@ -151,6 +151,32 @@ class NeteasePlaylistSyncRequestsTest {
     }
 
     @Test
+    fun `like fallback does not refresh a logged out session or accept a malformed response`() {
+        for ((raw, expected) in listOf(
+            """{"code":301}""" to NeteasePlaylistAddOutcome.Rejected(301, null),
+            "invalid" to NeteasePlaylistAddOutcome.Transient(-1, null)
+        )) {
+            val client = mock(NeteaseClient::class.java)
+            `when`(client.likeSong(1L)).thenReturn(raw)
+
+            assertEquals(expected, addNeteaseLikedSong(client, 1L) { client.likeSong(it) })
+            verify(client).likeSong(1L)
+            verify(client, never()).ensureWeapiSession()
+        }
+    }
+
+    @Test
+    fun `like fallback preserves an unknown result when session retry fails`() {
+        val client = loggedInClient()
+        `when`(client.likeSong(1L)).thenReturn("""{"code":301}""")
+            .thenThrow(IllegalStateException("retry failed"))
+
+        assertEquals(NeteasePlaylistAddOutcome.Transient(-1, null), addNeteaseLikedSong(client, 1L) { client.likeSong(it) })
+        verify(client, times(2)).likeSong(1L)
+        verify(client).ensureWeapiSession()
+    }
+
+    @Test
     fun `playlist insertion preserves direct success and nonretryable outcomes`() {
         val ids = listOf(1L)
         for ((raw, expected) in listOf(
