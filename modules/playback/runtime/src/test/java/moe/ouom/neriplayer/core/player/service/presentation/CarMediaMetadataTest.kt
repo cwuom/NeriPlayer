@@ -126,12 +126,12 @@ class CarMediaMetadataTest {
     }
 
     @Test
-    fun `combined lyrics preserve artist album and normal display metadata`() {
+    fun `combined lyrics stay visible in display metadata while preserving artist and album`() {
         val metadata = serviceMetadataText(song(), ExternalBluetoothLyricPayload("line", "译文"), AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, false, BluetoothMetadataMode.SongAndLyrics)
         assertEquals("Song | line | 译文", metadata.title)
         assertEquals("Artist", metadata.artist)
         assertEquals("Album", metadata.album)
-        assertEquals("Song", metadata.displayTitle)
+        assertEquals("Song | line | 译文", metadata.displayTitle)
         assertEquals("Artist", metadata.displaySubtitle)
         assertEquals("line | 译文", metadata.displayDescription)
     }
