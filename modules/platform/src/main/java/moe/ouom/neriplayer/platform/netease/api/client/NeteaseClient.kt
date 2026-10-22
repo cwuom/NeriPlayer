@@ -1244,22 +1244,24 @@ class NeteaseClient(
         val raw = getUserPlaylists(uid, 0, 1000)
         return try {
             val root = JSONObject(raw)
-            val list = root.optJSONArray("playlist") ?: JSONArray()
+            if (root.optInt("code", -1) != 200) return raw
+            val list = root.optJSONArray("playlist")
+                ?: return """{ "code": 500, "msg": "invalid playlist response" }"""
             var likedId: Long? = null
             for (i in 0 until list.length()) {
                 val pl = list.optJSONObject(i) ?: continue
                 val specialType = pl.optInt("specialType", 0)
-                val name = pl.optString("name", "")
                 val creatorId = pl.optJSONObject("creator")?.optLong("userId") ?: -1L
-                if (creatorId == uid && (specialType == 5 || name.contains("我喜欢的音乐"))) {
-                    likedId = pl.optLong("id")
+                val playlistId = pl.optLong("id", 0L)
+                if (creatorId == uid && specialType == 5 && playlistId > 0L) {
+                    likedId = playlistId
                     break
                 }
             }
             if (likedId != null) {
                 """{ "code": 200, "playlistId": $likedId }"""
             } else {
-                """{ "code": 404, "msg": "liked playlist not found" }"""
+                """{ "code": 404, "msg": "liked playlist not found", "neriplayerLikedPlaylistNotFound": true }"""
             }
         } catch (e: Exception) {
             """{ "code": 500, "msg": ${jsonQuote(e.message ?: "parse error")} }"""
@@ -1282,16 +1284,42 @@ class NeteaseClient(
      * 喜欢/取消喜欢一首歌
      * @param songId 歌曲 ID
      * @param like 是否喜欢 (true=喜欢, false=取消喜欢)
-     * @param time 可选参数, 时间戳
+     * @param time 可选播放时长, 默认 3
      */
     @Throws(IOException::class)
     fun likeSong(songId: Long, like: Boolean = true, time: Long? = null): String {
-        val params = mutableMapOf<String, Any>(
+        return callWeApi("/radio/like", buildSongLikeParams(songId, like, time), usePersistedCookies = true)
+    }
+
+    internal fun createSongLiker(): (Long) -> String {
+        val session = sessionStore.currentSession()
+        return { songId ->
+            if (!session.hasLogin() || sessionStore.currentSession() !== session) {
+                "{\"code\":301}"
+            } else {
+                requestForSession(
+                    session = session,
+                    url = "https://music.163.com/weapi/radio/like",
+                    params = buildSongLikeParams(songId),
+                    mode = CryptoMode.WEAPI,
+                    method = "POST",
+                    usePersistedCookies = true
+                )
+            }
+        }
+    }
+
+    private fun buildSongLikeParams(
+        songId: Long,
+        like: Boolean = true,
+        time: Long? = null
+    ): Map<String, Any> {
+        return mapOf(
+            "alg" to "itembased",
             "trackId" to songId.toString(),
-            "like" to like.toString()
+            "like" to like,
+            "time" to (time ?: 3L).toString()
         )
-        time?.let { params["time"] = it.toString() }
-        return callWeApi("/song/like", params, usePersistedCookies = true)
     }
 
     /**
