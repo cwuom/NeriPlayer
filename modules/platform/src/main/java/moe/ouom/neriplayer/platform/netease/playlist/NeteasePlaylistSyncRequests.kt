@@ -13,7 +13,7 @@ internal class NeteasePlaylistAddSession(
     private val client: NeteaseClient,
     private val playlistId: Long
 ) {
-    private var isLikedPlaylist: Boolean? = null
+    private var likedPlaylistIdentity: ParsedNeteasePlaylistId? = null
     private val likeSong = client.createSongLiker()
 
     fun add(ids: List<Long>): NeteasePlaylistAddOutcome {
@@ -21,9 +21,10 @@ internal class NeteasePlaylistAddSession(
         if (ids.size != 1 || outcome !is NeteasePlaylistAddOutcome.Rejected || outcome.code != 524) {
             return outcome
         }
-        val confirmedLikedPlaylist = isLikedPlaylist
-            ?: (resolveLikedNeteasePlaylistId(client) == playlistId).also { isLikedPlaylist = it }
-        return if (confirmedLikedPlaylist) addNeteaseLikedSong(client, ids.single(), likeSong) else outcome
+        val identity = likedPlaylistIdentity ?: resolveLikedNeteasePlaylist(client).also {
+            if (it.success) likedPlaylistIdentity = it
+        }
+        return if (identity.playlistId == playlistId) addNeteaseLikedSong(client, ids.single(), likeSong) else outcome
     }
 }
 
@@ -283,20 +284,25 @@ internal fun fetchResolvableNeteaseSongIds(
 }
 
 internal fun resolveLikedNeteasePlaylistId(client: NeteaseClient): Long? {
+    return resolveLikedNeteasePlaylist(client).playlistId
+}
+
+private fun resolveLikedNeteasePlaylist(client: NeteaseClient): ParsedNeteasePlaylistId {
     val raw = runCatching { client.getLikedPlaylistId(0) }
         .getOrElse { error ->
             NPLogger.e("LocalPlaylistRepo", "getLikedPlaylistId failed: ${error.message}", error)
-            return null
+            return ParsedNeteasePlaylistId(playlistId = null, success = false)
         }
     if (parseNeteaseCode(raw) == 301 && client.hasLogin()) {
         val retried = retryNeteaseSessionRequest(
             client = client,
             ensureFailureMessage = "ensureWeapiSession retry failed",
             retryFailureMessage = "getLikedPlaylistId retry failed"
-        ) { client.getLikedPlaylistId(0) } ?: return null
-        return parseNeteaseLikedPlaylistId(retried).playlistId
+        ) { client.getLikedPlaylistId(0) }
+            ?: return ParsedNeteasePlaylistId(playlistId = null, success = false)
+        return parseNeteaseLikedPlaylistId(retried)
     }
-    return parseNeteaseLikedPlaylistId(raw).playlistId
+    return parseNeteaseLikedPlaylistId(raw)
 }
 
 private fun retryNeteaseSessionRequest(

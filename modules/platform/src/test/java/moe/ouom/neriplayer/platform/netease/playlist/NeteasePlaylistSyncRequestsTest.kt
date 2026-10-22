@@ -135,6 +135,33 @@ class NeteasePlaylistSyncRequestsTest {
     }
 
     @Test
+    fun `malformed liked identity is not cached as a confirmed mismatch`() {
+        val client = loggedInClient()
+        `when`(client.createSongLiker()).thenReturn { """{"code":200}""" }
+        `when`(client.addSongsToPlaylist(91L, listOf(1L))).thenReturn("""{"code":524}""")
+        `when`(client.getLikedPlaylistId(0L)).thenReturn("invalid", """{"code":200,"playlistId":91}""")
+        val session = NeteasePlaylistAddSession(client, 91L)
+
+        assertEquals(NeteasePlaylistAddOutcome.Rejected(524, null), session.add(listOf(1L)))
+        assertEquals(NeteasePlaylistAddOutcome.Ok, session.add(listOf(1L)))
+        verify(client, times(2)).getLikedPlaylistId(0L)
+    }
+
+    @Test
+    fun `exceptional liked identity lookup can recover within the same add session`() {
+        val client = loggedInClient()
+        `when`(client.createSongLiker()).thenReturn { """{"code":200}""" }
+        `when`(client.addSongsToPlaylist(91L, listOf(1L))).thenReturn("""{"code":524}""")
+        `when`(client.getLikedPlaylistId(0L)).thenThrow(IllegalStateException("temporary identity outage"))
+            .thenReturn("""{"code":200,"playlistId":91}""")
+        val session = NeteasePlaylistAddSession(client, 91L)
+
+        assertEquals(NeteasePlaylistAddOutcome.Rejected(524, null), session.add(listOf(1L)))
+        assertEquals(NeteasePlaylistAddOutcome.Ok, session.add(listOf(1L)))
+        verify(client, times(2)).getLikedPlaylistId(0L)
+    }
+
+    @Test
     fun `playlist insertion retries one logged in 301 and returns the retry outcome`() {
         val ids = listOf(1L, 2L)
         val recovered = loggedInClient()

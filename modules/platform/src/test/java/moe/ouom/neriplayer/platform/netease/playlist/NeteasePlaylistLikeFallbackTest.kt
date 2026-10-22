@@ -60,6 +60,69 @@ class NeteasePlaylistLikeFallbackTest {
     }
 
     @Test
+    fun `a temporary identity failure does not block fallback for a later song`() = runTest {
+        val client = mixedBatchClient()
+        `when`(client.addSongsToPlaylist(eq(91L), anyList())).thenReturn(rejected)
+        `when`(client.getLikedPlaylistId(0L)).thenReturn(
+            """{"code":503}""",
+            """{"code":200,"playlistId":91}"""
+        )
+        `when`(client.likeSong(2L)).thenReturn("""{"code":200}""")
+
+        val result = NeteasePlaylistSync(noPause) { it.name }
+            .syncSongsToNeteasePlaylist(client, 91L, songs())
+
+        assertEquals(1, result.added)
+        assertEquals(1, result.failed)
+        assertEquals(listOf(1L), result.rejectedSongIds)
+        verify(client, times(2)).getLikedPlaylistId(0L)
+        verify(client, never()).likeSong(1L)
+        verify(client).likeSong(2L)
+    }
+
+    @Test
+    fun `failed identity session refresh can recover for a later song`() = runTest {
+        val client = mixedBatchClient()
+        `when`(client.addSongsToPlaylist(eq(91L), anyList())).thenReturn(rejected)
+        `when`(client.getLikedPlaylistId(0L)).thenReturn(
+            """{"code":301}""",
+            """{"code":301}""",
+            """{"code":200,"playlistId":91}"""
+        )
+        `when`(client.likeSong(2L)).thenReturn("""{"code":200}""")
+
+        val result = NeteasePlaylistSync(noPause) { it.name }
+            .syncSongsToNeteasePlaylist(client, 91L, songs())
+
+        assertEquals(1, result.added)
+        assertEquals(1, result.failed)
+        assertEquals(listOf(1L), result.rejectedSongIds)
+        verify(client, times(3)).getLikedPlaylistId(0L)
+        verify(client, times(2)).ensureWeapiSession()
+        verify(client, never()).likeSong(1L)
+        verify(client).likeSong(2L)
+    }
+
+    @Test
+    fun `confirmed absent or different liked identity is cached without liking songs`() = runTest {
+        for (identity in listOf("""{"code":200}""", """{"code":200,"playlistId":92}""")) {
+            val client = mixedBatchClient()
+            `when`(client.addSongsToPlaylist(eq(91L), anyList())).thenReturn(rejected)
+            `when`(client.getLikedPlaylistId(0L)).thenReturn(identity)
+
+            val result = NeteasePlaylistSync(noPause) { it.name }
+                .syncSongsToNeteasePlaylist(client, 91L, songs())
+
+            assertEquals(0, result.added)
+            assertEquals(2, result.failed)
+            assertEquals(listOf(1L, 2L), result.rejectedSongIds)
+            verify(client).getLikedPlaylistId(0L)
+            verify(client, never()).likeSong(1L)
+            verify(client, never()).likeSong(2L)
+        }
+    }
+
+    @Test
     fun `account switch while resolving liked identity cannot like a song in the new account`() = runTest {
         val client = mixedBatchClient()
         val account = NeteaseClient { error("Comment token is outside this test") }

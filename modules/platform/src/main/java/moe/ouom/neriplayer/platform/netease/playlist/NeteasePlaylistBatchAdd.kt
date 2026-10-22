@@ -32,7 +32,7 @@ private val NETEASE_WHOLE_BATCH_REJECTION_CODES = setOf(301, 401)
 private const val NETEASE_PLAYLIST_ADD_MAX_TRANSIENT_RETRIES = 3
 private const val NETEASE_PLAYLIST_ADD_BACKOFF_MS = 1_000L
 
-/** 拆分和重试最多额外发出的请求数, 避免大量失败时请求数成倍增长 */
+/** 拆分和重试最多额外提交的批次数, 不包含单批内部的会话重试和喜欢回退 */
 private const val NETEASE_PLAYLIST_ADD_EXTRA_REQUESTS = 30
 
 /** 单次添加请求的结果 */
@@ -76,8 +76,7 @@ fun addNeteasePlaylistSongIdsInBatches(
         .toList()
     val adder = NeteasePlaylistBatchAdder(
         addBatch = addBatch,
-        pause = pause,
-        remainingRequests = batches.size + NETEASE_PLAYLIST_ADD_EXTRA_REQUESTS
+        pause = pause
     )
     batches.forEach(adder::submit)
     return adder.result()
@@ -85,25 +84,20 @@ fun addNeteasePlaylistSongIdsInBatches(
 
 private class NeteasePlaylistBatchAdder(
     private val addBatch: (List<Long>) -> NeteasePlaylistAddOutcome,
-    private val pause: (Long) -> Unit,
-    private var remainingRequests: Int
+    private val pause: (Long) -> Unit
 ) {
     private val addedIds = LinkedHashSet<Long>()
     private val failedIds = LinkedHashSet<Long>()
     private val rejections = LinkedHashMap<Long, NeteasePlaylistAddOutcome.Rejected>()
+    private var remainingExtraRequests = NETEASE_PLAYLIST_ADD_EXTRA_REQUESTS
     private var transientRetries = 0
     private var stopped = false
 
     fun submit(ids: List<Long>) {
-        if (!stopped && remainingRequests <= 0) {
-            NPLogger.w("LocalPlaylistRepo", "addSongsToPlaylist request budget exhausted, ${ids.size} songs not sent")
-            stopped = true
-        }
         if (stopped) {
             failedIds.addAll(ids)
             return
         }
-        remainingRequests -= 1
         val outcome = runCatching { addBatch(ids) }
             .getOrElse { NeteasePlaylistAddOutcome.Transient(-1, it.message) }
         when (outcome) {
@@ -115,11 +109,21 @@ private class NeteasePlaylistBatchAdder(
 
     fun result() = NeteasePlaylistBatchAddResult(addedIds, failedIds, rejections)
 
+    private fun submitExtra(ids: List<Long>) {
+        if (remainingExtraRequests <= 0) {
+            NPLogger.w("LocalPlaylistRepo", "addSongsToPlaylist extra request budget exhausted, ${ids.size} songs not sent")
+            failedIds.addAll(ids)
+            return
+        }
+        remainingExtraRequests -= 1
+        submit(ids)
+    }
+
     private fun reject(ids: List<Long>, rejected: NeteasePlaylistAddOutcome.Rejected) {
         if (ids.size > 1 && rejected.code !in NETEASE_WHOLE_BATCH_REJECTION_CODES) {
             val midpoint = ids.size / 2
-            submit(ids.subList(0, midpoint))
-            submit(ids.subList(midpoint, ids.size))
+            submitExtra(ids.subList(0, midpoint))
+            submitExtra(ids.subList(midpoint, ids.size))
             return
         }
         NPLogger.w("LocalPlaylistRepo", "NetEase rejected songs $ids: code=${rejected.code}, message=${rejected.message}")
@@ -136,7 +140,7 @@ private class NeteasePlaylistBatchAdder(
         }
         pause(NETEASE_PLAYLIST_ADD_BACKOFF_MS shl transientRetries)
         transientRetries += 1
-        submit(ids)
+        submitExtra(ids)
     }
 }
 

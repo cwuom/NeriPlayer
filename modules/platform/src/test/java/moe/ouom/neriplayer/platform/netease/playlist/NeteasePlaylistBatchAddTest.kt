@@ -175,6 +175,24 @@ class NeteasePlaylistBatchAddTest {
     }
 
     @Test
+    fun `exhausted splitting budget preserves the next healthy batch submission`() {
+        val calls = mutableListOf<List<Long>>()
+        val rejected = NeteasePlaylistAddOutcome.Rejected(524, "当前环境异常，已取消喜欢")
+        val healthyIds = (51L..100L).toList()
+
+        val result = addNeteasePlaylistSongIdsInBatches((1L..100L).toList(), 50, noPause) { ids ->
+            calls += ids.toList()
+            if (ids.any { it <= 50L }) rejected else NeteasePlaylistAddOutcome.Ok
+        }
+
+        assertEquals(healthyIds.toSet(), result.addedIds)
+        assertEquals((1L..50L).toSet(), result.failedIds)
+        assertEquals(healthyIds, calls.last())
+        assertEquals(2 + 30, calls.size)
+        assertEquals(calls.filter { it.size == 1 }.flatten().toSet(), result.rejections.keys)
+    }
+
+    @Test
     fun `a rejection without a server message still explains its code`() {
         assertEquals("code 524", NeteasePlaylistAddOutcome.Rejected(524, null).reason)
         assertEquals("no copyright", NeteasePlaylistAddOutcome.Rejected(524, "no copyright").reason)
