@@ -11,7 +11,7 @@ import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
 import moe.ouom.neriplayer.core.player.queue.heartbeat.consumeHeartbeatReadyNextSong
 import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatModeState
 import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatReadyNextSong
-import moe.ouom.neriplayer.core.player.queue.heartbeat.insertHeartbeatSongAndPlay
+import moe.ouom.neriplayer.core.player.queue.heartbeat.appendHeartbeatSongAndPlay
 import moe.ouom.neriplayer.core.player.queue.heartbeat.markHeartbeatSongFailed
 import moe.ouom.neriplayer.core.player.queue.heartbeat.requestHeartbeatSelectionAsync
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
@@ -181,7 +181,7 @@ private fun PlayerManager.heartbeatAdvanceOrFallback(
         return false
     }
     consumeHeartbeatReadyNextSong()
-    insertHeartbeatSongAndPlay(ready, activePlaybackCommandSource)
+    appendHeartbeatSongAndPlay(ready, activePlaybackCommandSource)
     return true
 }
 internal fun PlayerManager.advanceAfterPlaybackFailure(

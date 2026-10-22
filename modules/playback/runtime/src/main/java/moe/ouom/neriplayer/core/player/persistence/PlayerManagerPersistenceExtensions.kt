@@ -489,7 +489,8 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
     _repeatModeFlow.value = repeatModeSetting
     // 走 setHeartbeatMode 而不是直接写 heartbeatModeState：开启时会顺带刷新官方可用性、
     // 清理 pending、reset 选择器，恢复路径与用户手动开开关保持同一套不变量。
-    setHeartbeatMode(HeartbeatMode.normalized(snapshot.heartbeatMode))
+    // userInitiated=false：这是恢复上次状态，不是用户刚点出来的，不该弹提示。
+    setHeartbeatMode(HeartbeatMode.normalized(snapshot.heartbeatMode), userInitiated = false)
 
     player.shuffleModeEnabled = snapshot.shuffleEnabled
 

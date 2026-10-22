@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.ltw
 
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.playback.pauseImpl
+import moe.ouom.neriplayer.core.player.queue.heartbeat.disableHeartbeatForListenTogetherRoom
 import moe.ouom.neriplayer.core.player.url.currentListenTogetherShareableStreamUrls
 import moe.ouom.neriplayer.core.player.url.currentPlaybackRequiresListenTogetherAuthoritativeStream
 import moe.ouom.neriplayer.core.player.url.hasUsableListenTogetherLocalDirectStream
@@ -24,6 +25,10 @@ object PlayerListenTogetherSongMapper : ListenTogetherSongMapper by DefaultListe
 )
 
 object PlayerManagerListenTogetherHost : ListenTogetherPlaybackHost {
+    override fun onListenTogetherSessionJoined() {
+        PlayerManager.disableHeartbeatForListenTogetherRoom()
+    }
+
     override val currentSongFlow get() = PlayerManager.currentSongFlow
     override val currentQueueFlow get() = PlayerManager.currentQueueFlow
     override val isPlayingFlow get() = PlayerManager.isPlayingFlow

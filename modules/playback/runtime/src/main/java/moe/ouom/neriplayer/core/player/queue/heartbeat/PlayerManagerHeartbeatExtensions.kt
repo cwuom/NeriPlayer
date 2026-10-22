@@ -12,7 +12,6 @@ import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
-import moe.ouom.neriplayer.data.model.playback.queue.QueueInsertPlacement
 import moe.ouom.neriplayer.platform.netease.playmode.NeteasePlaymodeIntelligenceRepository
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatCandidateExhaustionTracker
@@ -39,6 +38,30 @@ private val heartbeatModeStateFlow = MutableStateFlow(HeartbeatMode.OFF)
  * UI 据此走「本地推荐」文案。
  */
 private val heartbeatOfficialAvailableStateFlow = MutableStateFlow(false)
+
+/**
+ * 「因进入一起听房间而被自动关闭」的次数，只增不减。
+ *
+ * 用计数器而不是布尔值：连续两次进房间各被关一次，UI 要各提示一次。
+ * UI 只观察它的变化，不读具体数值。
+ */
+private val heartbeatRoomAutoOffStateFlow = MutableStateFlow(0)
+
+/**
+ * 「在房间里想开启却被拒绝」的次数，只增不减。
+ *
+ * 与 [heartbeatRoomAutoOffStateFlow] 分开，是因为两件事的提示文案不同：
+ * 一个是「已关闭」，一个是「不能开启」。
+ */
+private val heartbeatRoomRejectedStateFlow = MutableStateFlow(0)
+
+/**
+ * 「用户主动开启心动模式」的次数，只增不减。
+ *
+ * 只统计用户主动开启（含点按钮、设置页开关），不统计状态恢复——
+ * 否则每次冷启动都会弹一条提示。UI 观察它的变化来提示「当前是本地推荐」。
+ */
+private val heartbeatUserEnabledStateFlow = MutableStateFlow(0)
 
 /** 由 `app` 的 DI 容器在启动时安装一次的官方仓库引用；未安装时官方能力视为不可用。 */
 @Volatile
@@ -132,6 +155,30 @@ val PlayerManager.heartbeatCandidateExhaustedFlow: StateFlow<Boolean>
     get() = heartbeatCandidateExhaustion.isExhaustedFlow
 
 /**
+ * 「进房间时心动模式被自动关掉」的计数，UI 观察它来弹一句提示。
+ *
+ * 一起听房间里的播放由房间控制，心动模式选出来的歌没人会听，
+ * 所以加入房间时直接关掉（任务书 §八「优先房间控制」）。
+ */
+val PlayerManager.heartbeatRoomAutoOffFlow: StateFlow<Int>
+    get() = heartbeatRoomAutoOffStateFlow
+
+/**
+ * 「在房间里试图开启心动模式被拒绝」的计数，UI 观察它来弹一句提示。
+ */
+val PlayerManager.heartbeatRoomRejectedFlow: StateFlow<Int>
+    get() = heartbeatRoomRejectedStateFlow
+
+/**
+ * 「用户主动开启心动模式」的计数，UI 观察它来决定要不要提示当前推荐来源。
+ *
+ * 与 [heartbeatModeFlow] 的区别：状态恢复也会让 [heartbeatModeFlow] 变成 ON，
+ * 但用户并没有做任何操作，不该被打扰。
+ */
+val PlayerManager.heartbeatUserEnabledFlow: StateFlow<Int>
+    get() = heartbeatUserEnabledStateFlow
+
+/**
  * 重新判定官方接口可用性。
  *
  * 判定规则刻意保持宽松：只要登录态还在且没有熔断，就认为官方可用，
@@ -154,31 +201,47 @@ private fun isHeartbeatOfficialCircuitOpen(): Boolean =
  *
  * 开启时会异步预取一次下一首（任务书 §3.5 步骤 2），避免播完才请求导致卡顿；
  * 关闭时复位选择器内部状态（失败计数/熔断）与预取快照，下次开启重新计数。
+ *
+ * [userInitiated] 标记这次调用是不是用户点出来的。恢复上次会话的状态也会走本函数，
+ * 那种情况不该被当成「用户刚开启」，否则冷启动会凭空弹提示。
  */
 fun PlayerManager.setHeartbeatMode(
     mode: Int,
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
+    userInitiated: Boolean = commandSource == PlaybackCommandSource.LOCAL,
 ) {
     val normalized = HeartbeatMode.normalized(mode)
+    // 一起听房间里不允许开启：房间里的播放由房间控制，心动模式选出来的歌没人会听。
+    // 只拦「开启」方向，关闭永远放行——否则用户进房间后就再也关不掉了。
+    if (normalized == HeartbeatMode.ON && isListenTogetherActive()) {
+        heartbeatRoomRejectedStateFlow.value += 1
+        NPLogger.d(TAG, "setHeartbeatMode: 一起听房间内不允许开启，已拒绝（source=$commandSource）")
+        return
+    }
     val changed = heartbeatModeState != normalized
     heartbeatModeState = normalized
-    heartbeatModeStateFlow.value = normalized
-    if (!changed) return
-    NPLogger.d(TAG, "setHeartbeatMode: $normalized, source=$commandSource")
-    if (normalized == HeartbeatMode.OFF) {
-        heartbeatPending.clear()
-        heartbeatCandidateExhaustion.reset()
-        (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
-        // 任务书 §3.6：退出心动模式时让候选池缓存失效，
-        // 避免下次开启还沿用上次会话的收藏/历史快照。
-        invalidateHeartbeatCandidateCache()
-    } else {
-        heartbeatCandidateExhaustion.reset()
-        // 重新开启视为新会话：清空上一次会话的失败曲目黑名单（任务书 §3.5）
-        (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
-        refreshHeartbeatOfficialAvailability()
-        requestHeartbeatSelectionAsync("enable")
+    if (changed) {
+        NPLogger.d(TAG, "setHeartbeatMode: $normalized, source=$commandSource")
+        if (normalized == HeartbeatMode.OFF) {
+            heartbeatPending.clear()
+            heartbeatCandidateExhaustion.reset()
+            (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
+            // 任务书 §3.6：退出心动模式时让候选池缓存失效，
+            // 避免下次开启还沿用上次会话的收藏/历史快照。
+            invalidateHeartbeatCandidateCache()
+        } else {
+            heartbeatCandidateExhaustion.reset()
+            // 重新开启视为新会话：清空上一次会话的失败曲目黑名单（任务书 §3.5）
+            (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
+            refreshHeartbeatOfficialAvailability()
+            requestHeartbeatSelectionAsync("enable")
+            // 只有用户主动开启才计数：状态恢复走的是同一个函数，但那是静默的。
+            if (userInitiated) heartbeatUserEnabledStateFlow.value += 1
+        }
     }
+    // 开关状态最后才广播：UI 收到「已开启」时，官方可用性必须已经是刷新后的值，
+    // 否则「登录后可启用云端推荐」这条提示会拿到上一轮的结果（例如上次熔断过就误报本地推荐）。
+    heartbeatModeStateFlow.value = normalized
 }
 
 /**
@@ -225,6 +288,21 @@ fun PlayerManager.cycleHeartbeatMode(
         if (heartbeatModeState == HeartbeatMode.ON) HeartbeatMode.OFF else HeartbeatMode.ON,
         commandSource,
     )
+}
+
+/**
+ * 加入一起听房间时把心动模式关掉（任务书 §八「优先房间控制」）。
+ *
+ * 「直接关」而不是「先记住、退出房间再恢复」：用户离开房间后多半会换歌单继续听，
+ * 自动恢复成心动模式反而会在不知情的情况下改变选歌行为，不如让他自己再开一次。
+ *
+ * 本来就没开就什么都不做，也不会弹提示——没发生的事不该打扰用户。
+ */
+fun PlayerManager.disableHeartbeatForListenTogetherRoom() {
+    if (heartbeatModeState != HeartbeatMode.ON) return
+    setHeartbeatMode(HeartbeatMode.OFF, PlaybackCommandSource.REMOTE_SYNC)
+    heartbeatRoomAutoOffStateFlow.value += 1
+    NPLogger.d(TAG, "disableHeartbeatForListenTogetherRoom: 进入一起听房间，心动模式已关闭")
 }
 
 /**
@@ -291,17 +369,28 @@ internal suspend fun PlayerManager.tryAdvanceWithHeartbeat(
     }
     heartbeatCandidateExhaustion.onCandidate()
     NPLogger.d(TAG, "心动模式选中下一首（reason=$reason）：${next.name}/${next.id}")
-    insertHeartbeatSongAndPlay(next, commandSource)
+    appendHeartbeatSongAndPlay(next, commandSource)
     return true
 }
 
 /**
- * 把心动模式选中的歌曲插到 NEXT 位置并播放。
+ * 把心动模式选中的歌曲接到「心动流」末尾并播放。
+ *
+ * 为什么不再插播：心动模式的语义是「从当前这首歌往后长出一条持续更新的歌流」。
+ * 插到 NEXT 位置时，配合 `PlayerQueueEditOwner.insertNext` 的「已存在则先移除」
+ * 策略，队列长度始终不变，用户听到的就是「十几首歌反复循环、偶尔混进一首新歌」。
+ *
+ * 做法是把当前歌之后的歌整段换成心动候选：先截断到当前歌，再追加候选，
+ * 由 `PlayerQueueEditOwner.appendReplacingTail` 在**同一次**队列更新里完成。
+ * 这样队列里的歌永远等于「已播过的 + 心动流」，不会留下「排在后面却永远轮不到」的孤儿歌。
+ *
+ * 截断只发生在真正切歌时（本函数被调用时），开启心动模式本身不动队列——
+ * 用户开了开关又关掉，队列不会少任何一首歌。
  *
  * 复用既有的 `queueEdits.insert(...)` 与 `playAtIndex`，
- * 不复制第二份插入逻辑，保证队列修订号、持久化、命令上报与「插播」完全一致。
+ * 不复制第二份插入逻辑，保证队列修订号、持久化、命令上报与其他插入路径完全一致。
  */
-internal fun PlayerManager.insertHeartbeatSongAndPlay(
+internal fun PlayerManager.appendHeartbeatSongAndPlay(
     song: SongItem,
     commandSource: PlaybackCommandSource,
 ) {
@@ -309,17 +398,14 @@ internal fun PlayerManager.insertHeartbeatSongAndPlay(
         playPlaylist(listOf(song), 0, commandSource)
         return
     }
-    var insertedIndex = -1
+    var appendedIndex = -1
     val updatedQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
-        val planned = queueEdits.insert(snapshot, song, _currentSongFlow.value, QueueInsertPlacement.NEXT)
+        // `appendReplacingTail` 已把当前下标指向新接上的候选，
+        // 不需要再 selecting 一次，否则会把候选又指回原歌。
+        val planned = queueEdits.appendReplacingTail(snapshot, song, _currentSongFlow.value)
             ?: return@updateCurrentQueue null
-        insertedIndex = planned.insertedIndex
-        // 关键修复：把队列的当前下标指向刚插入的心动候选。
-        // `queueEdits.insert` 沿用「按 identity 找回原当前歌」的通用策略，
-        // 返回的 currentIndex 仍停在原歌上；若直接 playAtIndex(currentIndex)
-        // 就会把当前这首歌再播一遍——这正是真机实测到的
-        // 「开启心动后第一次点下一首是重复播放当前这首歌」的根因。
-        planned.queue.selecting(planned.insertedIndex)
+        appendedIndex = planned.insertedIndex
+        planned.queue
     } ?: return
 
     consecutivePlayFailures = 0
@@ -334,9 +420,9 @@ internal fun PlayerManager.insertHeartbeatSongAndPlay(
     scheduleStatePersist(debounceMs = 0L)
     NPLogger.d(
         TAG,
-        "insertHeartbeatSongAndPlay: song=${song.name}/${song.id}, insertIndex=$insertedIndex, queueSize=${updatedQueue.playlist.size}",
+        "appendHeartbeatSongAndPlay: song=${song.name}/${song.id}, appendIndex=$appendedIndex, queueSize=${updatedQueue.playlist.size}",
     )
     // 立刻为「下一次切歌」预取，否则用户连续点两次下一首时第二次会命中空池
     // 而回退到原有队列（真机表现为「第一次正确、第二次又播原队列下一首」）。
-    requestHeartbeatSelectionAsync("afterInsert")
+    requestHeartbeatSelectionAsync("afterAppend")
 }
