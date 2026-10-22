@@ -1596,7 +1596,8 @@ fun NowPlayingScreen(
                                     lyricsAvailable = coverLyricsAvailable,
                                     lyricsShowing = isLyricsMode,
                                     activeColor = nowPlayingActiveIconColor,
-                                    heartbeatActive = heartbeatEnabled
+                                    heartbeatActive = heartbeatEnabled,
+                                    heartbeatAvailable = isNeteaseExclusiveFeatureAvailable(currentSong)
                                 ),
                                 actions = coverToolbarActions,
                                 sharedTransitionScope = this@SharedTransitionLayout,

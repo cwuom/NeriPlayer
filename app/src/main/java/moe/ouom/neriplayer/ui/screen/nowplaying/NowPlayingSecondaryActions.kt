@@ -223,10 +223,22 @@ internal fun isBiliUploaderNavigationSource(song: SongItem): Boolean {
     )
 }
 
+private fun isYouTubeMusicSource(song: SongItem): Boolean =
+    song.channelId.equals("youtubeMusic", ignoreCase = true) || isYouTubeMusicSong(song)
+
 internal fun isYouTubeMusicArtistNavigationSource(song: SongItem): Boolean {
-    return song.artist.isNotBlank() && (
-        song.channelId.equals("youtubeMusic", ignoreCase = true) || isYouTubeMusicSong(song)
-        )
+    return song.artist.isNotBlank() && isYouTubeMusicSource(song)
+}
+
+/**
+ * 「心动模式」「不喜欢这首歌」「歌曲百科」都依赖网易云的数据，B 站与 YouTube 音源下没有意义。
+ *
+ * 判定只看歌曲自身的来源，不看实际播放地址：网易云歌曲因版权回落到 B 站音源播放时，
+ * 歌曲对象仍是网易云的，这三个入口照常显示。
+ */
+internal fun isNeteaseExclusiveFeatureAvailable(song: SongItem?): Boolean {
+    if (song == null) return true
+    return !PlayerManager.isBiliTrack(song) && !isYouTubeMusicSource(song)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

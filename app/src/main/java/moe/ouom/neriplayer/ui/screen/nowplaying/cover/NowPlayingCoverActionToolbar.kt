@@ -84,7 +84,8 @@ internal data class NowPlayingCoverToolbarStatus(
     val lyricsAvailable: Boolean,
     val lyricsShowing: Boolean,
     val activeColor: Color,
-    val heartbeatActive: Boolean = false
+    val heartbeatActive: Boolean = false,
+    val heartbeatAvailable: Boolean = true
 )
 
 internal data class NowPlayingCoverToolbarActions(
@@ -103,6 +104,15 @@ internal data class NowPlayingCoverToolbarActions(
  * 后者被歌词页、启动引导页与既有单测复用，改它会连带破坏那三处。
  */
 internal const val NowPlayingCoverToolbarItemCount = 6
+
+/**
+ * 心动模式入口不可用（B 站 / YouTube 音源）时的按钮数量：少一个心动按钮。
+ */
+internal const val NowPlayingCoverToolbarItemCountWithoutHeartbeat = 5
+
+internal fun resolveNowPlayingCoverToolbarItemCount(heartbeatAvailable: Boolean): Int =
+    if (heartbeatAvailable) NowPlayingCoverToolbarItemCount
+    else NowPlayingCoverToolbarItemCountWithoutHeartbeat
 
 internal fun resolveNowPlayingLyricsToolbarAction(
     lyricsAdjustBehavior: Boolean,
@@ -246,7 +256,7 @@ private fun NowPlayingCoverToolbarContent(
                 preferredHorizontalPadding = toolbarPreferredPadding(spec),
                 defaultIconSize = spec.iconSize,
                 preferredMinimumTouchTarget = spec.minimumTouchTarget,
-                itemCount = NowPlayingCoverToolbarItemCount
+                itemCount = resolveNowPlayingCoverToolbarItemCount(status.heartbeatAvailable)
             )
         CompositionLocalProvider(
             LocalMinimumInteractiveComponentSize provides layout.minimumInteractiveComponentSize
@@ -303,10 +313,12 @@ private fun NowPlayingCoverToolbarRow(
             layout.iconSize, buttonModifier, sharedTransitionScope, animatedVisibilityScope,
             actions.onAddToPlaylist, LocalContentColor.current
         )
-        NowPlayingCoverHeartbeatButton(
-            status, layout.iconSize, buttonModifier, sharedTransitionScope,
-            animatedVisibilityScope, actions.onHeartbeat
-        )
+        if (status.heartbeatAvailable) {
+            NowPlayingCoverHeartbeatButton(
+                status, layout.iconSize, buttonModifier, sharedTransitionScope,
+                animatedVisibilityScope, actions.onHeartbeat
+            )
+        }
     }
 }
 

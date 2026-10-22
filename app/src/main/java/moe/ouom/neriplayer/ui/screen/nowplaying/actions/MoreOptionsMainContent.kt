@@ -103,6 +103,7 @@ import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.download.downloadStageLabelResource
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.screen.nowplaying.hasCachedLocalDownload
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNeteaseExclusiveFeatureAvailable
 import moe.ouom.neriplayer.ui.screen.nowplaying.shouldHideDownloadActionForSong
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.album.isNeteaseAlbumNavigationSource
@@ -140,6 +141,7 @@ internal fun MoreOptionsMainContent(
     onDismissSheet: (() -> Unit) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    val neteaseExclusiveFeatureAvailable = isNeteaseExclusiveFeatureAvailable(originalSong)
     Column(
         Modifier
             .bottomSheetScrollGuard { scrollState.value == 0 }
@@ -190,13 +192,15 @@ internal fun MoreOptionsMainContent(
                 onDismissSheet = onDismissSheet
             )
             PlaybackStatsAction(originalSong)
-            DislikeSongAction(originalSong)
-            MoreOptionsItem(
-                title = stringResource(CoreCommonR.string.encyclopedia_title),
-                icon = Icons.AutoMirrored.Outlined.MenuBook,
-                hue = MoreHueViolet,
-                onClick = onOpenEncyclopedia
-            )
+            if (neteaseExclusiveFeatureAvailable) {
+                DislikeSongAction(originalSong)
+                MoreOptionsItem(
+                    title = stringResource(CoreCommonR.string.encyclopedia_title),
+                    icon = Icons.AutoMirrored.Outlined.MenuBook,
+                    hue = MoreHueViolet,
+                    onClick = onOpenEncyclopedia
+                )
+            }
             MoreOptionsItem(
                 title = stringResource(CoreCommonR.string.listen_together_title),
                 icon = Icons.Outlined.Headphones,
