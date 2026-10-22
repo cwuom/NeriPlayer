@@ -3,7 +3,7 @@
 package moe.ouom.neriplayer.core.player.persistence
 
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
-import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatModeState
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatModeState
 import moe.ouom.neriplayer.core.player.runtime.persistence.PlaybackStatePersistenceCoordinator
 
 import android.os.SystemClock

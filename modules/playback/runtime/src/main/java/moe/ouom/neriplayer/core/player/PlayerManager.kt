@@ -242,7 +242,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.playback.stopPlaybackImmediatelyImpl
-import moe.ouom.neriplayer.core.player.queue.heartbeat.recordHeartbeatSkip
+import moe.ouom.neriplayer.core.player.heartbeat.recordHeartbeatSkip
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap

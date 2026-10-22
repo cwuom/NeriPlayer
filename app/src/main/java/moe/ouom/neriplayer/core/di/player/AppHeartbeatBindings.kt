@@ -4,12 +4,12 @@ import android.app.Application
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatCandidateCache
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatNextTrackCoordinator
-import moe.ouom.neriplayer.core.player.queue.heartbeat.LocalHeartbeatCandidateProvider
+import moe.ouom.neriplayer.core.player.heartbeat.LocalHeartbeatCandidateProvider
 import moe.ouom.neriplayer.core.player.queue.heartbeat.LocalHeartbeatCandidateSource
-import moe.ouom.neriplayer.core.player.queue.heartbeat.OfficialHeartbeatSource
-import moe.ouom.neriplayer.core.player.queue.heartbeat.installHeartbeatOfficialRepository
-import moe.ouom.neriplayer.core.player.queue.heartbeat.installHeartbeatSelector
-import moe.ouom.neriplayer.core.player.queue.heartbeat.installHeartbeatSkipRecorder
+import moe.ouom.neriplayer.core.player.heartbeat.OfficialHeartbeatSource
+import moe.ouom.neriplayer.core.player.heartbeat.installHeartbeatOfficialRepository
+import moe.ouom.neriplayer.core.player.heartbeat.installHeartbeatSelector
+import moe.ouom.neriplayer.core.player.heartbeat.installHeartbeatSkipRecorder
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 

@@ -109,8 +109,8 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.platform.comments.resolveCommentSource
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
-import moe.ouom.neriplayer.core.player.queue.heartbeat.cycleHeartbeatMode
-import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatModeFlow
+import moe.ouom.neriplayer.core.player.heartbeat.cycleHeartbeatMode
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatModeFlow
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage

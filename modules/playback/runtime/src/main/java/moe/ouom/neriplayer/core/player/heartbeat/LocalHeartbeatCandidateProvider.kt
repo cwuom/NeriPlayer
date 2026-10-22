@@ -1,11 +1,14 @@
-package moe.ouom.neriplayer.core.player.queue.heartbeat
+package moe.ouom.neriplayer.core.player.heartbeat
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.history.PlayHistoryRepository
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatCandidateProvider
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatScorer
 import moe.ouom.neriplayer.data.heartbeat.DislikedSongRepository
 import moe.ouom.neriplayer.data.heartbeat.HeartbeatSkipRepository
+import moe.ouom.neriplayer.data.history.PlayHistoryRepository
+import moe.ouom.neriplayer.data.history.toSongItem as playedEntryToSongItem
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
@@ -14,7 +17,6 @@ import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsSort
-import moe.ouom.neriplayer.data.history.toSongItem as playedEntryToSongItem
 
 /**
  * 心动模式本地降级候选池的数据来源实现。
@@ -84,9 +86,9 @@ class LocalHeartbeatCandidateProvider(
     /**
      * 各曲累计播放次数，key 与 [HeartbeatScorer.identityKey] 对齐。
      *
-     * 统计库的 identityKey 由 `TrackStat.identityKey` 提供（形如 `netease:123`），
-     * 与 [HeartbeatScorer.identityKey] 的生成规则一致；不一致的键不会被命中，
-     * 只是少一个惩罚信号，不影响正确性。
+     * 统计库的 `TrackStat.identityKey` 与 `SongItem.stableKey()` 同源；
+     * [toHeartbeatSongItem] 会把它原样写进 `sourceStableKey`，
+     * 因此候选侧与统计侧用的是同一个键，不会出现「查得到歌、查不到次数」。
      */
     override suspend fun recentPlayCounts(limit: Int): Map<String, Int> = withContext(Dispatchers.IO) {
         val repository = playbackStatsRepository ?: return@withContext emptyMap()
@@ -142,4 +144,7 @@ private fun TrackStat.toHeartbeatSongItem(): SongItem = SongItem(
     mediaUri = mediaUri,
     localFilePath = localFilePath,
     localFileName = localFileName,
+    // 必须带上统计库的身份键：不带的话 `HeartbeatScorer.identityKey` 会退化成 `:id`，
+    // 与统计库里存的键对不上，重复播放惩罚与跳过降权永远命中不了。
+    sourceStableKey = identityKey,
 )

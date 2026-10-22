@@ -51,10 +51,13 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
      * 返回 null 表示「本次无法给出官方推荐」，调用方静默降级。
      *
      * 不会抛异常（取消除外），也不会把接口错误暴露给用户。
+     *
+     * [bypassCache] 供「命中不喜欢名单后重试」使用：第一次拿到的结果刚被写进 30 秒缓存，
+     * 不绕过缓存的话后面几次「重试」都是原地读缓存，等于没重试。
      */
-    suspend fun fetchNextSong(currentSongId: Long): SongItem? {
+    suspend fun fetchNextSong(currentSongId: Long, bypassCache: Boolean = false): SongItem? {
         if (currentSongId <= 0L) return null
-        cachedSong(currentSongId)?.let { return it }
+        if (!bypassCache) cachedSong(currentSongId)?.let { return it }
         return withContext(Dispatchers.IO) {
             runCatching { load(currentSongId) }
                 .getOrElse { error ->

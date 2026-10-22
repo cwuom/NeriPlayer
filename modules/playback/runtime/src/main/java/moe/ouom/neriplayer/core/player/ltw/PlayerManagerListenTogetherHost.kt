@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.ltw
 
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.playback.pauseImpl
-import moe.ouom.neriplayer.core.player.queue.heartbeat.disableHeartbeatForListenTogetherRoom
+import moe.ouom.neriplayer.core.player.heartbeat.disableHeartbeatForListenTogetherRoom
 import moe.ouom.neriplayer.core.player.url.currentListenTogetherShareableStreamUrls
 import moe.ouom.neriplayer.core.player.url.currentPlaybackRequiresListenTogetherAuthoritativeStream
 import moe.ouom.neriplayer.core.player.url.hasUsableListenTogetherLocalDirectStream

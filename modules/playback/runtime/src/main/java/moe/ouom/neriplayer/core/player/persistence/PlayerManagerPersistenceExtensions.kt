@@ -26,7 +26,7 @@ import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
-import moe.ouom.neriplayer.core.player.queue.heartbeat.setHeartbeatMode
+import moe.ouom.neriplayer.core.player.heartbeat.restoreHeartbeatModeFromState
 import moe.ouom.neriplayer.data.model.playback.storage.PlayerMetadataClearRequest as RestorableMetadataClearPolicy
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
@@ -92,11 +92,7 @@ data class RestoredPlayerStateSnapshot(
     val shouldResumePlayback: Boolean,
     val originalPlaylistSize: Int,
     val persistedIndex: Int,
-    /**
-     * 心动模式开关；默认 OFF 兼容旧存档与 Room 路径（Room 实体没有对应列，见下方注释）。
-     * 声明放在既有字段之后，保证测试里 11 个位置参数/具名参数的构造调用仍能编译。
-     */
-    val heartbeatMode: Int = HeartbeatMode.OFF
+    val heartbeatMode: Int = HeartbeatMode.OFF // 心动模式开关，默认 OFF 兼容旧存档
 )
 
 private val songMetadataRequestCoordinator = SongMetadataRequestCoordinator()
@@ -290,10 +286,7 @@ private fun buildRestoredStateSnapshot(
             shouldResumePlayback = data.shouldResumePlayback && currentIndex != -1,
             originalPlaylistSize = data.playlist.size,
             persistedIndex = data.index,
-            // Room 实体（PlaybackQueueStateEntity）没有 heartbeatMode 列也不允许加列，
-            // 因此 Room 为主时该值必然丢失、恢复为 OFF；JSON 为主时才带真实值。
-            // 心动模式独立于 keepPlaybackModeStateEnabled：它是用户显式功能开关，不是瞬态播放模式。
-            heartbeatMode = data.heartbeatMode ?: HeartbeatMode.OFF
+            heartbeatMode = data.heartbeatMode ?: HeartbeatMode.OFF, // Room 实体没有该列，恢复为 OFF
         )
         val identities = playbackLyricIdentityKeys(snapshot.playlist.getOrNull(snapshot.currentIndex),
             snapshot.playlist, snapshot.shuffleRestorePlaylist)
@@ -487,11 +480,7 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
     repeatModeSetting = snapshot.repeatMode
     syncExoRepeatMode()
     _repeatModeFlow.value = repeatModeSetting
-    // 走 setHeartbeatMode 而不是直接写 heartbeatModeState：开启时会顺带刷新官方可用性、
-    // 清理 pending、reset 选择器，恢复路径与用户手动开开关保持同一套不变量。
-    // userInitiated=false：这是恢复上次状态，不是用户刚点出来的，不该弹提示。
-    setHeartbeatMode(HeartbeatMode.normalized(snapshot.heartbeatMode), userInitiated = false)
-
+    restoreHeartbeatModeFromState(snapshot.heartbeatMode)
     player.shuffleModeEnabled = snapshot.shuffleEnabled
 
     setRestoredPlayback(snapshot.resumePositionMs, snapshot.shouldResumePlayback)

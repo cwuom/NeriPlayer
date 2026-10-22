@@ -36,11 +36,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatCandidateExhaustedFlow
-import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatOfficialAvailableFlow
-import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatRoomAutoOffFlow
-import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatRoomRejectedFlow
-import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatUserEnabledFlow
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatCandidateExhaustedFlow
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatOfficialAvailableFlow
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatRoomAutoOffFlow
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatRoomRejectedFlow
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatUserEnabledFlow
 import moe.ouom.neriplayer.ui.feedback.dismissCurrentNeriSnackbar
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 

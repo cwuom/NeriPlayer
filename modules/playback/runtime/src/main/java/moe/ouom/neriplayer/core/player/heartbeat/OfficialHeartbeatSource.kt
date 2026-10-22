@@ -1,6 +1,8 @@
-package moe.ouom.neriplayer.core.player.queue.heartbeat
+package moe.ouom.neriplayer.core.player.heartbeat
 
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatNextTrackSelector
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatScorer
 import moe.ouom.neriplayer.data.heartbeat.DislikedSongRepository
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.platform.netease.playmode.NeteasePlaymodeIntelligenceRepository
@@ -40,7 +42,8 @@ class OfficialHeartbeatSource(
         val disliked = readDislikedIdentities()
         var attempt = 0
         while (true) {
-            val song = fetchOnce(currentSong) ?: return null
+            // 第一次走缓存；重试必须绕过缓存，否则拿到的还是刚才那首被标记的歌
+            val song = fetchOnce(currentSong, bypassCache = attempt > 0) ?: return null
             if (disliked.isEmpty() || HeartbeatScorer.identityKey(song) !in disliked) {
                 return song
             }
@@ -61,8 +64,8 @@ class OfficialHeartbeatSource(
     }
 
     /** 单次官方请求，失败一律折算成 null（不打断播放链路）。 */
-    private suspend fun fetchOnce(currentSong: SongItem): SongItem? = try {
-        repository.fetchNextSong(currentSong.id)
+    private suspend fun fetchOnce(currentSong: SongItem, bypassCache: Boolean): SongItem? = try {
+        repository.fetchNextSong(currentSong.id, bypassCache)
     } catch (error: Throwable) {
         // 取消必须继续向上传播，否则旧请求会在切歌后污染新歌状态
         if (error is kotlinx.coroutines.CancellationException) throw error

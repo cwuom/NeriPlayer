@@ -455,6 +455,8 @@ private fun NowPlayingQueueRow(
                 selectionMode = selectionMode,
                 isFavoriteSong = isFavoriteSong,
                 isDislikedSong = isDislikedSong,
+                // 「不喜欢」依赖网易云曲库身份，B 站 / YouTube 音源下与封面工具栏保持一致地隐藏
+                dislikeAvailable = isNeteaseExclusiveFeatureAvailable(song),
                 onPlayNext = onPlayNext,
                 onAddToEnd = onAddToEnd,
                 onFavoriteToggle = onFavoriteToggle,
@@ -604,6 +606,7 @@ private fun QueueRowTrailingActions(
     selectionMode: Boolean,
     isFavoriteSong: Boolean,
     isDislikedSong: Boolean,
+    dislikeAvailable: Boolean,
     onPlayNext: () -> Unit,
     onAddToEnd: () -> Unit,
     onFavoriteToggle: () -> Unit,
@@ -617,6 +620,7 @@ private fun QueueRowTrailingActions(
         QueueRowMoreMenu(
             isFavoriteSong = isFavoriteSong,
             isDislikedSong = isDislikedSong,
+            dislikeAvailable = dislikeAvailable,
             onPlayNext = onPlayNext,
             onAddToEnd = onAddToEnd,
             onFavoriteToggle = onFavoriteToggle,
@@ -655,6 +659,7 @@ private fun QueueRowReorderHandle(reorderState: ReorderableLazyListState) {
 private fun QueueRowMoreMenu(
     isFavoriteSong: Boolean,
     isDislikedSong: Boolean,
+    dislikeAvailable: Boolean,
     onPlayNext: () -> Unit,
     onAddToEnd: () -> Unit,
     onFavoriteToggle: () -> Unit,
@@ -682,7 +687,9 @@ private fun QueueRowMoreMenu(
                 onClick = { onAddToEnd(); expanded = false }
             )
             QueueRowFavoriteAction(isFavoriteSong) { onFavoriteToggle(); expanded = false }
-            QueueRowDislikeAction(isDislikedSong) { onDislikeToggle(); expanded = false }
+            if (dislikeAvailable) {
+                QueueRowDislikeAction(isDislikedSong) { onDislikeToggle(); expanded = false }
+            }
             QueueRowMenuAction(
                 label = stringResource(CoreCommonR.string.nowplaying_queue_remove),
                 icon = Icons.Outlined.DeleteOutline,

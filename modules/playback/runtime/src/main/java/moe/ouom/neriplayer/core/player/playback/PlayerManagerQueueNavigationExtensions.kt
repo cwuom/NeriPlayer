@@ -8,19 +8,21 @@ import moe.ouom.neriplayer.core.player.currentPositionMsOrZero
 import moe.ouom.neriplayer.core.player.durationMsOrZero
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
-import moe.ouom.neriplayer.core.player.queue.heartbeat.consumeHeartbeatReadyNextSong
-import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatModeState
-import moe.ouom.neriplayer.core.player.queue.heartbeat.heartbeatReadyNextSong
-import moe.ouom.neriplayer.core.player.queue.heartbeat.appendHeartbeatSongAndPlay
-import moe.ouom.neriplayer.core.player.queue.heartbeat.markHeartbeatSongFailed
-import moe.ouom.neriplayer.core.player.queue.heartbeat.requestHeartbeatSelectionAsync
+import moe.ouom.neriplayer.core.player.heartbeat.consumeHeartbeatReadyNextSong
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatModeState
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatReadyNextSong
+import moe.ouom.neriplayer.core.player.heartbeat.appendHeartbeatSongAndPlay
+import moe.ouom.neriplayer.core.player.heartbeat.clearHeartbeatPending
+import moe.ouom.neriplayer.core.player.heartbeat.isHeartbeatSourceSupported
+import moe.ouom.neriplayer.core.player.heartbeat.markHeartbeatSongFailed
+import moe.ouom.neriplayer.core.player.heartbeat.requestHeartbeatSelectionAsync
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.queue.ListenTogetherTrackFinishPlan
 import moe.ouom.neriplayer.data.model.playback.queue.PlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
 import moe.ouom.neriplayer.data.model.playback.queue.QueueNavigationStep
 import moe.ouom.neriplayer.data.model.playback.queue.QueueTrackCompletion
-import moe.ouom.neriplayer.core.player.queue.heartbeat.tryAdvanceWithHeartbeat
+import moe.ouom.neriplayer.core.player.heartbeat.tryAdvanceWithHeartbeat
 import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueNavigationOwner
 import moe.ouom.neriplayer.core.player.queue.policy.failure.resolvePlaybackFailureAdvanceAction
 
@@ -142,10 +144,13 @@ private fun PlayerManager.playAfterTrackCompletion(action: QueueTrackCompletion)
     if (heartbeatAdvanceOrFallback(
             reason = "trackCompletion:$action",
             fallback = {
-                nextImpl(
+                // 必须走不带心动包装的推进：再调 nextImpl 会重新进入本函数，
+                // 一次切歌发起两次预取、甚至两条官方请求互相覆盖。
+                requestNextTrack(
                     force = PlayerQueueNavigationOwner.forceWrapAfterCompletion(action),
                     commandSource = activePlaybackCommandSource,
-                    bypassLoudVolumeWarning = true
+                    bypassLoudVolumeWarning = true,
+                    allowRememberedLongFormPosition = false
                 )
             }
         )
@@ -164,9 +169,16 @@ private fun PlayerManager.playAfterTrackCompletion(action: QueueTrackCompletion)
  */
 private fun PlayerManager.heartbeatAdvanceOrFallback(
     reason: String,
+    resetFailureCount: Boolean = true,
     fallback: () -> Unit,
 ): Boolean {
     if (heartbeatModeState != HeartbeatMode.ON) {
+        fallback()
+        return false
+    }
+    // 外部音源（B 站 / YouTube）不下发到网易云接口，也不改动它们的队列
+    if (!isHeartbeatSourceSupported()) {
+        clearHeartbeatPending()
         fallback()
         return false
     }
@@ -181,7 +193,7 @@ private fun PlayerManager.heartbeatAdvanceOrFallback(
         return false
     }
     consumeHeartbeatReadyNextSong()
-    appendHeartbeatSongAndPlay(ready, activePlaybackCommandSource)
+    appendHeartbeatSongAndPlay(ready, activePlaybackCommandSource, resetFailureCount)
     return true
 }
 internal fun PlayerManager.advanceAfterPlaybackFailure(
@@ -219,12 +231,14 @@ private fun PlayerManager.dispatchFailureAdvance(
     // 播放失败时先用心动候选顶上（任务书 §3.5 步骤 5），拿不到才按原失败策略推进
     if (heartbeatAdvanceOrFallback(
             reason = "playbackFailure",
+            resetFailureCount = false,
             fallback = {
                 markAutoTrackAdvance()
-                nextImpl(
+                requestNextTrack(
                     force = PlayerQueueNavigationOwner.forceWrapAfterFailure(action),
                     commandSource = commandSource,
                     bypassLoudVolumeWarning = true,
+                    allowRememberedLongFormPosition = false
                 )
             },
         )
@@ -277,11 +291,21 @@ internal fun PlayerManager.nextImpl(
 ) {
     ensureInitialized()
     if (!initialized) return
+    // USB 独占音量确认必须在心动接管之前走一遍：命中预取候选时不会经过
+    // requestNextTrack → confirmNextTrackVolume，会绕过这道保护直接起播。
+    if (requestUsbExclusiveLoudPlaybackConfirmation(
+            commandSource = commandSource,
+            bypassWarning = bypassLoudVolumeWarning,
+            continuePlayback = {
+                nextImpl(force, commandSource, bypassLoudVolumeWarning = true, allowRememberedLongFormPosition)
+            }
+        )
+    ) return
     // 心动模式优先：用户主动跳过时也走心跳候选，避免「跳过一次就掉出心动歌流」（任务书 §3.5 步骤 6）
     if (heartbeatAdvanceOrFallback(
             reason = "userSkip",
             fallback = {
-                requestNextTrack(force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition)
+                requestNextTrack(force, commandSource, bypassLoudVolumeWarning = true, allowRememberedLongFormPosition)
             },
         )
     ) {
