@@ -449,15 +449,10 @@ internal fun MiuixSettingsSwitch(
     )
 }
 
-/**
- * Borderless track with a white thumb, closer to a native toggle. Achromatic covers resolve to a
- * near-white primary, where a white thumb would vanish into the track, so it flips to onPrimary.
- */
+// 主题已配对的前景色能在浅色强调轨道上保持滑块可辨认
 @Composable
 private fun cleanSwitchColors() = SwitchDefaults.colors(
-    checkedThumbColor = MaterialTheme.colorScheme.primary.let { primary ->
-        if (primary.luminance() > 0.6f) MaterialTheme.colorScheme.onPrimary else Color.White
-    },
+    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
     checkedTrackColor = MaterialTheme.colorScheme.primary,
     checkedBorderColor = Color.Transparent,
     uncheckedThumbColor = Color.White,

@@ -218,7 +218,7 @@ internal fun NowPlayingContainerMorph(
         Canvas(Modifier.fillMaxSize()) {
             if (flight?.linked != true || !flight.hidesCovers) return@Canvas
             val p = progress.value.coerceIn(0f, 1f)
-            val bitmap = artwork() ?: return@Canvas
+            val bitmap = artwork() ?: flight.linkedBitmap ?: return@Canvas
             val from = flight.miniCoverBounds?.translate(-geometry.origin) ?: return@Canvas
             val to = geometry.pageCover(flight.targetCoordinates) ?: return@Canvas
             val rect = lerp(from, to, p)

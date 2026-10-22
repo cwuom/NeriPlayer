@@ -130,20 +130,27 @@ class SharedCoverFlightState {
     var linked: Boolean by mutableStateOf(false)
         private set
 
+    internal var linkedBitmap: ImageBitmap? by mutableStateOf(null)
+        private set
+
     /** 替代封面的位图和两端坐标齐备后才隐藏真实封面 */
     val hidesCovers: Boolean
-        get() = flying || (linked && sourceBitmap != null && sourceBounds != null &&
+        get() = flying || (linked && linkedBitmap != null && sourceBounds != null &&
             targetCoordinates?.isAttached == true)
 
     fun beginLinked() {
+        if (linked) return
         // a Material flight must not keep painting its bitmap under the morph
         job?.cancel()
         flying = false
+        // 固定本轮接管条件，避免图片回调在动画中途切换真实封面与替代封面
+        linkedBitmap = sourceBitmap
         linked = true
     }
 
     fun endLinked() {
         linked = false
+        linkedBitmap = null
     }
 
     fun open(scope: CoroutineScope, preferredBitmap: ImageBitmap? = null) {
