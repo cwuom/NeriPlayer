@@ -659,7 +659,9 @@ For release build and signing details, see
   dynamic color, seed colors, palette styles, UI scaling,
   custom background image, haptic feedback, lyric font size (separate cover and
   lyrics-page controls), lyric blur, default start destination, and Home card
-  toggles. Android 13+ can optionally
+  toggles. When no refresh-rate preference is saved, the app prefers the display's
+  highest supported refresh rate; an explicit opt-out is preserved, and Android
+  still controls the actual refresh rate. Android 13+ can optionally
   enable Enhanced Advanced Blur for top/bottom tabs and structural settings cards;
   its radius is adjustable from `12-64 dp`, and disabling the parent preserves the
   child choice and radius while removing enhanced drawing. Blur quality is separately

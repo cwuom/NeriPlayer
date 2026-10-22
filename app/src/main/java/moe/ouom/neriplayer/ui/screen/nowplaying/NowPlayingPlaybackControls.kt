@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -56,6 +55,9 @@ import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.cleanTintedAccent
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.screen.playback.resolveLyricPreviewTimeMs
 import moe.ouom.neriplayer.ui.screen.playback.shouldReleaseLyricSeekPreview
 import moe.ouom.neriplayer.util.format.formatDuration
@@ -305,10 +307,12 @@ fun NowPlayingQualityOptionsDialog(
                             }
                         },
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(neriRoundedShape(12.dp))
                             .clickable { onSelect(option) },
                         colors = ListItemDefaults.colors(
-                            containerColor = Color.Transparent
+                            containerColor = if (NeriDesign.isClean && option.key == selectedKey) {
+                                MaterialTheme.colorScheme.cleanTintedAccent()
+                            } else Color.Transparent
                         )
                     )
                 }

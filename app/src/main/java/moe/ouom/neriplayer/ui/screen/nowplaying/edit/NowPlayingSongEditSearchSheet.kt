@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.edit
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -30,6 +31,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -54,6 +56,10 @@ import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 import moe.ouom.neriplayer.ui.viewmodel.ManualSearchState
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -128,6 +134,8 @@ private fun EditSongSearchInput(
         placeholder = { Text(stringResource(CoreCommonR.string.music_auto_fill_custom_title_hint)) },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
+        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+        colors = neriSearchFieldColors(),
         trailingIcon = {
             HapticIconButton(onClick = onSearch, enabled = searchEnabled) {
                 Icon(Icons.Filled.Search, contentDescription = stringResource(CoreCommonR.string.cd_search))
@@ -160,6 +168,28 @@ private fun EditSongSearchPlatforms(
     selected: MusicPlatform,
     onSelect: (MusicPlatform) -> Unit
 ) {
+    if (NeriDesign.isClean) {
+        Row(
+            Modifier.fillMaxWidth().selectableGroup().clip(NeriDesign.tokens.controlShape)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)).padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            MusicPlatform.entries.forEachIndexed { index, platform ->
+                val isSelected = selected.ordinal == index
+                Tab(
+                    selected = isSelected,
+                    onClick = { onSelect(platform) },
+                    modifier = Modifier.weight(1f).clip(NeriDesign.tokens.chipShape).background(
+                        if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+                    ),
+                    selectedContentColor = MaterialTheme.colorScheme.onPrimary,
+                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = { Text(stringResource(musicPlatformLabelResource(platform))) }
+                )
+            }
+        }
+        return
+    }
     PrimaryTabRow(
         selectedTabIndex = selected.ordinal,
         containerColor = Color.Transparent,
@@ -214,13 +244,15 @@ private fun EditSongSearchResultCard(
     val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = neriRoundedShape(18.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
+            containerColor = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
         ),
         border = BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)
+            color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = NeriDesign.tokens.hairlineAlpha)
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)
         )
     ) {
         ListItem(
@@ -235,7 +267,7 @@ private fun EditSongSearchResultCard(
                         offlineMode = offlineMode
                     ),
                     contentDescription = result.songName,
-                    modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                    modifier = Modifier.size(48.dp).clip(neriRoundedShape(12.dp))
                 )
             },
             modifier = Modifier.clickable(onClick = onSelect)

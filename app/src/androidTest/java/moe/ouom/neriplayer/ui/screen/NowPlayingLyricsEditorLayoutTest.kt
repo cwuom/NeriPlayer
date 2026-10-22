@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.ui.screen
 
 import android.graphics.Bitmap
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
@@ -11,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -23,6 +26,8 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -38,12 +43,15 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.core.graphics.ColorUtils
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricsEditorContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsEditorOwner
+import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -72,6 +80,44 @@ class NowPlayingLyricsEditorLayoutTest {
     @Before
     fun assumeDeviceUnlocked() {
         assumeComposeHostAvailable()
+    }
+
+    @Test
+    fun cleanLightTabsKeepTheSelectedSegmentAndLabelVisible() {
+        verifyCleanTabContrast(dark = false)
+    }
+
+    @Test
+    fun cleanDarkTabsKeepTheSelectedSegmentAndLabelVisible() {
+        verifyCleanTabContrast(dark = true)
+    }
+
+    private fun verifyCleanTabContrast(dark: Boolean) {
+        render(360.dp, 840.dp, 1f, cleanDark = dark)
+        for (index in 0..2) {
+            scrollTo("lyrics-editor-tab-$index").performClick()
+            composeRule.mainClock.advanceTimeBy(500L)
+            composeRule.waitForIdle()
+            for (candidate in 0..2) {
+                val tab = composeRule.onNodeWithTag("lyrics-editor-tab-$candidate")
+                if (candidate == index) tab.assertIsSelected() else tab.assertIsNotSelected()
+            }
+            val track = composeRule.onNodeWithTag("lyrics-editor-tabs").captureToImage().toPixelMap()
+            val selected = composeRule.onNodeWithTag("lyrics-editor-tab-$index").captureToImage().toPixelMap()
+            val trackColor = track[track.width / 2, 1].toArgb()
+            val selectedColor = selected[selected.width / 2, 3].toArgb()
+            val segmentContrast = ColorUtils.calculateContrast(selectedColor, trackColor)
+            assertTrue("选中滑块应与底轨清晰区分: dark=$dark index=$index contrast=$segmentContrast",
+                segmentContrast >= 3.0)
+            val textContrast = (selected.height / 3 until selected.height * 2 / 3).maxOf { y ->
+                (selected.width / 4 until selected.width * 3 / 4).maxOf { x ->
+                    ColorUtils.calculateContrast(selected[x, y].toArgb(), selectedColor)
+                }
+            }
+            assertTrue("选中标签应清晰可读: dark=$dark index=$index contrast=$textContrast",
+                textContrast >= 4.5)
+            capture("lyrics-editor-clean-${if (dark) "dark" else "light"}-tab-$index")
+        }
     }
 
     @Test
@@ -286,11 +332,11 @@ class NowPlayingLyricsEditorLayoutTest {
         composeRule.waitForIdle()
     }
 
-    private fun render(initialWidth: Dp, initialHeight: Dp, fontScale: Float) {
+    private fun render(initialWidth: Dp, initialHeight: Dp, fontScale: Float, cleanDark: Boolean? = null) {
         width.value = initialWidth
         height.value = initialHeight
         composeRule.setContent {
-            MaterialTheme {
+            EditorTestTheme(cleanDark) {
                 val scope = rememberCoroutineScope()
                 val song = remember { SongItem(1L, "夜航星", "不才", "专辑A", 10L, 222_000L, null) }
                 owner = remember {
@@ -333,6 +379,20 @@ class NowPlayingLyricsEditorLayoutTest {
             }
         }
         composeRule.waitForIdle()
+    }
+
+    @Composable
+    private fun EditorTestTheme(cleanDark: Boolean?, content: @Composable () -> Unit) {
+        if (cleanDark == null) {
+            MaterialTheme(content = content)
+        } else {
+            NeriTheme(
+                followSystemDark = false, forceDark = cleanDark, dynamicColor = false,
+                seedColorHex = "D88467", uiStyle = UiStyle.Clean, animateColors = false
+            ) {
+                Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, content = content)
+            }
+        }
     }
 
     private fun capture(stage: String) {

@@ -16,6 +16,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
@@ -55,6 +56,8 @@ import moe.ouom.neriplayer.data.model.comments.CommentSource
 import moe.ouom.neriplayer.data.model.comments.SongComment
 import moe.ouom.neriplayer.data.model.comments.CommentQuote
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
+import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
@@ -101,6 +104,8 @@ class CommentSheetTest {
 
     @Test fun lightLayoutAndScrolledList() = renderPreview(dark = false, fontScale = 1f)
     @Test fun darkLayoutAtLargeFont() = renderPreview(dark = true, fontScale = 1.3f)
+    @Test fun cleanLightLayoutAndScrolledList() = renderPreview(dark = false, fontScale = 1f, clean = true)
+    @Test fun cleanDarkLayoutAtLargeFont() = renderPreview(dark = true, fontScale = 1.3f, clean = true)
 
     @Test
     fun longPressHighlightDoesNotCoverCardCorners() {
@@ -242,11 +247,16 @@ class CommentSheetTest {
     }
 
     @Test
-    fun composerKeepsSendVisibleWithKeyboardAndDisablesItWhileSending() = withSoftwareKeyboard {
+    fun composerKeepsSendVisibleWithKeyboardAndDisablesItWhileSending() = verifyComposer(clean = false)
+
+    @Test
+    fun cleanComposerKeepsSendVisibleWithKeyboardAndDisablesItWhileSending() = verifyComposer(clean = true)
+
+    private fun verifyComposer(clean: Boolean) = withSoftwareKeyboard {
         val state = mutableStateOf(sampleState())
         val sheetFocused = AtomicBoolean(false)
         composeRule.setContent {
-            MaterialTheme {
+            PreviewTheme(clean = clean, dark = false) {
                 ModalBottomSheet(onDismissRequest = {}, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
                     val focused = LocalWindowInfo.current.isWindowFocused
                     SideEffect { sheetFocused.set(focused) }
@@ -269,9 +279,9 @@ class CommentSheetTest {
         waitForKeyboardVisibility(true)
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("comment-send").assertIsDisplayed().assertIsEnabled()
-        savePreview("comment-keyboard")
+        savePreview(if (clean) "clean-comment-keyboard" else "comment-keyboard")
         val screenshot = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
-        File(context.cacheDir, "comment-keyboard-screen.png").outputStream().use {
+        File(context.cacheDir, if (clean) "clean-comment-keyboard-screen.png" else "comment-keyboard-screen.png").outputStream().use {
             screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)
         }
         composeRule.onNodeWithTag("comment-send").performClick().assertIsNotEnabled()
@@ -335,9 +345,9 @@ class CommentSheetTest {
         assertEquals(bounds, composeRule.onNodeWithTag("comment-sheet-content").fetchSemanticsNode().boundsInRoot)
     }
 
-    private fun renderPreview(dark: Boolean, fontScale: Float) {
+    private fun renderPreview(dark: Boolean, fontScale: Float, clean: Boolean = false) {
         composeRule.setContent {
-            MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
+            PreviewTheme(clean, dark) {
                 ModalBottomSheet(
                     onDismissRequest = {},
                     sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -355,11 +365,25 @@ class CommentSheetTest {
             }
         }
         composeRule.waitForIdle()
-        savePreview(if (dark) "comment-dark-large-font" else "comment-light")
+        val prefix = if (clean) "clean-" else ""
+        savePreview(prefix + if (dark) "comment-dark-large-font" else "comment-light")
         composeRule.onNode(hasScrollToIndexAction()).performTouchInput { swipeUp() }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("#1").assertIsNotDisplayed()
-        savePreview(if (dark) "comment-dark-scrolled" else "comment-light-scrolled")
+        savePreview(prefix + if (dark) "comment-dark-scrolled" else "comment-light-scrolled")
+    }
+
+    @Composable
+    private fun PreviewTheme(clean: Boolean, dark: Boolean, content: @Composable () -> Unit) {
+        if (clean) {
+            NeriTheme(
+                followSystemDark = false, forceDark = dark, dynamicColor = false,
+                seedColorHex = "A8C7FA", uiStyle = UiStyle.Clean, animateColors = false,
+                content = content
+            )
+        } else {
+            MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme(), content = content)
+        }
     }
 
     private fun savePreview(name: String) {

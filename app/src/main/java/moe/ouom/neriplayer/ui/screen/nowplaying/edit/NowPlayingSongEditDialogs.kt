@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -33,6 +32,8 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -155,13 +156,15 @@ fun FillOptionsDialog(
                 // 显示选中的歌曲信息
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = neriRoundedShape(18.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
+                        containerColor = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
                     ),
                     border = BorderStroke(
                         width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                        color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = NeriDesign.tokens.hairlineAlpha)
+                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
                     )
                 ) {
                     Column(

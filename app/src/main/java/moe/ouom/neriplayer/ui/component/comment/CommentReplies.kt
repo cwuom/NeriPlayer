@@ -49,6 +49,8 @@ import moe.ouom.neriplayer.data.model.comments.CommentQuote
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.data.model.comments.SongComment
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.cleanTintedAccent
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 
@@ -77,7 +79,7 @@ internal fun CommentActionBox(
     replyEnabled: Boolean,
     onReply: (CommentReplyTarget) -> Unit,
     modifier: Modifier = Modifier,
-    shape: Shape = MaterialTheme.shapes.extraLarge,
+    shape: Shape = if (NeriDesign.isClean) NeriDesign.tokens.cardShape else MaterialTheme.shapes.extraLarge,
     showReplyAction: Boolean = true,
     content: @Composable () -> Unit
 ) {
@@ -92,7 +94,11 @@ internal fun CommentActionBox(
         onLongClick = { expanded = true }
     )) {
         content()
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, shape = MaterialTheme.shapes.large) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = if (NeriDesign.isClean) NeriDesign.tokens.menuShape else MaterialTheme.shapes.large
+        ) {
             DropdownMenuItem(
                 text = { Text(stringResource(CoreCommonR.string.comment_copy)) },
                 onClick = {
@@ -119,14 +125,19 @@ internal fun CommentActionBox(
 @Composable
 internal fun CommentQuotes(quotes: List<CommentQuote>) {
     if (quotes.isEmpty()) return
-    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+            else MaterialTheme.colorScheme.surfaceContainerHighest
+    ) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             quotes.forEach { quote ->
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         stringResource(CoreCommonR.string.comment_reply_to, quote.username.ifBlank { stringResource(CoreCommonR.string.comment_anonymous_user) }),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.primary
                     )
                     Text(
                         quote.content ?: stringResource(CoreCommonR.string.comment_deleted),
@@ -178,7 +189,11 @@ internal fun CommentReplyItem(
         comment, rootId, replyEnabled, onReply, modifier, MaterialTheme.shapes.medium,
         showReplyAction = showReplyAction
     ) {
-        Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                else MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -212,7 +227,8 @@ internal fun CommentReplyItem(
                     Text(
                         comment.username.ifBlank { stringResource(CoreCommonR.string.comment_anonymous_user) },
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.primary
                     )
                     CommentRichText(
                         content = comment.content,
@@ -239,9 +255,11 @@ internal fun CommentReplyItem(
                             onClick = onLike,
                             enabled = likeEnabled && !isLiking && !offlineMode,
                             colors = ButtonDefaults.textButtonColors(
-                                containerColor = if (comment.isLiked) MaterialTheme.colorScheme.primaryContainer
+                                containerColor = if (comment.isLiked && NeriDesign.isClean) MaterialTheme.colorScheme.cleanTintedAccent()
+                                    else if (comment.isLiked) MaterialTheme.colorScheme.primaryContainer
                                     else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = if (comment.isLiked) MaterialTheme.colorScheme.onPrimaryContainer
+                                contentColor = if (comment.isLiked && NeriDesign.isClean) MaterialTheme.colorScheme.primary
+                                    else if (comment.isLiked) MaterialTheme.colorScheme.onPrimaryContainer
                                     else MaterialTheme.colorScheme.onSurfaceVariant
                             ),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)

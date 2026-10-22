@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.component.local
 
 import android.content.ClipData
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -57,6 +59,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
@@ -252,6 +255,11 @@ private fun DetailsRow(
     Column(
         modifier = Modifier
             .then(
+                if (NeriDesign.isClean) Modifier.clip(NeriDesign.tokens.cardShape)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f))
+                else Modifier
+            )
+            .then(
                 if (onClick != null) {
                     Modifier.clickable(onClick = onClick)
                 } else {
@@ -259,7 +267,8 @@ private fun DetailsRow(
                 }
             )
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
+            .padding(horizontal = if (NeriDesign.isClean) 12.dp else 0.dp,
+                vertical = if (NeriDesign.isClean) 10.dp else 2.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(

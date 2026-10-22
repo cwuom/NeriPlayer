@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BarChart
@@ -51,6 +50,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -99,6 +99,7 @@ import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.download.downloadStageLabelResource
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.screen.nowplaying.hasCachedLocalDownload
 import moe.ouom.neriplayer.ui.screen.nowplaying.shouldHideDownloadActionForSong
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
@@ -559,7 +560,7 @@ private fun PlaybackStatsAction(song: SongItem) {
         onDismissRequest = { showDialog = false },
         icon = { Icon(Icons.Outlined.BarChart, null) },
         title = { Text(stringResource(CoreCommonR.string.stats_title)) },
-        shape = RoundedCornerShape(28.dp),
+        shape = neriRoundedShape(28.dp),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatsCard(CoreCommonR.string.stats_song_first_played, firstPlayedText)
@@ -585,12 +586,15 @@ private fun PlaybackStatsAction(song: SongItem) {
 @Composable
 private fun StatsCard(labelRes: Int, value: String) {
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = neriRoundedShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
+            containerColor = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
         )
     ) {
         ListItem(
+            colors = if (NeriDesign.isClean) ListItemDefaults.colors(containerColor = Color.Transparent)
+                else ListItemDefaults.colors(),
             headlineContent = { Text(stringResource(labelRes)) },
             supportingContent = { Text(value) }
         )

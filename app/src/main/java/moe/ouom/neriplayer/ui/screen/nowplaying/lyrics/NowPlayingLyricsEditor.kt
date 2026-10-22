@@ -28,6 +28,7 @@ import android.content.ClipData
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -56,7 +57,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardActionScope
 import androidx.compose.foundation.text.KeyboardOptions
@@ -72,8 +72,10 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -130,6 +132,10 @@ import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
 import moe.ouom.neriplayer.util.format.formatDuration
@@ -729,7 +735,7 @@ private fun LyricsEditorSongInfo(identity: LyricsEditorSongIdentityPresentation,
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(neriRoundedShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(12.dp)
             .testTag("lyrics-editor-song"),
@@ -818,6 +824,19 @@ private fun LyricsEditorTabs(owner: NowPlayingLyricsEditorOwner) {
         CoreCommonR.string.lyrics_translation,
         CoreCommonR.string.lyrics_romanized
     )
+    if (NeriDesign.isClean) {
+        Row(
+            Modifier.fillMaxWidth().selectableGroup().testTag("lyrics-editor-tabs")
+                .clip(NeriDesign.tokens.controlShape)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)).padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            labels.forEachIndexed { index, label ->
+                LyricsEditorTab(owner, index, label, Modifier.weight(1f))
+            }
+        }
+        return
+    }
     PrimaryTabRow(
         selectedTabIndex = selectedTab,
         modifier = Modifier.testTag("lyrics-editor-tabs"),
@@ -831,12 +850,18 @@ private fun LyricsEditorTabs(owner: NowPlayingLyricsEditorOwner) {
 }
 
 @Composable
-private fun LyricsEditorTab(owner: NowPlayingLyricsEditorOwner, index: Int, label: Int) {
+private fun LyricsEditorTab(owner: NowPlayingLyricsEditorOwner, index: Int, label: Int, modifier: Modifier = Modifier) {
     Tab(
         selected = owner.isSelectedTab(index),
         onClick = { owner.selectedTabState.intValue = index },
         enabled = owner.canEdit,
-        modifier = Modifier.testTag("lyrics-editor-tab-$index"),
+        modifier = modifier.testTag("lyrics-editor-tab-$index").then(
+            if (NeriDesign.isClean) Modifier.clip(NeriDesign.tokens.chipShape).background(
+                if (owner.isSelectedTab(index)) MaterialTheme.colorScheme.primary else Color.Transparent
+            ) else Modifier
+        ),
+        selectedContentColor = if (NeriDesign.isClean) MaterialTheme.colorScheme.onPrimary else LocalContentColor.current,
+        unselectedContentColor = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurfaceVariant else LocalContentColor.current,
         text = { LyricsEditorTabLabel(label) }
     )
 }
@@ -863,6 +888,8 @@ private fun LyricsEditorTextInput(owner: NowPlayingLyricsEditorOwner, modifier: 
         value = textState.value,
         onValueChange = owner::replaceSelectedText,
         enabled = !owner.isSavingState.value,
+        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+        colors = neriSearchFieldColors(),
         modifier = modifier.testTag("lyrics-editor-input"),
         placeholder = {
             Text(
@@ -1053,6 +1080,8 @@ private fun LyricMatchQuery(presentation: LyricMatchQueryPresentation, actions: 
         OutlinedTextField(
             value = presentation.query,
             onValueChange = actions.onQueryChange,
+            shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+            colors = neriSearchFieldColors(),
             modifier = Modifier.weight(1f).testTag("lyrics-match-query"),
             label = { Text(stringResource(CoreCommonR.string.lyrics_match_keyword)) },
             placeholder = { Text(stringResource(CoreCommonR.string.lyrics_match_keyword_hint)) },
@@ -1115,8 +1144,10 @@ private fun LyricMatchResultCard(
             .testTag("lyrics-match-result-${candidate.id}")
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
-        )
+            containerColor = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+        ),
+        shape = if (NeriDesign.isClean) NeriDesign.tokens.cardShape else MaterialTheme.shapes.medium
     ) {
         Column(
             modifier = Modifier

@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -48,6 +47,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -103,6 +103,10 @@ import moe.ouom.neriplayer.data.ltw.validation.validateListenTogetherUserUuid
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -249,8 +253,10 @@ fun ListenTogetherRoomPanel(
 
     Card(
         modifier = modifier.fillMaxWidth(),
+        shape = if (NeriDesign.isClean) NeriDesign.tokens.groupShape else CardDefaults.shape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+            containerColor = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
         )
     ) {
         if (showAdvancedDebug) {
@@ -433,6 +439,8 @@ fun ListenTogetherRoomPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp),
+                    shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+                    colors = neriSearchFieldColors(),
                     label = { Text(stringResource(CoreCommonR.string.listen_together_nickname)) },
                     singleLine = true
                 )
@@ -443,6 +451,8 @@ fun ListenTogetherRoomPanel(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp),
+                        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+                        colors = neriSearchFieldColors(),
                         label = { Text(stringResource(CoreCommonR.string.listen_together_room_id)) },
                         singleLine = true,
                         readOnly = true
@@ -1283,8 +1293,9 @@ private fun DebugFieldCard(
     Box(
         modifier = modifier
             .background(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
-                shape = RoundedCornerShape(12.dp)
+                color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+                shape = neriRoundedShape(12.dp)
             )
             .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
@@ -1292,7 +1303,8 @@ private fun DebugFieldCard(
             Text(
                 text = field.label,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
+                color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.primary
             )
             Text(
                 text = field.value,
@@ -1314,13 +1326,14 @@ internal fun DebugBanner(
     val bg = if (highlighted) {
         MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
     }
     val fg = if (highlighted) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(bg, RoundedCornerShape(12.dp))
+            .background(bg, neriRoundedShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {

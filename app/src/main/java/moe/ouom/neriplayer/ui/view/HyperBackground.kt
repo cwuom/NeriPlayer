@@ -52,6 +52,8 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -151,6 +153,8 @@ fun HyperBackground(
     offlineMode: Boolean = false,
     coverIdentityKey: String? = null
 ) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+
     val context = LocalContext.current
     val applicationContext = context.applicationContext
     val currentIsDark by rememberUpdatedState(isDark)
@@ -168,12 +172,16 @@ fun HyperBackground(
     val latestCoverRequestIdentity by rememberUpdatedState(coverRequestIdentity)
     val initialPalette = remember { dynamicBackgroundPaletteCache.get(coverRequestIdentity) }
 
-    // 仅 T+ 创建 painter
-    val painter = remember(currentIsDark, applicationContext) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            BgEffectPainter(applicationContext)
-        } else null
+    val painterState = remember(currentIsDark, applicationContext) {
+        mutableStateOf<BgEffectPainter?>(null)
     }
+    LaunchedEffect(currentIsDark, applicationContext) {
+        // 构建期间对象只归后台任务所有，交接后统一在主线程更新和绘制
+        val prepared = withContext(Dispatchers.IO) { BgEffectPainter(applicationContext) }
+        currentCoroutineContext().ensureActive()
+        painterState.value = prepared
+    }
+    val painter = painterState.value
 
     var hostView by remember { mutableStateOf<View?>(null) }
     var shaderInitialized by remember(painter, hostView, currentIsDark) {
@@ -201,7 +209,7 @@ fun HyperBackground(
         }
     )
 
-    DisposableEffect(hostView) {
+    DisposableEffect(hostView, painter) {
         val view = hostView
         onDispose {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

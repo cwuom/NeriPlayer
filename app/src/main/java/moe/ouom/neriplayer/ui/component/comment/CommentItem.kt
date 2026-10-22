@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.data.model.comments.SongComment
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.cleanTintedAccent
 import moe.ouom.neriplayer.util.format.formatDate
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -110,7 +111,7 @@ internal fun CommentItem(
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.extraLarge,
+            shape = if (NeriDesign.isClean) NeriDesign.tokens.cardShape else MaterialTheme.shapes.extraLarge,
             // Clean 下 surfaceContainer 与 sheet 底 surfaceContainerLow 只差一点点，
             // 评论卡片会糊成一片，改用墨色半透明拉开层次。
             color = if (NeriDesign.isClean) {
@@ -150,12 +151,17 @@ internal fun CommentItem(
                         }
                     }
                     comment.userLevel?.let { level ->
-                        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Surface(
+                            shape = if (NeriDesign.isClean) NeriDesign.tokens.chipShape else MaterialTheme.shapes.small,
+                            color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+                                else MaterialTheme.colorScheme.secondaryContainer
+                        ) {
                             Text(
                                 text = stringResource(CoreCommonR.string.comment_user_level_format, level),
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                                color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurfaceVariant
+                                    else MaterialTheme.colorScheme.onSecondaryContainer
                             )
                         }
                         Spacer(Modifier.width(10.dp))
@@ -242,9 +248,11 @@ internal fun CommentItem(
                             stateDescription = likeState
                         },
                         colors = ButtonDefaults.textButtonColors(
-                            containerColor = if (comment.isLiked) MaterialTheme.colorScheme.primaryContainer
+                            containerColor = if (comment.isLiked && NeriDesign.isClean) MaterialTheme.colorScheme.cleanTintedAccent()
+                                else if (comment.isLiked) MaterialTheme.colorScheme.primaryContainer
                                 else MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = if (comment.isLiked) MaterialTheme.colorScheme.onPrimaryContainer
+                            contentColor = if (comment.isLiked && NeriDesign.isClean) MaterialTheme.colorScheme.primary
+                                else if (comment.isLiked) MaterialTheme.colorScheme.onPrimaryContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         contentPadding = CommentActionContentPadding

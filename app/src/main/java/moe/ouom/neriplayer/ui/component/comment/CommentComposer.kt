@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.component.comment
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,6 +35,9 @@ import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.data.model.comments.commentLengthLimit
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState
 
@@ -49,6 +53,10 @@ internal fun CommentComposer(
 ) {
     val source = ui.source ?: return
     val limit = source.platform.commentLengthLimit()
+    val sendEnabled = !offlineMode && !ui.isSending && !ui.isRefreshing && !ui.isCheckingCache && !ui.isLoadingMore &&
+        ui.pendingSort == null && ui.likingIds.isEmpty() &&
+        ui.status in setOf(CommentListStatus.SUCCESS, CommentListStatus.EMPTY) &&
+        ui.draft.isNotBlank() && ui.draft.length <= limit
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val windowInfo = LocalWindowInfo.current
@@ -90,7 +98,8 @@ internal fun CommentComposer(
                 onValueChange = onDraft,
                 modifier = Modifier.weight(1f).focusRequester(focusRequester).testTag("comment-draft"),
                 enabled = !ui.isSending,
-                shape = MaterialTheme.shapes.extraLarge,
+                shape = neriSearchFieldShape(MaterialTheme.shapes.extraLarge),
+                colors = neriSearchFieldColors(),
                 placeholder = {
                     Text(stringResource(CoreCommonR.string.comment_write_hint),
                         maxLines = if (compact) 1 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis)
@@ -111,11 +120,14 @@ internal fun CommentComposer(
             )
             HapticIconButton(
                 onClick = onSend,
-                enabled = !offlineMode && !ui.isSending && !ui.isRefreshing && !ui.isCheckingCache && !ui.isLoadingMore &&
-                    ui.pendingSort == null && ui.likingIds.isEmpty() &&
-                    ui.status in setOf(CommentListStatus.SUCCESS, CommentListStatus.EMPTY) &&
-                    ui.draft.isNotBlank() && ui.draft.length <= limit,
-                modifier = Modifier.testTag("comment-send")
+                enabled = sendEnabled,
+                modifier = Modifier.testTag("comment-send").then(
+                    if (NeriDesign.isClean) Modifier.background(
+                        color = if (sendEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f),
+                        shape = NeriDesign.tokens.controlShape
+                    ) else Modifier
+                )
             ) {
                 if (ui.isSending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 else Icon(Icons.AutoMirrored.Filled.Send, stringResource(CoreCommonR.string.comment_send))

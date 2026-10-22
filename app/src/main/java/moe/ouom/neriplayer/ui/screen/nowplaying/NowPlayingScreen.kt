@@ -115,6 +115,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.presentation.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayState
 import moe.ouom.neriplayer.data.model.playback.forSource
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
@@ -669,12 +670,6 @@ fun NowPlayingScreen(
 
     val queue by PlayerManager.currentQueueFlow.collectAsStateWithLifecycle()
     val queueDisplayRevision by PlayerManager.currentQueueDisplayRevisionFlow.collectAsStateWithLifecycle()
-    val queueDisplayState = remember(queue, currentSong, shuffleEnabled, queueDisplayRevision) {
-        PlayerManager.currentQueueDisplaySnapshot()
-    }
-    val displayedQueueItems = queueDisplayState.items
-    val displayedQueue = remember(displayedQueueItems) { displayedQueueItems.map { it.song } }
-    val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
 
     var showAddSheet by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
@@ -711,15 +706,6 @@ fun NowPlayingScreen(
         context.performHapticFeedback()
         screenScope.launch {
             settingsRepo.setNowPlayingImmersiveMode(enable)
-            snackbarHostState.showNeriSnackbar(
-                composeResources.getString(
-                    if (enable) {
-                        CoreCommonR.string.nowplaying_immersive_mode_on
-                    } else {
-                        CoreCommonR.string.nowplaying_immersive_mode_off
-                    }
-                )
-            )
         }
     }
 
@@ -978,6 +964,16 @@ fun NowPlayingScreen(
     var lyricShareInitialLine by remember(currentSong?.stableKey()) {
         mutableStateOf<LyricEntry?>(null)
     }
+    val queueDisplayState = if (showQueueSheet || showMoreOptions || lyricShareInitialLine != null) {
+        remember(queue, currentSong, shuffleEnabled, queueDisplayRevision) {
+            PlayerManager.currentQueueDisplaySnapshot()
+        }
+    } else {
+        PlayerQueueDisplayState.EMPTY
+    }
+    val displayedQueueItems = queueDisplayState.items
+    val displayedQueue = remember(displayedQueueItems) { displayedQueueItems.map { it.song } }
+    val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
