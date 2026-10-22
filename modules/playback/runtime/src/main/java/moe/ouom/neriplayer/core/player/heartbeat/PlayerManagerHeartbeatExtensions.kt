@@ -2,6 +2,7 @@
 
 package moe.ouom.neriplayer.core.player.heartbeat
 
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -77,6 +78,15 @@ private var heartbeatSelectorHolder: HeartbeatNextTrackSelector? = null
 
 /** 预取的下一首就绪快照，用于把挂起的官方接口桥接到同步推进链路。 */
 private val heartbeatPending = HeartbeatPendingNextStore()
+
+/**
+ * 心动模式会话代次，每次开关状态变化就 +1。
+ *
+ * 光靠「当前歌」这个锚点挡不住一类过期结果：同一首歌上先关掉再打开时锚点没变，
+ * 上一轮会话在途的请求回来后仍能通过锚点校验，被写进新一轮会话的待播槽。
+ * 请求发起时记下代次，回来时代次变了就整份丢弃。
+ */
+private val heartbeatSessionGeneration = AtomicInteger(0)
 
 /**
  * 候选耗尽判定：开着心动模式却连续 N 次拿不到候选时置位，
@@ -246,6 +256,8 @@ fun PlayerManager.setHeartbeatMode(
     val changed = heartbeatModeState != normalized
     heartbeatModeState = normalized
     if (changed) {
+        // 代次先 +1：上一轮会话在途的预取请求回来后会被判定为过期，不会串到新会话里
+        heartbeatSessionGeneration.incrementAndGet()
         NPLogger.d(TAG, "setHeartbeatMode: $normalized, source=$commandSource")
         if (normalized == HeartbeatMode.OFF) {
             heartbeatPending.clear()
@@ -357,6 +369,7 @@ internal fun PlayerManager.requestHeartbeatSelectionAsync(reason: String) {
     val selector = heartbeatSelectorHolder ?: return
     val currentSong = _currentSongFlow.value ?: return
     val anchor = HeartbeatScorer.identityKey(currentSong)
+    val generation = heartbeatSessionGeneration.get()
     val queue = currentPlaylist.toList()
     PlayerDependencies.launchBackgroundIo {
         val next = try {
@@ -366,6 +379,11 @@ internal fun PlayerManager.requestHeartbeatSelectionAsync(reason: String) {
         } catch (error: Throwable) {
             NPLogger.w(TAG, "预取失败（reason=$reason），本次沿用原有模式", error)
             null
+        }
+        // 请求期间开关被切过：同一首歌上关掉再打开时锚点不变，只有代次能识别出新旧会话。
+        if (heartbeatSessionGeneration.get() != generation) {
+            NPLogger.d(TAG, "预取结果属于已结束的心动会话（reason=$reason），丢弃")
+            return@launchBackgroundIo
         }
         // 请求期间用户可能已经切走：锚点变了就整份作废，免得把 A 的候选当成 B 的下一首。
         if (heartbeatPendingAnchor() != anchor) {
