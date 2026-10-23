@@ -11,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -35,6 +36,7 @@ import moe.ouom.neriplayer.ui.animation.sharedCoverTarget
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingContainerMorph
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingMorphState
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -94,10 +96,103 @@ class NowPlayingMorphRenderingTest {
         assertCoverThroughoutMorph()
     }
 
+    @Test
+    fun flyingCoverTracksTheCurrentFrameWhenTheMorphReverses() {
+        render(390.dp, 844.dp, hasSource = true, hasBitmap = true)
+        listOf(0.2f, 0.7f, 0.4f, 0.9f, 0.6f, 0.3f).forEach { progress ->
+            composeRule.runOnIdle { runBlocking { morph.progress.snapTo(progress) } }
+            val actual = coverBounds()
+            val expected = composeRule.runOnIdle {
+                val target = checkNotNull(flight.targetCoordinates)
+                val origin = checkNotNull(flight.miniPlayerContainerBounds).let {
+                    Offset(it.left, it.bottom - 844f * viewportPixelsPerDp)
+                }
+                val source = checkNotNull(flight.miniCoverBounds).translate(-origin)
+                val destination = Rect(
+                    target.localToWindow(Offset.Zero) - origin,
+                    target.localToWindow(Offset(target.size.width.toFloat(), target.size.height.toFloat())) - origin
+                )
+                androidx.compose.ui.geometry.lerp(source, destination, progress)
+            }
+            assertEquals("cover left at progress=$progress", expected.left, actual.left, 2f)
+            assertEquals("cover top at progress=$progress", expected.top, actual.top, 2f)
+            assertEquals("cover right at progress=$progress", expected.right, actual.right, 2f)
+            assertEquals("cover bottom at progress=$progress", expected.bottom, actual.bottom, 2f)
+        }
+    }
+
+    @Test
+    fun artworkArrivingMidMorphDoesNotTakeTheCoverFromThePage() {
+        render(390.dp, 844.dp, hasSource = true, hasBitmap = false)
+        composeRule.runOnIdle { runBlocking { morph.progress.snapTo(0.5f) } }
+        val before = coverBounds()
+
+        composeRule.runOnIdle {
+            flight.reportSource(checkNotNull(flight.miniCoverBounds), 8f, magentaBitmap())
+        }
+
+        assertEquals("late artwork must not move the visible page cover", before, coverBounds())
+    }
+
+    @Test
+    fun losingTheMiniPlayerBitmapMidMorphDoesNotHandTheCoverBackEarly() {
+        render(390.dp, 844.dp, hasSource = true, hasBitmap = true)
+        composeRule.runOnIdle { runBlocking { morph.progress.snapTo(0.5f) } }
+        val before = coverBounds()
+
+        composeRule.runOnIdle {
+            flight.reportSource(checkNotNull(flight.miniCoverBounds), 8f, null)
+        }
+
+        assertEquals("the flying cover must keep its position until handoff", before, coverBounds())
+    }
+
+    @Test
+    fun replacingANonNullBitmapMidMorphKeepsTheCapturedArtwork() {
+        render(390.dp, 844.dp, hasSource = true, hasBitmap = true)
+        composeRule.runOnIdle { runBlocking { morph.progress.snapTo(0.5f) } }
+        val before = coverBounds()
+
+        composeRule.runOnIdle {
+            val replacement = ImageBitmap(48, 48).also {
+                Canvas(it).drawRect(Rect(0f, 0f, 48f, 48f), Paint().apply { color = Color.Green })
+            }
+            flight.reportSource(checkNotNull(flight.miniCoverBounds), 8f, replacement)
+        }
+
+        val frame = composeRule.onNodeWithTag("morphViewport").captureToImage().toPixelMap()
+        val pixel = frame[before.center.x.toInt(), before.center.y.toInt()]
+        assertTrue(
+            "a replacement bitmap must wait until the next linked morph",
+            pixel.red > 0.7f && pixel.blue > 0.7f && pixel.green < 0.2f
+        )
+    }
+
+    private fun magentaBitmap() = ImageBitmap(48, 48).also {
+        Canvas(it).drawRect(Rect(0f, 0f, 48f, 48f), Paint().apply { color = Color.Magenta })
+    }
+
+    private fun coverBounds(): Rect {
+        val frame = composeRule.onNodeWithTag("morphViewport").captureToImage().toPixelMap()
+        var left = frame.width
+        var top = frame.height
+        var right = 0
+        var bottom = 0
+        for (y in 0 until frame.height) for (x in 0 until frame.width) {
+            val pixel = frame[x, y]
+            if (pixel.red > 0.7f && pixel.blue > 0.7f && pixel.green < 0.2f) {
+                left = minOf(left, x)
+                top = minOf(top, y)
+                right = maxOf(right, x + 1)
+                bottom = maxOf(bottom, y + 1)
+            }
+        }
+        assertTrue("the cover must remain visible", right > left && bottom > top)
+        return Rect(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
+    }
+
     private fun render(width: Dp, height: Dp, hasSource: Boolean, hasBitmap: Boolean) {
-        val bitmap = if (hasBitmap) ImageBitmap(48, 48).also {
-            Canvas(it).drawRect(Rect(0f, 0f, 48f, 48f), Paint().apply { color = Color.Magenta })
-        } else null
+        val bitmap = if (hasBitmap) magentaBitmap() else null
         composeRule.setContent {
             BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 val hostDensity = LocalDensity.current
@@ -128,8 +223,7 @@ class NowPlayingMorphRenderingTest {
                         NowPlayingContainerMorph(
                             morph = morph,
                             flight = flight,
-                            capsuleInWindow = { flight.miniPlayerContainerBounds },
-                            artwork = { bitmap }
+                            capsuleInWindow = { flight.miniPlayerContainerBounds }
                         ) {
                             Box(Modifier.fillMaxSize().background(Color.Black)) {
                                 Box(

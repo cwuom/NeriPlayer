@@ -30,7 +30,7 @@ class NowPlayingCoverFlightVisibilityTest {
     }
 
     @Test
-    fun realArtworkHidesOnlyWhileTheSharedFlightCanDrawItsReplacement() {
+    fun realArtworkRemainsHiddenUntilTheLinkedFlightEnds() {
         val flight = SharedCoverFlightState()
         flight.reportSource(Rect(0f, 0f, 48f, 48f), 8f, ImageBitmap(2, 2))
         flight.targetCoordinates = mock(LayoutCoordinates::class.java).also {
@@ -43,6 +43,31 @@ class NowPlayingCoverFlightVisibilityTest {
         assertEquals(1f, nowPlayingCoverArtworkAlpha(flight), 0f)
         flight.beginLinked()
         flight.reportSource(Rect(0f, 0f, 48f, 48f), 8f, null)
+        assertEquals(0f, nowPlayingCoverArtworkAlpha(flight), 0f)
+
+        flight.endLinked()
+        flight.beginLinked()
         assertEquals(1f, nowPlayingCoverArtworkAlpha(flight), 0f)
+    }
+
+    @Test
+    fun lateArtworkIsOnlyUsedByTheNextLinkedFlight() {
+        val flight = SharedCoverFlightState()
+        val bounds = Rect(0f, 0f, 48f, 48f)
+        flight.reportSource(bounds, 8f, null)
+        flight.targetCoordinates = mock(LayoutCoordinates::class.java).also {
+            `when`(it.isAttached).thenReturn(true)
+        }
+        flight.beginLinked()
+
+        flight.reportSource(bounds, 8f, ImageBitmap(2, 2))
+
+        assertEquals(1f, nowPlayingCoverArtworkAlpha(flight), 0f)
+        flight.beginLinked()
+        assertEquals(1f, nowPlayingCoverArtworkAlpha(flight), 0f)
+
+        flight.endLinked()
+        flight.beginLinked()
+        assertEquals(0f, nowPlayingCoverArtworkAlpha(flight), 0f)
     }
 }
