@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.model.SongItem
@@ -71,9 +72,7 @@ internal fun LocalPlaylistRepository.buildPlaylistSongDeletionRemoval(
     playlistId: Long,
     songs: List<SongItem>
 ): LocalPlaylistSyncMutation {
-    val remoteIdentities = songs
-        .asSequence()
-        .filter { it.isSyncableRemoteSong(context) }
+    val remoteIdentities = syncablePlaylistSongs(playlistId, songs)
         .map { it.identity() }
         .toList()
     if (remoteIdentities.isEmpty()) return LocalPlaylistSyncMutation()
@@ -97,9 +96,7 @@ internal fun LocalPlaylistRepository.buildPlaylistSongDeletions(
     }
 
     val deviceId = syncMutationStore.getOrCreateDeviceId()
-    return songs
-        .asSequence()
-        .filter { it.isSyncableRemoteSong(context) }
+    return syncablePlaylistSongs(playlistId, songs)
         .map { song ->
             val identity = song.identity()
             SyncPlaylistSongDeletion(
@@ -113,6 +110,17 @@ internal fun LocalPlaylistRepository.buildPlaylistSongDeletions(
             )
         }
         .toList()
+}
+
+private fun LocalPlaylistRepository.syncablePlaylistSongs(
+    playlistId: Long,
+    songs: List<SongItem>
+): Sequence<SongItem> = songs.asSequence().mapNotNull { song ->
+    if (playlistId == FavoritesPlaylist.SYSTEM_ID) {
+        FavoritesPlaylist.toSyncableSongOrNull(song, context)
+    } else {
+        song.takeIf { it.isSyncableRemoteSong(context) }
+    }
 }
 
 internal suspend fun LocalPlaylistRepository.hydrateLocalSongsForPersistence(

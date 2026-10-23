@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.identity.toSyncableRemoteSongOrNull
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.model.sync.normalizedSyncCausalTokens
@@ -60,7 +61,7 @@ internal fun LocalPlaylistRepository.loadFromDisk() {
         recoverPendingSyncMutation(
             committedDomainDigest = LocalPlaylistRoomStore.domainDigest(roomPrimary)
         )
-        val normalizedRoomPrimary = normalizeRoomPrimaryLocalFilesCover(roomPrimary)
+        val normalizedRoomPrimary = normalizeRoomPrimaryPlaylists(roomPrimary)
         if (normalizedRoomPrimary != roomPrimary) {
             runCatching {
                 runBlocking {
@@ -349,12 +350,20 @@ internal fun LocalPlaylistRepository.normalizePlaylistOrder(playlists: List<Loca
     )
 }
 
-internal fun LocalPlaylistRepository.normalizeRoomPrimaryLocalFilesCover(
+internal fun LocalPlaylistRepository.normalizeRoomPrimaryPlaylists(
     playlists: List<LocalPlaylist>
 ): List<LocalPlaylist> {
     var changed = false
     val normalized = playlists.map { playlist ->
-        if (isLocalFilesPlaylist(playlist.id, playlist.name) &&
+        if (FavoritesPlaylist.isSystemPlaylist(playlist, context)) {
+            val songs = FavoritesPlaylist.mergedSongs(listOf(playlist))
+            if (songs == playlist.songs) {
+                playlist
+            } else {
+                changed = true
+                playlist.copy(songs = songs)
+            }
+        } else if (isLocalFilesPlaylist(playlist.id, playlist.name) &&
             playlist.customCoverUrl != null
         ) {
             changed = true

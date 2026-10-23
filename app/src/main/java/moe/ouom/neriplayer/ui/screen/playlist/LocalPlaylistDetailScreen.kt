@@ -487,7 +487,7 @@ fun LocalPlaylistDetailScreen(
                 FavoritesPlaylist.firstOrNull(allPlaylists, context)?.songs.orEmpty()
             }
             val favoriteSongLookup = remember(favoriteSongs) {
-                SongIdentityLookup(favoriteSongs)
+                FavoriteSongLookup(favoriteSongs)
             }
             val scope = rememberCoroutineScope()
             var syncInProgress by remember { mutableStateOf(false) }

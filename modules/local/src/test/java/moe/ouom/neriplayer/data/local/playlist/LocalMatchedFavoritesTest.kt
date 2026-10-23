@@ -4,6 +4,7 @@ import java.io.File
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import org.junit.Assert.assertEquals
@@ -57,6 +58,57 @@ class LocalMatchedFavoritesTest : LocalPlaylistRepositoryTestSupport() {
         assertEquals(local.identity(), repository.playlists.value.single().songs.single().identity())
         val reloaded = repository(syncStore)
         assertEquals(1, reloaded.playlists.value.single().songs.size)
+    }
+
+    @Test
+    fun `readding matched local favorite clears the canonical remote deletion identity`() = runTest {
+        val syncStore = RecordingSyncMutationStore()
+        val repository = repository(syncStore)
+        val local = localSong(99).copy(
+            matchedLyricSource = MusicPlatform.CLOUD_MUSIC,
+            matchedSongId = "42"
+        )
+        repository.updatePlaylists(listOf(LocalPlaylist(
+            id = FavoritesPlaylist.SYSTEM_ID,
+            name = "Favorites",
+            songs = mutableListOf(remoteNeteaseSong())
+        )))
+        repository.removeFromFavorites(local)
+
+        repository.addToFavorites(local)
+
+        val removals = syncStore.applied.flatMap(LocalPlaylistSyncMutation::removedSongDeletions)
+        assertEquals(1, removals.size)
+        assertEquals(FavoritesPlaylist.SYSTEM_ID, removals.single().playlistId)
+        assertEquals(listOf(SongIdentity(42L, "netease", null)), removals.single().identities)
+        val favorite = repository.playlists.value.single().songs.single()
+        assertEquals(local.identity(), favorite.identity())
+        assertEquals(local.localFilePath, favorite.localFilePath)
+        assertTrue(favorite.syncMembershipTokens.orEmpty().isNotEmpty())
+    }
+
+    @Test
+    fun `removing matched local favorite records its remote identity and membership tokens`() = runTest {
+        val syncStore = RecordingSyncMutationStore()
+        val repository = repository(syncStore)
+        val local = localSong(99).copy(
+            matchedLyricSource = MusicPlatform.CLOUD_MUSIC,
+            matchedSongId = "42"
+        )
+        repository.updatePlaylists(listOf(LocalPlaylist(
+            id = FavoritesPlaylist.SYSTEM_ID,
+            name = "Favorites"
+        )))
+        repository.addToFavorites(local)
+        val membershipTokens = repository.playlists.value.single().songs.single().syncMembershipTokens
+
+        repository.removeFromFavorites(local)
+
+        val deletions = syncStore.applied.flatMap(LocalPlaylistSyncMutation::addedSongDeletions)
+        assertEquals(1, deletions.size)
+        assertEquals(SongIdentity(42L, "netease", null), deletions.single().identity())
+        assertEquals(membershipTokens, deletions.single().removedMembershipTokens)
+        assertTrue(repository.playlists.value.single().songs.isEmpty())
     }
 
     @Test

@@ -15,8 +15,10 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,7 +29,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit
 import java.util.Locale
-import moe.ouom.neriplayer.ui.screen.playlist.SongIdentityLookup
+import moe.ouom.neriplayer.ui.screen.playlist.FavoriteSongLookup
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
@@ -191,6 +193,51 @@ class RecentSongsStateComposeTest {
     }
 
     @Test
+    fun `remote favorite is shown for a recent local song with confirmed NetEase lyrics`() {
+        verifyRecentFavoriteMembership(remoteFavoriteSong(), matchedLocalSong())
+    }
+
+    @Test
+    fun `matched local favorite is shown for the corresponding recent remote song`() {
+        verifyRecentFavoriteMembership(matchedLocalSong(), remoteFavoriteSong())
+    }
+
+    private fun verifyRecentFavoriteMembership(favorite: SongItem, query: SongItem) {
+        val favorites = listOf(favorite)
+        val lookup = AtomicReference<FavoriteSongLookup?>()
+        composeRule.setContent {
+            val prepared = rememberRecentFavoriteLookup(favorites)
+            SideEffect { lookup.set(prepared) }
+            Text(if (prepared == null) "preparing" else "ready")
+        }
+        waitForAsyncCondition { lookup.get() != null }
+        assertTrue("最近歌曲的收藏状态应遵循收藏仓库的匹配身份", checkNotNull(lookup.get()).contains(query))
+    }
+
+    private fun remoteFavoriteSong() = SongItem(
+        id = 42L,
+        name = "Remote favorite",
+        artist = "Artist",
+        album = "netease",
+        albumId = 0L,
+        durationMs = 60_000L,
+        coverUrl = null,
+        channelId = "netease",
+        audioId = "42"
+    )
+
+    private fun matchedLocalSong() = remoteFavoriteSong().copy(
+        id = 99L,
+        name = "Local recent song",
+        album = "__local_files__",
+        mediaUri = "content://media/external/audio/media/99",
+        channelId = "local",
+        audioId = "99",
+        matchedLyricSource = MusicPlatform.CLOUD_MUSIC,
+        matchedSongId = "42"
+    )
+
+    @Test
     fun `changed favorites disable stale lookup while the replacement is prepared`() {
         val first = SongItem(
             id = 1L, name = "First", artist = "Artist", album = "Album", albumId = 0L,
@@ -209,7 +256,7 @@ class RecentSongsStateComposeTest {
             }
         }
         var favorites by mutableStateOf(listOf(first), referentialEqualityPolicy())
-        val lookup = AtomicReference<SongIdentityLookup?>()
+        val lookup = AtomicReference<FavoriteSongLookup?>()
         composeRule.setContent {
             val prepared = rememberRecentFavoriteLookup(favorites)
             SideEffect { lookup.set(prepared) }

@@ -73,7 +73,7 @@ internal class LocalPlaylistDetailModernContentScope(
     val totalDurationText: String,
     val metadataProcessingVisible: Boolean,
     val visibleMetadataProcessingState: LocalMetadataProcessingState,
-    val favoriteSongLookup: SongIdentityLookup,
+    val favoriteSongLookup: FavoriteSongLookup,
     val currentSongLookup: SongIdentityLookup,
     val queueIndexBySongKey: Map<String, Int>,
     val canReorderCurrentSongs: Boolean,

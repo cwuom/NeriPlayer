@@ -16,7 +16,7 @@ import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.screen.playlist.SongIdentityLookup
+import moe.ouom.neriplayer.ui.screen.playlist.FavoriteSongLookup
 
 internal class RecentSongRowItem(
     val song: SongItem,
@@ -124,11 +124,11 @@ private fun recentSongSearchTokens(song: SongItem, context: Context): List<Strin
 )
 
 @Composable
-internal fun rememberRecentFavoriteLookup(favoriteSongs: List<SongItem>): SongIdentityLookup? {
+internal fun rememberRecentFavoriteLookup(favoriteSongs: List<SongItem>): FavoriteSongLookup? {
     val source = RecentFavoriteSource(favoriteSongs)
     val prepared by produceState<RecentFavoriteLookup?>(null, source) {
         value = withContext(Dispatchers.Default) {
-            RecentFavoriteLookup(favoriteSongs, SongIdentityLookup(favoriteSongs))
+            RecentFavoriteLookup(favoriteSongs, FavoriteSongLookup(favoriteSongs))
         }
     }
     return prepared?.takeIf { it.source === favoriteSongs }?.lookup
@@ -136,7 +136,7 @@ internal fun rememberRecentFavoriteLookup(favoriteSongs: List<SongItem>): SongId
 
 private class RecentFavoriteLookup(
     val source: List<SongItem>,
-    val lookup: SongIdentityLookup
+    val lookup: FavoriteSongLookup
 )
 
 private class RecentFavoriteSource(private val songs: List<SongItem>) {

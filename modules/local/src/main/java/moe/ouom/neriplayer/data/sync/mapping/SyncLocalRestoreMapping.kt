@@ -9,7 +9,9 @@ import moe.ouom.neriplayer.data.sync.identity.identity
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.validExplicitLocalSourceReference
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongIdentity
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
@@ -43,18 +45,22 @@ internal class SyncLocalRestoreMapping(
     private fun restorePlaylist(playlist: SyncPlaylist, current: Map<Long, LocalPlaylist>, candidates: MutableList<SyncSong>): LocalPlaylist {
         val descriptor = SystemLocalPlaylists.resolve(playlist.id, playlist.name, localizedContext)
         val id = descriptor?.id ?: playlist.id
+        val isFavorites = id == FavoritesPlaylist.SYSTEM_ID
         val existing = current[id]
-        val existingSongs = existing?.songs.orEmpty().associateBy {
-            it.toLegacyLyricRecoveryCandidateOrNull()?.let(candidates::add)
-            it.identity()
-        }
+        val existingSongs = indexPlaylistSongs(existing, isFavorites, candidates)
         val songs = playlist.songs.map { song ->
-            song.toSongItem(existingSongs[song.identity()])
+            val currentSong = existingSongs[song.identity()]
+            val restored = song.toSongItem(currentSong)
+            if (isFavorites && currentSong != null && LocalSongSupport.isLocalSong(currentSong, localizedContext)) {
+                restoreFavoriteLocalSource(restored, currentSong)
+            } else {
+                restored
+            }
         }.distinctBy { it.identity() }
         return LocalPlaylist(
             id = id,
             name = restoredName(playlist, descriptor),
-            songs = mergeLocalOnlySongs(songs, preservedLocalSongs(existing)),
+            songs = mergeLocalOnlySongs(songs, preservedLocalSongs(existing, isFavorites)),
             modifiedAt = playlist.modifiedAt,
             customCoverUrl = existing?.customCoverUrl,
             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
@@ -64,9 +70,54 @@ internal class SyncLocalRestoreMapping(
     private fun restoredName(playlist: SyncPlaylist, descriptor: SystemLocalPlaylists.Descriptor?): String =
         descriptor?.currentName ?: playlist.name
 
-    private fun preservedLocalSongs(playlist: LocalPlaylist?): List<moe.ouom.neriplayer.data.model.SongItem> =
+    private fun indexPlaylistSongs(
+        playlist: LocalPlaylist?,
+        isFavorites: Boolean,
+        candidates: MutableList<SyncSong>
+    ): Map<SongIdentity, SongItem> {
+        if (playlist == null) return emptyMap()
+        playlist.songs.forEach { song ->
+            song.toLegacyLyricRecoveryCandidateOrNull()?.let(candidates::add)
+        }
+        val songs = if (isFavorites) FavoritesPlaylist.mergedSongs(listOf(playlist)) else playlist.songs
+        return songs.associateBy { song ->
+            if (isFavorites) {
+                FavoritesPlaylist.toSyncableSongOrNull(song, localizedContext)?.identity() ?: song.identity()
+            } else {
+                song.identity()
+            }
+        }
+    }
+
+    private fun restoreFavoriteLocalSource(restored: SongItem, local: SongItem): SongItem = restored.copy(
+        id = local.id,
+        album = local.album,
+        albumId = local.albumId,
+        mediaUri = local.mediaUri,
+        localFileName = local.localFileName,
+        localFilePath = local.localFilePath,
+        channelId = local.channelId,
+        audioId = local.audioId,
+        subAudioId = local.subAudioId,
+        playlistContextId = local.playlistContextId,
+        sourceStableKey = local.sourceStableKey,
+        streamUrl = local.streamUrl,
+        neteaseArtists = local.neteaseArtists,
+        logicalCreatedAtMs = local.logicalCreatedAtMs,
+        createdAtSource = local.createdAtSource,
+        createdAtConfidence = local.createdAtConfidence,
+        membershipAddedAtMs = restored.addedAt,
+        sourceModifiedAtMs = local.sourceModifiedAtMs,
+        explicitLocalSourceReference = local.explicitLocalSourceReference,
+        // 纯本地文件仍依靠这组匹配字段关联收藏，远端条目可能没有歌词匹配信息
+        matchedLyricSource = if (local.remoteSourceIdentityOrNull() == null) local.matchedLyricSource else restored.matchedLyricSource,
+        matchedSongId = if (local.remoteSourceIdentityOrNull() == null) local.matchedSongId else restored.matchedSongId
+    )
+
+    private fun preservedLocalSongs(playlist: LocalPlaylist?, isFavorites: Boolean): List<SongItem> =
         playlist?.songs.orEmpty().filter {
             LocalSongSupport.isLocalSong(it, localizedContext) &&
+                !(isFavorites && FavoritesPlaylist.toSyncableSongOrNull(it, localizedContext) != null) &&
                 !(it.validExplicitLocalSourceReference() != null && it.remoteSourceIdentityOrNull() != null)
         }
 
