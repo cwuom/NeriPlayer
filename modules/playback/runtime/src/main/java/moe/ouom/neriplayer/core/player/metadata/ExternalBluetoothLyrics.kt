@@ -160,7 +160,8 @@ private fun songAndLyricsMetadata(
         title = combined,
         artist = artist,
         album = album,
-        displayTitle = title,
+        // 显示端可能优先读取 DISPLAY_TITLE, 需保留当前歌词
+        displayTitle = combined,
         displaySubtitle = artist,
         displayDescription = lines,
     )

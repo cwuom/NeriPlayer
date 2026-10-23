@@ -79,7 +79,7 @@ class CarSessionPresentationRegressionTest {
 
             source.modes.value = BluetoothMetadataMode.SongAndLyrics
             assertEquals("Song 1 | line | translation", builders.string(1, MediaMetadata.METADATA_KEY_TITLE))
-            assertEquals("Song 1", builders.string(1, MediaMetadata.METADATA_KEY_DISPLAY_TITLE))
+            assertEquals("Song 1 | line | translation", builders.string(1, MediaMetadata.METADATA_KEY_DISPLAY_TITLE))
             assertEquals("Artist", builders.string(1, MediaMetadata.METADATA_KEY_ARTIST))
             assertEquals("Album", builders.string(1, MediaMetadata.METADATA_KEY_ALBUM))
 
