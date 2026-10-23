@@ -322,7 +322,8 @@ internal suspend fun GlobalDownloadManager.deferDownloadForDeleteCleanup(
     songs: Collection<SongItem>,
     userInitiated: Boolean,
     admissionTicket: Long?,
-    batchPresentationId: Long? = null
+    batchPresentationId: Long? = null,
+    requiresWifiNetworkOverride: Boolean? = null
 ): Boolean {
     val ticket = admissionTicket ?: return false
     var deferred = false
@@ -330,7 +331,7 @@ internal suspend fun GlobalDownloadManager.deferDownloadForDeleteCleanup(
         context, ticket, songs.map(SongItem::stableKey)
     ) {
         deferred = persistDownloadWaitingForDeleteCleanup(
-            context, songs, userInitiated, ticket, batchPresentationId
+            context, songs, userInitiated, ticket, batchPresentationId, requiresWifiNetworkOverride
         )
     }
     return admitted && deferred
@@ -341,7 +342,8 @@ private suspend fun GlobalDownloadManager.persistDownloadWaitingForDeleteCleanup
     songs: Collection<SongItem>,
     userInitiated: Boolean,
     admissionTicket: Long,
-    batchPresentationId: Long?
+    batchPresentationId: Long?,
+    requiresWifiNetworkOverride: Boolean?
 ): Boolean {
     val appContext = context.applicationContext
     val distinctSongs = songs.distinctBy(SongItem::stableKey)
@@ -378,8 +380,9 @@ private suspend fun GlobalDownloadManager.persistDownloadWaitingForDeleteCleanup
         return false
     }
     val currentNetworkType = appContext.currentDownloadNetworkTypeOrNull()
-    val requiresWifiNetwork = !userInitiated ||
-        currentNetworkType == null || currentNetworkType == TrafficNetworkType.WIFI
+    val requiresWifiNetwork = requiresWifiNetworkOverride ?: (
+        !userInitiated || currentNetworkType == null || currentNetworkType == TrafficNetworkType.WIFI
+        )
     val operationCreatedAtMs = nextDownloadOperationCreatedAtMs(
         requestedAtMs = System.currentTimeMillis(),
         cancellationCutoffs = songKeys.mapNotNull { songKey ->

@@ -1047,7 +1047,8 @@ internal suspend fun GlobalDownloadManager.maybeRequestTrafficRiskDownloadConfir
     context: Context,
     songs: List<SongItem>,
     isBatch: Boolean,
-    skipTrafficRiskPrompt: Boolean
+    skipTrafficRiskPrompt: Boolean,
+    networkType: TrafficNetworkType? = context.currentDownloadNetworkTypeOrNull()
 ): Boolean {
     if (skipTrafficRiskPrompt) {
         return false
@@ -1056,7 +1057,6 @@ internal suspend fun GlobalDownloadManager.maybeRequestTrafficRiskDownloadConfir
     if (distinctSongs.isEmpty()) {
         return false
     }
-    val networkType = context.currentDownloadNetworkTypeOrNull()
     if (networkType == TrafficNetworkType.WIFI) {
         return false
     }

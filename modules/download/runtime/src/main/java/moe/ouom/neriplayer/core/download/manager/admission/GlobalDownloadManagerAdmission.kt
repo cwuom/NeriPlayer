@@ -371,6 +371,7 @@ internal suspend fun GlobalDownloadManager.stageAndPromotePendingDownloadQueue(
     songs: List<SongItem>,
     userInitiated: Boolean,
     batchIdentity: DownloadExecutionRoomStore.DownloadBatchIdentity? = null,
+    requiresWifiNetworkOverride: Boolean? = null,
     onPageReady: suspend (pageIndex: Int, page: StagedPendingDownloadQueue) -> Unit =
         { _, _ -> }
 ): StagedPendingDownloadQueue {
@@ -397,8 +398,9 @@ internal suspend fun GlobalDownloadManager.stageAndPromotePendingDownloadQueue(
         .filter(cancellationForceNewSongKeys::contains)
         .toSet()
     val currentNetworkType = appContext.currentDownloadNetworkTypeOrNull()
-    val requiresWifiNetwork = !userInitiated ||
-        currentNetworkType == null || currentNetworkType == TrafficNetworkType.WIFI
+    val requiresWifiNetwork = requiresWifiNetworkOverride ?: (
+        !userInitiated || currentNetworkType == null || currentNetworkType == TrafficNetworkType.WIFI
+        )
     val downloadAudioQuality = resolveDownloadAudioQualitySelection(appContext)
     // 首批交接前保存整批载荷，进程退出后尾部歌曲仍可沿原恢复入口继续
     val waitingBatch = database.withTransaction {
