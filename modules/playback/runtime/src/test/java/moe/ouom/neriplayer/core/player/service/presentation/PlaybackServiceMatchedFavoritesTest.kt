@@ -81,10 +81,35 @@ class PlaybackServiceMatchedFavoritesTest {
         assertTrue(fixture.owner.refreshFavoriteSongKeys())
         fixture.publish()
         assertFalse(fixture.notification().favorite)
-        assertTrue(fixture.notification().interactiveFavorite)
+        assertFalse(fixture.notification().interactiveFavorite)
         assertFalse(fixture.widget().isFavorite)
-        assertFalse(fixture.widget().canToggleFavorite)
+        assertTrue(fixture.widget().canToggleFavorite)
         assertEquals(listOf(true, false), fixture.widgetStates().map { it.isFavorite })
+    }
+
+    @Test
+    fun `syncable matched favorites can be added externally while unmatched files still require confirmation`() = runTest {
+        favorites()
+        val matched = fixture(local, backgroundScope)
+        matched.owner.refreshFavoriteSongKeys()
+        matched.publish()
+        assertFalse(matched.notification().favorite)
+        assertFalse(matched.notification().interactiveFavorite)
+        assertTrue(matched.widget().canToggleFavorite)
+        assertTrue(matched.owner.canToggleFavorite(local))
+
+        listOf(
+            local.copy(matchedSongId = null),
+            local.copy(matchedSongId = "invalid"),
+            local.copy(matchedLyricSource = MusicPlatform.QQ_MUSIC)
+        ).forEach { song ->
+            val unmatched = fixture(song, backgroundScope)
+            unmatched.owner.refreshFavoriteSongKeys()
+            unmatched.publish()
+            assertTrue(unmatched.notification().interactiveFavorite)
+            assertFalse(unmatched.widget().canToggleFavorite)
+            assertFalse(unmatched.owner.canToggleFavorite(song))
+        }
     }
 
     @Test

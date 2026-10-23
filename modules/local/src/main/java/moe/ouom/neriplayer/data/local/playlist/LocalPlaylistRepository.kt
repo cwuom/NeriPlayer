@@ -1018,27 +1018,37 @@ class LocalPlaylistRepository private constructor(
         withContext(Dispatchers.IO) {
             recordLyricSyncState(newSongInfo)
             commitPlaylistMutation {
-                val modifiedAt = if (triggerSync) System.currentTimeMillis() else null
+                val now = System.currentTimeMillis()
+                val modifiedAt = if (triggerSync) now else null
                 var changed = false
+                var syncMutation = LocalPlaylistSyncMutation()
                 val updated = _playlists.value.map { playlist ->
                     val songIndex = playlist.songs.indexOfFirst { it.sameIdentityAs(originalSong) }
                     if (songIndex == -1) {
                         playlist
                     } else {
-                        val mergedSongInfo = mergeSongMetadataForPersistence(
-                            currentSong = playlist.songs[songIndex],
-                            newSongInfo = newSongInfo
+                        val currentSong = playlist.songs[songIndex]
+                        val metadataUpdate = prepareFavoriteMetadataMembership(
+                            playlist = playlist,
+                            currentSong = currentSong,
+                            mergedSong = mergeSongMetadataForPersistence(currentSong, newSongInfo),
+                            triggerSync = triggerSync,
+                            now = now
                         )
-                        if (playlist.songs[songIndex] == mergedSongInfo) {
+                        val mergedSongInfo = metadataUpdate.song
+                        if (currentSong == mergedSongInfo) {
                             return@map playlist
                         }
+                        syncMutation += metadataUpdate.syncMutation
                         saveCoverMapping(mergedSongInfo)
                         val songs = playlist.songs.toMutableList()
                         songs[songIndex] = mergedSongInfo
                         changed = true
                         playlist.copy(
                             songs = songs,
-                            modifiedAt = modifiedAt ?: playlist.modifiedAt,
+                            modifiedAt = if (!metadataUpdate.syncMutation.isEmpty) now else {
+                                modifiedAt ?: playlist.modifiedAt
+                            },
                             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
                     }
@@ -1046,11 +1056,12 @@ class LocalPlaylistRepository private constructor(
                 if (!changed) {
                     return@commitPlaylistMutation
                 }
-                // 调用方决定这次元数据变更是不是用户动作，避免播放期自动补全顺手唤醒云同步
+                // 普通自动补全不唤醒同步，首次建立收藏关联由同批成员变更推进同步
                 publishLocked(
                     playlists = updated,
                     triggerSync = triggerSync,
-                    markLocalMutation = triggerSync
+                    markLocalMutation = triggerSync,
+                    syncMutation = syncMutation
                 )
             }
         }

@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.model.sync.normalizedSyncCausalTokens
@@ -21,20 +22,32 @@ internal suspend fun LocalPlaylistRepository.applySongMetadataUpdates(updates: L
 
     commitPlaylistMutation {
         val updateIndex = SongMetadataUpdateIndex(updates)
+        val now = System.currentTimeMillis()
         var changed = false
+        var syncMutation = LocalPlaylistSyncMutation()
         val updated = _playlists.value.map { playlist ->
             var playlistChanged = false
+            var modifiedAt = playlist.modifiedAt
             val refreshedSongs = playlist.songs.map { currentSong ->
                 val update = updateIndex.find(currentSong) ?: return@map currentSong
-                val mergedSongInfo = mergeSongMetadataForPersistence(
+                val metadataUpdate = prepareFavoriteMetadataMembership(
+                    playlist = playlist,
                     currentSong = currentSong,
-                    newSongInfo = update.newSongInfo,
-                    clearCoverUrl = update.clearCoverUrl,
-                    clearOriginalCoverUrl = update.clearOriginalCoverUrl
+                    mergedSong = mergeSongMetadataForPersistence(
+                        currentSong = currentSong,
+                        newSongInfo = update.newSongInfo,
+                        clearCoverUrl = update.clearCoverUrl,
+                        clearOriginalCoverUrl = update.clearOriginalCoverUrl
+                    ),
+                    triggerSync = false,
+                    now = now
                 )
+                val mergedSongInfo = metadataUpdate.song
                 if (currentSong == mergedSongInfo) {
                     currentSong
                 } else {
+                    syncMutation += metadataUpdate.syncMutation
+                    if (!metadataUpdate.syncMutation.isEmpty) modifiedAt = now
                     saveCoverMapping(mergedSongInfo)
                     changed = true
                     playlistChanged = true
@@ -45,6 +58,7 @@ internal suspend fun LocalPlaylistRepository.applySongMetadataUpdates(updates: L
             if (playlistChanged) {
                 playlist.copy(
                     songs = refreshedSongs,
+                    modifiedAt = modifiedAt,
                     songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
             } else {
@@ -56,10 +70,49 @@ internal suspend fun LocalPlaylistRepository.applySongMetadataUpdates(updates: L
             publishLocked(
                 playlists = updated,
                 triggerSync = false,
-                markLocalMutation = false
+                markLocalMutation = false,
+                syncMutation = syncMutation
             )
         }
     }
+}
+
+internal data class FavoriteMetadataMembershipUpdate(
+    val song: SongItem,
+    val syncMutation: LocalPlaylistSyncMutation = LocalPlaylistSyncMutation()
+)
+
+internal fun LocalPlaylistRepository.prepareFavoriteMetadataMembership(
+    playlist: LocalPlaylist,
+    currentSong: SongItem,
+    mergedSong: SongItem,
+    triggerSync: Boolean,
+    now: Long
+): FavoriteMetadataMembershipUpdate {
+    if (!FavoritesPlaylist.isSystemPlaylist(playlist, context)) {
+        return FavoriteMetadataMembershipUpdate(mergedSong)
+    }
+    val previousIdentity = FavoritesPlaylist.toSyncableSongOrNull(currentSong, context)?.identity()
+    val nextIdentity = FavoritesPlaylist.toSyncableSongOrNull(mergedSong, context)?.identity()
+    if (previousIdentity == nextIdentity) {
+        return FavoriteMetadataMembershipUpdate(mergedSong)
+    }
+    if (!triggerSync && previousIdentity != null) {
+        // 自动补全可以刷新文本，但不能静默替换已经收藏的远端成员
+        return FavoriteMetadataMembershipUpdate(mergedSong.copy(
+            matchedLyricSource = currentSong.matchedLyricSource,
+            matchedSongId = currentSong.matchedSongId
+        ))
+    }
+
+    val updatedSong = if (nextIdentity == null) mergedSong else {
+        renewSongsForPlaylistRestore(listOf(mergedSong)).single()
+    }
+    return FavoriteMetadataMembershipUpdate(
+        song = updatedSong,
+        syncMutation = buildPlaylistSongDeletionMutation(playlist.id, listOf(currentSong), now) +
+            buildPlaylistSongDeletionRemoval(playlist.id, listOf(updatedSong))
+    )
 }
 
 internal suspend fun LocalPlaylistRepository.applySongDurationUpdates(updates: List<Pair<SongItem, SongItem>>) {

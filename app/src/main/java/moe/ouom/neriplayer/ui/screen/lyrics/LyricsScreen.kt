@@ -146,6 +146,7 @@ import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
+import moe.ouom.neriplayer.ui.screen.playback.shouldConfirmFavoriteSync
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricEdgeFadeHeight
@@ -628,7 +629,7 @@ fun LyricsScreen(
                     launchWithLocalSyncWarning(
                         song = song,
                         actionLabel = favoriteActionLabel,
-                        warnForLocalSync = willFav
+                        warnForLocalSync = shouldConfirmFavoriteSync(song, willFav, context)
                     ) {
                         favOverride = willFav
                         PlayerManager.toggleCurrentFavorite()
@@ -1251,7 +1252,9 @@ fun LyricsScreen(
                                     .clickable {
                                         launchWithLocalSyncWarning(
                                             song = currentSong,
-                                            actionLabel = playlistAddActionLabel
+                                            actionLabel = playlistAddActionLabel,
+                                            warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(pl, context) ||
+                                                shouldConfirmFavoriteSync(currentSong, adding = true, context = context)
                                         ) {
                                             PlayerManager.addCurrentToPlaylist(pl.id)
                                             showAddSheet = false

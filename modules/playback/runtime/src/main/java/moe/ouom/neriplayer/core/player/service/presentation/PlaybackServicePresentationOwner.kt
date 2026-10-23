@@ -393,7 +393,9 @@ internal class PlaybackServicePresentationOwner(
             localPlaylistsReady = source.localPlaylistsReady(),
             hasCurrentSong = song != null,
             isFavorite = isFavoriteSong(song),
-            isLocalSong = song?.let(source::isLocalSong) == true,
+            isLocalSong = song?.let {
+                source.isLocalSong(it) && FavoritesPlaylist.toSyncableSongOrNull(it) == null
+            } == true,
         )
 
     private fun widgetState(

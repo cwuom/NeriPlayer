@@ -312,18 +312,24 @@ internal suspend fun LocalPlaylistRepository.addStampedSongsToPlaylistLocked(
             return@map playlist
         }
 
-        val existingSongs = if (preserveScannedSourceAddedAt) {
-            mergeScannedMetadataIntoExistingSongs(playlist.songs, songs)
+        val scannedMetadata = if (preserveScannedSourceAddedAt) {
+            mergeScannedMetadataIntoExistingSongs(playlist, songs, now)
         } else {
-            playlist.songs
+            ScannedPlaylistMetadataMerge(playlist.songs)
         }
+        val existingSongs = scannedMetadata.songs
+        syncMutation += scannedMetadata.syncMutation
         val newSongs = filterNewSongs(
             existingSongs = existingSongs,
             candidates = songs,
             includeLocalMetadataFallback = includeLocalMetadataFallback
         )
         if (newSongs.isEmpty()) {
-            if (existingSongs == playlist.songs) playlist else playlist.copy(songs = existingSongs)
+            if (existingSongs == playlist.songs) playlist else playlist.copy(
+                songs = existingSongs,
+                modifiedAt = if (scannedMetadata.syncMutation.isEmpty) playlist.modifiedAt else now,
+                songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+            )
         } else {
             val toAdd = stampSongsForPlaylistInsert(
                 songs = newSongs,
@@ -354,16 +360,19 @@ internal suspend fun LocalPlaylistRepository.addSongsToLocalFilesPlaylistWithRes
         val hydratedSongs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata)
         commitPlaylistMutation {
             var addedSongs = emptyList<SongItem>()
+            var syncMutation = LocalPlaylistSyncMutation()
             val updated = _playlists.value.map { playlist ->
                 if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
                     return@map playlist
                 }
 
-                val existingSongs = if (preserveScannedSourceAddedAt) {
-                    mergeScannedMetadataIntoExistingSongs(playlist.songs, hydratedSongs)
+                val scannedMetadata = if (preserveScannedSourceAddedAt) {
+                    mergeScannedMetadataIntoExistingSongs(playlist, hydratedSongs, now)
                 } else {
-                    playlist.songs
+                    ScannedPlaylistMetadataMerge(playlist.songs)
                 }
+                val existingSongs = scannedMetadata.songs
+                syncMutation += scannedMetadata.syncMutation
                 val newSongs = filterNewSongs(
                     existingSongs = existingSongs,
                     candidates = hydratedSongs,
@@ -392,30 +401,46 @@ internal suspend fun LocalPlaylistRepository.addSongsToLocalFilesPlaylistWithRes
                     )
                 }
             }
-            publishLocked(updated)
+            publishLocked(updated, syncMutation = syncMutation)
             LocalPlaylistSongAddResult(addedSongs)
         }
     }
 }
 
+internal data class ScannedPlaylistMetadataMerge(
+    val songs: MutableList<SongItem>,
+    val syncMutation: LocalPlaylistSyncMutation = LocalPlaylistSyncMutation()
+)
+
 internal fun LocalPlaylistRepository.mergeScannedMetadataIntoExistingSongs(
-    existingSongs: List<SongItem>,
-    scannedSongs: List<SongItem>
-): MutableList<SongItem> {
-    if (existingSongs.isEmpty() || scannedSongs.isEmpty()) {
-        return existingSongs.toMutableList()
+    playlist: LocalPlaylist,
+    scannedSongs: List<SongItem>,
+    now: Long
+): ScannedPlaylistMetadataMerge {
+    if (playlist.songs.isEmpty() || scannedSongs.isEmpty()) {
+        return ScannedPlaylistMetadataMerge(playlist.songs.toMutableList())
     }
     val scannedSongIndex = SongMatchIndex(
         songs = scannedSongs,
         includeLocalMetadataFallback = true
     )
-    return existingSongs.mapTo(mutableListOf()) existingSong@{ existingSong ->
+    var syncMutation = LocalPlaylistSyncMutation()
+    val songs = playlist.songs.mapTo(mutableListOf()) existingSong@{ existingSong ->
         val scannedSong = scannedSongIndex.firstMatch(existingSong)
             ?: return@existingSong existingSong
-        mergeSongMetadataForPersistence(
-            existingSong,
-            scannedSong,
-            allowScannedSourceReplacement = true
+        val metadataUpdate = prepareFavoriteMetadataMembership(
+            playlist = playlist,
+            currentSong = existingSong,
+            mergedSong = mergeSongMetadataForPersistence(
+                existingSong,
+                scannedSong,
+                allowScannedSourceReplacement = true
+            ),
+            triggerSync = false,
+            now = now
         )
+        syncMutation += metadataUpdate.syncMutation
+        metadataUpdate.song
     }
+    return ScannedPlaylistMetadataMerge(songs, syncMutation)
 }
