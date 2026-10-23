@@ -124,6 +124,7 @@ import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
+import moe.ouom.neriplayer.ui.screen.playback.shouldConfirmFavoriteSync
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.rememberMainTabDetailVisibilityState
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
@@ -487,7 +488,7 @@ fun LocalPlaylistDetailScreen(
                 FavoritesPlaylist.firstOrNull(allPlaylists, context)?.songs.orEmpty()
             }
             val favoriteSongLookup = remember(favoriteSongs) {
-                SongIdentityLookup(favoriteSongs)
+                FavoriteSongLookup(favoriteSongs)
             }
             val scope = rememberCoroutineScope()
             var syncInProgress by remember { mutableStateOf(false) }
@@ -849,8 +850,13 @@ fun LocalPlaylistDetailScreen(
                 selectionMode = false; clearSelection()
             }
 
-            fun launchWithLocalSyncWarning(songs: List<SongItem>, actionLabel: String, action: () -> Unit) {
-                if (songs.any { !it.isSyncableRemoteSong(context) }) {
+            fun launchWithLocalSyncWarning(
+                songs: List<SongItem>,
+                actionLabel: String,
+                warnForLocalSync: Boolean = true,
+                action: () -> Unit
+            ) {
+                if (warnForLocalSync && songs.any { !it.isSyncableRemoteSong(context) }) {
                     pendingSyncConfirmLabel = actionLabel
                     pendingSyncConfirmAction = action
                 } else {
@@ -1476,7 +1482,9 @@ fun LocalPlaylistDetailScreen(
                             }
                             launchWithLocalSyncWarning(
                                 songs = selectedSongs,
-                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
+                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to),
+                                warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(target, context) ||
+                                    shouldConfirmFavoriteSync(selectedSongs, context)
                             ) {
                                 appendSongsOptimistically(target.id, selectedSongs)
                                 vm.addScannedSongsToPlaylist(

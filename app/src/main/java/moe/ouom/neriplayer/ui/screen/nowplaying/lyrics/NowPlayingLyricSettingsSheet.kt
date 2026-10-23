@@ -132,7 +132,6 @@ private fun Modifier.lyricToggleModifier(
     onCheckedChange: (Boolean) -> Unit
 ): Modifier = this
     .fillMaxWidth()
-    .clip(neriRoundedShape(12.dp))
     .clickable(enabled = enabled, onClick = booleanToggleClick(checked, onCheckedChange))
 
 internal class LyricBehaviorSheetState(initialOffset: Long) {
@@ -315,19 +314,26 @@ internal fun LyricBehaviorContent(
             style = if (NeriDesign.isClean) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
 
-        LyricTranslationToggle(
-            copy = lyricTranslationToggleCopy(hasTranslationLyrics, hasPhoneticLyrics),
-            checked = showLyricTranslation,
-            onCheckedChange = onTranslationChange
-        )
-        LyricPhoneticToggle(
-            visible = hasTranslationLyrics,
-            translationEnabled = showLyricTranslation,
-            hasPhonetic = hasPhoneticLyrics,
-            enabled = phoneticSwitchEnabled,
-            checked = phoneticSwitchChecked,
-            onCheckedChange = onPhoneticChange
-        )
+        Column(
+            Modifier.fillMaxWidth().clip(neriRoundedShape(12.dp)).background(
+                if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                else MaterialTheme.colorScheme.surface
+            )
+        ) {
+            LyricTranslationToggle(
+                copy = lyricTranslationToggleCopy(hasTranslationLyrics, hasPhoneticLyrics),
+                checked = showLyricTranslation,
+                onCheckedChange = onTranslationChange
+            )
+            LyricPhoneticToggle(
+                visible = hasTranslationLyrics,
+                translationEnabled = showLyricTranslation,
+                hasPhonetic = hasPhoneticLyrics,
+                enabled = phoneticSwitchEnabled,
+                checked = phoneticSwitchChecked,
+                onCheckedChange = onPhoneticChange
+            )
+        }
         LyricOffsetControls(
             state = offsetState,
             onCommit = onOffsetCommit
@@ -356,9 +362,7 @@ private fun LyricTranslationToggle(
             Switch(checked = checked, onCheckedChange = onCheckedChange)
         },
         modifier = Modifier.lyricToggleModifier(true, checked, onCheckedChange),
-        colors = if (NeriDesign.isClean) ListItemDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
-        ) else ListItemDefaults.colors()
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
 
@@ -396,9 +400,7 @@ private fun LyricPhoneticListItem(
             )
         },
         modifier = Modifier.lyricToggleModifier(enabled, checked, onCheckedChange),
-        colors = if (NeriDesign.isClean) ListItemDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
-        ) else ListItemDefaults.colors()
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
 

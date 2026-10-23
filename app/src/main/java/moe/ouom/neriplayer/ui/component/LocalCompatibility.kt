@@ -6,13 +6,11 @@ import moe.ouom.neriplayer.data.model.SongItem
 @Composable
 fun LocalSongDetailsDialog(
     song: SongItem,
-    onDismiss: () -> Unit,
-    onShowMessage: (String) -> Unit = {}
+    onDismiss: () -> Unit
 ) {
     moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog(
         song = song,
-        onDismiss = onDismiss,
-        onShowMessage = onShowMessage
+        onDismiss = onDismiss
     )
 }
 

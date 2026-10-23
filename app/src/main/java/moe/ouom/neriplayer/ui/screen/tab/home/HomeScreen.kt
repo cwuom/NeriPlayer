@@ -25,7 +25,7 @@ package moe.ouom.neriplayer.ui.screen.tab.home
 
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
-import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.ui.screen.playlist.FavoriteSongLookup
 import android.app.Application
 import android.content.ClipData
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -232,11 +232,13 @@ fun HomeScreen(
     val favoriteKeys = remember(favorites) {
         favorites.mapTo(mutableSetOf()) { "${it.source}:${it.id}" }
     }
-    val favoriteSongs = remember(localPlaylistSnapshotVersion, context) {
-        localPlaylists
-            .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
-            ?.songs
-            .orEmpty()
+    val favoriteSongLookup = remember(localPlaylistSnapshotVersion, context) {
+        FavoriteSongLookup(
+            localPlaylists
+                .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
+                ?.songs
+                .orEmpty()
+        )
     }
     val localPlaylistCoverFallbackIds = usageEntries.asSequence()
         .take(HomeContinueEntryLimit)
@@ -583,7 +585,7 @@ fun HomeScreen(
                                     icon = Icons.Outlined.Bolt,
                                     title = guessYouLikeTitle,
                                     onSongClick = onSongClick,
-                                    favoriteSongs = favoriteSongs,
+                                    favoriteSongLookup = favoriteSongLookup,
                                     onFavoriteToggle = ::toggleHomeSongFavorite,
                                     onShowSnackbar = showHomeSnackbar,
                                     offlineMode = offlineMode
@@ -598,7 +600,7 @@ fun HomeScreen(
                                     icon = Icons.Outlined.Explore,
                                     title = dailyDiscoverTitle,
                                     onSongClick = onSongClick,
-                                    favoriteSongs = favoriteSongs,
+                                    favoriteSongLookup = favoriteSongLookup,
                                     onFavoriteToggle = ::toggleHomeSongFavorite,
                                     onShowSnackbar = showHomeSnackbar,
                                     offlineMode = offlineMode
@@ -677,7 +679,7 @@ fun HomeScreen(
                                                     icon = Icons.Outlined.Explore,
                                                     title = shelf.title,
                                                     onSongClick = onSongClick,
-                                                    favoriteSongs = favoriteSongs,
+                                                    favoriteSongLookup = favoriteSongLookup,
                                                     onFavoriteToggle = ::toggleHomeSongFavorite,
                                                     onShowSnackbar = showHomeSnackbar,
                                                     offlineMode = offlineMode
@@ -791,7 +793,7 @@ fun HomeScreen(
                                         icon = neteaseSongSectionIcon(sectionState.source),
                                         loadingText = homeLoadingText,
                                         onSongClick = onSongClick,
-                                        favoriteSongs = favoriteSongs,
+                                        favoriteSongLookup = favoriteSongLookup,
                                         onFavoriteToggle = ::toggleHomeSongFavorite,
                                         onShowSnackbar = showHomeSnackbar,
                                         offlineMode = offlineMode
@@ -850,7 +852,7 @@ fun HomeScreen(
                                             icon = neteaseSongSectionIcon(sectionState.source),
                                             loadingText = homeLoadingText,
                                             onSongClick = onSongClick,
-                                            favoriteSongs = favoriteSongs,
+                                            favoriteSongLookup = favoriteSongLookup,
                                             onFavoriteToggle = ::toggleHomeSongFavorite,
                                             onShowSnackbar = showHomeSnackbar,
                                             offlineMode = offlineMode
@@ -876,7 +878,7 @@ fun HomeScreen(
                                         icon = neteaseSongSectionIcon(sectionState.source),
                                         loadingText = homeLoadingText,
                                         onSongClick = onSongClick,
-                                        favoriteSongs = favoriteSongs,
+                                        favoriteSongLookup = favoriteSongLookup,
                                         onFavoriteToggle = ::toggleHomeSongFavorite,
                                         onShowSnackbar = showHomeSnackbar,
                                         offlineMode = offlineMode
@@ -956,7 +958,7 @@ private fun LazyGridScope.addNeteaseSongSection(
     icon: ImageVector,
     loadingText: String,
     onSongClick: (List<SongItem>, Int) -> Unit,
-    favoriteSongs: List<SongItem>,
+    favoriteSongLookup: FavoriteSongLookup,
     onFavoriteToggle: (SongItem, Boolean) -> Unit,
     onShowSnackbar: (String) -> Unit,
     offlineMode: Boolean
@@ -984,7 +986,7 @@ private fun LazyGridScope.addNeteaseSongSection(
             ResponsiveSongPagerList(
                 songs = sectionState.section.items,
                 onSongClick = onSongClick,
-                favoriteSongs = favoriteSongs,
+                favoriteSongLookup = favoriteSongLookup,
                 onFavoriteToggle = onFavoriteToggle,
                 onShowSnackbar = onShowSnackbar,
                 offlineMode = offlineMode
@@ -1694,7 +1696,7 @@ private fun LazyGridScope.addYouTubeMusicSongShelfSection(
     icon: ImageVector,
     title: String,
     onSongClick: (List<SongItem>, Int) -> Unit,
-    favoriteSongs: List<SongItem>,
+    favoriteSongLookup: FavoriteSongLookup,
     onFavoriteToggle: (SongItem, Boolean) -> Unit,
     onShowSnackbar: (String) -> Unit,
     offlineMode: Boolean
@@ -1731,7 +1733,7 @@ private fun LazyGridScope.addYouTubeMusicSongShelfSection(
         ResponsiveSongPagerList(
             songs = songs,
             onSongClick = onSongClick,
-            favoriteSongs = favoriteSongs,
+            favoriteSongLookup = favoriteSongLookup,
             onFavoriteToggle = onFavoriteToggle,
             onShowSnackbar = onShowSnackbar,
             offlineMode = offlineMode
@@ -1743,7 +1745,7 @@ private fun LazyGridScope.addYouTubeMusicSongShelfSection(
 private fun ResponsiveSongPagerList(
     songs: List<SongItem>,
     onSongClick: (List<SongItem>, Int) -> Unit,
-    favoriteSongs: List<SongItem>,
+    favoriteSongLookup: FavoriteSongLookup,
     onFavoriteToggle: (SongItem, Boolean) -> Unit,
     onShowSnackbar: (String) -> Unit,
     offlineMode: Boolean
@@ -1786,7 +1788,7 @@ private fun ResponsiveSongPagerList(
                                 index = absoluteIndex + 1,
                                 song = song,
                                 onClick = { onSongClick(songs, absoluteIndex) },
-                                isFavorite = favoriteSongs.any { it.sameIdentityAs(song) },
+                                isFavorite = favoriteSongLookup.contains(song),
                                 onFavoriteToggle = onFavoriteToggle,
                                 onShowSnackbar = onShowSnackbar,
                                 offlineMode = offlineMode

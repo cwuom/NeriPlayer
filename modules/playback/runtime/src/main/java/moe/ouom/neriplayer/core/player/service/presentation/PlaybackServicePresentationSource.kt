@@ -126,7 +126,12 @@ internal class AndroidPlaybackServicePresentationSource(
 
     override fun favoriteSongKeys(): Set<String> {
         if (!PlayerManager.localPlaylistsReady) return emptySet()
-        return favoritePlaylistSongs().mapTo(mutableSetOf()) { it.stableKey() }
+        return buildSet {
+            favoritePlaylistSongs().forEach { song ->
+                add(song.stableKey())
+                FavoritesPlaylist.toSyncableSongOrNull(song)?.let { add(it.stableKey()) }
+            }
+        }
     }
 
     override fun localPlaylistsReady(): Boolean = PlayerManager.localPlaylistsReady

@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncSong
 import android.content.Context
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 
@@ -22,10 +23,18 @@ internal fun mapResolvedLocalPlaylist(
     context: Context?,
     optimizeLegacyLyrics: Boolean = false
 ): SyncPlaylist {
+    val resolvedId = systemDescriptor?.id ?: playlist.id
     return SyncPlaylist(
-        id = systemDescriptor?.id ?: playlist.id,
+        id = resolvedId,
         name = systemDescriptor?.currentName ?: playlist.name,
-        songs = playlist.songs.mapNotNull { SyncSong.fromSongItemOrNull(it, context, optimizeLegacyLyrics) },
+        songs = playlist.songs.mapNotNull { song ->
+            if (resolvedId == FavoritesPlaylist.SYSTEM_ID) {
+                FavoritesPlaylist.toSyncableSongOrNull(song, context)
+                    ?.let { SyncSong.fromSongItem(it, context, optimizeLegacyLyrics) }
+            } else {
+                SyncSong.fromSongItemOrNull(song, context, optimizeLegacyLyrics)
+            }
+        },
         createdAt = playlist.id, // 使用ID作为创建时间
         modifiedAt = modifiedAt,
         songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION

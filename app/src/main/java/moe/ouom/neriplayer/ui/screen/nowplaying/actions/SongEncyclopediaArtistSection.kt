@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -129,23 +130,30 @@ private fun SongEncyclopediaArtistAvatar(artist: EncyclopediaArtistInfo, modifie
     )
 }
 @Composable
-private fun SongEncyclopediaArtistBrief(artist: EncyclopediaArtistInfo) {
+internal fun SongEncyclopediaArtistBrief(artist: EncyclopediaArtistInfo) {
     val brief = artist.briefDesc?.takeIf { it.isNotBlank() }
     if (brief == null) {
         SongEncyclopediaEmptyHint(CoreCommonR.string.encyclopedia_empty)
         return
     }
-    var expanded by rememberSaveable(artist.artistId) { mutableStateOf(false) }
+    var expanded by rememberSaveable(artist.artistId, brief) { mutableStateOf(false) }
+    var canExpand by remember(artist.artistId, brief) { mutableStateOf(false) }
     Text(
         text = brief,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = if (expanded) Int.MAX_VALUE else ENCYCLOPEDIA_ARTIST_BRIEF_MAX_LINES,
         overflow = TextOverflow.Ellipsis,
+        onTextLayout = { layout ->
+            // 展开后按实际行数保留收起入口，宽度或字号变化后也重新判断
+            canExpand = layout.hasVisualOverflow || layout.lineCount > ENCYCLOPEDIA_ARTIST_BRIEF_MAX_LINES
+        },
         modifier = Modifier.fillMaxWidth()
     )
-    SongEncyclopediaActionSpacer()
-    SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
+    if (canExpand) {
+        SongEncyclopediaActionSpacer()
+        SongEncyclopediaExpandAction(expanded = expanded, onToggle = { expanded = !expanded })
+    }
 }
 @Composable
 private fun buildEncyclopediaArtistMeta(artist: EncyclopediaArtistInfo): String? {

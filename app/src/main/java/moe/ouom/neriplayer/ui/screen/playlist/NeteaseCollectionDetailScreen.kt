@@ -370,8 +370,8 @@ fun DetailScreen(
     // 多选与导出到本地歌单
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allPlaylists by repo.playlists.collectAsState()
-    val favoriteSongs = remember(allPlaylists, context) {
-        FavoritesPlaylist.firstOrNull(allPlaylists, context)?.songs.orEmpty()
+    val favoriteSongLookup = remember(allPlaylists, context) {
+        FavoriteSongLookup(FavoritesPlaylist.firstOrNull(allPlaylists, context)?.songs.orEmpty())
     }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
@@ -886,9 +886,7 @@ fun DetailScreen(
                                             coverUrl = displayCoverUrl,
                                             offlineMode = offlineMode
                                         ) {
-                                            val isFavoriteSong = favoriteSongs.any {
-                                                it.sameIdentityAs(item)
-                                            }
+                                            val isFavoriteSong = favoriteSongLookup.contains(item)
                                             SongRow(
                                                 index = index + 1,
                                                 song = item,

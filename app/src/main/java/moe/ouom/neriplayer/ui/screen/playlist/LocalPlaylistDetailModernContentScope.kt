@@ -73,7 +73,7 @@ internal class LocalPlaylistDetailModernContentScope(
     val totalDurationText: String,
     val metadataProcessingVisible: Boolean,
     val visibleMetadataProcessingState: LocalMetadataProcessingState,
-    val favoriteSongLookup: SongIdentityLookup,
+    val favoriteSongLookup: FavoriteSongLookup,
     val currentSongLookup: SongIdentityLookup,
     val queueIndexBySongKey: Map<String, Int>,
     val canReorderCurrentSongs: Boolean,
@@ -100,7 +100,7 @@ internal class LocalPlaylistDetailModernContentScope(
         List<SongItem>,
         Result<List<LocalPlaylistSongDeleteResult>>
     ) -> Unit,
-    private val launchWithLocalSyncWarningAction: (List<SongItem>, String, () -> Unit) -> Unit,
+    private val launchWithLocalSyncWarningAction: (List<SongItem>, String, Boolean, () -> Unit) -> Unit,
     val openNeteaseSyncPreview: () -> Unit,
     private val playPlaylistAction: (Boolean) -> Unit,
     val copyText: (String) -> Unit,
@@ -188,9 +188,10 @@ internal class LocalPlaylistDetailModernContentScope(
     fun launchWithLocalSyncWarning(
         songs: List<SongItem>,
         actionLabel: String,
+        warnForLocalSync: Boolean = true,
         action: () -> Unit
     ) {
-        launchWithLocalSyncWarningAction(songs, actionLabel, action)
+        launchWithLocalSyncWarningAction(songs, actionLabel, warnForLocalSync, action)
     }
 
     fun playPlaylist(shuffle: Boolean) = playPlaylistAction(shuffle)

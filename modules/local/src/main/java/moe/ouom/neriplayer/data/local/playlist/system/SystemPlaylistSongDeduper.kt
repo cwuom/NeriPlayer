@@ -36,7 +36,11 @@ internal fun List<SongItem>.distinctSystemSongs(): List<SongItem> {
         .songs()
 }
 
-internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
+internal class SystemPlaylistSongDeduper(
+    expectedSongCount: Int,
+    private val additionalIdentity: (SongItem) -> SongIdentity? = { null },
+    private val mergeSongs: (SongItem, SongItem) -> SongItem = ::mergeSystemPlaylistSong
+) {
     private val initialCapacity = expectedSongCount.coerceIn(0, MAX_INITIAL_CAPACITY)
     private val distinct = ArrayList<SongItem>(initialCapacity)
     private val indexByIdentity = HashMap<SongIdentity, Int>(initialCapacity)
@@ -51,13 +55,13 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
     fun takeSongs(): MutableList<SongItem> = distinct
 
     private fun add(song: SongItem) {
-        val identity = song.identity()
+        val identities = listOfNotNull(song.identity(), additionalIdentity(song))
         val localKeys = LocalSongSupport.localDuplicateKeys(
             song = song,
             includeMetadataFallback = true
         )
         val matchingIndices = buildSet {
-            indexByIdentity[identity]?.let(::add)
+            identities.mapNotNullTo(this, indexByIdentity::get)
             localKeys.mapNotNullTo(this, indexByLocalKey::get)
         }
         if (matchingIndices.isNotEmpty()) {
@@ -65,12 +69,12 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
             var merged = distinct[duplicateIndex]
             matchingIndices.sorted().forEach { index ->
                 if (index != duplicateIndex) {
-                    merged = mergeDuplicateSong(merged, distinct[index])
+                    merged = mergeSongs(merged, distinct[index])
                 }
             }
-            distinct[duplicateIndex] = mergeDuplicateSong(merged, song)
+            distinct[duplicateIndex] = mergeSongs(merged, song)
             collapseDuplicateIndices(duplicateIndex, matchingIndices - duplicateIndex)
-            indexByIdentity[identity] = duplicateIndex
+            identities.forEach { indexByIdentity[it] = duplicateIndex }
             localKeys.forEach { key ->
                 indexByLocalKey[key] = duplicateIndex
             }
@@ -78,7 +82,7 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
         }
         val index = distinct.size
         distinct += song
-        indexByIdentity[identity] = index
+        identities.forEach { indexByIdentity[it] = index }
         localKeys.forEach { key ->
             indexByLocalKey[key] = index
         }
@@ -99,32 +103,32 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
         indexByLocalKey.replaceAll { _, index -> remap(index) }
     }
 
-    private fun mergeDuplicateSong(existing: SongItem, candidate: SongItem): SongItem {
-        return existing.copy(
-            name = existing.name.ifBlank { candidate.name },
-            artist = existing.artist.ifBlank { candidate.artist },
-            album = existing.album.ifBlank { candidate.album },
-            durationMs = positiveOr(existing.durationMs, candidate.durationMs),
-            coverUrl = nonBlankOr(existing.coverUrl, candidate.coverUrl),
-            customCoverUrl = nonBlankOr(existing.customCoverUrl, candidate.customCoverUrl),
-            originalCoverUrl = nonBlankOr(existing.originalCoverUrl, candidate.originalCoverUrl),
-            matchedLyric = presentOr(existing.matchedLyric, candidate.matchedLyric),
-            matchedTranslatedLyric = presentOr(existing.matchedTranslatedLyric, candidate.matchedTranslatedLyric),
-            matchedRomanizedLyric = presentOr(existing.matchedRomanizedLyric, candidate.matchedRomanizedLyric),
-            originalLyric = presentOr(existing.originalLyric, candidate.originalLyric),
-            originalTranslatedLyric = presentOr(existing.originalTranslatedLyric, candidate.originalTranslatedLyric),
-            originalRomanizedLyric = presentOr(existing.originalRomanizedLyric, candidate.originalRomanizedLyric)
-        )
-    }
-
-    private fun positiveOr(existing: Long, candidate: Long): Long = if (existing > 0L) existing else candidate
-
-    private fun nonBlankOr(existing: String?, candidate: String?): String? =
-        if (existing.isNullOrBlank()) candidate else existing
-
-    private fun presentOr(existing: String?, candidate: String?): String? = existing ?: candidate
-
     private companion object {
         const val MAX_INITIAL_CAPACITY = 4_096
     }
 }
+
+internal fun mergeSystemPlaylistSong(existing: SongItem, candidate: SongItem): SongItem {
+    return existing.copy(
+        name = existing.name.ifBlank { candidate.name },
+        artist = existing.artist.ifBlank { candidate.artist },
+        album = existing.album.ifBlank { candidate.album },
+        durationMs = positiveOr(existing.durationMs, candidate.durationMs),
+        coverUrl = nonBlankOr(existing.coverUrl, candidate.coverUrl),
+        customCoverUrl = nonBlankOr(existing.customCoverUrl, candidate.customCoverUrl),
+        originalCoverUrl = nonBlankOr(existing.originalCoverUrl, candidate.originalCoverUrl),
+        matchedLyric = presentOr(existing.matchedLyric, candidate.matchedLyric),
+        matchedTranslatedLyric = presentOr(existing.matchedTranslatedLyric, candidate.matchedTranslatedLyric),
+        matchedRomanizedLyric = presentOr(existing.matchedRomanizedLyric, candidate.matchedRomanizedLyric),
+        originalLyric = presentOr(existing.originalLyric, candidate.originalLyric),
+        originalTranslatedLyric = presentOr(existing.originalTranslatedLyric, candidate.originalTranslatedLyric),
+        originalRomanizedLyric = presentOr(existing.originalRomanizedLyric, candidate.originalRomanizedLyric)
+    )
+}
+
+private fun positiveOr(existing: Long, candidate: Long): Long = if (existing > 0L) existing else candidate
+
+private fun nonBlankOr(existing: String?, candidate: String?): String? =
+    if (existing.isNullOrBlank()) candidate else existing
+
+private fun presentOr(existing: String?, candidate: String?): String? = existing ?: candidate

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
@@ -17,6 +18,7 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -36,6 +38,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.Before
 import org.junit.runner.RunWith
+import java.util.concurrent.atomic.AtomicBoolean
 
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = 33)
@@ -59,9 +62,23 @@ class CleanTabLensRenderingTest {
 
     private fun showPressedIndicator() {
         var hostCoordinates: LayoutCoordinates? = null
+        val pressedFrameCommitted = AtomicBoolean(false)
         composeRule.setContent {
+            val view = LocalView.current
             val barLayer = rememberGraphicsLayer()
             val barHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
+            // 初始未按压帧不能提前完成等待，按压状态生效后再监听硬件提交
+            if (tabDrag.dragProgress.value == 1f && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                DisposableEffect(view) {
+                    val observer = view.viewTreeObserver
+                    val callback = Runnable { pressedFrameCommitted.set(true) }
+                    observer.registerFrameCommitCallback(callback)
+                    view.invalidate()
+                    onDispose {
+                        if (observer.isAlive) observer.unregisterFrameCommitCallback(callback)
+                    }
+                }
+            }
             CompositionLocalProvider(LocalAdvancedGlassController provides controller.value) {
                 MaterialTheme(colorScheme = lightColorScheme(
                     primary = Color.Red,
@@ -95,6 +112,7 @@ class CleanTabLensRenderingTest {
             }
         }
         composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = 5_000L) { pressedFrameCommitted.get() }
     }
 
     private fun brightestRimPixel(): Float {

@@ -30,7 +30,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.shape.CircleShape
 import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
 import moe.ouom.neriplayer.ui.theme.NeriDesign
-import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.ui.screen.playlist.FavoriteSongLookup
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.app.Application
@@ -431,11 +431,8 @@ fun ExploreScreen(
     val localPlaylistsReady by repo.initializationReadyFlow.collectAsStateWithLifecycle(
         initialValue = false
     )
-    val favoriteSongKeys = remember(allLocalPlaylists, context) {
-        FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)
-            ?.songs
-            .orEmpty()
-            .mapTo(mutableSetOf()) { it.stableKey() }
+    val favoriteSongLookup = remember(allLocalPlaylists, context) {
+        FavoriteSongLookup(FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)?.songs.orEmpty())
     }
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val favorites by favoriteRepo.favorites.collectAsStateWithLifecycle()
@@ -960,7 +957,7 @@ fun ExploreScreen(
                                             val songListIndex = ui.searchResults.indexOfFirst {
                                                 it.stableKey() == song.stableKey()
                                             }.takeIf { it >= 0 } ?: index
-                                            val isFavoriteSong = favoriteSongKeys.contains(song.stableKey())
+                                            val isFavoriteSong = favoriteSongLookup.contains(song)
                                             SongRow(
                                                 state = ExploreSongRowState(
                                                     index = index + 1,
@@ -1032,9 +1029,7 @@ fun ExploreScreen(
                                                                         )
                                                                         ?.songs
                                                                         ?.any {
-                                                                            it.sameIdentityAs(
-                                                                                song
-                                                                            )
+                                                                            FavoritesPlaylist.matchesSong(it, song)
                                                                         } == true
                                                                 if (isFavoriteAtAction) {
                                                                     repo.removeFromFavorites(song)

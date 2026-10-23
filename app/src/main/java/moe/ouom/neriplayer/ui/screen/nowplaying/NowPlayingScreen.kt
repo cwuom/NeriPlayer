@@ -120,6 +120,7 @@ import moe.ouom.neriplayer.data.model.playback.forSource
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
+import moe.ouom.neriplayer.ui.screen.playback.shouldConfirmFavoriteSync
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.media.displayArtist
@@ -659,7 +660,7 @@ fun NowPlayingScreen(
         playlists
             .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
             ?.songs
-            ?.any { it.sameIdentityAs(song) } == true
+            ?.any { FavoritesPlaylist.matchesSong(it, song) } == true
     }
     LaunchedEffect(isFavoriteComputed) {
         if (favOverride == isFavoriteComputed) {
@@ -1418,7 +1419,7 @@ fun NowPlayingScreen(
                                 launchWithLocalSyncWarning(
                                     song = song,
                                     actionLabel = composeResources.getString(CoreCommonR.string.favorite_add),
-                                    warnForLocalSync = willFav
+                                    warnForLocalSync = shouldConfirmFavoriteSync(song, willFav, context)
                                 ) {
                                     favOverride = willFav
                                     PlayerManager.toggleCurrentFavorite()
@@ -1885,7 +1886,9 @@ fun NowPlayingScreen(
                                             .clickable {
                                                 launchWithLocalSyncWarning(
                                                     song = currentSong,
-                                                    actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
+                                                    actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to),
+                                                    warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(pl, context) ||
+                                                        shouldConfirmFavoriteSync(currentSong, adding = true, context = context)
                                                 ) {
                                                     PlayerManager.addCurrentToPlaylist(pl.id)
                                                     showAddSheet = false
@@ -1921,12 +1924,7 @@ fun NowPlayingScreen(
                     detailSong?.let { song ->
                         LocalSongDetailsDialog(
                             song = song,
-                            onDismiss = { detailSong = null },
-                            onShowMessage = { message ->
-                                screenScope.launch {
-                                    snackbarHostState.showNeriSnackbar(message)
-                                }
-                            }
+                            onDismiss = { detailSong = null }
                         )
                     }
 

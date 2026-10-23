@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.data.local.playlist
 
 import java.io.File
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import org.junit.Assert.assertEquals
@@ -21,8 +23,29 @@ class LocalPlaylistCoverNormalizationTest : LocalPlaylistRepositoryTestSupport()
         val roadTrip = LocalPlaylist(id = 5L, name = "Road trip", customCoverUrl = "content://covers/road-trip.jpg")
         val clean = listOf(localFiles.copy(customCoverUrl = null), roadTrip)
 
-        assertEquals(clean, repository.normalizeRoomPrimaryLocalFilesCover(listOf(localFiles, roadTrip)))
-        assertSame(clean, repository.normalizeRoomPrimaryLocalFilesCover(clean))
+        assertEquals(clean, repository.normalizeRoomPrimaryPlaylists(listOf(localFiles, roadTrip)))
+        assertSame(clean, repository.normalizeRoomPrimaryPlaylists(clean))
+    }
+
+    @Test
+    fun `room primary favorites migrate legacy matched duplicates without touching ordinary playlists`() {
+        val repository = repository()
+        val local = localSong(99).copy(matchedLyricSource = MusicPlatform.CLOUD_MUSIC, matchedSongId = "42")
+        val songs = mutableListOf(remoteNeteaseSong(), local)
+        val favorites = LocalPlaylist(
+            id = FavoritesPlaylist.SYSTEM_ID, name = "Favorites", songs = songs,
+            modifiedAt = 123L, customCoverUrl = NETWORK_COVER
+        )
+        val ordinary = LocalPlaylist(id = 5L, name = "Mix", songs = songs.toMutableList())
+
+        val normalized = repository.normalizeRoomPrimaryPlaylists(listOf(favorites, ordinary))
+
+        assertEquals(listOf(local), normalized.first().songs)
+        assertEquals(123L, normalized.first().modifiedAt)
+        assertEquals(NETWORK_COVER, normalized.first().customCoverUrl)
+        assertSame(ordinary, normalized.last())
+        assertEquals(2, normalized.last().songs.size)
+        assertSame(normalized, repository.normalizeRoomPrimaryPlaylists(normalized))
     }
 
     @Test

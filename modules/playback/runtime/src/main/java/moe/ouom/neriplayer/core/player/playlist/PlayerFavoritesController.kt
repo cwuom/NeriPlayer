@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.core.player.playlist
  * Updated: 2026/3/23
  */
 
-import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import android.app.Application
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
@@ -40,7 +39,7 @@ internal object PlayerFavoritesController {
     ): Boolean {
         return FavoritesPlaylist.firstOrNull(playlists, application)
             ?.songs
-            ?.any { it.sameIdentityAs(song) } == true
+            ?.any { FavoritesPlaylist.matchesSong(it, song) } == true
     }
 
     fun optimisticUpdateFavorites(
@@ -70,12 +69,12 @@ internal object PlayerFavoritesController {
             val favorites = copiedPlaylists[favoriteIndex]
             when {
                 add && favoriteSong != null && favorites.songs.none {
-                    it.sameIdentityAs(favoriteSong)
+                    FavoritesPlaylist.matchesSong(it, favoriteSong)
                 } -> {
                     favorites.songs.add(0, favoriteSong)
                 }
                 !add && song != null -> {
-                    favorites.songs.removeAll { it.sameIdentityAs(song) }
+                    favorites.songs.removeAll { FavoritesPlaylist.matchesSong(it, song) }
                 }
             }
         } else if (add && favoriteSong != null) {
