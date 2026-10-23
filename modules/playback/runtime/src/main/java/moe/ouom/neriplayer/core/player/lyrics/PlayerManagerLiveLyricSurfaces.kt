@@ -8,13 +8,9 @@ import moe.ouom.neriplayer.core.player.service.lyrics.XiaomiSuperIslandLyricBrid
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.displayName
 
-/**
- * Owns the Xiaomi Super Island and Android Live Update lyric surfaces for one PlayerManager
- * session. Bridges are created per initialize() so they never capture a cancelled scope, and
- * they are destroyed on release() so no island, foreground service or XMSF block outlives
- * the player.
- */
+/** 厂商歌词输出随播放器会话初始化和释放，避免保留已取消的协程作用域及上首歌词 */
 internal fun PlayerManager.attachLiveLyricSurfaces() {
+    colorOsLockscreenLyricsEnabled = false
     xiaomiSuperIslandLyricEnabled = false
     liveUpdateLyricEnabled = false
     val superIsland = XiaomiSuperIslandLyricBridge(application)
@@ -22,6 +18,12 @@ internal fun PlayerManager.attachLiveLyricSurfaces() {
     xiaomiSuperIslandLyricBridge = superIsland
     liveLyricNotificationBridge = liveUpdate
 
+    ioScope.launch {
+        settingsRepo.colorOsLockscreenLyricsEnabledFlow.collect { enabled ->
+            colorOsLockscreenLyricsEnabled = enabled
+            syncExternalBluetoothLyrics(_currentSongFlow.value)
+        }
+    }
     ioScope.launch {
         settingsRepo.liveUpdateLyricEnabledFlow.collect { enabled ->
             liveUpdateLyricEnabled = enabled
@@ -56,6 +58,10 @@ internal fun PlayerManager.attachLiveLyricSurfaces() {
 }
 
 internal fun PlayerManager.releaseLiveLyricSurfaces() {
+    colorOsLyricTimelineOwner.begin(null)
+    externalLyricRequest = null
+    externalTranslationRequestId++
+    colorOsLockscreenLyricsEnabled = false
     xiaomiSuperIslandLyricEnabled = false
     liveUpdateLyricEnabled = false
     xiaomiSuperIslandLyricBridge?.destroy()

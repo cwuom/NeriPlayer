@@ -703,6 +703,19 @@ For release build and signing details, see
   and translations. Original and translated Bluetooth lyrics have independent
   switches; in the original lyric compatibility mode, enabling both uses separate title and artist fields while
   track identity remains available through album/description metadata.
+- **ColorOS lock-screen lyrics (experimental)**:
+  Enable under Settings → External lyrics to publish full line, word, and translation timelines
+  for ColorOS 16/17 through the existing media session. Separate Root and Shizuku controls check,
+  apply, and restore configuration; the lyric output switch never writes system configuration automatically.
+  Only this app's entries in an existing vendor configuration are updated, with an initial recovery
+  record and conflict/OTA checks. Missing or incompatible configuration and restricted Shizuku access
+  are reported rather than treated as successful activation. Song title and artist remain stable;
+  Bluetooth players that only read those fields may stop showing lyrics until this option is disabled.
+  Restore publishes the original policy at a higher version; check again after system updates.
+  Applying a confirmed configuration again retries reload without another configuration write.
+  After a conflict, a confirmation can discard a settled local recovery record without changing system
+  configuration; the original policy can no longer be restored. Unresolved write records are retained.
+  Local tests and a standard emulator do not establish ColorOS 16/17 lock-screen or AOD compatibility.
 - 🚗 **Car playback**:
   Bluetooth media metadata includes title, artist, album, duration, track counts, and artwork.
   Under Lyrics settings, Bluetooth car display offers song information, song with lyrics,

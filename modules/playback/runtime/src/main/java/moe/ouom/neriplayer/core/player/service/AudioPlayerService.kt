@@ -103,6 +103,7 @@ import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
+import moe.ouom.neriplayer.core.player.service.lyrics.coloros.observeColorOsLyricMetadata
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusivePlaybackResumeAfterDeviceAttach
 import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
@@ -986,6 +987,9 @@ class AudioPlayerService : Service() {
                 refreshLyricMetadata()
             }
         }
+        serviceScope.observeColorOsLyricMetadata(
+            PlayerManager.colorOsLyricTimelineFlow, PlayerManager.colorOsLockscreenLyricsEnabledFlow,
+        ) { refreshLyricMetadata() }
         serviceScope.launch {
             PlayerManager.currentAudioDeviceFlow.collectSafely("currentAudioDeviceFlow") {
                 updateMetadata()

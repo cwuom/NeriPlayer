@@ -80,6 +80,8 @@ import moe.ouom.neriplayer.core.player.media.LocalPlaybackMediaResolver
 import moe.ouom.neriplayer.core.player.media.PlaybackMediaItemFactory
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.lyrics.floating.FloatingLyricsContentSource
+import moe.ouom.neriplayer.core.player.service.lyrics.coloros.ColorOsLyricTimelineOwner
+import moe.ouom.neriplayer.core.player.service.lyrics.coloros.ColorOsLyricRequest
 import moe.ouom.neriplayer.data.model.playback.AudioDevice
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PreferredQualityKeys
@@ -445,6 +447,10 @@ object PlayerManager {
     internal var externalBluetoothLyricsEnabled = false
     internal var externalBluetoothTranslationEnabled = false
     internal var dynamicIslandLyricsEnabled = false
+    internal val colorOsLockscreenLyricsEnabledFlow = MutableStateFlow(false)
+    internal var colorOsLockscreenLyricsEnabled: Boolean
+        get() = colorOsLockscreenLyricsEnabledFlow.value
+        set(value) { colorOsLockscreenLyricsEnabledFlow.value = value }
     internal var xiaomiSuperIslandLyricEnabled = false
     internal var liveUpdateLyricEnabled = false
     internal var xiaomiSuperIslandLyricBridge: XiaomiSuperIslandLyricBridge? = null
@@ -654,6 +660,10 @@ object PlayerManager {
         MutableStateFlow(ExternalBluetoothLyricPayload())
     internal val externalBluetoothLyricPayloadFlow: StateFlow<ExternalBluetoothLyricPayload> =
         _externalBluetoothLyricPayloadFlow
+    internal val colorOsLyricTimelineOwner = ColorOsLyricTimelineOwner()
+    internal val colorOsLyricTimelineFlow = colorOsLyricTimelineOwner.timeline
+    internal var externalLyricRequest: ColorOsLyricRequest? = null
+    internal var externalTranslationRequestId = 0L
 
     internal val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
     val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()

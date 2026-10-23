@@ -916,6 +916,7 @@ private val PageSearchAliases = mapOf(
 )
 
 private val SettingSearchAliases = mapOf(
+    "coloros_lockscreen_lyrics_enabled" to listOf("ColorOS", "OPlus", "OxygenOS", "root", "shizuku", "锁屏岛", "锁屏歌词"),
     "dynamic_color" to listOf("material you", "monet", "auto color", "quse", "xitongquse"),
     "haptic_feedback_enabled" to listOf("vibration", "touch", "zhendong", "chugan"),
     "playback_service_idle_shutdown_minutes" to listOf("notification", "foreground", "idle", "tuichu"),

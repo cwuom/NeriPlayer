@@ -22,3 +22,11 @@
         androidx.media3.decoder.SimpleDecoderOutputBuffer, int
     );
 }
+
+# app_process and Shizuku construct these fixed entrypoints outside normal app calls
+-keep class moe.ouom.neriplayer.core.player.privileged.coloros.ColorOsRootMain {
+    public static void main(java.lang.String[]);
+}
+-keep class moe.ouom.neriplayer.core.player.privileged.coloros.ColorOsUserService {
+    public <init>(android.content.Context);
+}
