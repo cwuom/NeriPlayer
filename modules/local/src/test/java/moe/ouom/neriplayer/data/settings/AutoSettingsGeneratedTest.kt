@@ -25,6 +25,13 @@ import org.mockito.Mockito.`when`
 
 class AutoSettingsGeneratedTest {
     @Test
+    fun colorOsLockscreenLyricsIsRegisteredForPersistenceAndBackup() {
+        val setting = AutoSettingsMetadata.setting("coloros_lockscreen_lyrics_enabled")
+        assertEquals(AutoSettingsSections.lyrics, setting?.section)
+        assertTrue(AutoSettingsBackupKeys.booleanKeys.any { it.name == "coloros_lockscreen_lyrics_enabled" })
+    }
+
+    @Test
     fun homeBilibiliVisibilityIsRegisteredForPersistenceAndBackup() {
         val setting = AutoSettingsMetadata.setting("home_card_bilibili")
         assertEquals(AutoSettingsSections.personalization, setting?.section)

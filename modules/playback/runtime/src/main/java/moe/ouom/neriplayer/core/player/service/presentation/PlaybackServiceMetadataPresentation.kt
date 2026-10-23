@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.service.presentation
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkSnapshot
 import moe.ouom.neriplayer.core.player.service.notification.serviceNotificationTitle
 import android.media.MediaMetadata
+import android.os.Parcel
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
@@ -22,14 +23,20 @@ internal fun serviceMetadataText(
     forceSendLyrics: Boolean,
     mode: BluetoothMetadataMode = BluetoothMetadataMode.SongAndLyrics,
     normalAlbum: String? = null,
-): ExternalBluetoothMetadataText = resolveExternalBluetoothMetadataText(
-    normalTitle = serviceNotificationTitle(song),
-    normalArtist = serviceMetadataArtist(song),
-    payload = payload,
-    useBluetoothLyrics = shouldUseExternalBluetoothLyrics(audioDeviceType, payload, forceSendLyrics),
-    normalAlbum = normalAlbum ?: serviceMetadataAlbum(song),
-    mode = if (audioDeviceType?.let(::isBluetoothOutputType) == true) mode else BluetoothMetadataMode.Lyrics,
-)
+    colorOsLyricsEnabled: Boolean = false,
+): ExternalBluetoothMetadataText {
+    val text = resolveExternalBluetoothMetadataText(
+        normalTitle = serviceNotificationTitle(song),
+        normalArtist = serviceMetadataArtist(song),
+        payload = payload,
+        useBluetoothLyrics = shouldUseExternalBluetoothLyrics(audioDeviceType, payload, forceSendLyrics),
+        normalAlbum = normalAlbum ?: serviceMetadataAlbum(song),
+        mode = if (audioDeviceType?.let(::isBluetoothOutputType) == true) mode else BluetoothMetadataMode.Lyrics,
+    )
+    return if (colorOsLyricsEnabled) text.copy(
+        title = serviceNotificationTitle(song), artist = serviceMetadataArtist(song),
+    ) else text
+}
 
 private fun serviceMetadataArtist(song: SongItem?): String = song?.displayArtist().orEmpty()
 
@@ -50,6 +57,7 @@ internal fun serviceMetadataSnapshot(
     queueIndex: Int = -1,
     artworkUri: String? = null,
     mediaId: String? = null,
+    colorOsLyricInfo: String? = null,
 ): PlaybackMetadataSnapshot = PlaybackMetadataSnapshot(
     songKey = song?.playbackVisualKey(),
     title = text.title,
@@ -65,6 +73,7 @@ internal fun serviceMetadataSnapshot(
     trackNumber = if (queueIndex in 0 until queueSize) queueIndex.toLong() + 1L else 0L,
     numTracks = queueSize.toLong(),
     artworkUri = artworkUri,
+    colorOsLyricInfo = colorOsLyricInfo,
 )
 
 internal fun serviceMediaMetadata(
@@ -89,7 +98,24 @@ internal fun serviceMediaMetadata(
     addOptionalAlbum(builder, snapshot.album)
     addOptionalDescription(builder, snapshot.displayDescription)
     addArtworkUri(builder, snapshot.artworkUri)
-    return builder.build()
+    val baseline = builder.build()
+    val lyricInfo = snapshot.colorOsLyricInfo ?: return baseline
+    val candidate = builder.putString("lyricInfo", lyricInfo)
+        .putString("oplus.media.config", "1")
+        .build()
+    return if (fitsColorOsMetadataBudget(candidate)) candidate else baseline
+}
+
+private fun fitsColorOsMetadataBudget(metadata: MediaMetadata): Boolean {
+    val parcel = Parcel.obtain()
+    return try {
+        metadata.writeToParcel(parcel, 0)
+        parcel.dataSize() <= 512 * 1024
+    } catch (_: RuntimeException) {
+        false
+    } finally {
+        parcel.recycle()
+    }
 }
 
 private fun addOptionalAlbum(builder: MediaMetadata.Builder, album: String?) {

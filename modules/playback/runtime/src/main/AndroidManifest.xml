@@ -16,6 +16,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <queries>
+        <package android:name="com.android.systemui" />
         <package android:name="moe.shizuku.privileged.api" />
         <package android:name="com.google.android.gms" />
         <package android:name="com.google.android.projection.gearhead" />

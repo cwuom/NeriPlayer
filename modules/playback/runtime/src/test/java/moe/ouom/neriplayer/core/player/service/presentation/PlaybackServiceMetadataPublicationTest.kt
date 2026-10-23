@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.service.presentation
 
 import android.graphics.Bitmap
 import android.media.MediaMetadata
+import android.media.AudioDeviceInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -9,6 +10,7 @@ import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkOwner
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkSnapshot
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -24,6 +26,77 @@ class PlaybackServiceMetadataPublicationTest {
     private val song = SongItem(1L, "Song", "Artist", "Album", 1L, 60_000L, null)
     private val mediaBitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
     private val iconBitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+
+    @Test
+    fun `ColorOS keeps stable platform identity while preserving Bluetooth display lyrics`() {
+        for (mode in listOf(BluetoothMetadataMode.Lyrics, BluetoothMetadataMode.SongAndLyrics)) {
+            val text = serviceMetadataText(song, ExternalBluetoothLyricPayload("line", "translation"), AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, false, mode, colorOsLyricsEnabled = true)
+            assertEquals("Song", text.title)
+            assertEquals("Artist", text.artist)
+            val baseline = serviceMetadataText(song, ExternalBluetoothLyricPayload("line", "translation"), AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, false, mode)
+            assertEquals(baseline.displayTitle, text.displayTitle)
+            assertEquals(baseline.displaySubtitle, text.displaySubtitle)
+        }
+    }
+
+    @Test
+    fun `ColorOS timeline-only changes deduplicate and toggle removal clears both vendor fields`() = runTest {
+        val source = FakeSource().apply { colorOsLyricsEnabled = true; colorOsLyricInfo = "first" }
+        val port = RecordingPort(false)
+        val owner = owner(port, source, artworkFor("content://covers/a.jpg", smallArtwork("content://covers/a.jpg")))
+        owner.updateMetadata()
+        owner.updateMetadata()
+        assertEquals(1, port.attempts)
+        assertEquals("first", port.published.last().getString("lyricInfo"))
+        assertEquals("1", port.published.last().getString("oplus.media.config"))
+        source.colorOsLyricInfo = "translation-arrived"
+        owner.updateMetadata()
+        assertEquals(2, port.attempts)
+        assertEquals("translation-arrived", port.published.last().getString("lyricInfo"))
+        assertNotNull(port.published.last().getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART))
+        source.colorOsLyricsEnabled = false
+        owner.updateMetadata()
+        assertEquals(3, port.attempts)
+        assertNull(port.published.last().getString("lyricInfo"))
+        assertNull(port.published.last().getString("oplus.media.config"))
+    }
+
+    @Test
+    fun `ColorOS oversize full metadata drops only vendor fields and preserves media identity`() {
+        val artwork = smallArtwork("cover")
+        val snapshot = serviceMetadataSnapshot(song, serviceMetadataText(song, ExternalBluetoothLyricPayload(), null, false), artwork, 3, 1, "content://cover", "queue-id")
+            .copy(colorOsLyricInfo = "a".repeat(300_000))
+        val metadata = serviceMediaMetadata(snapshot, artwork)
+        assertNull(metadata.getString("lyricInfo"))
+        assertNull(metadata.getString("oplus.media.config"))
+        assertEquals("queue-id", metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID))
+        assertEquals(2L, metadata.getLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER))
+        assertEquals("content://cover", metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI))
+        assertEquals(artwork.mediaBitmap, metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART))
+    }
+
+    @Test
+    fun `ColorOS measures the complete parcel including preexisting text`() {
+        val album = "a".repeat(300_000)
+        val artwork = smallArtwork("cover")
+        val snapshot = serviceMetadataSnapshot(song, serviceMetadataText(song, ExternalBluetoothLyricPayload(), null, false), artwork)
+            .copy(album = album, colorOsLyricInfo = "small lyric")
+        val metadata = serviceMediaMetadata(snapshot, artwork)
+        assertNull(metadata.getString("lyricInfo"))
+        assertNull(metadata.getString("oplus.media.config"))
+        assertEquals(album, metadata.getString(MediaMetadata.METADATA_KEY_ALBUM))
+    }
+
+    @Test
+    fun `ColorOS full parcel budget also counts large bitmap artwork`() {
+        val snapshot = serviceMetadataSnapshot(song, serviceMetadataText(song, ExternalBluetoothLyricPayload(), null, false), readyArtwork("cover"))
+            .copy(colorOsLyricInfo = "small lyric")
+        val metadata = serviceMediaMetadata(snapshot, readyArtwork("cover"))
+        assertNull(metadata.getString("lyricInfo"))
+        assertNull(metadata.getString("oplus.media.config"))
+        assertEquals(mediaBitmap, metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART))
+        assertEquals(iconBitmap, metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON))
+    }
 
     @Test
     fun `accepted metadata carries the large artwork once plus the display icon`() = runTest {
@@ -94,11 +167,18 @@ class PlaybackServiceMetadataPublicationTest {
         artwork: PlaybackArtworkOwner,
     ) = PlaybackServicePresentationOwner(source, port.port, artwork, backgroundScope)
 
-    private fun artworkFor(coverSource: String): PlaybackArtworkOwner {
+    private fun artworkFor(coverSource: String, snapshot: PlaybackArtworkSnapshot = readyArtwork(coverSource)): PlaybackArtworkOwner {
         val artwork = mock(PlaybackArtworkOwner::class.java)
-        `when`(artwork.observe(song)).thenReturn(readyArtwork(coverSource))
+        `when`(artwork.observe(song)).thenReturn(snapshot)
         return artwork
     }
+
+    private fun smallArtwork(coverSource: String) = PlaybackArtworkSnapshot(
+        coverSource,
+        Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888),
+        Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888),
+        true, true, false,
+    )
 
     private fun readyArtwork(coverSource: String) =
         PlaybackArtworkSnapshot(coverSource, mediaBitmap, iconBitmap, true, true, false)
@@ -123,6 +203,8 @@ class PlaybackServiceMetadataPublicationTest {
 
     private inner class FakeSource : PlaybackServicePresentationSource {
         var payload = ExternalBluetoothLyricPayload()
+        var colorOsLyricsEnabled = false
+        var colorOsLyricInfo: String? = null
 
         override fun playback() = PlaybackServicePlaybackSnapshot(
             song = song,
@@ -137,7 +219,7 @@ class PlaybackServiceMetadataPublicationTest {
             audioRouteMuted = false,
             playbackSpeed = 1f,
         )
-        override fun metadata() = PlaybackServiceMetadataInputs(payload, null, forceSendLyrics = true)
+        override fun metadata() = PlaybackServiceMetadataInputs(payload, null, forceSendLyrics = true, colorOsLyricsEnabled = colorOsLyricsEnabled, colorOsLyricInfo = colorOsLyricInfo)
         override fun timer() = PlaybackServiceTimerInputs(SleepTimerState(), "")
         override fun favoriteSongKeys() = emptySet<String>()
         override fun localPlaylistsReady() = true

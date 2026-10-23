@@ -13,6 +13,10 @@ import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.displayAlbum
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
+import moe.ouom.neriplayer.core.player.service.lyrics.coloros.ColorOsLyricTimeline
+import moe.ouom.neriplayer.core.player.service.lyrics.coloros.colorOsLyricPayload
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -43,6 +47,8 @@ internal data class PlaybackServiceMetadataInputs(
     val audioDeviceType: Int?,
     val forceSendLyrics: Boolean,
     val album: String? = null,
+    val colorOsLyricsEnabled: Boolean = false,
+    val colorOsLyricInfo: String? = null,
 )
 
 internal data class PlaybackServiceTimerInputs(
@@ -65,6 +71,10 @@ internal interface PlaybackServicePresentationSource {
 internal class AndroidPlaybackServicePresentationSource(
     private val context: Context,
 ) : PlaybackServicePresentationSource {
+    private var cachedColorOsTimeline: ColorOsLyricTimeline? = null
+    private var cachedColorOsIdentity: Triple<String?, String, String>? = null
+    private var cachedColorOsLyricInfo: String? = null
+
     override fun playback(): PlaybackServicePlaybackSnapshot {
         val queue = PlayerManager.currentQueueSnapshot()
         return PlaybackServicePlaybackSnapshot(
@@ -92,7 +102,22 @@ internal class AndroidPlaybackServicePresentationSource(
         audioDeviceType = PlayerManager.currentAudioDeviceFlow.value?.type,
         forceSendLyrics = PlayerManager.dynamicIslandLyricsEnabled,
         album = metadataAlbum(),
+        colorOsLyricsEnabled = PlayerManager.colorOsLockscreenLyricsEnabled,
+        colorOsLyricInfo = currentColorOsLyricInfo(),
     )
+
+    private fun currentColorOsLyricInfo(): String? {
+        if (!PlayerManager.colorOsLockscreenLyricsEnabled) return null
+        val song = playbackSurfaceSong()
+        val timeline = PlayerManager.colorOsLyricTimelineFlow.value
+        val identity = Triple(song?.stableKey(), song?.displayName().orEmpty(), song?.displayArtist().orEmpty())
+        if (timeline !== cachedColorOsTimeline || identity != cachedColorOsIdentity) {
+            cachedColorOsTimeline = timeline
+            cachedColorOsIdentity = identity
+            cachedColorOsLyricInfo = colorOsLyricPayload(timeline, identity.first, identity.second, identity.third, context.packageName)
+        }
+        return cachedColorOsLyricInfo
+    }
 
     override fun timer(): PlaybackServiceTimerInputs = PlaybackServiceTimerInputs(
         state = PlayerManager.sleepTimerManager.timerState.value,

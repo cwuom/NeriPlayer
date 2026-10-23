@@ -71,6 +71,7 @@ internal data class PlaybackMetadataSnapshot(
     val trackNumber: Long = 0L,
     val numTracks: Long = 0L,
     val artworkUri: String? = null,
+    val colorOsLyricInfo: String? = null,
 )
 
 internal fun resolveServicePlaybackState(snapshot: PlaybackServicePlaybackSnapshot): Int = when {
@@ -326,11 +327,13 @@ internal class PlaybackServicePresentationOwner(
             forceSendLyrics = metadataInputs.forceSendLyrics,
             mode = bluetoothMode,
             normalAlbum = metadataInputs.album,
+            colorOsLyricsEnabled = metadataInputs.colorOsLyricsEnabled,
         )
         val snapshot = serviceMetadataSnapshot(
             song, text, artworkSnapshot, playback.queue.size, playback.queueIndex,
             carArtwork.observe(song, artworkSnapshot),
             serviceMetadataMediaId(song, playback.queue, playback.queueIndex),
+            metadataInputs.colorOsLyricInfo.takeIf { metadataInputs.colorOsLyricsEnabled },
         )
         if (snapshot == lastMetadataSnapshot) return false
         lastMetadataSnapshot = snapshot

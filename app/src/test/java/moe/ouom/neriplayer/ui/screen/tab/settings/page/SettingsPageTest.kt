@@ -16,6 +16,17 @@ import org.mockito.stubbing.Answer
 
 class SettingsPageTest {
     @Test
+    fun colorOsLyricsSearchOpensExternalLyricsConfigurationCard() {
+        val setting = AutoSettingsMetadata.settings.first {
+            it.keyName == "coloros_lockscreen_lyrics_enabled"
+        }
+        assertEquals(SettingsPage.ExternalLyrics, setting.settingsPage())
+        assertEquals("setting:coloros_lockscreen_lyrics_enabled", setting.searchTargetId())
+        assertEquals(2, settingsSearchScrollAnchor(SettingsPage.ExternalLyrics, setting.searchTargetId()).itemIndex)
+        assertTrue(setting.searchTokens("", "").any { it.equals("shizuku", ignoreCase = true) })
+    }
+
+    @Test
     fun settingsHomePageGroupsDoNotCaptureNullDuringEnumInitialization() {
         @Suppress("UNCHECKED_CAST")
         val groups = SettingsHomePageGroups as List<List<SettingsPage?>>
