@@ -358,6 +358,7 @@ class LocalPlaylistRepository private constructor(
 
                 val favorites = list[index]
                 if (
+                    favorites.songs.any { FavoritesPlaylist.matchesSong(it, hydratedSong) } ||
                     hasExistingSong(
                         existingSongs = favorites.songs,
                         candidate = hydratedSong,
@@ -393,8 +394,8 @@ class LocalPlaylistRepository private constructor(
                 if (index == -1) return@commitPlaylistMutation
 
                 val favorites = list[index]
-                val removedSongs = favorites.songs.filter { it.sameIdentityAs(song) }
-                val updatedSongs = favorites.songs.filterNot { it.sameIdentityAs(song) }.toMutableList()
+                val removedSongs = favorites.songs.filter { FavoritesPlaylist.matchesSong(it, song) }
+                val updatedSongs = favorites.songs.filterNot { FavoritesPlaylist.matchesSong(it, song) }.toMutableList()
                 if (updatedSongs.size == favorites.songs.size) return@commitPlaylistMutation
 
                 val deletedAt = System.currentTimeMillis()

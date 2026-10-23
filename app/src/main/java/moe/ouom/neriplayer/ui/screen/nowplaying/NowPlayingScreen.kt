@@ -659,7 +659,7 @@ fun NowPlayingScreen(
         playlists
             .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
             ?.songs
-            ?.any { it.sameIdentityAs(song) } == true
+            ?.any { FavoritesPlaylist.matchesSong(it, song) } == true
     }
     LaunchedEffect(isFavoriteComputed) {
         if (favOverride == isFavoriteComputed) {
@@ -1921,12 +1921,7 @@ fun NowPlayingScreen(
                     detailSong?.let { song ->
                         LocalSongDetailsDialog(
                             song = song,
-                            onDismiss = { detailSong = null },
-                            onShowMessage = { message ->
-                                screenScope.launch {
-                                    snackbarHostState.showNeriSnackbar(message)
-                                }
-                            }
+                            onDismiss = { detailSong = null }
                         )
                     }
 

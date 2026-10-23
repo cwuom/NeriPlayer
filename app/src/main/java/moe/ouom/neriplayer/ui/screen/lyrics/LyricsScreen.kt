@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.screen.lyrics
  * Created: 2025/8/13
  */
 
-import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.annotation.SuppressLint
 import android.content.ClipData
@@ -611,7 +610,7 @@ fun LyricsScreen(
                     false
                 } else {
                     val fav = playlists.firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
-                    fav?.songs?.any { it.sameIdentityAs(song) } == true
+                    fav?.songs?.any { FavoritesPlaylist.matchesSong(it, song) } == true
                 }
             }
             var favOverride by remember(currentSong) { mutableStateOf<Boolean?>(null) }
@@ -1287,12 +1286,7 @@ fun LyricsScreen(
         detailSong?.let { song ->
             LocalSongDetailsDialog(
                 song = song,
-                onDismiss = { detailSong = null },
-                onShowMessage = { message ->
-                    scope.launch {
-                        snackbarHostState.showNeriSnackbar(message)
-                    }
-                }
+                onDismiss = { detailSong = null }
             )
         }
 

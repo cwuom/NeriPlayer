@@ -69,6 +69,18 @@ class SongEncyclopediaCommentPreviewTest {
     }
 
     @Test
+    fun previewKeepsCommentsAndShowAllWithoutDisplayingTheTotalCount() {
+        render(PreviewRepository(listOf(comment("1"), comment("2"))))
+
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.encyclopedia_section_comments)).assertExists()
+        composeRule.onNodeWithText("preview-comment-1", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("preview-comment-2", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.encyclopedia_comment_show_all)).assertExists()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_total_format, "2"))
+            .assertDoesNotExist()
+    }
+
+    @Test
     fun previewOmitsReplyAndThreadActions() {
         render(PreviewRepository(listOf(comment("1", replyCount = 6L), comment("2"))))
 

@@ -25,8 +25,13 @@ package moe.ouom.neriplayer.data.local.playlist.system
 
 import android.content.Context
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.remoteDownloadIdentityOrNull
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.common.locale.LanguageManager
 
@@ -62,6 +67,28 @@ object FavoritesPlaylist {
 
     fun isSystemPlaylist(playlist: LocalPlaylist, context: Context): Boolean {
         return playlist.id == SYSTEM_ID || (playlist.id < 0 && matches(playlist.name, context))
+    }
+
+    fun matchesSong(first: SongItem, second: SongItem): Boolean {
+        if (first.sameIdentityAs(second)) return true
+        val neteaseId = neteaseFavoriteSongId(first) ?: return false
+        return neteaseId == neteaseFavoriteSongId(second)
+    }
+
+    private fun neteaseFavoriteSongId(song: SongItem): Long? {
+        // 收藏可关联本地匹配结果，扫描和队列仍保留文件自身身份
+        val remoteIdentity = if (LocalSongSupport.isLocalSong(song, null)) {
+            song.remoteDownloadIdentityOrNull()
+        } else {
+            song.identity()
+        }
+        if (remoteIdentity != null) {
+            return remoteIdentity.id.takeIf {
+                remoteIdentity.album == "netease" && remoteIdentity.mediaUri == null && it > 0L
+            }
+        }
+        if (song.matchedLyricSource != MusicPlatform.CLOUD_MUSIC) return null
+        return song.matchedSongId?.toLongOrNull()?.takeIf { it > 0L }
     }
 
     fun merge(playlists: List<LocalPlaylist>, context: Context): LocalPlaylist {

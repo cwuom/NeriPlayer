@@ -87,13 +87,6 @@ internal fun SongEncyclopediaCommentPreview(
             }
 
             CommentListStatus.SUCCESS -> {
-                ui.total?.let { total ->
-                    Text(
-                        text = stringResource(CoreCommonR.string.comment_total_format, total.toString()),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
                 // 只有 3 条预览，用普通 Column 即可。
                 // 外层是 Column(Modifier.verticalScroll())，此处若用 LazyColumn 会因无限高度约束崩溃。
                 Column(

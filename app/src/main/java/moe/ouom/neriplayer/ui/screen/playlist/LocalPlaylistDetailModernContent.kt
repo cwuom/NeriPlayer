@@ -1630,12 +1630,7 @@ internal fun LocalPlaylistDetailModernContent(
                 detailSong?.let { song ->
                     LocalSongDetailsDialog(
                         song = song,
-                        onDismiss = { detailSong = null },
-                        onShowMessage = { message ->
-                            scope.launch {
-                                snackbarHostState.showNeriSnackbar(message)
-                            }
-                        }
+                        onDismiss = { detailSong = null }
                     )
                 }
 
