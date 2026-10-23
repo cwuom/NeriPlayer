@@ -989,7 +989,7 @@ class AudioPlayerService : Service() {
         }
         serviceScope.observeColorOsLyricMetadata(
             PlayerManager.colorOsLyricTimelineFlow, PlayerManager.colorOsLockscreenLyricsEnabledFlow,
-        ) { updateMetadata() }
+        ) { refreshLyricMetadata() }
         serviceScope.launch {
             PlayerManager.currentAudioDeviceFlow.collectSafely("currentAudioDeviceFlow") {
                 updateMetadata()

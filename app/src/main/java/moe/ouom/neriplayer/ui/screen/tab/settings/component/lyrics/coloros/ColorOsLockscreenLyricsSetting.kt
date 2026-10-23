@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.privileged.coloros.ColorOsAccessMode
+import moe.ouom.neriplayer.core.player.privileged.coloros.ColorOsConfigBackend
 import moe.ouom.neriplayer.core.player.privileged.coloros.ColorOsConfigCoordinator
 import moe.ouom.neriplayer.core.player.privileged.coloros.ColorOsConfigException
 import moe.ouom.neriplayer.core.player.privileged.coloros.ColorOsConfigJournal
@@ -113,32 +114,34 @@ private fun ColorOsConfigurationDialog(onDismiss: () -> Unit) {
     )
 }
 
-private suspend fun executeColorOsConfiguration(
+internal suspend fun executeColorOsConfiguration(
     context: Context,
     journalFile: File,
     mode: ColorOsAccessMode,
     action: ColorOsConfigurationAction,
-): ColorOsConfigResult = try {
-    // 先确认本机有目标资源，避免在不受支持的系统上请求提权
-    loadColorOsSystemUiAsset(context)
-    val coordinator = ColorOsConfigCoordinator(
-        context.packageName,
-        { loadColorOsSystemUiAsset(context) },
-        ColorOsConfigJournal(journalFile),
-    )
-    ColorOsPrivilegedBackendFactory.open(context, mode).use { backend ->
-        when (action) {
-            ColorOsConfigurationAction.CHECK -> coordinator.inspect(backend)
-            ColorOsConfigurationAction.APPLY -> coordinator.apply(backend)
-            ColorOsConfigurationAction.RESTORE -> coordinator.restore(backend)
+): ColorOsConfigResult {
+    return try {
+        val coordinator = ColorOsConfigCoordinator(
+            context.packageName,
+            { loadColorOsSystemUiAsset(context) },
+            ColorOsConfigJournal(journalFile),
+        )
+        val operation: suspend (ColorOsConfigBackend) -> ColorOsConfigResult = when (action) {
+            ColorOsConfigurationAction.CHECK -> coordinator::inspect
+            ColorOsConfigurationAction.APPLY -> coordinator::apply
+            ColorOsConfigurationAction.RESTORE -> coordinator::restore
+            ColorOsConfigurationAction.DISCARD -> return coordinator.discardRecovery()
         }
+        // 先确认本机有目标资源，避免在不受支持的系统上请求提权
+        loadColorOsSystemUiAsset(context)
+        ColorOsPrivilegedBackendFactory.open(context, mode).use { backend -> operation(backend) }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: ColorOsConfigException) {
+        ColorOsConfigResult(failure.status, canRestore = journalFile.exists(), detailCode = failure.detailCode)
+    } catch (_: SecurityException) {
+        ColorOsConfigResult(ColorOsConfigStatus.PERMISSION_DENIED, canRestore = journalFile.exists())
+    } catch (_: Exception) {
+        ColorOsConfigResult(ColorOsConfigStatus.ERROR, canRestore = journalFile.exists())
     }
-} catch (cancelled: CancellationException) {
-    throw cancelled
-} catch (failure: ColorOsConfigException) {
-    ColorOsConfigResult(failure.status, canRestore = journalFile.exists(), detailCode = failure.detailCode)
-} catch (_: SecurityException) {
-    ColorOsConfigResult(ColorOsConfigStatus.PERMISSION_DENIED, canRestore = journalFile.exists())
-} catch (_: Exception) {
-    ColorOsConfigResult(ColorOsConfigStatus.ERROR, canRestore = journalFile.exists())
 }

@@ -10,6 +10,32 @@ class ColorOsConfigCoordinator(
     private val assetLoader: () -> ColorOsSystemUiAsset,
     private val journal: ColorOsConfigJournal
 ) {
+    suspend fun discardRecovery(): ColorOsConfigResult = withContext(Dispatchers.IO) {
+        journal.serialized {
+            try {
+                val state = journal.load()
+                    ?: return@serialized ColorOsConfigResult(ColorOsConfigStatus.NOT_CONFIGURED,
+                        detailCode = "no_recovery_record")
+                if (state.applicationId != applicationId) {
+                    return@serialized ColorOsConfigResult(ColorOsConfigStatus.CONFLICT,
+                        detailCode = "asset_or_owner_changed")
+                }
+                if (state.pending || state.uncertain) {
+                    return@serialized ColorOsConfigResult(ColorOsConfigStatus.WRITE_OUTCOME_UNKNOWN,
+                        detailCode = "write_not_settled")
+                }
+                journal.clear()
+                ColorOsConfigResult(ColorOsConfigStatus.RECOVERY_DISCARDED)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: ColorOsConfigException) {
+                ColorOsConfigResult(exception.status, detailCode = exception.detailCode)
+            } catch (_: Exception) {
+                ColorOsConfigResult(ColorOsConfigStatus.ERROR, detailCode = "recovery_discard_failed")
+            }
+        }
+    }
+
     suspend fun inspect(backend: ColorOsConfigBackend): ColorOsConfigResult = run(backend) { asset, current, state ->
         if (current == null) return@run result(backend, ColorOsConfigStatus.NOT_CONFIGURED)
         val enabled = isEffectivelyEnabled(current, asset)
@@ -20,7 +46,7 @@ class ColorOsConfigCoordinator(
     suspend fun apply(backend: ColorOsConfigBackend): ColorOsConfigResult = run(backend) { asset, current, state ->
         if (current == null) return@run result(backend, ColorOsConfigStatus.UNSUPPORTED, detail = "row_creation_unsupported")
         if (isEffectivelyEnabled(current, asset)) {
-            if (state != null && !state.restoring && !state.pending && !state.reloadRequested) {
+            if (state != null && !state.restoring && !state.pending) {
                 return@run reload(backend, state)
             }
             return@run result(backend, ColorOsConfigStatus.ENABLED, state != null)

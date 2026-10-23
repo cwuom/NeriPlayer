@@ -712,6 +712,9 @@ For release build and signing details, see
   are reported rather than treated as successful activation. Song title and artist remain stable;
   Bluetooth players that only read those fields may stop showing lyrics until this option is disabled.
   Restore publishes the original policy at a higher version; check again after system updates.
+  Applying a confirmed configuration again retries reload without another configuration write.
+  After a conflict, a confirmation can discard a settled local recovery record without changing system
+  configuration; the original policy can no longer be restored. Unresolved write records are retained.
   Local tests and a standard emulator do not establish ColorOS 16/17 lock-screen or AOD compatibility.
 - 🚗 **Car playback**:
   Bluetooth media metadata includes title, artist, album, duration, track counts, and artwork.

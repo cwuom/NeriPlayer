@@ -39,6 +39,33 @@ class ColorOsConfigurationContentTest {
     }
 
     @Test
+    fun materialDiscardRequiresConfirmationAndCancellationDoesNothing() {
+        assertConfirmedDiscard(UiStyle.Material)
+    }
+
+    @Test
+    fun cleanDiscardRequiresConfirmationAndCancellationDoesNothing() {
+        assertConfirmedDiscard(UiStyle.Clean)
+    }
+
+    @Test
+    fun discardWithoutARecoveryRecordIsDisabled() {
+        composeRule.setContent {
+            NeriTheme(followSystemDark = false, forceDark = false, dynamicColor = false, seedColorHex = "#6750A4", uiStyle = UiStyle.Material) {
+                ColorOsConfigurationContent(
+                    mode = ColorOsAccessMode.ROOT,
+                    busy = false,
+                    result = null,
+                    restoreAvailable = false,
+                    onModeChanged = {},
+                    onExecute = { error("operation without a recovery record") },
+                )
+            }
+        }
+        composeRule.onNodeWithText("丢弃恢复记录").assertIsNotEnabled()
+    }
+
+    @Test
     fun inFlightOperationDisablesWritesAndBackendChanges() {
         composeRule.setContent {
             NeriTheme(followSystemDark = false, forceDark = false, dynamicColor = false, seedColorHex = "#6750A4", uiStyle = UiStyle.Clean) {
@@ -52,9 +79,32 @@ class ColorOsConfigurationContentTest {
                 )
             }
         }
-        listOf("Root", "Shizuku", "应用配置", "恢复原策略", "检查配置").forEach {
+        listOf("Root", "Shizuku", "应用配置", "恢复原策略", "检查配置", "丢弃恢复记录").forEach {
             composeRule.onNodeWithText(it).assertIsNotEnabled()
         }
+    }
+
+    private fun assertConfirmedDiscard(style: UiStyle) {
+        val requests = mutableListOf<ColorOsConfigurationAction>()
+        composeRule.setContent {
+            NeriTheme(followSystemDark = false, forceDark = false, dynamicColor = false, seedColorHex = "#6750A4", uiStyle = style) {
+                ColorOsConfigurationContent(
+                    mode = ColorOsAccessMode.SHIZUKU,
+                    busy = false,
+                    result = null,
+                    restoreAvailable = true,
+                    onModeChanged = {},
+                    onExecute = { requests += it },
+                )
+            }
+        }
+        composeRule.onNodeWithText("丢弃恢复记录").performScrollTo().performClick()
+        composeRule.runOnIdle { assertTrue(requests.isEmpty()) }
+        composeRule.onNodeWithText("取消").performClick()
+        composeRule.runOnIdle { assertTrue(requests.isEmpty()) }
+        composeRule.onNodeWithText("丢弃恢复记录").performScrollTo().performClick()
+        composeRule.onNodeWithText("确认丢弃").performClick()
+        composeRule.runOnIdle { assertEquals(listOf(ColorOsConfigurationAction.DISCARD), requests) }
     }
 
     private fun assertExplicitActions(style: UiStyle) {

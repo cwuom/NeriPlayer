@@ -256,4 +256,9 @@
     <string name="settings_coloros_readback_mismatch">Read-back did not match; recovery data was kept. Check configuration first</string>
     <string name="settings_coloros_reload_failed">Configuration was written, but reload was denied or unconfirmed; recovery data was kept</string>
     <string name="settings_coloros_error">Operation did not complete; check authorization and system support</string>
+    <string name="settings_coloros_discard">Discard recovery record</string>
+    <string name="settings_coloros_discard_confirmation_title">Discard recovery record?</string>
+    <string name="settings_coloros_discard_confirmation_message">Only the local recovery record is removed. System configuration is unchanged. The original policy cannot be restored afterward. Records for unresolved writes are kept.</string>
+    <string name="settings_coloros_discard_confirm">Confirm discard</string>
+    <string name="settings_coloros_discarded">Recovery record discarded; system configuration is unchanged</string>
 </resources>

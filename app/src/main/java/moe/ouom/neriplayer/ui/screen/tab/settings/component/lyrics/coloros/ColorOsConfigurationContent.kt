@@ -10,6 +10,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -18,9 +22,10 @@ import moe.ouom.neriplayer.core.player.privileged.coloros.ColorOsAccessMode
 import moe.ouom.neriplayer.core.player.privileged.coloros.ColorOsConfigResult
 import moe.ouom.neriplayer.core.player.privileged.coloros.ColorOsConfigStatus
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
-internal enum class ColorOsConfigurationAction { CHECK, APPLY, RESTORE }
+internal enum class ColorOsConfigurationAction { CHECK, APPLY, RESTORE, DISCARD }
 
 @Composable
 internal fun ColorOsConfigurationContent(
@@ -31,6 +36,7 @@ internal fun ColorOsConfigurationContent(
     onModeChanged: (ColorOsAccessMode) -> Unit,
     onExecute: (ColorOsConfigurationAction) -> Unit,
 ) {
+    var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     Column(
         modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -73,6 +79,32 @@ internal fun ColorOsConfigurationContent(
                 modifier = Modifier.weight(1f),
             ) { Text(stringResource(CoreCommonR.string.settings_coloros_restore)) }
         }
+        MiuixSettingsTextButton(
+            onClick = { showDiscardConfirmation = true },
+            enabled = !busy && restoreAvailable,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(CoreCommonR.string.settings_coloros_discard)) }
+    }
+    if (showDiscardConfirmation) {
+        MiuixSettingsDialog(
+            onDismissRequest = { if (!busy) showDiscardConfirmation = false },
+            title = { Text(stringResource(CoreCommonR.string.settings_coloros_discard_confirmation_title)) },
+            text = { Text(stringResource(CoreCommonR.string.settings_coloros_discard_confirmation_message)) },
+            confirmButton = {
+                MiuixSettingsTextButton(
+                    enabled = !busy,
+                    onClick = {
+                        showDiscardConfirmation = false
+                        onExecute(ColorOsConfigurationAction.DISCARD)
+                    },
+                ) { Text(stringResource(CoreCommonR.string.settings_coloros_discard_confirm)) }
+            },
+            dismissButton = {
+                MiuixSettingsTextButton(enabled = !busy, onClick = { showDiscardConfirmation = false }) {
+                    Text(stringResource(CoreCommonR.string.action_cancel))
+                }
+            },
+        )
     }
 }
 
@@ -84,6 +116,7 @@ private fun resultLabel(result: ColorOsConfigResult?): Int {
         ColorOsConfigStatus.ENABLED -> CoreCommonR.string.settings_coloros_enabled
         ColorOsConfigStatus.APPLIED_RELOAD_REQUESTED -> CoreCommonR.string.settings_coloros_applied
         ColorOsConfigStatus.RESTORED_RELOAD_REQUESTED -> CoreCommonR.string.settings_coloros_restored
+        ColorOsConfigStatus.RECOVERY_DISCARDED -> CoreCommonR.string.settings_coloros_discarded
         ColorOsConfigStatus.NOT_CONFIGURED -> CoreCommonR.string.settings_coloros_not_configured
         ColorOsConfigStatus.UNSUPPORTED -> CoreCommonR.string.settings_coloros_unsupported
         ColorOsConfigStatus.PERMISSION_DENIED -> CoreCommonR.string.settings_coloros_permission_denied

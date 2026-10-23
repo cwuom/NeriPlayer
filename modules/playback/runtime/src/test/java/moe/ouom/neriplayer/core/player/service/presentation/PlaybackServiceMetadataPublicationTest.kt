@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.service.presentation
 import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.AudioDeviceInfo
+import android.os.Parcel
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -15,6 +16,7 @@ import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
@@ -88,14 +90,83 @@ class PlaybackServiceMetadataPublicationTest {
     }
 
     @Test
-    fun `ColorOS full parcel budget also counts large bitmap artwork`() {
+    fun `ColorOS keeps lyrics and visible artwork within the full parcel budget`() {
         val snapshot = serviceMetadataSnapshot(song, serviceMetadataText(song, ExternalBluetoothLyricPayload(), null, false), readyArtwork("cover"))
             .copy(colorOsLyricInfo = "small lyric")
         val metadata = serviceMediaMetadata(snapshot, readyArtwork("cover"))
-        assertNull(metadata.getString("lyricInfo"))
-        assertNull(metadata.getString("oplus.media.config"))
-        assertEquals(mediaBitmap, metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART))
-        assertEquals(iconBitmap, metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON))
+        assertEquals("small lyric", metadata.getString("lyricInfo"))
+        assertEquals("1", metadata.getString("oplus.media.config"))
+        assertNotNull(metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART))
+        assertNotNull(metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON))
+        assertTrue(parcelSize(metadata) <= 512 * 1024)
+        assertEquals(512, mediaBitmap.width)
+        assertEquals(256, iconBitmap.width)
+    }
+
+    @Test
+    fun `an accepting session receives ColorOS lyrics even with the normal large cover`() = runTest {
+        val source = FakeSource().apply { colorOsLyricsEnabled = true; colorOsLyricInfo = "loaded timeline" }
+        val port = RecordingPort(rejectBitmaps = false)
+        val owner = owner(port, source, artworkFor("content://covers/a.jpg"))
+
+        owner.updateMetadata()
+
+        val metadata = port.published.single()
+        assertEquals("loaded timeline", metadata.getString("lyricInfo"))
+        assertNotNull(metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART))
+        assertTrue(parcelSize(metadata) <= 512 * 1024)
+        assertEquals(1, port.attempts)
+    }
+
+    @Test
+    fun `ColorOS retains a near-limit lyric payload while shrinking only metadata artwork`() {
+        val artwork = readyArtwork("cover")
+        val lyric = "a".repeat(128 * 1024)
+        val snapshot = serviceMetadataSnapshot(song, serviceMetadataText(song, ExternalBluetoothLyricPayload(), null, false), artwork)
+            .copy(colorOsLyricInfo = lyric)
+
+        val metadata = serviceMediaMetadata(snapshot, artwork)
+
+        assertEquals(lyric, metadata.getString("lyricInfo"))
+        assertNotNull(metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART))
+        assertTrue(parcelSize(metadata) <= 512 * 1024)
+    }
+
+    @Test
+    fun `ColorOS keeps artwork URIs when text leaves no room for embedded thumbnails`() {
+        val artwork = readyArtwork("cover")
+        val snapshot = serviceMetadataSnapshot(
+            song, serviceMetadataText(song, ExternalBluetoothLyricPayload(), null, false), artwork,
+            artworkUri = "content://covers/a.jpg", mediaId = "queue-id",
+        ).copy(album = "a".repeat(240_000), colorOsLyricInfo = "small lyric")
+
+        val metadata = serviceMediaMetadata(snapshot, artwork)
+
+        assertEquals("small lyric", metadata.getString("lyricInfo"))
+        assertEquals("queue-id", metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID))
+        assertEquals("content://covers/a.jpg", metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI))
+        assertEquals("content://covers/a.jpg", metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI))
+        assertNull(metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART))
+        assertNull(metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON))
+        assertTrue(parcelSize(metadata) <= 512 * 1024)
+        assertTrue(!mediaBitmap.isRecycled && !iconBitmap.isRecycled)
+    }
+
+    @Test
+    fun `a session rejecting ColorOS artwork retains lyrics in the bitmap-free retry`() = runTest {
+        val source = FakeSource().apply { colorOsLyricsEnabled = true; colorOsLyricInfo = "loaded timeline" }
+        val port = RecordingPort(rejectBitmaps = true)
+        val owner = owner(port, source, artworkFor("content://covers/a.jpg"))
+
+        owner.updateMetadata()
+
+        assertEquals(2, port.attempts)
+        val fallback = port.published.single()
+        assertEquals("loaded timeline", fallback.getString("lyricInfo"))
+        assertEquals("1", fallback.getString("oplus.media.config"))
+        assertNull(fallback.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART))
+        assertNull(fallback.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON))
+        assertTrue(parcelSize(fallback) <= 512 * 1024)
     }
 
     @Test
@@ -182,6 +253,16 @@ class PlaybackServiceMetadataPublicationTest {
 
     private fun readyArtwork(coverSource: String) =
         PlaybackArtworkSnapshot(coverSource, mediaBitmap, iconBitmap, true, true, false)
+
+    private fun parcelSize(metadata: MediaMetadata): Int {
+        val parcel = Parcel.obtain()
+        return try {
+            metadata.writeToParcel(parcel, 0)
+            parcel.dataSize()
+        } finally {
+            parcel.recycle()
+        }
+    }
 
     private class RecordingPort(
         var rejectBitmaps: Boolean,

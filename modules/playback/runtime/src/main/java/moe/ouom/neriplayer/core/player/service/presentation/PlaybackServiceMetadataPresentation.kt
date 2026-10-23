@@ -2,8 +2,10 @@ package moe.ouom.neriplayer.core.player.service.presentation
 
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkSnapshot
 import moe.ouom.neriplayer.core.player.service.notification.serviceNotificationTitle
+import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.os.Parcel
+import androidx.core.graphics.scale
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
@@ -15,6 +17,14 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import moe.ouom.neriplayer.core.player.service.car.library.CarMediaIds
+import java.util.IdentityHashMap
+
+private const val COLOR_OS_METADATA_MAX_BYTES = 512 * 1024
+private val COLOR_OS_METADATA_ARTWORK_DIMENSIONS = intArrayOf(256, 128)
+private val COLOR_OS_METADATA_BITMAP_KEYS = arrayOf(
+    MediaMetadata.METADATA_KEY_ALBUM_ART,
+    MediaMetadata.METADATA_KEY_DISPLAY_ICON,
+)
 
 internal fun serviceMetadataText(
     song: SongItem?,
@@ -103,14 +113,54 @@ internal fun serviceMediaMetadata(
     val candidate = builder.putString("lyricInfo", lyricInfo)
         .putString("oplus.media.config", "1")
         .build()
-    return if (fitsColorOsMetadataBudget(candidate)) candidate else baseline
+    return if (fitsColorOsMetadataBudget(candidate)) candidate else fitColorOsMetadataArtwork(candidate, baseline)
+}
+
+private fun fitColorOsMetadataArtwork(candidate: MediaMetadata, baseline: MediaMetadata): MediaMetadata {
+    val withoutBitmaps = MediaMetadata.Builder(candidate).apply {
+        COLOR_OS_METADATA_BITMAP_KEYS.forEach { putBitmap(it, null) }
+    }.build()
+    if (!fitsColorOsMetadataBudget(withoutBitmaps)) return baseline
+    for (maxDimensionPx in COLOR_OS_METADATA_ARTWORK_DIMENSIONS) {
+        scaledColorOsMetadata(candidate, maxDimensionPx)?.let { return it }
+    }
+    return withoutBitmaps
+}
+
+private fun scaledColorOsMetadata(candidate: MediaMetadata, maxDimensionPx: Int): MediaMetadata? {
+    val scaledBitmaps = IdentityHashMap<Bitmap, Bitmap>()
+    var accepted = false
+    return try {
+        val builder = MediaMetadata.Builder(candidate)
+        for (key in COLOR_OS_METADATA_BITMAP_KEYS) {
+            val bitmap = candidate.getBitmap(key) ?: continue
+            builder.putBitmap(key, scaledBitmaps.getOrPut(bitmap) { bitmap.scaledForMetadata(maxDimensionPx) })
+        }
+        builder.build().takeIf(::fitsColorOsMetadataBudget).also { accepted = it != null }
+    } catch (_: RuntimeException) {
+        null
+    } finally {
+        // 成功发布的缩略图由元数据持有，失败候选只回收本次创建的副本，保留封面 owner 的原图
+        if (!accepted) recycleMetadataBitmapCopies(scaledBitmaps)
+    }
+}
+
+private fun Bitmap.scaledForMetadata(maxDimensionPx: Int): Bitmap {
+    val longestSide = maxOf(width, height)
+    if (longestSide <= maxDimensionPx) return this
+    val scale = maxDimensionPx.toFloat() / longestSide
+    return scale((width * scale).toInt().coerceAtLeast(1), (height * scale).toInt().coerceAtLeast(1), true)
+}
+
+private fun recycleMetadataBitmapCopies(scaledBitmaps: IdentityHashMap<Bitmap, Bitmap>) {
+    scaledBitmaps.forEach { original, scaled -> if (scaled !== original) scaled.recycle() }
 }
 
 private fun fitsColorOsMetadataBudget(metadata: MediaMetadata): Boolean {
     val parcel = Parcel.obtain()
     return try {
         metadata.writeToParcel(parcel, 0)
-        parcel.dataSize() <= 512 * 1024
+        parcel.dataSize() <= COLOR_OS_METADATA_MAX_BYTES
     } catch (_: RuntimeException) {
         false
     } finally {

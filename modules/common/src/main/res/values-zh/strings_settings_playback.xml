@@ -256,4 +256,9 @@
     <string name="settings_coloros_readback_mismatch">读回内容不符合预期，恢复记录已保留，请先检查</string>
     <string name="settings_coloros_reload_failed">配置已写入，但系统拒绝重载或未确认；恢复记录已保留</string>
     <string name="settings_coloros_error">操作未完成，请检查授权及系统支持情况</string>
+    <string name="settings_coloros_discard">丢弃恢复记录</string>
+    <string name="settings_coloros_discard_confirmation_title">丢弃恢复记录？</string>
+    <string name="settings_coloros_discard_confirmation_message">此操作仅删除本机恢复记录，不会修改或恢复系统配置。删除后将无法恢复最初策略。尚未确认结果的写入会保留记录。</string>
+    <string name="settings_coloros_discard_confirm">确认丢弃</string>
+    <string name="settings_coloros_discarded">恢复记录已丢弃，系统配置未改变</string>
 </resources>
