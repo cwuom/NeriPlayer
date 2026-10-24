@@ -245,6 +245,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.playback.stopPlaybackImmediatelyImpl
+import moe.ouom.neriplayer.core.player.heartbeat.recordHeartbeatSkip
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -1727,7 +1728,15 @@ object PlayerManager {
     fun next(
         force: Boolean = false,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
-    ) = this.nextImpl(force, commandSource)
+    ) {
+        // 任务书 §七 第三阶段：用户主动跳过要计入心动模式的负反馈。
+        // 放在这个公开入口而不是 nextImpl：nextImpl 会被 USB 音量确认等内部路径
+        // 递归调用，放里面会把一次点击记成多次跳过。
+        // 必须在切歌之前取当前歌——切完之后 _currentSongFlow 已指向新歌。
+        // 自动播完推进不走这里，所以「听完」不会被误记成「跳过」。
+        _currentSongFlow.value?.let { recordHeartbeatSkip(it) }
+        this.nextImpl(force, commandSource)
+    }
 
     fun previous(commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL) =
         this.previousImpl(commandSource)

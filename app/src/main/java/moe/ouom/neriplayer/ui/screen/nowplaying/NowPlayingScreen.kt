@@ -108,6 +108,9 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.platform.comments.resolveCommentSource
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
+import moe.ouom.neriplayer.core.player.heartbeat.cycleHeartbeatMode
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatModeFlow
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -151,6 +154,7 @@ import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.ui.component.playback.SleepTimerDialog
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.theme.LocalNeriTargetColorScheme
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricSeekPosition
@@ -297,11 +301,13 @@ internal fun resolvePlaybackActionToolbarLayout(
     availableWidth: Dp,
     preferredHorizontalPadding: Dp,
     defaultIconSize: Dp,
-    preferredMinimumTouchTarget: Dp = PlaybackActionToolbarMinimumTouchTarget
+    preferredMinimumTouchTarget: Dp = PlaybackActionToolbarMinimumTouchTarget,
+    itemCount: Int = PlaybackActionToolbarItemCount
 ): PlaybackActionToolbarLayout {
     val minimumTouchTarget = preferredMinimumTouchTarget.coerceAtLeast(0.dp)
+    val safeItemCount = itemCount.coerceAtLeast(1)
     val preferredSlotWidth = (
-            (availableWidth - preferredHorizontalPadding * 2) / PlaybackActionToolbarItemCount
+            (availableWidth - preferredHorizontalPadding * 2) / safeItemCount
             ).coerceAtLeast(0.dp)
     if (preferredSlotWidth >= minimumTouchTarget) {
         return PlaybackActionToolbarLayout(
@@ -312,7 +318,7 @@ internal fun resolvePlaybackActionToolbarLayout(
         )
     }
 
-    val compactSlotWidth = (availableWidth / PlaybackActionToolbarItemCount).coerceAtLeast(0.dp)
+    val compactSlotWidth = (availableWidth / safeItemCount).coerceAtLeast(0.dp)
     return PlaybackActionToolbarLayout(
         horizontalPadding = 0.dp,
         minimumInteractiveComponentSize = minOf(
@@ -509,6 +515,8 @@ fun NowPlayingScreen(
     )
     val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsStateWithLifecycle()
     val repeatMode by PlayerManager.repeatModeFlow.collectAsStateWithLifecycle()
+    val heartbeatMode by PlayerManager.heartbeatModeFlow.collectAsStateWithLifecycle()
+    val heartbeatEnabled = heartbeatMode == HeartbeatMode.ON
     val durationMs by PlayerManager.playbackDurationFlow.collectAsStateWithLifecycle()
     val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsStateWithLifecycle()
     val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsStateWithLifecycle()
@@ -1462,7 +1470,8 @@ fun NowPlayingScreen(
                                 },
                                 onSwitchPage = { onShowLyricsScreenChange(!showLyricsScreen) }
                             ),
-                            onAddToPlaylist = { showAddSheet = true }
+                            onAddToPlaylist = { showAddSheet = true },
+                            onHeartbeat = { PlayerManager.cycleHeartbeatMode() }
                         )
 
                         val coverTopBar: @Composable () -> Unit = {
@@ -1583,7 +1592,9 @@ fun NowPlayingScreen(
                                     sleepTimerActive = sleepTimerState.isActive,
                                     lyricsAvailable = coverLyricsAvailable,
                                     lyricsShowing = isLyricsMode,
-                                    activeColor = nowPlayingActiveIconColor
+                                    activeColor = nowPlayingActiveIconColor,
+                                    heartbeatActive = heartbeatEnabled,
+                                    heartbeatAvailable = isNeteaseExclusiveFeatureAvailable(currentSong)
                                 ),
                                 actions = coverToolbarActions,
                                 sharedTransitionScope = this@SharedTransitionLayout,
@@ -1943,6 +1954,19 @@ fun NowPlayingScreen(
                         )
                     }
                 }
+                // 播放页自己的 Snackbar 挂载点。
+                // 此前本页没有任何 host，`snackbarHostState` 只被「更多选项」面板里的
+                // overlay host 渲染，导致本页的提示必须打开右上角菜单才看得到。
+                // 更多面板打开时由它自己的 host 渲染，避免同一 hostState 被两处同时画出。
+                if (!showMoreOptions) {
+                    NeriOverlaySnackbarHost(hostState = snackbarHostState)
+                }
+                // 心动模式的失败提示（成功不提示）。走上面这个 host 渲染成项目原有的
+                // 底部 Snackbar 样式，但只停留 1 秒。
+                NowPlayingHeartbeatFeedback(
+                    snackbarHostState = snackbarHostState,
+                    scope = screenScope
+                )
             }
         }
     }

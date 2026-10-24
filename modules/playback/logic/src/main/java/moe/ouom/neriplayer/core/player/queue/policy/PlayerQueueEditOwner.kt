@@ -120,6 +120,34 @@ class PlayerQueueEditOwner(private val identity: QueueSongIdentity) {
         return InsertQueueEdit(selectedQueue(songs, queue.currentIndex, currentSong), existingIndex, insertIndex)
     }
 
+    /**
+     * 丢弃当前歌之后的全部歌，再把 [song] 接到队尾。
+     *
+     * 供「持续往后长出一条歌流」的播放模式使用（如心动模式）：
+     * 这类模式每次都给出下一首，若沿用 [insertEnd] 直接追加，
+     * 排在当前歌之后、原本还会播到的歌就永远轮不到了；
+     * 若沿用 [insertNext] 插播，队列长度又永远不变，表现为「十几首歌反复循环」。
+     * 截断后追加让队列恒等于「已播过的 + 歌流」，两种毛病都没有。
+     *
+     * 返回的 [InsertQueueEdit.existingIndex] 是相对于截断后的队列的下标，
+     * 不是原队列下标；调用方若需要原队列下标请自行换算。
+     * 返回的 [InsertQueueEdit.queue] 的当前下标已经指向新接上的 [song]，
+     * 调用方可以直接播放它，不需要再自己 [PlayerQueueSnapshot.selecting]。
+     */
+    fun appendReplacingTail(
+        queue: PlayerQueueSnapshot,
+        song: SongItem,
+        currentSong: SongItem?,
+    ): InsertQueueEdit? {
+        if (queue.currentIndex !in queue.playlist.indices) return null
+        val kept = PlayerQueueSnapshot.from(
+            queue.playlist.take(queue.currentIndex + 1),
+            queue.currentIndex,
+        )
+        val edit = insertEnd(kept, song, currentSong) ?: return null
+        return edit.copy(queue = edit.queue.selecting(edit.insertedIndex))
+    }
+
     private fun selectedQueue(
         songs: List<SongItem>,
         previousIndex: Int,

@@ -205,6 +205,42 @@ class PlayerQueueEditOwnerTest {
     }
 
     @Test
+    fun `append replacing tail drops the unplayed tail and appends the new song`() {
+        val edit = editOwner.appendReplacingTail(queue(listOf(first, second, third), 0), fourth, first)
+
+        assertEquals(listOf(first, fourth), edit?.queue?.playlist)
+        assertEquals(1, edit?.queue?.currentIndex)
+        assertEquals(1, edit?.insertedIndex)
+    }
+
+    @Test
+    fun `append replacing tail keeps the already played part untouched`() {
+        val edit = editOwner.appendReplacingTail(
+            queue(listOf(first, second, third, fourth), 2),
+            song(5, "Fifth"),
+            third,
+        )
+
+        assertEquals(listOf(first, second, third, song(5, "Fifth")), edit?.queue?.playlist)
+        assertEquals(3, edit?.queue?.currentIndex)
+    }
+
+    @Test
+    fun `append replacing tail removes a duplicate already in the played part`() {
+        val edit = editOwner.appendReplacingTail(queue(listOf(first, second, third), 2), first, third)
+
+        assertEquals(listOf(second, third, first), edit?.queue?.playlist)
+        assertEquals(2, edit?.queue?.currentIndex)
+        assertEquals(0, edit?.existingIndex)
+    }
+
+    @Test
+    fun `append replacing tail rejects an invalid current index`() {
+        assertNull(editOwner.appendReplacingTail(PlayerQueueSnapshot.EMPTY, fourth, null))
+        assertNull(editOwner.appendReplacingTail(queue(listOf(first), -1), fourth, null))
+    }
+
+    @Test
     fun `reorder index keeps submitted selection when the current song is unavailable`() {
         val songs = listOf(first, second, third)
 

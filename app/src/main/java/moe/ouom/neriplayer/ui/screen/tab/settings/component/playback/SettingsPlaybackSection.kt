@@ -519,6 +519,21 @@ internal fun SettingsPlaybackSection(
                     }
                 }
             }
+
+            if (cardIndex == null) DetailSectionGap(showHeader)
+            if (shouldShowCard(4)) DetailSectionCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                // 心动模式的静态说明，同时承担合规告知：让用户知道未登录时走的是本地推荐，
+                // 推荐逻辑与官方不同（任务书 §四 步骤 3 / §5.3 文案红线）。
+                MiuixSettingsSectionIntro(
+                    title = stringResource(CoreCommonR.string.settings_heartbeat_section_title),
+                    description = stringResource(CoreCommonR.string.settings_heartbeat_section_desc)
+                )
+            }
         }
     }
 }

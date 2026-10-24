@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -82,7 +83,9 @@ internal data class NowPlayingCoverToolbarStatus(
     val sleepTimerActive: Boolean,
     val lyricsAvailable: Boolean,
     val lyricsShowing: Boolean,
-    val activeColor: Color
+    val activeColor: Color,
+    val heartbeatActive: Boolean = false,
+    val heartbeatAvailable: Boolean = true
 )
 
 internal data class NowPlayingCoverToolbarActions(
@@ -90,8 +93,26 @@ internal data class NowPlayingCoverToolbarActions(
     val onSleepTimer: () -> Unit,
     val onVolume: () -> Unit,
     val onLyrics: () -> Unit,
-    val onAddToPlaylist: () -> Unit
+    val onAddToPlaylist: () -> Unit,
+    val onHeartbeat: () -> Unit = {}
 )
+
+/**
+ * 封面操作栏的按钮数量：队列 / 定时器 / 扬声器 / 歌词 / 添加到歌单 / 心动 = 6。
+ *
+ * 与 `NowPlayingScreen.kt` 的 `PlaybackActionToolbarItemCount`（=5）刻意分开：
+ * 后者被歌词页、启动引导页与既有单测复用，改它会连带破坏那三处。
+ */
+internal const val NowPlayingCoverToolbarItemCount = 6
+
+/**
+ * 心动模式入口不可用（B 站 / YouTube 音源）时的按钮数量：少一个心动按钮。
+ */
+internal const val NowPlayingCoverToolbarItemCountWithoutHeartbeat = 5
+
+internal fun resolveNowPlayingCoverToolbarItemCount(heartbeatAvailable: Boolean): Int =
+    if (heartbeatAvailable) NowPlayingCoverToolbarItemCount
+    else NowPlayingCoverToolbarItemCountWithoutHeartbeat
 
 internal fun resolveNowPlayingLyricsToolbarAction(
     lyricsAdjustBehavior: Boolean,
@@ -234,7 +255,8 @@ private fun NowPlayingCoverToolbarContent(
                 availableWidth = maxWidth,
                 preferredHorizontalPadding = toolbarPreferredPadding(spec),
                 defaultIconSize = spec.iconSize,
-                preferredMinimumTouchTarget = spec.minimumTouchTarget
+                preferredMinimumTouchTarget = spec.minimumTouchTarget,
+                itemCount = resolveNowPlayingCoverToolbarItemCount(status.heartbeatAvailable)
             )
         CompositionLocalProvider(
             LocalMinimumInteractiveComponentSize provides layout.minimumInteractiveComponentSize
@@ -291,6 +313,50 @@ private fun NowPlayingCoverToolbarRow(
             layout.iconSize, buttonModifier, sharedTransitionScope, animatedVisibilityScope,
             actions.onAddToPlaylist, LocalContentColor.current
         )
+        if (status.heartbeatAvailable) {
+            NowPlayingCoverHeartbeatButton(
+                status, layout.iconSize, buttonModifier, sharedTransitionScope,
+                animatedVisibilityScope, actions.onHeartbeat
+            )
+        }
+    }
+}
+
+/**
+ * 心动模式开关：图标是心跳脉冲折线，不是爱心。
+ *
+ * 爱心在本项目已被「收藏当前歌曲」占用（顶部 `已收藏` 按钮），
+ * 放进操作栏会让用户误以为点了会收藏当前歌曲。
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun NowPlayingCoverHeartbeatButton(
+    status: NowPlayingCoverToolbarStatus,
+    iconSize: Dp,
+    modifier: Modifier,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    onClick: () -> Unit
+) {
+    with(sharedTransitionScope) {
+        HapticIconButton(
+            onClick = onClick,
+            modifier = modifier.testTag("nowPlayingHeartbeatAction").sharedBounds(
+                rememberSharedContentState(key = "btn_heartbeat"),
+                animatedVisibilityScope = animatedVisibilityScope,
+                enter = EnterTransition.None,
+                exit = ExitTransition.None
+            ).zIndex(1f)
+        ) {
+            Icon(
+                painter = painterResource(CoreCommonR.drawable.ic_heartbeat_pulse_24),
+                contentDescription = stringResource(CoreCommonR.string.heartbeat_mode_content_description),
+                tint = toolbarActiveTint(
+                    status.heartbeatActive, status.activeColor, LocalContentColor.current
+                ),
+                modifier = Modifier.size(iconSize)
+            )
+        }
     }
 }
 

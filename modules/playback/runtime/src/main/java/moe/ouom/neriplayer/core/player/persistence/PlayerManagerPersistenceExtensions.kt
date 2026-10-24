@@ -25,6 +25,8 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
+import moe.ouom.neriplayer.core.player.heartbeat.restoreHeartbeatModeFromState
 import moe.ouom.neriplayer.data.model.playback.storage.PlayerMetadataClearRequest as RestorableMetadataClearPolicy
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
@@ -85,7 +87,8 @@ data class RestoredPlayerStateSnapshot(
     val resumePositionMs: Long,
     val shouldResumePlayback: Boolean,
     val originalPlaylistSize: Int,
-    val persistedIndex: Int
+    val persistedIndex: Int,
+    val heartbeatMode: Int = HeartbeatMode.OFF // 心动模式开关，默认 OFF 兼容旧存档
 )
 
 private val songMetadataRequestCoordinator = SongMetadataRequestCoordinator()
@@ -278,7 +281,8 @@ private fun buildRestoredStateSnapshot(
             },
             shouldResumePlayback = data.shouldResumePlayback && currentIndex != -1,
             originalPlaylistSize = data.playlist.size,
-            persistedIndex = data.index
+            persistedIndex = data.index,
+            heartbeatMode = data.heartbeatMode ?: HeartbeatMode.OFF, // Room 实体没有该列，恢复为 OFF
         )
         val identities = playbackLyricIdentityKeys(snapshot.playlist.getOrNull(snapshot.currentIndex),
             snapshot.playlist, snapshot.shuffleRestorePlaylist)
@@ -472,7 +476,7 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
     repeatModeSetting = snapshot.repeatMode
     syncExoRepeatMode()
     _repeatModeFlow.value = repeatModeSetting
-
+    restoreHeartbeatModeFromState(snapshot.heartbeatMode)
     player.shuffleModeEnabled = snapshot.shuffleEnabled
 
     setRestoredPlayback(snapshot.resumePositionMs, snapshot.shouldResumePlayback)

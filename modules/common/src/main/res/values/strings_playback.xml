@@ -108,4 +108,16 @@
     <string name="player_playback_url_error_detail">获取播放地址失败：%1$s</string>
     <string name="mini_player_volume">音量</string>
     <string name="mini_player_progress">播放进度</string>
+    <!-- Heartbeat Mode -->
+    <string name="heartbeat_mode_enabled">Heartbeat mode on</string>
+    <string name="heartbeat_mode_enabled_local">Heartbeat mode on (local suggestions)</string>
+    <string name="heartbeat_mode_enabled_local_hint">Heartbeat mode on (local suggestions). Log in to use cloud suggestions</string>
+    <string name="heartbeat_official_unavailable_hint">Heartbeat mode is using local suggestions; cloud suggestions are temporarily unavailable</string>
+    <string name="heartbeat_mode_disabled">Heartbeat mode off</string>
+    <string name="heartbeat_room_auto_disabled">Joined Listen Together; heartbeat mode turned off</string>
+    <string name="heartbeat_room_cannot_enable">Heartbeat mode is unavailable in a Listen Together room</string>
+    <string name="heartbeat_candidates_insufficient">Not enough heartbeat candidates; reverted to the previous mode</string>
+    <string name="heartbeat_mode_content_description">Heartbeat mode</string>
+    <string name="heartbeat_dislike_action">Don\'t like this song</string>
+    <string name="heartbeat_dislike_marked">Marked as disliked</string>
 </resources>
