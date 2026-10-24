@@ -273,6 +273,21 @@ class NeteasePlaymodeIntelligenceRepositoryTest {
     }
 
     @Test
+    fun `换账号后同一首歌不复用上一个账号的推荐`() = runTest {
+        val api = FakePlaymodeIntelligenceApi(intelligence = { INTELLIGENCE_JSON })
+        val repository = repository(api)
+
+        repository.fetchNextSong(SONG_ID)
+        assertEquals(1, api.loadIntelligenceRequests.size)
+
+        // 换号后个性化推荐完全不同，缓存不能只按歌曲 id 命中
+        api.userId = 5678L
+        repository.fetchNextSong(SONG_ID)
+
+        assertEquals(2, api.loadIntelligenceRequests.size)
+    }
+
+    @Test
     fun `不同歌曲各走一次请求互不复用`() = runTest {
         val api = FakePlaymodeIntelligenceApi(intelligence = { INTELLIGENCE_JSON })
         val repository = repository(api)
@@ -327,7 +342,7 @@ class NeteasePlaymodeIntelligenceRepositoryTest {
 
     private class FakePlaymodeIntelligenceApi(
         private val hasLogin: Boolean = true,
-        private val userId: Long = USER_ID,
+        var userId: Long = USER_ID,
         private val likedPlaylistId: Long? = PLAYLIST_ID,
         // 未注入时一旦真的发出请求就立刻炸，用来钉住「守卫必须先于请求」
         private val intelligence: suspend () -> String = { error("intelligence 不得被调用") },

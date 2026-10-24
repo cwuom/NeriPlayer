@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.queue.heartbeat
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -393,6 +394,16 @@ class HeartbeatScorerTest {
 
         assertEquals(HeartbeatScorer.identityKey(plain), HeartbeatScorer.identityKey(withNeteaseLyrics))
         assertEquals(HeartbeatScorer.identityKey(plain), HeartbeatScorer.identityKey(withQqLyrics))
+    }
+
+    @Test
+    fun `identity key uses the channel value not its mere presence`() {
+        val netease = song(123, "x").copy(channelId = "netease")
+        val bili = song(123, "x").copy(channelId = "bilibili")
+
+        assertEquals("netease:123", HeartbeatScorer.identityKey(netease))
+        assertEquals("bili:123", HeartbeatScorer.identityKey(bili))
+        assertNotEquals(HeartbeatScorer.identityKey(netease), HeartbeatScorer.identityKey(bili))
     }
 
     // ---- 助手 ----

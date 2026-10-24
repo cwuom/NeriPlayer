@@ -68,6 +68,24 @@ class LocalHeartbeatCandidateSourceTest {
     }
 
     @Test
+    fun `bilibili and youtube songs are filtered out of every tier`() = runTest {
+        val provider = StaticProvider(
+            favorites = listOf(
+                song(30, "B站曲").copy(channelId = "bilibili"),
+                song(31, "YouTube曲").copy(channelId = "youtubeMusic"),
+                song(32, "历史标记的B站曲").copy(album = "Bilibili|123"),
+            ),
+            history = listOf(song(33, "正常曲")),
+        )
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        // 非网易云音源一旦被选中就会让推进卡死，所以必须在这里就被筛掉
+        val result = source.selectNext(current, emptyList())
+
+        assertEquals(33L, result?.id)
+    }
+
+    @Test
     fun `history candidates are used when there is no favorite`() = runTest {
         val provider = StaticProvider(favorites = emptyList(), history = listOf(song(11, "历史曲")))
         val source = LocalHeartbeatCandidateSource(provider = provider)

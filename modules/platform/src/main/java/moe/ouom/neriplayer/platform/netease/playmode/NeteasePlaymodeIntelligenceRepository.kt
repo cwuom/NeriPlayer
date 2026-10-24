@@ -34,8 +34,17 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
 
     private data class CacheEntry(val song: SongItem, val fetchedAtMs: Long)
 
+    /**
+     * 缓存键带上账号，避免换号后串号。
+     *
+     * 只能按「账号 + 歌曲」定位：同一个人 30 秒内重复触发同一首歌才该复用，
+     * 而不同账号对同一首歌的个性化推荐完全不同。用 data class 而不是 `Pair`，
+     * 因为本模块的依赖边界禁止出现 `kotlin.TuplesKt`。
+     */
+    private data class CacheKey(val userId: Long, val songId: Long)
+
     private val cacheLock = Any()
-    private val cache = LinkedHashMap<Long, CacheEntry>()
+    private val cache = LinkedHashMap<CacheKey, CacheEntry>()
 
     /**
      * 红心歌单 id 的账号级缓存，见 [resolveLikedPlaylistId]。
@@ -67,9 +76,10 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
      */
     suspend fun fetchNextSong(currentSongId: Long, bypassCache: Boolean = false): SongItem? {
         if (currentSongId <= 0L) return null
-        if (!bypassCache) cachedSong(currentSongId)?.let { return it }
+        val userId = api.currentUserId()
+        if (!bypassCache) cachedSong(userId, currentSongId)?.let { return it }
         return withContext(Dispatchers.IO) {
-            runCatching { load(currentSongId) }
+            runCatching { load(currentSongId, userId) }
                 .getOrElse { error ->
                     // 取消必须向上传播，否则切歌时的旧请求会污染新歌状态
                     if (error is CancellationException) throw error
@@ -82,8 +92,7 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
     /** [fetchNextSong] 的别名：与 [isOfficialAvailable] 配对，供上层统一命名使用。 */
     suspend fun nextSong(songId: Long): SongItem? = fetchNextSong(songId)
 
-    private suspend fun load(currentSongId: Long): SongItem? {
-        val userId = api.currentUserId()
+    private suspend fun load(currentSongId: Long, userId: Long): SongItem? {
         if (userId <= 0L) {
             // 未登录属于预期情况：静默降级，不打错误日志
             NPLogger.d(TAG, "心动模式跳过: 未登录")
@@ -112,7 +121,7 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
 
         return when (val result = PlaymodeIntelligenceResponseParser.parse(raw)) {
             is PlaymodeIntelligenceResult.Success -> {
-                putCache(currentSongId, result.song)
+                putCache(userId, currentSongId, result.song)
                 result.song
             }
             PlaymodeIntelligenceResult.RequiresLogin -> {
@@ -137,20 +146,21 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
         }
     }
 
-    private fun cachedSong(songId: Long): SongItem? {
+    private fun cachedSong(userId: Long, songId: Long): SongItem? {
+        val key = CacheKey(userId = userId, songId = songId)
         synchronized(cacheLock) {
-            val entry = cache[songId] ?: return null
+            val entry = cache[key] ?: return null
             if (nowMs() - entry.fetchedAtMs > CACHE_TTL_MS) {
-                cache.remove(songId)
+                cache.remove(key)
                 return null
             }
             return entry.song
         }
     }
 
-    private fun putCache(songId: Long, song: SongItem) {
+    private fun putCache(userId: Long, songId: Long, song: SongItem) {
         synchronized(cacheLock) {
-            cache[songId] = CacheEntry(song = song, fetchedAtMs = nowMs())
+            cache[CacheKey(userId = userId, songId = songId)] = CacheEntry(song = song, fetchedAtMs = nowMs())
             while (cache.size > MAX_CACHE_ENTRIES) {
                 val oldest = cache.keys.firstOrNull() ?: break
                 cache.remove(oldest)

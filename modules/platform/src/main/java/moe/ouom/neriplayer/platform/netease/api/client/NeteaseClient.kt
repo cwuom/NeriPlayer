@@ -1551,9 +1551,13 @@ class NeteaseClient(
             "startMusicId" to startMusicId.toString(),
             "count" to count.toString(),
         )
-        fun call(usePersistedCookies: Boolean): String = callEApi(
-            "/playmode/intelligence/list",
-            params,
+        // 走可取消通道：阻塞版 `callEApi` 在调用方已经取消后仍会等到 IO 超时，
+        // 心动模式切歌频繁，旧请求挂着会占住连接池。
+        suspend fun call(usePersistedCookies: Boolean): String = requestCancellable(
+            url = "https://interface.music.163.com/eapi/playmode/intelligence/list",
+            params = params,
+            mode = CryptoMode.EAPI,
+            method = "POST",
             usePersistedCookies = usePersistedCookies,
             retryHttp1OnStreamReset = true,
         )
