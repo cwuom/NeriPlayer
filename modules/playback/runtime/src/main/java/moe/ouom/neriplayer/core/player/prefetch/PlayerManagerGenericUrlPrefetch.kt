@@ -120,6 +120,7 @@ private suspend fun PlayerManager.prefetchGenericTrackMedia(
     if (playbackDemandArbiter.shouldYieldPrefetch(mediaCacheKey)) return
     val descriptorResult = synchronizeCachedPlaybackDescriptor(
         cacheKey = mediaCacheKey,
+        ownerSong = song,
         audioInfo = result.audioInfo,
         expectedContentLength = result.expectedContentLength,
         representationIdentity = result.representationIdentity,

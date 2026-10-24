@@ -379,9 +379,8 @@ internal class AppStorageSettingsActions(
             scope.launch { repo.setMaxCacheSizeBytes(size) }
         }
 
-    val onClearCacheClick: (StorageCacheClearOptions) -> Unit = { options ->
-            scope.launch {
-                snackbarHostState.showNeriSnackbar(cacheClearOwner.clear(options))
-            }
-        }
+    val onClearCacheClick: suspend (StorageCacheClearOptions) -> Unit = { options ->
+        val message = cacheClearOwner.clear(options)
+        scope.launch { snackbarHostState.showNeriSnackbar(message) }
+    }
 }

@@ -551,8 +551,16 @@ For release build and signing details, see
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
   cleanup for audio cache, image cache, share staging, and platform playlist
-  cache, with grouped storage usage details. Download staging contains resume
-  and recovery state and is managed by download recovery.
+  cache. The cleanup sheet scans category sizes before clearing, refreshes usage
+  afterward, and reports the space actually released. Audio and artwork cleanup
+  share an optional list of the **X most recently played distinct songs**, retaining
+  their existing cache without downloading missing files. **0** retains no history;
+  the currently playing audio remains protected. With retention enabled, legacy
+  cache entries whose song ownership is unknown are kept, so more than X songs
+  may remain. Other cache currently covers lyric share cards; sync, backup recovery,
+  download resume, and unknown working files are listed as protected data.
+  Download staging is managed by download recovery. Ordinary cache cleanup preserves
+  downloaded songs and their lyrics and artwork.
 - 🛰️ **Offline mode**:
   automatically detects network availability, disables online Explore and remote
   Home refreshes while offline, and uses cached images only for remote artwork.

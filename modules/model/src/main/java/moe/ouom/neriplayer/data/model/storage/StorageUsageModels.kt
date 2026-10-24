@@ -34,7 +34,8 @@ enum class StorageCacheKind {
     BiliArchive,
     YouTubePlaylist,
     LogFiles,
-    CrashLogs
+    CrashLogs,
+    Other
 }
 
 enum class StorageUsageItemKind {
@@ -58,7 +59,8 @@ enum class StorageUsageItemKind {
     CustomBackground,
     LegacyMigrationFiles,
     Database,
-    AppData
+    AppData,
+    ProtectedCache
 }
 
 data class StorageCacheClearOptions(
@@ -72,18 +74,19 @@ data class StorageCacheClearOptions(
     val biliArchiveCache: Boolean = false,
     val youtubePlaylistCache: Boolean = false,
     val logFiles: Boolean = false,
-    val crashLogs: Boolean = false
+    val crashLogs: Boolean = false,
+    val otherCache: Boolean = false,
+    val retainRecentSongs: Int = 0
 ) {
     val hasSelection: Boolean
-        get() = audioCache || imageCache || downloadStaging || sharedMedia ||
-            lyricsCache || hasPlatformCacheSelection || logFiles || crashLogs
+        get() = needsPlayerCacheClear || needsExtraCacheClear
 
     val needsPlayerCacheClear: Boolean
         get() = audioCache || imageCache
 
     val needsExtraCacheClear: Boolean
         get() = downloadStaging || sharedMedia || hasPlatformCacheSelection ||
-            lyricsCache || logFiles || crashLogs
+            lyricsCache || logFiles || crashLogs || otherCache
 
     val hasPlatformCacheSelection: Boolean
         get() = neteasePlaylistCache || biliFavoriteCache || biliArchiveCache ||
@@ -136,4 +139,9 @@ data class ExtraCacheClearResult(
     val freedBytes: Long,
     val roomBytesMadeReusable: Long,
     val deletedFiles: Int
+)
+
+data class PlayerCacheClearOutcome(
+    val result: ExtraCacheClearResult,
+    val retentionUnavailable: Boolean = false
 )

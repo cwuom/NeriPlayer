@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.data.model.storage.StorageCacheKind
 
 interface StorageCacheFileAccess {
     fun stats(file: File): FileStats
-    fun clear(file: File, kind: StorageCacheKind): Boolean
+    suspend fun clear(file: File, kind: StorageCacheKind): Boolean
 }
 
 interface StoragePlatformCacheAccess {

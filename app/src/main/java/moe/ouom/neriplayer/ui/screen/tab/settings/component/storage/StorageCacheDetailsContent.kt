@@ -92,7 +92,8 @@ internal fun StorageCacheDetailsContent(
     isScanning: Boolean,
     onRefresh: () -> Unit,
     onClearCache: () -> Unit,
-    onOpenSystemSettings: () -> Unit
+    onOpenSystemSettings: () -> Unit,
+    scanFailed: Boolean = false
 ) {
     AnimatedContent(
         targetState = isScanning,
@@ -109,6 +110,26 @@ internal fun StorageCacheDetailsContent(
         AdvancedGlassScene(active = scanning == isScanning) {
             if (scanning) {
                 StorageScanCard()
+            } else if (scanFailed) {
+                MiuixSettingsSectionCard {
+                    Column(
+                        Modifier.fillMaxWidth().padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            stringResource(CoreCommonR.string.storage_scan_failed),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            stringResource(CoreCommonR.string.storage_scan_failed_desc),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        MiuixSettingsOutlinedButton(onClick = onRefresh) {
+                            Text(stringResource(CoreCommonR.string.storage_scan_refresh))
+                        }
+                    }
+                }
             } else {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                     val useTwoColumns = maxWidth >= TABLET_CONTENT_MIN_WIDTH
@@ -561,6 +582,7 @@ private fun StorageUsageItemKind.toStorageIcon(): ImageVector {
         StorageUsageItemKind.BiliArchiveCache -> Icons.Outlined.VideoLibrary
         StorageUsageItemKind.YouTubePlaylistCache -> Icons.Outlined.PlayArrow
         StorageUsageItemKind.OtherCache -> Icons.Outlined.Layers
+        StorageUsageItemKind.ProtectedCache -> Icons.Outlined.Storage
         StorageUsageItemKind.DownloadedMusic -> Icons.Outlined.DownloadDone
         StorageUsageItemKind.DownloadedLyrics -> Icons.Outlined.Subtitles
         StorageUsageItemKind.DownloadedCovers -> Icons.Outlined.PictureInPictureAlt
