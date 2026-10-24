@@ -87,7 +87,8 @@ internal fun applyOnePlusHighDensityDisplayCorrection(context: Context): Context
     if (correctedDensityDpi == densityDpi) {
         return context
     }
-    val configuration = Configuration(context.resources.configuration)
+    // 只覆盖密度，让后续窗口和主题配置继续跟随系统
+    val configuration = Configuration()
     configuration.densityDpi = correctedDensityDpi
     return OnePlusHighDensityContextWrapper(context, configuration)
 }

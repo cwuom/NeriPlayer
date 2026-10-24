@@ -1271,6 +1271,13 @@ class MainActivity : ComponentActivity() {
         scheduleStartupSyncIfNeeded()
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        // 旋转只更新现有 Compose 页面，保留底层内容和返回层级
+        super.onConfigurationChanged(newConfig)
+        applyNowPlayingOrientation()
+        applyNavigationBarVisibility()
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean(STATE_NOW_PLAYING_OPEN, nowPlayingOrientationState.playerOpen)
         outState.putBoolean(STATE_PLAYER_PORTRAIT_REQUESTED, nowPlayingOrientationState.portraitRequested)
