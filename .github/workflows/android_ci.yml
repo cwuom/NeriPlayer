@@ -146,7 +146,7 @@ jobs:
             app_test_arguments: >-
               -Pandroid.testInstrumentationRunnerArguments.numShards=2
               -Pandroid.testInstrumentationRunnerArguments.shardIndex=0
-              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
+              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest,moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
           - shard: 1
             test_group: shard 1
             emulator_gpu: swiftshader
@@ -155,15 +155,25 @@ jobs:
             app_test_arguments: >-
               -Pandroid.testInstrumentationRunnerArguments.numShards=2
               -Pandroid.testInstrumentationRunnerArguments.shardIndex=1
-              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
+              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest,moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
           # 完整宿主触摸回归使用独立的新 AVD，隔离套件间图形状态并保留全部断言
           - shard: 2
             test_group: External Lyrics host
             emulator_gpu: swangle
+            offline: true
             build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
             module_tests: ""
             app_test_arguments: >-
               -Pandroid.testInstrumentationRunnerArguments.class=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
+          # 真实 Activity 旋转单独运行，避免共享图形宿主的状态影响连续性回归
+          - shard: 3
+            test_group: Player rotation host
+            emulator_gpu: swangle
+            offline: true
+            build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
+            module_tests: ""
+            app_test_arguments: >-
+              -Pandroid.testInstrumentationRunnerArguments.class=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -217,7 +227,7 @@ jobs:
           # 保留 Launcher 组件，用设置页承接测试前的前台焦点
           # 首次沉浸模式提示会抢走原生输入，测试 AVD 预先标记已确认
           # 隐藏错误弹窗不会关闭已有 ANR，停止启动器和 SDK Setup 以清理无关窗口
-          # 歌词页使用固定离线夹具，避免虚拟 Wi-Fi 失联反复移动迷你播放器
+          # 完整宿主使用固定离线夹具，避免虚拟 Wi-Fi 失联反复移动迷你播放器
           script: >-
             { ps -eLo pid,tid,comm > build/reports/emulator-host/before-tests-threads.txt || true; } &&
             adb shell settings put global hide_error_dialogs 1 &&
@@ -226,7 +236,7 @@ jobs:
             adb shell am start -W -a android.settings.SETTINGS &&
             adb shell am force-stop --user 0 com.google.android.apps.nexuslauncher &&
             adb shell am force-stop --user 0 com.google.android.googlesdksetup &&
-            { [ "${{ matrix.test_group }}" != "External Lyrics host" ] ||
+            { [ "${{ matrix.offline }}" != "true" ] ||
             { adb shell cmd connectivity airplane-mode enable && adb shell svc wifi disable; }; } &&
             { [ -z "${{ matrix.module_tests }}" ] || ./gradlew ${{ matrix.module_tests }}
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
@@ -235,6 +245,30 @@ jobs:
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
             ${{ matrix.app_test_arguments }}
             --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace
+
+      - name: Verify player rotation regression cases
+        if: ${{ matrix.test_group == 'Player rotation host' }}
+        shell: python
+        run: |
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          expected = {
+              "cleanPlayerRotationPreservesSettingsDraftScrollAndBackDepth",
+              "materialPlayerRotationPreservesSettingsDraftScrollAndBackDepth",
+          }
+          cases = [
+              case
+              for report in Path("app/build/outputs/androidTest-results/connected").rglob("TEST-*.xml")
+              for case in ET.parse(report).iter("testcase")
+              if case.get("classname") == "moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest"
+          ]
+          assert len(cases) == len(expected) and {case.get("name") for case in cases} == expected, \
+              "Both player rotation regression cases must execute"
+          for case in cases:
+              assert not any(case.find(result) is not None for result in ("failure", "error", "skipped")), \
+                  f"Player rotation regression did not pass: {case.get('name')}"
+          print("Both player rotation regression cases executed and passed")
 
       - name: Collect emulator host diagnostics
         if: always()

@@ -10,6 +10,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -30,10 +31,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.performTextReplacement
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.text.AnnotatedString
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
@@ -89,6 +87,9 @@ class MainActivityRotationContinuityTest {
         verifyRotationContinuity(UiStyle.Material)
 
     private fun verifyRotationContinuity(style: UiStyle) {
+        fun logPhase(phase: String) {
+            Log.i("RotationContinuityTest", "style=${style.name} phase=$phase")
+        }
         assumeComposeHostAvailable()
         assumeTrue("需要 API 30+ 手机模拟器", Build.VERSION.SDK_INT >= 30 &&
             Build.HARDWARE in setOf("ranchu", "goldfish") &&
@@ -109,6 +110,7 @@ class MainActivityRotationContinuityTest {
         var scenario: ActivityScenario<MainActivity>? = null
         var failure: Throwable? = null
         try {
+            logPhase("prepare")
             check(directory.mkdirs())
             val song = createPausedSong(directory)
             instrumentation.runOnMainSync { PlayerManager.release() }
@@ -134,6 +136,7 @@ class MainActivityRotationContinuityTest {
             }
             assertTrue(automation.setRotation(UiAutomation.ROTATION_FREEZE_0))
             instrumentation.runOnMainSync { PlayerManager.initialize(context.applicationContext as Application) }
+            logPhase("activity-launch")
             scenario = ActivityScenario.launch(MainActivity::class.java)
             val activeScenario = checkNotNull(scenario)
             UiFailureDiagnostics.onFailure("rotation-continuity-${style.name}") {
@@ -143,20 +146,14 @@ class MainActivityRotationContinuityTest {
                         composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).isDisplayed() &&
                         PlayerManager.currentSongFlow.value?.mediaUri == song.mediaUri
                 }
+                logPhase("home-ready")
                 val search = composeRule.onNode(hasSetTextAction())
-                search.performClick().performTextReplacement(SearchDraft)
-                activeScenario.onActivity { activity ->
-                    WindowInsetsControllerCompat(activity.window, activity.window.decorView)
-                        .hide(WindowInsetsCompat.Type.ime())
+                // 草稿是旋转前的夹具，直接更新真实输入状态以隔离系统键盘
+                search.performSemanticsAction(SemanticsActions.SetText) {
+                    assertTrue(it(AnnotatedString(SearchDraft)))
                 }
-                awaitUi {
-                    var hidden = false
-                    activeScenario.onActivity { activity ->
-                        hidden = ViewCompat.getRootWindowInsets(activity.window.decorView)
-                            ?.isVisible(WindowInsetsCompat.Type.ime()) == false
-                    }
-                    hidden
-                }
+                search.assertTextEquals(SearchDraft)
+                logPhase("draft-ready")
                 val lyricsResult = lyricsPageSearchResult()
                 awaitUi { lyricsResult.isDisplayed() }
                 lyricsResult.performClick()
@@ -166,24 +163,29 @@ class MainActivityRotationContinuityTest {
                 composeRule.waitForIdle()
                 val savedScroll = scrollPosition(detail)
                 assertTrue("歌词设置详情必须已滚动，才能验证旋转后位置连续", savedScroll > 0f)
+                logPhase("detail-ready")
                 lateinit var originalActivity: MainActivity
                 activeScenario.onActivity { originalActivity = it }
 
                 openPlayer(activeScenario)
                 closePlayerToDetail(activeScenario, originalActivity, savedScroll)
+                logPhase("baseline-player-roundtrip")
                 openPlayer(activeScenario)
                 assertTrue(automation.setRotation(UiAutomation.ROTATION_FREEZE_90))
                 awaitPlayerOrientation(activeScenario, Configuration.ORIENTATION_LANDSCAPE)
                 assertSameActivity(activeScenario, originalActivity)
+                logPhase("landscape")
 
                 assertTrue(automation.setRotation(UiAutomation.ROTATION_FREEZE_0))
                 awaitPlayerOrientation(activeScenario, Configuration.ORIENTATION_PORTRAIT)
                 assertSameActivity(activeScenario, originalActivity)
+                logPhase("portrait")
                 assertTrue(automation.setRotation(UiAutomation.ROTATION_FREEZE_90))
                 awaitPlayerOrientation(activeScenario, Configuration.ORIENTATION_LANDSCAPE)
                 composeRule.onNodeWithTag(PlayerBackTag).performClick()
                 awaitPlayerOrientation(activeScenario, Configuration.ORIENTATION_PORTRAIT)
                 assertSameActivity(activeScenario, originalActivity)
+                logPhase("top-back-portrait")
                 activeScenario.onActivity { activity ->
                     assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, activity.requestedOrientation)
                 }
@@ -202,6 +204,7 @@ class MainActivityRotationContinuityTest {
                 search.assertTextEquals(SearchDraft)
                 composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).assertIsDisplayed()
                 assertSameActivity(activeScenario, originalActivity)
+                logPhase("complete")
             }
         } catch (error: Throwable) {
             failure = error
