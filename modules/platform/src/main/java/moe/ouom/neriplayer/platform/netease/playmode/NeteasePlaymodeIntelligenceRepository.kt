@@ -37,9 +37,15 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
     private val cacheLock = Any()
     private val cache = LinkedHashMap<Long, CacheEntry>()
 
-    /** userId → 红心歌单 id，见 [resolveLikedPlaylistId]。 */
+    /**
+     * 红心歌单 id 的账号级缓存，见 [resolveLikedPlaylistId]。
+     *
+     * 这里刻意不用 `Pair`：本模块的依赖边界检查（`tools_pub/quality/domain_dependencies.py`）
+     * 禁止出现 `kotlin.TuplesKt`，所以拆成两个 Long 字段。
+     */
     private val likedPlaylistLock = Any()
-    private var likedPlaylistCache: Pair<Long, Long>? = null
+    private var likedPlaylistOwnerId: Long = -1L
+    private var likedPlaylistCachedId: Long = -1L
 
     /** 未登录时上层可先判断，避免无谓请求。 */
     fun isLoggedIn(): Boolean = api.hasLogin()
@@ -162,11 +168,16 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
      */
     private suspend fun resolveLikedPlaylistId(userId: Long): Long? {
         synchronized(likedPlaylistLock) {
-            likedPlaylistCache?.takeIf { it.first == userId }?.let { return it.second }
+            if (likedPlaylistOwnerId == userId && likedPlaylistCachedId > 0L) {
+                return likedPlaylistCachedId
+            }
         }
         val resolved = api.likedPlaylistId(userId)
         if (resolved != null && resolved > 0L) {
-            synchronized(likedPlaylistLock) { likedPlaylistCache = userId to resolved }
+            synchronized(likedPlaylistLock) {
+                likedPlaylistOwnerId = userId
+                likedPlaylistCachedId = resolved
+            }
         }
         return resolved
     }
