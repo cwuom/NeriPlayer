@@ -146,7 +146,8 @@ jobs:
             app_test_arguments: >-
               -Pandroid.testInstrumentationRunnerArguments.numShards=2
               -Pandroid.testInstrumentationRunnerArguments.shardIndex=0
-              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest,moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
+              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
+              -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
           - shard: 1
             test_group: shard 1
             emulator_gpu: swiftshader
@@ -155,7 +156,8 @@ jobs:
             app_test_arguments: >-
               -Pandroid.testInstrumentationRunnerArguments.numShards=2
               -Pandroid.testInstrumentationRunnerArguments.shardIndex=1
-              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest,moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
+              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
+              -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
           # 完整宿主触摸回归使用独立的新 AVD，隔离套件间图形状态并保留全部断言
           - shard: 2
             test_group: External Lyrics host
@@ -246,29 +248,41 @@ jobs:
             ${{ matrix.app_test_arguments }}
             --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace
 
-      - name: Verify player rotation regression cases
-        if: ${{ matrix.test_group == 'Player rotation host' }}
+      - name: Verify instrumented test routing
+        if: ${{ matrix.shard < 2 || matrix.test_group == 'Player rotation host' }}
         shell: python
+        env:
+          TEST_GROUP: ${{ matrix.test_group }}
         run: |
+          import os
           from pathlib import Path
           import xml.etree.ElementTree as ET
 
-          expected = {
-              "cleanPlayerRotationPreservesSettingsDraftScrollAndBackDepth",
-              "materialPlayerRotationPreservesSettingsDraftScrollAndBackDepth",
-          }
+          rotation_class = "moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest"
+          external_lyrics_class = "moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest"
           cases = [
               case
               for report in Path("app/build/outputs/androidTest-results/connected").rglob("TEST-*.xml")
               for case in ET.parse(report).iter("testcase")
-              if case.get("classname") == "moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest"
           ]
-          assert len(cases) == len(expected) and {case.get("name") for case in cases} == expected, \
-              "Both player rotation regression cases must execute"
-          for case in cases:
-              assert not any(case.find(result) is not None for result in ("failure", "error", "skipped")), \
-                  f"Player rotation regression did not pass: {case.get('name')}"
-          print("Both player rotation regression cases executed and passed")
+          assert cases, "Instrumented test reports must contain executed cases"
+          if os.environ["TEST_GROUP"] == "Player rotation host":
+              expected = {
+                  "cleanPlayerRotationPreservesSettingsDraftScrollAndBackDepth",
+                  "materialPlayerRotationPreservesSettingsDraftScrollAndBackDepth",
+              }
+              assert all(case.get("classname") == rotation_class for case in cases), \
+                  "Player rotation host must only execute its regression class"
+              assert len(cases) == len(expected) and {case.get("name") for case in cases} == expected, \
+                  "Both player rotation regression cases must execute"
+              for case in cases:
+                  assert not any(case.find(result) is not None for result in ("failure", "error", "skipped")), \
+                      f"Player rotation regression did not pass: {case.get('name')}"
+              print("Both player rotation regression cases executed and passed")
+          else:
+              assert all(case.get("classname") not in {rotation_class, external_lyrics_class} for case in cases), \
+                  "Dedicated host tests must not execute in shared shards"
+              print(f"Shared shard routing verified for {len(cases)} cases")
 
       - name: Collect emulator host diagnostics
         if: always()
