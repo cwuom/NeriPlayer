@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.queue.heartbeat
 
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -378,10 +379,20 @@ class HeartbeatScorerTest {
 
     @Test
     fun `identity key falls back to id then to name and artist`() {
-        assertEquals(":42", HeartbeatScorer.identityKey(song(42, "x")))
+        assertEquals("local:42", HeartbeatScorer.identityKey(song(42, "x")))
 
         val noId = song(0, "Name").copy(artist = "Artist")
         assertEquals("name|artist", HeartbeatScorer.identityKey(noId))
+    }
+
+    @Test
+    fun `identity key ignores lyric source so switching providers keeps the key`() {
+        val plain = song(42, "x")
+        val withNeteaseLyrics = plain.copy(matchedLyricSource = MusicPlatform.CLOUD_MUSIC)
+        val withQqLyrics = plain.copy(matchedLyricSource = MusicPlatform.QQ_MUSIC)
+
+        assertEquals(HeartbeatScorer.identityKey(plain), HeartbeatScorer.identityKey(withNeteaseLyrics))
+        assertEquals(HeartbeatScorer.identityKey(plain), HeartbeatScorer.identityKey(withQqLyrics))
     }
 
     // ---- 助手 ----

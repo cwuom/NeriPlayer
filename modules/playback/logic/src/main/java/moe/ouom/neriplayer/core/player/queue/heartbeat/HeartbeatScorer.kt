@@ -174,6 +174,7 @@ object HeartbeatScorer {
             ?.filter { it.isNotEmpty() }
             ?.sorted()
             ?.joinToString("/")
+            ?.lowercase()
             .orEmpty()
         return if (fromSummary.isNotEmpty()) fromSummary else song.artist.trim().lowercase()
     }
@@ -182,15 +183,21 @@ object HeartbeatScorer {
      * 歌曲身份键。
      *
      * 优先使用 [SongItem.sourceStableKey]（本地歌曲/多来源场景下更准确），
-     * 回退到「平台:歌曲 id」，再回退到「名称|歌手」。
+     * 回退到「播放来源:歌曲 id」，再回退到「名称|歌手」。
+     *
+     * 播放来源只看播放渠道，不看歌词来源：换一个歌词服务不应该改变同一首歌的身份，
+     * 否则已存的降权、不喜欢与队列排除都会对不上。
      */
     fun identityKey(song: SongItem): String {
         song.sourceStableKey?.takeIf { it.isNotBlank() }?.let { return it }
-        if (song.id > 0L) {
-            val platform = song.matchedLyricSource?.name.orEmpty()
-            return "$platform:${song.id}"
-        }
+        if (song.id > 0L) return "${playbackSourceKey(song)}:${song.id}"
         return "${song.name.trim().lowercase()}|${song.artist.trim().lowercase()}"
+    }
+
+    private fun playbackSourceKey(song: SongItem): String {
+        if (!song.channelId.isNullOrBlank()) return "bili"
+        if (!song.neteaseArtists.isNullOrEmpty()) return "netease"
+        return "local"
     }
 
     /** 默认身份判定：身份键相等即视为同一首歌 */
