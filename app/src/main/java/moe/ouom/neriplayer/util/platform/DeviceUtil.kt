@@ -29,7 +29,9 @@ import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.content.pm.ActivityInfo
 import android.os.Build
+import android.os.LocaleList
 import android.view.ContextThemeWrapper
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import kotlin.math.roundToInt
 
 internal const val ONEPLUS_HIGH_DENSITY_DPI_THRESHOLD = 500
@@ -87,9 +89,13 @@ internal fun applyOnePlusHighDensityDisplayCorrection(context: Context): Context
     if (correctedDensityDpi == densityDpi) {
         return context
     }
-    // 只覆盖密度，让后续窗口和主题配置继续跟随系统
+    // 新配置不会继承父 Context 的语言覆盖，只保留显式语言和密度
     val configuration = Configuration()
     configuration.densityDpi = correctedDensityDpi
+    val language = LanguageManager.getCurrentLanguage(context)
+    if (language != LanguageManager.Language.SYSTEM) {
+        configuration.setLocales(LocaleList.forLanguageTags(language.code))
+    }
     return OnePlusHighDensityContextWrapper(context, configuration)
 }
 

@@ -55,6 +55,34 @@ class ConfigurationContextContinuityTest {
         assertEquals(532, effectiveConfiguration.densityDpi)
     }
 
+    @Test
+    fun onePlusDensityPreservesExplicitLanguageAfterLanguageWrapping() {
+        ShadowBuild.setManufacturer("OnePlus")
+        ShadowBuild.setBrand("OnePlus")
+        val application = ApplicationProvider.getApplicationContext<Application>()
+        val originalLanguage = LanguageManager.getCurrentLanguage(application)
+        val originalLocale = Locale.getDefault()
+        try {
+            LanguageManager.setLanguage(application, LanguageManager.Language.CHINESE)
+            val localized = spy(LanguageManager.applyLanguage(application))
+            assertEquals("zh", localized.resources.configuration.locales[0].language)
+
+            val corrected = applyOnePlusHighDensityDisplayCorrection(localized)
+
+            assertEquals("zh", corrected.resources.configuration.locales[0].language)
+            assertEquals(532, corrected.resources.displayMetrics.densityDpi)
+            val override = ArgumentCaptor.forClass(Configuration::class.java)
+            verify(localized).createConfigurationContext(override.capture())
+            val effectiveConfiguration = laterConfiguration().apply { updateFrom(override.value) }
+            assertLaterWindowAndTheme(effectiveConfiguration)
+            assertEquals("zh", effectiveConfiguration.locales[0].language)
+            assertEquals(532, effectiveConfiguration.densityDpi)
+        } finally {
+            LanguageManager.setLanguage(application, originalLanguage)
+            Locale.setDefault(originalLocale)
+        }
+    }
+
     private fun laterConfiguration(): Configuration = Configuration().apply {
         orientation = Configuration.ORIENTATION_LANDSCAPE
         screenWidthDp = 820
