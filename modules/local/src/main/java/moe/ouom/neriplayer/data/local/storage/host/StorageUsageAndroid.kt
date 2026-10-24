@@ -97,7 +97,8 @@ private suspend fun deleteCacheEntry(file: File): Boolean {
     if (Files.isSymbolicLink(file.toPath())) return file.delete()
     if (!file.isDirectory) return if (file.isFile) file.delete() else !file.exists()
     val children = file.listFiles() ?: return false
-    val childrenDeleted = children.fold(true) { deleted, child -> deleteCacheEntry(child) && deleted }
+    for (child in children) deleteCacheEntry(child)
     currentCoroutineContext().ensureActive()
-    return file.delete() && childrenDeleted
+    // 任一子项仍存在时目录删除会失败，同时继续尝试清理其它子项
+    return file.delete()
 }

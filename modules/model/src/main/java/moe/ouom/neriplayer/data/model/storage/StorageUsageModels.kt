@@ -79,8 +79,7 @@ data class StorageCacheClearOptions(
     val retainRecentSongs: Int = 0
 ) {
     val hasSelection: Boolean
-        get() = audioCache || imageCache || downloadStaging || sharedMedia ||
-            lyricsCache || hasPlatformCacheSelection || logFiles || crashLogs || otherCache
+        get() = needsPlayerCacheClear || needsExtraCacheClear
 
     val needsPlayerCacheClear: Boolean
         get() = audioCache || imageCache
@@ -140,4 +139,9 @@ data class ExtraCacheClearResult(
     val freedBytes: Long,
     val roomBytesMadeReusable: Long,
     val deletedFiles: Int
+)
+
+data class PlayerCacheClearOutcome(
+    val result: ExtraCacheClearResult,
+    val retentionUnavailable: Boolean = false
 )

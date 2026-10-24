@@ -98,6 +98,7 @@ internal class SettingsStorageDetailsController(
         private set
     var scanFailed by mutableStateOf(false)
         private set
+    val isWaitingForScan: Boolean get() = isScanning || (!hasScanned && !scanFailed)
 
     fun requestRefresh() {
         if (!isScanning) {

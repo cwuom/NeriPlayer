@@ -1094,8 +1094,7 @@ internal fun SettingsScreen(
                         SettingsPage.StorageCacheDetails to {
                             settingsStorageCacheDetailsItem(
                                 storageDetails = storageDetailsController.details,
-                                isScanning = storageDetailsController.isScanning ||
-                                    (!storageDetailsController.hasScanned && !storageDetailsController.scanFailed),
+                                isScanning = storageDetailsController.isWaitingForScan,
                                 scanFailed = storageDetailsController.scanFailed,
                                 onRefresh = storageDetailsController::requestRefresh,
                                 onClearCache = {

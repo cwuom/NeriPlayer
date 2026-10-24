@@ -115,6 +115,88 @@ class StorageUsageAndroidTest {
     }
 
     @Test
+    fun directoryCleanupRemovesNestedFilesAndRecreatesOnlyTheRoot() = runBlocking<Unit> {
+        val directory = temporary.newFolder()
+        val nested = File(directory, "nested/deep").apply { mkdirs() }
+        File(nested, "cached").writeText("remove")
+
+        assertTrue(AndroidStorageCacheFiles(mockContext()).clear(directory, StorageCacheKind.SharedMedia))
+
+        assertTrue(directory.isDirectory)
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+        assertFalse(nested.exists())
+    }
+
+    @Test
+    fun directoryCleanupRemovesDanglingSymbolicLinks() = runBlocking<Unit> {
+        val directory = temporary.newFolder()
+        val missingTarget = File(temporary.newFolder(), "missing")
+        val link = File(directory, "linked")
+        Files.createSymbolicLink(link.toPath(), missingTarget.toPath())
+
+        assertTrue(AndroidStorageCacheFiles(mockContext()).clear(directory, StorageCacheKind.SharedMedia))
+
+        assertTrue(directory.isDirectory)
+        assertFalse(Files.isSymbolicLink(link.toPath()))
+        assertFalse(missingTarget.exists())
+    }
+
+    @Test
+    fun directoryCleanupKeepsFailedChildrenAndStillClearsLaterSiblings() = runBlocking<Unit> {
+        val directory = temporary.newFolder()
+        val failed = File(directory, "failed").apply { writeText("keep") }
+        val later = File(directory, "later").apply { writeText("remove") }
+        val undeletableFile = object : File(failed.path) {
+            override fun delete(): Boolean = false
+        }
+        val orderedDirectory = object : File(directory.path) {
+            override fun listFiles(): Array<File> = arrayOf(undeletableFile, later)
+        }
+
+        assertFalse(AndroidStorageCacheFiles(mockContext()).clear(orderedDirectory, StorageCacheKind.SharedMedia))
+
+        assertEquals("keep", failed.readText())
+        assertFalse(later.exists())
+        assertTrue(directory.isDirectory)
+    }
+
+    @Test
+    fun directoryCleanupDoesNotDeleteADirectoryWhoseChildrenCannotBeRead() = runBlocking<Unit> {
+        val directory = temporary.newFolder()
+        val cached = File(directory, "cached").apply { writeText("keep") }
+        val unreadableDirectory = object : File(directory.path) {
+            override fun listFiles(): Array<File>? = null
+        }
+
+        assertFalse(AndroidStorageCacheFiles(mockContext()).clear(unreadableDirectory, StorageCacheKind.SharedMedia))
+
+        assertEquals("keep", cached.readText())
+        assertTrue(directory.isDirectory)
+    }
+
+    @Test
+    fun directoryCleanupRecreatesAMissingRoot() = runBlocking<Unit> {
+        val directory = File(temporary.newFolder(), "missing")
+
+        assertTrue(AndroidStorageCacheFiles(mockContext()).clear(directory, StorageCacheKind.SharedMedia))
+
+        assertTrue(directory.isDirectory)
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun directoryCleanupPreservesAnExistingEntryWithUnknownType() = runBlocking<Unit> {
+        val entry = mock(File::class.java)
+        `when`(entry.toPath()).thenReturn(File(temporary.newFolder(), "unknown").toPath())
+        `when`(entry.exists()).thenReturn(true)
+
+        assertFalse(AndroidStorageCacheFiles(mockContext()).clear(entry, StorageCacheKind.SharedMedia))
+
+        verify(entry, never()).delete()
+        verify(entry, never()).mkdirs()
+    }
+
+    @Test
     fun directoryCleanupStopsBeforeDeletingTheNextFileAfterCancellation() = runBlocking {
         val directory = temporary.newFolder()
         val first = File(directory, "first").apply { writeText("remove") }

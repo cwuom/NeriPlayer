@@ -16,22 +16,27 @@ import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
 import moe.ouom.neriplayer.data.history.toSongItem
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
+import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearOutcome
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 
 private val storageCacheClearMutex = Mutex()
 
-internal suspend fun PlayerManager.clearStorageCachesImpl(options: StorageCacheClearOptions): ExtraCacheClearResult =
+internal suspend fun PlayerManager.clearStorageCachesImpl(options: StorageCacheClearOptions): PlayerCacheClearOutcome =
     storageCacheClearMutex.withLock {
         withContext(Dispatchers.IO) {
             val empty = ExtraCacheClearResult(true, 0, 0, 0)
-            if (!options.needsPlayerCacheClear) return@withContext empty
+            if (!options.needsPlayerCacheClear) return@withContext PlayerCacheClearOutcome(empty)
             var completed = empty
+            var retentionUnavailable = options.retainRecentSongs > 0
             try {
                 val recent = if (options.retainRecentSongs > 0) {
                     val history = PlayerDependencies.repositories.playHistoryRepo
-                    if (!history.awaitInitialized()) return@withContext empty.copy(success = false)
+                    if (!history.awaitInitialized()) {
+                        return@withContext PlayerCacheClearOutcome(empty.copy(success = false), retentionUnavailable = true)
+                    }
                     selectRetainedCacheSongs(history.historyFlow.value.map { it.toSongItem() }, options.retainRecentSongs)
                 } else emptyList()
+                retentionUnavailable = false
                 val (currentSong, currentKeys, requestToken) = withContext(Dispatchers.Main.immediate) {
                     val mediaUri = if (isPlayerInitialized()) player.currentMediaItem?.localConfiguration?.uri?.toString() else null
                     val keys = setOfNotNull(currentPlaybackCacheKeyForRecovery(), currentMediaUrlFlow.value, mediaUri)
@@ -57,13 +62,15 @@ internal suspend fun PlayerManager.clearStorageCachesImpl(options: StorageCacheC
                         .filter(String::isNotBlank).toSet()
                     clearRetainingImageCache(Coil.imageLoader(application), covers, options.retainRecentSongs > 0)
                 } else empty
-                ExtraCacheClearResult(audio.success && image.success, audio.freedBytes + image.freedBytes, 0,
-                    audio.deletedFiles + image.deletedFiles)
+                PlayerCacheClearOutcome(
+                    ExtraCacheClearResult(audio.success && image.success, audio.freedBytes + image.freedBytes, 0,
+                        audio.deletedFiles + image.deletedFiles)
+                )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 NPLogger.w("NERI-Player", "Storage cache clear failed", error)
-                completed.copy(success = false)
+                PlayerCacheClearOutcome(completed.copy(success = false), retentionUnavailable)
             }
         }
     }

@@ -77,9 +77,11 @@ class SettingsStoragePageControllerTest {
         controller = SettingsStorageDetailsController(details, loading, request) {
             scanCount++
             assertTrue(controller.isScanning)
+            assertTrue(controller.isWaitingForScan)
             scanned
         }
 
+        assertTrue(controller.isWaitingForScan)
         controller.scanRequested()
         assertEquals(0, scanCount)
         controller.requestRefresh()
@@ -89,6 +91,7 @@ class SettingsStoragePageControllerTest {
         assertEquals(1, scanCount)
         assertEquals(scanned, controller.details)
         assertFalse(controller.isScanning)
+        assertFalse(controller.isWaitingForScan)
     }
 
     @Test
@@ -112,6 +115,7 @@ class SettingsStoragePageControllerTest {
         assertFalse(controller.isScanning)
         assertTrue(controller.scanFailed)
         assertFalse(controller.hasScanned)
+        assertFalse(controller.isWaitingForScan)
     }
 
     @Test
@@ -133,12 +137,14 @@ class SettingsStoragePageControllerTest {
         controller.requestRefresh()
         assertFalse(controller.scanFailed)
         assertTrue(controller.isScanning)
+        assertTrue(controller.isWaitingForScan)
         controller.scanRequested()
 
         assertEquals(result, controller.details)
         assertTrue(controller.hasScanned)
         assertFalse(controller.isScanning)
         assertFalse(controller.scanFailed)
+        assertFalse(controller.isWaitingForScan)
     }
 
     @Test

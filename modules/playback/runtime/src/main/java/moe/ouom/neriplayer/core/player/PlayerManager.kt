@@ -71,7 +71,7 @@ import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSour
 import moe.ouom.neriplayer.core.player.lifecycle.clearCacheImpl
 import moe.ouom.neriplayer.core.player.lifecycle.clearStorageCachesImpl
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
-import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
+import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearOutcome
 import moe.ouom.neriplayer.core.player.lifecycle.ensureInitializedImpl
 import moe.ouom.neriplayer.core.player.lifecycle.handleAudioBecomingNoisyImpl
 import moe.ouom.neriplayer.core.player.lifecycle.initializeImpl
@@ -1630,7 +1630,7 @@ object PlayerManager {
 
     suspend fun clearStorageCaches(
         options: StorageCacheClearOptions
-    ): ExtraCacheClearResult = clearStorageCachesImpl(options)
+    ): PlayerCacheClearOutcome = clearStorageCachesImpl(options)
 
     internal fun ensureInitialized() = ensureInitializedImpl()
 

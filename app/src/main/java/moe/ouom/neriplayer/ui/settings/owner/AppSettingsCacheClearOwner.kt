@@ -1,10 +1,11 @@
 package moe.ouom.neriplayer.ui.settings.owner
 
 import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
+import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearOutcome
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 
 internal class AppSettingsCacheClearOwner(
-    private val clearPlayerCache: suspend (StorageCacheClearOptions) -> ExtraCacheClearResult,
+    private val clearPlayerCache: suspend (StorageCacheClearOptions) -> PlayerCacheClearOutcome,
     private val clearLyricsCache: suspend () -> Unit,
     private val clearExtraCaches: suspend (StorageCacheClearOptions) -> ExtraCacheClearResult,
     private val formatExtraResult: (ExtraCacheClearResult) -> String
@@ -13,9 +14,10 @@ internal class AppSettingsCacheClearOwner(
         if (!options.hasSelection) return ""
         var result = ExtraCacheClearResult(true, 0, 0, 0)
         if (options.needsPlayerCacheClear) {
-            result = clearPlayerCache(options)
-            // 保留名单读取失败时不能继续清除其它类型，避免只执行一半用户要求
-            if (!result.success && options.retainRecentSongs > 0) return formatExtraResult(result)
+            val outcome = clearPlayerCache(options)
+            result = outcome.result
+            // 仅在保留名单不可用时停止，普通部分失败继续清理其它类型
+            if (outcome.retentionUnavailable) return formatExtraResult(result)
         }
         if (options.needsExtraCacheClear) {
             if (options.lyricsCache) {
