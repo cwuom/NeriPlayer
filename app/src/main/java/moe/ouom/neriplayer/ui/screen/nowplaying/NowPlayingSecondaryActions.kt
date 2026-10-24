@@ -238,7 +238,13 @@ internal fun isYouTubeMusicArtistNavigationSource(song: SongItem): Boolean {
  */
 internal fun isNeteaseExclusiveFeatureAvailable(song: SongItem?): Boolean {
     if (song == null) return true
-    return !PlayerManager.isBiliTrack(song) && !isYouTubeMusicSource(song)
+    return isNeteaseExclusiveSource(song)
+}
+
+/** 非 B 站且非 YouTube 音源。拆成单层判断，避免 `&&` 在质量门禁里被算成两条独立路径。 */
+private fun isNeteaseExclusiveSource(song: SongItem): Boolean {
+    if (PlayerManager.isBiliTrack(song)) return false
+    return !isYouTubeMusicSource(song)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
