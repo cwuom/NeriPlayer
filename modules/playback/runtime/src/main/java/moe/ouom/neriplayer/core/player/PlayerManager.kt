@@ -69,6 +69,9 @@ import moe.ouom.neriplayer.core.player.runtime.transport.PlaybackTransportOwner
 import moe.ouom.neriplayer.core.player.audio.output.PlayerManagerPlaybackTransportPort
 import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSourceFactory
 import moe.ouom.neriplayer.core.player.lifecycle.clearCacheImpl
+import moe.ouom.neriplayer.core.player.lifecycle.clearStorageCachesImpl
+import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
 import moe.ouom.neriplayer.core.player.lifecycle.ensureInitializedImpl
 import moe.ouom.neriplayer.core.player.lifecycle.handleAudioBecomingNoisyImpl
 import moe.ouom.neriplayer.core.player.lifecycle.initializeImpl
@@ -712,6 +715,8 @@ object PlayerManager {
     internal var currentGenericUrlPrefetchKey: String? = null
     @Volatile
     internal var playbackRequestToken = 0L
+        set(value) = synchronized(storageCachePlaybackLock) { field = value }
+    internal val storageCachePlaybackLock = Any()
     @Volatile
     internal var loadedMediaRequestToken = 0L
     internal val _pendingMediaLoadFlow = MutableStateFlow(false)
@@ -784,7 +789,7 @@ object PlayerManager {
     }
 
     private fun publishCurrentSong(song: SongItem?) {
-        _currentSongFlow.value = song
+        synchronized(storageCachePlaybackLock) { _currentSongFlow.value = song }
         lyriconOutput.publishSong(song)
         playbackProgressOwner.onCurrentSongPublished(song)
     }
@@ -1622,6 +1627,10 @@ object PlayerManager {
         clearAudio: Boolean = true,
         clearImage: Boolean = true
     ): Pair<Boolean, String> = clearCacheImpl(clearAudio, clearImage)
+
+    suspend fun clearStorageCaches(
+        options: StorageCacheClearOptions
+    ): ExtraCacheClearResult = clearStorageCachesImpl(options)
 
     internal fun ensureInitialized() = ensureInitializedImpl()
 

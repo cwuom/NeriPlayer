@@ -45,7 +45,8 @@ class StorageUsageSummaryTest {
             Triple(none.copy(biliArchiveCache = true), false, true),
             Triple(none.copy(youtubePlaylistCache = true), false, true),
             Triple(none.copy(logFiles = true), false, false),
-            Triple(none.copy(crashLogs = true), false, false)
+            Triple(none.copy(crashLogs = true), false, false),
+            Triple(none.copy(otherCache = true), false, false)
         )
         selections.forEach { (options, playerOwned, platformOwned) ->
             assertTrue(options.hasSelection)

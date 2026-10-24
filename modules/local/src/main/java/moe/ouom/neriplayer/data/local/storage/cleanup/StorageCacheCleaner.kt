@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.data.local.storage.cleanup
 
 import java.io.File
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
 import moe.ouom.neriplayer.data.model.storage.FileStats
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
@@ -30,11 +32,20 @@ class StorageCacheCleaner(
     }
 
     private suspend fun clearFile(file: File, kind: StorageCacheKind): ExtraCacheClearResult {
-        val before = files.stats(file)
+        currentCoroutineContext().ensureActive()
+        val before = storageScanOrDefault<FileStats?>(null) { files.stats(file) }
+            ?: return emptyResult(success = false)
         if (before == FileStats.Empty) return emptyResult()
         val deleted = storageScanOrDefault(false) { files.clear(file, kind) }
-        return if (deleted) ExtraCacheClearResult(true, before.sizeBytes, 0, before.fileCount)
-        else emptyResult(success = false)
+        currentCoroutineContext().ensureActive()
+        val after = storageScanOrDefault<FileStats?>(null) { files.stats(file) }
+            ?: return emptyResult(success = false)
+        return ExtraCacheClearResult(
+            success = deleted && after == FileStats.Empty,
+            freedBytes = (before.sizeBytes - after.sizeBytes).coerceAtLeast(0),
+            roomBytesMadeReusable = 0,
+            deletedFiles = (before.fileCount - after.fileCount).coerceAtLeast(0)
+        )
     }
 
     private suspend fun clearPlatforms(selected: List<String>): ExtraCacheClearResult {
@@ -65,5 +76,6 @@ private fun selectedExtraCaches(options: StorageCacheClearOptions): List<Storage
     StorageCacheKind.NeteasePlaylist to options.neteasePlaylistCache,
     StorageCacheKind.BiliFavorite to options.biliFavoriteCache,
     StorageCacheKind.BiliArchive to options.biliArchiveCache,
-    StorageCacheKind.YouTubePlaylist to options.youtubePlaylistCache
+    StorageCacheKind.YouTubePlaylist to options.youtubePlaylistCache,
+    StorageCacheKind.Other to options.otherCache
 ).filter { it.second }.map { it.first }

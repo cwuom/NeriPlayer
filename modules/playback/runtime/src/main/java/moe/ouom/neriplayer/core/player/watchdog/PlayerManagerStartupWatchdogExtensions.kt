@@ -470,6 +470,7 @@ private suspend fun PlayerManager.applyPlaybackCandidate(
     )
     val cacheSynchronization = synchronizeCachedPlaybackDescriptor(
         cacheKey = cacheKey,
+        ownerSong = song,
         audioInfo = selectedAudioInfo,
         expectedContentLength = candidate.expectedContentLength,
         representationIdentity = candidate.representationIdentity,

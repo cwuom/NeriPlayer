@@ -10,8 +10,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
@@ -84,19 +82,13 @@ internal fun rememberAppSettingsCacheClearOwner(application: Application): AppSe
     return remember(Triple(context, application, resources)) {
         AppSettingsCacheClearOwner(
             clearPlayerCache = { options ->
-                PlayerManager.clearCache(
-                    clearAudio = options.audioCache,
-                    clearImage = options.imageCache
-                ).second
+                PlayerManager.clearStorageCaches(options)
             },
             clearLyricsCache = {
                 PlayerLyricsProvider.clearLyricsCaches(
                     neteaseLyricsCache = PlayerManager.neteaseLyricsCache,
                     ytMusicLyricsCache = PlayerManager.ytMusicLyricsCache
                 )
-                withContext(Dispatchers.IO) {
-                    PlayerLyricsProvider.clearPersistentLyricCache(application)
-                }
             },
             clearExtraCaches = { options -> clearExtraStorageCaches(context, options) },
             formatExtraResult = { result ->

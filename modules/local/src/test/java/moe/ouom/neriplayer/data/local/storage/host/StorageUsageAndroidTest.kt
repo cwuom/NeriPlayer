@@ -2,8 +2,11 @@ package moe.ouom.neriplayer.data.local.storage.host
 
 import android.content.Context
 import java.io.File
+import java.nio.file.Files
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.media.source.CrashLogCleanup
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaCoverAccess
@@ -30,7 +33,7 @@ class StorageUsageAndroidTest {
     val temporary = TemporaryFolder()
 
     @Test
-    fun logCleanupUsesLoggerDirectoryRatherThanSuppliedDirectory() {
+    fun logCleanupUsesLoggerDirectoryRatherThanSuppliedDirectory() = runBlocking<Unit> {
         val external = temporary.newFolder()
         val context = mockContext(external = external)
         val logs = File(external, "logs").apply { mkdirs() }
@@ -46,7 +49,7 @@ class StorageUsageAndroidTest {
     }
 
     @Test
-    fun crashCleanupDelegatesContextAndPreservesSuccess() {
+    fun crashCleanupDelegatesContextAndPreservesSuccess() = runBlocking<Unit> {
         val context = mockContext()
         val directory = temporary.newFolder()
         val marker = File(directory, "keep.txt").apply { writeText("keep") }
@@ -63,7 +66,7 @@ class StorageUsageAndroidTest {
     }
 
     @Test
-    fun crashCleanupPreservesHostFailure() {
+    fun crashCleanupPreservesHostFailure() = runBlocking<Unit> {
         val context = mockContext()
         bindHost(CrashLogCleanup { false })
 
@@ -71,7 +74,7 @@ class StorageUsageAndroidTest {
     }
 
     @Test
-    fun directStagingCleanupPreservesWorkingFileAndResumeCredentials() {
+    fun directStagingCleanupPreservesWorkingFileAndResumeCredentials() = runBlocking<Unit> {
         val context = mockContext()
         val directory = File(context.filesDir, "download_staging/waiting-operation").apply { mkdirs() }
         val working = File(directory, "npdl_waiting_audio.m4a.download").apply { writeText("audio") }
@@ -84,8 +87,62 @@ class StorageUsageAndroidTest {
     }
 
     @Test
-    fun failedDirectoryDeletionDoesNotRecreateDirectory() {
+    fun directoryCleanupDoesNotFollowNestedSymbolicLinks() = runBlocking<Unit> {
+        val directory = temporary.newFolder()
+        val outside = temporary.newFolder()
+        val privateFile = File(outside, "private").apply { writeText("keep") }
+        File(directory, "cached").writeText("remove")
+        Files.createSymbolicLink(File(directory, "linked").toPath(), outside.toPath())
+
+        assertTrue(AndroidStorageCacheFiles(mockContext()).clear(directory, StorageCacheKind.SharedMedia))
+
+        assertEquals("keep", privateFile.readText())
+        assertTrue(directory.isDirectory)
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun directoryCleanupRejectsASymbolicLinkRoot() = runBlocking<Unit> {
+        val directory = temporary.newFolder()
+        val privateFile = File(directory, "private").apply { writeText("keep") }
+        val linked = File(temporary.newFolder(), "linked")
+        Files.createSymbolicLink(linked.toPath(), directory.toPath())
+
+        assertFalse(AndroidStorageCacheFiles(mockContext()).clear(linked, StorageCacheKind.SharedMedia))
+
+        assertEquals("keep", privateFile.readText())
+        assertTrue(Files.isSymbolicLink(linked.toPath()))
+    }
+
+    @Test
+    fun directoryCleanupStopsBeforeDeletingTheNextFileAfterCancellation() = runBlocking {
+        val directory = temporary.newFolder()
+        val first = File(directory, "first").apply { writeText("remove") }
+        val second = File(directory, "second").apply { writeText("keep") }
+        val clearingJob = Job()
+        val cancellingFile = object : File(first.path) {
+            override fun delete(): Boolean = super.delete().also { clearingJob.cancel() }
+        }
+        val orderedDirectory = object : File(directory.path) {
+            override fun listFiles(): Array<File> = arrayOf(cancellingFile, second)
+        }
+
+        val failure = runCatching {
+            withContext(clearingJob) {
+                AndroidStorageCacheFiles(mockContext()).clear(orderedDirectory, StorageCacheKind.SharedMedia)
+            }
+        }.exceptionOrNull()
+
+        assertFalse(first.exists())
+        assertTrue(second.exists())
+        assertEquals("keep", second.readText())
+        assertTrue(failure is CancellationException)
+    }
+
+    @Test
+    fun failedDirectoryDeletionDoesNotRecreateDirectory() = runBlocking<Unit> {
         val directory = mock(File::class.java)
+        `when`(directory.toPath()).thenReturn(temporary.newFolder().toPath())
         `when`(directory.isFile).thenReturn(true)
         `when`(directory.exists()).thenReturn(true)
         `when`(directory.delete()).thenReturn(false)
@@ -96,8 +153,9 @@ class StorageUsageAndroidTest {
     }
 
     @Test
-    fun directoryAccessFailureReturnsFalse() {
+    fun directoryAccessFailureReturnsFalse() = runBlocking<Unit> {
         val directory = mock(File::class.java)
+        `when`(directory.toPath()).thenReturn(temporary.newFolder().toPath())
         `when`(directory.isDirectory).thenThrow(SecurityException("denied"))
 
         assertFalse(AndroidStorageCacheFiles(mockContext()).clear(directory, StorageCacheKind.SharedMedia))
@@ -106,8 +164,9 @@ class StorageUsageAndroidTest {
     }
 
     @Test
-    fun successfulDeletionKeepsItsResultWhenRecreationFails() {
+    fun successfulDeletionKeepsItsResultWhenRecreationFails() = runBlocking<Unit> {
         val directory = mock(File::class.java)
+        `when`(directory.toPath()).thenReturn(temporary.newFolder().toPath())
         `when`(directory.isFile).thenReturn(true)
         `when`(directory.delete()).thenReturn(true)
         `when`(directory.mkdirs()).thenReturn(false)

@@ -112,6 +112,28 @@ class StorageUsagePresenterTest {
         assertEquals("/staging", item.path)
     }
 
+    @Test
+    fun otherCacheIsCleanableAndProtectedCacheIsAppData() {
+        val snapshot = StorageUsageSnapshot(
+            StorageUsageItemKind.entries.associateWith { StorageUsageMeasurement(FileStats.Empty) } + mapOf(
+                StorageUsageItemKind.OtherCache to StorageUsageMeasurement(FileStats(7, 1)),
+                StorageUsageItemKind.ProtectedCache to StorageUsageMeasurement(FileStats(11, 1))
+            )
+        )
+
+        val summary = StorageUsagePresenter(mockResources()).present(snapshot)
+        val other = summary.sections.flatMap { it.items }.single { it.kind == StorageUsageItemKind.OtherCache }
+        val protectedSection = summary.sections.single { section ->
+            section.items.any { it.kind == StorageUsageItemKind.ProtectedCache }
+        }
+
+        assertEquals(StorageCacheKind.Other, other.cacheKind)
+        assertEquals(7L, summary.cleanableSizeBytes)
+        assertEquals(18L, summary.totalSizeBytes)
+        assertEquals("resource-${CoreCommonR.string.storage_group_app_data}", protectedSection.title)
+        assertNull(protectedSection.items.single { it.kind == StorageUsageItemKind.ProtectedCache }.cacheKind)
+    }
+
     private fun mockResources(): Resources = mock(Resources::class.java).apply {
         `when`(getString(anyInt())).thenAnswer { "resource-${it.arguments[0]}" }
     }
