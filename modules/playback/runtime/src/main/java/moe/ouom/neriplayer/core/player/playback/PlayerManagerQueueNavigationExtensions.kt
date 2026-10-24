@@ -470,7 +470,7 @@ private fun PlayerManager.applyPreviousTrack(targetIndex: Int, commandSource: Pl
     )
 }
 
-private fun PlayerManager.queueNavigationTransitionFade(): Boolean =
+internal fun PlayerManager.queueNavigationTransitionFade(): Boolean =
     PlayerQueueNavigationOwner.shouldUseTransitionFade(
         fadeEnabled = playbackCrossfadeNextEnabled,
         isPlaying = player.isPlaying,

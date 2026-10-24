@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
+import moe.ouom.neriplayer.core.player.playback.queueNavigationTransitionFade
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatCandidateExhaustionTracker
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatNextTrackCoordinator
@@ -216,15 +217,20 @@ val PlayerManager.heartbeatUserEnabledFlow: StateFlow<Int>
 /**
  * 重新判定官方接口可用性。
  *
- * 判定规则刻意保持宽松：只要登录态还在且没有熔断，就认为官方可用，
- * 真正能否拿到推荐由请求结果决定——失败时静默降级，不在这里反复横跳。
+ * 只按「登录态还在且没有熔断」判断，请求失败时静默降级，不在这里反复横跳。
+ * [honorLastResult] 为 true 时再叠加一次实际结果校验，用于选歌刚成功之后。
  */
-private fun refreshHeartbeatOfficialAvailability() {
+private fun refreshHeartbeatOfficialAvailability(honorLastResult: Boolean = false) {
     val repository = heartbeatOfficialRepository
-    val available = repository != null &&
+    val gateOpen = repository != null &&
         runCatching { repository.isLoggedIn() }.getOrDefault(false) &&
         !isHeartbeatOfficialCircuitOpen()
-    heartbeatOfficialAvailableStateFlow.value = available
+    // 登录态在、熔断也没开，但官方接口一直返回空：真正在出歌的是本地候选池。
+    // 这时若还对外报「官方可用」，界面就会一直不说「本地推荐」，用户以为用着云端推荐。
+    val producedByOfficial =
+        (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.lastResultFromOfficial == true
+    heartbeatOfficialAvailableStateFlow.value =
+        gateOpen && (!honorLastResult || producedByOfficial)
 }
 
 /** 熔断状态由选择器持有，这里只做读取，不在这里改。 */
@@ -398,7 +404,7 @@ internal fun PlayerManager.requestHeartbeatSelectionAsync(reason: String) {
         } else {
             heartbeatPending.publish(anchor, next)
             heartbeatCandidateExhaustion.onCandidate()
-            refreshHeartbeatOfficialAvailability()
+            refreshHeartbeatOfficialAvailability(honorLastResult = true)
             NPLogger.d(TAG, "预取成功（reason=$reason）：${next.name}/${next.id}")
         }
     }
@@ -437,6 +443,7 @@ internal suspend fun PlayerManager.tryAdvanceWithHeartbeat(
         return false
     }
     heartbeatCandidateExhaustion.onCandidate()
+    refreshHeartbeatOfficialAvailability(honorLastResult = true)
     NPLogger.d(TAG, "心动模式选中下一首（reason=$reason）：${next.name}/${next.id}")
     appendHeartbeatSongAndPlay(next, commandSource)
     return true
@@ -480,7 +487,14 @@ internal fun PlayerManager.appendHeartbeatSongAndPlay(
 
     // 播放失败后的接管不能清零，否则「连续失败」永远攒不到上限，退化成无限重试。
     if (resetFailureCount) consecutivePlayFailures = 0
-    playAtIndex(index = updatedQueue.currentIndex, commandSource = commandSource)
+    // 与普通「下一首」共用同一套切歌策略：淡入淡出跟随用户设置，
+    // 长音频一律从头播（记忆进度属于「手动续播」的语义，推荐出来的歌不该续到一半）。
+    playAtIndex(
+        index = updatedQueue.currentIndex,
+        useTrackTransitionFade = queueNavigationTransitionFade(),
+        commandSource = commandSource,
+        allowRememberedLongFormPosition = false,
+    )
     emitPlaybackCommand(
         type = "PLAY_FROM_QUEUE",
         source = commandSource,

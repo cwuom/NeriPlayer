@@ -143,23 +143,34 @@ fun NowPlayingHeartbeatFeedback(
     val heartbeatOfficialAvailable by PlayerManager.heartbeatOfficialAvailableFlow
         .collectAsStateWithLifecycle()
     val messageEnabledLocalHint = stringResource(CoreCommonR.string.heartbeat_mode_enabled_local_hint)
+    val messageOfficialUnavailable = stringResource(
+        CoreCommonR.string.heartbeat_official_unavailable_hint
+    )
 
     var isFirstUserEnable: Boolean by remember { mutableStateOf(true) }
     var lastUserEnabled: Int by remember { mutableStateOf(0) }
+    var lastOfficialAvailable: Boolean by remember { mutableStateOf(true) }
     LaunchedEffect(heartbeatUserEnabled, heartbeatOfficialAvailable) {
         if (isFirstUserEnable) {
             isFirstUserEnable = false
             lastUserEnabled = heartbeatUserEnabled
+            lastOfficialAvailable = heartbeatOfficialAvailable
             return@LaunchedEffect
         }
-        // 官方可用性变化也会走到这里，但那时计数没涨，直接忽略。
-        if (heartbeatUserEnabled <= lastUserEnabled) return@LaunchedEffect
+        val userJustEnabled = heartbeatUserEnabled > lastUserEnabled
+        // 开启那一刻还不知道实际来源：登录态在、熔断也没开，就先报「可用」。
+        // 等第一次选歌回来才发现官方没出歌时，可用性会掉成 false——这种
+        // 「开了之后才发现在走本地」也要说一声，否则用户以为用着云端推荐。
+        val fellBackToLocal = lastOfficialAvailable && !heartbeatOfficialAvailable
         lastUserEnabled = heartbeatUserEnabled
+        lastOfficialAvailable = heartbeatOfficialAvailable
+        if (!userJustEnabled && !fellBackToLocal) return@LaunchedEffect
         if (!shouldShowHeartbeatLocalHint(officialAvailable = heartbeatOfficialAvailable)) {
             return@LaunchedEffect
         }
+        val message = if (userJustEnabled) messageEnabledLocalHint else messageOfficialUnavailable
         scope.launch {
-            launch { snackbarHostState.showNeriSnackbar(message = messageEnabledLocalHint) }
+            launch { snackbarHostState.showNeriSnackbar(message = message) }
             delay(HeartbeatFailureSnackbarVisibleMs)
             snackbarHostState.dismissCurrentNeriSnackbar()
         }

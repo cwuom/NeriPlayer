@@ -112,6 +112,7 @@
     <string name="heartbeat_mode_enabled">Heartbeat mode on</string>
     <string name="heartbeat_mode_enabled_local">Heartbeat mode on (local suggestions)</string>
     <string name="heartbeat_mode_enabled_local_hint">Heartbeat mode on (local suggestions). Log in to use cloud suggestions</string>
+    <string name="heartbeat_official_unavailable_hint">Heartbeat mode is using local suggestions; cloud suggestions are temporarily unavailable</string>
     <string name="heartbeat_mode_disabled">Heartbeat mode off</string>
     <string name="heartbeat_room_auto_disabled">Joined Listen Together; heartbeat mode turned off</string>
     <string name="heartbeat_room_cannot_enable">Heartbeat mode is unavailable in a Listen Together room</string>

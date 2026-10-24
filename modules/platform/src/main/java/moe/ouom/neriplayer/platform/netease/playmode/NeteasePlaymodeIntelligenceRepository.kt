@@ -37,6 +37,10 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
     private val cacheLock = Any()
     private val cache = LinkedHashMap<Long, CacheEntry>()
 
+    /** userId → 红心歌单 id，见 [resolveLikedPlaylistId]。 */
+    private val likedPlaylistLock = Any()
+    private var likedPlaylistCache: Pair<Long, Long>? = null
+
     /** 未登录时上层可先判断，避免无谓请求。 */
     fun isLoggedIn(): Boolean = api.hasLogin()
 
@@ -80,7 +84,7 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
             return null
         }
 
-        val playlistId = api.likedPlaylistId(userId)
+        val playlistId = resolveLikedPlaylistId(userId)
         if (playlistId == null || playlistId <= 0L) {
             // 没有真实红心歌单 id 时不能用 0 占位去请求，直接降级
             NPLogger.w(TAG, "心动模式跳过: 未找到红心歌单 userId=$userId")
@@ -146,6 +150,25 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
                 cache.remove(oldest)
             }
         }
+    }
+
+    /**
+     * 红心歌单 id 在同一个账号登录期间不会变，按 userId 记住它。
+     *
+     * 取它要先把「我创建和收藏的歌单」整页拉下来（生产实现是
+     * `getUserPlaylists(limit = 1000)`），而心动模式每切一首歌都会走到这里。
+     * 不缓存的话，每首歌都要重复两次「当前账号 + 红心歌单」请求，
+     * 既慢又多打一次大响应。账号变了（userId 不同）自然命中不了，不会串号。
+     */
+    private suspend fun resolveLikedPlaylistId(userId: Long): Long? {
+        synchronized(likedPlaylistLock) {
+            likedPlaylistCache?.takeIf { it.first == userId }?.let { return it.second }
+        }
+        val resolved = api.likedPlaylistId(userId)
+        if (resolved != null && resolved > 0L) {
+            synchronized(likedPlaylistLock) { likedPlaylistCache = userId to resolved }
+        }
+        return resolved
     }
 }
 

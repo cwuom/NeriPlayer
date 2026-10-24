@@ -112,6 +112,7 @@
     <string name="heartbeat_mode_enabled">心动模式已开启</string>
     <string name="heartbeat_mode_enabled_local">心动模式已开启（本地推荐）</string>
     <string name="heartbeat_mode_enabled_local_hint">心动模式已开启（本地推荐），登录后可使用云端推荐</string>
+    <string name="heartbeat_official_unavailable_hint">心动模式正在使用本地推荐，云端推荐暂时不可用</string>
     <string name="heartbeat_mode_disabled">心动模式已关闭</string>
     <string name="heartbeat_room_auto_disabled">已加入一起听，心动模式已关闭</string>
     <string name="heartbeat_room_cannot_enable">一起听房间中无法开启心动模式</string>
