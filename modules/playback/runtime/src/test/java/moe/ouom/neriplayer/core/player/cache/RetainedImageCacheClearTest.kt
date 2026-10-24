@@ -255,6 +255,33 @@ class RetainedImageCacheClearTest {
     }
 
     @Test
+    fun `refused entries remain indexed after reopening and are removed when a later retry succeeds`() = runTest {
+        val delegate = realCache()
+        var refuseRemoval = true
+        val failing = object : DiskCache by delegate {
+            override fun remove(key: String): Boolean =
+                if (key == "blocked" && refuseRemoval) false else delegate.remove(key)
+        }
+        val disk = track(failing)
+        listOf("retained", "blocked", "other").forEach { write(disk, it) }
+
+        assertFalse(clearRetainingImageCache(loader(disk), setOf("retained")).success)
+        assertEntry(delegate, "blocked")
+        assertNull(delegate.openSnapshot("other"))
+
+        val reopened = track(failing)
+        assertFalse(clearRetainingImageCache(loader(reopened), setOf("retained")).success)
+        assertEntry(delegate, "blocked")
+
+        refuseRemoval = false
+        val completed = clearRetainingImageCache(loader(track(failing)), setOf("retained"))
+        assertTrue(completed.success)
+        assertTrue(completed.freedBytes > 0)
+        assertNull(delegate.openSnapshot("blocked"))
+        assertEntry(delegate, "retained")
+    }
+
+    @Test
     fun `cancellation during removal never selects retained or legacy entries`() = runTest {
         val delegate = realCache()
         write(delegate, "legacy")

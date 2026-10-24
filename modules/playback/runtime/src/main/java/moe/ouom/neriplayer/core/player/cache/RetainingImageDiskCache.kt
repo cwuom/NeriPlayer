@@ -29,7 +29,11 @@ class RetainingImageDiskCache(
     override fun edit(key: String): DiskCache.Editor? = openEditor(key)
 
     @Synchronized
-    override fun remove(key: String): Boolean = delegate.remove(key).also { registry.remove(key) }
+    override fun remove(key: String): Boolean {
+        val removed = delegate.remove(key)
+        if (removed) registry.remove(key)
+        return removed
+    }
 
     @Synchronized
     override fun clear() {
