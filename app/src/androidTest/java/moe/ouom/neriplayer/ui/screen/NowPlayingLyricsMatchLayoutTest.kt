@@ -2,23 +2,17 @@ package moe.ouom.neriplayer.ui.screen
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
@@ -40,7 +34,6 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -50,6 +43,7 @@ import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchCandidat
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
 import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
+import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricMatchResultsContent
 import moe.ouom.neriplayer.ui.theme.NeriTheme
@@ -269,33 +263,29 @@ class NowPlayingLyricsMatchLayoutTest {
                     focusManager = currentFocusManager
                     keyboardController = currentKeyboardController
                 }
-                BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    val density = LocalDensity.current
-                    val scale = minOf(maxWidth.value / width.value.value, maxHeight.value / height.value.value)
-                    CompositionLocalProvider(LocalDensity provides Density(density.density * scale, fontScale)) {
-                        val parentConnection = remember {
-                            object : NestedScrollConnection {
-                                override fun onPostScroll(consumed: Offset, available: Offset,
-                                    source: NestedScrollSource): Offset {
-                                    if (available.y != 0f) parentMotionCount++
-                                    return available
-                                }
-                                override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                                    if (available.y != 0f) parentMotionCount++
-                                    return available
-                                }
+                FittedTestViewport(width.value, height.value, fontScale = fontScale, layoutOnlyTextInput = true) {
+                    val parentConnection = remember {
+                        object : NestedScrollConnection {
+                            override fun onPostScroll(consumed: Offset, available: Offset,
+                                source: NestedScrollSource): Offset {
+                                if (available.y != 0f) parentMotionCount++
+                                return available
+                            }
+                            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                                if (available.y != 0f) parentMotionCount++
+                                return available
                             }
                         }
-                        Box(Modifier.requiredSize(width.value, height.value).nestedScroll(parentConnection)) {
-                            LyricMatchResultsContent(query.value, { query.value = it }, results.value,
-                                loading.value, error.value, searched.value, selectedSources.value,
-                                onSourceToggle = { source ->
-                                    selectedSources.value = selectedSources.value.let {
-                                        if (source in it) it - source else it + source
-                                    }
-                                }, onSearch = { searches += it }, onApply = { applied += it },
-                                onDismiss = { cancels++ })
-                        }
+                    }
+                    Box(Modifier.nestedScroll(parentConnection)) {
+                        LyricMatchResultsContent(query.value, { query.value = it }, results.value,
+                            loading.value, error.value, searched.value, selectedSources.value,
+                            onSourceToggle = { source ->
+                                selectedSources.value = selectedSources.value.let {
+                                    if (source in it) it - source else it + source
+                                }
+                            }, onSearch = { searches += it }, onApply = { applied += it },
+                            onDismiss = { cancels++ })
                     }
                 }
             }
