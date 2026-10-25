@@ -16,6 +16,18 @@ class NowPlayingQueueRemovalTest {
     private val fourth = song(4)
 
     @Test
+    fun `select all submits hundreds of removals as one queue edit`() {
+        val entries = buildNowPlayingQueueEntries((1L..500L).map(::song))
+        var queueEdits = 0
+
+        removeSelectedNowPlayingQueueEntries(entries, entries.mapTo(mutableSetOf()) { it.key }) {
+            queueEdits++
+        }
+
+        assertEquals(1, queueEdits)
+    }
+
+    @Test
     fun `batch removal keeps unselected rows after earlier indices shift`() {
         val queue = mutableListOf(first, second, third, fourth)
         val entries = buildNowPlayingQueueEntries(queue)
@@ -23,7 +35,7 @@ class NowPlayingQueueRemovalTest {
         removeSelectedNowPlayingQueueEntries(
             entries,
             setOf(entries[0].key, entries[2].key),
-            queue::removeAt
+            { indices -> indices.sortedDescending().forEach(queue::removeAt) }
         )
 
         assertEquals(listOf(second, fourth), queue)
@@ -40,7 +52,9 @@ class NowPlayingQueueRemovalTest {
             )
         )
 
-        removeSelectedNowPlayingQueueEntries(entries, setOf(entries[0].key), queue::removeAt)
+        removeSelectedNowPlayingQueueEntries(entries, setOf(entries[0].key)) { indices ->
+            indices.sortedDescending().forEach(queue::removeAt)
+        }
 
         assertEquals(listOf(first, second), queue)
     }
@@ -50,7 +64,9 @@ class NowPlayingQueueRemovalTest {
         val queue = mutableListOf(first, second, first, third)
         val entries = buildNowPlayingQueueEntries(queue)
 
-        removeSelectedNowPlayingQueueEntries(entries, setOf(entries[2].key), queue::removeAt)
+        removeSelectedNowPlayingQueueEntries(entries, setOf(entries[2].key)) { indices ->
+            indices.sortedDescending().forEach(queue::removeAt)
+        }
 
         assertEquals(listOf(first, second, third), queue)
     }
@@ -60,10 +76,12 @@ class NowPlayingQueueRemovalTest {
         val queue = mutableListOf(first, second)
         val entries = buildNowPlayingQueueEntries(queue)
 
-        removeSelectedNowPlayingQueueEntries(entries, emptySet(), queue::removeAt)
-        removeSelectedNowPlayingQueueEntries(entries, setOf("missing"), queue::removeAt)
+        var edits = 0
+        removeSelectedNowPlayingQueueEntries(entries, emptySet()) { edits++ }
+        removeSelectedNowPlayingQueueEntries(entries, setOf("missing")) { edits++ }
 
         assertEquals(listOf(first, second), queue)
+        assertEquals(0, edits)
     }
 
     @Test
@@ -73,16 +91,16 @@ class NowPlayingQueueRemovalTest {
         val entries = buildNowPlayingQueueEntries(queue.playlist)
         val actions = mutableListOf<RemovedQueuePlaybackAction>()
 
-        removeSelectedNowPlayingQueueEntries(entries, setOf(entries[0].key, entries[3].key)) { index ->
-            val edit = requireNotNull(owner.remove(queue, index))
-            queue = edit.queue
-            actions += owner.removalPlaybackAction(edit, transportActive = true)
+        removeSelectedNowPlayingQueueEntries(entries, setOf(entries[0].key, entries[3].key)) { indices ->
+            val removedCurrent = queue.currentIndex in indices
+            queue = requireNotNull(owner.remove(queue, indices))
+            actions += owner.removalPlaybackAction(queue, removedCurrent, transportActive = true)
         }
 
         assertEquals(listOf(second, first), queue.playlist)
         assertEquals(1, queue.currentIndex)
         assertEquals(
-            listOf(RemovedQueuePlaybackAction.KEEP_PLAYING, RemovedQueuePlaybackAction.KEEP_PLAYING),
+            listOf(RemovedQueuePlaybackAction.KEEP_PLAYING),
             actions
         )
     }
@@ -94,16 +112,16 @@ class NowPlayingQueueRemovalTest {
         val entries = buildNowPlayingQueueEntries(queue.playlist)
         val actions = mutableListOf<RemovedQueuePlaybackAction>()
 
-        removeSelectedNowPlayingQueueEntries(entries, setOf(entries[1].key, entries[2].key)) { index ->
-            val edit = requireNotNull(owner.remove(queue, index))
-            queue = edit.queue
-            actions += owner.removalPlaybackAction(edit, transportActive = true)
+        removeSelectedNowPlayingQueueEntries(entries, setOf(entries[1].key, entries[2].key)) { indices ->
+            val removedCurrent = queue.currentIndex in indices
+            queue = requireNotNull(owner.remove(queue, indices))
+            actions += owner.removalPlaybackAction(queue, removedCurrent, transportActive = true)
         }
 
         assertEquals(listOf(first, fourth), queue.playlist)
         assertEquals(1, queue.currentIndex)
         assertEquals(
-            listOf(RemovedQueuePlaybackAction.KEEP_PLAYING, RemovedQueuePlaybackAction.PLAY_NEXT),
+            listOf(RemovedQueuePlaybackAction.PLAY_NEXT),
             actions
         )
     }
@@ -115,16 +133,16 @@ class NowPlayingQueueRemovalTest {
         val entries = buildNowPlayingQueueEntries(queue.playlist)
         val actions = mutableListOf<RemovedQueuePlaybackAction>()
 
-        removeSelectedNowPlayingQueueEntries(entries, entries.mapTo(mutableSetOf()) { it.key }) { index ->
-            val edit = requireNotNull(owner.remove(queue, index))
-            queue = edit.queue
-            actions += owner.removalPlaybackAction(edit, transportActive = true)
+        removeSelectedNowPlayingQueueEntries(entries, entries.mapTo(mutableSetOf()) { it.key }) { indices ->
+            val removedCurrent = queue.currentIndex in indices
+            queue = requireNotNull(owner.remove(queue, indices))
+            actions += owner.removalPlaybackAction(queue, removedCurrent, transportActive = true)
         }
 
         assertEquals(emptyList<SongItem>(), queue.playlist)
         assertEquals(-1, queue.currentIndex)
         assertEquals(
-            listOf(RemovedQueuePlaybackAction.KEEP_PLAYING, RemovedQueuePlaybackAction.STOP),
+            listOf(RemovedQueuePlaybackAction.STOP),
             actions
         )
     }

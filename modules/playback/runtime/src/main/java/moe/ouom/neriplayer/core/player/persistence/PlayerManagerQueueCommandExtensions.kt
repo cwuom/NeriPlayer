@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.queue.QueueInsertPlacement
-import moe.ouom.neriplayer.data.model.playback.queue.RemoveQueueEdit
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
 import moe.ouom.neriplayer.data.model.playback.queue.RemovedQueuePlaybackAction
 import moe.ouom.neriplayer.data.model.SongItem
 
@@ -128,42 +128,45 @@ private fun PlayerManager.applyQueueMove(fromIndex: Int, toIndex: Int) {
     scheduleStatePersist(debounceMs = 0L)
 }
 
-internal fun PlayerManager.removeQueueItemImpl(index: Int) {
+internal fun PlayerManager.removeQueueItemImpl(index: Int) = removeQueueItemsImpl(setOf(index))
+
+internal fun PlayerManager.removeQueueItemsImpl(indices: Set<Int>) {
     ensureInitialized()
     if (!initialized) return
-    removeQueueIfRoomAllowed(index)
+    removeQueueIfRoomAllowed(indices)
 }
 
-private fun PlayerManager.removeQueueIfRoomAllowed(index: Int) {
+private fun PlayerManager.removeQueueIfRoomAllowed(indices: Set<Int>) {
     if (shouldBlockLocalRoomControl(PlaybackCommandSource.LOCAL)) return
-    applyQueueRemoval(index)
+    applyQueueRemoval(indices)
 }
 
-private fun PlayerManager.applyQueueRemoval(index: Int) {
-    var removal: RemoveQueueEdit? = null
+private fun PlayerManager.applyQueueRemoval(indices: Set<Int>) {
+    var removedCurrent = false
+    var removedCount = 0
     val updatedQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
-        val planned = queueEdits.remove(snapshot, index) ?: return@updateCurrentQueue null
-        removal = planned
-        planned.queue
+        val planned = queueEdits.remove(snapshot, indices) ?: return@updateCurrentQueue null
+        removedCurrent = snapshot.currentIndex >= 0 && snapshot.currentIndex in indices
+        removedCount = snapshot.playlist.size - planned.playlist.size
+        planned
     } ?: return
-    applyCommittedQueueRemoval(index, updatedQueue.playlist.size, updatedQueue.currentIndex, removal)
+    applyCommittedQueueRemoval(updatedQueue, removedCurrent, removedCount)
 }
 
 private fun PlayerManager.applyCommittedQueueRemoval(
-    index: Int,
-    queueSize: Int,
-    selectedIndex: Int,
-    edit: RemoveQueueEdit?,
+    queue: PlayerQueueSnapshot,
+    removedCurrent: Boolean,
+    removedCount: Int,
 ) {
-    val removal = edit ?: return
     val playbackAction = queueEdits.removalPlaybackAction(
-        removal,
+        queue,
+        removedCurrent,
         transportActive = isTransportActiveWithoutInitialization(),
     )
 
     NPLogger.d(
         "NERI-PlayerManager",
-        "removeQueueItem(): index=$index, removed=${removal.removedSong.name}/${removal.removedSong.id}, queueSize=$queueSize, currentIndex=$selectedIndex, action=$playbackAction, shuffle=${player.shuffleModeEnabled}, stack=[${debugStackHint()}]"
+        "removeQueueItems(): removedCount=$removedCount, queueSize=${queue.playlist.size}, currentIndex=${queue.currentIndex}, action=$playbackAction, shuffle=${player.shuffleModeEnabled}, stack=[${debugStackHint()}]"
     )
 
     applyRemovalPlaybackAction(playbackAction)
