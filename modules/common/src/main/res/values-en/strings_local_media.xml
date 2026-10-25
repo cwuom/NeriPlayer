@@ -130,4 +130,11 @@
     <string name="local_song_sync_confirm_title">Local Song Won\'t Sync</string>
     <string name="local_song_sync_confirm_message">Local songs are not synced. Confirm %1$s?</string>
     <string name="local_song_share_failed">Unable to share the local song file</string>
+    <!-- External tag editor (Lyrico) -->
+    <string name="local_song_lyrico_edit_tags">Edit tags with Lyrico</string>
+    <string name="local_song_lyrico_unavailable">Lyrico cannot edit this song where it is stored</string>
+    <string name="local_song_lyrico_missing">Lyrico with external editing support was not found; install or update it</string>
+    <string name="local_song_lyrico_refresh_success">Song info refreshed from the edited file</string>
+    <string name="local_song_lyrico_refresh_unavailable">Lyrico saved the file, but it could not be read back</string>
+    <string name="local_song_lyrico_refresh_failed">Lyrico saved the file, but refreshing song info failed</string>
 </resources>

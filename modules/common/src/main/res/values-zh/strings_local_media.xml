@@ -127,4 +127,11 @@
     <string name="local_song_sync_confirm_title">本地歌曲不会同步</string>
     <string name="local_song_sync_confirm_message">本地歌曲不会参与同步，确认%1$s吗？</string>
     <string name="local_song_share_failed">无法分享本地歌曲文件</string>
+    <!-- 外部标签编辑器（Lyrico） -->
+    <string name="local_song_lyrico_edit_tags">使用 Lyrico 编辑标签</string>
+    <string name="local_song_lyrico_unavailable">该歌曲的文件位置不支持交给 Lyrico 编辑</string>
+    <string name="local_song_lyrico_missing">未找到支持外部编辑的 Lyrico，请安装或更新</string>
+    <string name="local_song_lyrico_refresh_success">已按文件内容刷新歌曲信息</string>
+    <string name="local_song_lyrico_refresh_unavailable">Lyrico 已保存，但无法重新读取该文件</string>
+    <string name="local_song_lyrico_refresh_failed">Lyrico 已保存，但刷新歌曲信息失败</string>
 </resources>

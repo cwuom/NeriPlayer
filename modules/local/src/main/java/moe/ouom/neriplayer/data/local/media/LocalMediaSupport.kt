@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.media
 
+import moe.ouom.neriplayer.data.local.media.external.invalidateExternalTagEditCachesImpl
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaCompanionTransaction
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaUriCandidates
@@ -824,6 +825,11 @@ object LocalMediaSupport {
 
     fun invalidateSongAssetCaches(song: SongItem) {
         return this.invalidateSongAssetCachesImpl(song)
+    }
+
+    /** 外部标签编辑器写回文件后，按旧文件内容建立的封面与歌词缓存必须一起失效 */
+    fun invalidateExternalTagEditCaches(context: Context, song: SongItem) {
+        return this.invalidateExternalTagEditCachesImpl(context, song)
     }
 
 

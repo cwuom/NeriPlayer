@@ -709,6 +709,12 @@ For release build and signing details, see
   system overlay lyrics with customizable color, outline, font size, position,
   alignment, and translation display, plus Meizu status-bar lyrics, SuperLyric
   output, and auto-hide while the app is foregrounded.
+- 🏷️ **External local tag editing**:
+  local songs can be handed to [Lyrico](https://github.com/Replica0110/Lyrico) to edit title, artist,
+  album, lyrics, and cover. Files in the app-managed download directory are granted read/write through
+  `FileProvider`; MediaStore entries let Lyrico request the system write grant itself. After saving, the
+  queue, playlists, lyrics, and cover caches are refreshed from the file; storage locations that cannot be
+  written back are reported instead of silently editing a cached copy.
 - 🔌 **External lyrics/device integration**:
   Lyricon integration, SuperLyric, external Bluetooth lyrics, pause on Bluetooth
   disconnect, and USB exclusive playback toggles. The external lyrics path
@@ -786,7 +792,8 @@ For release build and signing details, see
   playback, and library data are not implemented.
 - **Local audio**:
   external share/open import, device scanning, authorized-folder scanning,
-  local file playback, local artist grouping, sharing, and local playlist management.
+  local file playback, local artist grouping, sharing, local playlist management,
+  and handing audio tags to Lyrico for editing.
 
 ---
 

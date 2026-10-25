@@ -5,6 +5,9 @@ import moe.ouom.neriplayer.data.model.download.DownloadStage
 import moe.ouom.neriplayer.data.ltw.validation.format
 
 import android.content.Intent
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.runtime.CompositionLocalProvider
@@ -62,6 +66,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -77,6 +82,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
@@ -90,6 +96,9 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.external.LocalMediaExternalTagEdit
+import moe.ouom.neriplayer.data.local.media.external.LocalMediaExternalTagEditResolution
+import moe.ouom.neriplayer.data.local.media.external.LocalSongFileRefreshResult
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.displayArtist
@@ -113,6 +122,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 import moe.ouom.neriplayer.ui.feedback.startActivityOrShowUnavailable
+import moe.ouom.neriplayer.util.platform.tryLaunch
 
 @Composable
 internal fun MoreOptionsMainContent(
@@ -157,6 +167,12 @@ internal fun MoreOptionsMainContent(
                 song = originalSong,
                 isLocalSong = isLocalSong,
                 onShowSongDetails = onShowSongDetails
+            )
+            ExternalTagEditAction(
+                song = originalSong,
+                isLocalSong = isLocalSong,
+                snackbarHostState = snackbarHostState,
+                onDismissSheet = onDismissSheet
             )
             NeteaseAlbumAction(
                 song = originalSong,
@@ -306,6 +322,94 @@ private fun downloadActionLabel(task: DownloadTask?): Int {
         DownloadStatus.FAILED -> CoreCommonR.string.action_retry
         else -> CoreCommonR.string.download_to_local
     }
+}
+
+/**
+ * 本地歌曲可以交给外部标签编辑器（Lyrico）修改文件里的标签。
+ *
+ * 底部面板在外部应用期间保持展开，返回后才能收到编辑结果；保存成功后按文件内容刷新歌曲，
+ * 再关闭面板，让播放页直接显示新标题与封面。取消编辑则什么都不做。
+ */
+@Composable
+private fun ExternalTagEditAction(
+    song: SongItem,
+    isLocalSong: Boolean,
+    snackbarHostState: SnackbarHostState,
+    onDismissSheet: (() -> Unit) -> Unit
+) {
+    if (!isLocalSong) return
+    val context = LocalContext.current
+    val composeResources = LocalResources.current
+    val coroutineScope = rememberCoroutineScope()
+    val latestSong = rememberUpdatedState(song)
+    var waitingForEditor by remember(song.stableKey()) { mutableStateOf(false) }
+    val editLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        waitingForEditor = false
+        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            val outcome = try {
+                PlayerManager.refreshLocalSongAfterExternalTagEdit(latestSong.value)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                NPLogger.e("ExternalTagEdit", "刷新外部编辑后的本地歌曲失败", error)
+                LocalSongFileRefreshResult.FAILED
+            }
+            // 面板会随刷新一起收起，SnackbarHost 也跟着消失，这里用应用级提示保证结果可见
+            AppFeedback.showToast(
+                context = context,
+                message = composeResources.getString(externalTagEditRefreshMessage(outcome))
+            )
+            onDismissSheet {}
+        }
+    }
+    MoreOptionsItem(
+        title = stringResource(CoreCommonR.string.local_song_lyrico_edit_tags),
+        icon = Icons.AutoMirrored.Outlined.OpenInNew,
+        hue = MoreHueOrange,
+        busy = waitingForEditor,
+        enabled = !waitingForEditor,
+        onClick = {
+            coroutineScope.launch {
+                waitingForEditor = true
+                val unavailableMessage = composeResources.getString(CoreCommonR.string.local_song_lyrico_unavailable)
+                var editorStarted = false
+                try {
+                    val resolution = withContext(Dispatchers.IO) {
+                        LocalMediaExternalTagEdit.resolve(context, latestSong.value)
+                    }
+                    val target = (resolution as? LocalMediaExternalTagEditResolution.Editable)?.target
+                    if (target == null) {
+                        snackbarHostState.showNeriSnackbar(unavailableMessage)
+                        return@launch
+                    }
+                    editorStarted = lyricoTagEditIntents(target).any { intent -> editLauncher.tryLaunch(intent) }
+                    if (!editorStarted) {
+                        snackbarHostState.showNeriSnackbar(
+                            composeResources.getString(CoreCommonR.string.local_song_lyrico_missing)
+                        )
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Exception) {
+                    NPLogger.e("ExternalTagEdit", "解析本地标签外部编辑入口失败", error)
+                    snackbarHostState.showNeriSnackbar(unavailableMessage)
+                } finally {
+                    // 编辑页已经拉起时继续等待结果，失败或取消则恢复按钮
+                    if (!editorStarted) waitingForEditor = false
+                }
+            }
+        }
+    )
+}
+
+private fun externalTagEditRefreshMessage(outcome: LocalSongFileRefreshResult): Int = when (outcome) {
+    LocalSongFileRefreshResult.SUCCESS -> CoreCommonR.string.local_song_lyrico_refresh_success
+    LocalSongFileRefreshResult.NOT_LOCAL_SONG,
+    LocalSongFileRefreshResult.UNAVAILABLE -> CoreCommonR.string.local_song_lyrico_refresh_unavailable
+    LocalSongFileRefreshResult.FAILED -> CoreCommonR.string.local_song_lyrico_refresh_failed
 }
 
 @Composable

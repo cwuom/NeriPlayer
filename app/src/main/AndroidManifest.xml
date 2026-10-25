@@ -32,6 +32,12 @@
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
+    <!-- 单曲标签可交给 Lyrico 编辑；声明包名才能在其安装后正常解析编辑入口 -->
+    <queries>
+        <package android:name="com.lonx.lyrico" />
+        <package android:name="com.lonx.lyrico.debug" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"

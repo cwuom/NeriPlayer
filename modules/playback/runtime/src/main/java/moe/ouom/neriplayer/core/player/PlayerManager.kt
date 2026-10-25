@@ -154,7 +154,9 @@ import moe.ouom.neriplayer.core.player.runtime.stats.trackEndDeduplicationKey
 import moe.ouom.neriplayer.core.player.persistence.LocalSongAssetEmbedding
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.embedLocalSongAssetsImpl
+import moe.ouom.neriplayer.core.player.persistence.refreshLocalSongAfterExternalTagEditImpl
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
+import moe.ouom.neriplayer.data.local.media.external.LocalSongFileRefreshResult
 import moe.ouom.neriplayer.core.player.persistence.addCurrentToFavoritesImpl
 import moe.ouom.neriplayer.core.player.persistence.addCurrentToPlaylistImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueEndImpl
@@ -1905,6 +1907,10 @@ object PlayerManager {
 
     fun hydrateSongMetadata(originalSong: SongItem, updatedSong: SongItem) =
         hydrateSongMetadataImpl(originalSong, updatedSong)
+
+    /** 外部标签编辑器（如 Lyrico）写回文件后，按文件内容刷新队列、歌单与本地缓存 */
+    suspend fun refreshLocalSongAfterExternalTagEdit(song: SongItem): LocalSongFileRefreshResult =
+        refreshLocalSongAfterExternalTagEditImpl(song)
 
     suspend fun updateUserLyricOffset(songToUpdate: SongItem, newOffset: Long) =
         updateUserLyricOffsetImpl(songToUpdate, newOffset)
