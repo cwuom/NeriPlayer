@@ -7,6 +7,7 @@ import java.net.URLClassLoader
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermission
 import java.util.UUID
@@ -411,7 +412,7 @@ object SyncArchiveWorkspaceRecoveryProcess {
                 LinkOption.NOFOLLOW_LINKS).use { channel ->
                 val lock = channel.tryLock()
                 try {
-                    File(args[2]).writeText(if (lock == null) "locked" else "acquired")
+                    publishReady(File(args[2]), if (lock == null) "locked" else "acquired")
                 } finally {
                     lock?.close()
                 }
@@ -421,12 +422,19 @@ object SyncArchiveWorkspaceRecoveryProcess {
         val workspace = SyncArchiveWorkspace.create(File(args[1]))
         File(workspace.directory, "main.records").writeBytes(byteArrayOf(1, 2, 3))
         File(workspace.directory, "legacy.records").writeBytes(byteArrayOf(4))
-        File(args[2]).writeText(workspace.directory.name)
+        publishReady(File(args[2]), workspace.directory.name)
         if (args[0] == "halt") Runtime.getRuntime().halt(73)
         try {
             System.`in`.read()
         } finally {
             workspace.close()
         }
+    }
+
+    private fun publishReady(ready: File, result: String) {
+        // 父进程看到文件就会读取，先完成写入再原子发布就绪信号
+        val pending = ready.toPath().resolveSibling("${ready.name}.tmp")
+        pending.toFile().writeText(result)
+        Files.move(pending, ready.toPath(), StandardCopyOption.ATOMIC_MOVE)
     }
 }
