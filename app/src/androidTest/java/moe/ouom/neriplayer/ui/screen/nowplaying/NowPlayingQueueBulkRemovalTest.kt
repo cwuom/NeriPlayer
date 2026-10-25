@@ -1,9 +1,17 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import android.app.LocaleManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.media.session.MediaController
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
@@ -24,18 +32,24 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Locale
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.persistence.PlaybackQueueRoomStore
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.stats.flushPlaybackStatsPendingWrites
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.PersistedState
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
@@ -48,8 +62,10 @@ import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeFalse
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -62,41 +78,7 @@ class NowPlayingQueueBulkRemovalTest {
 
     @Test
     fun selectAllAndRemoveFiveHundredSongsPublishesOnceWithoutBlockingMainThread() {
-        assumeTrue("仅在专用模拟器运行", Build.HARDWARE in setOf("ranchu", "goldfish"))
-        assumeComposeHostAvailable()
-        val context = composeRule.activity.applicationContext
-        assumeNoSyncTargets(context)
-        val savedQueue = runBlocking { SavedQueue.read(context) }
-        val preferences = readPlaybackPreferenceSnapshotSync(context)
-        val directory = File.createTempFile("queue-bulk-removal-", "", context.cacheDir).apply {
-            check(delete() && mkdir())
-        }
-        val heartbeat = MainThreadHeartbeat()
-        var visible by mutableStateOf(true)
-        var songs = emptyList<SongItem>()
-        var failure: Throwable? = null
-        try {
-            songs = createLocalQueue(directory)
-            composeRule.runOnUiThread {
-                if (!AppContainer.isInitialized()) AppContainer.initialize(composeRule.activity.application)
-                PlayerManager.release()
-                PlayerManager.initializePreloaded(
-                    composeRule.activity.application,
-                    preferences,
-                    RestoredPlayerStateSnapshot(
-                        playlist = emptyList(), currentIndex = -1, currentMediaUrl = null,
-                        repeatMode = Player.REPEAT_MODE_OFF, shuffleEnabled = false,
-                        shuffleRestorePlaylist = null, shuffleRestoreIndex = -1,
-                        resumePositionMs = 0L, shouldResumePlayback = false,
-                        originalPlaylistSize = 0, persistedIndex = -1
-                    )
-                )
-            }
-            composeRule.waitUntil(UiTimeoutMs) { PlayerManager.localPlaylistsReadyFlow.value }
-            composeRule.runOnUiThread { PlayerManager.playPlaylist(songs, startIndex = 0) }
-            composeRule.waitUntil(UiTimeoutMs) {
-                PlayerManager.currentQueueFlow.value.size == 500 && PlayerManager.isPlayingFlow.value
-            }
+        withPlaybackFixture(500) {
             composeRule.setContent {
                 val queue by PlayerManager.currentQueueFlow.collectAsState()
                 val revision by PlayerManager.currentQueueDisplayRevisionFlow.collectAsState()
@@ -124,10 +106,13 @@ class NowPlayingQueueBulkRemovalTest {
                     CoreCommonR.plurals.common_selected_count, 500, 500
                 )).assertIsDisplayed()
                 val revisionBeforeRemoval = PlayerManager.currentQueueDisplayRevisionFlow.value
-                composeRule.runOnIdle { heartbeat.start() }
+                composeRule.runOnIdle { service.updates.reset(); heartbeat.start() }
                 val startedAt = SystemClock.uptimeMillis()
                 composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.nowplaying_queue_remove))
                     .performClick()
+                composeRule.waitUntil(UiTimeoutMs) {
+                    service.updates.latestQueue?.isEmpty() == true && service.controller.queue?.isEmpty() == true
+                }
                 composeRule.runOnIdle {
                     heartbeat.stop()
                     assertTrue(PlayerManager.currentQueueFlow.value.isEmpty())
@@ -137,13 +122,135 @@ class NowPlayingQueueBulkRemovalTest {
                     assertEquals(revisionBeforeRemoval + 1L,
                         PlayerManager.currentQueueDisplayRevisionFlow.value)
                 }
-                val elapsedMs = SystemClock.uptimeMillis() - startedAt
-                Log.i("QueueBulkRemovalTest", "queue=500 deleteElapsedMs=$elapsedMs " +
-                    "maximumMainThreadGapMs=${heartbeat.maximumDelayMs}")
-                assertTrue("500 首批量删除耗时 ${elapsedMs}ms", elapsedMs < 4_000L)
-                assertTrue("主线程最长未响应 ${heartbeat.maximumDelayMs}ms",
-                    heartbeat.maximumDelayMs < 2_000L)
+                assertRemovalPerformance(500, 500, startedAt)
+                assertSingleQueueCallback()
             }
+        }
+    }
+
+    @Test
+    fun removeLastFiveHundredOfThreeThousandSongsKeepsPlaybackAndPublishesSessionOnce() {
+        withPlaybackFixture(3_000) {
+            composeRule.runOnUiThread { PlayerManager.seekTo(30_000L) }
+            composeRule.waitUntil(UiTimeoutMs) {
+                PlayerManager.playbackPositionFlow.value >= 30_000L && PlayerManager.isPlayingFlow.value
+            }
+            val queueBefore = PlayerManager.currentQueueFlow.value
+            val windowBefore = checkNotNull(service.controller.queue).toList()
+            val revisionBefore = PlayerManager.currentQueueDisplayRevisionFlow.value
+            var positionBefore = 0L
+            var startedAt = 0L
+            composeRule.runOnIdle {
+                val songBefore = PlayerManager.currentSongFlow.value
+                positionBefore = PlayerManager.playbackPositionFlow.value
+                service.updates.reset()
+                heartbeat.start()
+                startedAt = SystemClock.uptimeMillis()
+                PlayerManager.removeQueueItems((2_500 until 3_000).toSet())
+                assertEquals(songBefore, PlayerManager.currentSongFlow.value)
+                assertEquals("删除非当前歌曲不能重置进度", positionBefore, PlayerManager.playbackPositionFlow.value)
+                assertTrue(PlayerManager.isPlayingFlow.value)
+                assertTrue(PlayerManager.playWhenReadyFlow.value)
+            }
+            composeRule.waitUntil(UiTimeoutMs) {
+                service.updates.latestQueue?.size == SessionQueueWindowSize &&
+                    service.controller.playbackState?.state == PlaybackState.STATE_PLAYING
+            }
+            composeRule.runOnIdle {
+                heartbeat.stop()
+                assertEquals(queueBefore.take(2_500), PlayerManager.currentQueueFlow.value)
+                assertEquals(revisionBefore + 1L, PlayerManager.currentQueueDisplayRevisionFlow.value)
+                val sessionQueue = checkNotNull(service.controller.queue)
+                assertEquals(windowBefore.map { it.queueId }, sessionQueue.map { it.queueId })
+                assertEquals(PlayerManager.currentQueueFlow.value.take(SessionQueueWindowSize).map { it.displayName() },
+                    sessionQueue.map { it.description.title.toString() })
+                assertTrue(PlayerManager.isPlayingFlow.value)
+                assertTrue(PlayerManager.playWhenReadyFlow.value)
+                val elapsedMs = SystemClock.uptimeMillis() - startedAt
+                val positionAfter = PlayerManager.playbackPositionFlow.value
+                assertTrue("删除后进度必须继续前进: before=$positionBefore after=$positionAfter",
+                    positionAfter >= positionBefore && positionAfter <= positionBefore + elapsedMs + 1_000L)
+            }
+            assertRemovalPerformance(3_000, 500, startedAt)
+            assertSingleQueueCallback()
+        }
+    }
+
+    private fun withPlaybackFixture(queueSize: Int, block: PlaybackFixture.() -> Unit) {
+        assumeTrue("仅在专用模拟器运行", Build.HARDWARE in setOf("ranchu", "goldfish"))
+        assumeComposeHostAvailable()
+        val context = composeRule.activity.applicationContext
+        assumeNoSyncTargets(context)
+        assumeFalse("已有播放服务时不干预其生命周期", AudioPlayerService.isInstanceActiveForDiagnostics())
+        assumeFalse("已有播放时不干预播放器", PlayerManager.isPlayingFlow.value ||
+            PlayerManager.playWhenReadyFlow.value || PlayerManager.playbackControlPlayingFlow.value)
+        assumeFalse("安全模式不创建播放服务", PlayerDependencies.presentation.shouldEnterSafeMode(context))
+        val savedQueue = runBlocking { SavedQueue.read(context) }
+        val languagePreferences = context.getSharedPreferences("language_settings", Context.MODE_PRIVATE)
+        val savedLanguage = languagePreferences.getString("selected_language", null)
+        val savedDefaultLocale = Locale.getDefault()
+        val savedPlatformLocales = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.getSystemService(LocaleManager::class.java)?.applicationLocales
+        } else null
+        val preferences = readPlaybackPreferenceSnapshotSync(context)
+        val directory = File.createTempFile("queue-bulk-removal-", "", context.cacheDir).apply {
+            check(delete() && mkdir())
+        }
+        val fixture = PlaybackFixture(context)
+        var songs = emptyList<SongItem>()
+        var failure: Throwable? = null
+        try {
+            songs = createLocalQueue(directory, queueSize)
+            composeRule.runOnUiThread {
+                assertNull("初始化队列前不能继承其它测试的服务", activeService())
+                if (!AppContainer.isInitialized()) AppContainer.initialize(composeRule.activity.application)
+                PlayerManager.release()
+                PlayerManager.initializePreloaded(
+                    composeRule.activity.application,
+                    preferences.copy(maxCacheSizeBytes = 0L, usbExclusivePlayback = false),
+                    RestoredPlayerStateSnapshot(
+                        playlist = emptyList(), currentIndex = -1, currentMediaUrl = null,
+                        repeatMode = Player.REPEAT_MODE_OFF, shuffleEnabled = false,
+                        shuffleRestorePlaylist = null, shuffleRestoreIndex = -1,
+                        resumePositionMs = 0L, shouldResumePlayback = false,
+                        originalPlaylistSize = 0, persistedIndex = -1
+                    )
+                )
+            }
+            composeRule.waitUntil(UiTimeoutMs) { PlayerManager.localPlaylistsReadyFlow.value }
+            fixture.service.bind()
+            val serviceContext = checkNotNull(activeService())
+            val mismatch = if (serviceContext.resources.configuration.locales[0].language == "en") {
+                LanguageManager.Language.CHINESE
+            } else {
+                LanguageManager.Language.ENGLISH
+            }
+            // 不直接调用平台语言接口，生产路径可能继续同步应用语言
+            check(languagePreferences.edit().putString("selected_language", mismatch.code).commit())
+            composeRule.runOnUiThread { PlayerManager.playPlaylist(songs, startIndex = 0) }
+            composeRule.waitUntil(UiTimeoutMs) {
+                PlayerManager.currentQueueFlow.value.size == queueSize && PlayerManager.isPlayingFlow.value &&
+                    fixture.service.controller.queue?.size == SessionQueueWindowSize
+            }
+            composeRule.runOnUiThread {
+                assertTrue("必须向真实播放服务发送启动命令", AudioPlayerService.startSyncService(
+                    composeRule.activity, "queue_bulk_removal_test", forceForeground = true
+                ))
+            }
+            composeRule.waitUntil(UiTimeoutMs) {
+                AudioPlayerService.isForegroundActiveForDiagnostics() &&
+                    fixture.service.controller.playbackState?.state == PlaybackState.STATE_PLAYING &&
+                    fixture.service.updates.latestQueue?.map { it.description.title.toString() } ==
+                    PlayerManager.currentQueueFlow.value.take(SessionQueueWindowSize).map { it.displayName() }
+            }
+            composeRule.runOnIdle {
+                assertEquals(mismatch, LanguageManager.getCurrentLanguage(serviceContext))
+                assertNotSame("真实服务仍需覆盖资源语言以覆盖 Context 创建路径", serviceContext,
+                    LanguageManager.localizedContext(serviceContext, mismatch))
+                assertTrue("会话必须包含普通专辑以覆盖本地专辑名称匹配",
+                    fixture.service.controller.queue.orEmpty().any { it.description.description == FixtureAlbum })
+            }
+            fixture.block()
         } catch (error: Throwable) {
             failure = error
             throw error
@@ -152,11 +259,27 @@ class NowPlayingQueueBulkRemovalTest {
             fun cleanup(action: () -> Unit) {
                 runCatching(action).exceptionOrNull()?.let(cleanupFailures::add)
             }
-            cleanup { composeRule.runOnUiThread { heartbeat.stop(); visible = false } }
+            cleanup { composeRule.runOnUiThread { fixture.heartbeat.stop(); fixture.visible = false } }
             cleanup { composeRule.waitForIdle() }
+            cleanup { fixture.service.close() }
             cleanup { composeRule.runOnUiThread { PlayerManager.release() } }
             cleanup { runBlocking { removeFixtureStatistics(context, directory, songs) } }
             cleanup { runBlocking { savedQueue.restore(context) } }
+            cleanup {
+                val editor = languagePreferences.edit()
+                if (savedLanguage == null) editor.remove("selected_language")
+                else editor.putString("selected_language", savedLanguage)
+                check(editor.commit())
+            }
+            cleanup {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && savedPlatformLocales != null) {
+                    val localeManager = context.getSystemService(LocaleManager::class.java)
+                    if (localeManager != null && localeManager.applicationLocales != savedPlatformLocales) {
+                        localeManager.applicationLocales = savedPlatformLocales
+                    }
+                }
+            }
+            cleanup { Locale.setDefault(savedDefaultLocale) }
             cleanup { check(directory.deleteRecursively()) }
             cleanupFailures.forEach { failure?.addSuppressed(it) }
             if (failure == null && cleanupFailures.isNotEmpty()) {
@@ -165,7 +288,118 @@ class NowPlayingQueueBulkRemovalTest {
         }
     }
 
-    private fun createLocalQueue(directory: File): List<SongItem> {
+    private inner class PlaybackFixture(val context: Context) {
+        val heartbeat = MainThreadHeartbeat()
+        val service = PlaybackServiceClient(context)
+        var visible by mutableStateOf(true)
+
+        fun assertRemovalPerformance(queueSize: Int, removedCount: Int, startedAt: Long) {
+            val elapsedMs = SystemClock.uptimeMillis() - startedAt
+            Log.i("QueueBulkRemovalTest", "queue=$queueSize removed=$removedCount deleteElapsedMs=$elapsedMs " +
+                "maximumMainThreadGapMs=${heartbeat.maximumDelayMs} queueCallbacks=${service.updates.queueChanges} " +
+                "sessionQueueCallbackLatencyMs=${service.updates.lastCallbackAtMs - startedAt}")
+            assertTrue("$queueSize 首队列批量删除耗时 ${elapsedMs}ms", elapsedMs < 4_000L)
+            assertTrue("主线程最长未响应 ${heartbeat.maximumDelayMs}ms", heartbeat.maximumDelayMs < 2_000L)
+        }
+
+        fun assertSingleQueueCallback() {
+            // 性能指标已在首次完成时记录，观察延迟回调不计入删除耗时
+            composeRule.waitUntil(QueueCallbackObservationTimeoutMs) {
+                service.updates.queueChanges > 1 ||
+                    SystemClock.uptimeMillis() - service.updates.lastCallbackAtMs >= QueueCallbackStableMs
+            }
+            composeRule.runOnIdle {
+                assertEquals("稳定观察后真实媒体会话只能发布一次删除结果", 1, service.updates.queueChanges)
+            }
+        }
+    }
+
+    private inner class PlaybackServiceClient(private val context: Context) {
+        val updates = QueueUpdates()
+        lateinit var controller: MediaController
+            private set
+        private var connection: ServiceConnection? = null
+        private var ownsService = false
+
+        fun bind() {
+            val connected = CompletableFuture<MediaSession.Token>()
+            val client = object : ServiceConnection {
+                override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                    try {
+                        // 复用现有车载绑定，不为测试扩大 runtime 模块可见性
+                        val token = checkNotNull(binder).javaClass.getMethod("getSessionToken").invoke(binder)
+                        connected.complete(token as? MediaSession.Token ?: error("播放服务没有媒体会话"))
+                    } catch (error: Exception) {
+                        connected.completeExceptionally(error)
+                    }
+                }
+
+                override fun onServiceDisconnected(name: ComponentName?) {
+                    connected.completeExceptionally(AssertionError("播放服务绑定中断"))
+                }
+
+                override fun onNullBinding(name: ComponentName?) {
+                    connected.completeExceptionally(AssertionError("播放服务没有提供绑定接口"))
+                }
+
+                override fun onBindingDied(name: ComponentName?) {
+                    connected.completeExceptionally(AssertionError("播放服务绑定失效"))
+                }
+            }
+            composeRule.runOnUiThread {
+                val intent = Intent(context, AudioPlayerService::class.java).setAction(ActionBindCar)
+                assertTrue("必须绑定真实播放服务", context.bindService(intent, client, Context.BIND_AUTO_CREATE))
+                connection = client
+                ownsService = true
+            }
+            controller = MediaController(context, connected.get(UiTimeoutMs, TimeUnit.MILLISECONDS))
+            assertEquals(context.packageName, controller.packageName)
+            composeRule.runOnUiThread {
+                controller.registerCallback(updates, Handler(Looper.getMainLooper()))
+            }
+        }
+
+        fun close() {
+            composeRule.runOnUiThread {
+                if (::controller.isInitialized) controller.unregisterCallback(updates)
+                connection?.let(context::unbindService)
+                connection = null
+                if (ownsService) context.stopService(Intent(context, AudioPlayerService::class.java))
+            }
+            if (ownsService) {
+                composeRule.waitUntil(UiTimeoutMs) {
+                    !AudioPlayerService.isInstanceActiveForDiagnostics() && activeService() == null
+                }
+                ownsService = false
+            }
+        }
+    }
+
+    private class QueueUpdates : MediaController.Callback() {
+        @Volatile var latestQueue: List<MediaSession.QueueItem>? = null
+            private set
+        @Volatile var queueChanges = 0
+            private set
+        @Volatile var lastCallbackAtMs = 0L
+            private set
+
+        override fun onQueueChanged(queue: MutableList<MediaSession.QueueItem>?) {
+            queueChanges += 1
+            lastCallbackAtMs = SystemClock.uptimeMillis()
+            latestQueue = queue?.toList()
+        }
+
+        fun reset() {
+            latestQueue = null
+            queueChanges = 0
+            lastCallbackAtMs = 0L
+        }
+    }
+
+    private fun activeService(): AudioPlayerService? = AudioPlayerService::class.java
+        .getDeclaredField("activeServiceInstance").apply { isAccessible = true }.get(null) as? AudioPlayerService
+
+    private fun createLocalQueue(directory: File, queueSize: Int): List<SongItem> {
         val audio = File(directory, "synthetic.wav")
         val pcm = ByteArray(8_000 * 180 * 2)
         val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
@@ -176,10 +410,10 @@ class NowPlayingQueueBulkRemovalTest {
             put("data".toByteArray(Charsets.US_ASCII)); putInt(pcm.size)
         }.array()
         audio.outputStream().use { it.write(header); it.write(pcm) }
-        return List(500) { index ->
+        return List(queueSize) { index ->
             SongItem(
                 id = -9_800_000L - index, name = "Queue bulk fixture $index", artist = "Synthetic fixture",
-                album = LocalSongSupport.LOCAL_ALBUM_IDENTITY, albumId = 0L, durationMs = 180_000L,
+                album = FixtureAlbum, albumId = 0L, durationMs = 180_000L,
                 coverUrl = null, mediaUri = Uri.fromFile(audio).toString(), localFilePath = audio.path
             )
         }
@@ -243,6 +477,7 @@ class NowPlayingQueueBulkRemovalTest {
         fun stop() {
             if (lastTickMs != 0L) recordTick()
             handler.removeCallbacks(tick)
+            lastTickMs = 0L
         }
 
         private fun recordTick() {
@@ -276,5 +511,10 @@ class NowPlayingQueueBulkRemovalTest {
 
     private companion object {
         const val UiTimeoutMs = 15_000L
+        const val SessionQueueWindowSize = 100
+        const val FixtureAlbum = "Queue regression album"
+        const val ActionBindCar = "moe.ouom.neriplayer.action.BIND_CAR"
+        const val QueueCallbackStableMs = 250L
+        const val QueueCallbackObservationTimeoutMs = 1_000L
     }
 }
