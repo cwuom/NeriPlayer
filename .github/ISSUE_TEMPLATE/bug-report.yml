@@ -1,8 +1,7 @@
 name: Bug report / 报告问题
 description: 提交一份问题报告帮助开发者改进产品 / Submit a bug report to help improve the product
 title: "[BUG] "
-labels: [ "bug" ]
-
+labels: ["bug", "status: needs-triage"]
 
 body:
   - type: markdown
@@ -10,11 +9,18 @@ body:
       value: |
         感谢给 NeriPlayer 汇报问题！
         为了使我们更好地帮助你，请提供以下信息。
-        
+        请说明复现步骤、应用构建和运行环境，便于定位问题。
+        日志、截图和链接请先移除 Cookie、Token、密钥和个人信息。
+        下拉框中的“请选择”仅为填写提示，请改为实际情况后再提交。
+
         Thank you for reporting an issue with NeriPlayer!
         To help us assist you better, please provide the following information.
+        Provide reproduction steps, build information, and environment details.
+        Remove cookies, tokens, keys, and personal data before uploading.
+        Replace "Please select" in dropdowns with the actual value before submitting.
 
   - type: textarea
+    id: problem-description
     attributes:
       label: 问题描述 / Problem description
       placeholder: 简要描述你遇到的问题 / Briefly describe the issue you're experiencing
@@ -22,6 +28,7 @@ body:
       required: true
 
   - type: textarea
+    id: reproduction-steps
     attributes:
       label: 复现步骤 / Steps to reproduce
       placeholder: |
@@ -35,7 +42,24 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: reproduction-frequency
+    attributes:
+      label: 复现频率 / Reproduction frequency
+      description: 请选择问题出现的频率；无法判断时可选择“暂不确定” / Select how often the issue occurs or choose unsure
+      default: 0
+      options:
+        - 请选择 / Please select
+        - 每次 / Every time
+        - 经常 / Frequently
+        - 偶尔 / Occasionally
+        - 仅一次 / Only once
+        - 暂不确定 / Not sure yet
+    validations:
+      required: true
+
   - type: textarea
+    id: expected-behavior
     attributes:
       label: 预期行为 / Expected behaviour
       placeholder: 正常情况下应该发生什么 / Tell us what should happen
@@ -43,6 +67,7 @@ body:
       required: true
 
   - type: textarea
+    id: actual-behavior
     attributes:
       label: 实际行为 / Actual behaviour
       description: 如果含有截图，个人信息注意打码保护 / If including screenshots, please censor personal information
@@ -50,13 +75,78 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: affected-area
+    attributes:
+      label: 涉及模块 / Affected area
+      description: 可多选；请选择实际出现问题的模块，不确定时选择“其他或不确定” / Select the affected areas or choose unsure
+      multiple: true
+      options:
+        - 账号与登录 / Accounts and login
+        - 播放与音频 / Playback and audio
+        - 车载与 Android Auto / Automotive and Android Auto
+        - 蓝牙连接与控制 / Bluetooth connectivity and controls
+        - 自动换源 / Automatic source switching
+        - 通知与锁屏控制 / Notifications and lock screen controls
+        - 音频焦点与中断 / Audio focus and interruptions
+        - USB 独占播放 / USB exclusive playback
+        - 网络与代理 / Network and proxy
+        - 歌词 / Lyrics
+        - 下载与存储 / Downloads and storage
+        - 本地音乐与歌单 / Local music and playlists
+        - 云同步与备份 / Cloud sync and backup
+        - 一起听 / Listen Together
+        - 界面与交互 / UI and interaction
+        - 性能与资源占用 / Performance and resource usage
+        - 文档与翻译 / Documentation and translation
+        - 构建、CI 与发布 / Build and CI and release
+        - 安装、启动与更新 / Installation and startup and update
+        - 其他或不确定 / Other or unsure
+    validations:
+      required: true
+
   - type: input
+    id: app-version
+    attributes:
+      label: 应用版本与构建信息 / App version and build information
+      description: 从设置的“关于”复制版本号；无法确认可填“未知” / Copy the version from Settings → About or enter unknown
+      placeholder: 例如 c362c9a.10251232，或未知
+    validations:
+      required: true
+
+  - type: input
+    id: build-uuid
+    attributes:
+      label: 构建 UUID / Build UUID
+      description: 如方便获取，可从设置的“关于”复制构建 UUID；无法启动或找不到时可留空 / Copy the Build UUID from About if available; otherwise leave blank
+      placeholder: 可选：构建 UUID；无法获取可留空
+    validations:
+      required: false
+
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: 安装来源 / Distribution
+      default: 0
+      options:
+        - 请选择 / Please select
+        - GitHub Release
+        - GitHub Actions CI
+        - Telegram CI 频道 / Telegram CI channel
+        - 本地源码构建 / Local source build
+        - 其他或不确定 / Other or unsure
+    validations:
+      required: true
+
+  - type: input
+    id: android-version
     attributes:
       label: 你使用的安卓系统版本 / Your Android version
     validations:
       required: true
 
   - type: input
+    id: device-model
     attributes:
       label: 你正在使用的手机型号 / Your phone model
     validations:
@@ -71,18 +161,32 @@ body:
         The following information helps distinguish source, audio-output, and USB-exclusive issues.
 
   - type: dropdown
-    id: playback-platform
+    id: affected-platforms
     attributes:
-      label: 问题涉及的播放平台 / Affected playback platform
-      description: 可多选；非播放类问题请选择“不涉及播放” / Multiple selections allowed; choose “Not related to playback” for non-playback issues
+      label: 涉及平台 / Affected platforms
+      description: 可多选；自动换源或跨平台问题请选中所有实际涉及的平台 / Select all affected platforms including automatic source switching
       multiple: true
       options:
-        - None / 未选择
         - 网易云音乐 / NetEase Cloud Music
         - Bilibili
         - YouTube Music
         - 本地音频或下载文件 / Local audio or downloaded files
-        - 自动换源或多个平台 / Automatic source switching or multiple platforms
+        - 不涉及在线平台 / Not related to online platforms
+        - 其他或不确定 / Other or unsure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: automatic-source-switching
+    attributes:
+      label: 是否开启自动换源 / Automatic source switching enabled
+      description: 请按复现问题时的设置选择 / Select the setting used when reproducing the issue
+      default: 0
+      options:
+        - 请选择 / Please select
+        - 开启 / Enabled
+        - 关闭 / Disabled
+        - 不确定 / Not sure
         - 不涉及播放 / Not related to playback
     validations:
       required: true
@@ -92,8 +196,9 @@ body:
     attributes:
       label: 复现时的音频输出设备 / Audio output during reproduction
       description: 请选择复现问题时实际使用的输出设备 / Select the device that was in use when the issue occurred
+      default: 0
       options:
-        - None / 未选择
+        - 请选择 / Please select
         - 手机或平板扬声器 / Device speaker
         - 有线耳机或 USB-C 耳机 / Wired or USB-C headphones
         - 蓝牙耳机或音箱 / Bluetooth device
@@ -108,8 +213,9 @@ body:
     attributes:
       label: 是否开启 USB 独占播放 / Is USB exclusive playback enabled
       description: 请按复现问题时的设置选择；这与是否连接 USB DAC 是两个信息 / Choose the setting used during reproduction; this is separate from whether a USB DAC was connected
+      default: 0
       options:
-        - None / 未选择
+        - 请选择 / Please select
         - 已开启，且正在使用 USB DAC / Enabled, using a USB DAC
         - 已开启，但本次未使用 USB DAC / Enabled, without a USB DAC in this case
         - 未开启 / Disabled
@@ -142,19 +248,22 @@ body:
   - type: checkboxes
     id: latest
     attributes:
-      label: 版本和其他要求 / Version and Other Requirements
+      label: 提交前确认 / Confirmation
       options:
-        - label: 我使用的是最新 CI 版本，并已开启开发者模式（在设置中连续点击 7 次版本号）。/ I'm using the latest CI build with DEBUG Mode enabled (by tapping the version number 7 times in Settings).
-          required: false
-        - label: 我已经在 [Issue Tracker](https://github.com/cwuom/NeriPlayer/issues) 中找过我要提出的问题，没有找到相同问题。重复问题会被关闭。 / I have searched in the [Issue Tracker](https://github.com/cwuom/NeriPlayer/issues) and found no similar issues. Duplicate issues will be closed.
+        - label: 我确认本 Issue 只提交一个问题；多个问题需要分多个 Issue 提交，否则只有第一个问题会被考虑 / I confirm this issue covers only one topic; multiple topics require separate issues, otherwise only the first will be considered
           required: true
-        - label: 我已知晓并同意，如果我不按照模板提供的指示进行填写，则我的 Issue 可能会被无条件删除。 / I understand and agree that my issue may be deleted without notice if I do not follow the instructions provided in the template.
+        - label: 我已尽可能在最新 Release 或 CI 构建中复现问题 / I reproduced the issue on the latest Release or CI build when possible
+          required: false
+        - label: 我已搜索现有 Issue，未找到相同问题 / I searched existing issues and found no duplicate
+          required: true
+        - label: 我已从日志、截图和链接中移除 Cookie、Token、密钥和个人信息 / I removed cookies, tokens, keys, and personal data
           required: true
 
   - type: textarea
+    id: logs
     attributes:
       label: 日志 / Logs
-      description: 请先开启开发者模式（在设置界面点击 7 次版本号）复现问题，然后在调试页面查看并导出日志。 / Please enable DEBUG Mode first (tap the version number 7 times in Settings), reproduce the issue, then view and export logs from the Debug page.
+      description: 在设置中连续点击 7 次版本号启用开发者模式，复现后从调试页面导出日志；上传前请脱敏 / Enable developer mode by tapping the version 7 times, reproduce, then export and redact logs
       placeholder: 将日志粘贴到此处或者点击文本框底栏上传日志文件。 / Paste logs here or upload logs by clicking the bar on the bottom.
     validations:
       required: false

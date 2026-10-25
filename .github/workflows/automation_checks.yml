@@ -1,0 +1,57 @@
+name: Automation checks
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/**'
+  pull_request:
+    paths:
+      - '.github/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Test automation scripts
+        run: |
+          python3 -B -m unittest discover -s .github/scripts -p 'test_*.py'
+          node --test .github/scripts/*.test.cjs
+
+      - name: Validate Issue forms and labels
+        run: ruby .github/scripts/check_issue_forms.rb
+
+      - name: Check workflow syntax
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+        run: |
+          set -euo pipefail
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          tool_dir="${RUNNER_TEMP}/actionlint"
+          mkdir -p "$tool_dir"
+          cd "$tool_dir"
+          curl --fail --silent --show-error --location --retry 2 --output "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
+          curl --fail --silent --show-error --location --retry 2 --output checksums.txt \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
+          grep "  ${archive}$" checksums.txt | sha256sum --check --strict
+          tar -xzf "$archive" actionlint
+          cd "$GITHUB_WORKSPACE"
+          "$tool_dir/actionlint" -color -shellcheck=

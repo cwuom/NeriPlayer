@@ -1009,7 +1009,8 @@ Commit 信息建议遵循 Conventional Commits，
 
 ### 沟通方式 / Communication
 
-- [Issues](https://github.com/cwuom/NeriPlayer/issues)：缺陷、功能建议、讨论
+- [Issues](https://github.com/cwuom/NeriPlayer/issues)：缺陷、功能请求与改进建议，每个 Issue 只提交一个问题
+- [Discussions Q&A](https://github.com/cwuom/NeriPlayer/discussions/categories/q-a)：使用方法、设置与兼容性咨询
 - [README.md](./README.md)：功能与使用说明
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)：社区行为准则
 

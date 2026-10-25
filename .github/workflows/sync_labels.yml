@@ -1,0 +1,32 @@
+name: Sync labels
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/labels.json'
+      - '.github/scripts/sync_labels.cjs'
+      - '.github/workflows/sync_labels.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sync-labels
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { syncLabels } = require('./.github/scripts/sync_labels.cjs');
+            await syncLabels({ github, context, core });

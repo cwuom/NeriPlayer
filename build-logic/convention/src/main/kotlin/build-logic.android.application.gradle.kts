@@ -6,7 +6,7 @@ plugins {
 
 extensions.findByType(ApplicationExtension::class)?.run {
     defaultConfig {
-        versionCode = Common.getBuildVersionCode()
+        versionCode = Common.getBuildVersionCode(providers.gradleProperty("buildTimestamp").orNull)
         versionName = Common.getBuildVersionName(project)
     }
 
