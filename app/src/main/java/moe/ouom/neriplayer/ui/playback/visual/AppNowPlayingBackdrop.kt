@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.NonRestartableComposable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
@@ -13,7 +14,10 @@ import coil.Coil
 import coil.ImageLoader
 import coil.request.CachePolicy
 import kotlinx.coroutines.flow.StateFlow
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.util.media.isRemoteImageSource
 
 internal data class NowPlayingBackdropRequest(
     val cover: NowPlayingOverlayCover,
@@ -106,6 +110,11 @@ private fun NowPlayingBlurNeighborPreloader(
     frame: NowPlayingBackdropFrame,
     effectOwner: NowPlayingBlurEffectOwner
 ) {
+    if (!frame.hasCoverBlur || !isRemoteImageSource(frame.cover.url)) {
+        val request = nowPlayingBlurPreloadRequest(frame, emptyList())
+        SideEffect { effectOwner.updatePreload(request) {} }
+        return
+    }
     val nowPlayingQueue by queueFlow.collectAsStateWithLifecycle()
     NowPlayingBlurNeighborPreloadEffect(
         NowPlayingBlurNeighborPreloadInput(nowPlayingQueue, frame, effectOwner)
@@ -124,14 +133,26 @@ private fun rememberNowPlayingBlurPreloadRequest(
     input: NowPlayingBlurNeighborPreloadInput
 ): NowPlayingBlurPreloadRequest {
     val context = LocalContext.current
-    val preloadCoverUrls = remember(input.queue, input.frame.cover, context) {
-        nowPlayingBlurNeighborUrls(
+    val neighborSongs = remember(input.queue, input.frame.cover.song, input.frame.cover.url) {
+        nowPlayingBlurNeighborSongs(
             input.queue, input.frame.cover.song, input.frame.cover.url
-        ) { song ->
-            song.resolveUiCoverSource(context)
+        )
+    }
+    val covers = neighborSongs.mapIndexed { index, song ->
+        val songKey = remember(song) { song.stableKey() }
+        key(index, songKey) {
+            val revisionFlow = remember(songKey) { LocalAssetInvalidationBus.revisionFlow(songKey) }
+            val revision by revisionFlow.collectAsStateWithLifecycle(
+                initialValue = LocalAssetInvalidationBus.currentSongRevision(songKey)
+            )
+            remember(song, input.frame.cover, revision, context) {
+                nowPlayingBlurNeighborCover(
+                    input.frame.cover, song, song.resolveUiCoverSource(context), revision
+                )
+            }
         }
     }
-    return nowPlayingBlurPreloadRequest(input.frame, preloadCoverUrls)
+    return nowPlayingBlurPreloadRequest(input.frame, covers)
 }
 
 @Composable
@@ -150,11 +171,11 @@ private fun nowPlayingBlurPreloadAction(
     context: Context,
     imageLoader: ImageLoader
 ): () -> Unit = {
-        effectOwner.updatePreload(request) { url ->
+        effectOwner.updatePreload(request) { cover ->
             imageLoader.enqueue(
                 nowPlayingBlurImageRequest(
-                    context, url, request.blurStrength, request.imageSizePx,
-                    request.assetVersion, request.offlineMode
+                    context, cover.coverUrl, cover.blurStrength, cover.imageSizePx,
+                    cover.assetVersion, request.offlineMode
                 )
                     .memoryCachePolicy(CachePolicy.ENABLED)
                     .diskCachePolicy(CachePolicy.ENABLED)

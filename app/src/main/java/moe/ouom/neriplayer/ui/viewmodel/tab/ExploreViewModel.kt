@@ -333,6 +333,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private val app = application
     private val neteaseRepo = AppContainer.neteaseCookieRepo
     private var highQualityLoadJob: Job? = null
+    private var highQualityLoadCookies: Map<String, String>? = null
     private var searchJob: Job? = null
     private var searchMoreJob: Job? = null
     private var ytMusicPlaylistsJob: Job? = null
@@ -677,10 +678,20 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     fun loadHighQuality(cat: String? = null) {
         val currentState = _uiState.value
         val realCat = cat ?: currentState.selectedTag
+        val cookies = neteaseRepo.getCookiesOnce()
+        if (
+            highQualityLoadJob?.isActive == true &&
+            currentState.loading &&
+            currentState.selectedTag == realCat &&
+            highQualityLoadCookies == cookies
+        ) {
+            return
+        }
         val previousTag = currentState.selectedTag
         val previousPlaylists = currentState.playlists
 
         highQualityLoadJob?.cancel()
+        highQualityLoadCookies = cookies.toMap()
         _uiState.value = currentState.copy(
             loading = true,
             error = null,

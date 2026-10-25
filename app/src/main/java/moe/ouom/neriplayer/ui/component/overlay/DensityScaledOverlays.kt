@@ -22,6 +22,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,6 +40,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 
 internal val LocalOverlaySurfaceScale = compositionLocalOf { 1f }
 
@@ -154,6 +156,8 @@ internal fun DensityScaledModalBottomSheet(
     val dragHandleInteractionSource = remember { MutableInteractionSource() }
 
     val backBridge = remember { SheetNavigationEventBridge() }
+    val previewEnabled = LocalPredictiveBackPreviewEnabled.current
+    SideEffect { backBridge.previewEnabled = previewEnabled }
     DisposableEffect(backBridge) { onDispose(backBridge::dispose) }
 
     CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides backBridge) {

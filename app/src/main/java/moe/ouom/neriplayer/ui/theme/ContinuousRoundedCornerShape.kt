@@ -26,8 +26,13 @@ internal const val CONTINUOUS_CORNER_EXTENSION = 1.1f
 
 /** Cubic handle ratio of the miuix squircle curve. */
 private const val CONTINUOUS_CORNER_CONTROL = 0.643f
+private const val CIRCULAR_CORNER_CONTROL = 0.55228475f
 
 private const val MAX_GENERIC_CLIP_AXIS_PX = 8192f
+
+internal fun supportsContinuousCornerOutline(width: Float, height: Float): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+        width < MAX_GENERIC_CLIP_AXIS_PX && height < MAX_GENERIC_CLIP_AXIS_PX
 
 class ContinuousRoundedCornerShape(
     topStart: CornerSize,
@@ -68,9 +73,7 @@ class ContinuousRoundedCornerShape(
         val bottomLeft = if (ltr) bottomStart else bottomEnd
         // Compose probes generic outlines with a 0.01px path that Skia discards at large coordinates
         // analytic rounded outlines keep controls near the end of long cards hittable
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
-            size.width >= MAX_GENERIC_CLIP_AXIS_PX || size.height >= MAX_GENERIC_CLIP_AXIS_PX
-        ) {
+        if (!supportsContinuousCornerOutline(size.width, size.height)) {
             return Outline.Rounded(
                 RoundRect(
                     rect = size.toRect(),
@@ -144,7 +147,8 @@ internal fun Path.addContinuousRoundRect(
     topRight: Float,
     bottomRight: Float,
     bottomLeft: Float,
-    extension: Float = CONTINUOUS_CORNER_EXTENSION
+    extension: Float = CONTINUOUS_CORNER_EXTENSION,
+    control: Float = CONTINUOUS_CORNER_CONTROL
 ) {
     if (width <= 0f || height <= 0f) return
     val halfMin = min(width, height) * 0.5f
@@ -154,7 +158,7 @@ internal fun Path.addContinuousRoundRect(
     val tr = tile(topRight)
     val br = tile(bottomRight)
     val bl = tile(bottomLeft)
-    val handle = 1f - CONTINUOUS_CORNER_CONTROL
+    val handle = 1f - control
     moveTo(tl, 0f)
     lineTo(width - tr, 0f)
     cubicTo(width - tr * handle, 0f, width, tr * handle, width, tr)
@@ -165,4 +169,23 @@ internal fun Path.addContinuousRoundRect(
     lineTo(0f, tl)
     cubicTo(0f, tl * handle, tl * handle, 0f, tl, 0f)
     close()
+}
+
+internal fun Path.addSmoothedRoundRect(
+    width: Float,
+    height: Float,
+    cornerPx: Float,
+    smoothing: Float
+) {
+    val fraction = smoothing.coerceIn(0f, 1f)
+    when (fraction) {
+        0f -> addRoundRect(RoundRect(Size(width, height).toRect(), CornerRadius(cornerPx)))
+        1f -> addContinuousRoundRect(width, height, cornerPx, cornerPx, cornerPx, cornerPx)
+        else -> addContinuousRoundRect(
+            width, height, cornerPx, cornerPx, cornerPx, cornerPx,
+            extension = 1f + (CONTINUOUS_CORNER_EXTENSION - 1f) * fraction,
+            control = CIRCULAR_CORNER_CONTROL +
+                (CONTINUOUS_CORNER_CONTROL - CIRCULAR_CORNER_CONTROL) * fraction
+        )
+    }
 }

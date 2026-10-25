@@ -130,6 +130,18 @@ android {
                 "proguard-rules.pro"
             )
         }
+
+        if (providers.gradleProperty("enablePerformanceBenchmark").orNull == "true") {
+            create("benchmark") {
+                initWith(getByName("release"))
+                applicationIdSuffix = ".benchmark"
+                signingConfig = signingConfigs.getByName("debug")
+                matchingFallbacks += "release"
+                val inviteScheme = "neriplayer-benchmark"
+                manifestPlaceholders["listenTogetherInviteScheme"] = inviteScheme
+                buildConfigField("String", "LISTEN_TOGETHER_INVITE_SCHEME", "\"$inviteScheme\"")
+            }
+        }
     }
     buildFeatures {
         buildConfig = true

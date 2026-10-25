@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayCover
 import moe.ouom.neriplayer.ui.playback.visual.currentNowPlayingBlurCoverUrl
 import moe.ouom.neriplayer.ui.playback.visual.hasNowPlayingCoverBlur
 import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurAssetVersion
-import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurNeighborUrls
+import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurNeighborSongs
 import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurRequestKey
 import moe.ouom.neriplayer.ui.playback.visual.resolveNowPlayingBlurLoadFailure
 import moe.ouom.neriplayer.ui.playback.visual.selectNowPlayingAccentCoverUrl
@@ -45,26 +45,25 @@ class NowPlayingBlurPolicyTest {
     @Test
     fun `neighbor prefetch follows queue identity only for remote current covers`() {
         val queue = listOf(song(1), song(2), song(3))
-        val resolve: (SongItem) -> String? = { "cover-${it.id}" }
         assertEquals(
-            listOf("cover-1", "cover-3"),
-            nowPlayingBlurNeighborUrls(queue, song(2), "https://example.com/cover", resolve)
+            listOf(song(1), song(3)),
+            nowPlayingBlurNeighborSongs(queue, song(2), "https://example.com/cover")
         )
         assertEquals(
-            listOf("cover-2"),
-            nowPlayingBlurNeighborUrls(queue, song(1), "https://example.com/cover", resolve)
+            listOf(song(2)),
+            nowPlayingBlurNeighborSongs(queue, song(1), "https://example.com/cover")
         )
         assertEquals(
-            emptyList<String>(),
-            nowPlayingBlurNeighborUrls(queue, song(2), "content://cover", resolve)
+            emptyList<SongItem>(),
+            nowPlayingBlurNeighborSongs(queue, song(2), "content://cover")
         )
         assertEquals(
-            emptyList<String>(),
-            nowPlayingBlurNeighborUrls(queue, null, "https://example.com/cover", resolve)
+            emptyList<SongItem>(),
+            nowPlayingBlurNeighborSongs(queue, null, "https://example.com/cover")
         )
         assertEquals(
-            emptyList<String>(),
-            nowPlayingBlurNeighborUrls(queue, song(4), "https://example.com/cover", resolve)
+            emptyList<SongItem>(),
+            nowPlayingBlurNeighborSongs(queue, song(4), "https://example.com/cover")
         )
     }
 

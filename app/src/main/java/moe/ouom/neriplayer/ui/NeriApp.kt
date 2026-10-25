@@ -194,6 +194,7 @@ import moe.ouom.neriplayer.ui.navigation.shouldAcceptObservedMainTabRoute
 import moe.ouom.neriplayer.ui.navigation.shouldDispatchMainTabNavigation
 import moe.ouom.neriplayer.ui.navigation.shouldUseAdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.playback.visual.AppNowPlayingOverlay
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingCoverAssetRefresh
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayBackground
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayCover
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
@@ -598,15 +599,14 @@ private fun NeriAppContent(
             }
         })
     }
-    val coverAssetRefreshKey = remember(
+    val coverAssetRefresh = remember(
         coverArtRefreshToken,
-        coverAssetRootGeneration,
-        coverAssetSongRevision
+        coverAssetRootGeneration
     ) {
-        var result = coverArtRefreshToken
-        result = 31 * result + coverAssetRootGeneration.hashCode()
-        result = 31 * result + coverAssetSongRevision.hashCode()
-        result
+        NowPlayingCoverAssetRefresh(coverArtRefreshToken, coverAssetRootGeneration)
+    }
+    val coverAssetRefreshKey = remember(coverAssetRefresh, coverAssetSongRevision) {
+        coverAssetRefresh.key(coverAssetSongRevision)
     }
     val scope = rememberCoroutineScope()
     var pendingTrafficRiskDownloadRequest by remember {
@@ -1194,7 +1194,7 @@ private fun NeriAppContent(
             var mainTabDetailContentHeightPx by remember {
                 mutableIntStateOf(0)
             }
-            val mainTabBackgroundProgress by animateFloatAsState(
+            val mainTabBackgroundProgress = animateFloatAsState(
                 targetValue = mainTabMotionTarget.targetProgress,
                 animationSpec = tween(
                     durationMillis = resolveMainTabBackgroundMotionDurationMillis(
@@ -1206,10 +1206,17 @@ private fun NeriAppContent(
                 ),
                 label = "main_tab_detail_content_handoff"
             )
-            val mainTabNavigationMotion = resolveMainTabNavigationMotionState(
-                backgroundMotion = mainTabMotionTarget.backgroundMotion,
-                progress = mainTabBackgroundProgress
-            )
+            val mainTabNavigationMotion = remember(
+                mainTabMotionTarget.backgroundMotion,
+                mainTabBackgroundProgress
+            ) {
+                {
+                    resolveMainTabNavigationMotionState(
+                        backgroundMotion = mainTabMotionTarget.backgroundMotion,
+                        progress = mainTabBackgroundProgress.value
+                    )
+                }
+            }
             val effectiveStartDestination = remember(
                 currentDefaultStartDestination,
                 showHomeTab,
@@ -1671,7 +1678,15 @@ private fun NeriAppContent(
                         navHostStartDestination = navHostStartDestination
                     )
 
-                    Box(Modifier.fillMaxSize().nowPlayingBackdropRecede(sharedCoverFlight)) {
+                    Box(
+                        Modifier.fillMaxSize()
+                            .nowPlayingBackdropRecede(sharedCoverFlight)
+                            .drawNowPlayingUnderlay(
+                                flight = sharedCoverFlight,
+                                playbackVisible = { showNowPlaying },
+                                backProgress = { nowPlayingDismissState.progress }
+                            )
+                    ) {
                     AppNavigationScaffold(
                         bottomBar = AppBottomBarPresentation(
                             items = bottomBarItems,
@@ -1760,16 +1775,17 @@ private fun NeriAppContent(
                                         IntOffset(
                                             x = 0,
                                             y = (
-                                                    mainTabNavigationMotion.tabLayerTransform
+                                                    mainTabNavigationMotion().tabLayerTransform
                                                         .translationYFraction *
                                                             mainTabDetailContentHeightPx
                                                     ).roundToInt()
                                         )
                                     }
                                     .graphicsLayer {
-                                        scaleX = mainTabNavigationMotion.tabLayerTransform.scale
-                                        scaleY = mainTabNavigationMotion.tabLayerTransform.scale
-                                        alpha = mainTabNavigationMotion.tabLayerTransform.alpha
+                                        val tabLayerTransform = mainTabNavigationMotion().tabLayerTransform
+                                        scaleX = tabLayerTransform.scale
+                                        scaleY = tabLayerTransform.scale
+                                        alpha = tabLayerTransform.alpha
                                         transformOrigin = TransformOrigin.Center
                                     }
                                     .zIndex(MAIN_TAB_LAYER_Z_INDEX),
@@ -1790,7 +1806,8 @@ private fun NeriAppContent(
                             url = playbackVisualCoverUrl,
                             songKey = currentSongVisualKey,
                             song = currentSong,
-                            assetRefreshKey = coverAssetRefreshKey
+                            assetRefreshKey = coverAssetRefreshKey,
+                            assetRefresh = coverAssetRefresh
                         ),
                         queueFlow = PlayerManager.currentQueueFlow,
                         theme = NowPlayingOverlayTheme(

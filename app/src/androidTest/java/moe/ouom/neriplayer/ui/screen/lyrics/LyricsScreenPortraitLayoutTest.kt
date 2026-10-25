@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalConfiguration
@@ -98,6 +99,67 @@ class LyricsScreenPortraitLayoutTest {
             "lyricsScreenControlPanel", "lyricsScreenActionToolbar"
         ).forEach { assertCenteredWidth(it, 320.dp) }
         assertOrderedPanels()
+    }
+
+    @Test
+    fun cancellingLargeRightDragKeepsTheLyricsPage() {
+        render(360.dp, 800.dp, smallestScreenWidth = 360)
+        val readingPane = composeRule.onNodeWithTag("lyricsScreenReadingPane")
+        readingPane.performTouchInput {
+            down(Offset(width * 0.2f, height * 0.8f))
+            moveBy(Offset(40f, 0f))
+            moveBy(Offset(100f, 0f))
+        }
+        val beforeCancel = composeRule.runOnIdle { navigatedBack }
+
+        readingPane.performTouchInput { cancel() }
+
+        composeRule.runOnIdle {
+            assertEquals("手指未抬起时不能提前返回", 0, beforeCancel)
+            assertEquals("取消拖动必须保留歌词页", 0, navigatedBack)
+        }
+    }
+
+    @Test
+    fun smallRightDragStepsNavigateOnceOnlyAfterRelease() {
+        render(360.dp, 800.dp, smallestScreenWidth = 360)
+        val readingPane = composeRule.onNodeWithTag("lyricsScreenReadingPane")
+        readingPane.performTouchInput {
+            down(Offset(width * 0.2f, height * 0.8f))
+            repeat(10) { moveBy(Offset(16f, 0f)) }
+        }
+        composeRule.runOnIdle { assertEquals("累计右滑仍需等待抬起", 0, navigatedBack) }
+
+        readingPane.performTouchInput { up() }
+
+        composeRule.runOnIdle { assertEquals("完成右滑只返回一次", 1, navigatedBack) }
+    }
+
+    @Test
+    fun returningTheDragToItsOriginDoesNotNavigateOnRelease() {
+        render(360.dp, 800.dp, smallestScreenWidth = 360)
+
+        composeRule.onNodeWithTag("lyricsScreenReadingPane").performTouchInput {
+            down(Offset(width * 0.2f, height * 0.8f))
+            repeat(10) { moveBy(Offset(16f, 0f)) }
+            repeat(10) { moveBy(Offset(-16f, 0f)) }
+            up()
+        }
+
+        composeRule.runOnIdle { assertEquals("回拖原点后抬起必须保留歌词页", 0, navigatedBack) }
+    }
+
+    @Test
+    fun leftDragDoesNotNavigateBack() {
+        render(360.dp, 800.dp, smallestScreenWidth = 360)
+
+        composeRule.onNodeWithTag("lyricsScreenReadingPane").performTouchInput {
+            down(Offset(width * 0.8f, height * 0.8f))
+            repeat(10) { moveBy(Offset(-16f, 0f)) }
+            up()
+        }
+
+        composeRule.runOnIdle { assertEquals("左滑不能触发返回", 0, navigatedBack) }
     }
 
     private fun render(width: Dp, height: Dp, smallestScreenWidth: Int, fontScale: Float = 1f) {

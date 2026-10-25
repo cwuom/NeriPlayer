@@ -943,7 +943,9 @@ class LocalPlaylistHeaderScrollRegressionTest {
             coherentFeedbackEnabled = false,
             currentRoute = Destinations.Library.route,
             visibleNavigationRoutes = setOf(Destinations.Library.route),
-            mainTabNavigationMotion = resolveMainTabNavigationMotionState(MainTabBackgroundMotion.NONE, 0f)
+            mainTabNavigationMotion = {
+                resolveMainTabNavigationMotionState(MainTabBackgroundMotion.NONE, 0f)
+            }
         )
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
             transition.AnimatedContent(

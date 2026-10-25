@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.component.common
 import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -10,6 +11,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,13 +25,16 @@ class PredictiveBackDismissTest {
 
     private val state = PredictiveDismissState()
     private var enabled by mutableStateOf(true)
+    private var previewEnabled by mutableStateOf(true)
     private var dismissals = 0
 
     private val dispatcher get() = composeRule.activity.onBackPressedDispatcher
 
     private fun setHandler() {
         composeRule.setContent {
-            PredictiveDismissHandler(state = state, enabled = enabled) { dismissals++ }
+            CompositionLocalProvider(LocalPredictiveBackPreviewEnabled provides previewEnabled) {
+                PredictiveDismissHandler(state = state, enabled = enabled) { dismissals++ }
+            }
         }
         composeRule.waitForIdle()
     }
@@ -113,6 +119,35 @@ class PredictiveBackDismissTest {
         enabled = true
         composeRule.waitForIdle()
         composeRule.runOnIdle { assertTrue(dispatcher.hasEnabledCallbacks()) }
+    }
+
+    @Test
+    fun `disabled preview keeps the surface unchanged and dismisses only on release`() {
+        previewEnabled = false
+        setHandler()
+        startGesture(0.7f)
+
+        assertEquals(0f, state.progress, 0f)
+        assertFalse(state.revealsUnderlying)
+        assertEquals(0, dismissals)
+
+        composeRule.runOnIdle { dispatcher.onBackPressed() }
+        composeRule.waitForIdle()
+        assertEquals(1, dismissals)
+        assertEquals(0f, state.progress, 0f)
+    }
+
+    @Test
+    fun `disabled preview cancellation keeps the surface open without a settling job`() {
+        previewEnabled = false
+        setHandler()
+        startGesture(0.6f)
+        composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
+        composeRule.waitForIdle()
+
+        assertEquals(0, dismissals)
+        assertEquals(0f, state.progress, 0f)
+        assertNull(state.settleJob)
     }
 
     @Test

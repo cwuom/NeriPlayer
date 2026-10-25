@@ -185,6 +185,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.ui.component.playback.SleepTimerDialog
+import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsBoundsTransform
+import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsEnterTransition
+import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsExitTransition
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedTransitionElement
 import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsFontSettings
 import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsLyricContent
@@ -199,8 +202,13 @@ import moe.ouom.neriplayer.ui.screen.playback.shouldReleaseLyricSeekPreview
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsToolbarDescription
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsToolbarIcon
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingLyricsCoverFlight
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsCoverFlightEndpoint
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsCoverFlightRow
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingLyricsToolbarAction
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
+
+private const val LyricsSwipeBackThresholdPx = 50f
 
 internal data class LyricsTabletPortraitWidths(
     val header: Dp,
@@ -252,9 +260,12 @@ fun LyricsScreen(
     animatedContentScope: AnimatedContentScope? = null,
     offlineMode: Boolean = false,
     lyricsAdjustBehavior: Boolean = false,
+    coverArtwork: (@Composable (Modifier) -> Unit)? = null,
+    coverFlight: NowPlayingLyricsCoverFlight? = null,
 ) {
     val lyricFontScale = lyricFontScales.lyricsPageLyric
     val translationFontScale = lyricFontScales.lyricsPageTranslation
+    val latestOnNavigateBack by rememberUpdatedState(onNavigateBack)
 
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val settingsRepo = remember { AppContainer.settingsRepo }
@@ -409,13 +420,13 @@ fun LyricsScreen(
     }
 
     // 封面动画
-    val coverScale by animateFloatAsState(
+    val coverScale = animateFloatAsState(
         targetValue = if (isLyricsMode) 0.6f else 1f,
         animationSpec = spring(dampingRatio = 0.8f),
         label = "cover_scale"
     )
     // 垂直偏移控制在标题栏内 (约-8dp) , 避免飞出界面
-    val coverOffsetY by animateFloatAsState(
+    val coverOffsetY = animateFloatAsState(
         targetValue = if (isLyricsMode) -8f else 0f,
         animationSpec = spring(dampingRatio = 0.8f),
         label = "cover_offset_y"
@@ -432,12 +443,18 @@ fun LyricsScreen(
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .pointerInput(Unit) {
-                    detectHorizontalDragGestures { _, dragAmount ->
-                        // 右滑返回
-                        if (dragAmount > 50) {
-                            onNavigateBack()
-                        }
-                    }
+                    var horizontalDragPx = 0f
+                    // 手势可能被系统接管或回拖，等抬手后再提交返回
+                    detectHorizontalDragGestures(
+                        onDragStart = { horizontalDragPx = 0f },
+                        onDragCancel = { horizontalDragPx = 0f },
+                        onDragEnd = {
+                            val shouldNavigateBack = horizontalDragPx > LyricsSwipeBackThresholdPx
+                            horizontalDragPx = 0f
+                            if (shouldNavigateBack) latestOnNavigateBack()
+                        },
+                        onHorizontalDrag = { _, dragAmount -> horizontalDragPx += dragAmount }
+                    )
                 }
                 .padding(horizontal = horizontalPadding, vertical = verticalPadding)
                 .testTag("lyricsScreenContent"),
@@ -450,6 +467,11 @@ fun LyricsScreen(
                 .fillMaxWidth(contentWidthFraction)
                 .widthIn(max = 1320.dp)
                 .height(lyricsTopBarHeight)
+                .then(
+                    if (coverFlight != null) {
+                        Modifier.nowPlayingLyricsCoverFlightRow(coverFlight)
+                    } else Modifier
+                )
                 .testTag("lyricsScreenHeader"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start
@@ -465,6 +487,7 @@ fun LyricsScreen(
                                     rememberSharedContentState(
                                         key = NowPlayingLyricsSharedTransitionElement.BACK.key
                                     ),
+                                    boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                                     animatedVisibilityScope = animatedContentScope,
                                     enter = EnterTransition.None,
                                     exit = ExitTransition.None
@@ -485,23 +508,31 @@ fun LyricsScreen(
             // 封面 - 紧邻返回键, 缩小时约48dp
             Box(
                 modifier = Modifier
-                    .size((64 * coverScale).dp)
+                    .size((64 * coverScale.value).dp)
                     .then(
-                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                        if (coverFlight != null) {
+                            Modifier.nowPlayingLyricsCoverFlightEndpoint(
+                                coverFlight, coverScale, coverOffsetY
+                            )
+                        } else if (sharedTransitionScope != null && animatedContentScope != null) {
                             with(sharedTransitionScope) {
                                 Modifier.sharedElement(
                                     rememberSharedContentState(
                                         key = NowPlayingLyricsSharedTransitionElement.COVER.key
                                     ),
+                                    boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                                     animatedVisibilityScope = animatedContentScope
                                 )
                             }
                         } else Modifier
                     )
-                    .graphicsLayer { translationY = coverOffsetY }
+                    .graphicsLayer { translationY = coverOffsetY.value }
                     .clip(RoundedCornerShape(10.dp))
             ) {
-                currentCoverUrl?.let { cover ->
+                if (coverArtwork != null) {
+                    // 两端共用已解码封面，避免共享层接管时等待新的图片请求
+                    coverArtwork(Modifier.fillMaxSize())
+                } else currentCoverUrl?.let { cover ->
                     AsyncImage(
                         model = remember(context, cover, offlineMode) {
                             offlineCachedImageRequest(
@@ -572,6 +603,7 @@ fun LyricsScreen(
                                             rememberSharedContentState(
                                                 key = NowPlayingLyricsSharedTransitionElement.ARTIST.key
                                             ),
+                                            boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                                             animatedVisibilityScope = animatedContentScope
                                         )
                                     }
@@ -642,6 +674,7 @@ fun LyricsScreen(
                             with(sharedTransitionScope) {
                                 Modifier.sharedElement(
                                     rememberSharedContentState(key = "btn_favorite"),
+                                    boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                                     animatedVisibilityScope = animatedContentScope
                                 ).zIndex(1f)
                             }
@@ -672,6 +705,7 @@ fun LyricsScreen(
                             with(sharedTransitionScope) {
                                 Modifier.sharedBounds(
                                     rememberSharedContentState(key = "btn_more"),
+                                    boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                                     animatedVisibilityScope = animatedContentScope,
                                     enter = EnterTransition.None,
                                     exit = ExitTransition.None,
@@ -917,7 +951,10 @@ fun LyricsScreen(
                                     rememberSharedContentState(
                                         key = NowPlayingLyricsSharedTransitionElement.PROGRESS.key
                                     ),
-                                    animatedVisibilityScope = animatedContentScope
+                                    boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
+                                    animatedVisibilityScope = animatedContentScope,
+                                    enter = LocalNowPlayingLyricsEnterTransition.current,
+                                    exit = LocalNowPlayingLyricsExitTransition.current
                                 ).zIndex(1f)
                             }
                         } else Modifier
@@ -941,6 +978,7 @@ fun LyricsScreen(
                                     rememberSharedContentState(
                                         key = NowPlayingLyricsSharedTransitionElement.PREVIOUS.key
                                     ),
+                                    boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                                     animatedVisibilityScope = animatedContentScope
                                 )
                             }
@@ -966,6 +1004,7 @@ fun LyricsScreen(
                                         rememberSharedContentState(
                                             key = NowPlayingLyricsSharedTransitionElement.PLAY.key
                                         ),
+                                        boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                                         animatedVisibilityScope = animatedContentScope
                                     )
                                 }
@@ -995,6 +1034,7 @@ fun LyricsScreen(
                                         rememberSharedContentState(
                                             key = NowPlayingLyricsSharedTransitionElement.NEXT.key
                                         ),
+                                        boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                                         animatedVisibilityScope = animatedContentScope
                                     )
                                 }
@@ -1066,6 +1106,7 @@ fun LyricsScreen(
                     with(sharedTransitionScope) {
                         Modifier.sharedBounds(
                             rememberSharedContentState(key = "btn_queue"),
+                            boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                             animatedVisibilityScope = animatedContentScope,
                             enter = EnterTransition.None,
                             exit = ExitTransition.None,
@@ -1089,6 +1130,7 @@ fun LyricsScreen(
                         with(sharedTransitionScope) {
                             Modifier.sharedBounds(
                                 rememberSharedContentState(key = "btn_timer"),
+                                boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                                 animatedVisibilityScope = animatedContentScope,
                                 enter = EnterTransition.None,
                                 exit = ExitTransition.None,
@@ -1122,6 +1164,7 @@ fun LyricsScreen(
                         with(sharedTransitionScope) {
                             Modifier.sharedBounds(
                                 rememberSharedContentState(key = "btn_volume"),
+                                boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                                 animatedVisibilityScope = animatedContentScope,
                                 enter = EnterTransition.None,
                                 exit = ExitTransition.None,
@@ -1152,6 +1195,7 @@ fun LyricsScreen(
                     with(sharedTransitionScope) {
                         Modifier.sharedBounds(
                             rememberSharedContentState(key = "btn_lyrics"),
+                            boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                             animatedVisibilityScope = animatedContentScope,
                             enter = EnterTransition.None,
                             exit = ExitTransition.None,
@@ -1188,6 +1232,7 @@ fun LyricsScreen(
                     with(sharedTransitionScope) {
                         Modifier.sharedBounds(
                             rememberSharedContentState(key = "btn_add"),
+                            boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                             animatedVisibilityScope = animatedContentScope,
                             enter = EnterTransition.None,
                             exit = ExitTransition.None,
