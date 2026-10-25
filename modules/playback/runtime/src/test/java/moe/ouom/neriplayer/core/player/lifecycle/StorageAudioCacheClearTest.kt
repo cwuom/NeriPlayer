@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.spy
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -27,6 +28,61 @@ import org.robolectric.annotation.Config
 @Config(sdk = [28])
 class StorageAudioCacheClearTest {
     @get:Rule val temporary = TemporaryFolder()
+
+    @Test
+    fun `audio estimate follows recent song retention without removing cache spans`() = withCache { cache ->
+        store(cache, "netease-12-exhigh", 7)
+        store(cache, "netease-12-lossless", 11)
+        store(cache, "netease-13-exhigh", 13)
+        store(cache, "netease-14-exhigh", 17)
+        val recent = listOf(song(12), song(12), song(13))
+        val keys = cache.keys.toSet()
+
+        assertEquals(48L, estimateAudioStorageCache(cache, emptyList(), emptySet(), false))
+        assertEquals(30L, estimateAudioStorageCache(cache, selectRetainedCacheSongs(recent, 1), emptySet(), true))
+        assertEquals(17L, estimateAudioStorageCache(cache, selectRetainedCacheSongs(recent, 2), emptySet(), true))
+        assertEquals(keys, cache.keys)
+        assertEquals(48L, cache.cacheSpace)
+    }
+
+    @Test
+    fun `audio estimate protects current resources and unmapped legacy data`() = withCache { cache ->
+        store(cache, "playing", 7)
+        store(cache, "legacy-unknown", 11)
+        store(cache, "bili-auto-legacy-9-high", 13)
+        store(cache, "bili-auto-known-9-high", 17)
+        cache.recordStorageCacheOwner("bili-auto-known-9-high", song(14))
+
+        assertEquals(41L, estimateAudioStorageCache(cache, emptyList(), setOf("playing"), false))
+        assertEquals(17L, estimateAudioStorageCache(cache, listOf(song(12)), setOf("playing"), true))
+        assertEquals(4, cache.keys.size)
+    }
+
+    @Test
+    fun `audio estimate is unavailable when span inspection fails`() = withCache { cache ->
+        store(cache, "netease-12-exhigh", 7)
+        val observed = spy(cache)
+        doAnswer { throw java.io.IOException("cannot inspect cache") }
+            .`when`(observed).getCachedSpans("netease-12-exhigh")
+
+        assertNull(estimateAudioStorageCache(observed, emptyList(), emptySet(), false))
+        assertEquals(7L, cache.cacheSpace)
+    }
+
+    @Test
+    fun `audio estimate propagates cancellation without removing resources`() = withCache { cache ->
+        store(cache, "netease-12-exhigh", 7)
+        val observed = spy(cache)
+        doAnswer { throw CancellationException("cancel estimate") }
+            .`when`(observed).getCachedSpans("netease-12-exhigh")
+
+        val failure = runCatching {
+            estimateAudioStorageCache(observed, emptyList(), emptySet(), false)
+        }.exceptionOrNull()
+
+        assertTrue(failure is CancellationException)
+        assertEquals(7L, cache.cacheSpace)
+    }
 
     @Test
     fun `all qualities of retained song survive while other songs are removed`() = withCache { cache ->

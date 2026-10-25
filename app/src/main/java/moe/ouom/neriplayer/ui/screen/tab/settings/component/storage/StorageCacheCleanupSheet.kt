@@ -6,11 +6,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -22,20 +21,22 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.format.formatFileSize
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
 import moe.ouom.neriplayer.data.model.storage.StorageCacheKind
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
@@ -43,11 +44,8 @@ import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsCheckbox
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
-
-internal fun parseRetainRecentSongs(value: String): Int? =
-    value.takeIf { it.isNotEmpty() && it.all { char -> char in '0'..'9' } }?.toIntOrNull()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,9 +59,20 @@ internal fun StorageCacheCleanupSheet(
     onClear: (StorageCacheClearOptions) -> Unit,
     onDismiss: () -> Unit,
     scanFailed: Boolean = false,
-    onRetryScan: () -> Unit = {}
+    onRetryScan: () -> Unit = {},
+    estimateCacheClear: suspend (Int) -> PlayerCacheClearEstimate = { PlayerCacheClearEstimate(null, null) }
 ) {
     val clearing by rememberUpdatedState(isClearing)
+    val estimateLoader by rememberUpdatedState(estimateCacheClear)
+    val count = snapRetainedCacheSongs(options.retainRecentSongs.toFloat())
+    val request = remember(count, storageDetails) { StorageCacheEstimateRequest(count, storageDetails) }
+    val estimateState = remember { StorageCacheEstimateState() }
+    LaunchedEffect(request, isScanning, hasScanned, isClearing, scanFailed) {
+        estimateState.reset()
+        if (!isScanning && hasScanned && !isClearing && !scanFailed) {
+            estimateState.update(request, estimateLoader)
+        }
+    }
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
         confirmValueChange = { it != SheetValue.Hidden || !clearing }
@@ -75,7 +84,9 @@ internal fun StorageCacheCleanupSheet(
     ) {
         StorageCacheCleanupContent(
             storageDetails, isScanning, hasScanned, isClearing, options,
-            onOptionsChange, onClear, onDismiss, scanFailed, onRetryScan
+            onOptionsChange, onClear, onDismiss, scanFailed, onRetryScan,
+            estimate = estimateState.estimateFor(request),
+            isEstimating = estimateState.isPending(request)
         )
     }
 }
@@ -91,28 +102,27 @@ internal fun StorageCacheCleanupContent(
     onClear: (StorageCacheClearOptions) -> Unit,
     onDismiss: () -> Unit,
     scanFailed: Boolean = false,
-    onRetryScan: () -> Unit = {}
+    onRetryScan: () -> Unit = {},
+    estimate: PlayerCacheClearEstimate? = null,
+    isEstimating: Boolean = false
 ) {
-    var retentionInput by rememberSaveable { mutableStateOf(options.retainRecentSongs.toString()) }
-    LaunchedEffect(options.retainRecentSongs) {
-        if (parseRetainRecentSongs(retentionInput) != options.retainRecentSongs) {
-            retentionInput = options.retainRecentSongs.toString()
-        }
-    }
-    val retainedCount = parseRetainRecentSongs(retentionInput)
+    val retainedCount = snapRetainedCacheSongs(options.retainRecentSongs.toFloat())
     val waitingForScan = isScanning || !hasScanned
     val enabled = !waitingForScan && !isClearing && !scanFailed
     val selectedOptions = options.copy(
-        retainRecentSongs = retainedCount ?: options.retainRecentSongs
+        retainRecentSongs = retainedCount
     )
     val choices = cleanupChoices(selectedOptions)
     val (mediaChoices, otherChoices) = choices.partition {
         it.kind == StorageCacheKind.Audio || it.kind == StorageCacheKind.Image
     }
     val allSelected = choices.all { it.checked }
-    val selectedSize = choices.filter { it.checked }.sumOf { storageDetails.sizeOf(it.kind) }
+    val visibleEstimate = estimate.takeUnless { isEstimating }
+    val sizes = choices.associate { it.kind to estimatedCacheBytes(it.kind, storageDetails, visibleEstimate) }
+    val totalSize = sizes.values.sumKnownCacheBytes()
+    val selectedSize = choices.filter { it.checked }.map { sizes.getValue(it.kind) }.sumKnownCacheBytes()
 
-    Column(Modifier.fillMaxWidth().heightIn(max = 720.dp).imePadding()) {
+    Column(Modifier.fillMaxWidth().heightIn(max = 720.dp)) {
         Column(
             modifier = Modifier.weight(1f, fill = false)
                 .verticalScroll(rememberScrollState())
@@ -130,7 +140,7 @@ internal fun StorageCacheCleanupContent(
                     Text(
                         if (scanFailed) stringResource(CoreCommonR.string.storage_scan_failed)
                         else if (waitingForScan) stringResource(CoreCommonR.string.storage_scan_title)
-                        else stringResource(CoreCommonR.string.storage_cleanable_total),
+                        else stringResource(CoreCommonR.string.storage_cleanup_estimated_total),
                         style = MaterialTheme.typography.labelLarge,
                         color = if (scanFailed) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.onSurfaceVariant
@@ -147,19 +157,23 @@ internal fun StorageCacheCleanupContent(
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         Text(stringResource(CoreCommonR.string.storage_cleanup_waiting_scan), style = MaterialTheme.typography.bodySmall)
                     } else {
-                        Text(
-                            formatFileSize(storageDetails.cleanableSizeBytes),
+                        AnimatedCacheEstimateText(
+                            totalSize?.let(::formatFileSize)
+                                ?: stringResource(CoreCommonR.string.storage_cleanup_size_unavailable),
+                            modifier = Modifier.fillMaxWidth().testTag("cache_estimate_total"),
                             style = MaterialTheme.typography.headlineMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            stringResource(CoreCommonR.string.storage_cleanup_selected_size, formatFileSize(selectedSize)),
-                            style = MaterialTheme.typography.bodyMedium
+                        AnimatedCacheEstimateText(
+                            stringResource(CoreCommonR.string.storage_cleanup_selected_size,
+                                selectedSize?.let(::formatFileSize)
+                                    ?: stringResource(CoreCommonR.string.storage_cleanup_size_unavailable)),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.fillMaxWidth().testTag("cache_estimate_selected")
                         )
-                        Text(
-                            stringResource(CoreCommonR.string.storage_cleanup_size_notice),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        StorageCacheEstimateNotice(
+                            isEstimating = isEstimating,
+                            isUnavailable = estimate?.audioBytes == null || estimate.imageBytes == null
                         )
                     }
                 }
@@ -190,30 +204,39 @@ internal fun StorageCacheCleanupContent(
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(CoreCommonR.string.storage_cleanup_media_group), style = MaterialTheme.typography.titleSmall)
                     mediaChoices.forEach { choice ->
-                        CacheCleanupChoiceRow(choice, storageDetails, waitingForScan || scanFailed, enabled) {
+                        CacheCleanupChoiceRow(
+                            choice, sizes.getValue(choice.kind), waitingForScan || scanFailed, enabled,
+                            occupiedBytes = storageDetails.sizeOf(choice.kind)
+                        ) {
                             onOptionsChange(choice.withChecked(selectedOptions, it))
                         }
                     }
                     HorizontalDivider()
-                    MiuixSettingsTextField(
-                        value = retentionInput,
-                        onValueChange = { input ->
-                            retentionInput = input
-                            parseRetainRecentSongs(input)?.let { count ->
-                                onOptionsChange(options.copy(retainRecentSongs = count))
-                            }
+                    val retentionLabel = stringResource(CoreCommonR.string.storage_cleanup_retain_label)
+                    val retentionCount = stringResource(CoreCommonR.string.storage_cleanup_retain_count, retainedCount)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(retentionLabel, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Text(retentionCount, style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    MiuixSettingsSlider(
+                        value = retainedCount.toFloat(),
+                        onValueChange = { value ->
+                            onOptionsChange(selectedOptions.copy(retainRecentSongs = snapRetainedCacheSongs(value)))
                         },
                         enabled = enabled,
-                        singleLine = true,
-                        label = { Text(stringResource(CoreCommonR.string.storage_cleanup_retain_label)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        valueRange = 0f..MAX_RETAINED_CACHE_SONGS.toFloat(),
+                        steps = MAX_RETAINED_CACHE_SONGS / RETAINED_CACHE_SONG_STEP - 1,
+                        modifier = Modifier.testTag("cache_retention_slider").semantics {
+                            contentDescription = retentionLabel
+                            stateDescription = retentionCount
+                        }
                     )
-                    if (retainedCount == null) {
-                        Text(
-                            stringResource(CoreCommonR.string.storage_cleanup_retain_error),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("0", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(MAX_RETAINED_CACHE_SONGS.toString(), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text(
                         stringResource(CoreCommonR.string.storage_cleanup_retain_help),
@@ -231,7 +254,7 @@ internal fun StorageCacheCleanupContent(
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(CoreCommonR.string.storage_cleanup_other_group), style = MaterialTheme.typography.titleSmall)
                     otherChoices.forEach { choice ->
-                        CacheCleanupChoiceRow(choice, storageDetails, waitingForScan || scanFailed, enabled) { checked ->
+                        CacheCleanupChoiceRow(choice, sizes.getValue(choice.kind), waitingForScan || scanFailed, enabled) { checked ->
                             onOptionsChange(choice.withChecked(selectedOptions, checked))
                         }
                     }
@@ -255,7 +278,7 @@ internal fun StorageCacheCleanupContent(
             }
             MiuixSettingsButton(
                 modifier = Modifier.weight(1f),
-                enabled = enabled && retainedCount != null && selectedOptions.hasSelection,
+                enabled = enabled && !isEstimating && selectedOptions.hasSelection,
                 onClick = { onClear(selectedOptions) }
             ) {
                 Text(stringResource(if (isClearing) CoreCommonR.string.storage_cleanup_running else CoreCommonR.string.action_confirm_clear))
@@ -344,9 +367,10 @@ private fun cleanupChoices(options: StorageCacheClearOptions) = listOf(
 @Composable
 private fun CacheCleanupChoiceRow(
     choice: CacheCleanupChoice,
-    storageDetails: StorageUsageSummary,
+    estimatedBytes: Long?,
     waitingForScan: Boolean,
     enabled: Boolean,
+    occupiedBytes: Long? = null,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
@@ -360,16 +384,34 @@ private fun CacheCleanupChoiceRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(stringResource(choice.title), style = MaterialTheme.typography.bodyLarge)
             Text(
-                stringResource(choice.description),
+                if (occupiedBytes == null) stringResource(choice.description)
+                else stringResource(CoreCommonR.string.storage_cleanup_occupied_size,
+                    if (waitingForScan) stringResource(CoreCommonR.string.storage_cleanup_size_unavailable)
+                    else formatFileSize(occupiedBytes)),
+                modifier = if (occupiedBytes == null) Modifier
+                    else Modifier.testTag("cache_occupied_${choice.kind.name}"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Text(
-            if (waitingForScan) stringResource(CoreCommonR.string.storage_cleanup_size_unavailable)
-            else formatFileSize(storageDetails.sizeOf(choice.kind)),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary
-        )
+        Column(
+            if (occupiedBytes == null) Modifier else Modifier.widthIn(min = 88.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            AnimatedCacheEstimateText(
+                if (waitingForScan || estimatedBytes == null) stringResource(CoreCommonR.string.storage_cleanup_size_unavailable)
+                else formatFileSize(estimatedBytes),
+                modifier = Modifier.testTag("cache_estimate_${choice.kind.name}"),
+                alignment = Alignment.CenterEnd,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+            if (choice.kind == StorageCacheKind.Audio || choice.kind == StorageCacheKind.Image) {
+                Text(stringResource(CoreCommonR.string.storage_cleanup_estimate_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }

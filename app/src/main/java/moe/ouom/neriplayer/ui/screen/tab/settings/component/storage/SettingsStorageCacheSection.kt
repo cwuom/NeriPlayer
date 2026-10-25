@@ -87,6 +87,7 @@ import moe.ouom.neriplayer.ui.settings.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
@@ -188,6 +189,7 @@ internal fun SettingsStorageCacheSection(
     isClearing: Boolean = false,
     scanFailed: Boolean = false,
     onRetryScan: () -> Unit = {},
+    estimateCacheClear: suspend (Int) -> PlayerCacheClearEstimate = { PlayerCacheClearEstimate(null, null) },
     cardIndex: Int? = null,
     highlightTargetId: String? = null,
     highlightPulse: Int = 0,
@@ -522,6 +524,7 @@ internal fun SettingsStorageCacheSection(
             isClearing = isClearing,
             scanFailed = scanFailed,
             onRetryScan = onRetryScan,
+            estimateCacheClear = estimateCacheClear,
             options = StorageCacheClearOptions(
                 audioCache = clearAudioCache,
                 imageCache = clearImageCache,

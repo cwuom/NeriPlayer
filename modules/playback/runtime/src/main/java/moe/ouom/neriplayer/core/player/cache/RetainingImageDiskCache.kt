@@ -43,6 +43,9 @@ class RetainingImageDiskCache(
 
     internal fun knownKeys(): Set<String> = registry.keys()
 
+    @Synchronized
+    internal fun snapshotForEstimate(key: String): DiskCache.Snapshot? = delegate.openSnapshot(key)
+
     internal fun flushKeys() = registry.flush()
 }
 

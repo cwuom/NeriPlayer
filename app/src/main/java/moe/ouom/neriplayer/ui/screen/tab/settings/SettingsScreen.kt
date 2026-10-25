@@ -1071,6 +1071,7 @@ internal fun SettingsScreen(
                                 isClearing = isClearingStorageCache,
                                 scanFailed = storageDetailsController.scanFailed,
                                 onRetryScan = storageDetailsController::requestRefresh,
+                                estimateCacheClear = storageActions.estimateCacheClear,
                                 onClearCacheClick = { options ->
                                     if (!isClearingStorageCache) {
                                         isClearingStorageCache = true

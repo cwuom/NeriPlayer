@@ -553,8 +553,13 @@ For release build and signing details, see
   cleanup for audio cache, image cache, share staging, and platform playlist
   cache. The cleanup sheet scans category sizes before clearing, refreshes usage
   afterward, and reports the space actually released. Audio and artwork cleanup
-  share an optional list of the **X most recently played distinct songs**, retaining
-  their existing cache without downloading missing files. **0** retains no history;
+  share a slider for **0–1000 recently played distinct songs in steps of 50**, retaining
+  their existing cache without downloading missing files. Both categories and their
+  combined estimated cleanup size transition smoothly with the selection; pending or
+  unavailable estimates show a placeholder alongside the occupied size. Details count
+  physical directory usage; estimates exclude the current song (including while paused),
+  retained cache and index files. An unreadable cache instance is never reported as zero.
+  **0** retains no history;
   the currently playing audio remains protected. With retention enabled, legacy
   cache entries whose song ownership is unknown are kept, so more than X songs
   may remain. Other cache currently covers lyric share cards; sync, backup recovery,

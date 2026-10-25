@@ -145,3 +145,8 @@ data class PlayerCacheClearOutcome(
     val result: ExtraCacheClearResult,
     val retentionUnavailable: Boolean = false
 )
+
+data class PlayerCacheClearEstimate(
+    val audioBytes: Long?,
+    val imageBytes: Long?
+)

@@ -11,9 +11,6 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.cache.clearRetainingImageCache
-import moe.ouom.neriplayer.core.player.host.PlayerDependencies
-import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
-import moe.ouom.neriplayer.data.history.toSongItem
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
 import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearOutcome
@@ -29,24 +26,14 @@ internal suspend fun PlayerManager.clearStorageCachesImpl(options: StorageCacheC
             var completed = empty
             var retentionUnavailable = options.retainRecentSongs > 0
             try {
-                val recent = if (options.retainRecentSongs > 0) {
-                    val history = PlayerDependencies.repositories.playHistoryRepo
-                    if (!history.awaitInitialized()) {
-                        return@withContext PlayerCacheClearOutcome(empty.copy(success = false), retentionUnavailable = true)
-                    }
-                    selectRetainedCacheSongs(history.historyFlow.value.map { it.toSongItem() }, options.retainRecentSongs)
-                } else emptyList()
+                val recent = loadRetainedStorageCacheSongs(options.retainRecentSongs)
+                    ?: return@withContext PlayerCacheClearOutcome(empty.copy(success = false), retentionUnavailable = true)
                 retentionUnavailable = false
-                val (currentSong, currentKeys, requestToken) = withContext(Dispatchers.Main.immediate) {
-                    val mediaUri = if (isPlayerInitialized()) player.currentMediaItem?.localConfiguration?.uri?.toString() else null
-                    val keys = setOfNotNull(currentPlaybackCacheKeyForRecovery(), currentMediaUrlFlow.value, mediaUri)
-                    Triple(currentSongFlow.value, keys, playbackRequestToken)
-                }
-                val retained = (recent + listOfNotNull(currentSong)).distinctBy { it.stableKey() }
+                val plan = snapshotStorageCacheRetention(recent, options.retainRecentSongs)
                 val audio = if (options.audioCache) cache?.let {
-                    clearAudioStorageCache(it, retained, currentKeys, options.retainRecentSongs > 0) { remove ->
+                    clearAudioStorageCache(it, plan.retainedSongs, plan.protectedKeys, plan.preserveUnmapped) { remove ->
                         synchronized(storageCachePlaybackLock) {
-                            if (playbackRequestToken != requestToken || currentSongFlow.value?.stableKey() != currentSong?.stableKey()) {
+                            if (playbackRequestToken != plan.requestToken || currentSongFlow.value?.stableKey() != plan.currentSongKey) {
                                 false
                             } else {
                                 remove()
@@ -57,10 +44,7 @@ internal suspend fun PlayerManager.clearStorageCachesImpl(options: StorageCacheC
                 } ?: empty else empty
                 completed = audio
                 val image = if (options.imageCache) {
-                    val covers = (if (options.retainRecentSongs > 0) retained else emptyList())
-                        .flatMap { listOfNotNull(it.coverUrl, it.customCoverUrl, it.originalCoverUrl) }
-                        .filter(String::isNotBlank).toSet()
-                    clearRetainingImageCache(Coil.imageLoader(application), covers, options.retainRecentSongs > 0)
+                    clearRetainingImageCache(Coil.imageLoader(application), plan.retainedCoverUrls, plan.preserveUnmapped)
                 } else empty
                 PlayerCacheClearOutcome(
                     ExtraCacheClearResult(audio.success && image.success, audio.freedBytes + image.freedBytes, 0,

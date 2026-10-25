@@ -19,6 +19,7 @@ import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
 import moe.ouom.neriplayer.data.local.storage.analyzeStorageUsage
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.ManagedLibraryProcessingDetailsCard
@@ -168,6 +169,7 @@ internal fun LazyListScope.settingsStoragePageItems(
     isClearing: Boolean = false,
     scanFailed: Boolean = false,
     onRetryScan: () -> Unit = {},
+    estimateCacheClear: suspend (Int) -> PlayerCacheClearEstimate = { PlayerCacheClearEstimate(null, null) },
     highlightTargetId: String?,
     highlightPulse: Int,
     onHighlightFinished: () -> Unit
@@ -220,6 +222,7 @@ internal fun LazyListScope.settingsStoragePageItems(
                 isClearing = isClearing,
                 scanFailed = scanFailed,
                 onRetryScan = onRetryScan,
+                estimateCacheClear = estimateCacheClear,
                 cardIndex = cardIndex,
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,

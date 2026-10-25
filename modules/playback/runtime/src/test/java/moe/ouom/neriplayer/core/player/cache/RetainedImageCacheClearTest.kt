@@ -11,6 +11,7 @@ import kotlin.concurrent.thread
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.data.local.storage.scan.statsOf
 import okio.buffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -26,6 +27,87 @@ import org.mockito.Mockito.`when`
 class RetainedImageCacheClearTest {
     @get:Rule
     val temporary = TemporaryFolder()
+
+    @Test
+    fun `an emptied image cache retains physical journal bytes without reclaimable image payload`() = runTest {
+        val disk = realCache()
+        write(disk, "cover-before-clear")
+        assertTrue(disk.size > 0L)
+        disk.clear()
+
+        val remaining = statsOf(disk.directory.toFile())
+        assertTrue(remaining.sizeBytes > 0L)
+        assertTrue(remaining.fileCount > 0)
+        assertEquals(0L, disk.size)
+        assertEquals(0L, estimateRetainingImageCache(loader(disk), emptySet(), preserveUnmapped = false))
+        assertTrue(statsOf(disk.directory.toFile()).sizeBytes > 0L)
+    }
+
+    @Test
+    fun `image estimate follows retained cover URLs without changing cache contents`() = runTest {
+        val disk = track(realCache())
+        val first = "https://cover.example/a"
+        val second = "https://cover.example/b"
+        val firstVersion = "nowplaying-cover|$first|1|2|3"
+        listOf(first, firstVersion, second).forEach { write(disk, it) }
+        val before = physicalBytes(disk)
+
+        assertEquals(disk.size, estimateRetainingImageCache(loader(disk), emptySet(), false))
+        assertEquals(entryBytes(second), estimateRetainingImageCache(loader(disk), setOf(first), true))
+        assertEquals(0L, estimateRetainingImageCache(loader(disk), setOf(first, second), true))
+        assertEquals(before, physicalBytes(disk))
+        listOf(first, firstVersion, second).forEach { assertEntry(disk, it) }
+    }
+
+    @Test
+    fun `image retention estimate excludes unknown legacy and edited entries`() = runTest {
+        val delegate = realCache()
+        write(delegate, "legacy")
+        val disk = track(delegate)
+        listOf("retained", "busy", "other").forEach { write(disk, it) }
+        val editor = requireNotNull(disk.openEditor("busy"))
+        try {
+            assertEquals(entryBytes("other"), estimateRetainingImageCache(loader(disk), setOf("retained"), true))
+            assertEquals(0L, estimateRetainingImageCache(loader(delegate), setOf("retained"), true))
+        } finally {
+            editor.abort()
+        }
+        listOf("legacy", "retained", "busy", "other").forEach { assertEntry(delegate, it) }
+    }
+
+    @Test
+    fun `positive retention without cover URLs estimates only tracked entries`() = runTest {
+        val delegate = realCache()
+        write(delegate, "legacy")
+        val disk = track(delegate)
+        write(disk, "tracked")
+
+        assertEquals(entryBytes("tracked"), estimateRetainingImageCache(loader(disk), emptySet(), true))
+        assertEntry(disk, "tracked")
+        assertEntry(delegate, "legacy")
+    }
+
+    @Test
+    fun `image estimate returns unavailable on inspection failure and propagates cancellation`() = runTest {
+        val delegate = realCache()
+        val disk = track(object : DiskCache by delegate {
+            override fun openSnapshot(key: String): DiskCache.Snapshot? =
+                throw java.io.IOException("cannot inspect cache")
+        })
+        write(disk, "tracked")
+        assertNull(estimateRetainingImageCache(loader(disk), emptySet(), true))
+        assertEntry(delegate, "tracked")
+
+        val cancelled = track(object : DiskCache by delegate {
+            override fun openSnapshot(key: String): DiskCache.Snapshot? =
+                throw CancellationException("cancel estimate")
+        })
+        val failure = runCatching {
+            estimateRetainingImageCache(loader(cancelled), emptySet(), true)
+        }.exceptionOrNull()
+        assertTrue(failure is CancellationException)
+        assertEntry(delegate, "tracked")
+    }
 
     @Test
     fun `an editor opened during clear remains tracked for the next cleanup`() = runTest {
@@ -333,4 +415,6 @@ class RetainedImageCacheClearTest {
 
     private fun physicalBytes(disk: DiskCache): Long = disk.directory.toFile()
         .walkTopDown().filter(File::isFile).sumOf(File::length)
+
+    private fun entryBytes(key: String): Long = ("metadata:$key" + "data:$key").toByteArray().size.toLong()
 }

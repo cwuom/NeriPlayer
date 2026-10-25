@@ -38,6 +38,28 @@ private fun Cache.storageCacheOwners(key: String): Set<String> {
     }.getOrDefault(emptySet())
 }
 
+internal suspend fun estimateAudioStorageCache(
+    cache: Cache,
+    retainedSongs: List<SongItem>,
+    protectedKeys: Set<String>,
+    preserveUnmapped: Boolean
+): Long? = try {
+    currentCoroutineContext().ensureActive()
+    val retention = AudioStorageCacheRetention(retainedSongs, protectedKeys, preserveUnmapped)
+    var bytes = 0L
+    for (key in cache.keys.toList()) {
+        currentCoroutineContext().ensureActive()
+        if (!retention.retains(key, cache.storageCacheOwners(key))) {
+            bytes += cache.getCachedSpans(key).sumOf { it.length }
+        }
+    }
+    bytes
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    null
+}
+
 internal suspend fun clearAudioStorageCache(
     cache: Cache,
     retainedSongs: List<SongItem>,
@@ -46,19 +68,14 @@ internal suspend fun clearAudioStorageCache(
     removalGate: ((() -> Unit) -> Boolean) = { remove -> remove(); true }
 ): ExtraCacheClearResult {
     val before = cache.cacheSpace
-    val identities = retainedSongs.map { it.stableKey() }.toSet()
-    val prefixes = retainedSongs.flatMap(::legacySongCachePrefixes)
+    val retention = AudioStorageCacheRetention(retainedSongs, protectedKeys, preserveUnmapped)
     var success = true
     var deletedFiles = 0
     var confirmedBytes = 0L
     for (key in cache.keys.toList()) {
         currentCoroutineContext().ensureActive()
         try {
-            val owners = cache.storageCacheOwners(key)
-            val retained = key in protectedKeys || owners.any(identities::contains) ||
-                (owners.isEmpty() && prefixes.any(key::startsWith)) ||
-                (preserveUnmapped && owners.isEmpty() && !isRecognizedSongCacheKey(key))
-            if (retained) continue
+            if (retention.retains(key, cache.storageCacheOwners(key))) continue
             val oldSpans = cache.getCachedSpans(key)
             if (!removalGate { cache.removeResource(key) }) {
                 success = false
@@ -81,6 +98,20 @@ internal suspend fun clearAudioStorageCache(
         confirmedBytes
     }
     return ExtraCacheClearResult(success, freed, 0, deletedFiles)
+}
+
+private class AudioStorageCacheRetention(
+    retainedSongs: List<SongItem>,
+    private val protectedKeys: Set<String>,
+    private val preserveUnmapped: Boolean
+) {
+    private val identities = retainedSongs.map { it.stableKey() }.toSet()
+    private val prefixes = retainedSongs.flatMap(::legacySongCachePrefixes)
+
+    fun retains(key: String, owners: Set<String>): Boolean =
+        key in protectedKeys || owners.any(identities::contains) ||
+            (owners.isEmpty() && prefixes.any(key::startsWith)) ||
+            (preserveUnmapped && owners.isEmpty() && !isRecognizedSongCacheKey(key))
 }
 
 private fun legacySongCachePrefixes(song: SongItem): List<String> {
