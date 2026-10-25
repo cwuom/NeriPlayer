@@ -660,7 +660,8 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(
             defaultLyricSource
         },
         ytMusicLyricsCache = ytMusicLyricsCache,
-        biliSourceTag = BILI_SOURCE_TAG
+        biliSourceTag = BILI_SOURCE_TAG,
+        biliClient = biliClient
     )
 }
 
@@ -698,7 +699,8 @@ internal suspend fun PlayerManager.getLyricsImpl(
             defaultLyricSource
         },
         ytMusicLyricsCache = ytMusicLyricsCache,
-        biliSourceTag = BILI_SOURCE_TAG
+        biliSourceTag = BILI_SOURCE_TAG,
+        biliClient = biliClient
     )
 }
 

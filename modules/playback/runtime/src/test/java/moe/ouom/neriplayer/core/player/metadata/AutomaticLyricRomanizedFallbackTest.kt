@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.platform.lyrics.repository.AmllLyricsRepository
 import moe.ouom.neriplayer.platform.lyrics.repository.EditableLyricsMatcher
 import moe.ouom.neriplayer.platform.lyrics.repository.LrcLibLyricsRepository
 import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
+import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
 import moe.ouom.neriplayer.platform.youtube.api.client.YouTubeMusicClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -158,12 +159,14 @@ class AutomaticLyricRomanizedFallbackTest {
             }
         })
         private val youtube = Mockito.mock(YouTubeMusicClient::class.java)
+        private val biliClient = Mockito.mock(BiliClient::class.java)
         private val lrcLib = Mockito.mock(LrcLibLyricsRepository::class.java)
         private val youtubeCache = mock<LruCache<String, YouTubeMusicLyricsCacheEntry>>(Answers.RETURNS_DEFAULTS)
 
         suspend fun original(amllEnabled: Boolean = true, preferWordTimed: Boolean = true): List<LyricEntry> =
             PlayerLyricsProvider.getLyrics(song, application, netease, cache, youtube, lrcLib, matcher, amll,
-                amllEnabled, preferWordTimed, LyricSourcePreference.Automatic, youtubeCache, SongSourceTags.BILIBILI)
+                amllEnabled, preferWordTimed, LyricSourcePreference.Automatic, youtubeCache, SongSourceTags.BILIBILI,
+                biliClient)
 
         suspend fun romanized(song: SongItem = this.song, preferWordTimed: Boolean = true): List<LyricEntry> =
             PlayerLyricsProvider.getRomanizedLyrics(song, application, netease, cache, matcher, preferWordTimed,

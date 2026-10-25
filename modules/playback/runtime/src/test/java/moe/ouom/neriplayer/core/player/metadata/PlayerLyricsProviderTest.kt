@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.platform.lyrics.repository.AmllLyricsRepository
 import moe.ouom.neriplayer.platform.lyrics.repository.EditableLyricsMatcher
 import moe.ouom.neriplayer.platform.lyrics.repository.LrcLibLyricsRepository
 import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
+import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
 import moe.ouom.neriplayer.platform.youtube.api.client.YouTubeMusicClient
 import org.mockito.Mockito
 
@@ -251,10 +252,11 @@ class PlayerLyricsProviderTest {
                 lyricSyncEdited = true, lyricSyncRevision = 20)
             val original = PlayerLyricsProvider.getLyrics(base.copy(matchedLyric = text), dependencies.application,
                 dependencies.netease, dependencies.neteaseCache, dependencies.youtube, dependencies.lrcLib,
-                dependencies.matcher, dependencies.amll, true, true, LyricSourcePreference.Kugou, dependencies.youtubeCache, "bili")
+                dependencies.matcher, dependencies.amll, true, true, LyricSourcePreference.Kugou, dependencies.youtubeCache,
+                "bili", dependencies.biliClient)
             val translated = PlayerLyricsProvider.getTranslatedLyrics(base.copy(matchedTranslatedLyric = text), dependencies.application,
                 dependencies.netease, dependencies.neteaseCache, dependencies.matcher, true,
-                LyricSourcePreference.Kugou, dependencies.youtubeCache, "bili")
+                LyricSourcePreference.Kugou, dependencies.youtubeCache, "bili", dependencies.biliClient)
             val romanized = PlayerLyricsProvider.getRomanizedLyrics(base.copy(matchedRomanizedLyric = text), dependencies.application,
                 dependencies.netease, dependencies.neteaseCache, dependencies.matcher, true, LyricSourcePreference.Kugou)
             val expected = if (text.isEmpty()) emptyList() else listOf("user")
@@ -262,7 +264,8 @@ class PlayerLyricsProviderTest {
             assertEquals(expected, translated.map { it.text })
             assertEquals(expected, romanized.map { it.text })
             Mockito.verifyNoInteractions(dependencies.application, dependencies.netease, dependencies.neteaseCache,
-                dependencies.youtube, dependencies.lrcLib, dependencies.matcher, dependencies.amll, dependencies.youtubeCache)
+                dependencies.youtube, dependencies.lrcLib, dependencies.matcher, dependencies.amll, dependencies.youtubeCache,
+                dependencies.biliClient)
         }
     }
 
@@ -275,6 +278,7 @@ class PlayerLyricsProviderTest {
         val lrcLib = mock<LrcLibLyricsRepository>()
         val matcher = mock<EditableLyricsMatcher>()
         val amll = mock<AmllLyricsRepository>()
+        val biliClient = mock<BiliClient>()
         private inline fun <reified T : Any> mock(): T = Mockito.mock(T::class.java)
     }
 

@@ -61,6 +61,8 @@ import moe.ouom.neriplayer.data.model.bilibili.playback.PlayInfo
 import moe.ouom.neriplayer.data.model.bilibili.playback.PlayOptions
 import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoItem
 import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoPage
+import moe.ouom.neriplayer.data.model.bilibili.subtitle.BiliSubtitleCue
+import moe.ouom.neriplayer.data.model.bilibili.subtitle.BiliSubtitleTrack
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContentPage
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderProfile
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderVideoPage
@@ -68,7 +70,10 @@ import moe.ouom.neriplayer.data.model.bilibili.video.UgcSeason
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoStats
+import moe.ouom.neriplayer.platform.bilibili.api.parser.normalizeBiliSubtitleUrl
 import moe.ouom.neriplayer.platform.bilibili.api.parser.parseBiliSeriesArchivePage
+import moe.ouom.neriplayer.platform.bilibili.api.parser.parseBiliSubtitleCues
+import moe.ouom.neriplayer.platform.bilibili.api.parser.parseBiliSubtitleTracks
 import moe.ouom.neriplayer.platform.bilibili.api.parser.parseBiliUploaderContentPage
 import moe.ouom.neriplayer.platform.bilibili.api.parser.parseBiliUploaderProfile
 import moe.ouom.neriplayer.platform.bilibili.api.parser.parseBiliUploaderVideoPage
@@ -123,6 +128,7 @@ class BiliClient(
             "https://api.bilibili.com/x/polymer/web-space/seasons_series_list"
         private const val SERIES_ARCHIVES_URL = "https://api.bilibili.com/x/series/archives"
         private const val PAGELIST_URL = "https://api.bilibili.com/x/player/pagelist"
+        private const val PLAYER_WBI_V2_URL = "https://api.bilibili.com/x/player/wbi/v2"
         private const val MUSIC_RANK_PERIOD_URL =
             "https://api.bilibili.com/x/copyright-music-publicity/toplist/all_period"
         private const val MUSIC_RANK_SONGS_URL =
@@ -192,6 +198,9 @@ class BiliClient(
 
         /** WebTicket HMAC key */
         private const val WEB_TICKET_KEY = "XgwSnGZ1p"
+
+        /** CC 字幕文件体积不稳定，单独限制整次调用的耗时 */
+        private const val SUBTITLE_CALL_TIMEOUT_MS = 10_000L
     }
 
     private val http: OkHttpClient = client ?: OkHttpClient.Builder()
@@ -203,6 +212,11 @@ class BiliClient(
 
     private val cookieSession = BiliCookieSession(cookieRepo, http)
     private val comments = BiliCommentApi(cookieRepo, cookieSession, http)
+    private val subtitleHttp: OkHttpClient by lazy {
+        http.newBuilder()
+            .callTimeout(SUBTITLE_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .build()
+    }
 
     private data class FavFolderListResult(
         val count: Int,
@@ -1677,6 +1691,56 @@ class BiliClient(
         }
         return videos
     }
+
+    // CC 字幕 //
+
+    /** 是否带有 B 站登录态，CC 字幕列表只有登录后才下发。 */
+    fun hasLoginSession(): Boolean =
+        !cookieRepo.getCookiesOnce()["SESSDATA"].isNullOrBlank()
+
+    /**
+     * 读取视频分 P 的 CC 字幕轨道。
+     *
+     * 字幕列表依赖登录态，未登录时官方接口返回空数组。
+     */
+    suspend fun getVideoSubtitleTracks(aid: Long, cid: Long): List<BiliSubtitleTrack> {
+        require(aid > 0L) { "aid must be positive" }
+        require(cid > 0L) { "cid must be positive" }
+        return withContext(Dispatchers.IO) {
+            val response = getJsonWbi(
+                PLAYER_WBI_V2_URL,
+                mapOf("aid" to aid.toString(), "cid" to cid.toString())
+            )
+            parseBiliSubtitleTracks(
+                response.requireSuccessfulData("player/v2").optJSONObject("subtitle")
+            )
+        }
+    }
+
+    /**
+     * 下载并解析 CC 字幕文件，地址由 [getVideoSubtitleTracks] 返回。
+     */
+    suspend fun getSubtitleCues(url: String): List<BiliSubtitleCue> {
+        val normalized = normalizeBiliSubtitleUrl(url)
+        if (normalized.isEmpty()) return emptyList()
+        return withContext(Dispatchers.IO) {
+            parseBiliSubtitleCues(JSONObject(executeSubtitleGetAsText(normalized)))
+        }
+    }
+
+    private suspend fun executeSubtitleGetAsText(url: String): String {
+        val cookieHeader = getEffectiveCookies().toCookieHeader()
+        val req = Request.Builder()
+            .url(url.toHttpUrl())
+            .header("User-Agent", DEFAULT_WEB_UA)
+            .header("Referer", REFERER)
+            .apply { headerCookieIfPresent(cookieHeader) }
+            .get()
+            .build()
+        return subtitleHttp.newCall(req).executeOrThrow().use { it.body.string() }
+    }
+
+    // 评论 //
 
     suspend fun getVideoComments(
         aid: Long,
