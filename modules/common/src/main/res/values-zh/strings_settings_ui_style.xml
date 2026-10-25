@@ -8,6 +8,7 @@
     <string name="ui_style_clean_desc">中性配色、连续曲率圆角与玻璃质感，长时间使用更不易疲劳</string>
     <string name="ui_style_preview_badge">预览</string>
     <string name="settings_predictive_back_preview">预测性返回预览</string>
+    <string name="settings_predictive_back_coloros_only">当前仅在 ColorOS 提供预览，普通返回动画仍然保留</string>
     <string name="settings_predictive_back_preview_desc">返回手势时跟随手指预览上一级页面；关闭后返回本身与松手后的返回动画保持不变</string>
     <string name="settings_liquid_glass">液态玻璃</string>
     <string name="settings_liquid_glass_desc">简洁风格下为底栏与迷你播放器加入边缘折射与高光；低端设备、省电模式下会自动降级</string>

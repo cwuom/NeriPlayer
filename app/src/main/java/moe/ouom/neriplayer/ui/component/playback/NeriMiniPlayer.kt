@@ -100,6 +100,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
 import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.supportsContinuousCornerOutline
 import moe.ouom.neriplayer.ui.playback.visual.shouldUseNowPlayingContainerMorph
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -747,11 +748,13 @@ fun NeriMiniPlayer(
 
     val coverCornerRadius = if (cleanStyle) 10.dp else 8.dp
     val coverShape = if (cleanStyle) NeriDesign.tokens.coverSmallShape else RoundedCornerShape(8.dp)
+    val coverSizePx = with(density) { NeriMiniPlayerDefaults.CoverSize.toPx() }
+    val continuousCoverCorners = cleanStyle && supportsContinuousCornerOutline(coverSizePx, coverSizePx)
     val cover: @Composable () -> Unit = {
         Box(
             modifier = Modifier
                 .size(NeriMiniPlayerDefaults.CoverSize)
-                .sharedCoverSource(coverCornerRadius, visibleFrame?.decodedBitmap)
+                .sharedCoverSource(coverCornerRadius, visibleFrame?.decodedBitmap, continuousCoverCorners)
                 .background(
                     color = if (visibleFrame != null) {
                         Color.Transparent

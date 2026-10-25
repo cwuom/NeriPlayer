@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui
 
 import coil.request.CachePolicy
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingBlurCoverRequest
 import moe.ouom.neriplayer.ui.playback.visual.normalizedNowPlayingBlurStrength
 import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurImageCacheKey
 import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurNetworkCachePolicy
@@ -46,12 +47,16 @@ class NowPlayingBlurImageRequestsTest {
 
     @Test
     fun `neighbor prefetch is silent while blur is off and keeps enabled order`() {
-        val queued = mutableListOf<String>()
-        preloadNowPlayingBlurCovers(false, listOf("prev", "next"), queued::add)
+        val queued = mutableListOf<NowPlayingBlurCoverRequest>()
+        val covers = listOf(
+            NowPlayingBlurCoverRequest("prev", 4f, 640, "prev-revision"),
+            NowPlayingBlurCoverRequest("next", 4f, 640, "next-revision")
+        )
+        preloadNowPlayingBlurCovers(false, covers, queued::add)
         assertTrue(queued.isEmpty())
         preloadNowPlayingBlurCovers(true, emptyList(), queued::add)
         assertTrue(queued.isEmpty())
-        preloadNowPlayingBlurCovers(true, listOf("prev", "next"), queued::add)
-        assertEquals(listOf("prev", "next"), queued)
+        preloadNowPlayingBlurCovers(true, covers, queued::add)
+        assertEquals(covers, queued)
     }
 }

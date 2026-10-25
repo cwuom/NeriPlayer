@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.ApplyOverlayWindowNavigationBarPolicy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -286,6 +287,7 @@ internal fun StartupPlaybackSourceContent(
                 Text(stringResource(CoreCommonR.string.onboarding_playback_sources_confirm_desc))
             },
             confirmButton = {
+                ApplyOverlayWindowNavigationBarPolicy()
                 HapticTextButton(
                     onClick = {
                         showConfirmation = false
@@ -613,6 +615,7 @@ internal fun StartupLyricsContent(
                 Text(stringResource(CoreCommonR.string.onboarding_lyrics_control_size_warning_desc))
             },
             confirmButton = {
+                ApplyOverlayWindowNavigationBarPolicy()
                 HapticTextButton(
                     onClick = {
                         showControlSizeWarning = false

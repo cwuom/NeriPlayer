@@ -123,6 +123,7 @@ fun AutoSettingsSwitchItems(
     repository: AutoSettingsRepository,
     scope: CoroutineScope,
     sectionScope: AutoSettingsSectionScope,
+    excludedKeys: Set<String> = emptySet(),
     highlightTargetId: String? = null,
     highlightPulse: Int = 0,
     onHighlightFinished: (() -> Unit)? = null
@@ -131,6 +132,7 @@ fun AutoSettingsSwitchItems(
         repository = repository,
         scope = scope,
         section = sectionScope.key,
+        excludedKeys = excludedKeys,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished
@@ -142,13 +144,14 @@ fun AutoSettingsSwitchItems(
     repository: AutoSettingsRepository,
     scope: CoroutineScope,
     section: String,
+    excludedKeys: Set<String> = emptySet(),
     highlightTargetId: String? = null,
     highlightPulse: Int = 0,
     onHighlightFinished: (() -> Unit)? = null
 ) {
-    val bindings = remember(section) {
+    val bindings = remember(section, excludedKeys) {
         AutoSettingsSwitchBindings.inSection(section)
-            .filterNot { it.setting.keyName in unavailableSettingKeys }
+            .filterNot { it.setting.keyName in unavailableSettingKeys || it.setting.keyName in excludedKeys }
     }
     bindings.forEach { binding ->
         key(binding.setting.keyName) {

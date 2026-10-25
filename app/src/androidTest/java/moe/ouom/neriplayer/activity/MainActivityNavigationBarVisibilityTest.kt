@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.activity
 
 import android.app.AlertDialog
 import android.content.res.Configuration
+import android.graphics.Color
+import android.os.Build
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.ViewGroup
@@ -36,6 +38,9 @@ class MainActivityNavigationBarVisibilityTest {
         var dialog: AlertDialog? = null
         try {
             scenario.onActivity { activity ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    activity.window.isNavigationBarContrastEnforced = true
+                }
                 dialog = AlertDialog.Builder(activity).setTitle("Navigation focus fixture")
                     .setPositiveButton("Close", null).create().also(AlertDialog::show)
             }
@@ -48,6 +53,20 @@ class MainActivityNavigationBarVisibilityTest {
         scenario.moveToState(Lifecycle.State.RESUMED)
         awaitNavigationPolicy(scenario, hidden)
         scenario.recreate()
+        awaitNavigationPolicy(scenario, hidden)
+    }
+
+    @Test
+    fun navigationTransparencySurvivesThemeConfigurationDispatch() = withOnboardingActivity { scenario, hidden ->
+        scenario.onActivity { activity ->
+            for (nightMode in listOf(Configuration.UI_MODE_NIGHT_YES, Configuration.UI_MODE_NIGHT_NO)) {
+                val nextConfiguration = Configuration(activity.resources.configuration).apply {
+                    uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or nightMode
+                }
+                activity.window.decorView.dispatchConfigurationChanged(nextConfiguration)
+                assertWindowTransparency(activity)
+            }
+        }
         awaitNavigationPolicy(scenario, hidden)
     }
 
@@ -142,6 +161,7 @@ class MainActivityNavigationBarVisibilityTest {
                 insets.isVisible(WindowInsetsCompat.Type.navigationBars()) == !hidden
         }
         scenario.onActivity { activity ->
+            assertWindowTransparency(activity)
             val insets = checkNotNull(ViewCompat.getRootWindowInsets(activity.window.decorView))
             assertTrue("状态栏应保留", insets.isVisible(WindowInsetsCompat.Type.statusBars()))
             val controller = WindowInsetsControllerCompat(activity.window, activity.window.decorView)
@@ -151,6 +171,17 @@ class MainActivityNavigationBarVisibilityTest {
                 assertEquals("隐藏导航栏不应继续占据布局边距", Insets.NONE,
                     insets.getInsets(WindowInsetsCompat.Type.navigationBars()))
             }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun assertWindowTransparency(activity: MainActivity) {
+        assertEquals(Color.TRANSPARENT, activity.window.statusBarColor)
+        assertEquals(Color.TRANSPARENT, activity.window.navigationBarColor)
+        assertEquals(Color.TRANSPARENT, activity.window.navigationBarDividerColor)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            assertTrue("导航栏不能恢复系统对比度遮罩", !activity.window.isNavigationBarContrastEnforced)
+            assertTrue("状态栏不能添加系统对比度遮罩", !activity.window.isStatusBarContrastEnforced)
         }
     }
 

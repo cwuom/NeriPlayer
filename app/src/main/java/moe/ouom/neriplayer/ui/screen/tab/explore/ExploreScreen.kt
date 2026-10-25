@@ -560,13 +560,6 @@ fun ExploreScreen(
         stringResource(CoreCommonR.string.tag_study), stringResource(CoreCommonR.string.tag_korean), stringResource(CoreCommonR.string.tag_work), stringResource(CoreCommonR.string.tag_electronic), stringResource(CoreCommonR.string.tag_cantonese), stringResource(CoreCommonR.string.tag_dance), stringResource(CoreCommonR.string.tag_sad), stringResource(CoreCommonR.string.tag_game), stringResource(CoreCommonR.string.tag_afternoon_tea), stringResource(CoreCommonR.string.tag_healing), stringResource(CoreCommonR.string.tag_rap), stringResource(CoreCommonR.string.tag_light_music)
     )
 
-    // Initialize with default tag
-    LaunchedEffect(Unit) {
-        if (ui.selectedTag == "tag_all" && ui.playlists.isEmpty()) {
-            vm.loadHighQuality("tag_all")
-        }
-    }
-
     var lastRecordedSearchKeyword by remember { mutableStateOf<String?>(null) }
     var pendingSearchHistoryRecord by remember { mutableStateOf<String?>(null) }
 

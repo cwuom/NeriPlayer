@@ -44,11 +44,9 @@ import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import com.google.android.material.appbar.AppBarLayout
@@ -64,6 +62,7 @@ import moe.ouom.neriplayer.ui.feedback.showNeriViewSnackbar
 import moe.ouom.neriplayer.network.security.hostMatchesAnyDomain
 import moe.ouom.neriplayer.network.security.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
+import moe.ouom.neriplayer.activity.enableNeriEdgeToEdge
 
 /**
  * 用内置 WebView 登录哔哩哔哩
@@ -110,8 +109,7 @@ class BiliWebLoginActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (finishIfWebViewUnavailable()) return
         lockPortraitIfPhone()
-        enableEdgeToEdge()
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        enableNeriEdgeToEdge()
         NPLogger.d(LOG_TAG, "Bilibili login activity created")
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("bilibili")
 

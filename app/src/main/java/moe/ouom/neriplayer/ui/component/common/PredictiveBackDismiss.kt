@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 
 /** Material 全屏界面的预测性返回：缩小到 90%，朝手势方向偏移，四角逐渐变圆 */
 internal const val PREDICTIVE_DISMISS_MIN_SCALE = 0.9f
@@ -93,21 +94,28 @@ internal fun PredictiveDismissHandler(
 ) {
     val scope = rememberCoroutineScope()
     val currentOnDismiss by rememberUpdatedState(onDismiss)
+    val currentPreviewEnabled by rememberUpdatedState(LocalPredictiveBackPreviewEnabled.current)
     PredictiveBackHandler(enabled = enabled) { events ->
+        val previewEnabled = currentPreviewEnabled
         state.settleJob?.cancel()
+        if (!previewEnabled) state.progress = 0f
         try {
             events.collect { event ->
-                state.swipeEdge = event.swipeEdge
-                state.progress = event.progress
+                if (previewEnabled) {
+                    state.swipeEdge = event.swipeEdge
+                    state.progress = event.progress
+                }
             }
             currentOnDismiss()
         } catch (cancelled: CancellationException) {
-            state.settleJob = scope.launch {
-                animate(
-                    initialValue = state.progress,
-                    targetValue = 0f,
-                    animationSpec = tween(PREDICTIVE_DISMISS_CANCEL_DURATION_MS)
-                ) { value, _ -> state.progress = value }
+            if (previewEnabled) {
+                state.settleJob = scope.launch {
+                    animate(
+                        initialValue = state.progress,
+                        targetValue = 0f,
+                        animationSpec = tween(PREDICTIVE_DISMISS_CANCEL_DURATION_MS)
+                    ) { value, _ -> state.progress = value }
+                }
             }
             throw cancelled
         }

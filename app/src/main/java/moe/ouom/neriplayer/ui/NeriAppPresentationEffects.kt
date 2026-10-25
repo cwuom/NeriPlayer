@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -21,6 +22,7 @@ import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPlatformSupported
 
 internal data class AppStylePreferences(
     val uiStyle: UiStyle,
@@ -49,11 +51,28 @@ internal fun rememberAppStylePreferences(
     val predictiveBackPreviewEnabled by repo.predictiveBackPreviewEnabledFlow
         .collectAsStateWithLifecycle(initialValue = true)
     SideEffect { NeriMotionStyle.clean = uiStyle == UiStyle.Clean }
-    return AppStylePreferences(uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled)
+    return AppStylePreferences(
+        uiStyle, liquidGlassEnabled,
+        predictiveBackPreviewEnabled && LocalPredictiveBackPlatformSupported.current
+    )
 }
 
 private const val BackdropRecedeScale = 0.06f
 private val BackdropRecedeCorner = 28.dp
+
+internal fun Modifier.drawNowPlayingUnderlay(
+    flight: SharedCoverFlightState,
+    playbackVisible: () -> Boolean,
+    backProgress: () -> Float
+): Modifier = drawWithContent {
+    // 完整遮挡才省去下层绘制，任何露底或交接阶段都沿用原画面
+    val completelyCovered = playbackVisible() &&
+        backProgress() == 0f &&
+        flight.dragOpenProgress == null &&
+        !flight.linked &&
+        flight.nowPlayingMorphProgressState?.value == 1f
+    if (!completelyCovered) drawContent()
+}
 
 /** 手机播放页展开时让底层界面适当后退 */
 internal fun Modifier.nowPlayingBackdropRecede(flight: SharedCoverFlightState): Modifier =

@@ -600,9 +600,15 @@ class SettingsExternalLyricsPageTouchTest {
                 for ((checked, switch) in listOf(!original to true, original to false)) {
                     swipeUntilVisible(settingRow(spec.title), viewport, avoidMiniPlayer = true)
                     val expected = spec.update(expectedPreferences, checked)
+                    val expectedToggle = if (checked) ToggleableState.On else ToggleableState.Off
                     touchSetting(spec.title, viewport, switch)
                     expectCompletePreferences(spec.title, expected)
-                    assertEquals(if (checked) ToggleableState.On else ToggleableState.Off,
+                    // 持久化完成后，宿主仍需消费偏好更新并重新组合开关
+                    composeRule.waitUntil(UiTimeoutMs) {
+                        runBlocking { repository.floatingLyricsPreferencesFlow.first() } == expected &&
+                            settingSwitch(spec.title).fetchSemanticsNode().config[SemanticsProperties.ToggleableState] == expectedToggle
+                    }
+                    assertEquals(expectedToggle,
                         settingSwitch(spec.title).fetchSemanticsNode().config[SemanticsProperties.ToggleableState])
                 }
             }

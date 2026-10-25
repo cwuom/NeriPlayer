@@ -14,7 +14,7 @@ import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.NavigationEventInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 
-/** False when the user turned off "predictive back preview"; hosts then stop seeking on drag. */
+/** 只有平台兼容性和用户开关都允许时，返回手势才预览页面 */
 val LocalPredictiveBackPreviewEnabled = staticCompositionLocalOf { true }
 
 /**

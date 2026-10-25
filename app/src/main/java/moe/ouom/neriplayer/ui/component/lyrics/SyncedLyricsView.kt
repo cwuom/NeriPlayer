@@ -1256,9 +1256,8 @@ fun SyncedLyricsActiveLine(
         playbackSpeed = playbackSpeed
     )
     val targetLyricTimeMs = (currentTimeMs + lyricOffsetMs).coerceAtLeast(0L)
-    val smoothedTargetLyricTimeMs = rememberSmoothedLyricTimeMs(targetLyricTimeMs)
     val smoothedLyricTimeMs = if (animateProgress) {
-        smoothedTargetLyricTimeMs
+        rememberSmoothedLyricTimeMs(targetLyricTimeMs)
     } else {
         targetLyricTimeMs
     }

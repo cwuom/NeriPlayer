@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.playback.visual
 
 import android.os.Build
+import moe.ouom.neriplayer.data.identity.playbackVisualKey
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 
 import moe.ouom.neriplayer.data.model.SongItem
@@ -21,20 +22,43 @@ internal fun hasNowPlayingCoverBlur(
 internal fun currentNowPlayingBlurCoverUrl(coverUrl: String?): String? =
     coverUrl?.takeUnless(String::isBlank)
 
-internal fun nowPlayingBlurNeighborUrls(
+internal data class NowPlayingCoverAssetRefresh(
+    val foregroundToken: Int,
+    val rootGeneration: Long
+) {
+    fun key(songRevision: Long): Int {
+        var result = foregroundToken
+        result = 31 * result + rootGeneration.hashCode()
+        return 31 * result + songRevision.hashCode()
+    }
+}
+
+internal fun nowPlayingBlurNeighborSongs(
     queue: List<SongItem>,
     currentSong: SongItem?,
-    coverUrl: String?,
-    resolveCover: (SongItem) -> String?
-): List<String> {
+    coverUrl: String?
+): List<SongItem> {
     if (currentSong == null || !isRemoteImageSource(coverUrl)) return emptyList()
     val currentIndex = queue.indexOfFirst { it.sameIdentityAs(currentSong) }
     if (currentIndex < 0) return emptyList()
     return listOfNotNull(
-        queue.getOrNull(currentIndex - 1)?.let(resolveCover),
-        queue.getOrNull(currentIndex + 1)?.let(resolveCover)
-    ).distinct()
+        queue.getOrNull(currentIndex - 1),
+        queue.getOrNull(currentIndex + 1)
+    )
 }
+
+internal fun nowPlayingBlurNeighborCover(
+    currentCover: NowPlayingOverlayCover,
+    song: SongItem,
+    coverUrl: String?,
+    songRevision: Long
+): NowPlayingOverlayCover = NowPlayingOverlayCover(
+    url = coverUrl,
+    songKey = song.playbackVisualKey(),
+    song = song,
+    assetRefreshKey = currentCover.assetRefresh?.key(songRevision) ?: currentCover.assetRefreshKey,
+    assetRefresh = currentCover.assetRefresh
+)
 
 internal fun nowPlayingBlurAssetVersion(cover: NowPlayingOverlayCover): String =
     "${cover.assetRefreshKey}:${cover.songKey}:${cover.url}"

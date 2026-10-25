@@ -12,7 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -159,26 +159,32 @@ private fun BouncingSongTitle(
 
 private fun Modifier.horizontalTitleEdgeFade(fadeWidth: Dp): Modifier = this
     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-    .drawWithContent {
-        drawContent()
+    .drawWithCache {
         val edge = (fadeWidth.toPx() / size.width).coerceIn(0f, 0.22f)
-        if (edge <= 0f) return@drawWithContent
-
-        val brush = Brush.horizontalGradient(
-            colorStops = arrayOf(
-                0f to Color.Transparent,
-                edge to Color.Black,
-                1f - edge to Color.Black,
-                1f to Color.Transparent
-            ),
-            startX = 0f,
-            endX = size.width
-        )
-        drawRect(
-            brush = brush,
-            size = size,
-            blendMode = BlendMode.DstIn
-        )
+        val brush = if (edge > 0f) {
+            Brush.horizontalGradient(
+                colorStops = arrayOf(
+                    0f to Color.Transparent,
+                    edge to Color.Black,
+                    1f - edge to Color.Black,
+                    1f to Color.Transparent
+                ),
+                startX = 0f,
+                endX = size.width
+            )
+        } else {
+            null
+        }
+        onDrawWithContent {
+            drawContent()
+            if (brush != null) {
+                drawRect(
+                    brush = brush,
+                    size = size,
+                    blendMode = BlendMode.DstIn
+                )
+            }
+        }
     }
 
 internal fun songTitleBounceDistancePx(

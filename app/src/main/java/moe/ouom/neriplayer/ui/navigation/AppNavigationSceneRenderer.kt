@@ -22,7 +22,7 @@ internal class AppNavigationSceneRenderer(
     private val coherentFeedbackEnabled: Boolean,
     private val currentRoute: String?,
     private val visibleNavigationRoutes: Set<String?>,
-    private val mainTabNavigationMotion: MainTabNavigationMotionState
+    private val mainTabNavigationMotion: () -> MainTabNavigationMotionState
 ) {
     @Composable
     fun RenderNavigationScene(
@@ -98,7 +98,7 @@ internal class AppNavigationSceneRenderer(
             contentScale,
             sceneDepth,
             backgroundImageUri != null,
-            mainTabNavigationMotion
+            mainTabNavigationMotion()
         )
         RenderNavigationScene(
             revealTopFraction = revealTopFraction,

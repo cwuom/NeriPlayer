@@ -5,6 +5,8 @@ import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
@@ -112,12 +114,62 @@ internal class AppNavigationGraphOwner(
 internal fun AppNavigationGraph(
     owner: AppNavigationGraphOwner
 ) {
+    val graphOwner = rememberAppNavigationGraphOwner(owner)
+    val builder: NavGraphBuilder.() -> Unit = remember(graphOwner) {
+        { graphOwner.run { registerRoutes() } }
+    }
     NavHost(
         navController = owner.navController,
         startDestination = owner.presentation.startDestination,
-        modifier = Modifier.fillMaxSize().zIndex(NAV_HOST_LAYER_Z_INDEX)
+        modifier = Modifier.fillMaxSize().zIndex(NAV_HOST_LAYER_Z_INDEX),
+        builder = builder
+    )
+}
+
+@Composable
+internal fun rememberAppNavigationGraphOwner(
+    owner: AppNavigationGraphOwner
+): AppNavigationGraphOwner {
+    val latestOwner = rememberUpdatedState(owner)
+    val presentation = owner.presentation
+    // TAB 重组只更新回调，避免重新构建整张导航图和路由正则
+    return remember(
+        owner.navController,
+        presentation.startDestination,
+        presentation.coherentFeedbackEnabled,
+        presentation.offlineMode
     ) {
-        owner.run { registerRoutes() }
+        AppNavigationGraphOwner(
+            navController = owner.navController,
+            presentation = AppNavigationGraphPresentation(
+                startDestination = presentation.startDestination,
+                coherentFeedbackEnabled = presentation.coherentFeedbackEnabled,
+                offlineMode = presentation.offlineMode,
+                renderScene = { route, content ->
+                    latestOwner.value.presentation.renderScene(this, route, content)
+                }
+            ),
+            mediaActions = AppNavigationMediaActions(
+                playSongs = { songs, index, sourceRoute ->
+                    latestOwner.value.mediaActions.playSongs(songs, index, sourceRoute)
+                },
+                playBiliAudio = { videos, index, sourceRoute ->
+                    latestOwner.value.mediaActions.playBiliAudio(videos, index, sourceRoute)
+                },
+                playBiliParts = { videoInfo, index, coverUrl, sourceRoute ->
+                    latestOwner.value.mediaActions.playBiliParts(videoInfo, index, coverUrl, sourceRoute)
+                },
+                onNeteaseAlbumClick = { album ->
+                    latestOwner.value.mediaActions.onNeteaseAlbumClick(album)
+                },
+                onYouTubePlaylistClick = { playlist ->
+                    latestOwner.value.mediaActions.onYouTubePlaylistClick(playlist)
+                },
+                onYouTubeCreatorClick = { creator ->
+                    latestOwner.value.mediaActions.onYouTubeCreatorClick(creator)
+                }
+            )
+        )
     }
 }
 
