@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.player.queue.heartbeat
 
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.playbackSourceKey
 
 /**
  * 心动模式的本地降级候选源。

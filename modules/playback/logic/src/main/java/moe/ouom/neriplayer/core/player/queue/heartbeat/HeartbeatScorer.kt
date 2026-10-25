@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.player.queue.heartbeat
 
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.playbackSourceKey
 
 /**
  * 心动模式本地降级评分器。
@@ -159,25 +158,14 @@ object HeartbeatScorer {
         sameArtist(song, other) || sameAlbum(song, other)
 
     private fun sameArtist(song: SongItem, other: SongItem): Boolean {
-        val left = artistKey(song)
-        return left.isNotEmpty() && left == artistKey(other)
+        val left = song.artistIdentityKey()
+        return left.isNotEmpty() && left == other.artistIdentityKey()
     }
 
     private fun sameAlbum(song: SongItem, other: SongItem): Boolean {
         if (song.albumId > 0L && song.albumId == other.albumId) return true
         val left = song.album.trim()
         return left.isNotEmpty() && left == other.album.trim()
-    }
-
-    private fun artistKey(song: SongItem): String {
-        val fromSummary = song.neteaseArtists
-            ?.mapNotNull { it.name?.trim() }
-            ?.filter { it.isNotEmpty() }
-            ?.sorted()
-            ?.joinToString("/")
-            ?.lowercase()
-            .orEmpty()
-        return if (fromSummary.isNotEmpty()) fromSummary else song.artist.trim().lowercase()
     }
 
     /**
