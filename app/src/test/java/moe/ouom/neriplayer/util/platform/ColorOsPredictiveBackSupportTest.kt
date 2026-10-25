@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -32,8 +33,8 @@ class ColorOsPredictiveBackSupportTest {
         assertEquals(1, reads)
         advanceUntilIdle()
 
-        assertTrue(detection.await())
-        assertTrue(detector.detect())
+        assertEquals(true, detection.await())
+        assertEquals(true, detector.detect())
         assertEquals(2, reads)
     }
 
@@ -46,14 +47,14 @@ class ColorOsPredictiveBackSupportTest {
             if (available) true else null
         }
 
-        assertFalse(withTimeout(2_000L) { detector.detect() })
+        assertNull(withTimeout(2_000L) { detector.detect() })
         assertEquals(3, reads)
         advanceTimeBy(60_000L)
         runCurrent()
         assertEquals(3, reads)
 
         available = true
-        assertTrue(detector.detect())
+        assertEquals(true, detector.detect())
         assertEquals(4, reads)
     }
 
@@ -65,8 +66,8 @@ class ColorOsPredictiveBackSupportTest {
             false
         }
 
-        assertFalse(detector.detect())
-        assertFalse(detector.detect())
+        assertEquals(false, detector.detect())
+        assertEquals(false, detector.detect())
         assertEquals(1, reads)
     }
 
@@ -88,7 +89,7 @@ class ColorOsPredictiveBackSupportTest {
         assertEquals(1, reads)
 
         available = true
-        assertTrue(detector.detect())
+        assertEquals(true, detector.detect())
         assertEquals(2, reads)
     }
 
@@ -123,7 +124,7 @@ class ColorOsPredictiveBackSupportTest {
         }
         val detections = List(12) { async { detector.detect() } }
 
-        detections.forEach { assertTrue(it.await()) }
+        detections.forEach { assertEquals(true, it.await()) }
         assertEquals(2, reads)
         assertEquals(1, maxActiveReads)
     }

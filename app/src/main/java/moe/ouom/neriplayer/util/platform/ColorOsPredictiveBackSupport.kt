@@ -8,15 +8,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 
 private const val ROM_PROPERTY_TIMEOUT_MILLIS = 250L
 private const val COLOR_OS_DETECTION_ATTEMPTS = 3
 private const val COLOR_OS_DETECTION_RETRY_MILLIS = 500L
 private val colorOsPredictiveBackDetector = ColorOsPredictiveBackDetector {
-    withContext(Dispatchers.IO) { readColorOsPredictiveBackSupport() }
+    runInterruptible(Dispatchers.IO) { readColorOsPredictiveBackSupport() }
 }
 
 private val colorOsName = Regex(
@@ -36,7 +36,7 @@ private val internationalOtaRegion = Regex(
     RegexOption.IGNORE_CASE
 )
 
-internal suspend fun detectColorOsPredictiveBackSupport(): Boolean {
+internal suspend fun detectColorOsPredictiveBackSupport(): Boolean? {
     return colorOsPredictiveBackDetector.detect()
 }
 
@@ -46,7 +46,7 @@ internal class ColorOsPredictiveBackDetector(private val readSupport: suspend ()
     @Volatile
     private var cachedSupport: Boolean? = null
 
-    suspend fun detect(): Boolean {
+    suspend fun detect(): Boolean? {
         currentCoroutineContext().ensureActive()
         cachedSupport?.let { return it }
         return detectionMutex.withLock {
@@ -59,12 +59,12 @@ internal class ColorOsPredictiveBackDetector(private val readSupport: suspend ()
                     cachedSupport = support
                     return@withLock support
                 }
-                // Compose 只发起一次检测，临时失败在这次调用内有界重试
+                // 单批检测只短暂重试，后续恢复由前台生命周期触发
                 if (attempt < COLOR_OS_DETECTION_ATTEMPTS - 1) {
                     delay(COLOR_OS_DETECTION_RETRY_MILLIS)
                 }
             }
-            false
+            null
         }
     }
 }
