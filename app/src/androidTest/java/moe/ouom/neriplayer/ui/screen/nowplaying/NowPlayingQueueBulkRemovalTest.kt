@@ -34,11 +34,22 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -60,6 +71,7 @@ import moe.ouom.neriplayer.testing.TestComposeActivity
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.theme.NeriTheme
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -173,6 +185,111 @@ class NowPlayingQueueBulkRemovalTest {
             }
             assertRemovalPerformance(3_000, 500, startedAt)
             assertSingleQueueCallback()
+        }
+    }
+
+    @Test
+    fun savedQueueRestoreWaitsForReleasedWriterBeforeRestoringLegacyBytes() {
+        assumeTrue("仅在专用模拟器运行", Build.HARDWARE in setOf("ranchu", "goldfish"))
+        assumeComposeHostAvailable()
+        val context = composeRule.activity.applicationContext
+        assumeNoSyncTargets(context)
+        assumeFalse("已有播放服务时不干预其生命周期", AudioPlayerService.isInstanceActiveForDiagnostics())
+        assumeFalse("已有播放时不干预播放器", PlayerManager.isPlayingFlow.value ||
+            PlayerManager.playWhenReadyFlow.value || PlayerManager.playbackControlPlayingFlow.value)
+        composeRule.runOnUiThread {
+            assertNull("恢复回归测试不能继承其它测试的服务", activeService())
+            if (!AppContainer.isInitialized()) AppContainer.initialize(composeRule.activity.application)
+            PlayerManager.release()
+        }
+        val writerMutex = persistenceWriterMutex()
+        val savedQueue = runBlocking {
+            withTimeout(UiTimeoutMs) { writerMutex.withLock { SavedQueue.read(context) } }
+        }
+        val expectedLegacy = savedQueue.legacy.mapValues { (name, bytes) ->
+            bytes ?: if (name == "last_playlist.json") "[]\n".toByteArray() else "{}\n".toByteArray()
+        }
+        val fixtureQueue = savedQueue.copy(legacy = expectedLegacy)
+        val preferences = readPlaybackPreferenceSnapshotSync(context)
+        var failure: Throwable? = null
+        try {
+            composeRule.runOnUiThread {
+                PlayerManager.initializePreloaded(
+                    composeRule.activity.application,
+                    preferences.copy(maxCacheSizeBytes = 0L, usbExclusivePlayback = false),
+                    RestoredPlayerStateSnapshot(
+                        playlist = emptyList(), currentIndex = -1, currentMediaUrl = null,
+                        repeatMode = Player.REPEAT_MODE_OFF, shuffleEnabled = false,
+                        shuffleRestorePlaylist = null, shuffleRestoreIndex = -1,
+                        resumePositionMs = 0L, shouldResumePlayback = false,
+                        originalPlaylistSize = 0, persistedIndex = -1
+                    )
+                )
+            }
+            runBlocking {
+                val writerEntered = CompletableDeferred<Unit>()
+                val lateWriteCompleted = CompletableDeferred<Unit>()
+                val restoreEntered = CompletableDeferred<Unit>()
+                val allowLateWrite = CountDownLatch(1)
+                val oldWriter = launch(Dispatchers.IO) {
+                    writerMutex.withLock {
+                        writerEntered.complete(Unit)
+                        // 模拟已经进入同步 I/O 的旧写入，取消协程不会释放这段存储操作
+                        check(allowLateWrite.await(UiTimeoutMs * 2L, TimeUnit.MILLISECONDS))
+                        expectedLegacy.keys.forEach { name ->
+                            File(context.filesDir, name).writeText("{\"staleFixture\":true}")
+                        }
+                        lateWriteCompleted.complete(Unit)
+                    }
+                }
+                var restoring: Deferred<Unit>? = null
+                try {
+                    withTimeout(UiTimeoutMs) { writerEntered.await() }
+                    composeRule.runOnUiThread { PlayerManager.release() }
+                    oldWriter.cancel()
+                    val restoreTask = async(Dispatchers.IO) {
+                        fixtureQueue.restore(context) { restoreEntered.complete(Unit) }
+                    }
+                    restoring = restoreTask
+                    withTimeout(UiTimeoutMs) { restoreEntered.await() }
+                    val completedWhileOldWriterHeld = withTimeoutOrNull(RestoreWriterProbeMs) {
+                        restoreTask.await()
+                        true
+                    } ?: false
+                    allowLateWrite.countDown()
+                    withTimeout(UiTimeoutMs) {
+                        lateWriteCompleted.await()
+                        oldWriter.join()
+                        restoreTask.await()
+                    }
+
+                    assertTrue("旧 writer 已取消但仍完成同步写入", oldWriter.isCancelled)
+                    assertFalse("fixture 恢复必须等待 release 后仍持锁的旧 writer", completedWhileOldWriterHeld)
+                    expectedLegacy.forEach { (name, bytes) ->
+                        assertArrayEquals("旧 writer 结束后必须保留原始文件: $name", bytes,
+                            File(context.filesDir, name).readBytes())
+                    }
+                } finally {
+                    allowLateWrite.countDown()
+                    withContext(NonCancellable) {
+                        withTimeout(UiTimeoutMs) { oldWriter.join(); restoring?.join() }
+                    }
+                }
+            }
+        } catch (error: Throwable) {
+            failure = error
+            throw error
+        } finally {
+            val cleanupFailures = mutableListOf<Throwable>()
+            fun cleanup(action: () -> Unit) {
+                runCatching(action).exceptionOrNull()?.let(cleanupFailures::add)
+            }
+            cleanup { composeRule.runOnUiThread { PlayerManager.release() } }
+            cleanup { runBlocking { savedQueue.restore(context) } }
+            cleanupFailures.forEach { failure?.addSuppressed(it) }
+            if (failure == null && cleanupFailures.isNotEmpty()) {
+                throw AssertionError("恢复竞态回归测试清理失败", cleanupFailures.first())
+            }
         }
     }
 
@@ -488,14 +605,20 @@ class NowPlayingQueueBulkRemovalTest {
     }
 
     private data class SavedQueue(val roomPrimary: Boolean, val state: PersistedState?, val legacy: Map<String, ByteArray?>) {
-        suspend fun restore(context: Context) {
-            val store = PlaybackQueueRoomStore(NeriUserDataDatabase.getInstance(context))
-            if (roomPrimary && state != null) store.replaceSnapshot(state) else store.clear()
-            legacy.forEach { (name, bytes) ->
-                val file = File(context.filesDir, name)
-                if (bytes != null) file.writeBytes(bytes) else check(!file.exists() || file.delete())
+        suspend fun restore(context: Context, onWriterBarrierReached: () -> Unit = {}) {
+            onWriterBarrierReached()
+            // release 只取消旧写入，恢复前仍需等待同步 I/O 完成
+            withTimeout(UiTimeoutMs) {
+                persistenceWriterMutex().withLock {
+                    val store = PlaybackQueueRoomStore(NeriUserDataDatabase.getInstance(context))
+                    if (roomPrimary && state != null) store.replaceSnapshot(state) else store.clear()
+                    legacy.forEach { (name, bytes) ->
+                        val file = File(context.filesDir, name)
+                        if (bytes != null) file.writeBytes(bytes) else check(!file.exists() || file.delete())
+                    }
+                    if (!roomPrimary) store.markLegacyJsonPrimary(System.currentTimeMillis())
+                }
             }
-            if (!roomPrimary) store.markLegacyJsonPrimary(System.currentTimeMillis())
         }
 
         companion object {
@@ -510,11 +633,19 @@ class NowPlayingQueueBulkRemovalTest {
     }
 
     private companion object {
+        fun persistenceWriterMutex(): Mutex {
+            val coordinator = PlayerManager::class.java.getDeclaredField("statePersistenceCoordinator")
+                .apply { isAccessible = true }.get(PlayerManager)
+            return coordinator.javaClass.getDeclaredField("writerMutex").apply { isAccessible = true }
+                .get(coordinator) as Mutex
+        }
+
         const val UiTimeoutMs = 15_000L
         const val SessionQueueWindowSize = 100
         const val FixtureAlbum = "Queue regression album"
         const val ActionBindCar = "moe.ouom.neriplayer.action.BIND_CAR"
         const val QueueCallbackStableMs = 250L
         const val QueueCallbackObservationTimeoutMs = 1_000L
+        const val RestoreWriterProbeMs = 1_000L
     }
 }
