@@ -43,6 +43,59 @@ class SheetNavigationEventBridgeTest {
     }
 
     @Test
+    fun `disabled preview keeps the sheet still until release and then performs ordinary back`() {
+        val dialog = NavigationEventDispatcher()
+        val gesture = GestureInput().also(dialog::addInput)
+        val bridge = SheetNavigationEventBridge().apply { previewEnabled = false }
+        val sheet = RecordingHandler().also(bridge.navigationEventDispatcher::addHandler)
+        bridge.attachTo(dialog)
+
+        gesture.start(0.1f)
+        gesture.progress(0.6f)
+        assertTrue("预览关闭时，手指拖动不能推进弹层", sheet.events.isEmpty())
+
+        gesture.complete()
+        assertEquals(listOf("started 0.0", "completed"), sheet.events)
+    }
+
+    @Test
+    fun `disabled preview cancellation never starts sheet navigation`() {
+        val dialog = NavigationEventDispatcher()
+        val gesture = GestureInput().also(dialog::addInput)
+        val bridge = SheetNavigationEventBridge().apply { previewEnabled = false }
+        val sheet = RecordingHandler().also(bridge.navigationEventDispatcher::addHandler)
+        bridge.attachTo(dialog)
+
+        gesture.start(0.1f)
+        gesture.progress(0.6f)
+        gesture.cancel()
+
+        assertTrue("取消手势不能关闭弹层或启动动画", sheet.events.isEmpty())
+    }
+
+    @Test
+    fun `preview policy changes apply to the next gesture without changing the current owner`() {
+        val dialog = NavigationEventDispatcher()
+        val gesture = GestureInput().also(dialog::addInput)
+        val bridge = SheetNavigationEventBridge().apply { previewEnabled = false }
+        val sheet = RecordingHandler().also(bridge.navigationEventDispatcher::addHandler)
+        bridge.attachTo(dialog)
+
+        gesture.start(0.1f)
+        bridge.previewEnabled = true
+        gesture.progress(0.6f)
+        gesture.complete()
+        assertEquals(listOf("started 0.0", "completed"), sheet.events)
+
+        sheet.events.clear()
+        gesture.start(0.2f)
+        bridge.previewEnabled = false
+        gesture.progress(0.7f)
+        gesture.cancel()
+        assertEquals(listOf("started 0.2", "progressed 0.7", "cancelled"), sheet.events)
+    }
+
+    @Test
     fun `the dialog keeps its default back when the sheet has no enabled handler`() {
         val dialog = NavigationEventDispatcher()
         val gesture = GestureInput().also(dialog::addInput)

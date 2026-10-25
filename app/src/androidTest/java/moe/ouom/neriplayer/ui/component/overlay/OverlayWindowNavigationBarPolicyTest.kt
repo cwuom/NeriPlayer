@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.ui.component.overlay
 
 import android.app.AlertDialog
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.os.Build
 import android.util.Log
 import android.view.View
 import android.view.Window
@@ -42,6 +44,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import moe.ouom.neriplayer.activity.applyNeriSystemBarTransparency
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.performNativeClick
@@ -102,6 +105,9 @@ class OverlayWindowNavigationBarPolicyTest {
             capture("sheet-open-hidden")
 
             composeRule.runOnIdle {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    sheetWindow.isNavigationBarContrastEnforced = true
+                }
                 WindowInsetsControllerCompat(sheetWindow, sheetWindow.decorView)
                     .show(WindowInsetsCompat.Type.navigationBars())
             }
@@ -307,6 +313,7 @@ class OverlayWindowNavigationBarPolicyTest {
 
     private fun applyHostPolicy(hidden: Boolean) {
         val window = composeRule.activity.window
+        window.applyNeriSystemBarTransparency()
         WindowInsetsControllerCompat(window, window.decorView).apply {
             show(WindowInsetsCompat.Type.statusBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
@@ -336,6 +343,7 @@ class OverlayWindowNavigationBarPolicyTest {
             throw failure
         }
         instrumentation.runOnMainSync {
+            assertWindowTransparency(window, stage)
             val insets = checkNotNull(ViewCompat.getRootWindowInsets(window.decorView))
             assertTrue("$stage: 当前 Window 必须持有焦点", window.decorView.hasWindowFocus())
             assertEquals("$stage: 导航栏可见性", !hidden, insets.isVisible(WindowInsetsCompat.Type.navigationBars()))
@@ -347,6 +355,17 @@ class OverlayWindowNavigationBarPolicyTest {
             )
             if (hidden) assertEquals("$stage: 隐藏导航栏不能保留底部 inset", 0, insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom)
             Log.i("OverlayWindowNavigation", "$stage complete hidden=$hidden behavior=$expectedBehavior: ${navigationPolicySnapshot(window)}")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun assertWindowTransparency(window: Window, stage: String) {
+        assertEquals("$stage: 状态栏应透明", Color.TRANSPARENT, window.statusBarColor)
+        assertEquals("$stage: 导航栏应透明", Color.TRANSPARENT, window.navigationBarColor)
+        assertEquals("$stage: 导航栏分隔线应透明", Color.TRANSPARENT, window.navigationBarDividerColor)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            assertTrue("$stage: 导航栏不能有系统对比度遮罩", !window.isNavigationBarContrastEnforced)
+            assertTrue("$stage: 状态栏不能有系统对比度遮罩", !window.isStatusBarContrastEnforced)
         }
     }
 

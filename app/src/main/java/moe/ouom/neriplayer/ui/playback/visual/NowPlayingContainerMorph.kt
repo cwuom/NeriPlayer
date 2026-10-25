@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,7 +47,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
-import moe.ouom.neriplayer.ui.theme.addContinuousRoundRect
+import moe.ouom.neriplayer.ui.animation.CoverFlightFrame
+import moe.ouom.neriplayer.ui.theme.addSmoothedRoundRect
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -91,10 +93,12 @@ internal fun rememberNowPlayingMorphState(
 ): NowPlayingMorphState {
     val state = remember { NowPlayingMorphState(initiallyVisible = visible) }
     val latestArtwork by rememberUpdatedState(artwork)
-    val dragging = flight?.dragOpenProgress != null
+    val dragging by remember(flight) {
+        derivedStateOf { flight?.dragOpenProgress != null }
+    }
     LaunchedEffect(visible, dragging) {
         val linked = flight
-        if (dragging && !visible) {
+        if (dragging && !visible && linked != null) {
             // the finger owns the morph; release hands over to the open or close branch
             state.closing = false
             state.mounted = true
@@ -113,12 +117,14 @@ internal fun rememberNowPlayingMorphState(
             linked?.endLinked()
             // a back gesture scrubs the close morph; commit continues it, cancel springs back
             snapshotFlow { backProgress().coerceIn(0f, 1f) }.collect { back ->
-                if (back > 0f) linked?.beginLinked(latestArtwork()) else linked?.endLinked()
+                if (back > 0f) {
+                    linked?.beginLinked(latestArtwork(), followMiniPlayerGeometry = true)
+                } else linked?.endLinked()
                 state.progress.snapTo(1f - back * MorphBackPreviewDepth)
             }
         } else if (state.mounted) {
             state.closing = true
-            linked?.beginLinked(latestArtwork())
+            linked?.beginLinked(latestArtwork(), followMiniPlayerGeometry = true)
             state.progress.animateTo(0f, tween(MorphCloseDurationMillis, easing = FastOutSlowInEasing))
             state.mounted = false
             linked?.endLinked()
@@ -145,18 +151,24 @@ internal fun NowPlayingContainerMorph(
     content: @Composable () -> Unit
 ) {
     val progress = morph.progress
+    val progressState = remember(progress) { progress.asState() }
     val startColor = { flight?.miniPlayerContainerColor ?: Color.Unspecified }
     LaunchedEffect(flight) {
         snapshotFlow { progress.value }.collect { flight?.nowPlayingMorphProgress = it }
     }
-    DisposableEffect(flight) {
-        onDispose { flight?.nowPlayingMorphProgress = 0f }
+    DisposableEffect(flight, progressState) {
+        val owner = flight
+        owner?.nowPlayingMorphProgressState = progressState
+        onDispose {
+            if (owner != null && owner.nowPlayingMorphProgressState === progressState) {
+                owner.nowPlayingMorphProgressState = null
+                owner.nowPlayingMorphProgress = 0f
+            }
+        }
     }
     val density = LocalDensity.current
     val capsuleCornerPx = with(density) { 22.dp.toPx() }
     val cardCornerPx = with(density) { 40.dp.toPx() }
-    val miniCoverCornerPx = with(density) { 10.dp.toPx() }
-    val pageCoverCornerPx = with(density) { 24.dp.toPx() }
     val geometry = remember { MorphGeometry() }
     val coverPath = remember { Path() }
     Box(
@@ -222,12 +234,13 @@ internal fun NowPlayingContainerMorph(
             val p = progress.value.coerceIn(0f, 1f)
             val bitmap = flight.linkedBitmap ?: return@Canvas
             val from = flight.miniCoverBounds?.translate(-geometry.origin) ?: return@Canvas
-            val to = geometry.pageCover(flight.targetCoordinates) ?: return@Canvas
-            val rect = lerp(from, to, p)
+            val to = geometry.pageCover(flight) ?: return@Canvas
+            val rect = lerp(from, to.bounds, p)
             if (rect.width <= 1f || rect.height <= 1f) return@Canvas
-            val corner = lerp(miniCoverCornerPx, pageCoverCornerPx * geometry.scale, p)
+            val corner = lerp(flight.miniCoverCornerPx, to.cornerPx, p)
+            val smoothing = lerp(flight.miniCoverCornerSmoothing, to.cornerSmoothing, p)
             coverPath.reset()
-            coverPath.addContinuousRoundRect(rect.width, rect.height, corner, corner, corner, corner)
+            coverPath.addSmoothedRoundRect(rect.width, rect.height, corner, smoothing)
             translate(rect.left, rect.top) {
                 clipPath(coverPath) {
                     val (srcOffset, srcSize) = centerCrop(bitmap, rect.size)
@@ -289,16 +302,18 @@ private class MorphGeometry {
     }
 
     /** Page artwork bounds in this layer's space, following the content scale and translation. */
-    fun pageCover(cover: LayoutCoordinates?): Rect? {
+    fun pageCover(flight: SharedCoverFlightState): CoverFlightFrame? {
         val host = content ?: return null
-        if (cover == null || !cover.isAttached || !host.isAttached) return null
-        val local = host.localBoundingBoxOf(cover, clipBounds = false)
-        return Rect(
+        if (!host.isAttached) return null
+        val frame = flight.targetFrameIn(host) ?: return null
+        val local = frame.bounds
+        val bounds = Rect(
             left = translation.x + local.left * scale,
             top = translation.y + local.top * scale,
             right = translation.x + local.right * scale,
             bottom = translation.y + local.bottom * scale
         )
+        return frame.copy(bounds = bounds, cornerPx = frame.cornerPx * scale)
     }
 }
 

@@ -11,6 +11,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -169,6 +170,35 @@ class PredictiveBackDismissTest {
             dispatcher.onBackPressed()
         }
         composeRule.runOnIdle { assertEquals(1, dismissals) }
+    }
+
+    @Test
+    fun `disabled preview keeps the surface unchanged and dismisses only on release`() {
+        previewEnabled = false
+        setHandler()
+        startGesture(0.7f)
+
+        assertEquals(0f, state.progress, 0f)
+        assertFalse(state.revealsUnderlying)
+        assertEquals(0, dismissals)
+
+        composeRule.runOnIdle { dispatcher.onBackPressed() }
+        composeRule.waitForIdle()
+        assertEquals(1, dismissals)
+        assertEquals(0f, state.progress, 0f)
+    }
+
+    @Test
+    fun `disabled preview cancellation keeps the surface open without a settling job`() {
+        previewEnabled = false
+        setHandler()
+        startGesture(0.6f)
+        composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
+        composeRule.waitForIdle()
+
+        assertEquals(0, dismissals)
+        assertEquals(0f, state.progress, 0f)
+        assertNull(state.settleJob)
     }
 
     @Test

@@ -8,24 +8,35 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-internal data class NowPlayingBlurPreloadRequest(
-    val hasCoverBlur: Boolean,
-    val coverUrls: List<String>,
+internal data class NowPlayingBlurCoverRequest(
+    val coverUrl: String,
     val blurStrength: Float,
     val imageSizePx: Int,
-    val assetVersion: String,
+    val assetVersion: String
+)
+
+internal data class NowPlayingBlurPreloadRequest(
+    val hasCoverBlur: Boolean,
+    val covers: List<NowPlayingBlurCoverRequest>,
     val offlineMode: Boolean
 )
 
 internal fun nowPlayingBlurPreloadRequest(
     frame: NowPlayingBackdropFrame,
-    coverUrls: List<String>
+    covers: List<NowPlayingOverlayCover>
 ): NowPlayingBlurPreloadRequest = NowPlayingBlurPreloadRequest(
     hasCoverBlur = frame.hasCoverBlur,
-    coverUrls = coverUrls,
-    blurStrength = frame.blurStrength,
-    imageSizePx = frame.imageSizePx,
-    assetVersion = frame.assetVersion,
+    covers = covers.mapNotNull { cover ->
+        val coverUrl = currentNowPlayingBlurCoverUrl(cover.url) ?: return@mapNotNull null
+        NowPlayingBlurCoverRequest(
+            coverUrl = coverUrl,
+            blurStrength = resolvedNowPlayingBlurStrength(
+                coverUrl, frame.background.blurAmount.coerceIn(0f, 500f)
+            ),
+            imageSizePx = resolvedNowPlayingBlurImageSizePx(coverUrl),
+            assetVersion = nowPlayingBlurAssetVersion(cover)
+        )
+    }.distinct(),
     offlineMode = frame.background.offlineMode
 )
 
@@ -37,10 +48,13 @@ internal class NowPlayingBlurEffectOwner(
     private var retentionRequest: NowPlayingBlurRetentionRequest? = null
     private var retentionJob: Job? = null
 
-    fun updatePreload(request: NowPlayingBlurPreloadRequest, enqueue: (String) -> Unit) {
+    fun updatePreload(
+        request: NowPlayingBlurPreloadRequest,
+        enqueue: (NowPlayingBlurCoverRequest) -> Unit
+    ) {
         if (preloadRequest == request) return
         preloadRequest = request
-        preloadNowPlayingBlurCovers(request.hasCoverBlur, request.coverUrls, enqueue)
+        preloadNowPlayingBlurCovers(request.hasCoverBlur, request.covers, enqueue)
     }
 
     fun updateRetention(request: NowPlayingBlurRetentionRequest) {

@@ -81,6 +81,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -100,6 +101,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
@@ -164,14 +167,34 @@ internal fun LocalPlaylistList(
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsStateWithLifecycle(
         initialValue = false
     )
-    val localArtists = remember(playlists, context) {
-        buildLocalArtistSummaries(playlists, context)
-    }
-    val filteredLocalArtists = remember(localArtists, localSearchQuery) {
-        filterLocalArtists(localArtists, localSearchQuery)
-    }
-    val displayedLocalArtists = remember(filteredLocalArtists, localArtistSortMode) {
-        sortLocalArtists(filteredLocalArtists, localArtistSortMode)
+    val displayedLocalArtists = if (selectedLocalCategory == LOCAL_CATEGORY_ARTIST) {
+        val localArtists by produceState<List<LocalArtistSummary>?>(
+            initialValue = null,
+            key1 = playlists,
+            key2 = context
+        ) {
+            value = withContext(Dispatchers.Default) {
+                buildLocalArtistSummaries(playlists, context)
+            }
+        }
+        val artistSnapshot = localArtists
+        val artistQuery = localSearchQuery
+        val artistSortMode = localArtistSortMode
+        val displayedArtists by produceState<List<LocalArtistSummary>?>(
+            initialValue = null,
+            key1 = artistSnapshot,
+            key2 = artistQuery,
+            key3 = artistSortMode
+        ) {
+            value = withContext(Dispatchers.Default) {
+                artistSnapshot?.let { artists ->
+                    sortLocalArtists(filterLocalArtists(artists, artistQuery), artistSortMode)
+                }
+            }
+        }
+        displayedArtists
+    } else {
+        emptyList()
     }
     val editablePlaylists = remember(playlists, context) {
         playlists.filterNot { SystemLocalPlaylists.isSystemPlaylist(it, context) }
@@ -265,12 +288,20 @@ internal fun LocalPlaylistList(
     val favoritesPlaylist = playlists.firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
     val localFilesPlaylist = playlists.firstOrNull { LocalFilesPlaylist.isSystemPlaylist(it, context) }
 
+    val showingLocalPlaylists = selectedLocalCategory == LOCAL_CATEGORY_PLAYLIST
     val displayedFavoritesPlaylist = favoritesPlaylist
-        ?.takeIf { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
+        ?.takeIf { playlist ->
+            showingLocalPlaylists && playlist.matchesLocalPlaylistSearch(localSearchQuery, context)
+        }
     val displayedLocalFilesPlaylist = localFilesPlaylist
-        ?.takeIf { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
-    val displayedPlaylists = reorderablePlaylists
-        .filter { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
+        ?.takeIf { playlist ->
+            showingLocalPlaylists && playlist.matchesLocalPlaylistSearch(localSearchQuery, context)
+        }
+    val displayedPlaylists = if (showingLocalPlaylists) {
+        reorderablePlaylists.filter { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
+    } else {
+        emptyList()
+    }
     val hasPlaylistSearchMatches =
         displayedFavoritesPlaylist != null ||
             displayedPlaylists.isNotEmpty() ||
@@ -290,7 +321,7 @@ internal fun LocalPlaylistList(
         ((windowWidthDp.value - 16f + 10f) / 130f).toInt().coerceAtLeast(1)
     }
     val localArtistRows = remember(displayedLocalArtists, localArtistColumnCount) {
-        displayedLocalArtists.chunked(localArtistColumnCount)
+        displayedLocalArtists.orEmpty().chunked(localArtistColumnCount)
     }
 
     val cardShape = neriRoundedShape(12.dp)
@@ -334,7 +365,7 @@ internal fun LocalPlaylistList(
         }
 
         if (selectedLocalCategory == LOCAL_CATEGORY_ARTIST) {
-            if (displayedLocalArtists.isEmpty()) {
+            if (displayedLocalArtists?.isEmpty() == true) {
                 item(key = "local_artist_empty") {
                     LibrarySearchEmptyCard(
                         titleResId = if (localSearchQuery.isBlank()) {

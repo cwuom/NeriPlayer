@@ -20,8 +20,10 @@ import androidx.navigationevent.findViewTreeNavigationEventDispatcherOwner
 internal class SheetNavigationEventBridge : NavigationEventDispatcherOwner {
     override val navigationEventDispatcher: NavigationEventDispatcher = NavigationEventDispatcher()
 
+    var previewEnabled: Boolean = true
+
     private val input = ForwardedInput()
-    private val forwarder = Forwarder(input)
+    private val forwarder = Forwarder()
 
     init {
         input.onEnabledChanged = { enabled -> forwarder.isBackEnabled = enabled }
@@ -50,12 +52,30 @@ internal class SheetNavigationEventBridge : NavigationEventDispatcherOwner {
         fun cancelled() = dispatchOnBackCancelled()
     }
 
-    private class Forwarder(private val input: ForwardedInput) :
+    private inner class Forwarder :
         NavigationEventHandler<NavigationEventInfo>(NavigationEventInfo.None, false) {
-        override fun onBackStarted(event: NavigationEvent) = input.started(event)
-        override fun onBackProgressed(event: NavigationEvent) = input.progressed(event)
-        override fun onBackCompleted() = input.completed()
-        override fun onBackCancelled() = input.cancelled()
+        private var forwarding = false
+
+        override fun onBackStarted(event: NavigationEvent) {
+            forwarding = previewEnabled
+            if (forwarding) input.started(event)
+        }
+
+        override fun onBackProgressed(event: NavigationEvent) {
+            if (forwarding) input.progressed(event)
+        }
+
+        override fun onBackCompleted() {
+            // 关闭预览时只在松手后启动普通返回，不向弹层泄露中间进度
+            if (!forwarding) input.started(NavigationEvent())
+            forwarding = false
+            input.completed()
+        }
+
+        override fun onBackCancelled() {
+            if (forwarding) input.cancelled()
+            forwarding = false
+        }
     }
 }
 

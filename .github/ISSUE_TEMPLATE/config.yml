@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / 使用咨询
+    url: https://github.com/cwuom/NeriPlayer/discussions/categories/q-a
+    about: 使用方法、设置和兼容性问题请前往主仓库 Discussions 的 Q&A / Ask usage, settings, and compatibility questions in the main repository's Q&A discussions

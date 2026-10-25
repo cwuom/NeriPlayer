@@ -18,10 +18,12 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -43,6 +45,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -197,7 +200,18 @@ class NeriBottomBarLayoutTest {
     @Test
     @SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
     fun bottomBarBlursLazyContentInsideNavHost() {
+        val firstFrameCommitted = AtomicBoolean(false)
         composeRule.setContent {
+            val view = LocalView.current
+            DisposableEffect(view) {
+                val observer = view.viewTreeObserver
+                val callback = Runnable { firstFrameCommitted.set(true) }
+                observer.registerFrameCommitCallback(callback)
+                view.invalidate()
+                onDispose {
+                    if (observer.isAlive) observer.unregisterFrameCommitCallback(callback)
+                }
+            }
             val backgroundBackdrop = rememberAdvancedGlassBackdrop()
             val contentBackdrop = rememberAdvancedGlassBackdrop()
             val navController = rememberNavController()
@@ -276,6 +290,8 @@ class NeriBottomBarLayoutTest {
         }
 
         composeRule.waitForIdle()
+        // CI 首帧已实测超过两秒，先等待硬件提交再进入截图的重绘期限
+        composeRule.waitUntil(timeoutMillis = 5_000L) { firstFrameCommitted.get() }
         val bottomBarBounds = composeRule
             .onNodeWithTag(NavHostBottomBarTag)
             .fetchSemanticsNode()

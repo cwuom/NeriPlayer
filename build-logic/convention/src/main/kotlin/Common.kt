@@ -5,9 +5,14 @@ import java.util.Locale
 import java.util.TimeZone
 
 object Common {
-    fun getBuildVersionCode(): Int {
+    fun getBuildVersionCode(buildTimestamp: String? = null): Int {
+        val buildDate = buildTimestamp?.let { value ->
+            val timestamp = value.toLongOrNull()?.takeIf { it > 0L }
+                ?: throw IllegalArgumentException("buildTimestamp must be positive epoch milliseconds")
+            Date(timestamp)
+        } ?: Date()
         val appVerCode: Int by lazy {
-            val versionCode = SimpleDateFormat("yyMMddHH", Locale.ENGLISH).format(Date())
+            val versionCode = SimpleDateFormat("yyMMddHH", Locale.ENGLISH).format(buildDate)
             versionCode.toInt()
         }
         return appVerCode

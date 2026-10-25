@@ -238,27 +238,28 @@ class NeriTabletMiniPlayerLayoutTest {
     }
 
     @Test
-    fun progressRendersOnTheGlassTopEdgeAndKeepsEndpointThumbsInside() {
-        render(600.dp, 240.dp, progressPixelFixture = true)
+    fun progressKeepsThumbCenteredOnTrackAndEndpointsInside() {
+        // 放大像素夹具，让窄屏宿主也能分辨圆点与轨道的边缘
+        render(240.dp, 120.dp, progressPixelFixture = true)
         val positions = listOf(0L, 30_000L, 120_000L)
         positions.forEach { position ->
             composeRule.runOnIdle { playback.value = playback.value.copy(positionMs = position) }
             val progress = position / 120_000f
-            assertProgressPixelsAlignedToGlassEdge(progress, dragging = false)
-            capture("tablet-mini-top-edge-$position")
+            assertProgressPixelsCenteredInsideGlass(progress, dragging = false)
+            capture("tablet-mini-centered-$position")
         }
-        listOf(0f, 1f).forEach { endpoint ->
+        listOf(0f, 0.75f, 1f).forEach { endpoint ->
             progressNode().performTouchInput {
                 down(Offset(width * 0.5f, centerY))
                 moveTo(Offset(width * endpoint, centerY), delayMillis = 100L)
             }
             assertProgress(endpoint)
-            assertProgressPixelsAlignedToGlassEdge(endpoint, dragging = true)
-            capture("tablet-mini-top-edge-drag-${endpoint.toInt()}")
+            assertProgressPixelsCenteredInsideGlass(endpoint, dragging = true)
+            capture("tablet-mini-centered-drag-$endpoint")
             progressNode().performTouchInput { up() }
         }
         composeRule.runOnIdle {
-            assertEquals(listOf(0L, 120_000L), seekRequests.map { it.positionMs })
+            assertEquals(listOf(0L, 90_000L, 120_000L), seekRequests.map { it.positionMs })
             assertTrue("端点进度操作误触了其它动作: $calls", calls.isEmpty())
         }
     }
@@ -462,7 +463,7 @@ class NeriTabletMiniPlayerLayoutTest {
         composeRule.onNodeWithText(Title, useUnmergedTree = true).assertIsDisplayed()
     }
 
-    private fun assertProgressPixelsAlignedToGlassEdge(progress: Float, dragging: Boolean) {
+    private fun assertProgressPixelsCenteredInsideGlass(progress: Float, dragging: Boolean) {
         val playerBounds = bounds(PlayerTag)
         val progressBounds = bounds(ProgressTag)
         val viewportBounds = bounds(ViewportTag)
@@ -473,29 +474,31 @@ class NeriTabletMiniPlayerLayoutTest {
         assertEquals(playerBounds.right, progressBounds.right, 1f)
 
         val pixels = progressNode().captureToImage().toPixelMap()
-        val strokeBottom = ceil(4f * pixelsPerDp).toInt() + 1
+        val centerY = pixels.height / 2f
+        val strokeTop = centerY - 2f * pixelsPerDp
+        val strokeBottom = centerY + 2f * pixelsPerDp
         listOf(0.4f, 0.7f).forEach { fraction ->
             val x = (pixels.width * fraction).roundToInt().coerceIn(0, pixels.width - 1)
-            val topInk = (0 until minOf(strokeBottom, pixels.height)).maxOf { y ->
+            val lineRows = (0 until pixels.height).filter { y ->
                 val color = pixels[x, y]
-                maxOf(color.red, color.green, color.blue)
+                maxOf(color.red, color.green, color.blue) > 0.03f
             }
-            assertTrue("进度线未贴玻璃上边缘: progress=$progress x=$x topInk=$topInk", topInk > 0.03f)
-            val thickLinePixel = pixels[x, (3f * pixelsPerDp).toInt().coerceIn(0, pixels.height - 1)]
-            assertTrue("进度线未加粗到 4dp: progress=$progress x=$x color=$thickLinePixel",
-                maxOf(thickLinePixel.red, thickLinePixel.green, thickLinePixel.blue) > 0.03f)
-            for (y in strokeBottom until pixels.height) {
-                val color = pixels[x, y]
-                assertTrue("进度线离开了玻璃上边缘: progress=$progress x=$x y=$y color=$color",
-                    maxOf(color.red, color.green, color.blue) < 0.03f)
-            }
+            assertTrue("进度线未绘制: progress=$progress x=$x", lineRows.isNotEmpty())
+            assertEquals("进度线中心偏移", centerY, (lineRows.first() + lineRows.last() + 1) / 2f, 1f)
+            assertEquals("进度线顶部偏移", strokeTop, lineRows.first().toFloat(), 1f)
+            assertEquals("进度线底部偏移", strokeBottom, lineRows.last() + 1f, 1f)
         }
 
         val radius = (if (dragging) 5f else 3f) * pixelsPerDp
         val thumbCenter = (progress * pixels.width).coerceIn(radius, pixels.width - radius)
-        val thumbRow = maxOf(radius.roundToInt(), ceil(4f * pixelsPerDp).toInt())
+        val thumbColumn = thumbCenter.roundToInt().coerceIn(0, pixels.width - 1)
+        val thumbRows = (0 until pixels.height).filter { y -> isProgressPrimary(pixels[thumbColumn, y]) }
+        assertTrue("进度圆点未绘制", thumbRows.isNotEmpty())
+        assertEquals("圆点未对齐轨道中心", centerY, (thumbRows.first() + thumbRows.last() + 1) / 2f, 1f)
+        assertEquals("圆点竖向被裁切", radius * 2f, thumbRows.size.toFloat(), 2f)
+        val thumbRow = ceil(strokeBottom).toInt()
             .coerceIn(0, pixels.height - 1)
-        val sampleOffset = thumbRow + 0.5f - radius
+        val sampleOffset = thumbRow + 0.5f - centerY
         val thumbHalfWidth = sqrt((radius * radius - sampleOffset * sampleOffset).coerceAtLeast(0f))
         val thumbPixels = (0 until pixels.width).filter { x -> isProgressPrimary(pixels[x, thumbRow]) }
         assertTrue("进度圆点未完整显示: progress=$progress dragging=$dragging", thumbPixels.isNotEmpty())
@@ -503,7 +506,7 @@ class NeriTabletMiniPlayerLayoutTest {
             abs(thumbPixels.first() - (thumbCenter - thumbHalfWidth)) <= 2f)
         assertTrue("进度圆点右边缘被裁切: progress=$progress pixels=$thumbPixels",
             abs((thumbPixels.last() + 1) - (thumbCenter + thumbHalfWidth)) <= 2f)
-        val thumbBottom = ceil(radius * 2f).toInt() + 1
+        val thumbBottom = ceil(centerY + radius).toInt() + 1
         for (y in thumbBottom until pixels.height) {
             assertTrue("进度圆点未完整留在顶部区域: progress=$progress dragging=$dragging y=$y",
                 (0 until pixels.width).none { x -> isProgressPrimary(pixels[x, y]) })

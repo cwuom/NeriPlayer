@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsBoundsTransform
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingFavoriteIconColor
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedTransitionElement
 
@@ -137,6 +138,7 @@ internal fun NowPlayingCoverBackButton(
             modifier = modifier.testTag("nowPlayingBackButton").size(buttonSize)
                 .sharedBounds(
                     rememberSharedContentState(key = NowPlayingLyricsSharedTransitionElement.BACK.key),
+                    boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                     animatedVisibilityScope = animatedVisibilityScope,
                     enter = EnterTransition.None,
                     exit = ExitTransition.None
@@ -190,6 +192,7 @@ internal fun NowPlayingCoverTopActions(
                 modifier = Modifier.size(buttonSize)
                     .sharedBounds(
                         rememberSharedContentState(key = "btn_more"),
+                        boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                         animatedVisibilityScope = animatedVisibilityScope,
                         enter = EnterTransition.None,
                         exit = ExitTransition.None
@@ -227,6 +230,7 @@ private fun NowPlayingFavoriteButton(
             modifier = Modifier.size(buttonSize)
                 .sharedElement(
                     rememberSharedContentState(key = "btn_favorite"),
+                    boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                     animatedVisibilityScope = animatedVisibilityScope
                 ).zIndex(1f)
         ) {
@@ -257,6 +261,7 @@ private fun NowPlayingCommentButton(
             modifier = Modifier.size(buttonSize)
                 .sharedBounds(
                     rememberSharedContentState(key = "btn_comment"),
+                    boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                     animatedVisibilityScope = animatedVisibilityScope,
                     enter = EnterTransition.None,
                     exit = ExitTransition.None

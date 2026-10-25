@@ -237,7 +237,8 @@ class NowPlayingPageBackNavigationTest {
         composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).assertDoesNotExist()
     }
 
-    private fun backEvent(progress: Float) = BackEventCompat(0f, 0f, progress, BackEventCompat.EDGE_RIGHT)
+    private fun backEvent(progress: Float, swipeEdge: Int = BackEventCompat.EDGE_RIGHT) =
+        BackEventCompat(0f, 0f, progress, swipeEdge)
 
     @Test
     fun materialPhoneLyricsSystemBackReturnsToCoverBeforeClosing() =
@@ -246,6 +247,14 @@ class NowPlayingPageBackNavigationTest {
     @Test
     fun cleanPhoneLyricsSystemBackReturnsToCoverBeforeClosing() =
         assertPhoneLyricsBack(UiStyle.Clean)
+
+    @Test
+    fun materialPhoneLyricsPredictiveCancelRestoresBothImmersiveModes() =
+        assertPhoneLyricsPredictiveCancel(UiStyle.Material)
+
+    @Test
+    fun cleanPhoneLyricsPredictiveCancelRestoresBothImmersiveModes() =
+        assertPhoneLyricsPredictiveCancel(UiStyle.Clean)
 
     private fun assertTabletCloses(style: UiStyle, topBar: Boolean) {
         render(style, tablet = true, retainedLyricsPage = false)
@@ -307,6 +316,68 @@ class NowPlayingPageBackNavigationTest {
             assertEquals(1, closeRequests)
         }
         composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    private fun assertPhoneLyricsPredictiveCancel(style: UiStyle) {
+        render(style, tablet = false, retainedLyricsPage = true)
+        val dispatcher = composeRule.activity.onBackPressedDispatcher
+        val settings = SettingsRepository(composeRule.activity.applicationContext)
+        listOf(false, true).forEachIndexed { index, immersive ->
+            runBlocking {
+                settings.setNowPlayingImmersiveMode(immersive)
+                settings.nowPlayingImmersiveModeFlow.first { it == immersive }
+            }
+            composeRule.runOnIdle {
+                visible = true
+                lyricsPage = true
+            }
+            advance(600L)
+            composeRule.onNodeWithTag("lyricsScreen", useUnmergedTree = true).assertIsDisplayed()
+            composeRule.onNodeWithTag("nowPlayingBackButton", useUnmergedTree = true).assertDoesNotExist()
+
+            composeRule.runOnIdle {
+                dispatcher.dispatchOnBackStarted(backEvent(0f, swipeEdge = BackEventCompat.EDGE_LEFT))
+            }
+            listOf(0.2f, 0.7f, 0.15f).forEach { progress ->
+                composeRule.runOnIdle {
+                    dispatcher.dispatchOnBackProgressed(backEvent(progress, swipeEdge = BackEventCompat.EDGE_LEFT))
+                }
+                advance(80L)
+                composeRule.runOnIdle {
+                    assertTrue("预览与回拖不能提交歌词导航: $style immersive=$immersive", lyricsPage)
+                    assertTrue(visible)
+                    assertEquals(index, closeRequests)
+                }
+            }
+            // 目标页实际加入转场，避免把没有进入歌词预览的取消当作通过
+            composeRule.onNodeWithTag("nowPlayingBackButton", useUnmergedTree = true).assertExists()
+
+            composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
+            advance(600L)
+            composeRule.runOnIdle {
+                assertTrue("取消后仍应显示歌词: $style immersive=$immersive", lyricsPage)
+                assertTrue(visible)
+                assertEquals(index, closeRequests)
+            }
+            composeRule.onNodeWithTag("lyricsScreen", useUnmergedTree = true).assertIsDisplayed()
+            composeRule.onNodeWithTag("nowPlayingBackButton", useUnmergedTree = true).assertDoesNotExist()
+
+            pressSystemBack()
+            advance(1_500L)
+            composeRule.runOnIdle {
+                assertFalse("取消后的普通返回应先回封面", lyricsPage)
+                assertTrue(visible)
+                assertEquals(index, closeRequests)
+            }
+            composeRule.onNodeWithTag("lyricsScreen", useUnmergedTree = true).assertDoesNotExist()
+
+            pressSystemBack()
+            advance(400L)
+            composeRule.runOnIdle {
+                assertFalse(visible)
+                assertEquals(index + 1, closeRequests)
+            }
+        }
     }
 
     private fun render(

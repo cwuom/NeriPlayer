@@ -22,6 +22,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,9 +39,8 @@ import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
-import moe.ouom.neriplayer.ui.navigation.PredictiveBackPreviewGate
 import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 
 internal val LocalOverlaySurfaceScale = compositionLocalOf { 1f }
 
@@ -156,59 +156,59 @@ internal fun DensityScaledModalBottomSheet(
     val dragHandleInteractionSource = remember { MutableInteractionSource() }
 
     val backBridge = remember { SheetNavigationEventBridge() }
+    val previewEnabled = LocalPredictiveBackPreviewEnabled.current
+    SideEffect { backBridge.previewEnabled = previewEnabled }
     DisposableEffect(backBridge) { onDispose(backBridge::dispose) }
 
     CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides backBridge) {
-        PredictiveBackPreviewGate(previewEnabled = LocalPredictiveBackPreviewEnabled.current) {
-            // 保持 Sheet 贴边，密度缩放由 LocalDensity 传递给内部内容
-            ModalBottomSheet(
-                onDismissRequest = onDismissRequest,
-                modifier = modifier,
-                sheetState = sheetState,
-                sheetMaxWidth = sheetMaxWidth,
-                sheetGesturesEnabled = sheetGesturesEnabled,
-                shape = shape,
-                containerColor = containerColor,
-                contentColor = contentColor,
-                tonalElevation = tonalElevation,
-                scrimColor = scrimColor,
-                // 绕过 Material 默认的 TooltipBox，避免按住把手时出现矩形遮罩
-                dragHandle = null,
-                contentWindowInsets = contentWindowInsets,
-                properties = properties,
-                content = {
-                    ApplyOverlayWindowNavigationBarPolicy()
-                    SheetNavigationEventForwarding(backBridge)
-                    if (dragHandle != null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(
-                                    interactionSource = dragHandleInteractionSource,
-                                    indication = null
-                                ) {
-                                    scope.launch {
-                                        when (sheetState.currentValue) {
-                                            SheetValue.Expanded -> {
-                                                sheetState.hide()
-                                                if (!sheetState.isVisible) {
-                                                    onDismissRequest()
-                                                }
+        // 保持 Sheet 贴边，密度缩放由 LocalDensity 传递给内部内容
+        ModalBottomSheet(
+            onDismissRequest = onDismissRequest,
+            modifier = modifier,
+            sheetState = sheetState,
+            sheetMaxWidth = sheetMaxWidth,
+            sheetGesturesEnabled = sheetGesturesEnabled,
+            shape = shape,
+            containerColor = containerColor,
+            contentColor = contentColor,
+            tonalElevation = tonalElevation,
+            scrimColor = scrimColor,
+            // 绕过 Material 默认的 TooltipBox，避免按住把手时出现矩形遮罩
+            dragHandle = null,
+            contentWindowInsets = contentWindowInsets,
+            properties = properties,
+            content = {
+                ApplyOverlayWindowNavigationBarPolicy()
+                SheetNavigationEventForwarding(backBridge)
+                if (dragHandle != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                interactionSource = dragHandleInteractionSource,
+                                indication = null
+                            ) {
+                                scope.launch {
+                                    when (sheetState.currentValue) {
+                                        SheetValue.Expanded -> {
+                                            sheetState.hide()
+                                            if (!sheetState.isVisible) {
+                                                onDismissRequest()
                                             }
-                                            SheetValue.PartiallyExpanded -> sheetState.expand()
-                                            SheetValue.Hidden -> sheetState.show()
                                         }
+                                        SheetValue.PartiallyExpanded -> sheetState.expand()
+                                        SheetValue.Hidden -> sheetState.show()
                                     }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            dragHandle()
-                        }
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        dragHandle()
                     }
-                    content()
                 }
-            )
-        }
+                content()
+            }
+        )
     }
 }
 

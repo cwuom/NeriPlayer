@@ -17,13 +17,11 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.createBitmap
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
@@ -51,6 +49,7 @@ import moe.ouom.neriplayer.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
+import moe.ouom.neriplayer.activity.enableNeriEdgeToEdge
 import org.json.JSONObject
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
@@ -101,8 +100,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lockPortraitIfPhone()
-        enableEdgeToEdge()
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        enableNeriEdgeToEdge()
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("netease")
 
         buildLayout()
