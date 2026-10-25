@@ -32,7 +32,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -69,7 +68,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
@@ -89,9 +87,8 @@ import moe.ouom.neriplayer.ui.settings.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
-import moe.ouom.neriplayer.data.model.storage.StorageCacheKind
+import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsCheckbox
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
@@ -100,7 +97,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
-import moe.ouom.neriplayer.common.format.formatFileSize
 
 private val DOWNLOAD_FILE_NAME_PLACEHOLDERS = listOf(
     "%title%",
@@ -188,12 +184,20 @@ internal fun SettingsStorageCacheSection(
     clearCrashLogs: Boolean,
     onClearCrashLogsChange: (Boolean) -> Unit,
     onClearCacheClick: (StorageCacheClearOptions) -> Unit,
+    isStorageScanning: Boolean = false,
+    hasStorageScan: Boolean = storageDetails != StorageUsageSummary.Empty,
+    isClearing: Boolean = false,
+    scanFailed: Boolean = false,
+    onRetryScan: () -> Unit = {},
+    estimateCacheClear: suspend (Int) -> PlayerCacheClearEstimate = { PlayerCacheClearEstimate(null, null) },
     cardIndex: Int? = null,
     highlightTargetId: String? = null,
     highlightPulse: Int = 0,
     onHighlightFinished: (() -> Unit)? = null
 ) {
     val composeResources = LocalResources.current
+    var clearOtherCache by rememberSaveable { mutableStateOf(false) }
+    var retainRecentSongs by rememberSaveable { mutableStateOf(0) }
     val showDownloadFileNameDialog = remember { mutableStateOf(false) }
     var pendingDownloadFileNameTemplate by rememberSaveable(
         stateSaver = TextFieldValue.Saver
@@ -513,156 +517,44 @@ internal fun SettingsStorageCacheSection(
     val shouldRenderCacheDialogs = cardIndex == null || cardIndex == 3
 
     if (shouldRenderCacheDialogs && showClearCacheDialog) {
-        MiuixSettingsDialog(
-            onDismissRequest = { onShowClearCacheDialogChange(false) },
-            title = { Text(stringResource(CoreCommonR.string.settings_confirm_clear_cache)) },
-            text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text(stringResource(CoreCommonR.string.settings_clear_cache_warning))
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        stringResource(CoreCommonR.string.settings_select_cache_types),
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    CacheTypeRow(
-                        checked = clearAudioCache,
-                        title = stringResource(CoreCommonR.string.settings_audio_cache),
-                        description = cacheTypeDescription(
-                            storageDetails = storageDetails,
-                            kind = StorageCacheKind.Audio,
-                            fallback = stringResource(CoreCommonR.string.settings_audio_cache_desc)
-                        ),
-                        onCheckedChange = onClearAudioCacheChange
-                    )
-                    CacheTypeRow(
-                        checked = clearImageCache,
-                        title = stringResource(CoreCommonR.string.settings_image_cache),
-                        description = cacheTypeDescription(
-                            storageDetails = storageDetails,
-                            kind = StorageCacheKind.Image,
-                            fallback = stringResource(CoreCommonR.string.settings_image_cache_desc)
-                        ),
-                        onCheckedChange = onClearImageCacheChange
-                    )
-                    CacheTypeRow(
-                        checked = clearSharedMediaCache,
-                        title = stringResource(CoreCommonR.string.storage_type_shared_media),
-                        description = cacheTypeDescription(
-                            storageDetails = storageDetails,
-                            kind = StorageCacheKind.SharedMedia,
-                            fallback = stringResource(CoreCommonR.string.storage_desc_shared_media)
-                        ),
-                        onCheckedChange = onClearSharedMediaCacheChange
-                    )
-                    CacheTypeRow(
-                        checked = clearLyricsCache,
-                        title = stringResource(CoreCommonR.string.storage_type_lyrics_cache),
-                        description = cacheTypeDescription(
-                            storageDetails = storageDetails,
-                            kind = StorageCacheKind.Lyrics,
-                            fallback = stringResource(CoreCommonR.string.storage_desc_lyrics_cache)
-                        ),
-                        onCheckedChange = onClearLyricsCacheChange
-                    )
-                    CacheTypeRow(
-                        checked = clearNeteasePlaylistCache,
-                        title = stringResource(CoreCommonR.string.storage_type_netease_playlist_cache),
-                        description = cacheTypeDescription(
-                            storageDetails = storageDetails,
-                            kind = StorageCacheKind.NeteasePlaylist,
-                            fallback = stringResource(CoreCommonR.string.storage_desc_netease_playlist_cache)
-                        ),
-                        onCheckedChange = onClearNeteasePlaylistCacheChange
-                    )
-                    CacheTypeRow(
-                        checked = clearBiliFavoriteCache,
-                        title = stringResource(CoreCommonR.string.storage_type_bili_favorite_cache),
-                        description = cacheTypeDescription(
-                            storageDetails = storageDetails,
-                            kind = StorageCacheKind.BiliFavorite,
-                            fallback = stringResource(CoreCommonR.string.storage_desc_bili_favorite_cache)
-                        ),
-                        onCheckedChange = onClearBiliFavoriteCacheChange
-                    )
-                    CacheTypeRow(
-                        checked = clearBiliArchiveCache,
-                        title = stringResource(CoreCommonR.string.storage_type_bili_archive_cache),
-                        description = cacheTypeDescription(
-                            storageDetails = storageDetails,
-                            kind = StorageCacheKind.BiliArchive,
-                            fallback = stringResource(CoreCommonR.string.storage_desc_bili_archive_cache)
-                        ),
-                        onCheckedChange = onClearBiliArchiveCacheChange
-                    )
-                    CacheTypeRow(
-                        checked = clearYoutubePlaylistCache,
-                        title = stringResource(CoreCommonR.string.storage_type_youtube_playlist_cache),
-                        description = cacheTypeDescription(
-                            storageDetails = storageDetails,
-                            kind = StorageCacheKind.YouTubePlaylist,
-                            fallback = stringResource(CoreCommonR.string.storage_desc_youtube_playlist_cache)
-                        ),
-                        onCheckedChange = onClearYoutubePlaylistCacheChange
-                    )
-                    CacheTypeRow(
-                        checked = clearLogFiles,
-                        title = stringResource(CoreCommonR.string.storage_type_log_files),
-                        description = cacheTypeDescription(
-                            storageDetails = storageDetails,
-                            kind = StorageCacheKind.LogFiles,
-                            fallback = stringResource(CoreCommonR.string.storage_desc_log_files)
-                        ),
-                        onCheckedChange = onClearLogFilesChange
-                    )
-                    CacheTypeRow(
-                        checked = clearCrashLogs,
-                        title = stringResource(CoreCommonR.string.storage_type_crash_logs),
-                        description = cacheTypeDescription(
-                            storageDetails = storageDetails,
-                            kind = StorageCacheKind.CrashLogs,
-                            fallback = stringResource(CoreCommonR.string.storage_desc_crash_logs)
-                        ),
-                        onCheckedChange = onClearCrashLogsChange
-                    )
-                }
+        StorageCacheCleanupSheet(
+            storageDetails = storageDetails,
+            isScanning = isStorageScanning,
+            hasScanned = hasStorageScan,
+            isClearing = isClearing,
+            scanFailed = scanFailed,
+            onRetryScan = onRetryScan,
+            estimateCacheClear = estimateCacheClear,
+            options = StorageCacheClearOptions(
+                audioCache = clearAudioCache,
+                imageCache = clearImageCache,
+                sharedMedia = clearSharedMediaCache,
+                lyricsCache = clearLyricsCache,
+                neteasePlaylistCache = clearNeteasePlaylistCache,
+                biliFavoriteCache = clearBiliFavoriteCache,
+                biliArchiveCache = clearBiliArchiveCache,
+                youtubePlaylistCache = clearYoutubePlaylistCache,
+                logFiles = clearLogFiles,
+                crashLogs = clearCrashLogs,
+                otherCache = clearOtherCache,
+                retainRecentSongs = retainRecentSongs
+            ),
+            onOptionsChange = { options ->
+                clearOtherCache = options.otherCache
+                retainRecentSongs = options.retainRecentSongs
+                onClearAudioCacheChange(options.audioCache)
+                onClearImageCacheChange(options.imageCache)
+                onClearSharedMediaCacheChange(options.sharedMedia)
+                onClearLyricsCacheChange(options.lyricsCache)
+                onClearNeteasePlaylistCacheChange(options.neteasePlaylistCache)
+                onClearBiliFavoriteCacheChange(options.biliFavoriteCache)
+                onClearBiliArchiveCacheChange(options.biliArchiveCache)
+                onClearYoutubePlaylistCacheChange(options.youtubePlaylistCache)
+                onClearLogFilesChange(options.logFiles)
+                onClearCrashLogsChange(options.crashLogs)
             },
-            confirmButton = {
-                val clearOptions = StorageCacheClearOptions(
-                    audioCache = clearAudioCache,
-                    imageCache = clearImageCache,
-                    sharedMedia = clearSharedMediaCache,
-                    lyricsCache = clearLyricsCache,
-                    neteasePlaylistCache = clearNeteasePlaylistCache,
-                    biliFavoriteCache = clearBiliFavoriteCache,
-                    biliArchiveCache = clearBiliArchiveCache,
-                    youtubePlaylistCache = clearYoutubePlaylistCache,
-                    logFiles = clearLogFiles,
-                    crashLogs = clearCrashLogs
-                )
-                MiuixSettingsTextButton(
-                    onClick = {
-                        onClearCacheClick(clearOptions)
-                        onShowClearCacheDialogChange(false)
-                    },
-                    enabled = clearOptions.hasSelection
-                ) {
-                    Text(
-                        stringResource(CoreCommonR.string.action_confirm_clear),
-                        color = if (clearOptions.hasSelection) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                        }
-                    )
-                }
-            },
-            dismissButton = {
-                MiuixSettingsTextButton(onClick = { onShowClearCacheDialogChange(false) }) {
-                    Text(stringResource(CoreCommonR.string.action_cancel))
-                }
-            }
+            onClear = onClearCacheClick,
+            onDismiss = { onShowClearCacheDialogChange(false) }
         )
     }
 
@@ -803,53 +695,5 @@ private fun StorageDetailCard(
 private fun StorageDetailGap(showHeader: Boolean) {
     if (!showHeader) {
         Spacer(Modifier.height(12.dp))
-    }
-}
-
-@Composable
-private fun CacheTypeRow(
-    checked: Boolean,
-    title: String,
-    description: String,
-    enabled: Boolean = true,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.55f)
-            .clickable(enabled = enabled) { onCheckedChange(!checked) }
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        MiuixSettingsCheckbox(
-            checked = checked,
-            onCheckedChange = { if (enabled) onCheckedChange(it) }
-        )
-        Column(modifier = Modifier.padding(start = 8.dp)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun cacheTypeDescription(
-    storageDetails: StorageUsageSummary,
-    kind: StorageCacheKind,
-    fallback: String
-): String {
-    val size = storageDetails.sizeOf(kind)
-    return if (size > 0L) {
-        stringResource(CoreCommonR.string.storage_clear_type_size, fallback, formatFileSize(size))
-    } else {
-        fallback
     }
 }

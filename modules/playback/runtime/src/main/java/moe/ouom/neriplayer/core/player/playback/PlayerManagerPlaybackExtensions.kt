@@ -753,6 +753,7 @@ internal fun PlayerManager.playAtIndex(
                     )
                     val cacheSynchronization = synchronizeCachedPlaybackDescriptor(
                         cacheKey = cacheKey,
+                        ownerSong = song,
                         audioInfo = selectedAudioInfo,
                         expectedContentLength = selectedExpectedContentLength,
                         representationIdentity = selectedRepresentationIdentity,

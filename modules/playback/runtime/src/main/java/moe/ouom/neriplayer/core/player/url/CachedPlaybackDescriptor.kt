@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.lifecycle.recordStorageCacheOwner
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.PlaybackQualityOption
@@ -422,6 +424,7 @@ internal suspend fun PlayerManager.synchronizeCachedPlaybackDescriptor(
     audioInfo: PlaybackAudioInfo?,
     expectedContentLength: Long?,
     representationIdentity: String?,
+    ownerSong: SongItem? = null,
     shouldApplyMutation: () -> Boolean = { true }
 ): CachedPlaybackDescriptorSynchronizationResult = withContext(Dispatchers.IO) {
     if (cacheKey.isBlank()) {
@@ -511,6 +514,7 @@ internal suspend fun PlayerManager.synchronizeCachedPlaybackDescriptor(
             return@runCatching CachedPlaybackDescriptorSynchronizationResult.SKIPPED
         }
         mediaCache.writeCachedPlaybackDescriptor(cacheKey, descriptor)
+        if (ownerSong != null && canMutate()) mediaCache.recordStorageCacheOwner(cacheKey, ownerSong)
         if (cache !== mediaCache) {
             return@runCatching CachedPlaybackDescriptorSynchronizationResult.SKIPPED
         }

@@ -99,6 +99,7 @@ private val sections = listOf(
         ItemText(StorageUsageItemKind.DownloadIndex, CoreCommonR.string.storage_type_download_index, CoreCommonR.string.storage_desc_download_index)
     )),
     SectionText(CoreCommonR.string.storage_group_app_data, listOf(
+        ItemText(StorageUsageItemKind.ProtectedCache, CoreCommonR.string.storage_type_protected_cache, CoreCommonR.string.storage_desc_protected_cache),
         ItemText(StorageUsageItemKind.LocalCovers, CoreCommonR.string.storage_type_local_covers, CoreCommonR.string.storage_desc_local_covers),
         ItemText(StorageUsageItemKind.CustomBackground, CoreCommonR.string.storage_type_custom_background, CoreCommonR.string.storage_desc_custom_background),
         ItemText(StorageUsageItemKind.LegacyMigrationFiles, CoreCommonR.string.storage_type_legacy_migration_files, CoreCommonR.string.storage_desc_legacy_migration_files),

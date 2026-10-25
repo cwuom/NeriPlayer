@@ -42,8 +42,8 @@ class StorageUsageScanner(
         val items = cacheMeasurements(attributed.platformCacheStats).toMutableMap()
         items.putAll(libraryMeasurements(library, attributed.downloadIndexStorageStats))
         items.putAll(appDataMeasurements(library, attributed, database))
-        items[StorageUsageItemKind.OtherCache] = StorageUsageMeasurement(
-            statsOf(locations.cacheDir, locations.cacheExclusions()), locations.cacheDir.absolutePath
+        items[StorageUsageItemKind.ProtectedCache] = StorageUsageMeasurement(
+            measuredStatsOf(locations.cacheDir, locations.cacheExclusions()), locations.cacheDir.absolutePath
         )
         return StorageUsageSnapshot(items.toMap())
     }
@@ -87,10 +87,10 @@ class StorageUsageScanner(
             ),
             StorageUsageItemKind.Database to StorageUsageMeasurement(databaseUsageStats(database, attributedBytes)),
             StorageUsageItemKind.AppData to StorageUsageMeasurement(
-                statsOf(locations.filesDir, locations.appDataExclusions(library.localFiles)), locations.filesDir.absolutePath
+                measuredStatsOf(locations.filesDir, locations.appDataExclusions(library.localFiles)), locations.filesDir.absolutePath
             )
         )
     }
 
-    private fun fileMeasurement(file: File) = StorageUsageMeasurement(statsOf(file), file.absolutePath)
+    private fun fileMeasurement(file: File) = StorageUsageMeasurement(measuredStatsOf(file), file.absolutePath)
 }

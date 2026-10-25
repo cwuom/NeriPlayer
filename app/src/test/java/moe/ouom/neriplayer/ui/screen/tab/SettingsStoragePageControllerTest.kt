@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSection
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
@@ -76,9 +77,11 @@ class SettingsStoragePageControllerTest {
         controller = SettingsStorageDetailsController(details, loading, request) {
             scanCount++
             assertTrue(controller.isScanning)
+            assertTrue(controller.isWaitingForScan)
             scanned
         }
 
+        assertTrue(controller.isWaitingForScan)
         controller.scanRequested()
         assertEquals(0, scanCount)
         controller.requestRefresh()
@@ -88,6 +91,7 @@ class SettingsStoragePageControllerTest {
         assertEquals(1, scanCount)
         assertEquals(scanned, controller.details)
         assertFalse(controller.isScanning)
+        assertFalse(controller.isWaitingForScan)
     }
 
     @Test
@@ -105,28 +109,88 @@ class SettingsStoragePageControllerTest {
         }
 
         controller.requestRefresh()
-        val failure = runCatching { controller.scanRequested() }.exceptionOrNull()
+        controller.scanRequested()
 
-        assertTrue(failure is IllegalStateException)
         assertEquals(1, request.intValue)
         assertFalse(controller.isScanning)
+        assertTrue(controller.scanFailed)
+        assertFalse(controller.hasScanned)
+        assertFalse(controller.isWaitingForScan)
     }
 
     @Test
-    fun `opening empty storage details requests one scan but other pages do not`() {
+    fun `a failed scan can retry and replace the visible failure with its result`() = runTest {
+        var shouldFail = true
+        val result = StorageUsageSummary(listOf(StorageUsageSection("cache", emptyList())))
+        val controller = SettingsStorageDetailsController(
+            mutableStateOf(StorageUsageSummary.Empty), mutableStateOf(false), mutableIntStateOf(0)
+        ) {
+            if (shouldFail) throw IllegalStateException("scan failed")
+            result
+        }
+
+        controller.requestRefresh()
+        controller.scanRequested()
+        assertTrue(controller.scanFailed)
+
+        shouldFail = false
+        controller.requestRefresh()
+        assertFalse(controller.scanFailed)
+        assertTrue(controller.isScanning)
+        assertTrue(controller.isWaitingForScan)
+        controller.scanRequested()
+
+        assertEquals(result, controller.details)
+        assertTrue(controller.hasScanned)
+        assertFalse(controller.isScanning)
+        assertFalse(controller.scanFailed)
+        assertFalse(controller.isWaitingForScan)
+    }
+
+    @Test
+    fun `scan cancellation propagates without becoming a visible failure`() = runTest {
+        val controller = SettingsStorageDetailsController(
+            mutableStateOf(StorageUsageSummary.Empty), mutableStateOf(false), mutableIntStateOf(0)
+        ) { throw CancellationException("cancelled") }
+
+        controller.requestRefresh()
+        val failure = runCatching { controller.scanRequested() }.exceptionOrNull()
+
+        assertTrue(failure is CancellationException)
+        assertFalse(controller.isScanning)
+        assertFalse(controller.scanFailed)
+    }
+
+    @Test
+    fun `opening storage page starts scanning before publishing any zero size`() {
         val request = mutableIntStateOf(0)
         val details = mutableStateOf(StorageUsageSummary.Empty)
         val controller = SettingsStorageDetailsController(
             details, mutableStateOf(false), request
         ) { StorageUsageSummary.Empty }
 
-        controller.requestIfDetailsPage(SettingsPage.Storage)
+        controller.requestIfDetailsPage(SettingsPage.Downloads)
         assertEquals(0, request.intValue)
+        controller.requestIfDetailsPage(SettingsPage.Storage)
+        assertEquals(1, request.intValue)
+        assertTrue(controller.isScanning)
         controller.requestIfDetailsPage(SettingsPage.StorageCacheDetails)
         assertEquals(1, request.intValue)
-        details.value = StorageUsageSummary(listOf(StorageUsageSection("cache", emptyList())))
+    }
+
+    @Test
+    fun `a completed empty scan does not trigger another automatic scan`() = runTest {
+        val request = mutableIntStateOf(0)
+        val controller = SettingsStorageDetailsController(
+            mutableStateOf(StorageUsageSummary.Empty), mutableStateOf(false), request
+        ) { StorageUsageSummary.Empty }
+
         controller.requestIfDetailsPage(SettingsPage.StorageCacheDetails)
+        controller.scanRequested()
+        controller.requestIfDetailsPage(SettingsPage.StorageCacheDetails)
+
         assertEquals(1, request.intValue)
+        assertFalse(controller.isScanning)
     }
 
 }

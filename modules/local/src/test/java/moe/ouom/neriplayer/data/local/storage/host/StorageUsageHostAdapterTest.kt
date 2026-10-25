@@ -50,14 +50,14 @@ class StorageUsageHostAdapterTest {
         val summary = StorageUsagePresenter(resources).present(snapshot)
 
         assertEquals(3, summary.sections.size)
-        assertEquals(21, summary.sections.sumOf { it.items.size })
+        assertEquals(22, summary.sections.sumOf { it.items.size })
         assertEquals(20L, summary.cleanableSizeBytes)
         assertEquals(20L, summary.totalSizeBytes)
         assertEquals(1, summary.totalFileCount)
     }
 
     @Test
-    fun androidFileAdapterDeletesAndRecreatesOrdinaryCacheDirectory() {
+    fun androidFileAdapterDeletesAndRecreatesOrdinaryCacheDirectory() = runBlocking<Unit> {
         val directory = temporary.newFolder()
         write(directory, "cache", 7)
         val adapter = AndroidStorageCacheFiles(mock(Context::class.java))

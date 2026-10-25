@@ -16,8 +16,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.core.net.toUri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
 import moe.ouom.neriplayer.data.local.storage.analyzeStorageUsage
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.ManagedLibraryProcessingDetailsCard
@@ -93,13 +95,24 @@ internal class SettingsStorageDetailsController(
 ) {
     val details: StorageUsageSummary get() = detailsState.value
     val isScanning: Boolean get() = loadingState.value
+    var hasScanned by mutableStateOf(false)
+        private set
+    var scanFailed by mutableStateOf(false)
+        private set
+    val isWaitingForScan: Boolean get() = isScanning || (!hasScanned && !scanFailed)
 
     fun requestRefresh() {
-        if (!isScanning) scanRequestState.intValue++
+        if (!isScanning) {
+            scanFailed = false
+            loadingState.value = true
+            scanRequestState.intValue++
+        }
     }
 
     fun requestIfDetailsPage(activePage: SettingsPage?) {
-        if (activePage == SettingsPage.StorageCacheDetails && details == StorageUsageSummary.Empty) {
+        val isStoragePage = activePage == SettingsPage.Storage ||
+            activePage == SettingsPage.StorageCacheDetails
+        if (isStoragePage && !hasScanned) {
             requestRefresh()
         }
     }
@@ -107,9 +120,14 @@ internal class SettingsStorageDetailsController(
     suspend fun scanRequested() {
         if (scanRequestState.intValue == 0) return
         loadingState.value = true
-        yield()
         try {
+            yield()
             detailsState.value = analyze()
+            hasScanned = true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            scanFailed = true
         } finally {
             loadingState.value = false
         }
@@ -146,6 +164,12 @@ internal fun LazyListScope.settingsStoragePageItems(
     storageDetails: StorageUsageSummary,
     selection: SettingsStorageSelectionState,
     onClearCacheClick: (StorageCacheClearOptions) -> Unit,
+    isStorageScanning: Boolean = false,
+    hasStorageScan: Boolean = storageDetails != StorageUsageSummary.Empty,
+    isClearing: Boolean = false,
+    scanFailed: Boolean = false,
+    onRetryScan: () -> Unit = {},
+    estimateCacheClear: suspend (Int) -> PlayerCacheClearEstimate = { PlayerCacheClearEstimate(null, null) },
     highlightTargetId: String?,
     highlightPulse: Int,
     onHighlightFinished: () -> Unit
@@ -193,6 +217,12 @@ internal fun LazyListScope.settingsStoragePageItems(
                 clearCrashLogs = selection.clearCrashLogs,
                 onClearCrashLogsChange = { selection.clearCrashLogs = it },
                 onClearCacheClick = onClearCacheClick,
+                isStorageScanning = isStorageScanning,
+                hasStorageScan = hasStorageScan,
+                isClearing = isClearing,
+                scanFailed = scanFailed,
+                onRetryScan = onRetryScan,
+                estimateCacheClear = estimateCacheClear,
                 cardIndex = cardIndex,
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,
@@ -207,7 +237,8 @@ internal fun LazyListScope.settingsStorageCacheDetailsItem(
     isScanning: Boolean,
     onRefresh: () -> Unit,
     onClearCache: () -> Unit,
-    onOpenSystemSettings: () -> Unit
+    onOpenSystemSettings: () -> Unit,
+    scanFailed: Boolean = false
 ) {
     item(key = "${SettingsPage.StorageCacheDetails.name}:content") {
         StorageCacheDetailsContent(
@@ -215,7 +246,8 @@ internal fun LazyListScope.settingsStorageCacheDetailsItem(
             isScanning = isScanning,
             onRefresh = onRefresh,
             onClearCache = onClearCache,
-            onOpenSystemSettings = onOpenSystemSettings
+            onOpenSystemSettings = onOpenSystemSettings,
+            scanFailed = scanFailed
         )
     }
 }

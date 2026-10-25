@@ -146,6 +146,7 @@
     "moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/SettingsDownloadDirectoryController.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/appearance/SettingsBackgroundAppearanceController.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/storage/SettingsStoragePageController.kt",
+    "moe/ouom/neriplayer/ui/screen/tab/settings/component/storage/StorageCacheEstimateState.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/home/SettingsHomeStartPresentation.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/operation/SettingsDownloadDirectoryApplyOwner.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/operation/SettingsDownloadDirectoryPreparationOwner.kt",

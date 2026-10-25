@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
 import moe.ouom.neriplayer.data.model.storage.FileStats
 import moe.ouom.neriplayer.data.model.storage.ManagedDownloadLibraryUsage
 import moe.ouom.neriplayer.data.model.storage.StorageCacheKind
-import moe.ouom.neriplayer.data.local.storage.scan.statsOf
+import moe.ouom.neriplayer.data.local.storage.scan.measuredStatsOf
 import moe.ouom.neriplayer.data.local.storage.source.StorageCacheFileAccess
 import moe.ouom.neriplayer.data.local.storage.source.StorageLocations
 import moe.ouom.neriplayer.data.local.storage.source.StoragePlatformCacheAccess
@@ -16,6 +16,10 @@ import moe.ouom.neriplayer.data.local.storage.source.storagePlatformCaches
 
 import android.content.Context
 import java.io.File
+import java.nio.file.Files
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.DownloadIndexRoomStore
@@ -61,16 +65,40 @@ internal class AndroidStoragePlatformCaches(private val context: Context) : Stor
 }
 
 class AndroidStorageCacheFiles(private val context: Context) : StorageCacheFileAccess {
-    override fun stats(file: File): FileStats = statsOf(file)
+    override fun stats(file: File): FileStats = measuredStatsOf(file)
 
-    override fun clear(file: File, kind: StorageCacheKind): Boolean = when (kind) {
-        StorageCacheKind.DownloadStaging -> false
-        StorageCacheKind.LogFiles -> NPLogger.clearLogFiles(context)
-        StorageCacheKind.CrashLogs -> LocalMediaHostAccess.crashLogs.clear(context)
-        else -> clearDirectory(file)
+    override suspend fun clear(file: File, kind: StorageCacheKind): Boolean {
+        currentCoroutineContext().ensureActive()
+        return when (kind) {
+            StorageCacheKind.DownloadStaging -> false
+            StorageCacheKind.LogFiles -> NPLogger.clearLogFiles(context)
+            StorageCacheKind.CrashLogs -> LocalMediaHostAccess.crashLogs.clear(context)
+            else -> clearDirectory(file)
+        }
     }
 
-    private fun clearDirectory(file: File): Boolean = runCatching {
-        file.deleteRecursively().also { deleted -> if (deleted) file.mkdirs() }
-    }.getOrDefault(false)
+    private suspend fun clearDirectory(file: File): Boolean = try {
+        if (Files.isSymbolicLink(file.toPath())) false
+        else {
+            val deleted = deleteCacheEntry(file)
+            currentCoroutineContext().ensureActive()
+            if (deleted) file.mkdirs()
+            deleted
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        false
+    }
+}
+
+private suspend fun deleteCacheEntry(file: File): Boolean {
+    currentCoroutineContext().ensureActive()
+    if (Files.isSymbolicLink(file.toPath())) return file.delete()
+    if (!file.isDirectory) return if (file.isFile) file.delete() else !file.exists()
+    val children = file.listFiles() ?: return false
+    for (child in children) deleteCacheEntry(child)
+    currentCoroutineContext().ensureActive()
+    // 任一子项仍存在时目录删除会失败，同时继续尝试清理其它子项
+    return file.delete()
 }
