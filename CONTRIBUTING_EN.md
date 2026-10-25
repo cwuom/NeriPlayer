@@ -1200,7 +1200,8 @@ Commit messages should follow Conventional Commits when possible, for example:
 
 ### Communication
 
-- [Issues](https://github.com/cwuom/NeriPlayer/issues): bugs, feature requests, and discussions
+- [Issues](https://github.com/cwuom/NeriPlayer/issues): bugs, feature requests, and improvements, with one topic per issue
+- [Discussions Q&A](https://github.com/cwuom/NeriPlayer/discussions/categories/q-a): usage, settings, and compatibility questions
 - [README_EN.md](./README_EN.md): features and usage
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md): community code of conduct
 
