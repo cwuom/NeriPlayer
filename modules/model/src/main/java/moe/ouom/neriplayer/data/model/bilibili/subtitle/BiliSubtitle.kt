@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.data.model.bilibili.subtitle
 
+/** CC 字幕轨道的自动选择取值，具体轨道由视频提供的字幕列表决定 */
+const val BILI_SUBTITLE_LANGUAGE_AUTO = ""
+
 /**
  * B 站 CC 字幕轨道。
  *

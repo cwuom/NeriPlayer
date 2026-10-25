@@ -165,6 +165,9 @@
     <string name="debug_bili_section_video">视频</string>
     <string name="debug_bili_section_stream">取流</string>
     <string name="debug_bili_section_favorites">收藏夹</string>
+    <string name="debug_bili_section_subtitles">字幕</string>
+    <string name="debug_bili_subtitle_tracks">CC 字幕轨道 · 第 %s P</string>
+    <string name="debug_bili_subtitle_cues">CC 字幕内容 · 第 %s P</string>
     <string name="debug_probe_autocopy">结果会自动复制到剪贴板</string>
     <string name="debug_probe_running">请求中</string>
     <string name="debug_probe_idle">空闲</string>

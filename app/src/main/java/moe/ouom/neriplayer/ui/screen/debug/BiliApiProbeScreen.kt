@@ -31,6 +31,8 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Stream
+import androidx.compose.material.icons.rounded.ClosedCaption
+import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material3.Text
@@ -148,6 +150,21 @@ fun BiliApiProbeScreen() {
                 title = stringResource(CoreCommonR.string.debug_get_by_avid),
                 icon = Icons.Rounded.Tag,
                 onClick = vm::playInfoByAvidCidAndCopy,
+                enabled = idle && hasBvid
+            )
+        }
+
+        DebugProbeSection(title = stringResource(CoreCommonR.string.debug_bili_section_subtitles)) {
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_bili_subtitle_tracks, page),
+                icon = Icons.Rounded.ClosedCaption,
+                onClick = vm::subtitleTracksByBvidCidAndCopy,
+                enabled = idle && hasBvid
+            )
+            DebugProbeAction(
+                title = stringResource(CoreCommonR.string.debug_bili_subtitle_cues, page),
+                icon = Icons.Rounded.Subtitles,
+                onClick = vm::subtitleCueProbeByBvidCidAndCopy,
                 enabled = idle && hasBvid
             )
         }

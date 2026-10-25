@@ -166,7 +166,8 @@ class AutomaticLyricRomanizedFallbackTest {
         suspend fun original(amllEnabled: Boolean = true, preferWordTimed: Boolean = true): List<LyricEntry> =
             PlayerLyricsProvider.getLyrics(song, application, netease, cache, youtube, lrcLib, matcher, amll,
                 amllEnabled, preferWordTimed, LyricSourcePreference.Automatic, youtubeCache, SongSourceTags.BILIBILI,
-                biliClient)
+                biliClient,
+                BiliSubtitleLyricsOptions())
 
         suspend fun romanized(song: SongItem = this.song, preferWordTimed: Boolean = true): List<LyricEntry> =
             PlayerLyricsProvider.getRomanizedLyrics(song, application, netease, cache, matcher, preferWordTimed,

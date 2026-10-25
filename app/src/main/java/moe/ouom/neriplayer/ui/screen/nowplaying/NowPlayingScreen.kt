@@ -136,6 +136,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFF
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
@@ -594,6 +595,9 @@ fun NowPlayingScreen(
     val amllTtmlLyricDefaultOffsetMs by settingsRepo
         .amllTtmlLyricDefaultOffsetMsFlow
         .collectAsStateWithLifecycle(initialValue = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS)
+    val biliCcSubtitleLyricDefaultOffsetMs by settingsRepo
+        .biliCcSubtitleLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS)
     val lyricTranslationUsePhonetic by settingsRepo
         .lyricTranslationUsePhoneticFlow
         .collectAsStateWithLifecycle(initialValue = false)
@@ -1096,6 +1100,8 @@ fun NowPlayingScreen(
         lrclibDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
         amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
         preferredLyricSource = loadedPreferredLyricSource,
+        biliCcSubtitleDefaultOffsetMs = biliCcSubtitleLyricDefaultOffsetMs,
+        isBiliCcSubtitleLyrics = PlayerManager.isBiliCcSubtitleLyricsActive(currentSong),
     )
     val progressInfoSegments = remember(
         currentPlaybackAudioInfo,

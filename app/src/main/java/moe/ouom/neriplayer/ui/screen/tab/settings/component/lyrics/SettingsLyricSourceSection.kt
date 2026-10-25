@@ -105,6 +105,13 @@ internal fun SettingsLyricSourceSection(
         onClick = { showSourceDialog = true }
     )
 
+    SettingsBiliCcSubtitleGroup(
+        repository = repository,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+
     if (!showSourceDialog) return
 
     MiuixSettingsDialog(
@@ -151,3 +158,4 @@ private fun lyricSourcePreferenceDescription(source: LyricSourcePreference): Int
     LyricSourcePreference.LrcLib -> CoreCommonR.string.settings_lyric_source_lrclib_desc
     LyricSourcePreference.AmllTtml -> CoreCommonR.string.settings_lyric_source_amll_ttml_desc
 }
+

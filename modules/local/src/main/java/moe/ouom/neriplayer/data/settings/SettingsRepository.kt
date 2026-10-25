@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.data.settings.appearance.persistThemeModeSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeUiStyle
 import moe.ouom.neriplayer.data.settings.bootstrap.updateBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
@@ -348,6 +349,14 @@ class SettingsRepository(private val context: Context) {
             )
         }
 
+    val biliCcSubtitleLyricDefaultOffsetMsFlow: Flow<Long> =
+        dataStoreSettingFlow {
+            normalizeLyricDefaultOffsetMs(
+                it[SettingsKeys.BILI_CC_SUBTITLE_LYRIC_DEFAULT_OFFSET_MS]
+                    ?: DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
+            )
+        }
+
     val advancedLyricsEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.advancedLyricsEnabledFlow
 
@@ -366,6 +375,15 @@ class SettingsRepository(private val context: Context) {
     val defaultLyricSourceFlow: Flow<LyricSourcePreference> =
         settingFlow(AutoSettingsSchema.lyricSource.defaultLyricSource)
             .map(LyricSourcePreferencePolicy::fromStorage)
+
+    val biliCcSubtitleLyricsEnabledFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.lyricSource.biliCcSubtitleLyricsEnabled)
+
+    val biliCcSubtitleLanguageFlow: Flow<String> =
+        settingFlow(AutoSettingsSchema.lyricSource.biliCcSubtitleLanguage)
+
+    val biliCcSubtitleAiOnlyEnabledFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.lyricSource.biliCcSubtitleAiOnlyEnabled)
 
     val liveUpdateLyricEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.liveUpdateLyricEnabledFlow
@@ -803,6 +821,27 @@ class SettingsRepository(private val context: Context) {
         )
     }
 
+    suspend fun setBiliCcSubtitleLyricsEnabled(enabled: Boolean) {
+        setSetting(
+            setting = AutoSettingsSchema.lyricSource.biliCcSubtitleLyricsEnabled,
+            value = enabled
+        )
+    }
+
+    suspend fun setBiliCcSubtitleLanguage(language: String) {
+        setSetting(
+            setting = AutoSettingsSchema.lyricSource.biliCcSubtitleLanguage,
+            value = language.trim()
+        )
+    }
+
+    suspend fun setBiliCcSubtitleAiOnlyEnabled(enabled: Boolean) {
+        setSetting(
+            setting = AutoSettingsSchema.lyricSource.biliCcSubtitleAiOnlyEnabled,
+            value = enabled
+        )
+    }
+
     suspend fun setBiliAudioQuality(value: String) {
         context.dataStore.edit { it[SettingsKeys.BILI_AUDIO_QUALITY] = value }
         updatePlaybackPreferenceSnapshot(context) { it.copy(biliAudioQuality = value) }
@@ -978,6 +1017,16 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun setBiliCcSubtitleLyricDefaultOffsetMs(offsetMs: Long) {
+        val normalized = normalizeLyricDefaultOffsetMs(offsetMs)
+        context.dataStore.edit {
+            it[SettingsKeys.BILI_CC_SUBTITLE_LYRIC_DEFAULT_OFFSET_MS] = normalized
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(biliCcSubtitleLyricDefaultOffsetMs = normalized)
+        }
+    }
+
     suspend fun resetLyricDefaultOffsets() {
         context.dataStore.edit {
             it[SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS] = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
@@ -985,6 +1034,7 @@ class SettingsRepository(private val context: Context) {
             it[SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS] = DEFAULT_KUGOU_LYRIC_OFFSET_MS
             it[SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS] = DEFAULT_LRCLIB_LYRIC_OFFSET_MS
             it[SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS] = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+            it[SettingsKeys.BILI_CC_SUBTITLE_LYRIC_DEFAULT_OFFSET_MS] = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
         }
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(
@@ -992,7 +1042,8 @@ class SettingsRepository(private val context: Context) {
                 qqMusicLyricDefaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
                 kugouLyricDefaultOffsetMs = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
                 lrclibLyricDefaultOffsetMs = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
-                amllTtmlLyricDefaultOffsetMs = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+                amllTtmlLyricDefaultOffsetMs = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
+                biliCcSubtitleLyricDefaultOffsetMs = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
             )
         }
     }

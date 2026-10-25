@@ -89,6 +89,7 @@ import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
+import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliCcSubtitleContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.MoreOptionsMainContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.SongEncyclopediaContent
@@ -338,6 +339,7 @@ internal enum class MoreOptionsPage {
     FONT_SIZE,
     EDIT_INFO,
     BILI_VIDEO_SKIP,
+    BILI_CC_SUBTITLE,
     LISTEN_TOGETHER,
     ENCYCLOPEDIA
 }
@@ -490,6 +492,7 @@ private class MoreOptionsMainActions(
     val onOpenLyricBehavior: () -> Unit = { owner.open(MoreOptionsPage.LYRIC_BEHAVIOR) }
     val onOpenFontSize: () -> Unit = { owner.open(MoreOptionsPage.FONT_SIZE) }
     val onOpenBiliVideoSkip: () -> Unit = { owner.open(MoreOptionsPage.BILI_VIDEO_SKIP) }
+    val onOpenBiliCcSubtitle: () -> Unit = { owner.open(MoreOptionsPage.BILI_CC_SUBTITLE) }
     val onOpenListenTogether: () -> Unit = { owner.open(MoreOptionsPage.LISTEN_TOGETHER) }
     val onOpenEncyclopedia: () -> Unit = { owner.open(MoreOptionsPage.ENCYCLOPEDIA) }
     val onShowDetails: () -> Unit = { owner.dismiss { onShowSongDetails(originalSong) } }
@@ -655,6 +658,7 @@ private fun MoreOptionsPages(
     )
     MoreOptionsListenTogetherPage(targetState)
     MoreOptionsBiliVideoSkipPage(targetState, actualSong, owner, biliClient)
+    MoreOptionsBiliCcSubtitlePage(targetState, actualSong, owner, biliClient)
     MoreOptionsSearchPage(targetState, viewModel, actualSong, offlineMode, owner)
     MoreOptionsLyricBehaviorPage(
         targetState, originalSong, hasTranslationLyrics, hasPhoneticLyrics, owner
@@ -915,6 +919,21 @@ private fun MoreOptionsBiliVideoSkipContent(
 }
 
 @Composable
+private fun MoreOptionsBiliCcSubtitlePage(
+    targetState: MoreOptionsPage,
+    actualSong: SongItem,
+    owner: MoreOptionsSheetOwner,
+    biliClient: BiliClient
+) {
+    if (targetState != MoreOptionsPage.BILI_CC_SUBTITLE) return
+    BiliCcSubtitleContent(
+        song = actualSong,
+        biliClient = biliClient,
+        onDismiss = { owner.open(MoreOptionsPage.MAIN) }
+    )
+}
+
+@Composable
 private fun MoreOptionsSearchPage(
     targetState: MoreOptionsPage,
     viewModel: NowPlayingViewModel,
@@ -1165,6 +1184,7 @@ private fun MoreOptionsMainPageContent(
         onOpenLyricBehavior = actions.onOpenLyricBehavior,
         onOpenFontSize = actions.onOpenFontSize,
         onOpenBiliVideoSkip = actions.onOpenBiliVideoSkip,
+        onOpenBiliCcSubtitle = actions.onOpenBiliCcSubtitle,
         onOpenListenTogether = actions.onOpenListenTogether,
         onOpenEncyclopedia = actions.onOpenEncyclopedia,
         onShowSongDetails = actions.onShowDetails,

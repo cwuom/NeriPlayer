@@ -1,9 +1,10 @@
-package moe.ouom.neriplayer.platform.bilibili.api.parser
+package moe.ouom.neriplayer.platform.bilibili.lyrics
 
 import moe.ouom.neriplayer.data.model.bilibili.subtitle.BiliSubtitleCue
 import moe.ouom.neriplayer.data.model.bilibili.subtitle.BiliSubtitleTrack
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -51,6 +52,22 @@ class BiliSubtitleParserTest {
     }
 
     @Test
+    fun `preferred language wins and falls back to the automatic order`() {
+        val aiChinese = track(lan = "ai-zh", isAi = true)
+        val humanChinese = track(lan = "zh-CN")
+        val english = track(lan = "en-US")
+        val tracks = listOf(humanChinese, aiChinese, english)
+
+        assertEquals(aiChinese, selectBiliSubtitleTrack(tracks, preferredLanguage = "ai-zh"))
+        assertEquals(english, selectBiliSubtitleTrack(tracks, preferredLanguage = "en-US"))
+        assertEquals(
+            humanChinese,
+            selectBiliSubtitleTrack(tracks, preferredLanguage = "ja")
+        )
+        assertEquals(humanChinese, selectBiliSubtitleTrack(tracks, preferredLanguage = "  "))
+    }
+
+    @Test
     fun `translated track must use another base language`() {
         val primary = track(lan = "zh-CN")
         val sameLanguageAi = track(lan = "ai-zh", isAi = true)
@@ -65,6 +82,19 @@ class BiliSubtitleParserTest {
         assertEquals(
             primary,
             selectBiliTranslatedSubtitleTrack(track(lan = "en-US"), listOf(primary))
+        )
+        assertEquals(
+            japanese,
+            selectBiliTranslatedSubtitleTrack(
+                track(lan = "en-US"),
+                listOf(track(lan = "en-GB"), japanese)
+            )
+        )
+        assertNull(
+            selectBiliTranslatedSubtitleTrack(
+                track(lan = "en-US"),
+                listOf(track(lan = "en-GB"), track(lan = "ai-en", isAi = true))
+            )
         )
     }
 
@@ -112,6 +142,79 @@ class BiliSubtitleParserTest {
         assertEquals(listOf(1_000L, 2_000L), entries.map { it.startTimeMs })
         assertEquals(listOf(1_800L, 2_001L), entries.map { it.endTimeMs })
         assertTrue(toBiliSubtitleLyricEntries(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun `human tracks match by primary language while ai tracks need an exact match`() {
+        assertTrue(matchesBiliSubtitleLanguage("zh-Hans", "zh-CN"))
+        assertTrue(matchesBiliSubtitleLanguage("zh-TW", "zh-Hant"))
+        assertFalse(matchesBiliSubtitleLanguage("zh-Hant", "zh-Hans"))
+        assertTrue(matchesBiliSubtitleLanguage("en-GB", "en-US"))
+        assertTrue(matchesBiliSubtitleLanguage("ai-zh", "ai-zh"))
+        assertFalse(matchesBiliSubtitleLanguage("ai-zh", "zh-CN"))
+        assertFalse(matchesBiliSubtitleLanguage("zh-CN", "ai-zh"))
+        assertFalse(matchesBiliSubtitleLanguage("ja", "zh-CN"))
+    }
+
+    @Test
+    fun `ai subtitles stay out of the automatic order when disabled`() {
+        val ai = track(lan = "ai-zh", isAi = true)
+        val human = track(lan = "zh-CN")
+        val tracks = listOf(ai, human)
+
+        assertEquals(human, selectBiliSubtitleTrack(tracks, aiSubtitleAllowed = true))
+        assertEquals(human, selectBiliSubtitleTrack(tracks, aiSubtitleAllowed = false))
+        assertEquals(ai, selectBiliSubtitleTrack(tracks, preferredLanguage = "ai-zh", aiSubtitleAllowed = false))
+        assertNull(selectBiliSubtitleTrack(listOf(ai), aiSubtitleAllowed = false))
+        assertEquals(ai, selectBiliSubtitleTrack(listOf(ai), aiSubtitleAllowed = true))
+    }
+
+    @Test
+    fun `candidates keep preferred tracks first and fall back to chinese human tracks`() {
+        val english = track(lan = "en-US")
+        val chinese = track(lan = "zh-CN")
+        val aiChinese = track(lan = "ai-zh", isAi = true)
+
+        val preferred = biliSubtitleTrackCandidates(
+            tracks = listOf(english, chinese, aiChinese),
+            preferredLanguage = "en-US"
+        )
+        assertEquals(english, preferred.first())
+
+        val automatic = biliSubtitleTrackCandidates(tracks = listOf(english, aiChinese, chinese))
+        assertEquals(listOf(chinese, aiChinese, english), automatic)
+    }
+
+    @Test
+    fun `chinese script preference keeps simplified and traditional apart`() {
+        assertTrue(matchesBiliSubtitleLanguage("zh-TW", "zh-Hant"))
+        assertTrue(matchesBiliSubtitleLanguage("zh-CN", "zh-Hans"))
+        assertTrue(matchesBiliSubtitleLanguage("zh-Hans", "zh"))
+        assertFalse(matchesBiliSubtitleLanguage("zh-CN", "zh-Hant"))
+        assertFalse(matchesBiliSubtitleLanguage("zh-TW", "zh-Hans"))
+        assertEquals(
+            "zh-TW",
+            selectBiliSubtitleTrack(
+                tracks = listOf(track("zh-CN"), track("zh-TW")),
+                preferredLanguage = "zh-Hant"
+            )?.lan
+        )
+    }
+
+    @Test
+    fun `ai translated track is skipped when ai subtitles are disabled`() {
+        val human = track("zh-CN")
+        val aiEnglish = track("en-US", isAi = true)
+        val tracks = listOf(human, aiEnglish)
+
+        assertEquals(aiEnglish, selectBiliTranslatedSubtitleTrack(human, tracks))
+        assertNull(
+            selectBiliTranslatedSubtitleTrack(
+                primary = human,
+                tracks = tracks,
+                aiSubtitleAllowed = false
+            )
+        )
     }
 
     private fun track(lan: String, isAi: Boolean = false): BiliSubtitleTrack =

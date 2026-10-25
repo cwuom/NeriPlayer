@@ -54,6 +54,7 @@ import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
 import moe.ouom.neriplayer.platform.bilibili.lyrics.BiliSubtitleLyrics
 import moe.ouom.neriplayer.platform.bilibili.lyrics.BiliSubtitleLyricsLoader
 import moe.ouom.neriplayer.platform.bilibili.playback.resolver.biliAvidOrNull
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.biliBvidOrNull
 import moe.ouom.neriplayer.platform.bilibili.playback.resolver.biliCidOrNull
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.platform.youtube.api.client.YouTubeMusicClient
@@ -224,6 +225,13 @@ data class PreferredLyricSourceResult(
     val source: LyricSourcePreference
 )
 
+/** B 站 CC 字幕歌词的开关与轨道偏好 */
+data class BiliSubtitleLyricsOptions(
+    val enabled: Boolean = true,
+    val preferredLanguage: String = "",
+    val aiSubtitleAllowed: Boolean = true
+)
+
 fun shouldTryPreferredLyricSource(
     song: SongItem,
     preference: LyricSourcePreference
@@ -303,6 +311,13 @@ object PlayerLyricsProvider {
     private val preferredLyricSourceCache = LruCache<String, PreferredLyricSourceResult>(40)
     // CC 字幕本身随视频固定，只缓存解析后的歌词行，避免重复拉取字幕文件
     private val biliSubtitleLyricsCache = androidx.collection.LruCache<String, BiliSubtitleLyrics>(24)
+
+    // 记录原文来自 CC 字幕的歌曲，翻译行只在原文确实来自 CC 时加载
+    private val biliCcOriginalSongs = androidx.collection.LruCache<String, Boolean>(32)
+
+    // 搜索与列表歌曲常缺少 cid, 记录 avid/bvid 对应的分 P, 让字幕缓存可以复用
+    private val biliResolvedCidCache = androidx.collection.LruCache<String, Long>(64)
+
     private val neteaseRefreshInFlight = ConcurrentHashMap.newKeySet<Long>()
     private val neteaseColdLoadLocks = ConcurrentHashMap<Long, Mutex>()
     private val lyricsCacheGeneration = AtomicLong(0L)
@@ -318,10 +333,13 @@ object PlayerLyricsProvider {
 
     internal fun clearLyricsCaches() {
         withLyricsCacheWriteLock {
+            biliCcOriginalSongs.evictAll()
+            biliResolvedCidCache.evictAll()
             lyricsCacheGeneration.incrementAndGet()
             amllLyricsCache.evictAll()
             preferredLyricSourceCache.evictAll()
             biliSubtitleLyricsCache.evictAll()
+            BiliSubtitleLyricsLoader.clearCachedTracks()
             LocalMediaSupport.clearLyricsLookupCache()
         }
     }
@@ -331,10 +349,13 @@ object PlayerLyricsProvider {
         ytMusicLyricsCache: LruCache<String, YouTubeMusicLyricsCacheEntry>
     ) {
         withLyricsCacheWriteLock {
+            biliCcOriginalSongs.evictAll()
+            biliResolvedCidCache.evictAll()
             lyricsCacheGeneration.incrementAndGet()
             amllLyricsCache.evictAll()
             preferredLyricSourceCache.evictAll()
             biliSubtitleLyricsCache.evictAll()
+            BiliSubtitleLyricsLoader.clearCachedTracks()
             LocalMediaSupport.clearLyricsLookupCache()
             neteaseLyricsCache.evictAll()
             ytMusicLyricsCache.evictAll()
@@ -344,7 +365,10 @@ object PlayerLyricsProvider {
     fun clearPersistentLyricCache(application: Application) {
         withLyricsCacheWriteLock {
             lyricsCacheGeneration.incrementAndGet()
+            biliCcOriginalSongs.evictAll()
+            biliResolvedCidCache.evictAll()
             biliSubtitleLyricsCache.evictAll()
+            BiliSubtitleLyricsLoader.clearCachedTracks()
             runCatching {
                 lyricsCacheDirectory(application).deleteRecursively()
             }.onFailure {
@@ -849,7 +873,8 @@ object PlayerLyricsProvider {
         defaultLyricSource: LyricSourcePreference,
         ytMusicLyricsCache: LruCache<String, YouTubeMusicLyricsCacheEntry>,
         biliSourceTag: String,
-        biliClient: BiliClient
+        biliClient: BiliClient,
+        biliSubtitleOptions: BiliSubtitleLyricsOptions
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             parseConfirmedUserLyricEntries(song, song.matchedTranslatedLyric)?.let { return@withContext it }
@@ -964,10 +989,14 @@ object PlayerLyricsProvider {
                 )
             }
 
-            if (song.album.startsWith(biliSourceTag)) {
+            if (isBiliSubtitleSource(song, biliSourceTag)) {
                 // 只有原文也取自 CC 字幕时，另一语种轨道才是这份歌词的翻译行
-                if (song.matchedLyricSource == null) {
-                    val subtitleLyrics = loadBiliSubtitleLyrics(song, biliClient)
+                if (biliSubtitleOptions.enabled && isBiliCcOriginal(song)) {
+                    val subtitleLyrics = loadBiliSubtitleLyrics(
+                        song = song,
+                        biliClient = biliClient,
+                        options = biliSubtitleOptions
+                    )
                     if (subtitleLyrics.translatedLyrics.isNotEmpty()) {
                         return@withContext subtitleLyrics.translatedLyrics
                     }
@@ -1101,9 +1130,12 @@ object PlayerLyricsProvider {
         defaultLyricSource: LyricSourcePreference,
         ytMusicLyricsCache: LruCache<String, YouTubeMusicLyricsCacheEntry>,
         biliSourceTag: String,
-        biliClient: BiliClient
+        biliClient: BiliClient,
+        biliSubtitleOptions: BiliSubtitleLyricsOptions
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
+            val isBiliSong = isBiliSubtitleSource(song, biliSourceTag)
+            if (isBiliSong) markBiliCcOriginal(song, fromCc = false)
             parseConfirmedUserLyricEntries(song, song.matchedLyric)?.let { return@withContext it }
             tryGetPreferredLyricSourceResult(
                 song = song,
@@ -1213,9 +1245,20 @@ object PlayerLyricsProvider {
                 )
             }
 
+            var biliCcLyricsLoaded = false
             val platformLyrics = when {
-                song.album.startsWith(biliSourceTag) ->
-                    loadBiliSubtitleLyrics(song, biliClient).lyrics
+                isBiliSong ->
+                    if (biliSubtitleOptions.enabled) {
+                        val subtitleLyrics = loadBiliSubtitleLyrics(
+                            song = song,
+                            biliClient = biliClient,
+                            options = biliSubtitleOptions
+                        )
+                        biliCcLyricsLoaded = subtitleLyrics.lyrics.isNotEmpty()
+                        subtitleLyrics.lyrics
+                    } else {
+                        emptyList()
+                    }
                 song.matchedLyricSource == MusicPlatform.QQ_MUSIC -> emptyList()
                 song.matchedLyricSource == MusicPlatform.CLOUD_MUSIC -> {
                     val matchedId = song.matchedSongId?.toLongOrNull() ?: song.id
@@ -1224,7 +1267,9 @@ object PlayerLyricsProvider {
                 else -> getNeteaseLyrics(song.id, neteaseClient, neteaseLyricsCache)
             }
 
-            if (!preferWordTimedLyrics ||
+            if (biliCcLyricsLoaded) markBiliCcOriginal(song, fromCc = true)
+            if (biliCcLyricsLoaded ||
+                !preferWordTimedLyrics ||
                 platformLyrics.hasWordTimedEntries() ||
                 !amllLyricsEnabled
             ) {
@@ -1245,32 +1290,90 @@ object PlayerLyricsProvider {
      */
     internal suspend fun loadBiliSubtitleLyrics(
         song: SongItem,
-        biliClient: BiliClient
+        biliClient: BiliClient,
+        options: BiliSubtitleLyricsOptions = BiliSubtitleLyricsOptions()
     ): BiliSubtitleLyrics {
-        biliSubtitleLyricsCacheKey(song, cid = null)?.let { key ->
+        if (!options.enabled) return BiliSubtitleLyrics()
+        // 原文加载期间先置位, 并发读取翻译行时也能判定来源
+        markBiliCcOriginal(song, fromCc = true)
+        val cacheKeyBase = biliSubtitleLyricsCacheKey(song, cid = null)
+        val cacheKey = cacheKeyBase?.let {
+            "$it|${options.preferredLanguage}|${options.aiSubtitleAllowed}"
+        }
+        cacheKey?.let { key ->
             biliSubtitleLyricsCache.get(key)?.let { return it }
         }
         val loaded = try {
-            BiliSubtitleLyricsLoader.load(song, biliClient)
+            BiliSubtitleLyricsLoader.load(
+                song = song,
+                client = biliClient,
+                preferredLanguage = options.preferredLanguage,
+                aiSubtitleAllowed = options.aiSubtitleAllowed
+            )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             NPLogger.d("NERI-PlayerManager", "Bilibili CC 字幕歌词读取失败: ${error.message}")
             BiliSubtitleLyrics()
         }
-        if (loaded.lyrics.isNotEmpty() || loaded.translatedLyrics.isNotEmpty()) {
-            biliSubtitleLyricsCacheKey(song, cid = loaded.cid)?.let { key ->
-                biliSubtitleLyricsCache.put(key, loaded)
-            }
+        if (loaded.lyrics.isEmpty()) {
+            markBiliCcOriginal(song, fromCc = false)
+        }
+        val resolvedCid = loaded.cid
+        if (resolvedCid != null) {
+            biliSongLookupKey(song)?.let { key -> biliResolvedCidCache.put(key, resolvedCid) }
+        }
+        // 首选轨道失败时结果是后备轨道, 不做缓存, 下次仍然重试首选轨道
+        if (loaded.preferredTrackMatched &&
+            loaded.translationComplete &&
+            (loaded.lyrics.isNotEmpty() || loaded.translatedLyrics.isNotEmpty())
+        ) {
+            val resolvedKey = biliSubtitleLyricsCacheKey(song, cid = loaded.cid)
+                ?.let { "$it|${options.preferredLanguage}|${options.aiSubtitleAllowed}" }
+            resolvedKey?.let { key -> biliSubtitleLyricsCache.put(key, loaded) }
         }
         return loaded
     }
 
+    /** 记录当前歌曲的原文是否由 CC 字幕提供，供翻译行判断来源 */
+    internal fun markBiliCcOriginal(song: SongItem, fromCc: Boolean) {
+        val key = biliCcMarkerKey(song) ?: return
+        if (fromCc) {
+            biliCcOriginalSongs.put(key, true)
+        } else {
+            biliCcOriginalSongs.remove(key)
+        }
+    }
+
+    internal fun isBiliCcOriginal(song: SongItem): Boolean {
+        val key = biliCcMarkerKey(song) ?: return false
+        if (biliCcOriginalSongs.get(key) != true) return false
+        if (song.lyricSyncEdited == true) return false
+        if (!song.matchedLyric.isNullOrBlank()) return false
+        return !song.isLocalSong()
+    }
+
+    private fun biliCcMarkerKey(song: SongItem): String? {
+        val avid = song.biliAvidOrNull() ?: return null
+        return "$avid:${song.biliCidOrNull() ?: 0L}"
+    }
+
+    private fun isBiliSubtitleSource(song: SongItem, biliSourceTag: String): Boolean =
+        song.channelId == "bilibili" || song.album.startsWith(biliSourceTag)
+
     private fun biliSubtitleLyricsCacheKey(song: SongItem, cid: Long?): String? {
         val avid = song.biliAvidOrNull() ?: return null
-        val resolvedCid = cid ?: song.biliCidOrNull() ?: return null
+        val lookupKey = biliSongLookupKey(song)
+        val resolvedCid = cid
+            ?: song.biliCidOrNull()
+            ?: (lookupKey?.let { biliResolvedCidCache.get(it) })
+            ?: return null
         return "$avid:$resolvedCid"
     }
+
+    private fun biliSongLookupKey(song: SongItem): String? =
+        song.biliAvidOrNull()?.let { "a:$it" }
+            ?: song.biliBvidOrNull()?.let { "b:$it" }
 
     private fun preferredLyricSourceCacheKey(
         song: SongItem,

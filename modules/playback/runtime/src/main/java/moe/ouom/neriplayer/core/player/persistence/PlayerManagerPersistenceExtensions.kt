@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.data.model.playback.storage.PlayerMetadataClearReques
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
 import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
+import moe.ouom.neriplayer.core.player.metadata.BiliSubtitleLyricsOptions
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
@@ -661,7 +662,12 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(
         },
         ytMusicLyricsCache = ytMusicLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG,
-        biliClient = biliClient
+        biliClient = biliClient,
+        biliSubtitleOptions = BiliSubtitleLyricsOptions(
+            enabled = biliCcSubtitleLyricsEnabled,
+            preferredLanguage = biliCcSubtitleLanguage,
+            aiSubtitleAllowed = biliCcSubtitleAiOnlyEnabled
+        )
     )
 }
 
@@ -700,7 +706,12 @@ internal suspend fun PlayerManager.getLyricsImpl(
         },
         ytMusicLyricsCache = ytMusicLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG,
-        biliClient = biliClient
+        biliClient = biliClient,
+        biliSubtitleOptions = BiliSubtitleLyricsOptions(
+            enabled = biliCcSubtitleLyricsEnabled,
+            preferredLanguage = biliCcSubtitleLanguage,
+            aiSubtitleAllowed = biliCcSubtitleAiOnlyEnabled
+        )
     )
 }
 

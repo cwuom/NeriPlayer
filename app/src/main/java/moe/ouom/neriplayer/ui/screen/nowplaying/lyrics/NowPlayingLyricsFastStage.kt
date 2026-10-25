@@ -72,6 +72,9 @@ internal class NowPlayingLyricsLoadStages(
         val canReadDownloaded = canReadDownloadedLyrics(song, managed)
         val downloaded = readFastDownloaded(request, canReadDownloaded)
         val local = readFastLocal(request, managed)
+        // 下载或本地侧载歌词接管原文后, CC 来源标记不再成立
+        val sidecarLyrics = !downloaded?.lyric.isNullOrBlank() || !local?.lyric.isNullOrBlank()
+        if (sidecarLyrics) song?.let(sources::clearBiliCcSubtitleLyricsOrigin)
         val state = resolveFastState(request, managed, local, downloaded)
         return NowPlayingFastLyricsResult(state, local, downloaded, managed, canReadDownloaded)
     }

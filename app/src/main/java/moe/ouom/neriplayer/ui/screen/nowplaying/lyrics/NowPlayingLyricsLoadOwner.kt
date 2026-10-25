@@ -111,12 +111,39 @@ internal class NowPlayingLyricsLoadOwner(
     private var requestJob: Job? = null
     private var disposed = false
     private var snapshotKey: NowPlayingLyricsSnapshotKey? = null
+    private var lastPreferenceRevision: Long? = null
+    private var lastRequestSongKey: String? = null
+    private var pendingForceReplace = false
 
-    fun reload(request: NowPlayingLyricsLoadRequest, key: NowPlayingLyricsSnapshotKey? = null) {
+    /**
+     * 载入歌词。
+     *
+     * [preferenceRevision] 变化表示歌词来源偏好被修改：此时空结果也要覆盖旧歌词，
+     * 否则关闭 CC 字幕之后画面会继续显示缓存内容。
+     */
+    fun reload(
+        request: NowPlayingLyricsLoadRequest,
+        key: NowPlayingLyricsSnapshotKey? = null,
+        preferenceRevision: Long? = null
+    ) {
         if (disposed) return
         requestGeneration++
         val generation = requestGeneration
         requestJob?.cancel()
+        val songKey = request.song?.stableKey()
+        if (songKey != lastRequestSongKey) {
+            // 换歌后旧的强制替换不再适用
+            pendingForceReplace = false
+            lastRequestSongKey = songKey
+        }
+        if (preferenceRevision != null &&
+            lastPreferenceRevision != null &&
+            lastPreferenceRevision != preferenceRevision
+        ) {
+            // 保留到结果真正发布, 期间被新的 reload 取消也不会丢失
+            pendingForceReplace = true
+        }
+        lastPreferenceRevision = preferenceRevision ?: lastPreferenceRevision
         val cacheGeneration = stages.cacheGeneration
         snapshotKey = key?.copy(cacheGeneration = cacheGeneration)
         val currentRequest = refreshInvalidatedInitialCache(request, key, cacheGeneration)
@@ -124,10 +151,11 @@ internal class NowPlayingLyricsLoadOwner(
         if (cached != null) {
             state = cached.state
             secondaryResolved = cached.secondaryResolved
+            pendingForceReplace = false
             requestJob = null
             return
         }
-        requestJob = scope.launch { load(generation, currentRequest) }
+        requestJob = scope.launch { load(generation, currentRequest, pendingForceReplace) }
     }
 
     private fun refreshInvalidatedInitialCache(
@@ -140,13 +168,17 @@ internal class NowPlayingLyricsLoadOwner(
         return request.copy(cachedPreferredLyrics = refreshed.cachedPreferredLyrics)
     }
 
-    private suspend fun load(generation: Long, request: NowPlayingLyricsLoadRequest) {
+    private suspend fun load(
+        generation: Long,
+        request: NowPlayingLyricsLoadRequest,
+        forceReplace: Boolean
+    ) {
         NPLogger.d("NowPlayingLyrics", "歌词加载开始: key=${request.song?.stableKey().orEmpty()}")
         val fast = stages.readFast(request)
         if (!isCurrent(generation)) return
-        publish(generation, request.song, fast.state, "fast")
+        publish(generation, request.song, fast.state, "fast", forceReplace)
         val background = stages.readBackground(request, fast)
-        publish(generation, request.song, background, "background")
+        publish(generation, request.song, background, "background", forceReplace)
         markSecondaryResolved(generation)
     }
 
@@ -158,12 +190,18 @@ internal class NowPlayingLyricsLoadOwner(
         generation: Long,
         song: SongItem?,
         loaded: LoadedLyricsState,
-        stage: String
+        stage: String,
+        forceReplace: Boolean = false
     ) {
         if (!isCurrent(generation) || keepsRestoredSnapshot(stage)) return
         val resolved = overlayConfirmedUserLyrics(song, loaded)
         val hasLyrics = resolved.hasDisplayableContent()
-        if (song.hasConfirmedLyricOverride() || shouldReplaceLyricsAfterRefresh(song != null, hasLyrics)) state = resolved
+        if (song.hasConfirmedLyricOverride() || forceReplace ||
+            shouldReplaceLyricsAfterRefresh(song != null, hasLyrics)
+        ) {
+            state = resolved
+            if (forceReplace) pendingForceReplace = false
+        }
         rememberSnapshot(if (resolved == state) state else resolved, stage)
         logPublishedLyrics(song, stage, hasLyrics)
     }
@@ -226,7 +264,11 @@ internal fun rememberNowPlayingLyricsLoadOwner(
         request.preferWordTimedLyrics, request.defaultLyricSource, versions
     )
     LaunchedEffect(owner, reloadKey, stages, cacheGeneration) {
-        owner.reload(request.copy(cachedPreferredLyrics = restored.initial.cachedPreferredLyrics), snapshotKey)
+        owner.reload(
+            request = request.copy(cachedPreferredLyrics = restored.initial.cachedPreferredLyrics),
+            key = snapshotKey,
+            preferenceRevision = versions.lyricsPreferenceRevision
+        )
     }
     return owner
 }

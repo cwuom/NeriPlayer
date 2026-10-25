@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.platform.bilibili.api.client
 
 import java.io.IOException
+import moe.ouom.neriplayer.platform.bilibili.lyrics.parseBiliSubtitleCues
+import moe.ouom.neriplayer.platform.bilibili.lyrics.parseBiliSubtitleTracks
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,7 +14,7 @@ class BiliClientSubtitleTest {
             json(PLAYER_WITH_SUBTITLE).takeIf { request.url.encodedPath == PLAYER_PATH }
         }
     ) { http, client ->
-        val tracks = client.getVideoSubtitleTracks(aid = 170001L, cid = 101L)
+        val tracks = parseBiliSubtitleTracks(client.getPlayerSubtitlePayload(aid = 170001L, cid = 101L))
 
         val request = http.requestsTo(PLAYER_PATH).single()
         assertEquals("170001", request.url.queryParameter("aid"))
@@ -40,9 +42,9 @@ class BiliClientSubtitleTest {
             }
         }
     ) { http, client ->
-        val track = client.getVideoSubtitleTracks(170001L, 101L).single()
+        val track = parseBiliSubtitleTracks(client.getPlayerSubtitlePayload(170001L, 101L)).single()
 
-        val cues = client.getSubtitleCues(track.url)
+        val cues = parseBiliSubtitleCues(client.getSubtitlePayload(track.url))
 
         assertEquals(listOf("第一句", "第二句"), cues.map { it.content })
         assertEquals(listOf(1_860L, 5_820L), cues.map { it.startTimeMs })
@@ -57,7 +59,7 @@ class BiliClientSubtitleTest {
             json(SUBTITLE_BODY).takeIf { request.url.host == "aisubtitle.hdslb.com" }
         }
     ) { http, client ->
-        val cues = client.getSubtitleCues("//aisubtitle.hdslb.com/bfs/ai_subtitle/prod/a.json")
+        val cues = parseBiliSubtitleCues(client.getSubtitlePayload("//aisubtitle.hdslb.com/bfs/ai_subtitle/prod/a.json"))
 
         assertEquals(2, cues.size)
         val request = http.requests.single()
@@ -67,7 +69,19 @@ class BiliClientSubtitleTest {
 
     @Test
     fun `blank subtitle url sends no request`() = biliClientTest(route = { null }) { http, client ->
-        assertTrue(client.getSubtitleCues("   ").isEmpty())
+        assertTrue(parseBiliSubtitleCues(client.getSubtitlePayload("   ")).isEmpty())
+        assertTrue(http.requests.isEmpty())
+    }
+
+    @Test
+    fun `subtitle url outside bilibili hosts is rejected before any request`() = biliClientTest(
+        route = { null }
+    ) { http, client ->
+        val error = runCatching {
+            client.getSubtitlePayload("https://evil.example/a.json")
+        }.exceptionOrNull()
+
+        assertTrue(error is IllegalArgumentException)
         assertTrue(http.requests.isEmpty())
     }
 
@@ -78,7 +92,7 @@ class BiliClientSubtitleTest {
                 .takeIf { request.url.encodedPath == PLAYER_PATH }
         }
     ) { _, client ->
-        val error = runCatching { client.getVideoSubtitleTracks(1L, 2L) }.exceptionOrNull()
+        val error = runCatching { client.getPlayerSubtitlePayload(1L, 2L) }.exceptionOrNull()
 
         assertTrue(error is IOException)
     }

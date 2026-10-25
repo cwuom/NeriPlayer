@@ -32,10 +32,12 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.playback.PlayOptions
+import moe.ouom.neriplayer.platform.bilibili.lyrics.BiliSubtitleLyricsLoader
 import moe.ouom.neriplayer.core.di.AppContainer
 import org.json.JSONArray
 import org.json.JSONObject
@@ -429,6 +431,92 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             put("resolved_cid", cid)
             put("page", page)
             put("durl", arr)
+        }.toString()
+    }
+
+    /** 解析探针目标：aid、cid 与视频页 Referer */
+    private suspend fun resolveSubtitleProbeTarget(): Triple<Long, Long, String> {
+        val bvid = ui.value.bvid.trim()
+        require(bvid.isNotEmpty()) {
+            getApplication<Application>().getString(CoreCommonR.string.debug_bvid_hint)
+        }
+        val info = client.getVideoBasicInfoByBvid(bvid)
+        val cid = ui.value.cid.toLongOrNull()?.takeIf { it > 0L }
+            ?: getCidByBvidAndPage(bvid, ui.value.page.toIntOrNull() ?: 1)
+        return Triple(info.aid, cid, "https://www.bilibili.com/video/$bvid")
+    }
+
+    /** CC 字幕轨道探针：登录态、轨道数量与字幕文件地址 */
+    fun subtitleTracksByBvidCidAndCopy() = launchAndCopy("subtitle_tracks") {
+        val (aid, cid, referer) = resolveSubtitleProbeTarget()
+        val tracks = BiliSubtitleLyricsLoader.loadTracksFor(aid, cid, client)
+        JSONObject().apply {
+            put("aid", aid)
+            put("cid", cid)
+            put("referer", referer)
+            put("login", client.hasLoginSession())
+            put("track_count", tracks.size)
+            put("tracks", JSONArray().apply {
+                tracks.forEach { track ->
+                    put(JSONObject().apply {
+                        put("id", track.id)
+                        put("lan", track.lan)
+                        put("lan_doc", track.lanDoc)
+                        put("ai_generated", track.isAiGenerated)
+                        put("host", android.net.Uri.parse(track.url).host)
+                        put("subtitle_url", track.url)
+                    })
+                }
+            })
+        }.toString()
+    }
+
+    /** CC 字幕内容探针：逐条轨道读取，记录耗时、条目数与首行内容 */
+    fun subtitleCueProbeByBvidCidAndCopy() = launchAndCopy("subtitle_cues") {
+        val (aid, cid, referer) = resolveSubtitleProbeTarget()
+        val tracks = BiliSubtitleLyricsLoader.loadTracksFor(aid, cid, client)
+        val settings = AppContainer.settingsRepo
+        val lyricsEnabled = settings.biliCcSubtitleLyricsEnabledFlow.first()
+        val preferredLanguage = settings.biliCcSubtitleLanguageFlow.first()
+        val aiFallback = settings.biliCcSubtitleAiOnlyEnabledFlow.first()
+        JSONObject().apply {
+            put("aid", aid)
+            put("cid", cid)
+            put("referer", referer)
+            put("login", client.hasLoginSession())
+            put("lyrics_enabled", lyricsEnabled)
+            put("preferred_language", preferredLanguage)
+            put("ai_fallback", aiFallback)
+            put("tracks", JSONArray().apply {
+                tracks.forEach { track ->
+                    val startedAt = System.currentTimeMillis()
+                    val result = JSONObject().apply {
+                        put("lan", track.lan)
+                        put("lan_doc", track.lanDoc)
+                        put("ai_generated", track.isAiGenerated)
+                        put("host", android.net.Uri.parse(track.url).host)
+                    }
+                    try {
+                        val cues = BiliSubtitleLyricsLoader.loadCuesFor(track.url, referer, client)
+                        result.put("ok", true)
+                        result.put("cue_count", cues.size)
+                        result.put("first_cues", JSONArray().apply {
+                            cues.take(3).forEach { cue ->
+                                put(JSONObject().apply {
+                                    put("from_ms", cue.startTimeMs)
+                                    put("to_ms", cue.endTimeMs)
+                                    put("content", cue.content)
+                                })
+                            }
+                        })
+                    } catch (error: Exception) {
+                        result.put("ok", false)
+                        result.put("error", error.message ?: error.javaClass.simpleName)
+                    }
+                    result.put("elapsed_ms", System.currentTimeMillis() - startedAt)
+                    put(result)
+                }
+            })
         }.toString()
     }
 }

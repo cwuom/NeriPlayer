@@ -171,6 +171,10 @@ Current positioning:
   translations do not crowd each other. Floating lyrics, status-bar lyrics,
   SuperLyric, Lyricon, Bluetooth lyrics, and lyric editing reuse the same
   playback data path.
+  Bilibili songs can use the video's own CC subtitles as lyrics: the CC
+  subtitle panel in Now Playing can turn subtitle lyrics off, pick a
+  specific track, and fall back to auto-generated subtitles; the default
+  offset section keeps a dedicated offset for this source.
 - **Complete local music management**:
   `LocalAudioImportManager` supports external share/open imports, authorized
   folder scanning, device media-library scanning, common audio formats, nearby
