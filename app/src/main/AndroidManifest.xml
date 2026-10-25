@@ -60,7 +60,7 @@
 
         <activity
             android:name=".activity.MainActivity"
-            android:configChanges="uiMode|locale|layoutDirection"
+            android:configChanges="uiMode|locale|layoutDirection|orientation|screenSize|smallestScreenSize|screenLayout"
             android:exported="true"
             tools:targetApi="33">
             <intent-filter>

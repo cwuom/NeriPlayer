@@ -279,7 +279,8 @@ internal fun LocalizedAppContent(
     val baseContext = LocalContext.current
     val configuration = LocalConfiguration.current
     val localizedContext = remember(baseContext, language, configuration) {
-        LanguageManager.localizedContext(baseContext, language)
+        // 语言 Context 会替换已有密度覆盖，在应用入口恢复设备适配
+        applyOnePlusHighDensityDisplayCorrection(LanguageManager.localizedContext(baseContext, language))
     }
     CompositionLocalProvider(
         LocalContext provides localizedContext,
@@ -1269,6 +1270,13 @@ class MainActivity : ComponentActivity() {
         }
 
         scheduleStartupSyncIfNeeded()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        // 旋转只更新现有 Compose 页面，保留底层内容和返回层级
+        super.onConfigurationChanged(newConfig)
+        applyNowPlayingOrientation()
+        applyNavigationBarVisibility()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

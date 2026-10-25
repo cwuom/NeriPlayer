@@ -119,7 +119,8 @@ object LanguageManager {
         if (currentLocales.size() == 1 && currentLocales[0] == locale) {
             return context
         }
-        val config = Configuration(context.resources.configuration)
+        // 只覆盖语言，让后续方向和窗口配置继续跟随系统
+        val config = Configuration()
         config.setLocales(LocaleList(locale))
         return context.createConfigurationContext(config)
     }
