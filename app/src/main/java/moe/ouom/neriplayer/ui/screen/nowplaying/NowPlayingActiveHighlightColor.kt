@@ -21,7 +21,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 internal const val NowPlayingActiveContentColorTransitionDurationMs = 220
 internal const val NowPlayingActiveContentColorStabilizationDelayMs = 72
-internal val NowPlayingFavoriteIconColor = Color(0xFFB71C1C)
+internal val NowPlayingFavoriteIconColor = Color(0xFFFF3B00)
 
 private const val NowPlayingActiveIconMinSaturation = 0.32f
 private const val NowPlayingActiveIconBoostedMinSaturation = 0.52f

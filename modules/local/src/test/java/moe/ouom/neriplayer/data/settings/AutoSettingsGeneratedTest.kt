@@ -25,6 +25,13 @@ import org.mockito.Mockito.`when`
 
 class AutoSettingsGeneratedTest {
     @Test
+    fun colorOsLockscreenLyricsIsRegisteredForPersistenceAndBackup() {
+        val setting = AutoSettingsMetadata.setting("coloros_lockscreen_lyrics_enabled")
+        assertEquals(AutoSettingsSections.lyrics, setting?.section)
+        assertTrue(AutoSettingsBackupKeys.booleanKeys.any { it.name == "coloros_lockscreen_lyrics_enabled" })
+    }
+
+    @Test
     fun homeBilibiliVisibilityIsRegisteredForPersistenceAndBackup() {
         val setting = AutoSettingsMetadata.setting("home_card_bilibili")
         assertEquals(AutoSettingsSections.personalization, setting?.section)
@@ -470,16 +477,31 @@ class AutoSettingsGeneratedTest {
     }
 
     @Test
-    fun highRefreshRateDefaultsToDisabledInGeneralSettings() {
+    fun highRefreshRateDefaultsToEnabledInGeneralSettings() {
         val setting = AutoSettingsSchema.general.preferHighRefreshRate
         val metadata = AutoSettingsMetadata.setting(setting.key)
 
         assertEquals("prefer_high_refresh_rate", setting.preferencesKey.name)
-        assertEquals(false, setting.defaultValue)
+        assertEquals(true, setting.defaultValue)
         assertEquals(SettingValueType.Boolean, metadata?.valueType)
         assertEquals(SettingUiType.Switch, metadata?.ui)
         assertEquals(AutoSettingsSections.general, metadata?.section)
         assertEquals(AutoSettingIcon.AutoAwesome, metadata?.icon)
+    }
+
+    @Test
+    fun highRefreshRateStartsEnabledAndRetainsAnExplicitOptOut() = runBlocking {
+        val context = IsolatedSettingsDataStore.context(
+            moe.ouom.neriplayer.data.testing.InMemorySharedPreferencesRegistry()
+        )
+        IsolatedSettingsDataStore.withEmptySettings(context) {
+            val repository = AutoSettingsRepository(context)
+            assertTrue(repository.preferHighRefreshRateFlow.first())
+
+            repository.setPreferHighRefreshRate(false)
+
+            assertEquals(false, AutoSettingsRepository(context).preferHighRefreshRateFlow.first())
+        }
     }
 
     @Test

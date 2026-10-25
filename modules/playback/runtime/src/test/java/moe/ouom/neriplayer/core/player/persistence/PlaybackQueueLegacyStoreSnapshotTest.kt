@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.persistence
 
 import com.google.gson.Gson
 import java.io.File
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
 import moe.ouom.neriplayer.data.model.playback.PersistedSongItem
@@ -76,6 +77,28 @@ class PlaybackQueueLegacyStoreSnapshotTest {
 
         assertEquals(queue.withPlaybackState(playback), restored)
         assertEquals(42_000L, restored?.positionMs)
+    }
+
+    @Test
+    fun `legacy disk snapshots retain explicit sources while overlaying the saved position`() {
+        val reference = "content://media/external/audio/media/7"
+        val scanned = SongItem(
+            id = 7L, name = "Scanned", artist = "Artist", album = "Album", albumId = 0L,
+            durationMs = 180_000L, coverUrl = null, mediaUri = reference,
+            localFilePath = "/storage/emulated/0/Music/scanned.flac", channelId = "netease", audioId = "7",
+            explicitLocalSourceReference = reference
+        )
+        val state = queue.copy(playlist = listOf(scanned.toPersistedSongItem()))
+        stateFile.writeText(gson.toJson(state))
+        playbackFile.writeText(gson.toJson(playback))
+
+        val restored = requireNotNull(store.read())
+
+        assertEquals(reference, restored.playlist.single().toSongItem().explicitLocalSourceReference)
+        assertEquals(scanned.mediaUri, restored.playlist.single().mediaUri)
+        assertEquals(scanned.localFilePath, restored.playlist.single().localFilePath)
+        assertEquals(42_000L, restored.positionMs)
+        assertEquals(true, restored.shouldResumePlayback)
     }
 
     @Test

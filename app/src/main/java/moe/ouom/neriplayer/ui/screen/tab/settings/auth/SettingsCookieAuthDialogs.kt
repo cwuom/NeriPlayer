@@ -44,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -102,6 +103,7 @@ internal fun SettingsBiliAuthDialogs(
     }
 
     if (showSheet) {
+        val authStorage = rememberAuthLoginStorageStatus(SettingsAccountPlatform.Bilibili)
         val launchBrowserLogin: () -> Unit = onBrowserLogin?.let { injectedBrowserLogin ->
             {
                 onInlineMsgChange(null)
@@ -149,7 +151,10 @@ internal fun SettingsBiliAuthDialogs(
                 } else {
                     vm.importCookiesFromRaw(rawCookie)
                 }
-            }
+            },
+            requiresCompatibilityStorageWarning = authStorage?.requiresCompatibilityWarning ?: false,
+            isAuthStoragePersistent = authStorage?.isPersistent ?: false,
+            isAuthStorageReady = authStorage != null
         )
     }
 
@@ -189,6 +194,7 @@ internal fun SettingsYouTubeAuthDialogs(
     }
 
     if (showSheet) {
+        val authStorage = rememberAuthLoginStorageStatus(SettingsAccountPlatform.YouTube)
         val launchBrowserLogin: () -> Unit = onBrowserLogin?.let { injectedBrowserLogin ->
             {
                 onInlineMsgChange(null)
@@ -241,7 +247,10 @@ internal fun SettingsYouTubeAuthDialogs(
                 } else {
                     vm.importCookiesFromRaw(rawCookie)
                 }
-            }
+            },
+            requiresCompatibilityStorageWarning = authStorage?.requiresCompatibilityWarning ?: false,
+            isAuthStoragePersistent = authStorage?.isPersistent ?: false,
+            isAuthStorageReady = authStorage != null
         )
     }
 
@@ -259,11 +268,26 @@ internal fun SettingsCookieLoginSheet(
     browserHintContent: @Composable ColumnScope.() -> Unit,
     cookieLabel: String,
     onBrowserLogin: () -> Unit,
-    onSaveCookie: (String) -> Unit
+    onSaveCookie: (String) -> Unit,
+    requiresCompatibilityStorageWarning: Boolean = false,
+    isAuthStoragePersistent: Boolean = true,
+    isAuthStorageReady: Boolean = true
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
     var rawCookie by remember { mutableStateOf("") }
+    val storageGate = remember { AuthLoginStorageGate() }
+    LaunchedEffect(inlineMsg, storageGate.submitted) {
+        if (inlineMsg != null) storageGate.allowRetry()
+    }
+
+    fun requestLogin(action: () -> Unit) {
+        if (!isAuthStorageReady) return
+        storageGate.request(requiresCompatibilityStorageWarning, isAuthStoragePersistent) {
+            onInlineMsgChange(null)
+            action()
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -309,6 +333,14 @@ internal fun SettingsCookieLoginSheet(
                     onSelectedIndexChange = { selectedTab = it }
                 )
 
+                if (!isAuthStorageReady) {
+                    Text(
+                        text = stringResource(CoreCommonR.string.auth_storage_checking),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
@@ -324,7 +356,8 @@ internal fun SettingsCookieLoginSheet(
                             0 -> {
                                 browserHintContent()
                                 MiuixSettingsButton(
-                                    onClick = onBrowserLogin,
+                                    onClick = { requestLogin(onBrowserLogin) },
+                                    enabled = isAuthStorageReady && !storageGate.submitted,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(browserButtonLabel)
@@ -341,7 +374,8 @@ internal fun SettingsCookieLoginSheet(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 MiuixSettingsButton(
-                                    onClick = { onSaveCookie(rawCookie) },
+                                    onClick = { requestLogin { onSaveCookie(rawCookie) } },
+                                    enabled = isAuthStorageReady && !storageGate.submitted,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(stringResource(CoreCommonR.string.login_save_cookie))
@@ -352,6 +386,7 @@ internal fun SettingsCookieLoginSheet(
                 }
             }
         }
+        AuthLoginStorageDialogs(storageGate, isAuthStorageReady && isAuthStoragePersistent)
     }
 }
 

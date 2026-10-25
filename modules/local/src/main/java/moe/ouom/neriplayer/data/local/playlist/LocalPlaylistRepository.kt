@@ -60,6 +60,7 @@ import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPreviewAuthority
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
@@ -69,6 +70,7 @@ import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist
 import moe.ouom.neriplayer.platform.netease.playlist.NeteasePlaylistSync
 import moe.ouom.neriplayer.platform.netease.playlist.NeteasePlaylistSyncMessage
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.identity.identity
@@ -180,6 +182,22 @@ class LocalPlaylistRepository private constructor(
             initializationScope.launch {
                 completeInitialLoad()
             }
+        }
+    }
+
+    internal fun containsExplicitLocalFileReferenceCached(reference: String): Boolean? {
+        if (!_initializationReadyFlow.value) return null
+        if (!LocalSongSupport.isLocalMediaUri(reference)) return false
+        val playlists = _playlists.value
+        val localFiles = LocalFilesPlaylist.firstOrNull(playlists)
+        if (localFiles?.songs?.any { song ->
+                preferredLocalMediaReference(song.localFilePath, song.mediaUri) == reference
+            } == true
+        ) {
+            return true
+        }
+        return playlists.any { playlist ->
+            playlist.songs.any { song -> song.validExplicitLocalSourceReference() == reference }
         }
     }
 
@@ -340,6 +358,7 @@ class LocalPlaylistRepository private constructor(
 
                 val favorites = list[index]
                 if (
+                    favorites.songs.any { FavoritesPlaylist.matchesSong(it, hydratedSong) } ||
                     hasExistingSong(
                         existingSongs = favorites.songs,
                         candidate = hydratedSong,
@@ -375,8 +394,8 @@ class LocalPlaylistRepository private constructor(
                 if (index == -1) return@commitPlaylistMutation
 
                 val favorites = list[index]
-                val removedSongs = favorites.songs.filter { it.sameIdentityAs(song) }
-                val updatedSongs = favorites.songs.filterNot { it.sameIdentityAs(song) }.toMutableList()
+                val removedSongs = favorites.songs.filter { FavoritesPlaylist.matchesSong(it, song) }
+                val updatedSongs = favorites.songs.filterNot { FavoritesPlaylist.matchesSong(it, song) }.toMutableList()
                 if (updatedSongs.size == favorites.songs.size) return@commitPlaylistMutation
 
                 val deletedAt = System.currentTimeMillis()
@@ -999,27 +1018,37 @@ class LocalPlaylistRepository private constructor(
         withContext(Dispatchers.IO) {
             recordLyricSyncState(newSongInfo)
             commitPlaylistMutation {
-                val modifiedAt = if (triggerSync) System.currentTimeMillis() else null
+                val now = System.currentTimeMillis()
+                val modifiedAt = if (triggerSync) now else null
                 var changed = false
+                var syncMutation = LocalPlaylistSyncMutation()
                 val updated = _playlists.value.map { playlist ->
                     val songIndex = playlist.songs.indexOfFirst { it.sameIdentityAs(originalSong) }
                     if (songIndex == -1) {
                         playlist
                     } else {
-                        val mergedSongInfo = mergeSongMetadataForPersistence(
-                            currentSong = playlist.songs[songIndex],
-                            newSongInfo = newSongInfo
+                        val currentSong = playlist.songs[songIndex]
+                        val metadataUpdate = prepareFavoriteMetadataMembership(
+                            playlist = playlist,
+                            currentSong = currentSong,
+                            mergedSong = mergeSongMetadataForPersistence(currentSong, newSongInfo),
+                            triggerSync = triggerSync,
+                            now = now
                         )
-                        if (playlist.songs[songIndex] == mergedSongInfo) {
+                        val mergedSongInfo = metadataUpdate.song
+                        if (currentSong == mergedSongInfo) {
                             return@map playlist
                         }
+                        syncMutation += metadataUpdate.syncMutation
                         saveCoverMapping(mergedSongInfo)
                         val songs = playlist.songs.toMutableList()
                         songs[songIndex] = mergedSongInfo
                         changed = true
                         playlist.copy(
                             songs = songs,
-                            modifiedAt = modifiedAt ?: playlist.modifiedAt,
+                            modifiedAt = if (!metadataUpdate.syncMutation.isEmpty) now else {
+                                modifiedAt ?: playlist.modifiedAt
+                            },
                             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
                     }
@@ -1027,11 +1056,12 @@ class LocalPlaylistRepository private constructor(
                 if (!changed) {
                     return@commitPlaylistMutation
                 }
-                // 调用方决定这次元数据变更是不是用户动作，避免播放期自动补全顺手唤醒云同步
+                // 普通自动补全不唤醒同步，首次建立收藏关联由同批成员变更推进同步
                 publishLocked(
                     playlists = updated,
                     triggerSync = triggerSync,
-                    markLocalMutation = triggerSync
+                    markLocalMutation = triggerSync,
+                    syncMutation = syncMutation
                 )
             }
         }
@@ -1195,7 +1225,7 @@ class LocalPlaylistRepository private constructor(
                     return@commitPlaylistMutation false
                 }
                 publishLocked(
-                    playlists = mergeExternalPlaylists(playlists),
+                    playlists = mergeExternalPlaylists(playlists, preserveExplicitLocalSources = true),
                     triggerSync = false,
                     markLocalMutation = false
                 )
@@ -1291,6 +1321,10 @@ class LocalPlaylistRepository private constructor(
         @SuppressLint("StaticFieldLeak")
         @Volatile
         private var INSTANCE: LocalPlaylistRepository? = null
+
+        /** 不触发仓库初始化，null 表示尚无可确认的手动导入缓存 */
+        fun peekExplicitLocalFileReference(reference: String): Boolean? =
+            INSTANCE?.containsExplicitLocalFileReferenceCached(reference)
 
         fun getInstance(context: Context): LocalPlaylistRepository {
             return INSTANCE ?: synchronized(this) {

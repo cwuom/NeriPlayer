@@ -40,6 +40,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.activity.MainActivity
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.persistence.PlaybackQueueRoomStore
@@ -50,6 +51,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.model.playback.PersistedState
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
@@ -79,7 +81,7 @@ class NowPlayingManualPerformanceReplayTest {
     fun compareExistingMiniPlayerWithNewPlaylistSong() {
         assumeTrue("需显式启用手动性能回放", InstrumentationRegistry.getArguments()
             .getString("runNowPlayingPerformanceReplay") == "true")
-        assumeTrue("仅操作 API 33+ 模拟器", Build.VERSION.SDK_INT >= 33 &&
+        assumeTrue("仅操作 API 28+ 模拟器", Build.VERSION.SDK_INT >= 28 &&
             Build.HARDWARE in setOf("ranchu", "goldfish"))
         assumeComposeHostAvailable()
         assumeNoSyncTargets()
@@ -101,6 +103,9 @@ class NowPlayingManualPerformanceReplayTest {
         var playlistId: Long? = null
         var scenario: ActivityScenario<MainActivity>? = null
         var songs = emptyList<SongItem>()
+        val recentHistorySize = InstrumentationRegistry.getArguments().getString("recentHistorySize")
+            ?.toIntOrNull()?.coerceIn(0, 20_000) ?: 0
+        var savedHistory: List<PlayedEntry>? = null
         var failure: Throwable? = null
         try {
             automation.serviceInfo = automation.serviceInfo.apply {
@@ -114,6 +119,8 @@ class NowPlayingManualPerformanceReplayTest {
                 settings.setStartupOnboardingCompleted(true)
                 settings.setDefaultStartDestination(Destinations.Library.route)
                 settings.setUiStyle(UiStyle.Clean)
+                settings.setFollowSystemDark(false)
+                settings.setForceDark(InstrumentationRegistry.getArguments().getString("forceDark") == "true")
                 settings.setDynamicColor(true)
                 settings.setUiDensityScale(1f)
                 settings.setLiquidGlassEnabled(true)
@@ -135,10 +142,60 @@ class NowPlayingManualPerformanceReplayTest {
             }
             playlistId = playlist.id
             songs = playlist.songs
+            if (recentHistorySize > 0) {
+                runBlocking {
+                    val history = AppContainer.playHistoryRepo
+                    check(history.awaitHistoryLoaded())
+                    savedHistory = history.syncSnapshot()
+                    val now = System.currentTimeMillis()
+                    val playable = songs.mapIndexed { index, song ->
+                        PlayedEntry(
+                            id = song.id, name = song.name, artist = song.artist,
+                            album = song.album, durationMs = song.durationMs,
+                            coverUrl = song.coverUrl, mediaUri = song.mediaUri,
+                            localFileName = song.localFileName, localFilePath = song.localFilePath,
+                            matchedLyric = song.matchedLyric,
+                            matchedTranslatedLyric = song.matchedTranslatedLyric,
+                            matchedRomanizedLyric = song.matchedRomanizedLyric,
+                            explicitLocalSourceReference = song.explicitLocalSourceReference,
+                            playedAt = now - index
+                        )
+                    }
+                    val extra = List(recentHistorySize) { index ->
+                        PlayedEntry(
+                            id = 8_000_000_000L + index, name = "History fixture $index",
+                            artist = "Synthetic artist", album = "网易云音乐",
+                            durationMs = 180_000L, coverUrl = songs.first().coverUrl,
+                            playedAt = now - songs.size - index
+                        )
+                    }
+                    history.updateHistory(playable + extra)
+                }
+            }
             scenario = ActivityScenario.launch(MainActivity::class.java)
             waitUntil("created playlist '${playlist.name}' visible") { nativeNodes(playlist.name).isNotEmpty() }
+            if (recentHistorySize > 0) {
+                Log.i(Tag, "recentHistorySize=$recentHistorySize")
+                measure(scenario, output, "recent-open") {
+                    clickText(context.getString(CoreCommonR.string.library_recent_played))
+                }
+                waitUntil("recent fixture songs visible") {
+                    nativeNodes(context.getString(CoreCommonR.string.recent_title)).isNotEmpty() &&
+                        nativeNodes(songs[1].name).isNotEmpty()
+                }
+                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+                waitUntil("library visible after recent back") {
+                    nativeNodes(playlist.name).any { it.text?.toString() == playlist.name } &&
+                        nativeNodes(context.getString(CoreCommonR.string.library_recent_played)).isNotEmpty()
+                }
+            }
             clickText(playlist.name)
-            waitUntil("fixture songs visible after playlist click") { nativeNodes(songs[1].name).isNotEmpty() }
+            val fixturePlaylistVisible = {
+                nativeNodes(playlist.name).any { it.text?.toString() == playlist.name } &&
+                    nativeNodes(songs[1].name).isNotEmpty() &&
+                    nativeNodes(context.getString(CoreCommonR.string.library_recent_played)).isEmpty()
+            }
+            waitUntil("created playlist '${playlist.name}' detail visible", fixturePlaylistVisible)
             scenario.onActivity {
                 PlayerManager.release()
                 PlayerManager.initialize(it.application)
@@ -150,11 +207,24 @@ class NowPlayingManualPerformanceReplayTest {
             SystemClock.sleep(1_000L)
             measure(scenario, output, "existing-mini-player") { clickText(songs[0].name, bottommost = true) }
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-            waitUntil("playlist visible after player back") { nativeNodes(songs[1].name).isNotEmpty() }
+            waitUntil("created playlist '${playlist.name}' visible after player back", fixturePlaylistVisible)
             SystemClock.sleep(700L)
             measure(scenario, output, "new-playlist-song") { clickText(songs[1].name) }
             waitUntil("second fixture song playing") {
                 PlayerManager.currentSongFlow.value?.id == songs[1].id && PlayerManager.isPlayingFlow.value
+            }
+            if (InstrumentationRegistry.getArguments().getString("captureCleanPanels") == "true") {
+                saveWindow(output, "player")
+                clickText(context.getString(CoreCommonR.string.nowplaying_more_options))
+                waitUntil("more options visible") {
+                    nativeNodes(context.getString(CoreCommonR.string.local_song_open_details)).isNotEmpty()
+                }
+                saveWindow(output, "more-options")
+                clickText(context.getString(CoreCommonR.string.local_song_open_details))
+                waitUntil("local song details loaded") {
+                    nativeNodes(context.getString(CoreCommonR.string.local_song_detail_display_name)).isNotEmpty()
+                }
+                saveWindow(output, "song-details")
             }
             Log.i(Tag, "diagnosticArtifacts=${output.absolutePath}; tracing perturbs timing; no performance acceptance asserted")
         } catch (error: Throwable) {
@@ -169,6 +239,7 @@ class NowPlayingManualPerformanceReplayTest {
             cleanup { instrumentation.runOnMainSync { PlayerManager.release() } }
             cleanup { scenario?.close() }
             cleanup { runBlocking { removeFixtureStatistics(fixtures, songs) } }
+            cleanup { savedHistory?.let { entries -> runBlocking { AppContainer.playHistoryRepo.updateHistory(entries) } } }
             cleanup { playlistId?.let { id -> runBlocking { restoreFixturePlaylistCount(id) } } }
             cleanup { playlistId?.let { id -> runBlocking { repository.deletePlaylist(id) }
                 AppContainer.playlistUsageRepo.removeEntry(id, "local") } }
@@ -213,6 +284,17 @@ class NowPlayingManualPerformanceReplayTest {
         var window: Window? = null
         scenario.onActivity { window = it.window }
         return window
+    }
+
+    private fun saveWindow(directory: File, name: String) {
+        val bitmap = checkNotNull(automation.takeScreenshot())
+        try {
+            File(directory, "$name.png").outputStream().use {
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+            }
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     private fun measure(scenario: ActivityScenario<MainActivity>, directory: File, name: String, action: () -> Unit) {
@@ -363,6 +445,8 @@ class NowPlayingManualPerformanceReplayTest {
             save(settings.startupOnboardingCompletedFlow.filterNotNull(), settings::setStartupOnboardingCompleted),
             save(settings.defaultStartDestinationFlow, settings::setDefaultStartDestination),
             save(settings.uiStyleFlow, settings::setUiStyle),
+            save(settings.followSystemDarkFlow, settings::setFollowSystemDark),
+            save(settings.forceDarkFlow, settings::setForceDark),
             save(settings.dynamicColorFlow, settings::setDynamicColor),
             save(settings.liquidGlassEnabledFlow, settings::setLiquidGlassEnabled),
             save(settings.advancedBlurEnabledFlow, settings::setAdvancedBlurEnabled),

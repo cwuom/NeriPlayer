@@ -119,4 +119,12 @@
     <string name="settings_account_sign_in_again">Sign in again</string>
     <string name="settings_account_avatar">%1$s account avatar</string>
     <string name="web_login_webview_unavailable">System WebView is unavailable, so web sign-in cannot open. Enable or update Android System WebView in system settings and try again</string>
+    <string name="auth_storage_checking">Checking account storage…</string>
+    <string name="auth_storage_compatibility_title">Reduced account storage protection</string>
+    <string name="auth_storage_compatibility_message">System secure storage is unavailable on this device. If you continue, account credentials will use software encryption in private app storage and remain available after a restart, but without system Keystore or hardware-backed key protection. Continue only if you trust this device.</string>
+    <string name="auth_storage_compatibility_continue">Accept risk and continue</string>
+    <string name="auth_storage_unavailable_title">Cannot save this account</string>
+    <string name="auth_storage_unavailable_message">Both system secure storage and compatibility encrypted storage are unavailable, so this account cannot be kept after a restart. This sign-in or import has been blocked. Restore device storage and system security services, then try again.</string>
+    <string name="auth_storage_save_failed">Cannot save account credentials. Check device storage and system security services, then try again</string>
+    <string name="auth_storage_clear_failed">Cannot clear the saved account. Check device storage, then try again</string>
 </resources>

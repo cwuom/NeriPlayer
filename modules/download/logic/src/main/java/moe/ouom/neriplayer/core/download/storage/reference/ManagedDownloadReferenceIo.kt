@@ -6,6 +6,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
@@ -317,7 +318,8 @@ object ManagedDownloadReferenceIo {
             val cursor = queryDocumentCursor(
                 context = context,
                 uri = uri,
-                projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                // 音频也可能来自 MediaStore，不能要求文档提供方专用的列
+                projection = arrayOf(OpenableColumns.SIZE)
             ) ?: return inspectDocumentWithoutCursorWithSize(context, uri)
             cursor.use {
                 if (!it.moveToFirst()) return AccessObservation(AccessResult.Missing, null)

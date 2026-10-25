@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
-import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import androidx.activity.compose.BackHandler
@@ -1285,7 +1284,7 @@ internal fun NowPlayingQueueSheet(
                     ) { index, entry ->
                         ReorderableItem(state = reorderState, key = entry.key) { isDragging ->
                             val isFavoriteSong = remember(favoriteSongs, entry.song) {
-                                favoriteSongs.any { it.sameIdentityAs(entry.song) }
+                                favoriteSongs.any { FavoritesPlaylist.matchesSong(it, entry.song) }
                             }
                             val isDislikedSong = remember(dislikedKeys, entry.song) {
                                 HeartbeatScorer.identityKey(entry.song) in dislikedKeys

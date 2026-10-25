@@ -4,8 +4,12 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import android.os.SystemClock
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -13,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -25,6 +28,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -66,6 +70,10 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 import moe.ouom.neriplayer.ui.viewmodel.ManualSearchState
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -206,6 +214,8 @@ private fun MetadataSearchInput(
         value = state.keyword,
         onValueChange = onKeywordChange,
         enabled = enabled && !state.isApplyingMetadata,
+        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+        colors = neriSearchFieldColors(),
         label = { Text(stringResource(CoreCommonR.string.search_keywords)) },
         modifier = Modifier
             .fillMaxWidth()
@@ -245,6 +255,31 @@ private fun MetadataSearchPlatformTabs(
     enabled: Boolean,
     onSelectPlatform: (MusicPlatform) -> Unit
 ) {
+    if (NeriDesign.isClean) {
+        Row(
+            Modifier.fillMaxWidth().selectableGroup().padding(horizontal = 16.dp, vertical = 8.dp)
+                .clip(NeriDesign.tokens.controlShape)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            MusicPlatform.entries.forEachIndexed { index, platform ->
+                val selected = state.selectedPlatform.ordinal == index
+                Tab(
+                    selected = selected,
+                    onClick = { onSelectPlatform(platform) },
+                    enabled = enabled && !state.isApplyingMetadata,
+                    modifier = Modifier.weight(1f).clip(NeriDesign.tokens.chipShape).background(
+                        if (selected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent
+                    ),
+                    selectedContentColor = MaterialTheme.colorScheme.onPrimary,
+                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = { Text(musicPlatformLabel(platform)) }
+                )
+            }
+        }
+        return
+    }
     PrimaryTabRow(
         selectedTabIndex = state.selectedPlatform.ordinal,
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -344,7 +379,7 @@ private fun MetadataSearchResultItem(
                 contentDescription = result.songName,
                 modifier = Modifier
                     .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .clip(neriRoundedShape(8.dp)),
                 contentScale = ContentScale.Crop
             )
         },

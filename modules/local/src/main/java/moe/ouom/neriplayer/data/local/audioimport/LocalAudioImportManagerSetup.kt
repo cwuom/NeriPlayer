@@ -431,9 +431,9 @@ internal suspend fun LocalAudioImportManager.completeScannedSongs(
             songs.chunked(COMPLETE_SCAN_BATCH_SIZE).forEach { batch ->
                 val hydratedBatch = batch.map { song ->
                     async(dispatcher) {
-                        val metadataReference = song.mediaUri
+                        val knownReferences = song.mediaUri
                             ?.let(indexedSidecarReferences::get)
-                            ?.metadata
+                        val metadataReference = knownReferences?.metadata
                         val directFile = song.localFilePath
                             ?.takeUnless { it.startsWith("content://", ignoreCase = true) }
                             ?.let(::File)
@@ -444,6 +444,12 @@ internal suspend fun LocalAudioImportManager.completeScannedSongs(
                             )
                         if (contentOnly) {
                             return@async hydrateLocalSongFromIndexedMetadataSidecar(context, song, metadataReference)
+                        }
+                        // 已知目录索引没有侧载时，完整的非 MP3 元数据不需要再逐曲查询
+                        if (knownReferences != null && metadataReference == null &&
+                            !isRawId3IdentityCandidate(song) && !needsLocalIdentityMetadataProbe(song)
+                        ) {
+                            return@async song
                         }
                         // MediaStore 的可读 Unicode 也可能已被系统误解码，MP3 需要核对原始标签
                         val canHydrateWithoutAudioProbe = metadataReference != null ||
@@ -824,8 +830,7 @@ internal suspend fun LocalAudioImportManager.scanExternalStorageFolderWithMediaS
                 if (resolvedFile != null) {
                     resolvedPathCount++
                 }
-                // MediaStore 的 _data 或 content URI 可能在切换存储权限后暂时失效
-                // 目录索引中的同名音频文档作为有界 SAF 回退，避免出现不可播放条目
+                // 文件路径存在不代表拥有全媒体权限，保留用户授权目录内的文档引用
                 val safAudioReference = sidecarResolver.resolveAudioReference(
                     relativePath = rowRelativePath,
                     displayName = displayName
@@ -880,15 +885,8 @@ internal suspend fun LocalAudioImportManager.scanExternalStorageFolderWithMediaS
                     relativePath = rowRelativePath,
                     displayName = displayName
                 )
-                val sourceReference = if (
-                    resolvedFile == null &&
-                        !hasReadableMediaStoreReference &&
-                        !safAudioReference.isNullOrBlank()
-                ) {
-                    safAudioReference
-                } else {
-                    contentUri.toString()
-                }
+                val sourceReference = safAudioReference?.takeIf(String::isNotBlank)
+                    ?: contentUri.toString()
                 if (sourceReference == safAudioReference) {
                     safAudioFallbackRows++
                 }

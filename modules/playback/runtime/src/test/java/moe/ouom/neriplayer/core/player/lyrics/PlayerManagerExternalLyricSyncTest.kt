@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -45,6 +46,37 @@ class PlayerManagerExternalLyricSyncTest {
         }
         pausedScope.cancel()
         PlayerTestEnvironment.reset()
+    }
+
+    @Test
+    fun `an obsolete settings reload cannot cancel the current track lyric request`() {
+        PlayerManager._currentSongFlow.value = otherSong
+        PlayerManager.externalBluetoothLyricsEnabled = true
+        PlayerManager.syncExternalBluetoothLyrics(otherSong)
+        val currentLoad = PlayerManager.externalBluetoothLyricsLoadJob
+
+        PlayerManager.syncExternalBluetoothLyrics(song)
+
+        assertSame(currentLoad, PlayerManager.externalBluetoothLyricsLoadJob)
+        assertTrue(currentLoad?.isActive == true)
+        assertEquals(otherSong.stableKey(), PlayerManager.externalBluetoothLyricsSongKey)
+    }
+
+    @Test
+    fun `an obsolete translation settings reload cannot cancel the current track translation request`() {
+        PlayerManager._currentSongFlow.value = otherSong
+        PlayerManager.externalBluetoothTranslationEnabled = true
+        PlayerManager.externalBluetoothLyrics = lyrics
+        PlayerManager.externalBluetoothLyricsSongKey = otherSong.stableKey()
+        PlayerManager.syncExternalTranslatedLyrics(otherSong)
+        val currentLoad = PlayerManager.externalBluetoothTranslationLoadJob
+
+        PlayerManager.syncExternalTranslatedLyrics(song)
+
+        assertSame(currentLoad, PlayerManager.externalBluetoothTranslationLoadJob)
+        assertTrue(currentLoad?.isActive == true)
+        assertEquals(otherSong.stableKey(), PlayerManager.externalBluetoothLyricsSongKey)
+        assertEquals(lyrics, PlayerManager.externalBluetoothLyrics)
     }
 
     @Test

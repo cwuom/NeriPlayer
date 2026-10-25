@@ -24,7 +24,6 @@ package moe.ouom.neriplayer.ui.screen.playlist
  */
 
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
-import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.app.Application
 import android.content.res.Resources
@@ -206,8 +205,8 @@ fun BiliPlaylistDetailScreen(
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
-    val favoriteSongs = remember(allLocalPlaylists, context) {
-        FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)?.songs.orEmpty()
+    val favoriteSongLookup = remember(allLocalPlaylists, context) {
+        FavoriteSongLookup(FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)?.songs.orEmpty())
     }
     val playlistSource = "bili"
     val playlistId = ui.header?.mediaId ?: playlist.mediaId
@@ -727,9 +726,7 @@ fun BiliPlaylistDetailScreen(
                                     key = { _, it -> it.bvid.ifBlank { it.id.toString() } }
                                 ) { index, item ->
                                     val songItem = remember(item) { item.toSongItem() }
-                                    val isFavoriteSong = favoriteSongs.any {
-                                        it.sameIdentityAs(songItem)
-                                    }
+                                    val isFavoriteSong = favoriteSongLookup.contains(songItem)
                                     PlaylistModernListItemSurface(
                                         coverUrl = displayHeaderCoverUrl,
                                         offlineMode = offlineMode

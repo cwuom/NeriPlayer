@@ -135,6 +135,33 @@ class NeteasePlaylistSyncRequestsTest {
     }
 
     @Test
+    fun `malformed liked identity is not cached as a confirmed mismatch`() {
+        val client = loggedInClient()
+        `when`(client.createSongLiker()).thenReturn { """{"code":200}""" }
+        `when`(client.addSongsToPlaylist(91L, listOf(1L))).thenReturn("""{"code":524}""")
+        `when`(client.getLikedPlaylistId(0L)).thenReturn("invalid", """{"code":200,"playlistId":91}""")
+        val session = NeteasePlaylistAddSession(client, 91L) { error("unexpected backoff") }
+
+        assertEquals(NeteasePlaylistAddOutcome.Rejected(524, null), session.add(listOf(1L)))
+        assertEquals(NeteasePlaylistAddOutcome.Ok, session.add(listOf(1L)))
+        verify(client, times(2)).getLikedPlaylistId(0L)
+    }
+
+    @Test
+    fun `exceptional liked identity lookup can recover within the same add session`() {
+        val client = loggedInClient()
+        `when`(client.createSongLiker()).thenReturn { """{"code":200}""" }
+        `when`(client.addSongsToPlaylist(91L, listOf(1L))).thenReturn("""{"code":524}""")
+        `when`(client.getLikedPlaylistId(0L)).thenThrow(IllegalStateException("temporary identity outage"))
+            .thenReturn("""{"code":200,"playlistId":91}""")
+        val session = NeteasePlaylistAddSession(client, 91L) { error("unexpected backoff") }
+
+        assertEquals(NeteasePlaylistAddOutcome.Rejected(524, null), session.add(listOf(1L)))
+        assertEquals(NeteasePlaylistAddOutcome.Ok, session.add(listOf(1L)))
+        verify(client, times(2)).getLikedPlaylistId(0L)
+    }
+
+    @Test
     fun `playlist insertion retries one logged in 301 and returns the retry outcome`() {
         val ids = listOf(1L, 2L)
         val recovered = loggedInClient()
@@ -148,6 +175,32 @@ class NeteasePlaylistSyncRequestsTest {
         assertEquals(NeteasePlaylistAddOutcome.Rejected(301, null), addNeteasePlaylistSongIdsBatch(rejected, 91L, ids))
         verify(rejected, times(2)).addSongsToPlaylist(91L, ids)
         verify(rejected).ensureWeapiSession()
+    }
+
+    @Test
+    fun `like fallback does not refresh a logged out session or accept a malformed response`() {
+        for ((raw, expected) in listOf(
+            """{"code":301}""" to NeteasePlaylistAddOutcome.Rejected(301, null),
+            "invalid" to NeteasePlaylistAddOutcome.Transient(-1, null)
+        )) {
+            val client = mock(NeteaseClient::class.java)
+            `when`(client.likeSong(1L)).thenReturn(raw)
+
+            assertEquals(expected, addNeteaseLikedSong(client, 1L) { client.likeSong(it) })
+            verify(client).likeSong(1L)
+            verify(client, never()).ensureWeapiSession()
+        }
+    }
+
+    @Test
+    fun `like fallback preserves an unknown result when session retry fails`() {
+        val client = loggedInClient()
+        `when`(client.likeSong(1L)).thenReturn("""{"code":301}""")
+            .thenThrow(IllegalStateException("retry failed"))
+
+        assertEquals(NeteasePlaylistAddOutcome.Transient(-1, null), addNeteaseLikedSong(client, 1L) { client.likeSong(it) })
+        verify(client, times(2)).likeSong(1L)
+        verify(client).ensureWeapiSession()
     }
 
     @Test

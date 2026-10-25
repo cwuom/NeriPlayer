@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.lyrics
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -9,8 +10,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -50,6 +51,9 @@ import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
 import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import kotlin.math.roundToInt
 
 private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
@@ -121,13 +125,13 @@ internal fun lyricPhoneticSwitchAction(
 internal fun booleanToggleClick(checked: Boolean, onCheckedChange: (Boolean) -> Unit): () -> Unit =
     { onCheckedChange(!checked) }
 
+@Composable
 private fun Modifier.lyricToggleModifier(
     enabled: Boolean,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ): Modifier = this
     .fillMaxWidth()
-    .clip(RoundedCornerShape(12.dp))
     .clickable(enabled = enabled, onClick = booleanToggleClick(checked, onCheckedChange))
 
 internal class LyricBehaviorSheetState(initialOffset: Long) {
@@ -286,7 +290,7 @@ private fun LyricBehaviorActionLayer(
 }
 
 @Composable
-private fun LyricBehaviorContent(
+internal fun LyricBehaviorContent(
     offsetState: LyricBehaviorSheetState,
     hasTranslationLyrics: Boolean,
     hasPhoneticLyrics: Boolean,
@@ -302,26 +306,34 @@ private fun LyricBehaviorContent(
         modifier = Modifier
             .fillMaxWidth()
             .bottomSheetDragBlocker()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .padding(horizontal = if (NeriDesign.isClean) NeriDesign.tokens.pageHorizontalPadding else 24.dp, vertical = 16.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(stringResource(CoreCommonR.string.lyrics_adjust_behavior), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(CoreCommonR.string.lyrics_adjust_behavior),
+            style = if (NeriDesign.isClean) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
 
-        LyricTranslationToggle(
-            copy = lyricTranslationToggleCopy(hasTranslationLyrics, hasPhoneticLyrics),
-            checked = showLyricTranslation,
-            onCheckedChange = onTranslationChange
-        )
-        LyricPhoneticToggle(
-            visible = hasTranslationLyrics,
-            translationEnabled = showLyricTranslation,
-            hasPhonetic = hasPhoneticLyrics,
-            enabled = phoneticSwitchEnabled,
-            checked = phoneticSwitchChecked,
-            onCheckedChange = onPhoneticChange
-        )
+        Column(
+            Modifier.fillMaxWidth().clip(neriRoundedShape(12.dp)).background(
+                if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                else MaterialTheme.colorScheme.surface
+            )
+        ) {
+            LyricTranslationToggle(
+                copy = lyricTranslationToggleCopy(hasTranslationLyrics, hasPhoneticLyrics),
+                checked = showLyricTranslation,
+                onCheckedChange = onTranslationChange
+            )
+            LyricPhoneticToggle(
+                visible = hasTranslationLyrics,
+                translationEnabled = showLyricTranslation,
+                hasPhonetic = hasPhoneticLyrics,
+                enabled = phoneticSwitchEnabled,
+                checked = phoneticSwitchChecked,
+                onCheckedChange = onPhoneticChange
+            )
+        }
         LyricOffsetControls(
             state = offsetState,
             onCommit = onOffsetCommit
@@ -349,7 +361,8 @@ private fun LyricTranslationToggle(
         trailingContent = {
             Switch(checked = checked, onCheckedChange = onCheckedChange)
         },
-        modifier = Modifier.lyricToggleModifier(true, checked, onCheckedChange)
+        modifier = Modifier.lyricToggleModifier(true, checked, onCheckedChange),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
 
@@ -386,7 +399,8 @@ private fun LyricPhoneticListItem(
                 enabled = enabled
             )
         },
-        modifier = Modifier.lyricToggleModifier(enabled, checked, onCheckedChange)
+        modifier = Modifier.lyricToggleModifier(enabled, checked, onCheckedChange),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
 
@@ -407,7 +421,7 @@ private fun LyricOffsetControls(state: LyricBehaviorSheetState, onCommit: () -> 
         )
     )
     Text(stringResource(CoreCommonR.string.lyrics_offset_hint), style = MaterialTheme.typography.bodySmall)
-    Slider(
+    LyricSettingsSlider(
         value = state.currentOffset.toFloat(),
         onValueChange = state::setSliderValue,
         onValueChangeFinished = onCommit,
@@ -472,7 +486,7 @@ private fun LyricFontSizeContent(
         modifier = Modifier
             .fillMaxWidth()
             .bottomSheetDragBlocker()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .padding(horizontal = if (NeriDesign.isClean) NeriDesign.tokens.pageHorizontalPadding else 24.dp, vertical = 16.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -485,7 +499,8 @@ private fun LyricFontSizeContent(
 
 @Composable
 private fun LyricFontSizeHeader() {
-    Text(stringResource(CoreCommonR.string.lyrics_font_size), style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(CoreCommonR.string.lyrics_font_size),
+        style = if (NeriDesign.isClean) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
     Text(
         text = stringResource(CoreCommonR.string.settings_lyrics_font_scale_hint),
@@ -555,7 +570,13 @@ private fun SheetLyricFontScaleSlider(
     sampleText: String,
     sampleBaseSizeSp: Float
 ) {
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().then(
+        if (NeriDesign.isClean) Modifier
+            .padding(top = 12.dp)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), NeriDesign.tokens.cardShape)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+        else Modifier
+    )) {
         Spacer(Modifier.height(16.dp))
         Text(
             text = title,
@@ -568,7 +589,7 @@ private fun SheetLyricFontScaleSlider(
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center
         )
-        Slider(
+        LyricSettingsSlider(
             value = currentScale,
             onValueChange = onScaleChange,
             onValueChangeFinished = onScaleCommit,
@@ -582,6 +603,33 @@ private fun SheetLyricFontScaleSlider(
                 .padding(top = 4.dp),
             textAlign = TextAlign.Center,
             fontSize = scaledLyricFontSize(sampleBaseSizeSp, currentScale).sp
+        )
+    }
+}
+
+@Composable
+private fun LyricSettingsSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int
+) {
+    if (NeriDesign.isClean) {
+        MiuixSettingsSlider(
+            value = value,
+            onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
+            valueRange = valueRange,
+            steps = steps
+        )
+    } else {
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
+            valueRange = valueRange,
+            steps = steps
         )
     }
 }

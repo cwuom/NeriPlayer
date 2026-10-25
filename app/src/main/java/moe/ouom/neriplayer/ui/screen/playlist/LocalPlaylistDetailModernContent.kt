@@ -150,6 +150,8 @@ import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedR
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistDeleteResultGlobally
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.ui.screen.playback.shouldConfirmFavoriteSync
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
@@ -190,6 +192,9 @@ internal fun LocalPlaylistDetailModernContent(
         var insertInProgress by remember(playlistId) { mutableStateOf(false) }
         var curationSongs by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
         val curatableTabSongs = remember(tabSongs) { tabSongs.filter { it.isLocalSong() } }
+        val selectedDownloadableSongs = remember(selectedSongsForAction) {
+            playlistDownloadCandidates(selectedSongsForAction)
+        }
         LaunchedEffect(selectionMode, canReorderCurrentSongs) {
             if (!selectionMode || !canReorderCurrentSongs) showInsertDialog = false
         }
@@ -562,24 +567,26 @@ internal fun LocalPlaylistDetailModernContent(
                                 }
                             },
                             actions = {
-                                HapticIconButton(
-                                    onClick = {
-                                        val selectedSongs = selectedSongsForAction
-                                        if (selectedSongs.isNotEmpty()) {
-                                            showDownloadManager = true
-                                            exitSelectionMode()
-                                            GlobalDownloadManager.startBatchDownload(
-                                                context,
-                                                selectedSongs
-                                            )
-                                        }
-                                    },
-                                    enabled = selectedSongsForAction.isNotEmpty() && !insertInProgress
-                                ) {
-                                    Icon(
-                                        Icons.Outlined.Download,
-                                        contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
-                                    )
+                                if (selectedDownloadableSongs.isNotEmpty()) {
+                                    HapticIconButton(
+                                        onClick = {
+                                            val selectedSongs = selectedDownloadableSongs
+                                            if (selectedSongs.isNotEmpty()) {
+                                                showDownloadManager = true
+                                                exitSelectionMode()
+                                                GlobalDownloadManager.startBatchDownload(
+                                                    context,
+                                                    selectedSongs
+                                                )
+                                            }
+                                        },
+                                        enabled = !insertInProgress
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.Download,
+                                            contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
+                                        )
+                                    }
                                 }
                                 HapticIconButton(
                                     onClick = {
@@ -1468,7 +1475,9 @@ internal fun LocalPlaylistDetailModernContent(
                             )
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
+                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to),
+                                warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(target, context) ||
+                                    shouldConfirmFavoriteSync(songs, context)
                             ) {
                                 scope.launchLocalPlaylistMutation(
                                     operation = "exportSongsFromLocalPlaylist",
@@ -1528,7 +1537,9 @@ internal fun LocalPlaylistDetailModernContent(
                             val songs = tabSongs
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
+                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to),
+                                warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(target, context) ||
+                                    shouldConfirmFavoriteSync(songs, context)
                             ) {
                                 scope.launchLocalPlaylistMutation(
                                     operation = "exportAllSongsFromLocalPlaylist",
@@ -1625,12 +1636,7 @@ internal fun LocalPlaylistDetailModernContent(
                 detailSong?.let { song ->
                     LocalSongDetailsDialog(
                         song = song,
-                        onDismiss = { detailSong = null },
-                        onShowMessage = { message ->
-                            scope.launch {
-                                snackbarHostState.showNeriSnackbar(message)
-                            }
-                        }
+                        onDismiss = { detailSong = null }
                     )
                 }
 

@@ -29,8 +29,7 @@ class NowPlayingContainerMorphTest {
             NowPlayingContainerMorph(
                 morph = morph,
                 flight = null,
-                capsuleInWindow = { null },
-                artwork = { null }
+                capsuleInWindow = { null }
             ) {
                 Box(Modifier.fillMaxSize().testTag("page"))
             }

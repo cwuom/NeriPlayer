@@ -250,6 +250,9 @@ fun LocalArtistDetailScreen(
             selectedSongsInSourceOrder(songs, selectedKeys)
         }
     }
+    val selectedDownloadableSongs = remember(selectedSongsForAction) {
+        playlistDownloadCandidates(selectedSongsForAction)
+    }
 
     fun toggleSelect(song: SongItem) {
         val songKey = song.stableKey()
@@ -446,24 +449,25 @@ fun LocalArtistDetailScreen(
                                     contentDescription = stringResource(CoreCommonR.string.cd_export_playlist)
                                 )
                             }
-                            HapticIconButton(
-                                onClick = {
-                                    val selectedSongs = selectedSongsForAction
-                                    if (selectedSongs.isNotEmpty()) {
-                                        showDownloadManager = true
-                                        exitSelectionMode()
-                                        GlobalDownloadManager.startBatchDownload(
-                                            context,
-                                            selectedSongs
-                                        )
+                            if (selectedDownloadableSongs.isNotEmpty()) {
+                                HapticIconButton(
+                                    onClick = {
+                                        val selectedSongs = selectedDownloadableSongs
+                                        if (selectedSongs.isNotEmpty()) {
+                                            showDownloadManager = true
+                                            exitSelectionMode()
+                                            GlobalDownloadManager.startBatchDownload(
+                                                context,
+                                                selectedSongs
+                                            )
+                                        }
                                     }
-                                },
-                                enabled = selectedSongsForAction.isNotEmpty()
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Download,
-                                    contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
-                                )
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Download,
+                                        contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
+                                    )
+                                }
                             }
                         },
                         windowInsets = WindowInsets.statusBars,

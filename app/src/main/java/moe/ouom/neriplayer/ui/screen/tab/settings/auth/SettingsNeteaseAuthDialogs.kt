@@ -107,6 +107,7 @@ internal fun SettingsNeteaseAuthDialogs(
     }
 
     if (showSheet) {
+        val authStorage = rememberAuthLoginStorageStatus(SettingsAccountPlatform.Netease)
         val launchBrowserLogin: () -> Unit = onBrowserLogin?.let { injectedBrowserLogin ->
             {
                 onInlineMsgChange(null)
@@ -154,7 +155,10 @@ internal fun SettingsNeteaseAuthDialogs(
                 } else {
                     vm.importCookiesFromRaw(rawCookie)
                 }
-            }
+            },
+            requiresCompatibilityStorageWarning = authStorage?.requiresCompatibilityWarning ?: false,
+            isAuthStoragePersistent = authStorage?.isPersistent ?: false,
+            isAuthStorageReady = authStorage != null
         )
     }
 

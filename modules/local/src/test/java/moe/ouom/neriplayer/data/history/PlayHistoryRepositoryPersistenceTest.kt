@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -39,6 +40,57 @@ import org.mockito.Mockito.`when`
 
 class PlayHistoryRepositoryPersistenceTest {
     @get:Rule val temporary = TemporaryFolder()
+
+    @Test
+    fun `recording and updating scanned history keeps its selected source after Room reload`() = runTest {
+        val reference = "content://media/external/audio/media/3"
+        val source = entry(3).toSongItem().copy(
+            mediaUri = reference, channelId = "netease", audioId = "3",
+            explicitLocalSourceReference = reference
+        )
+        val room = mockPlayHistoryRoomStore()
+        var primary = listOf(source.copy(explicitLocalSourceReference = null).toPlayedEntry(1L))
+        `when`(room.readIfRoomPrimary()).thenAnswer { primary }
+        doAnswer { primary = it.getArgument(1); Unit }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+
+        Fixture(room, testScope = this).use { fixture ->
+            fixture.repository.record(source, now = 2L)
+            runCurrent()
+            assertEquals(reference, fixture.repository.historyFlow.value.single().toSongItem().explicitLocalSourceReference)
+
+            fixture.repository.record(source.copy(name = "Updated title", explicitLocalSourceReference = null), now = 3L)
+            runCurrent()
+            assertEquals(reference, primary.single().toSongItem().explicitLocalSourceReference)
+            Fixture(room).use { restarted ->
+                assertEquals(reference, restarted.repository.historyFlow.value.single().toSongItem().explicitLocalSourceReference)
+                assertEquals("Updated title", restarted.repository.historyFlow.value.single().name)
+            }
+        }
+    }
+
+    @Test
+    fun `changing a history source clears both valid old and stale unrelated provenance`() = runTest {
+        val originalReference = "content://media/external/audio/media/3"
+        val replacementReference = "content://media/external/audio/media/4"
+        val source = entry(3).toSongItem().copy(mediaUri = originalReference,
+            explicitLocalSourceReference = originalReference)
+        listOf(originalReference, replacementReference).forEach { oldMarker ->
+            val room = mockPlayHistoryRoomStore()
+            var primary = listOf(source.toPlayedEntry(1L).copy(explicitLocalSourceReference = oldMarker))
+            `when`(room.readIfRoomPrimary()).thenAnswer { primary }
+            doAnswer { primary = it.getArgument(1); Unit }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+
+            Fixture(room, testScope = this).use { fixture ->
+                val replacement = source.copy(mediaUri = replacementReference, explicitLocalSourceReference = null)
+                fixture.repository.updateSongMetadata(source, replacement, triggerSync = false)
+                runCurrent()
+
+                assertEquals(replacementReference, primary.single().mediaUri)
+                assertNull(primary.single().explicitLocalSourceReference)
+                assertNull(primary.single().toSongItem().explicitLocalSourceReference)
+            }
+        }
+    }
 
     @Test
     fun `unreadable Room primary cannot replace history from a stale JSON snapshot`() = runTest {

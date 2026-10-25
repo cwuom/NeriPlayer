@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.model.lyrics.readLyricSyncPersistence
 import moe.ouom.neriplayer.data.model.lyrics.toPersistenceJson
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.local.database.entity.PlayHistoryEntity
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.stableKey
 
@@ -74,6 +75,9 @@ internal class PlayHistoryRoomMapper {
             audioId = audioId,
             subAudioId = subAudioId,
             sourceStableKey = sourceStableKey,
+            explicitLocalSourceReference = LocalSongSupport.validExplicitLocalSourceReference(
+                localFilePath, mediaUri, explicitLocalSourceReference
+            ),
             playedAt = playedAt
         )
     }
@@ -115,6 +119,9 @@ private fun PlayedEntry.toEntity(): PlayHistoryEntity {
         audioId = audioId,
         subAudioId = subAudioId,
         sourceStableKey = sourceStableKey,
+        explicitLocalSourceReference = LocalSongSupport.validExplicitLocalSourceReference(
+            localFilePath, mediaUri, explicitLocalSourceReference
+        ),
         playedAt = playedAt,
         lyricSyncPayloadJson = LyricSyncPersistence(
             revision = lyricSyncRevision, edited = lyricSyncEdited,

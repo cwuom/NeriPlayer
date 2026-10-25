@@ -383,6 +383,7 @@ object LocalMediaSupport {
             val outcome = writeTransaction.outcome
             var embeddedTransactionSettled = outcome != LocalMediaMetadataWriteOutcome.SUCCESS
             var companionTransactionSettled = companionTransaction == null
+            var rollbackSucceeded = true
             try {
                 if (!persistAvailableSidecars) {
                     var finalOutcome = outcome
@@ -463,6 +464,8 @@ object LocalMediaSupport {
                 } else {
                     true
                 }
+                val companionReferencesBeforeCover = companionTransaction?.record?.companions
+                    ?.mapTo(mutableSetOf()) { it.reference }.orEmpty()
                 val coverSidecarWritten = if (writeCover) {
                     currentCoroutineContext().ensureActive()
                     writeLocalCoverSidecar(
@@ -479,13 +482,10 @@ object LocalMediaSupport {
                     true
                 }
                 val metadataCoverReference = if (writeCover && !coverReference.isNullOrBlank()) {
-                    findNearbyCoverReference(
-                        context = context,
-                        uri = sourceUri,
-                        file = localFile,
-                        displayName = displayName,
-                        parentChildrenForMutation = knownSidecarReferences.mutationParentChildren
-                    ) ?: coverReference
+                    // 目录快照早于侧载创建，采用本次封面阶段确认写入的引用
+                    companionTransaction?.record?.companions
+                        ?.filter { !it.deferredDelete && it.reference !in companionReferencesBeforeCover }
+                        ?.takeIf { it.isNotEmpty() }?.single()?.reference ?: coverReference
                 } else {
                     null
                 }
@@ -513,7 +513,10 @@ object LocalMediaSupport {
                     allowSidecarAuthoritativeFallback = embeddedPropertyMapOverride == null && embeddedPropertyPlanFactory == null
                 )
                 if (!sidecarsWritten) {
-                    companionTransaction?.rollback() ?: writeTransaction.rollback?.invoke()
+                    rollbackSucceeded = companionTransaction?.rollback() ?: run {
+                        writeTransaction.rollback?.invoke()
+                        true
+                    }
                     embeddedTransactionSettled = true
                     companionTransactionSettled = true
                     NPLogger.w(TAG, "write local metadata sidecar failed for $sourceUri")
@@ -526,7 +529,10 @@ object LocalMediaSupport {
                         logEditableMetadataFailure("commit_recovery_record", sourceUri, error)
                     }.isSuccess
                     if (!committed) {
-                        companionTransaction?.rollback() ?: writeTransaction.rollback?.invoke()
+                        rollbackSucceeded = companionTransaction?.rollback() ?: run {
+                            writeTransaction.rollback?.invoke()
+                            true
+                        }
                         finalOutcome = LocalMediaMetadataWriteOutcome.FAILED
                     }
                     embeddedTransactionSettled = true
@@ -542,6 +548,7 @@ object LocalMediaSupport {
                         else -> "direct"
                     }
                 )
+                if (!rollbackSucceeded) return@withContext LocalMediaMetadataWriteOutcome.FAILED
                 if (finalOutcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
                     return@withContext finalOutcome
                 }
@@ -655,64 +662,8 @@ object LocalMediaSupport {
         writeLyrics: Boolean = false,
         coverReference: String? = null,
         clearCoverReference: Boolean = false
-    ): Boolean = withContext(Dispatchers.IO) {
-        val candidates = editableLocalMediaUriCandidates(context, song)
-        if (candidates.isEmpty()) return@withContext false
-        val written = candidates.any { sourceUri ->
-            currentCoroutineContext().ensureActive()
-            val file = resolveEditableSidecarFile(context, sourceUri)
-            val displayName = song.localFileName
-                ?.takeIf(String::isNotBlank)
-                ?: sourceUri.lastPathSegment.orEmpty()
-            val fastMetadataReference = if (!writeLyrics &&
-                coverReference.isNullOrBlank() && !clearCoverReference && file == null
-            ) {
-                resolveCachedEditableMetadataReference(context, sourceUri, displayName)
-            } else null
-            val references = if (fastMetadataReference != null) {
-                ContentSidecarReferences(
-                    metadataReference = fastMetadataReference,
-                    lyricReferences = NearbyLyricReferences(null, null, null)
-                )
-            } else {
-                resolveContentSidecarReferences(
-                    context = context,
-                    sourceUri = sourceUri,
-                    file = file,
-                    displayName = displayName
-                )
-            }
-            val knownReference = references.metadataReference
-            val effectiveCoverReference = if (
-                !coverReference.isNullOrBlank() && !clearCoverReference
-            ) {
-                findNearbyCoverReference(
-                    context = context,
-                    uri = sourceUri,
-                    file = file,
-                    displayName = displayName
-                ) ?: coverReference
-            } else {
-                coverReference
-            }
-            writeLocalLyricsMetadata(
-                context = context,
-                sourceUri = sourceUri,
-                file = file,
-                displayName = displayName,
-                song = song,
-                knownReference = knownReference,
-                writeFullMetadata = true,
-                writeLyricFields = writeLyrics,
-                coverReference = effectiveCoverReference,
-                clearCoverReference = clearCoverReference,
-                useVerifiedExistingReference = fastMetadataReference != null
-            )
-        }
-        if (written) {
-            clearLyricsLookupCache()
-        }
-        written
+    ): Boolean {
+        return this.writeLocalMetadataSidecarImpl(context, song, writeLyrics, coverReference, clearCoverReference)
     }
 
     /**

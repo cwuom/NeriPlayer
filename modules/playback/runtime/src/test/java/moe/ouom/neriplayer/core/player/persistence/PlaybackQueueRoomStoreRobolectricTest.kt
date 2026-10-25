@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.PLAYBACK_QUEUE_MAIN
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
 import moe.ouom.neriplayer.data.model.playback.PersistedSongItem
 import moe.ouom.neriplayer.data.model.playback.PersistedState
@@ -69,6 +70,45 @@ class PlaybackQueueRoomStoreRobolectricTest {
 
         assertEquals(state, snapshot?.state)
         assertEquals(20L, snapshot?.updatedAt)
+    }
+
+    @Test
+    fun `room main and shuffle queues retain explicit sources across incremental playback updates`() = runBlocking {
+        val reference = "content://media/external/audio/media/7"
+        val scanned = SongItem(
+            id = 7L, name = "Scanned", artist = "Artist", album = "Album", albumId = 0L,
+            durationMs = 180_000L, coverUrl = null, mediaUri = reference,
+            localFilePath = "/storage/emulated/0/Music/scanned.flac", channelId = "netease", audioId = "7",
+            explicitLocalSourceReference = reference
+        )
+        store.replaceSnapshot(PersistedState(
+            playlist = listOf(scanned.toPersistedSongItem()), index = 0, shuffleEnabled = true,
+            shuffleRestorePlaylist = listOf(scanned.toPersistedSongItem()), shuffleRestoreIndex = 0
+        ), now = 21L)
+        store.updatePlaybackState(PersistedPlaybackState(index = 0, positionMs = 1_500L,
+            shouldResumePlayback = true, shuffleEnabled = true), now = 22L)
+
+        val restored = requireNotNull(store.readIfRoomPrimary())
+
+        assertEquals(reference, restored.playlist.single().toSongItem().explicitLocalSourceReference)
+        assertEquals(reference, restored.shuffleRestorePlaylist?.single()?.toSongItem()?.explicitLocalSourceReference)
+        assertEquals(1_500L, restored.positionMs)
+        assertTrue(restored.shouldResumePlayback)
+    }
+
+    @Test
+    fun `room drops stale explicit markers on both write and read boundaries`() = runBlocking {
+        val reference = "content://media/external/audio/media/7"
+        val stale = "content://media/external/audio/media/8"
+        val selected = song(7L, null).copy(mediaUri = reference, explicitLocalSourceReference = stale)
+
+        store.replaceSnapshot(PersistedState(playlist = listOf(selected), index = 0), now = 23L)
+
+        assertNull(store.readIfRoomPrimary()?.playlist?.single()?.explicitLocalSourceReference)
+        val dao = database.playbackQueueDao()
+        assertNull(dao.getSongs(PLAYBACK_QUEUE_MAIN).single().explicitLocalSourceReference)
+        dao.upsertSongs(dao.getSongs(PLAYBACK_QUEUE_MAIN).map { it.copy(explicitLocalSourceReference = stale) })
+        assertNull(store.readIfRoomPrimary()?.playlist?.single()?.explicitLocalSourceReference)
     }
 
     @Test

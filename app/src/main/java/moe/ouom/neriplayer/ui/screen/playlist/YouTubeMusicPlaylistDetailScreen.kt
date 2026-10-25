@@ -232,8 +232,8 @@ fun YouTubeMusicPlaylistDetailScreen(
     var showExportAllSheet by remember { mutableStateOf(false) }
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allPlaylists by repo.playlists.collectAsState()
-    val favoriteSongs = remember(allPlaylists, context) {
-        FavoritesPlaylist.firstOrNull(allPlaylists, context)?.songs.orEmpty()
+    val favoriteSongLookup = remember(allPlaylists, context) {
+        FavoriteSongLookup(FavoritesPlaylist.firstOrNull(allPlaylists, context)?.songs.orEmpty())
     }
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val favorites by favoriteRepo.favorites.collectAsState()
@@ -801,7 +801,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 key = { _, song -> song.stableKey() }
                             ) { index, song ->
                                 val isCurrent = currentSong?.sameIdentityAs(song) == true
-                                val isFavoriteSong = favoriteSongs.any { it.sameIdentityAs(song) }
+                                val isFavoriteSong = favoriteSongLookup.contains(song)
                                 PlaylistModernListItemSurface(
                                     coverUrl = resolvedPlaylist.coverUrl,
                                     offlineMode = offlineMode

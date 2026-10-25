@@ -26,16 +26,16 @@ package moe.ouom.neriplayer.platform.bilibili.auth
  */
 
 import moe.ouom.neriplayer.data.model.bilibili.auth.BiliAuthBundle
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.core.content.edit
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import moe.ouom.neriplayer.common.storage.AccountPreferencesOpener
 import moe.ouom.neriplayer.common.storage.SecurePreferencesOpener
-import moe.ouom.neriplayer.common.storage.VolatileSharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 
 private const val BILI_AUTH_PREFS = "bili_auth_secure_prefs"
 private const val KEY_BILI_AUTH_BUNDLE = "bili_auth_bundle"
@@ -109,6 +110,12 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
     val authHealthFlow: StateFlow<SavedCookieAuthHealth>
         get() = _authHealthFlow.asStateFlow()
 
+    val requiresCompatibilityStorageWarning: Boolean
+        get() = AccountPreferencesOpener.isCompatibilityStorage(encryptedPrefs)
+
+    val isAuthStoragePersistent: Boolean
+        get() = SecurePreferencesOpener.isPersistent(encryptedPrefs)
+
     init {
         encryptedPrefs = openEncryptedPrefsWithRecovery()
         val initialBundle = loadAuthBundle()
@@ -135,7 +142,9 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
             cookies = cookies,
             savedAt = savedAt
         ).normalized(savedAt = savedAt)
-        writeAuthBundle(normalized)
+        if (!writeAuthBundle(normalized)) {
+            throw IOException("Failed to save Bili account storage")
+        }
         _authFlow.value = normalized
         _cookieFlow.value = normalized.cookies
         _authHealthFlow.value = evaluateBiliAuthHealth(normalized)
@@ -155,7 +164,9 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
     }
 
     fun clear(): Unit = synchronized(writeLock) {
-        writeAuthBundle(null)
+        if (!writeAuthBundle(null)) {
+            throw IOException("Failed to clear Bili account storage")
+        }
         val cleared = BiliAuthBundle()
         _authFlow.value = cleared
         _cookieFlow.value = cleared.cookies
@@ -175,13 +186,22 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
             encryptedPrefs.getString(KEY_BILI_AUTH_BUNDLE, null).orEmpty()
         }.getOrElse { error ->
             NPLogger.w("NERI-BiliCookieRepo", "Failed to read Bili secure prefs, recovering storage.", error)
-            recoverUnreadableStorage(error)
-            ""
+            encryptedPrefs = AccountPreferencesOpener.fallback(context, BILI_AUTH_PREFS)
+            runCatching { encryptedPrefs.getString(KEY_BILI_AUTH_BUNDLE, null).orEmpty() }
+                .getOrDefault("")
         }
         if (raw.isNotBlank()) {
             return BiliAuthBundle.fromJson(raw)
         }
 
+        // 仅新建兼容存储允许迁移，旧的空墓碑仍代表退出登录
+        val compatibilityPrefs = AccountPreferencesOpener.existing(context, BILI_AUTH_PREFS)
+        if (compatibilityPrefs != null && !runCatching {
+                compatibilityPrefs.getBoolean(AccountPreferencesOpener.LEGACY_MIGRATION_PENDING, false)
+            }.getOrDefault(false)
+        ) {
+            return BiliAuthBundle()
+        }
         return migrateLegacyCookies() ?: BiliAuthBundle()
     }
 
@@ -235,31 +255,26 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
         return out
     }
 
-    private fun openEncryptedPrefsWithRecovery(): SharedPreferences = SecurePreferencesOpener.open(
+    private fun openEncryptedPrefsWithRecovery(): SharedPreferences = AccountPreferencesOpener.open(
+        context = context,
         name = BILI_AUTH_PREFS,
         create = { createEncryptedPrefs() },
         delete = { clearEncryptedStorage() },
         report = { event, error -> NPLogger.w("NERI-BiliCookieRepo", "Bili secure prefs $event", error) }
     )
 
-    /** Keystore 不可用时删除文件也读不回凭据，只有数据损坏才删除重建 */
-    private fun recoverUnreadableStorage(error: Throwable) {
-        encryptedPrefs = if (SecurePreferencesOpener.isKeystoreUnavailable(error)) {
-            VolatileSharedPreferences.shared(BILI_AUTH_PREFS)
-        } else {
-            clearEncryptedStorage()
-            openEncryptedPrefsWithRecovery()
-        }
-    }
-
+    @SuppressLint("UseKtx")
     private fun writeAuthBundle(bundle: BiliAuthBundle?): Boolean = runCatching {
-        encryptedPrefs.edit {
+        if (!isAuthStoragePersistent) return false
+        // ktx edit 不返回 commit 结果，只有落盘成功才发布新的账号状态
+        encryptedPrefs.edit().apply {
+            remove(AccountPreferencesOpener.LEGACY_MIGRATION_PENDING)
             if (bundle == null) remove(KEY_BILI_AUTH_BUNDLE)
             else putString(KEY_BILI_AUTH_BUNDLE, bundle.toJson())
-        }
+        }.commit()
     }.onFailure { error ->
         NPLogger.w("NERI-BiliCookieRepo", "Failed to write Bili secure prefs", error)
-    }.isSuccess
+    }.getOrDefault(false)
 
     private fun createEncryptedPrefs(): SharedPreferences {
         val masterKey = MasterKey.Builder(context)

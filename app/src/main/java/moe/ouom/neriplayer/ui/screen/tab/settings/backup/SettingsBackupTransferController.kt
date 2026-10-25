@@ -40,7 +40,10 @@ private class BackupSafResultHandler(
     }
 
     fun onExportConfig(uri: Uri?) {
-        if (uri == null) return
+        if (uri == null) {
+            config.cancelExportSelection()
+            return
+        }
         config.initialize(context)
         config.exportConfig(uri)
     }
@@ -81,7 +84,6 @@ internal class SettingsBackupTransferController(
     private val config: ConfigTransferViewModel,
     private val launchPlaylistExport: (String) -> Unit,
     private val launchPlaylistImport: () -> Unit,
-    private val launchConfigExport: (String) -> Unit,
     private val launchConfigImport: () -> Unit
 ) {
     fun exportPlaylists() {
@@ -97,7 +99,7 @@ internal class SettingsBackupTransferController(
     fun exportConfig() {
         if (configState.isExporting) return
         config.initialize(context)
-        launchConfigExport(config.generateConfigFileName())
+        config.requestExportOptions()
     }
 
     fun importConfig() {
@@ -122,6 +124,19 @@ internal fun rememberSettingsBackupTransferController(
     val config: ConfigTransferViewModel = viewModel()
     val playlistState by playlists.uiState.collectAsStateWithLifecycleCompat()
     val configState by config.uiState.collectAsStateWithLifecycleCompat()
+    if (configState.requiresAuthStorageConfirmation) {
+        SettingsConfigImportStorageWarning(
+            onConfirm = config::confirmAuthStorageImport,
+            onDismiss = config::cancelAuthStorageImport
+        )
+    }
+    if (configState.requiresConfigPassword) {
+        SettingsConfigImportPasswordDialog(
+            isPasswordInvalid = configState.isConfigPasswordInvalid,
+            onConfirm = config::confirmImportPassword,
+            onDismiss = config::cancelAuthStorageImport
+        )
+    }
     val handler = BackupSafResultHandler(context, playlists, config)
     val exportPlaylist = rememberLauncherForActivityResult(
         contract = CreateDocument("application/json"),
@@ -139,6 +154,16 @@ internal fun rememberSettingsBackupTransferController(
         contract = OpenDocument(),
         onResult = handler::onImportConfig
     )
+    if (configState.showExportOptions) {
+        SettingsConfigExportOptionsDialog(
+            onConfirm = { includeLoginState, password ->
+                if (config.prepareExport(includeLoginState, password)) {
+                    exportConfig.launch(config.generateConfigFileName())
+                }
+            },
+            onDismiss = config::cancelExportSelection
+        )
+    }
     val controller = SettingsBackupTransferController(
         playlistState = playlistState,
         configState = configState,
@@ -147,7 +172,6 @@ internal fun rememberSettingsBackupTransferController(
         config = config,
         launchPlaylistExport = { exportPlaylist.launch(it) },
         launchPlaylistImport = { importPlaylist.launch(arrayOf("*/*")) },
-        launchConfigExport = { exportConfig.launch(it) },
         launchConfigImport = { importConfig.launch(arrayOf("*/*")) }
     )
     val recreateAction = BackupImportRecreateAction(

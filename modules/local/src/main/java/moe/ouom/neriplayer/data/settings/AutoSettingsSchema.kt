@@ -155,7 +155,7 @@ object AutoSettingsSchema {
         @AutoSetting(order = 46)
         val preferHighRefreshRate = autoSwitchSetting(
             key = "prefer_high_refresh_rate",
-            defaultValue = false,
+            defaultValue = true,
             titleRes = CoreCommonR.string.settings_prefer_high_refresh_rate,
             descriptionRes = CoreCommonR.string.settings_prefer_high_refresh_rate_desc,
             icon = AutoSettingIcon.AutoAwesome
@@ -1398,6 +1398,21 @@ object AutoSettingsSchema {
             defaultValue = true,
             titleRes = CoreCommonR.string.settings_dynamic_island_lyrics_enabled,
             descriptionRes = CoreCommonR.string.settings_dynamic_island_lyrics_enabled_desc,
+            icon = AutoSettingIcon.AutoAwesome
+        )
+
+        @AutoSetting(
+            key = "coloros_lockscreen_lyrics_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 30,
+            ui = SettingUiType.Custom
+        )
+        val colorOsLockscreenLyricsEnabled = autoSwitchSetting(
+            key = "coloros_lockscreen_lyrics_enabled",
+            defaultValue = false,
+            titleRes = CoreCommonR.string.settings_coloros_lockscreen_lyrics_enabled,
+            descriptionRes = CoreCommonR.string.settings_coloros_lockscreen_lyrics_desc,
             icon = AutoSettingIcon.AutoAwesome
         )
 

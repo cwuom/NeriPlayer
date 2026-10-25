@@ -34,7 +34,8 @@ data class PersistedSongItem(
     val matchedRomanizedLyric: String? = null,
     val originalRomanizedLyric: String? = null,
     val lyricSyncRevision: Long = 0L,
-    val lyricSyncEdited: Boolean? = null
+    val lyricSyncEdited: Boolean? = null,
+    val explicitLocalSourceReference: String? = null
 )
 
 data class PersistedState(

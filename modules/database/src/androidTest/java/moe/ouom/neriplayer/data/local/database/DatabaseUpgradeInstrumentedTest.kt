@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -115,7 +116,8 @@ class DatabaseUpgradeInstrumentedTest {
             "database-upgrade-from-v17", NeriUserDataDatabase.FINAL_DB_VERSION, true,
             NeriUserDataDatabase.MIGRATION_17_18,
             NeriUserDataDatabase.MIGRATION_18_19,
-            NeriUserDataDatabase.MIGRATION_19_20
+            NeriUserDataDatabase.MIGRATION_19_20,
+            NeriUserDataDatabase.MIGRATION_20_21
         ).use { database ->
             database.query("SELECT state, bytes_written FROM download_operation WHERE operation_id = 'operation'").use { cursor ->
                 check(cursor.moveToFirst())
@@ -127,6 +129,59 @@ class DatabaseUpgradeInstrumentedTest {
                 while (cursor.moveToNext()) indexColumns += cursor.getString(0)
             }
             assertEquals(listOf("state", "stop_requested_by_user", "queue_order", "created_at_ms", "operation_id"), indexColumns)
+        }
+    }
+
+    @Test
+    fun version20PreservesHistoryAndQueuesWithoutInventingLocalSourceProvenance() {
+        val databaseName = "database-upgrade-source-provenance-v20"
+        val reference = "content://media/external/audio/media/42"
+        val lyricPayload = """{"revision":7,"edited":true}"""
+        helper.createDatabase(databaseName, 20).use { database ->
+            database.execSQL(
+                "INSERT INTO play_history " +
+                    "(identity_key, identity_id, identity_album, identity_media_uri, id, name, artist, album, " +
+                    "album_id, duration_ms, resume_position_ms, played_at, media_uri, lyric_sync_payload_json) " +
+                    "VALUES (?, 42, 'Album', ?, 42, 'History', 'Artist', 'Album', 0, 1000, 1500, 10, ?, ?)",
+                arrayOf("42|Album|$reference", reference, reference, lyricPayload)
+            )
+            database.execSQL(
+                "INSERT INTO playback_queue_song " +
+                    "(queue_id, position, id, name, artist, album, album_id, duration_ms, user_lyric_offset_ms, " +
+                    "media_uri, lyric_sync_payload_json) VALUES ('main', 0, 42, 'Queue', 'Artist', 'Album', 0, 1000, 25, ?, ?)",
+                arrayOf(reference, lyricPayload)
+            )
+            database.execSQL(
+                "INSERT INTO playback_queue_state " +
+                    "(id, current_index, position_ms, should_resume_playback, updated_at) VALUES (1, 0, 1500, 1, 10)"
+            )
+        }
+
+        helper.runMigrationsAndValidate(databaseName, NeriUserDataDatabase.FINAL_DB_VERSION, true,
+            NeriUserDataDatabase.MIGRATION_20_21).use { database ->
+            database.query("SELECT name, media_uri, resume_position_ms, lyric_sync_payload_json, " +
+                "explicit_local_source_reference FROM play_history WHERE id = 42").use { cursor ->
+                check(cursor.moveToFirst())
+                assertEquals("History", cursor.getString(0))
+                assertEquals(reference, cursor.getString(1))
+                assertEquals(1500L, cursor.getLong(2))
+                assertEquals(lyricPayload, cursor.getString(3))
+                assertTrue(cursor.isNull(4))
+            }
+            database.query("SELECT name, media_uri, user_lyric_offset_ms, lyric_sync_payload_json, " +
+                "explicit_local_source_reference FROM playback_queue_song WHERE queue_id = 'main' AND position = 0").use { cursor ->
+                check(cursor.moveToFirst())
+                assertEquals("Queue", cursor.getString(0))
+                assertEquals(reference, cursor.getString(1))
+                assertEquals(25L, cursor.getLong(2))
+                assertEquals(lyricPayload, cursor.getString(3))
+                assertTrue(cursor.isNull(4))
+            }
+            database.query("SELECT position_ms, should_resume_playback FROM playback_queue_state WHERE id = 1").use { cursor ->
+                check(cursor.moveToFirst())
+                assertEquals(1500L, cursor.getLong(0))
+                assertEquals(1, cursor.getInt(1))
+            }
         }
     }
 
@@ -149,6 +204,7 @@ class DatabaseUpgradeInstrumentedTest {
         NeriUserDataDatabase.MIGRATION_16_17,
         NeriUserDataDatabase.MIGRATION_17_18,
         NeriUserDataDatabase.MIGRATION_18_19,
-            NeriUserDataDatabase.MIGRATION_19_20
+        NeriUserDataDatabase.MIGRATION_19_20,
+        NeriUserDataDatabase.MIGRATION_20_21
     )
 }

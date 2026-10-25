@@ -22,6 +22,10 @@ Room 数据由 `:database` 保存，平台账号和缓存由 `:platform` 管理�
 
 `:database` persists Room data, `:platform` manages platform accounts and caches, and `:sync` runs sync sessions. UI and playback access this library through repositories and host interfaces.
 
+配置导入会先检查备份包含的账号存储。恢复凭据需要使用软件兼容存储时，必须由界面明确确认；直接调用 `ConfigFileManager.importConfig` 默认拒绝这类恢复。取消确认或账号存储不可持久化时，不会恢复任何配置内容。确认期间保留同一份已解析的备份，不重新读取来源文件。
+
+Configuration import checks account storage before restoring any section. Restoring credentials into software compatibility storage requires explicit UI confirmation; direct `ConfigFileManager.importConfig` calls reject it by default. Cancellation or unavailable persistent account storage leaves all configuration sections unchanged. Confirmation retains the same parsed backup without reading the source file again.
+
 缓存清理保留已下载的音频、歌词和封面。`ExtraCacheClearResult` 区分文件释放空间与 Room 可复用空间；删除记录不会立即缩小数据库文件。已有目录、索引文件名及同步 Worker 类名需保持升级兼容。
 
 本地编辑保留首次修改前的歌词和封面，恢复时优先使用持久化原始值，重扫不会用当前侧载内容覆盖原始值。未知内容与明确为空分开处理；缺失且为空的翻译、罗马字歌词不会创建额外文件，已有歌词文件按类型复用。
@@ -49,6 +53,16 @@ Track playback statistics use Room as their primary store, without loading all t
 带事件 ID 的歌单播放增量只有在 Room 计数和回执共用事务时才能确认。旧 JSON 导入失败时保留该事件，恢复后先确认实际主存再重试迁移，避免进程重启后重复计数。没有事件 ID 的既有歌单写入仍支持 JSON 回退。
 
 Playlist play increments carrying event IDs are acknowledged only when Room persists the count and receipt in one transaction. Failed legacy JSON promotion leaves the event pending; recovery confirms the actual primary store before retrying promotion, preventing duplicate counts after process restart. Existing playlist writes without event IDs retain JSON fallback.
+
+## 扫描与本地播放 / Scans and local playback
+
+文件夹扫描优先保存授权树内的音频引用，不把路径存在当作 MediaStore 读取授权。旧引用不可读时，播放器可在同一存储卷和已授权目录内恢复同一文件的 SAF 引用，编辑回写也复用这一来源。封面和元数据侧载共用恢复事务，失败或取消时回滚；回滚未完成时停止尝试其它音频别名。
+
+Folder scans prefer audio references within the granted document tree; an existing path does not establish MediaStore read access. When an old reference is unreadable, playback can recover a SAF reference to the same file within a granted directory on the same volume, and metadata edits reuse that source. Artwork and metadata sidecars share a recovery transaction. Failure or cancellation rolls back the changes, and an unresolved rollback stops further audio alias attempts.
+
+从扫描预览创建或加入普通歌单时，持久化用户明确选择的本地引用，保留旁车恢复的远端身份。本机播放仅接受与当前首选引用完全一致的来源标记；同步投影清除此标记和本地地址。旧记录没有扫描来源证据时不自动推断，再次显式扫描导入同一远端条目可以更新它的本地来源。
+
+Creating or updating an ordinary playlist from scan results persists the explicitly selected local reference while retaining remote identity recovered from sidecars. Local playback accepts provenance only when it exactly matches the current preferred reference; remote sync projections remove provenance and local addresses. Records without scan provenance remain unclassified until the user explicitly imports a scanned source again.
 
 ## 测试 / Tests
 

@@ -34,10 +34,12 @@ import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -45,6 +47,7 @@ import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaAward
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaCredits
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaMusicInfo
 import moe.ouom.neriplayer.data.model.encyclopedia.SongEncyclopedia
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 
 /** 基本信息、音乐标签、创作团队与获奖收录各自独立成卡，详情字段只在歌曲详情展示 */
 @Composable
@@ -118,6 +121,8 @@ private fun SongEncyclopediaCreditsSection(credits: EncyclopediaCredits) {
 private fun SongEncyclopediaAwardRow(award: EncyclopediaAward) {
     val detail = award.detail?.takeIf { it.isNotBlank() }
     ListItem(
+        colors = if (NeriDesign.isClean) ListItemDefaults.colors(containerColor = Color.Transparent)
+            else ListItemDefaults.colors(),
         headlineContent = { Text(award.title) },
         supportingContent = {
             if (detail != null) Text(detail)

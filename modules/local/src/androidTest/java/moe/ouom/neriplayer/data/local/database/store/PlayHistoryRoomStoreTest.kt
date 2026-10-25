@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.data.history.toSongItem
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import org.junit.Assert.assertEquals
@@ -31,11 +32,15 @@ class PlayHistoryRoomStoreTest {
                 album = "netease",
                 durationMs = 180_000L,
                 coverUrl = null,
+                mediaUri = "content://media/external/audio/media/1",
+                explicitLocalSourceReference = "content://media/external/audio/media/1",
                 playedAt = 100L
             )
             val second = first.copy(
                 id = 2L,
                 name = "second",
+                mediaUri = null,
+                explicitLocalSourceReference = null,
                 playedAt = 50L
             )
             val store = PlayHistoryRoomStore(database)
@@ -51,6 +56,8 @@ class PlayHistoryRoomStoreTest {
             )
 
             assertEquals(listOf(updatedFirst), store.readIfRoomPrimary())
+            assertEquals(updatedFirst.explicitLocalSourceReference,
+                store.readIfRoomPrimary()?.single()?.toSongItem()?.explicitLocalSourceReference)
             assertEquals(1, database.playHistoryDao().getAll().size)
             assertTrue(
                 database.syncMetadataDao().getMigrationMetadata(

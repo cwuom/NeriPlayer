@@ -6,6 +6,19 @@ import org.junit.Test
 
 class PlayerManagerExternalBluetoothLyricsTest {
     @Test
+    fun colorOsLoadsTranslationsIndependentlyOfOtherSurfaces() {
+        assertTrue(
+            shouldProvideExternalTranslatedLyricLine(
+                externalBluetoothTranslationEnabled = false,
+                floatingLyricsEnabled = false,
+                floatingLyricsShowTranslation = false,
+                dynamicIslandLyricsEnabled = false,
+                colorOsLockscreenLyricsEnabled = true,
+            )
+        )
+    }
+
+    @Test
     fun dynamicIslandForcesExternalTranslatedLyrics() {
         assertTrue(
             shouldProvideExternalTranslatedLyricLine(

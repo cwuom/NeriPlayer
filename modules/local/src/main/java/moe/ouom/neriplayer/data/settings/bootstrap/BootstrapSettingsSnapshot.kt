@@ -192,7 +192,7 @@ fun Preferences.toBootstrapSettingsSnapshot(): BootstrapSettingsSnapshot {
     return BootstrapSettingsSnapshot(
         bypassProxy = this[SettingsKeys.BYPASS_PROXY] ?: true,
         youtubeEnabled = this[SettingsKeys.YOUTUBE_ENABLED] ?: true,
-        preferHighRefreshRate = this[SettingsKeys.PREFER_HIGH_REFRESH_RATE] ?: false,
+        preferHighRefreshRate = valueOf(AutoSettingsSchema.general.preferHighRefreshRate),
         downloadDirectoryUri = this[SettingsKeys.DOWNLOAD_DIRECTORY_URI],
         downloadDirectoryLabel = this[SettingsKeys.DOWNLOAD_DIRECTORY_LABEL],
         downloadFileNameTemplate = this[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE],
@@ -248,7 +248,7 @@ private fun readCachedBootstrapSettingsSnapshot(context: Context): BootstrapSett
         youtubeEnabled = prefs.getBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, true),
         preferHighRefreshRate = prefs.getBoolean(
             BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY,
-            false
+            BootstrapSettingsSnapshot().preferHighRefreshRate
         ),
         downloadDirectoryUri = prefs.getString(BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY, null),
         downloadDirectoryLabel = prefs.getString(BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY, null),

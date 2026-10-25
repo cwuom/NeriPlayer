@@ -49,6 +49,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomImportStatus
 import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomStore
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.store.preferences.SyncPreferences
@@ -97,6 +98,7 @@ internal fun SongItem.toPlayedEntry(now: Long): PlayedEntry {
         audioId = audioId,
         subAudioId = subAudioId,
         sourceStableKey = sourceStableKey,
+        explicitLocalSourceReference = LocalSongSupport.validExplicitLocalSourceReference(this),
         playedAt = now
     )
 }
@@ -110,7 +112,7 @@ fun PlayedEntry.toSongItem(): SongItem {
         album = album,
         durationMs = durationMs,
         coverUrl = coverUrl,
-        mediaUri = localFilePath ?: mediaUri,
+        mediaUri = preferredLocalMediaReference(localFilePath, mediaUri) ?: mediaUri,
         matchedLyric = matchedLyric,
         matchedTranslatedLyric = matchedTranslatedLyric,
         matchedRomanizedLyric = matchedRomanizedLyric,
@@ -133,7 +135,10 @@ fun PlayedEntry.toSongItem(): SongItem {
         channelId = channelId,
         audioId = audioId,
         subAudioId = subAudioId,
-        sourceStableKey = sourceStableKey
+        sourceStableKey = sourceStableKey,
+        explicitLocalSourceReference = LocalSongSupport.validExplicitLocalSourceReference(
+            localFilePath, mediaUri, explicitLocalSourceReference
+        )
     )
 }
 
@@ -661,6 +666,11 @@ class PlayHistoryRepository private constructor(
     }
 
     private fun PlayedEntry.mergeSongMetadata(song: SongItem, playedAt: Long = this.playedAt): PlayedEntry {
+        val currentReference = LocalSongSupport.validExplicitLocalSourceReference(
+            localFilePath, mediaUri, explicitLocalSourceReference
+        )
+        val selectedReference = LocalSongSupport.validExplicitLocalSourceReference(song)
+            ?: currentReference?.takeIf { it == preferredLocalMediaReference(song.localFilePath, song.mediaUri) }
         return copy(
             name = song.name,
             artist = song.artist,
@@ -692,6 +702,7 @@ class PlayHistoryRepository private constructor(
             audioId = song.audioId,
             subAudioId = song.subAudioId,
             sourceStableKey = song.sourceStableKey,
+            explicitLocalSourceReference = selectedReference,
             playedAt = playedAt
         )
     }

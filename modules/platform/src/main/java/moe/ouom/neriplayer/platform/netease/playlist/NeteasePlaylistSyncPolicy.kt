@@ -90,7 +90,11 @@ internal fun parseNeteaseLikedPlaylistId(raw: String): ParsedNeteasePlaylistId {
     if (raw.isBlank()) return ParsedNeteasePlaylistId(playlistId = null, success = false)
     return runCatching {
         val root = JSONObject(raw)
-        if (root.optInt("code", -1) != 200) {
+        val code = root.optInt("code", -1)
+        if (code == 404 && root.opt("neriplayerLikedPlaylistNotFound") == true && !root.has("playlistId")) {
+            return@runCatching ParsedNeteasePlaylistId(playlistId = null, success = true)
+        }
+        if (code != 200) {
             return@runCatching ParsedNeteasePlaylistId(playlistId = null, success = false)
         }
         val id = root.optLong("playlistId", 0L)

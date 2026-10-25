@@ -118,10 +118,12 @@ import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.presentation.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayState
 import moe.ouom.neriplayer.data.model.playback.forSource
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
+import moe.ouom.neriplayer.ui.screen.playback.shouldConfirmFavoriteSync
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.media.displayArtist
@@ -666,7 +668,7 @@ fun NowPlayingScreen(
         playlists
             .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
             ?.songs
-            ?.any { it.sameIdentityAs(song) } == true
+            ?.any { FavoritesPlaylist.matchesSong(it, song) } == true
     }
     LaunchedEffect(isFavoriteComputed) {
         if (favOverride == isFavoriteComputed) {
@@ -677,12 +679,6 @@ fun NowPlayingScreen(
 
     val queue by PlayerManager.currentQueueFlow.collectAsStateWithLifecycle()
     val queueDisplayRevision by PlayerManager.currentQueueDisplayRevisionFlow.collectAsStateWithLifecycle()
-    val queueDisplayState = remember(queue, currentSong, shuffleEnabled, queueDisplayRevision) {
-        PlayerManager.currentQueueDisplaySnapshot()
-    }
-    val displayedQueueItems = queueDisplayState.items
-    val displayedQueue = remember(displayedQueueItems) { displayedQueueItems.map { it.song } }
-    val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
 
     var showAddSheet by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
@@ -719,15 +715,6 @@ fun NowPlayingScreen(
         context.performHapticFeedback()
         screenScope.launch {
             settingsRepo.setNowPlayingImmersiveMode(enable)
-            snackbarHostState.showNeriSnackbar(
-                composeResources.getString(
-                    if (enable) {
-                        CoreCommonR.string.nowplaying_immersive_mode_on
-                    } else {
-                        CoreCommonR.string.nowplaying_immersive_mode_off
-                    }
-                )
-            )
         }
     }
 
@@ -986,6 +973,16 @@ fun NowPlayingScreen(
     var lyricShareInitialLine by remember(currentSong?.stableKey()) {
         mutableStateOf<LyricEntry?>(null)
     }
+    val queueDisplayState = if (showQueueSheet || showMoreOptions || lyricShareInitialLine != null) {
+        remember(queue, currentSong, shuffleEnabled, queueDisplayRevision) {
+            PlayerManager.currentQueueDisplaySnapshot()
+        }
+    } else {
+        PlayerQueueDisplayState.EMPTY
+    }
+    val displayedQueueItems = queueDisplayState.items
+    val displayedQueue = remember(displayedQueueItems) { displayedQueueItems.map { it.song } }
+    val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -1430,7 +1427,7 @@ fun NowPlayingScreen(
                                 launchWithLocalSyncWarning(
                                     song = song,
                                     actionLabel = composeResources.getString(CoreCommonR.string.favorite_add),
-                                    warnForLocalSync = willFav
+                                    warnForLocalSync = shouldConfirmFavoriteSync(song, willFav, context)
                                 ) {
                                     favOverride = willFav
                                     PlayerManager.toggleCurrentFavorite()
@@ -1900,7 +1897,9 @@ fun NowPlayingScreen(
                                             .clickable {
                                                 launchWithLocalSyncWarning(
                                                     song = currentSong,
-                                                    actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
+                                                    actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to),
+                                                    warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(pl, context) ||
+                                                        shouldConfirmFavoriteSync(currentSong, adding = true, context = context)
                                                 ) {
                                                     PlayerManager.addCurrentToPlaylist(pl.id)
                                                     showAddSheet = false
@@ -1936,12 +1935,7 @@ fun NowPlayingScreen(
                     detailSong?.let { song ->
                         LocalSongDetailsDialog(
                             song = song,
-                            onDismiss = { detailSong = null },
-                            onShowMessage = { message ->
-                                screenScope.launch {
-                                    snackbarHostState.showNeriSnackbar(message)
-                                }
-                            }
+                            onDismiss = { detailSong = null }
                         )
                     }
 

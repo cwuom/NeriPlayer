@@ -20,9 +20,10 @@ object SecurePreferencesOpener {
         create: () -> SharedPreferences,
         delete: () -> Unit,
         rebuildCorrupted: Boolean = true,
+        retryVolatile: Boolean = false,
         report: (SecurePreferencesEvent, Throwable) -> Unit = { _, _ -> }
     ): SharedPreferences {
-        VolatileSharedPreferences.existing(name)?.let { return it }
+        if (!retryVolatile) VolatileSharedPreferences.existing(name)?.let { return it }
         val failure = try {
             return create()
         } catch (error: Exception) {

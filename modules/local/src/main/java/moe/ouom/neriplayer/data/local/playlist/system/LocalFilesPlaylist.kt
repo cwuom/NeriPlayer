@@ -36,7 +36,7 @@ object LocalFilesPlaylist {
     private const val CANONICAL_EN_NAME = "Local Files"
 
     fun currentName(context: Context): String {
-        val localizedContext = LanguageManager.applyLanguage(context)
+        val localizedContext = LanguageManager.localizedContext(context, LanguageManager.getCurrentLanguage(context))
         return localizedContext.getString(CoreCommonR.string.local_files)
     }
 

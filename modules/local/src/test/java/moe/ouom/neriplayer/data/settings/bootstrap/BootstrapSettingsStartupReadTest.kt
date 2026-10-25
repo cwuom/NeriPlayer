@@ -111,7 +111,7 @@ class BootstrapSettingsStartupReadTest {
 
         assertTrue(snapshot.bypassProxy)
         assertTrue(snapshot.youtubeEnabled)
-        assertFalse(snapshot.preferHighRefreshRate)
+        assertTrue(snapshot.preferHighRefreshRate)
         assertNull(snapshot.downloadDirectoryUri)
         assertNull(snapshot.downloadDirectoryLabel)
         assertTrue(snapshot.downloadFollowPlaybackAudioQuality)
@@ -133,6 +133,24 @@ class BootstrapSettingsStartupReadTest {
         assertTrue(snapshot.preferHighRefreshRate)
         assertEquals(TREE_URI, snapshot.downloadDirectoryUri)
         assertNull(snapshot.downloadDirectoryLabel)
+    }
+
+    @Test
+    fun `explicit high refresh opt out survives startup mapping and mirror reload`() {
+        val snapshot = preferencesOf(
+            SettingsKeys.PREFER_HIGH_REFRESH_RATE to false
+        ).toBootstrapSettingsSnapshot()
+        persistBootstrapSettingsSnapshot(context, snapshot)
+
+        assertFalse(snapshot.preferHighRefreshRate)
+        assertFalse(readBootstrapSettingsSnapshotSync(context).preferHighRefreshRate)
+    }
+
+    @Test
+    fun `legacy mirror without a high refresh key uses the enabled default`() {
+        mirror.edit().putBoolean("ready", true).commit()
+
+        assertTrue(readBootstrapSettingsSnapshotSync(context).preferHighRefreshRate)
     }
 
     @Test

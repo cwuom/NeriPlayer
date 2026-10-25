@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.model.playback.storage.PlayerDownloadedMetadataS
 import moe.ouom.neriplayer.data.model.playback.storage.PlayerLocalPlaybackResolution
 import moe.ouom.neriplayer.data.model.playback.storage.PlayerMetadataClearRequest
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 
 internal object AppPlayerDownloads : PlayerDownloadAccess {
     override val downloadPresenceVersion get() = GlobalDownloadManager.downloadPresenceVersion
@@ -35,11 +36,11 @@ internal object AppPlayerDownloads : PlayerDownloadAccess {
     override fun getLocalPlaybackUri(context: Context, song: SongItem): String? =
         AudioDownloadManager.getLocalPlaybackUri(context, song)
 
-    override suspend fun resolvePermittedLocalPlaybackUri(context: Context, song: SongItem, rawLocalReference: String?): String? =
-        AudioDownloadManager.resolvePermittedLocalPlaybackUri(context, song, rawLocalReference)
+    override suspend fun resolvePermittedLocalPlaybackUri(context: Context, song: SongItem, rawLocalReference: String?, sourceContext: ResolvedLocalMediaSource?): String? =
+        AudioDownloadManager.resolvePermittedLocalPlaybackUri(context, song, rawLocalReference, sourceContext)
 
-    override suspend fun resolvePermittedLocalPlayback(context: Context, song: SongItem, rawLocalReference: String?): PlayerLocalPlaybackResolution =
-        AudioDownloadManager.resolvePermittedLocalPlayback(context, song, rawLocalReference).toPlayerResolution()
+    override suspend fun resolvePermittedLocalPlayback(context: Context, song: SongItem, rawLocalReference: String?, sourceContext: ResolvedLocalMediaSource?): PlayerLocalPlaybackResolution =
+        AudioDownloadManager.resolvePermittedLocalPlayback(context, song, rawLocalReference, sourceContext).toPlayerResolution()
 
     override fun resolveIndexedLocalPlaybackReference(context: Context, song: SongItem): PlayerLocalPlaybackResolution =
         AudioDownloadManager.resolveIndexedLocalPlaybackReference(context, song).toPlayerResolution()

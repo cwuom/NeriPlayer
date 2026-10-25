@@ -1,12 +1,20 @@
 package moe.ouom.neriplayer.data.local.media
 
 import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.ContentSidecarReferences
+import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaCompanionTransaction
+import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
+import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaUriCandidates
+import moe.ouom.neriplayer.data.local.media.metadata.resolveEditableSidecarFile
+import moe.ouom.neriplayer.data.local.media.metadata.writeLocalCoverSidecar
 
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.identity.stableKey as songStableKey
@@ -17,6 +25,102 @@ import java.io.File
 import java.io.IOException
 import java.util.Locale
 import androidx.core.net.toUri
+
+internal suspend fun LocalMediaSupport.writeLocalMetadataSidecarImpl(
+    context: Context,
+    song: SongItem,
+    writeLyrics: Boolean = false,
+    coverReference: String? = null,
+    clearCoverReference: Boolean = false
+): Boolean = withContext(Dispatchers.IO) {
+    val candidates = editableLocalMediaUriCandidates(context, song)
+    if (candidates.isEmpty()) return@withContext false
+    val writesCover = coverReference != null || clearCoverReference
+    LocalMediaMetadataRecoveryStore.withRecoveredTargets(
+        context = context.applicationContext,
+        targetReferences = candidates.map(Uri::toString),
+        blockedResult = false
+    ) {
+        candidates.any { sourceUri ->
+            currentCoroutineContext().ensureActive()
+            val file = resolveEditableSidecarFile(context, sourceUri)
+            val displayName = song.localFileName
+                ?.takeIf(String::isNotBlank)
+                ?: sourceUri.lastPathSegment.orEmpty()
+            val transaction = LocalMediaCompanionTransaction(context, sourceUri.toString())
+            var committed = false
+            var rollbackSucceeded = true
+            try {
+                val fastMetadataReference = if (!writeLyrics && !writesCover && file == null) {
+                    resolveCachedEditableMetadataReference(context, sourceUri, displayName)
+                } else null
+                val references = if (fastMetadataReference != null) {
+                    ContentSidecarReferences(
+                        metadataReference = fastMetadataReference,
+                        lyricReferences = NearbyLyricReferences(null, null, null)
+                    )
+                } else {
+                    resolveContentSidecarReferences(
+                        context = context,
+                        sourceUri = sourceUri,
+                        file = file,
+                        displayName = displayName,
+                        forMutation = true
+                    )
+                }
+                val companionReferencesBeforeCover = transaction.record?.companions
+                    ?.mapTo(mutableSetOf()) { it.reference }.orEmpty()
+                val coverWritten = !writesCover || writeLocalCoverSidecar(
+                    context = context,
+                    sourceUri = sourceUri,
+                    file = file,
+                    displayName = displayName,
+                    coverReference = coverReference.takeUnless { clearCoverReference },
+                    stableIdentityKey = song.songStableKey(),
+                    companionTransaction = transaction,
+                    parentChildrenForMutation = references.mutationParentChildren
+                )
+                if (coverWritten) {
+                    val effectiveCoverReference = if (!coverReference.isNullOrBlank() && !clearCoverReference) {
+                        transaction.record?.companions
+                            ?.filter { !it.deferredDelete && it.reference !in companionReferencesBeforeCover }
+                            ?.takeIf { it.isNotEmpty() }?.single()?.reference ?: coverReference
+                    } else coverReference
+                    val metadataWritten = writeLocalLyricsMetadata(
+                        context = context,
+                        sourceUri = sourceUri,
+                        file = file,
+                        displayName = displayName,
+                        song = song,
+                        knownReference = references.metadataReference,
+                        writeFullMetadata = true,
+                        writeLyricFields = writeLyrics,
+                        coverReference = effectiveCoverReference,
+                        clearCoverReference = clearCoverReference,
+                        companionTransaction = transaction,
+                        parentChildrenForMutation = references.mutationParentChildren,
+                        useVerifiedExistingReference = fastMetadataReference != null
+                    )
+                    if (metadataWritten) {
+                        currentCoroutineContext().ensureActive()
+                        if (transaction.record != null) transaction.commit()
+                        committed = true
+                    }
+                }
+            } finally {
+                if (!committed) {
+                    rollbackSucceeded = runCatching { transaction.rollback() }
+                        .onFailure { error -> logEditableMetadataFailure("rollback_metadata_sidecars", sourceUri, error) }
+                        .getOrDefault(false)
+                }
+                clearLyricsLookupCache()
+                clearCoverLookupCache()
+            }
+            if (!rollbackSucceeded) return@withRecoveredTargets false
+            committed
+        }
+    }
+}
 
 internal fun LocalMediaSupport.toSongItemImpl(details: LocalMediaDetails): SongItem {
     val stableSource = details.filePath?.takeIf { it.isNotBlank() } ?: details.sourceUri.toString()

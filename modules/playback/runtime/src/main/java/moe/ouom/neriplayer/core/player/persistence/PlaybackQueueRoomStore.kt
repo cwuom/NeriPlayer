@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PLAYBACK_QUEUE_SHUFFLE_RES
 import moe.ouom.neriplayer.data.local.database.entity.PLAYBACK_QUEUE_STATE_ID
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackQueueSongEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackQueueStateEntity
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 
 internal interface PlaybackQueueStateStore {
     suspend fun replaceSnapshot(
@@ -207,6 +208,9 @@ private fun PersistedSongItem.toEntity(
         subAudioId = subAudioId,
         playlistContextId = playlistContextId,
         streamUrl = streamUrl,
+        explicitLocalSourceReference = LocalSongSupport.validExplicitLocalSourceReference(
+            localFilePath, mediaUri, explicitLocalSourceReference
+        ),
         lyricSyncPayloadJson = LyricSyncPersistence(
             revision = lyricSyncRevision, edited = lyricSyncEdited,
             romanized = matchedRomanizedLyric, originalRomanized = originalRomanizedLyric
@@ -250,7 +254,10 @@ private fun PlaybackQueueSongEntity.toPersistedSong(): PersistedSongItem {
         audioId = audioId,
         subAudioId = subAudioId,
         playlistContextId = playlistContextId,
-        streamUrl = streamUrl
+        streamUrl = streamUrl,
+        explicitLocalSourceReference = LocalSongSupport.validExplicitLocalSourceReference(
+            localFilePath, mediaUri, explicitLocalSourceReference
+        )
     )
 }
 

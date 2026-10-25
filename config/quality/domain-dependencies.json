@@ -2190,7 +2190,9 @@
       "moe.ouom.neriplayer.platform.bilibili.skip.*",
       "moe.ouom.neriplayer.common.coroutines.RunCatchingNonCancellationKt",
       "okhttp3.OkHttpClient",
-      "org.json.JSONObject"
+      "org.json.JSONObject",
+      "java.io.IOException",
+      "moe.ouom.neriplayer.common.storage.AccountPreferencesOpener"
     ],
     "bridges": {},
     "descriptor_only": []
@@ -2492,7 +2494,8 @@
       "moe.ouom.neriplayer.platform.netease.playlist.*",
       "moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary",
       "org.json.JSONArray",
-      "org.json.JSONObject"
+      "org.json.JSONObject",
+      "moe.ouom.neriplayer.common.storage.AccountPreferencesOpener"
     ],
     "bridges": {},
     "descriptor_only": []
@@ -2987,7 +2990,9 @@
       "org.schabi.newpipe.extractor.services.youtube.YoutubeService",
       "org.schabi.newpipe.extractor.stream.AudioStream",
       "org.schabi.newpipe.extractor.stream.DeliveryMethod",
-      "org.schabi.newpipe.extractor.stream.StreamInfo"
+      "org.schabi.newpipe.extractor.stream.StreamInfo",
+      "moe.ouom.neriplayer.common.storage.AccountPreferencesOpener",
+      "moe.ouom.neriplayer.common.storage.SecurePreferencesOpener"
     ],
     "bridges": {},
     "descriptor_only": [],

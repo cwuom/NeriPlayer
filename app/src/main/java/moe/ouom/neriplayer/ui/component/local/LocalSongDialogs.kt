@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.component.local
 
 import android.content.ClipData
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,7 @@ import androidx.compose.foundation.verticalScroll
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -57,10 +60,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.util.format.convertTimestampToDate
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.common.format.formatFileSize
@@ -84,13 +90,13 @@ internal fun resolveLocalSongDetailsLoadState(
 @Composable
 fun LocalSongDetailsDialog(
     song: SongItem,
-    onDismiss: () -> Unit,
-    onShowMessage: (String) -> Unit = {}
+    onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember(song) { SnackbarHostState() }
     var details by remember(song) { mutableStateOf<LocalMediaDetails?>(null) }
     var error by remember(song) { mutableStateOf<String?>(null) }
 
@@ -113,101 +119,113 @@ fun LocalSongDetailsDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(CoreCommonR.string.local_song_details_title)) },
         text = {
-            fun copyPath(path: String) {
+            fun copyValue(value: String) {
                 scope.launch {
-                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", path)))
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", value)))
+                    snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.toast_copied))
                 }
-                onShowMessage(composeResources.getString(CoreCommonR.string.toast_copied))
+            }
+
+            @Composable
+            fun CopyableDetail(label: String, value: String?, mono: Boolean = false) {
+                DetailsRow(label, value, mono, onClick = { value?.let(::copyValue) })
             }
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                when {
-                    details == null && error == null -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            CircularProgressIndicator()
-                            Text(stringResource(CoreCommonR.string.local_song_details_loading))
-                        }
-                    }
-
-                    error != null -> {
-                        Text(
-                            text = stringResource(CoreCommonR.string.local_song_details_failed, error.orEmpty()),
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-
-                    details != null -> {
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_display_name), details!!.displayName)
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_title), details!!.title)
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_artist), details!!.artist)
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_album), details!!.album)
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_album_artist), details!!.albumArtist)
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_composer), details!!.composer)
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_genre), details!!.genre)
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_year), details!!.year?.toString())
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_track), details!!.trackNumber?.toString())
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_disc), details!!.discNumber?.toString())
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_duration), formatDuration(details!!.durationMs))
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_extension), details!!.fileExtension)
-                        DetailsRow(
-                            stringResource(CoreCommonR.string.local_song_detail_bitrate),
-                            details!!.bitrateKbps?.let { "$it kbps" }
-                        )
-                        DetailsRow(
-                            stringResource(CoreCommonR.string.local_song_detail_sample_rate),
-                            details!!.sampleRateHz?.let { "$it Hz" }
-                        )
-                        DetailsRow(
-                            stringResource(CoreCommonR.string.local_song_detail_channels),
-                            details!!.channelCount?.toString()
-                        )
-                        DetailsRow(
-                            stringResource(CoreCommonR.string.local_song_detail_bit_depth),
-                            details!!.bitsPerSample?.let { "$it-bit" }
-                        )
-                        DetailsRow(
-                            stringResource(CoreCommonR.string.local_song_detail_size),
-                            details!!.sizeBytes?.let(::formatFileSize)
-                        )
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_mime), details!!.mimeType)
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_audio_mime), details!!.audioMimeType)
-                        DetailsRow(
-                            stringResource(CoreCommonR.string.local_song_detail_modified),
-                            details!!.lastModifiedMs?.let(::convertTimestampToDate)
-                        )
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_cover), details!!.coverSource)
-                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_lyric), details!!.lyricSource)
-                        DetailsRow(
-                            stringResource(CoreCommonR.string.local_song_detail_has_lyrics),
-                            if (details!!.lyricContent.isNullOrBlank()) {
-                                stringResource(CoreCommonR.string.local_song_detail_no_lyrics_value)
-                            } else {
-                                stringResource(CoreCommonR.string.local_song_detail_has_lyrics_value)
+                Column(
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    when {
+                        details == null && error == null -> {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                CircularProgressIndicator()
+                                Text(stringResource(CoreCommonR.string.local_song_details_loading))
                             }
-                        )
-                        DetailsRow(
-                            stringResource(CoreCommonR.string.local_song_detail_path),
-                            details!!.filePath,
-                            mono = true,
-                            onClick = details!!.filePath?.let { path -> { copyPath(path) } }
-                        )
-                        DetailsRow(
-                            stringResource(CoreCommonR.string.local_song_detail_lyric_path),
-                            details!!.lyricPath,
-                            mono = true,
-                            onClick = details!!.lyricPath?.let { path -> { copyPath(path) } }
-                        )
-                        if (details!!.filePath.isNullOrBlank()) {
-                            DetailsRow(stringResource(CoreCommonR.string.local_song_detail_uri), details!!.sourceUri.toString(), mono = true)
+                        }
+
+                        error != null -> {
+                            Text(
+                                text = stringResource(CoreCommonR.string.local_song_details_failed, error.orEmpty()),
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+
+                        details != null -> {
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_display_name), details!!.displayName)
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_title), details!!.title)
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_artist), details!!.artist)
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_album), details!!.album)
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_album_artist), details!!.albumArtist)
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_composer), details!!.composer)
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_genre), details!!.genre)
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_year), details!!.year?.toString())
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_track), details!!.trackNumber?.toString())
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_disc), details!!.discNumber?.toString())
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_duration), formatDuration(details!!.durationMs))
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_extension), details!!.fileExtension)
+                            CopyableDetail(
+                                stringResource(CoreCommonR.string.local_song_detail_bitrate),
+                                details!!.bitrateKbps?.let { "$it kbps" }
+                            )
+                            CopyableDetail(
+                                stringResource(CoreCommonR.string.local_song_detail_sample_rate),
+                                details!!.sampleRateHz?.let { "$it Hz" }
+                            )
+                            CopyableDetail(
+                                stringResource(CoreCommonR.string.local_song_detail_channels),
+                                details!!.channelCount?.toString()
+                            )
+                            CopyableDetail(
+                                stringResource(CoreCommonR.string.local_song_detail_bit_depth),
+                                details!!.bitsPerSample?.let { "$it-bit" }
+                            )
+                            CopyableDetail(
+                                stringResource(CoreCommonR.string.local_song_detail_size),
+                                details!!.sizeBytes?.let(::formatFileSize)
+                            )
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_mime), details!!.mimeType)
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_audio_mime), details!!.audioMimeType)
+                            CopyableDetail(
+                                stringResource(CoreCommonR.string.local_song_detail_modified),
+                                details!!.lastModifiedMs?.let(::convertTimestampToDate)
+                            )
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_cover), details!!.coverSource)
+                            CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_lyric), details!!.lyricSource)
+                            CopyableDetail(
+                                stringResource(CoreCommonR.string.local_song_detail_has_lyrics),
+                                if (details!!.lyricContent.isNullOrBlank()) {
+                                    stringResource(CoreCommonR.string.local_song_detail_no_lyrics_value)
+                                } else {
+                                    stringResource(CoreCommonR.string.local_song_detail_has_lyrics_value)
+                                }
+                            )
+                            CopyableDetail(
+                                stringResource(CoreCommonR.string.local_song_detail_path),
+                                details!!.filePath,
+                                mono = true
+                            )
+                            CopyableDetail(
+                                stringResource(CoreCommonR.string.local_song_detail_lyric_path),
+                                details!!.lyricPath,
+                                mono = true
+                            )
+                            if (details!!.filePath.isNullOrBlank()) {
+                                CopyableDetail(stringResource(CoreCommonR.string.local_song_detail_uri), details!!.sourceUri.toString(), mono = true)
+                            }
                         }
                     }
                 }
+                NeriSnackbarHost(
+                    hostState = snackbarHostState,
+                    applyNavigationBarsPadding = false,
+                    applyImePadding = false
+                )
             }
         },
         confirmButton = {
@@ -252,6 +270,11 @@ private fun DetailsRow(
     Column(
         modifier = Modifier
             .then(
+                if (NeriDesign.isClean) Modifier.clip(NeriDesign.tokens.cardShape)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f))
+                else Modifier
+            )
+            .then(
                 if (onClick != null) {
                     Modifier.clickable(onClick = onClick)
                 } else {
@@ -259,7 +282,8 @@ private fun DetailsRow(
                 }
             )
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
+            .padding(horizontal = if (NeriDesign.isClean) 12.dp else 0.dp,
+                vertical = if (NeriDesign.isClean) 10.dp else 2.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(

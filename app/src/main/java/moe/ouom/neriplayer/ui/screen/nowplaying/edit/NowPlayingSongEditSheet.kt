@@ -31,7 +31,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,7 +55,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -65,6 +67,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -79,6 +83,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -110,6 +115,10 @@ import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricsEditorSheet
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
@@ -731,6 +740,42 @@ internal fun EditSongEditableTextField(
     modifier: Modifier,
     placeholder: @Composable (() -> Unit)? = null
 ) {
+    val restoreIcon: @Composable () -> Unit = {
+        HapticIconButton(enabled = enabled, onClick = onRestore) {
+            Icon(Icons.Outlined.Refresh, contentDescription = restoreDescription)
+        }
+    }
+    if (NeriDesign.isClean) {
+        val interactionSource = remember { MutableInteractionSource() }
+        val focused by interactionSource.collectIsFocusedAsState()
+        val colors = MaterialTheme.colorScheme
+        val shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape)
+        val fill = colors.onSurface.copy(alpha = 0.06f)
+        // 填充输入框将标签留在内部，避免边框缺口同时裁掉标签下方的底色
+        TextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(label) },
+            placeholder = placeholder,
+            modifier = modifier.fillMaxWidth().border(
+                1.dp, if (focused) colors.primary.copy(alpha = 0.5f) else Color.Transparent, shape
+            ),
+            enabled = enabled,
+            singleLine = true,
+            interactionSource = interactionSource,
+            shape = shape,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = fill,
+                unfocusedContainerColor = fill,
+                disabledContainerColor = colors.onSurface.copy(alpha = 0.03f),
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                disabledIndicatorColor = Color.Transparent
+            ),
+            trailingIcon = restoreIcon
+        )
+        return
+    }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -739,11 +784,8 @@ internal fun EditSongEditableTextField(
         modifier = modifier.fillMaxWidth(),
         enabled = enabled,
         singleLine = true,
-        trailingIcon = {
-            HapticIconButton(enabled = enabled, onClick = onRestore) {
-                Icon(Icons.Outlined.Refresh, contentDescription = restoreDescription)
-            }
-        }
+        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+        trailingIcon = restoreIcon
     )
 }
 
@@ -785,7 +827,7 @@ internal fun EditSongCoverPreview(
             modifier = Modifier
                 .size(size)
                 .testTag("song-edit-cover-preview")
-                .clip(RoundedCornerShape(12.dp))
+                .clip(neriRoundedShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .clickable(enabled = state.clickable, onClick = onClick),
             contentAlignment = Alignment.Center

@@ -260,13 +260,13 @@ class NeteasePlaylistSync(
                 return@withContext plan.toLikeSyncResult(targetPlaylistId)
             }
 
+            val addSession = NeteasePlaylistAddSession(client, targetPlaylistId, pause)
             val addResult = addNeteasePlaylistSongIdsInBatches(
                 songIds = candidates.map(NeteaseResolvedCandidate::neteaseId),
                 batchSize = NETEASE_PLAYLIST_ADD_BATCH_SIZE,
-                pause = pause
-            ) { ids ->
-                addNeteasePlaylistSongIdsBatch(client, targetPlaylistId, ids)
-            }
+                pause = pause,
+                addBatch = addSession::add
+            )
             val reconciled = reconcileNeteasePlaylistAddResult(client, targetPlaylistId, addResult)
             val failedSongResolution = classifyNeteasePlaylistAddFailures(
                 failedIds = reconciled.failedIds,

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.host
 import android.content.Context
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 
 import moe.ouom.neriplayer.data.model.playback.storage.PlayerLocalPlaybackResolution
 import moe.ouom.neriplayer.data.model.playback.storage.PlayerDownloadedLyrics
@@ -18,8 +19,8 @@ interface PlayerDownloadAccess {
     fun isLikelyManagedDownloadSongFast(context: Context, song: SongItem): Boolean
     fun scanLocalFiles(context: Context, forceRefresh: Boolean)
     fun getLocalPlaybackUri(context: Context, song: SongItem): String?
-    suspend fun resolvePermittedLocalPlaybackUri(context: Context, song: SongItem, rawLocalReference: String?): String?
-    suspend fun resolvePermittedLocalPlayback(context: Context, song: SongItem, rawLocalReference: String?): PlayerLocalPlaybackResolution
+    suspend fun resolvePermittedLocalPlaybackUri(context: Context, song: SongItem, rawLocalReference: String?, sourceContext: ResolvedLocalMediaSource? = null): String?
+    suspend fun resolvePermittedLocalPlayback(context: Context, song: SongItem, rawLocalReference: String?, sourceContext: ResolvedLocalMediaSource? = null): PlayerLocalPlaybackResolution
     fun resolveIndexedLocalPlaybackReference(context: Context, song: SongItem): PlayerLocalPlaybackResolution
     fun hasRecentlyCompletedAudio(song: SongItem): Boolean
     fun invalidateCompletedAudioReference(song: SongItem)

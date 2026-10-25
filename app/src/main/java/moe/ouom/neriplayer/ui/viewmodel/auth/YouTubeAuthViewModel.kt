@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.platform.youtube.api.auth.fromJson
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasEffectiveAuth
 import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import android.app.Application
+import java.io.IOException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -105,7 +106,12 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearAuth() {
         viewModelScope.launch(Dispatchers.IO) {
-            repo.clear()
+            try {
+                repo.clear()
+            } catch (_: IOException) {
+                emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_storage_clear_failed))
+                return@launch
+            }
             clearWebViewLoginState(
                 context = getApplication(),
                 platform = WebLoginPlatform.YOUTUBE
@@ -155,7 +161,12 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
 
-            repo.saveAuth(normalized)
+            try {
+                repo.saveAuth(normalized)
+            } catch (_: IOException) {
+                emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_storage_save_failed))
+                return@launch
+            }
             _uiState.value = YouTubeAuthUiState(
                 health = repo.getAuthHealthOnce(),
                 hasSavedAuth = true

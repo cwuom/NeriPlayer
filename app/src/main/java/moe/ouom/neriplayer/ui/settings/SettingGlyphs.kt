@@ -205,6 +205,7 @@ internal fun settingGlyphFor(key: String): SettingGlyph? = when (key) {
     "live_update_lyric_enabled" -> g(Icons.Rounded.NotificationsActive, Orange)
     "dynamic_island_lyrics_enabled" -> g(SettingSymbols.DynamicIsland, Slate)
     "xiaomi_super_island_lyric_enabled" -> g(SettingSymbols.SuperIsland, Orange)
+    "coloros_lockscreen_lyrics_enabled" -> g(Icons.Rounded.Lyrics, Mint)
     "lyricon_enabled" -> g(Icons.Rounded.Extension, Indigo)
     "amll_lyrics_enabled" -> g(Icons.Rounded.Animation, Pink)
     "external_bluetooth_lyrics_enabled" -> g(Icons.Rounded.Bluetooth, Blue)

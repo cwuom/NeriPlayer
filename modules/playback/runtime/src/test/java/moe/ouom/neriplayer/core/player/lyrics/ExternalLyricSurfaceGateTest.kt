@@ -162,6 +162,10 @@ class ExternalLyricSurfaceGateTest {
                 { PlayerManager.dynamicIslandLyricsEnabled },
                 { PlayerManager.dynamicIslandLyricsEnabled = it }
             ),
+            "ColorOS lockscreen" to SurfaceFlag(
+                { PlayerManager.colorOsLockscreenLyricsEnabled },
+                { PlayerManager.colorOsLockscreenLyricsEnabled = it }
+            ),
             "xiaomi super island" to SurfaceFlag(
                 { PlayerManager.xiaomiSuperIslandLyricEnabled },
                 { PlayerManager.xiaomiSuperIslandLyricEnabled = it }

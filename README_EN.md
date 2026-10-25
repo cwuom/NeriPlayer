@@ -659,7 +659,9 @@ For release build and signing details, see
   dynamic color, seed colors, palette styles, UI scaling,
   custom background image, haptic feedback, lyric font size (separate cover and
   lyrics-page controls), lyric blur, default start destination, and Home card
-  toggles. Android 13+ can optionally
+  toggles. When no refresh-rate preference is saved, the app prefers the display's
+  highest supported refresh rate; an explicit opt-out is preserved, and Android
+  still controls the actual refresh rate. Android 13+ can optionally
   enable Enhanced Advanced Blur for top/bottom tabs and structural settings cards;
   its radius is adjustable from `12-64 dp`, and disabling the parent preserves the
   child choice and radius while removing enhanced drawing. Blur quality is separately
@@ -701,6 +703,19 @@ For release build and signing details, see
   and translations. Original and translated Bluetooth lyrics have independent
   switches; in the original lyric compatibility mode, enabling both uses separate title and artist fields while
   track identity remains available through album/description metadata.
+- **ColorOS lock-screen lyrics (experimental)**:
+  Enable under Settings → External lyrics to publish full line, word, and translation timelines
+  for ColorOS 16/17 through the existing media session. Separate Root and Shizuku controls check,
+  apply, and restore configuration; the lyric output switch never writes system configuration automatically.
+  Only this app's entries in an existing vendor configuration are updated, with an initial recovery
+  record and conflict/OTA checks. Missing or incompatible configuration and restricted Shizuku access
+  are reported rather than treated as successful activation. Song title and artist remain stable;
+  Bluetooth players that only read those fields may stop showing lyrics until this option is disabled.
+  Restore publishes the original policy at a higher version; check again after system updates.
+  Applying a confirmed configuration again retries reload without another configuration write.
+  After a conflict, a confirmation can discard a settled local recovery record without changing system
+  configuration; the original policy can no longer be restored. Unresolved write records are retained.
+  Local tests and a standard emulator do not establish ColorOS 16/17 lock-screen or AOD compatibility.
 - 🚗 **Car playback**:
   Bluetooth media metadata includes title, artist, album, duration, track counts, and artwork.
   Under Lyrics settings, Bluetooth car display offers song information, song with lyrics,
@@ -1076,7 +1091,10 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   NeriPlayer still keeps management metadata, but stops writing tags, lyrics,
   and covers back into the audio file itself.
 - `BackupManager` supports playlist JSON export/import and diff analysis.
-- `ConfigFileManager` supports full config export/import for migration.
+- Configuration exports exclude login state by default. You can include music-service authorization
+  and GitHub/WebDAV credentials, and optionally encrypt the file with a password.
+  Imports accept legacy plaintext files; encrypted files require the original password. Files without
+  login state preserve existing accounts and sync credentials on the device.
 
 For implementation details, see [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md).
 
@@ -1185,6 +1203,8 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 - Automatic sync and manual sync are supported.
 - `WorkManager` handles delayed sync, periodic sync, network checks, and retries.
 - WebDAV URL, username, and password are stored in local encrypted storage.
+- HTTP addresses show a plaintext transport warning and require confirmation before validation and saving;
+  HTTPS is recommended.
 - WebDAV stores the V4 manifest and content objects beside the configured file, keeping the `neriplayer-sync-v3.manifest` filename.
   Subsequent manifest writes prefer a strong ETag condition; without one, the manifest fingerprint is
   verified before and after publication, and another device's write triggers a fresh merge instead of an overwrite.
@@ -1368,8 +1388,9 @@ We will keep improving the project over time.
 - For account safety, the app does not write local playback history or playback
   stats back to third-party music platforms, because that kind of reporting may
   be misclassified by platform risk-control systems.
-- Full config export files contain settings, auth data, and sync configuration.
-  They are intended for personal migration and should not be shared publicly.
+- Configuration exports exclude login state by default. Including it also exports auth and sync
+  credentials; use a password, store the file securely, and do not share it publicly.
+  Passwords are not stored in the file and cannot be recovered if forgotten.
 - Android system cloud backup / device transfer is disabled by default.
 - Third-party platform logs and risk-control behavior are governed by the
   corresponding platforms' privacy policies.

@@ -35,7 +35,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Share
@@ -88,6 +87,9 @@ import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.cleanTintedAccent
+import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import java.io.File
@@ -295,8 +297,9 @@ private fun LyricShareHeader(
     ) {
         Surface(
             modifier = Modifier.size(58.dp),
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant
+            shape = neriRoundedShape(12.dp),
+            color = if (NeriDesign.isClean) MaterialTheme.colorScheme.surfaceContainerHigh
+                else MaterialTheme.colorScheme.surfaceVariant
         ) {
             if (!coverUrl.isNullOrBlank()) {
                 AsyncImage(
@@ -344,7 +347,7 @@ private fun LyricShareLine(
     onToggle: () -> Unit,
     onRangeSelect: () -> Unit
 ) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = neriRoundedShape(14.dp)
     val selectedBrush = Brush.horizontalGradient(
         colors = listOf(
             MaterialTheme.colorScheme.primary.copy(alpha = 0.62f),
@@ -352,7 +355,13 @@ private fun LyricShareLine(
             MaterialTheme.colorScheme.secondary.copy(alpha = 0.42f)
         )
     )
-    val background = if (selected) {
+    val background = if (NeriDesign.isClean) {
+        Modifier.background(
+            if (selected) MaterialTheme.colorScheme.cleanTintedAccent()
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f),
+            shape
+        )
+    } else if (selected) {
         Modifier.background(selectedBrush, shape)
     } else {
         Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f), shape)
@@ -373,7 +382,8 @@ private fun LyricShareLine(
             text = line.text,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+            color = if (selected && NeriDesign.isClean) MaterialTheme.colorScheme.primary
+                else if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
             maxLines = 4,
             overflow = TextOverflow.Ellipsis
         )

@@ -56,6 +56,8 @@ import moe.ouom.neriplayer.core.player.download.network.currentDownloadParalleli
 import moe.ouom.neriplayer.core.player.download.network.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import moe.ouom.neriplayer.common.time.elapsedMillisSince
 
@@ -74,7 +76,8 @@ internal fun GlobalDownloadManager.startBatchDownload(
 
     val startupStartedAtNs = System.nanoTime()
     val appContext = context.applicationContext
-    var requestedSongs = songs.distinctBy(SongItem::stableKey)
+    var requestedSongs = songs.filterNot { LocalSongSupport.isLocalSong(it, appContext) }
+        .distinctBy(SongItem::stableKey)
     if (requestedSongs.isEmpty()) {
         return null
     }
@@ -109,12 +112,30 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 true
             }
             if (!deletionSettled) {
+                val networkType = appContext.currentDownloadNetworkTypeOrNull()
+                if (capturedAdmissionTicket != null &&
+                    isDownloadAdmissionTicketCurrentForStableKeys(
+                        context = appContext,
+                        admissionTicket = capturedAdmissionTicket,
+                        stableKeys = requestedSongKeys
+                    ) && maybeRequestTrafficRiskDownloadConfirmation(
+                        context = appContext,
+                        songs = requestedSongs,
+                        isBatch = true,
+                        skipTrafficRiskPrompt = skipTrafficRiskPrompt,
+                        networkType = networkType
+                    )
+                ) {
+                    return@admission null
+                }
                 val deferred = deferDownloadForDeleteCleanup(
                     context = appContext,
                     songs = requestedSongs,
                     userInitiated = userInitiated,
                     admissionTicket = capturedAdmissionTicket,
-                    batchPresentationId = batchPresentationId
+                    batchPresentationId = batchPresentationId,
+                    requiresWifiNetworkOverride = !userInitiated ||
+                        networkType == null || networkType == TrafficNetworkType.WIFI
                 )
                 if (!deferred) {
                     if (batchPresentationId != 0L) {
@@ -184,6 +205,8 @@ internal fun GlobalDownloadManager.startBatchDownload(
             )
         var preparedSnapshot: DownloadBatchSnapshotSelection? = null
         var durableBatchIdentity: DownloadExecutionRoomStore.DownloadBatchIdentity? = null
+        var trafficRiskConfirmationRequested = false
+        var requiresWifiNetwork = true
         val batchCreated = admitDownloadMutationForStableKeys(
             context = appContext,
             admissionTicket = admissionTicket,
@@ -193,6 +216,21 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 song.stableKey() in admittedSongKeys &&
                     song.stableKey() !in initiallyCompletedSongKeys
             }
+            // 确认前不能落盘或恢复旧任务，否则取消后重启仍会恢复这次批次
+            val networkType = appContext.currentDownloadNetworkTypeOrNull()
+            trafficRiskConfirmationRequested = maybeRequestTrafficRiskDownloadConfirmation(
+                context = appContext,
+                songs = admittedSongs,
+                isBatch = true,
+                skipTrafficRiskPrompt = skipTrafficRiskPrompt,
+                networkType = networkType
+            )
+            if (trafficRiskConfirmationRequested) {
+                return@snapshotAdmission
+            }
+            // 准备期间切到移动网络时，仍保留本次准入的 WIFI 限制
+            requiresWifiNetwork = !userInitiated ||
+                networkType == null || networkType == TrafficNetworkType.WIFI
             // 显式恢复可能释放旧 owner，必须在新批次归属查询前完成
             if (userInitiated && !clearSongCancellationForFreshStart(
                     context = appContext,
@@ -228,6 +266,9 @@ internal fun GlobalDownloadManager.startBatchDownload(
                     knownCompletedSongKeys = initiallyCompletedSongKeys
                 )
             }
+        }
+        if (trafficRiskConfirmationRequested) {
+            return@startup
         }
         if (!batchCreated || preparedSnapshot == null) {
             NPLogger.w(
@@ -531,17 +572,6 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 scheduleCompletedBatchDownloadPresentationRemoval(batchPresentationId)
                 return@admission
             }
-            if (
-                maybeRequestTrafficRiskDownloadConfirmation(
-                    context = appContext,
-                    songs = songsToStage,
-                    isBatch = true,
-                    skipTrafficRiskPrompt = skipTrafficRiskPrompt
-                )
-            ) {
-                clearBatchDownloadPresentation(batchPresentationId)
-                return@admission
-            }
             val canStartFirstDurablePageImmediately = cleanupBeforeStart &&
                 !shouldDeferQueuedDownloadStartForNetwork(
                     networkType = appContext.currentDownloadNetworkTypeOrNull(),
@@ -554,6 +584,7 @@ internal fun GlobalDownloadManager.startBatchDownload(
                 songs = songsToStage,
                 userInitiated = userInitiated,
                 batchIdentity = durableBatchIdentity,
+                requiresWifiNetworkOverride = requiresWifiNetwork,
                 // 首页 operation 已和持久批次绑定，立即唤醒共享泵
                 // 后续页按原队列顺序提升，不再阻塞第一首开始传输
                 onPageReady = { _, page ->

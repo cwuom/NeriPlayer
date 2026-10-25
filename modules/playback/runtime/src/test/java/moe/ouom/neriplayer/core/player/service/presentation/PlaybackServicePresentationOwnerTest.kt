@@ -118,8 +118,11 @@ class PlaybackServicePresentationOwnerTest {
 
         assertFalse(owner.canToggleFavorite(null))
         assertTrue(owner.canToggleFavorite(current))
+        val local = current.copy(mediaUri = "/music/local.mp3", localFilePath = "/music/local.mp3")
+        source.currentPlayback = playback(local)
         source.localSong = true
-        assertFalse(owner.canToggleFavorite(current))
+        assertFalse(owner.canToggleFavorite(local))
+        source.currentPlayback = playback(current)
         source.localSong = false
         source.playlistsReady = false
         assertFalse(owner.canToggleFavorite(current))

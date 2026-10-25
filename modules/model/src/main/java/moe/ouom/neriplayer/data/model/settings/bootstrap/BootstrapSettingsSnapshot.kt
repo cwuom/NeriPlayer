@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLE
 data class BootstrapSettingsSnapshot(
     val bypassProxy: Boolean = true,
     val youtubeEnabled: Boolean = true,
-    val preferHighRefreshRate: Boolean = false,
+    val preferHighRefreshRate: Boolean = true,
     val downloadDirectoryUri: String? = null,
     val downloadDirectoryLabel: String? = null,
     val downloadFileNameTemplate: String? = null,

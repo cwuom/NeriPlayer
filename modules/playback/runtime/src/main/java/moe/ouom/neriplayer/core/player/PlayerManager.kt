@@ -80,6 +80,8 @@ import moe.ouom.neriplayer.core.player.media.LocalPlaybackMediaResolver
 import moe.ouom.neriplayer.core.player.media.PlaybackMediaItemFactory
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.lyrics.floating.FloatingLyricsContentSource
+import moe.ouom.neriplayer.core.player.service.lyrics.coloros.ColorOsLyricTimelineOwner
+import moe.ouom.neriplayer.core.player.service.lyrics.coloros.ColorOsLyricRequest
 import moe.ouom.neriplayer.data.model.playback.AudioDevice
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PreferredQualityKeys
@@ -215,6 +217,7 @@ import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.shouldTreatReadyAtStartAsUnhealthyPrepared
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.model.stableKey
@@ -445,6 +448,10 @@ object PlayerManager {
     internal var externalBluetoothLyricsEnabled = false
     internal var externalBluetoothTranslationEnabled = false
     internal var dynamicIslandLyricsEnabled = false
+    internal val colorOsLockscreenLyricsEnabledFlow = MutableStateFlow(false)
+    internal var colorOsLockscreenLyricsEnabled: Boolean
+        get() = colorOsLockscreenLyricsEnabledFlow.value
+        set(value) { colorOsLockscreenLyricsEnabledFlow.value = value }
     internal var xiaomiSuperIslandLyricEnabled = false
     internal var liveUpdateLyricEnabled = false
     internal var xiaomiSuperIslandLyricBridge: XiaomiSuperIslandLyricBridge? = null
@@ -654,6 +661,10 @@ object PlayerManager {
         MutableStateFlow(ExternalBluetoothLyricPayload())
     internal val externalBluetoothLyricPayloadFlow: StateFlow<ExternalBluetoothLyricPayload> =
         _externalBluetoothLyricPayloadFlow
+    internal val colorOsLyricTimelineOwner = ColorOsLyricTimelineOwner()
+    internal val colorOsLyricTimelineFlow = colorOsLyricTimelineOwner.timeline
+    internal var externalLyricRequest: ColorOsLyricRequest? = null
+    internal var externalTranslationRequestId = 0L
 
     internal val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
     val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()
@@ -1279,6 +1290,9 @@ object PlayerManager {
         return LocalPlaybackMediaResolver.source(song, application)
     }
 
+    internal fun localMediaSourceContext(song: SongItem): ResolvedLocalMediaSource? =
+        LocalPlaybackMediaResolver.sourceContext(song, application)
+
     internal fun toPlayableLocalUrl(mediaUri: String?): String? =
         LocalPlaybackMediaResolver.playableUrl(mediaUri)
 
@@ -1841,7 +1855,7 @@ object PlayerManager {
     internal fun applyRemoteQueueUpdate(queue: List<SongItem>, currentIndexInQueue: Int) =
         applyRemoteQueueUpdateImpl(queue, currentIndexInQueue)
 
-    fun resumeRestoredPlaybackIfNeeded(): Long? = resumeRestoredPlaybackIfNeededImpl()
+    suspend fun resumeRestoredPlaybackIfNeeded(): Long? = resumeRestoredPlaybackIfNeededImpl()
 
     fun suppressFutureAutoResumeForCurrentSession(forcePersist: Boolean = false) =
         suppressFutureAutoResumeForCurrentSessionImpl(forcePersist)

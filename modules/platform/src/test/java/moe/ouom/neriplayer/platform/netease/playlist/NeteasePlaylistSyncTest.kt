@@ -172,11 +172,14 @@ class NeteasePlaylistSyncTest {
     fun `songs rejected by netease are reported with the server reason`() = runTest {
         val client = mock(NeteaseClient::class.java)
         `when`(client.hasLogin()).thenReturn(true)
+        `when`(client.getLikedPlaylistId(0L)).thenReturn("{\"code\":404}")
         `when`(client.getSongDetail(listOf(1L, 2L))).thenReturn(
             """{"code":200,"songs":[${songJson(1L, "one")},${songJson(2L, "two")}]}"""
         )
         `when`(client.getPlaylistDetail(91L)).thenReturn("{\"code\":200,\"playlist\":{\"trackIds\":[],\"trackCount\":0}}")
         `when`(client.addSongsToPlaylist(91L, listOf(1L, 2L))).thenReturn("{\"code\":524,\"message\":\"no copyright\"}")
+        `when`(client.addSongsToPlaylist(91L, listOf(1L))).thenReturn("{\"code\":524,\"message\":\"no copyright\"}")
+        `when`(client.addSongsToPlaylist(91L, listOf(2L))).thenReturn("{\"code\":524,\"message\":\"no copyright\"}")
 
         val result = NeteasePlaylistSync(noPause) { it.name }.syncSongsToNeteasePlaylist(client, 91L, listOf(song(1L), song(2L, "two")))
 

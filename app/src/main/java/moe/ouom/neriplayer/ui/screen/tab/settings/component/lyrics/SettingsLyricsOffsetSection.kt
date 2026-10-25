@@ -61,6 +61,7 @@ import moe.ouom.neriplayer.lyrics.offset.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.lyrics.offset.MIN_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.XiaomiSuperIslandLyricsSetting
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.lyrics.coloros.ColorOsLockscreenLyricsSetting
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
@@ -188,6 +189,12 @@ internal fun SettingsLyricsSection(
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
+                )
+                ColorOsLockscreenLyricsSetting(
+                    repository = autoSettingsRepository,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished,
                 )
                 BluetoothMetadataModeSetting(
                     repository = settingsRepository,

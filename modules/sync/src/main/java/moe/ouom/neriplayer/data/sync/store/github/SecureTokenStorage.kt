@@ -39,9 +39,18 @@ class SecureTokenStorage internal constructor(
     syncDirectory: ((File) -> Unit)? = null
 ) {
     constructor(context: Context) : this(
-        EncryptedSyncPreferences.open(context, GITHUB_PREFS_NAME, "NERI-SecureTokenStorage", recoverOnFailure = false),
+        openPreferences(context),
         context
     )
+
+    companion object {
+        // 旧同步间隔不包含凭据，迁移时无需初始化账号和删除记录存储
+        fun readLegacyPlayHistoryUpdateModeName(context: Context): String? =
+            openPreferences(context).getString(KEY_PLAY_HISTORY_UPDATE_MODE, null)
+
+        private fun openPreferences(context: Context): SharedPreferences =
+            EncryptedSyncPreferences.open(context, GITHUB_PREFS_NAME, "NERI-SecureTokenStorage", recoverOnFailure = false)
+    }
 
     private constructor(encryptedPrefs: SharedPreferences, context: Context) : this(
         encryptedPrefs,

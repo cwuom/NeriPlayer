@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.startup.safemode
 import android.content.Context
 import android.net.Uri
 import moe.ouom.neriplayer.data.backup.BackupManager
+import moe.ouom.neriplayer.data.config.ConfigExportOptions
 import moe.ouom.neriplayer.data.config.ConfigFileManager
 
 internal class SafeModeDataExports(
@@ -10,8 +11,12 @@ internal class SafeModeDataExports(
 ) {
     private val appContext = context.applicationContext
 
-    suspend fun exportConfigBackup(destination: Uri): Result<String> {
-        return ConfigFileManager(appContext).exportConfig(destination)
+    suspend fun exportConfigBackup(
+        destination: Uri,
+        options: ConfigExportOptions = ConfigExportOptions(),
+        password: CharArray? = null
+    ): Result<String> {
+        return ConfigFileManager(appContext).exportConfig(destination, options, password)
     }
 
     suspend fun exportPlaylistBackup(destination: Uri): Result<String> {

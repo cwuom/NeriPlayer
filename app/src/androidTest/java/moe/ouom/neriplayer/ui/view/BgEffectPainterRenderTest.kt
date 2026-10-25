@@ -4,6 +4,7 @@ import android.graphics.Color as AndroidColor
 import android.graphics.Bitmap
 import android.graphics.RenderEffect
 import android.os.Build
+import android.os.Looper
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.compose.foundation.background
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -35,6 +37,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
@@ -128,6 +131,44 @@ class BgEffectPainterRenderTest {
     }
 
     @Test
+    fun painterPreparedOnAWorkerRendersAfterHandingItToTheMainThread() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val executor = Executors.newSingleThreadExecutor()
+        val painter = try {
+            executor.submit<BgEffectPainter> {
+                check(Looper.myLooper() != Looper.getMainLooper())
+                BgEffectPainter(context.applicationContext)
+            }.get(DrawTimeoutMs, TimeUnit.MILLISECONDS)
+        } finally {
+            executor.shutdownNow()
+        }
+        var preparedHost: View? = null
+        composeRule.setContent {
+            AndroidView(
+                factory = { hostContext ->
+                    View(hostContext).apply {
+                        setWillNotDraw(false)
+                        setBackgroundColor(AndroidColor.TRANSPARENT)
+                        preparedHost = this
+                    }
+                },
+                modifier = Modifier.size(testViewSize).testTag(ProductionTag)
+            )
+        }
+        composeRule.waitUntil(DrawTimeoutMs) { (preparedHost?.width ?: 0) > 0 }
+        val view = checkNotNull(preparedHost)
+        awaitDraws(view) {
+            check(Looper.myLooper() == Looper.getMainLooper())
+            configurePainter(painter, InitialAnimTime)
+            painter.setResolution(view.width.toFloat(), view.height.toFloat())
+            view.setRenderEffect(painter.renderEffect)
+        }
+
+        val image = composeRule.onNodeWithTag(ProductionTag).captureToImage()
+        assertTrue("交接后的 shader 必须真实绘制颜色", coloredPixelRatio(image) >= MinColoredPixelRatio)
+    }
+
+    @Test
     fun hyperBackgroundComposable_rendersDynamicShader() {
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
@@ -146,15 +187,58 @@ class BgEffectPainterRenderTest {
             }
         }
 
-        composeRule.mainClock.advanceTimeBy(200L)
-        composeRule.waitForIdle()
-        val image = composeRule.onNodeWithTag(ProductionTag).captureToImage()
+        val image = awaitProductionFrame { coloredPixelRatio(it) >= MinColoredPixelRatio }
         val coloredPixelRatio = coloredPixelRatio(image)
 
         assertTrue(
             "HyperBackground rendered transparent or black: colored=$coloredPixelRatio",
             coloredPixelRatio >= MinColoredPixelRatio
         )
+    }
+
+    @Test
+    fun hyperBackgroundReopensAfterThemeChangesWithoutLosingItsLatestHost() {
+        val visible = mutableStateOf(true)
+        val dark = mutableStateOf(true)
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            Box(Modifier.size(testViewSize).background(Color.Black)) {
+                if (visible.value) {
+                    HyperBackground(
+                        modifier = Modifier.fillMaxSize().testTag(ProductionTag),
+                        isDark = dark.value,
+                        coverUrl = null
+                    )
+                }
+            }
+        }
+        awaitProductionFrame { darkPixelRatio(it) >= MinColoredPixelRatio }
+
+        repeat(3) {
+            composeRule.runOnIdle {
+                dark.value = !dark.value
+            }
+            // 仅有颜色仍可能是旧深色帧，等待浅色调色板真正出帧
+            val lightFrame = awaitProductionFrame {
+                coloredPixelRatio(it, MinLightThemeColorChannel) >= MinColoredPixelRatio
+            }
+            val lightPixelRatio = coloredPixelRatio(lightFrame, MinLightThemeColorChannel)
+            assertTrue("浅色主题必须在隐藏前真实绘制，浅色像素比例=$lightPixelRatio",
+                lightPixelRatio >= MinColoredPixelRatio)
+            composeRule.runOnIdle { visible.value = false }
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.onNodeWithTag(ProductionTag).assertDoesNotExist()
+            composeRule.runOnIdle {
+                dark.value = !dark.value
+                visible.value = true
+            }
+            val reopenedDarkFrame = awaitProductionFrame {
+                darkPixelRatio(it) >= MinColoredPixelRatio
+            }
+            val reopenedDarkPixelRatio = darkPixelRatio(reopenedDarkFrame)
+            assertTrue("深色主题重显后必须真实绘制，深色像素比例=$reopenedDarkPixelRatio",
+                reopenedDarkPixelRatio >= MinColoredPixelRatio)
+        }
     }
 
     @Test
@@ -184,10 +268,7 @@ class BgEffectPainterRenderTest {
                     }
                 }
             }
-            composeRule.waitUntil(DrawTimeoutMs) {
-                composeRule.mainClock.advanceTimeBy(64L)
-                redPalettePixelRatio(composeRule.onNodeWithTag(ProductionTag).captureToImage()) > 0.90
-            }
+            awaitProductionFrame { redPalettePixelRatio(it) > 0.90 }
 
             // 排除图片缓存重新提色，重建必须直接使用已经提取的颜色
             val memoryCache = Coil.imageLoader(context).memoryCache
@@ -196,13 +277,23 @@ class BgEffectPainterRenderTest {
             check(cover.delete())
             repeat(2) {
                 composeRule.runOnIdle { generation.intValue++ }
-                composeRule.mainClock.advanceTimeBy(64L)
-                val ratio = redPalettePixelRatio(composeRule.onNodeWithTag(ProductionTag).captureToImage())
+                val ratio = redPalettePixelRatio(awaitProductionFrame { redPalettePixelRatio(it) > 0.90 })
                 assertTrue("横竖尺寸重建后必须保留封面取色，红色像素比例=$ratio", ratio > 0.90)
             }
         } finally {
             if (cover.exists()) check(cover.delete())
         }
+    }
+
+    private fun awaitProductionFrame(ready: (ImageBitmap) -> Boolean): ImageBitmap {
+        var frame: ImageBitmap? = null
+        composeRule.waitUntil(DrawTimeoutMs) {
+            composeRule.mainClock.advanceTimeBy(64L)
+            val captured = composeRule.onNodeWithTag(ProductionTag).captureToImage()
+            frame = captured
+            ready(captured)
+        }
+        return checkNotNull(frame)
     }
 
     private fun redPalettePixelRatio(image: ImageBitmap): Double {
@@ -303,14 +394,22 @@ class BgEffectPainterRenderTest {
         return changedPixels.toDouble() / comparedPixels
     }
 
-    private fun coloredPixelRatio(image: ImageBitmap): Double {
+    private fun darkPixelRatio(image: ImageBitmap): Double {
+        // 排除透明或纯黑底色，以及上一主题遗留的浅色帧
+        return coloredPixelRatio(image) - coloredPixelRatio(image, MinLightThemeColorChannel)
+    }
+
+    private fun coloredPixelRatio(
+        image: ImageBitmap,
+        minVisibleColorChannel: Float = MinVisibleColorChannel
+    ): Double {
         val pixels = image.toPixelMap()
         var coloredPixels = 0
         var comparedPixels = 0
         for (y in PixelInset until image.height - PixelInset) {
             for (x in PixelInset until image.width - PixelInset) {
                 val color = pixels[x, y]
-                if (max(color.red, max(color.green, color.blue)) > MinVisibleColorChannel) {
+                if (max(color.red, max(color.green, color.blue)) > minVisibleColorChannel) {
                     coloredPixels++
                 }
                 comparedPixels++
@@ -343,6 +442,7 @@ class BgEffectPainterRenderTest {
         const val MaxOutlierPixelRatio = 0.01
         const val MinChangedPixelRatio = 0.25
         const val MinVisibleColorChannel = 0.02f
+        const val MinLightThemeColorChannel = 0.5f
         const val MinColoredPixelRatio = 0.95
     }
 }

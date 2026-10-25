@@ -49,6 +49,11 @@ class BootstrapSettingsSnapshotTest {
     }
 
     @Test
+    fun `cold startup enables high refresh before settings are available`() {
+        assertEquals(true, BootstrapSettingsSnapshot().sanitized().preferHighRefreshRate)
+    }
+
+    @Test
     fun `download quality startup state defaults to following playback`() {
         val snapshot = BootstrapSettingsSnapshot().sanitized()
 
