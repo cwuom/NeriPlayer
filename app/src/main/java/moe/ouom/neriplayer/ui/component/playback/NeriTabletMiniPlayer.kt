@@ -331,7 +331,7 @@ private fun TabletMiniPlayerProgress(controls: MiniPlayerTabletControls) {
             }
     ) {
         val strokeWidth = NeriMiniPlayerDefaults.TabletProgressThickness.toPx().coerceAtMost(size.height)
-        val y = strokeWidth / 2f
+        val y = size.height / 2f
         val x = progress * size.width
         val radius = minOf(
             if (preview != null) 5.dp.toPx() else 3.dp.toPx(),
@@ -341,6 +341,6 @@ private fun TabletMiniPlayerProgress(controls: MiniPlayerTabletControls) {
         val thumbX = x.coerceIn(radius, size.width - radius)
         drawLine(track, Offset(0f, y), Offset(size.width, y), strokeWidth, StrokeCap.Butt)
         drawLine(color, Offset(0f, y), Offset(x, y), strokeWidth, StrokeCap.Butt)
-        drawCircle(color, radius, Offset(thumbX, radius))
+        drawCircle(color, radius, Offset(thumbX, y))
     }
 }
