@@ -1,8 +1,7 @@
 package moe.ouom.neriplayer.core.player.queue.heartbeat
 
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.SongSourceTags
-import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
+import moe.ouom.neriplayer.data.model.playbackSourceKey
 
 /**
  * 心动模式的本地降级候选源。
@@ -228,17 +227,14 @@ class LocalHeartbeatCandidateSource(
     /**
      * 只有网易云音源的歌能参与心动模式。
      *
-     * 判定口径与播放侧一致（看渠道，或看历史歌曲写在专辑里的来源标记），
-     * 但本模块不能反向依赖 runtime，所以在这里就地判断。
-     *
      * 不筛的话，收藏里若有 B 站/YouTube 的歌，它会作为最高优先级层级被选中并追加进队列；
      * 一播到它，播放侧的 `isHeartbeatSourceSupported()` 就拒绝继续预取，
      * 界面又把心动入口藏起来，用户只会看到「模式还开着，但再也换不了歌」。
      */
     private fun isSupportedSource(song: SongItem): Boolean {
-        return when (song.channelId?.trim()) {
-            ListenTogetherChannels.BILIBILI, ListenTogetherChannels.YOUTUBE_MUSIC -> false
-            else -> !song.album.startsWith(SongSourceTags.BILIBILI)
+        return when (song.playbackSourceKey()) {
+            "bili", "youtube" -> false
+            else -> true
         }
     }
 

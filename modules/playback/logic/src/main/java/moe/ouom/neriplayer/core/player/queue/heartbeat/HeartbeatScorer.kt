@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.queue.heartbeat
 
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
+import moe.ouom.neriplayer.data.model.playbackSourceKey
 
 /**
  * 心动模式本地降级评分器。
@@ -196,23 +196,12 @@ object HeartbeatScorer {
     }
 
     /**
-     * 播放来源前缀。
+     * 播放来源前缀，见 [playbackSourceKey]。
      *
-     * 必须按渠道的**取值**判断，不能按「有没有值」判断：网易云歌曲的
-     * `channelId` 是 `"netease"`，按存在性判断会把它们全当成 B 站，
-     * 于是 bvid 恰好等于网易云歌曲 id 时两者身份键相同（`bili:123`），
-     * 队列排除、跳过降权、不喜欢名单会互相串。
+     * 实现放在 model 层：判断平台要看各平台的明细字段，而本模块的依赖边界
+     * 不允许直接引用那些类型。
      */
-    private fun playbackSourceKey(song: SongItem): String {
-        when (song.channelId?.trim()) {
-            ListenTogetherChannels.BILIBILI -> return "bili"
-            ListenTogetherChannels.YOUTUBE_MUSIC -> return "youtube"
-            ListenTogetherChannels.NETEASE -> return "netease"
-            ListenTogetherChannels.LOCAL -> return "local"
-        }
-        if (!song.neteaseArtists.isNullOrEmpty()) return "netease"
-        return "local"
-    }
+    private fun playbackSourceKey(song: SongItem): String = song.playbackSourceKey()
 
     /** 默认身份判定：身份键相等即视为同一首歌 */
     fun defaultSameIdentity(song: SongItem, other: SongItem?): Boolean {
