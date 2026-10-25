@@ -237,6 +237,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 }
 
 tasks.withType<Test>().configureEach {
+    // Android 16 的 Robolectric 沙箱需要通过 JDK 文件描述符接口创建共享内存
+    jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
     // Robolectric 用沙箱类加载器加载被测类，这些类没有代码源位置，需要显式纳入覆盖率
     extensions.configure<JacocoTaskExtension> {
         isIncludeNoLocationClasses = true

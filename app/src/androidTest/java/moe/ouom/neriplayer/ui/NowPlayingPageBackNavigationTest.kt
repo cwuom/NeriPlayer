@@ -1,7 +1,10 @@
 package moe.ouom.neriplayer.ui
 
 import android.content.res.Configuration
+import android.os.ParcelFileDescriptor
+import android.provider.Settings
 import android.util.Log
+import androidx.activity.BackEventCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
@@ -19,6 +22,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.DpSize
@@ -26,6 +30,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.Preferences
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,12 +48,14 @@ import moe.ouom.neriplayer.ui.playback.visual.AppNowPlayingOverlay
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayBackground
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayCover
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingScreen
 import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -63,6 +70,7 @@ class NowPlayingPageBackNavigationTest {
     private var savedCleanMotion = false
     private var visible by mutableStateOf(false)
     private var lyricsPage by mutableStateOf(false)
+    private var tabletPortrait by mutableStateOf(false)
     private var closeRequests = 0
     private val queue = MutableStateFlow<List<SongItem>>(emptyList())
 
@@ -118,6 +126,118 @@ class NowPlayingPageBackNavigationTest {
     @Test
     fun cleanTabletClosesWithOneTopBarBackRegardlessOfRetainedLyrics() =
         assertTabletCloses(UiStyle.Clean, topBar = true)
+
+    @Test
+    fun materialCompactLandscapeClosesWithOneEdgeBackWithPreview() =
+        assertLandscapeEdgeBack(UiStyle.Material, tablet = false, previewEnabled = true)
+
+    @Test
+    fun materialCompactLandscapeClosesWithOneEdgeBackWithoutPreview() =
+        assertLandscapeEdgeBack(UiStyle.Material, tablet = false, previewEnabled = false)
+
+    @Test
+    fun cleanCompactLandscapeClosesWithOneEdgeBackWithPreview() =
+        assertLandscapeEdgeBack(UiStyle.Clean, tablet = false, previewEnabled = true)
+
+    @Test
+    fun cleanCompactLandscapeClosesWithOneEdgeBackWithoutPreview() =
+        assertLandscapeEdgeBack(UiStyle.Clean, tablet = false, previewEnabled = false)
+
+    @Test
+    fun materialTabletLandscapeClosesWithOneEdgeBackWithPreview() =
+        assertLandscapeEdgeBack(UiStyle.Material, tablet = true, previewEnabled = true)
+
+    @Test
+    fun materialTabletLandscapeClosesWithOneEdgeBackWithoutPreview() =
+        assertLandscapeEdgeBack(UiStyle.Material, tablet = true, previewEnabled = false)
+
+    @Test
+    fun cleanTabletLandscapeClosesWithOneEdgeBackWithPreview() =
+        assertLandscapeEdgeBack(UiStyle.Clean, tablet = true, previewEnabled = true)
+
+    @Test
+    fun cleanTabletLandscapeClosesWithOneEdgeBackWithoutPreview() =
+        assertLandscapeEdgeBack(UiStyle.Clean, tablet = true, previewEnabled = false)
+
+    private fun assertLandscapeEdgeBack(style: UiStyle, tablet: Boolean, previewEnabled: Boolean) {
+        assumeTrue(
+            "需要系统手势导航",
+            Settings.Secure.getInt(composeRule.activity.contentResolver, "navigation_mode", -1) == 2
+        )
+        render(style, tablet, retainedLyricsPage = true, previewEnabled, compactLandscape = !tablet)
+        composeRule.onNodeWithTag("nowPlayingWideLayout", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("lyricsScreen", useUnmergedTree = true).assertDoesNotExist()
+        val (width, height) = composeRule.runOnIdle {
+            composeRule.activity.window.decorView.let { it.width to it.height }
+        }
+        composeRule.mainClock.autoAdvance = true
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        ParcelFileDescriptor.AutoCloseInputStream(
+            automation.executeShellCommand(
+                "input swipe ${width - 1} ${height / 2} ${width / 2} ${height / 2} 350"
+            )
+        ).use { it.readBytes() }
+        composeRule.waitUntil(timeoutMillis = 5_000) { !visible }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).assertDoesNotExist()
+        composeRule.runOnIdle { assertEquals(1, closeRequests) }
+    }
+
+    @Test
+    fun materialTabletRotationDuringLyricsBackStillClosesWithOneLandscapeBack() =
+        assertRotationDuringLyricsBack(UiStyle.Material, previewEnabled = true)
+
+    @Test
+    fun cleanTabletRotationDuringLyricsBackStillClosesWithOneLandscapeBack() =
+        assertRotationDuringLyricsBack(UiStyle.Clean, previewEnabled = true)
+
+    @Test
+    fun tabletRotationDuringLyricsBackWithPreviewDisabledClosesWithOneLandscapeBack() =
+        assertRotationDuringLyricsBack(UiStyle.Material, previewEnabled = false)
+
+    @Test
+    fun cancellingLyricsBackAfterTabletRotationKeepsThePlayerUntilTheNextBack() =
+        assertRotationDuringLyricsBack(UiStyle.Material, previewEnabled = true, cancelAfterRotation = true)
+
+    private fun assertRotationDuringLyricsBack(
+        style: UiStyle,
+        previewEnabled: Boolean,
+        cancelAfterRotation: Boolean = false
+    ) {
+        tabletPortrait = true
+        render(style, tablet = true, retainedLyricsPage = true, previewEnabled = previewEnabled)
+        composeRule.onNodeWithTag("lyricsScreen", useUnmergedTree = true).assertIsDisplayed()
+        val dispatcher = composeRule.activity.onBackPressedDispatcher
+        composeRule.runOnIdle { dispatcher.dispatchOnBackStarted(backEvent(0f)) }
+        composeRule.runOnIdle { dispatcher.dispatchOnBackProgressed(backEvent(0.5f)) }
+        advance(32L)
+
+        composeRule.runOnIdle { tabletPortrait = false }
+        advance(400L)
+        composeRule.onAllNodesWithTag("nowPlayingWideLayout", useUnmergedTree = true)
+            .onFirst().assertIsDisplayed()
+
+        if (cancelAfterRotation) {
+            composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
+            advance(400L)
+            composeRule.runOnIdle {
+                assertTrue(visible)
+                assertEquals(0, closeRequests)
+            }
+        }
+        composeRule.runOnIdle { dispatcher.dispatchOnBackStarted(backEvent(0f)) }
+        composeRule.runOnIdle { dispatcher.dispatchOnBackProgressed(backEvent(0.7f)) }
+        composeRule.runOnIdle { dispatcher.onBackPressed() }
+        advance(400L)
+
+        composeRule.runOnIdle {
+            assertFalse("切到横屏后第一次返回就应退出播放页", visible)
+            assertEquals(1, closeRequests)
+        }
+        composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    private fun backEvent(progress: Float) = BackEventCompat(0f, 0f, progress, BackEventCompat.EDGE_RIGHT)
 
     @Test
     fun materialPhoneLyricsSystemBackReturnsToCoverBeforeClosing() =
@@ -189,22 +309,31 @@ class NowPlayingPageBackNavigationTest {
         composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).assertDoesNotExist()
     }
 
-    private fun render(style: UiStyle, tablet: Boolean, retainedLyricsPage: Boolean) {
+    private fun render(
+        style: UiStyle,
+        tablet: Boolean,
+        retainedLyricsPage: Boolean,
+        previewEnabled: Boolean = true,
+        compactLandscape: Boolean = false
+    ) {
         lyricsPage = retainedLyricsPage
-        val width = if (tablet) 1280 else 360
-        val height = 800
         composeRule.setContent {
+            val width = if (tablet) { if (tabletPortrait) 800 else 1280 } else if (compactLandscape) 1280 else 360
+            val height = if (tablet && tabletPortrait) 1280 else 800
             val actualConfiguration = LocalConfiguration.current
-            val configuration = remember(actualConfiguration, tablet) {
+            val configuration = remember(actualConfiguration, tablet, tabletPortrait) {
                 Configuration(actualConfiguration).apply {
                     screenWidthDp = width
                     screenHeightDp = height
                     smallestScreenWidthDp = if (tablet) 800 else 360
-                    orientation = if (tablet) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
+                    orientation = if ((tablet && !tabletPortrait) || compactLandscape) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
                     uiMode = Configuration.UI_MODE_TYPE_NORMAL
                 }
             }
-            CompositionLocalProvider(LocalConfiguration provides configuration) {
+            CompositionLocalProvider(
+                LocalConfiguration provides configuration,
+                LocalPredictiveBackPreviewEnabled provides previewEnabled
+            ) {
                 FittedTestViewport(width.dp, height.dp) {
                     val density = LocalDensity.current
                     val actualWindow = LocalWindowInfo.current

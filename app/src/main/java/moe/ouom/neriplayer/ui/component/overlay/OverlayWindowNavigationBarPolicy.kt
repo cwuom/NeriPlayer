@@ -77,11 +77,7 @@ private fun View.findOverlayDialogWindow(): Window? {
 
 private fun Window.applyOverlayNavigationBarVisibility(hidden: Boolean) {
     WindowInsetsControllerCompat(this, decorView).apply {
-        systemBarsBehavior = if (hidden) {
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        } else {
-            WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
-        }
+        systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
         if (hidden) hide(WindowInsetsCompat.Type.navigationBars())
         else show(WindowInsetsCompat.Type.navigationBars())
     }

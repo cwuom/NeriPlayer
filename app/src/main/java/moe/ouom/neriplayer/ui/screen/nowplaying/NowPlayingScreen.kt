@@ -1131,9 +1131,14 @@ fun NowPlayingScreen(
         // 歌词页和宽屏歌词共用一个可拖动的转场，返回手势按进度淡回播放页
         val lyricsTransition = rememberHostPredictiveBackTransition(
             targetState = effectiveShowLyricsScreen,
-            backEnabled = effectiveShowLyricsScreen,
+            backEnabled = shouldUseStandaloneNowPlayingLyricsPage(
+                effectiveShowLyricsScreen, useWideLandscapeLayout
+            ),
             backTargetState = false,
-            onBack = { onShowLyricsScreenChange(false) },
+            onBack = {
+                // 横屏已将歌词放在双栏中，在途歌词手势也应直接退出播放页
+                if (useWideLandscapeLayout) onNavigateUp() else onShowLyricsScreenChange(false)
+            },
             label = "lyrics_transition"
         )
         SharedTransitionLayout {
