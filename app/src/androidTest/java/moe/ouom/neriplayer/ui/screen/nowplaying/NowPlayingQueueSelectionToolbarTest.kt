@@ -51,7 +51,9 @@ class NowPlayingQueueSelectionToolbarTest {
                     canRemove = selectedKeys.isNotEmpty(),
                     onSelectAll = {},
                     onRemove = {
-                        removeSelectedNowPlayingQueueEntries(entries, selectedKeys, queue::removeAt)
+                        removeSelectedNowPlayingQueueEntries(entries, selectedKeys) { indices ->
+                            indices.sortedDescending().forEach(queue::removeAt)
+                        }
                         selectedKeys = emptySet()
                     },
                     onInvertSelection = {},
