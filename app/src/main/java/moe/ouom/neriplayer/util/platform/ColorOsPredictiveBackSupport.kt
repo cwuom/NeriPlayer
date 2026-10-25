@@ -5,15 +5,19 @@ import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 private const val ROM_PROPERTY_TIMEOUT_MILLIS = 250L
-private val colorOsDetectionMutex = Mutex()
-
-@Volatile
-private var cachedColorOsPredictiveBackSupport: Boolean? = null
+private const val COLOR_OS_DETECTION_ATTEMPTS = 3
+private const val COLOR_OS_DETECTION_RETRY_MILLIS = 500L
+private val colorOsPredictiveBackDetector = ColorOsPredictiveBackDetector {
+    withContext(Dispatchers.IO) { readColorOsPredictiveBackSupport() }
+}
 
 private val colorOsName = Regex(
     "(?:^|[^a-z])coloros(?:[^a-z]|$)",
@@ -33,12 +37,34 @@ private val internationalOtaRegion = Regex(
 )
 
 internal suspend fun detectColorOsPredictiveBackSupport(): Boolean {
-    cachedColorOsPredictiveBackSupport?.let { return it }
-    return withContext(Dispatchers.IO) {
-        colorOsDetectionMutex.withLock {
-            cachedColorOsPredictiveBackSupport ?: readColorOsPredictiveBackSupport().also {
-                cachedColorOsPredictiveBackSupport = it
+    return colorOsPredictiveBackDetector.detect()
+}
+
+internal class ColorOsPredictiveBackDetector(private val readSupport: suspend () -> Boolean?) {
+    private val detectionMutex = Mutex()
+
+    @Volatile
+    private var cachedSupport: Boolean? = null
+
+    suspend fun detect(): Boolean {
+        currentCoroutineContext().ensureActive()
+        cachedSupport?.let { return it }
+        return detectionMutex.withLock {
+            cachedSupport?.let { return@withLock it }
+            repeat(COLOR_OS_DETECTION_ATTEMPTS) { attempt ->
+                currentCoroutineContext().ensureActive()
+                val support = readSupport()
+                currentCoroutineContext().ensureActive()
+                if (support != null) {
+                    cachedSupport = support
+                    return@withLock support
+                }
+                // Compose 只发起一次检测，临时失败在这次调用内有界重试
+                if (attempt < COLOR_OS_DETECTION_ATTEMPTS - 1) {
+                    delay(COLOR_OS_DETECTION_RETRY_MILLIS)
+                }
             }
+            false
         }
     }
 }
@@ -92,20 +118,20 @@ private fun hasEligibleColorOsVendor(manufacturer: String?, brand: String?): Boo
     }
 }
 
-private fun readColorOsPredictiveBackSupport(): Boolean {
+private fun readColorOsPredictiveBackSupport(): Boolean? {
     val manufacturer = Build.MANUFACTURER
     val brand = Build.BRAND
     if (!hasEligibleColorOsVendor(manufacturer, brand)) {
         return false
     }
-    // 这些只读属性是兼容性启发式，缺失或读取失败时保守关闭预览
-    val oxygenVersion = readRomProperty("ro.oxygen.version") ?: return false
+    // 空属性可用于判断 ROM，读取失败则保留未知状态供重试
+    val oxygenVersion = readRomProperty("ro.oxygen.version") ?: return null
     if (oxygenVersion.isNotBlank()) {
         return false
     }
-    val oppoRom = readRomProperty("ro.build.version.opporom") ?: return false
-    val oplusRom = readRomProperty("ro.build.version.oplusrom") ?: return false
-    val otaVersion = readRomProperty("ro.build.version.ota") ?: return false
+    val oppoRom = readRomProperty("ro.build.version.opporom") ?: return null
+    val oplusRom = readRomProperty("ro.build.version.oplusrom") ?: return null
+    val otaVersion = readRomProperty("ro.build.version.ota") ?: return null
     return supportsColorOsPredictiveBack(manufacturer, brand, oppoRom, oplusRom, oxygenVersion, otaVersion)
 }
 

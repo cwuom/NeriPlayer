@@ -1,10 +1,133 @@
 package moe.ouom.neriplayer.util.platform
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ColorOsPredictiveBackSupportTest {
+    @Test
+    fun `one detection recovers after a temporary unknown probe`() = runTest {
+        var reads = 0
+        val detector = ColorOsPredictiveBackDetector {
+            reads++
+            if (reads == 1) null else true
+        }
+        val detection = async { detector.detect() }
+
+        runCurrent()
+        assertFalse(detection.isCompleted)
+        assertEquals(1, reads)
+        advanceUntilIdle()
+
+        assertTrue(detection.await())
+        assertTrue(detector.detect())
+        assertEquals(2, reads)
+    }
+
+    @Test
+    fun `unknown probes stop within a bounded budget without poisoning later detection`() = runTest {
+        var reads = 0
+        var available = false
+        val detector = ColorOsPredictiveBackDetector {
+            reads++
+            if (available) true else null
+        }
+
+        assertFalse(withTimeout(2_000L) { detector.detect() })
+        assertEquals(3, reads)
+        advanceTimeBy(60_000L)
+        runCurrent()
+        assertEquals(3, reads)
+
+        available = true
+        assertTrue(detector.detect())
+        assertEquals(4, reads)
+    }
+
+    @Test
+    fun `confirmed unsupported result is cached without retrying`() = runTest {
+        var reads = 0
+        val detector = ColorOsPredictiveBackDetector {
+            reads++
+            false
+        }
+
+        assertFalse(detector.detect())
+        assertFalse(detector.detect())
+        assertEquals(1, reads)
+    }
+
+    @Test
+    fun `cancelling between retries stops probing and leaves a later detection possible`() = runTest {
+        var reads = 0
+        var available = false
+        val detector = ColorOsPredictiveBackDetector {
+            reads++
+            if (available) true else null
+        }
+        val detection = async { detector.detect() }
+        runCurrent()
+        assertEquals(1, reads)
+
+        detection.cancel()
+        advanceUntilIdle()
+        assertTrue(detection.isCancelled)
+        assertEquals(1, reads)
+
+        available = true
+        assertTrue(detector.detect())
+        assertEquals(2, reads)
+    }
+
+    @Test
+    fun `probe cancellation propagates without becoming an unsupported result`() = runTest {
+        val cancellation = CancellationException("detection disposed")
+        val detector = ColorOsPredictiveBackDetector { throw cancellation }
+
+        try {
+            detector.detect()
+            fail("probe cancellation must propagate")
+        } catch (error: CancellationException) {
+            assertSame(cancellation, error)
+        }
+    }
+
+    @Test
+    fun `concurrent callers share the successful retry and cached result`() = runTest {
+        var reads = 0
+        var activeReads = 0
+        var maxActiveReads = 0
+        val detector = ColorOsPredictiveBackDetector {
+            reads++
+            activeReads++
+            maxActiveReads = maxOf(maxActiveReads, activeReads)
+            try {
+                delay(100L)
+                if (reads == 1) null else true
+            } finally {
+                activeReads--
+            }
+        }
+        val detections = List(12) { async { detector.detect() } }
+
+        detections.forEach { assertTrue(it.await()) }
+        assertEquals(2, reads)
+        assertEquals(1, maxActiveReads)
+    }
+
     @Test
     fun `unknown device does not enable the preview`() {
         assertFalse(supportsColorOsPredictiveBack(manufacturer = null, brand = null))

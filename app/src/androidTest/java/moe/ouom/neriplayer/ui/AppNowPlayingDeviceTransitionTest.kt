@@ -140,14 +140,18 @@ class AppNowPlayingDeviceTransitionTest {
 
     @Test
     fun materialPhoneCancelsBackPreviewAndCanReopenDuringACommittedClose() {
+        val previewProgress = 0.6f
         render(smallestScreenWidthDp = 390, widthDp = 844, style = UiStyle.Material)
         composeRule.runOnIdle { visible.value = true }
         advance(1_500)
         composeRule.runOnIdle { backDispatcher.dispatchOnBackStarted(backEvent(0f)) }
-        composeRule.runOnIdle { backDispatcher.dispatchOnBackProgressed(backEvent(0.6f)) }
+        composeRule.runOnIdle { backDispatcher.dispatchOnBackProgressed(backEvent(previewProgress)) }
         advance(64)
         composeRule.runOnIdle {
-            assertEquals(0.76f, flight.nowPlayingMorphProgress, 0.001f)
+            // 慢起曲线将 0.6 的手势映射到约 0.43882，再推动 40% 的关闭预览
+            assertEquals(0.82447f, flight.nowPlayingMorphProgress, 0.001f)
+            assertTrue("预测返回预览应比线性映射慢起",
+                flight.nowPlayingMorphProgress > 1f - previewProgress * 0.4f)
             assertTrue(flight.linked)
             backDispatcher.dispatchOnBackCancelled()
         }
@@ -158,7 +162,7 @@ class AppNowPlayingDeviceTransitionTest {
             assertFalse(flight.linked)
         }
         composeRule.runOnIdle { backDispatcher.dispatchOnBackStarted(backEvent(0f)) }
-        composeRule.runOnIdle { backDispatcher.dispatchOnBackProgressed(backEvent(0.6f)) }
+        composeRule.runOnIdle { backDispatcher.dispatchOnBackProgressed(backEvent(previewProgress)) }
         advance(64)
         composeRule.runOnIdle { backDispatcher.onBackPressed() }
         advance(64)

@@ -29,6 +29,14 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import coil.Coil
+import coil.decode.DataSource
+import coil.intercept.Interceptor
+import coil.memory.MemoryCache
+import coil.request.Disposable
+import coil.request.ImageResult
+import coil.request.SuccessResult
+import coil.size.Size
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.InetAddress
@@ -62,6 +70,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingCoverReques
 import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
+import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -100,7 +109,33 @@ class NowPlayingLyricsFirstFrameRenderingTest {
             output.toByteArray()
         }
         val endpoint = HeldCoverResponse(png)
+        val savedImageLoader = Coil.imageLoader(context)
+        val memoryCache = MemoryCache.Builder(context).build()
+        // 媒体元数据和取色共用 URL，只为它们预热，保留 192px 歌词请求的冷缓存
+        val backgroundCacheKeys = listOf(96, 512).associate { size ->
+            Size(size, size) to MemoryCache.Key("lyrics-first-frame-background|${endpoint.url}|$size")
+        }
+        backgroundCacheKeys.values.forEach { key -> memoryCache[key] = MemoryCache.Value(bitmap) }
+        val backgroundRequestSizes = CopyOnWriteArrayList<Size>()
+        val imageLoader = savedImageLoader.newBuilder()
+            .memoryCache(memoryCache)
+            .diskCache(null)
+            .components {
+                add(Interceptor { chain ->
+                    val request = chain.request
+                    val cacheKey = backgroundCacheKeys[chain.size]
+                        .takeIf { request.data == endpoint.url && request.memoryCacheKey == null }
+                    if (cacheKey != null) backgroundRequestSizes += chain.size
+                    chain.proceed(
+                        if (cacheKey == null) request
+                        else request.newBuilder().memoryCacheKey(cacheKey).build()
+                    )
+                })
+            }
+            .build()
+        var coldHeaderRequest: Disposable? = null
         try {
+            Coil.setImageLoader(imageLoader)
             writeSilentWave(audio)
             val fixture = SongItem(
                 id = -System.nanoTime(),
@@ -148,21 +183,43 @@ class NowPlayingLyricsFirstFrameRenderingTest {
             }
             composeRule.onNodeWithTag("lyricsScreen").assertExists()
             val missingArtwork = frames.any { (_, count) -> count < 32 }
+            val transitionHeaderRequests = endpoint.requestCount.get()
             assertTrue(
                 "出现空帧时必须确实收到歌词 HTTP 请求，不能把网络配置错误当作复现",
-                !missingArtwork || endpoint.requestCount.get() > 0
+                !missingArtwork || transitionHeaderRequests > 0
             )
             assertEquals("真实图片请求不能因端点错误失败", null, endpoint.failure.get())
             assertEquals("像素采样时响应必须仍处于受控等待", 0, endpoint.responseCount.get())
 
+            // 采样结束后验证旧歌词页使用的尺寸仍会真正访问受控端点
+            val coldHeaderResult = AtomicReference<ImageResult?>()
+            coldHeaderRequest = imageLoader.enqueue(
+                offlineCachedImageRequest(
+                    context = context,
+                    data = endpoint.url,
+                    sizePx = 192,
+                    allowHardware = false,
+                    crossfade = false,
+                    offlineMode = false
+                ).newBuilder().listener(
+                    onError = { _, result -> coldHeaderResult.set(result) },
+                    onSuccess = { _, result -> coldHeaderResult.set(result) }
+                ).build()
+            )
+            composeRule.waitUntil(10_000L) { endpoint.requestCount.get() > transitionHeaderRequests }
+            assertEquals("192px 冷请求收到响应前必须仍被持有", 0, endpoint.responseCount.get())
             endpoint.release()
             composeRule.waitUntil(10_000L) {
                 composeRule.mainClock.advanceTimeByFrame()
                 composeRule.waitForIdle()
-                (endpoint.requestCount.get() == 0 || endpoint.responseCount.get() > 0) && artworkPixels() >= 32
+                coldHeaderResult.get() != null && endpoint.responseCount.get() > 0 && artworkPixels() >= 32
             }
+            val headerResult = coldHeaderResult.get()
+            assertTrue("192px 歌词请求必须从真实 HTTP 响应解码: $headerResult",
+                headerResult is SuccessResult && headerResult.dataSource == DataSource.NETWORK)
             assertTrue("释放真实 PNG 响应后歌词封面必须实际解码绘制", artworkPixels() >= 32)
-            Log.i(Tag, "coldHeaderRequests=${endpoint.requestCount.get()} frames=$frames")
+            Log.i(Tag, "backgroundRequestSizes=$backgroundRequestSizes transitionHeaderRequests=$transitionHeaderRequests " +
+                "coldProbeRequests=${endpoint.requestCount.get()} frames=$frames")
             assertTrue(
                 "已有同歌曲同 URL 封面时，歌词切页从第一帧起都不能丢图: frames=$frames",
                 frames.all { (_, count) -> count >= 32 }
@@ -176,8 +233,11 @@ class NowPlayingLyricsFirstFrameRenderingTest {
                     composeRule.runOnUiThread { PlayerManager.release() }
                 } finally {
                     try {
+                        coldHeaderRequest?.dispose()
                         endpoint.close()
                     } finally {
+                        Coil.setImageLoader(savedImageLoader)
+                        imageLoader.shutdown()
                         NeriMotionStyle.clean = savedCleanMotion
                         check(audio.delete())
                     }
