@@ -15,6 +15,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistNameError
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -42,7 +43,7 @@ class LocalPlaylistRenameStateRestorationTest {
         composeRule.onNodeWithTag(RENAME_FIELD_TAG).assertTextEquals("Morning Mix")
         composeRule.onNodeWithTag(RENAME_FIELD_TAG).performTextClearance()
         composeRule.onNodeWithTag(RENAME_FIELD_TAG).performTextInput("Evening Mix")
-        composeRule.runOnIdle { renameState.error.value = "Name already exists" }
+        composeRule.runOnIdle { renameState.error.value = PlaylistNameError.DUPLICATE }
 
         tester.emulateSavedInstanceStateRestore()
 
@@ -50,7 +51,7 @@ class LocalPlaylistRenameStateRestorationTest {
         composeRule.runOnIdle {
             assertTrue(renameState.visible.value)
             assertEquals(TextFieldValue("Evening Mix", TextRange(11)), renameState.text.value)
-            assertEquals("Name already exists", renameState.error.value)
+            assertEquals(PlaylistNameError.DUPLICATE, renameState.error.value)
         }
     }
 

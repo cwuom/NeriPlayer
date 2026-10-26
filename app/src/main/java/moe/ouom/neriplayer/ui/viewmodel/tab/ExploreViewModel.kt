@@ -23,6 +23,10 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * Created: 2025/8/11
  */
 
+import android.content.Context
+import moe.ouom.neriplayer.common.locale.LanguageManager
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.viewmodel.feedbackText
 import moe.ouom.neriplayer.core.player.persistence.toSongItem
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -172,16 +176,16 @@ sealed class ExploreSearchResult {
 
 data class ExploreUiState(
     val loading: Boolean = false,
-    val error: String? = null,
+    val error: UiText? = null,
     val playlists: List<PlaylistSummary> = emptyList(),
     val selectedTag: String = "tag_all",  // String resource key
     val searching: Boolean = false,
-    val searchError: String? = null,
+    val searchError: UiText? = null,
     val searchResults: List<SongItem> = emptyList(),
     val searchItems: List<ExploreSearchResult> = emptyList(),
     val searchHasMore: Boolean = false,
     val searchLoadingMore: Boolean = false,
-    val searchLoadMoreError: String? = null,
+    val searchLoadMoreError: UiText? = null,
     val searchPage: Int = 0,
     val searchKeyword: String = "",
     val searchDisplayQuery: String = "",
@@ -191,14 +195,14 @@ data class ExploreUiState(
     val isNeteaseLoggedIn: Boolean = false,
     val ytMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
     val ytMusicPlaylistsLoading: Boolean = false,
-    val ytMusicPlaylistsError: String? = null
+    val ytMusicPlaylistsError: UiText? = null
 )
 
 internal fun isNeteaseExploreSearchAvailable(authState: SavedCookieAuthState): Boolean {
     return authState != SavedCookieAuthState.Missing
 }
 
-internal fun ExploreUiState.withNeteaseAuthRequired(error: String): ExploreUiState = copy(
+internal fun ExploreUiState.withNeteaseAuthRequired(error: UiText): ExploreUiState = copy(
     searching = false,
     searchError = error,
     searchResults = emptyList(),
@@ -330,7 +334,8 @@ private data class ExploreSearchFetchResult(
 }
 
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
-    private val app = application
+    private val baseApplication = application
+    private val app: Context get() = LanguageManager.applyLanguage(baseApplication)
     private val neteaseRepo = AppContainer.neteaseCookieRepo
     private var highQualityLoadJob: Job? = null
     private var highQualityLoadCookies: Map<String, String>? = null
@@ -595,9 +600,9 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 updateSearchStateIfCurrent(requestVersion, SearchSource.BILIBILI) {
                     it.copy(
                         searching = false,
-                        searchError = app.getString(
+                        searchError = feedbackText(
                             CoreCommonR.string.error_bilibili_search,
-                            e.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
+                            e.message ?: feedbackText(CoreCommonR.string.github_sync_failed_message)
                         ),
                         searchResults = emptyList(),
                         searchItems = emptyList(),
@@ -728,9 +733,9 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 )
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = app.getString(
+                    error = feedbackText(
                         CoreCommonR.string.error_load_playlist,
-                        e.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
+                        e.message ?: feedbackText(CoreCommonR.string.github_sync_failed_message)
                     ),
                     playlists = if (shouldRestorePreviousContent) previousPlaylists else emptyList(),
                     selectedTag = if (shouldRestorePreviousContent) previousTag else realCat
@@ -783,9 +788,9 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 updateSearchStateIfCurrent(requestVersion, SearchSource.NETEASE) {
                     it.copy(
                         searching = false,
-                        searchError = app.getString(
+                        searchError = feedbackText(
                             CoreCommonR.string.error_netease_search,
-                            e.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
+                            e.message ?: feedbackText(CoreCommonR.string.github_sync_failed_message)
                         ),
                         searchResults = emptyList(),
                         searchItems = emptyList(),
@@ -808,7 +813,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         searchMoreJob?.cancel()
         invalidateSearchRequest()
         _uiState.value = _uiState.value.withNeteaseAuthRequired(
-            error = app.getString(CoreCommonR.string.netease_login_required_search)
+            error = feedbackText(CoreCommonR.string.netease_login_required_search)
         )
     }
 
@@ -820,7 +825,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     updateSearchStateIfCurrent(requestVersion, SearchSource.LINK_RECOGNITION) {
                         it.copy(
                             searching = false,
-                            searchError = app.getString(CoreCommonR.string.explore_link_invalid),
+                            searchError = feedbackText(CoreCommonR.string.explore_link_invalid),
                             searchResults = emptyList(),
                             searchItems = emptyList(),
                             searchHasMore = false,
@@ -856,9 +861,9 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 updateSearchStateIfCurrent(requestVersion, SearchSource.LINK_RECOGNITION) {
                     it.copy(
                         searching = false,
-                        searchError = app.getString(
+                        searchError = feedbackText(
                             CoreCommonR.string.error_link_recognition,
-                            e.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
+                            e.message ?: feedbackText(CoreCommonR.string.github_sync_failed_message)
                         ),
                         searchResults = emptyList(),
                         searchItems = emptyList(),
@@ -1293,9 +1298,9 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 updateSearchStateIfCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC) {
                     it.copy(
                         searching = false,
-                        searchError = app.getString(
+                        searchError = feedbackText(
                             CoreCommonR.string.error_youtube_search,
-                            e.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
+                            e.message ?: feedbackText(CoreCommonR.string.github_sync_failed_message)
                         ),
                         searchResults = emptyList(),
                         searchItems = emptyList(),
@@ -1348,7 +1353,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 NPLogger.e(TAG, "loadYtMusicPlaylists failed", e)
                 _uiState.value = _uiState.value.copy(
                     ytMusicPlaylistsLoading = false,
-                    ytMusicPlaylistsError = "YouTube Music: ${e.message ?: "unknown error"}"
+                    ytMusicPlaylistsError = feedbackText(CoreCommonR.string.error_youtube_search,
+                        e.message ?: feedbackText(CoreCommonR.string.github_sync_failed_message))
                 )
             } finally {
                 val completedJob = coroutineContext[Job]
@@ -1375,13 +1381,13 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         _uiState.value = _uiState.value.withYouTubeDisabled()
     }
 
-    private fun searchErrorMessage(source: SearchSource, error: Exception): String {
-        val fallback = error.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
+    private fun searchErrorMessage(source: SearchSource, error: Exception): UiText {
+        val fallback = error.message ?: feedbackText(CoreCommonR.string.github_sync_failed_message)
         return when (source) {
-            SearchSource.NETEASE -> app.getString(CoreCommonR.string.error_netease_search, fallback)
-            SearchSource.BILIBILI -> app.getString(CoreCommonR.string.error_bilibili_search, fallback)
-            SearchSource.YOUTUBE_MUSIC -> app.getString(CoreCommonR.string.error_youtube_search, fallback)
-            SearchSource.LINK_RECOGNITION -> app.getString(CoreCommonR.string.error_link_recognition, fallback)
+            SearchSource.NETEASE -> feedbackText(CoreCommonR.string.error_netease_search, fallback)
+            SearchSource.BILIBILI -> feedbackText(CoreCommonR.string.error_bilibili_search, fallback)
+            SearchSource.YOUTUBE_MUSIC -> feedbackText(CoreCommonR.string.error_youtube_search, fallback)
+            SearchSource.LINK_RECOGNITION -> feedbackText(CoreCommonR.string.error_link_recognition, fallback)
         }
     }
 }
@@ -1511,7 +1517,7 @@ private fun VideoBasicInfo.collectionOwnerMid(): Long? {
     }
 }
 
-internal fun YouTubeMusicSearchResult.toSongItem(app: Application): SongItem {
+internal fun YouTubeMusicSearchResult.toSongItem(app: Context): SongItem {
     val displayArtist = artist.ifBlank { "YouTube" }
     val displayAlbum = album.ifBlank {
         when (type) {

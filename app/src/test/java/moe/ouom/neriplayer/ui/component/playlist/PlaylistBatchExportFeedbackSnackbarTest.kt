@@ -25,6 +25,7 @@ import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
+import moe.ouom.neriplayer.R as AppR
 import org.mockito.Mockito.`when`
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -162,7 +163,7 @@ class PlaylistBatchExportFeedbackSnackbarTest {
         val resources = mock(Resources::class.java)
         `when`(
             resources.getQuantityString(
-                eq(CoreCommonR.plurals.playlist_batch_export_success),
+                eq(AppR.plurals.playlist_batch_export_success),
                 anyInt(),
                 anyInt(),
                 anyString()

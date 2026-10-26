@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import java.util.Locale
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import moe.ouom.neriplayer.R as AppR
 
 /** 输入框里显示和填写的是界面单位，滑块内部值通过 toDisplay/fromDisplay 换算 */
 internal class AudioEffectsValueInput(
@@ -128,9 +129,9 @@ internal fun AudioEffectsValueInputDialog(
                 }
                 Text(
                     text = if (field.text.isNotBlank() && parsed == null) {
-                        stringResource(CoreCommonR.string.audio_effects_input_invalid)
+                        stringResource(AppR.string.audio_effects_input_invalid)
                     } else {
-                        stringResource(CoreCommonR.string.audio_effects_input_range, format(low), format(high))
+                        stringResource(AppR.string.audio_effects_input_range, format(low), format(high))
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (field.text.isNotBlank() && parsed == null) {

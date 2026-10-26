@@ -51,12 +51,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
 import moe.ouom.neriplayer.ui.theme.NeriMotion
+import moe.ouom.neriplayer.R as AppR
 
 private val ProbeRowShape = ContinuousRoundedCornerShape(14.dp)
 private val ProbeCodeShape = ContinuousRoundedCornerShape(14.dp)
@@ -238,7 +238,7 @@ internal fun DebugProbeResult(
             Box(Modifier.size(8.dp).background(dotColor, CircleShape))
             Spacer(Modifier.width(10.dp))
             Text(
-                status.ifBlank { stringResource(CoreCommonR.string.debug_probe_idle) },
+                status.ifBlank { stringResource(AppR.string.debug_probe_idle) },
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.onSurface,
                 maxLines = 3,

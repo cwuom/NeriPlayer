@@ -75,6 +75,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsInlineMessa
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.R as AppR
 
 private const val LYRIC_PREVIEW_LINES = 6
 
@@ -110,13 +111,13 @@ internal fun LocalCurationReviewContent(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (session.cancelled) {
             MiuixSettingsInlineMessage(
-                message = stringResource(CoreCommonR.string.local_curation_analysis_stopped),
+                message = stringResource(AppR.string.local_curation_analysis_stopped),
                 isSuccess = true
             )
         }
         if (writeAccessDenied) {
             MiuixSettingsInlineMessage(
-                message = stringResource(CoreCommonR.string.local_curation_write_access_denied),
+                message = stringResource(AppR.string.local_curation_write_access_denied),
                 isSuccess = false,
                 onClose = { writeAccessDenied = false }
             )
@@ -152,7 +153,7 @@ internal fun LocalCurationReviewContent(
         ) {
             Text(
                 text = pluralStringResource(
-                    CoreCommonR.plurals.local_curation_selected_count,
+                    AppR.plurals.local_curation_selected_count,
                     session.selectedCount,
                     session.selectedCount
                 ) + " · " + localCurationSizeDeltaText(sizeDelta),
@@ -173,7 +174,7 @@ internal fun LocalCurationReviewContent(
         }
         if (filtered.isEmpty()) {
             Text(
-                text = stringResource(CoreCommonR.string.local_curation_review_empty),
+                text = stringResource(AppR.string.local_curation_review_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
@@ -219,7 +220,7 @@ internal fun LocalCurationReviewContent(
             ) {
                 Text(
                     pluralStringResource(
-                        CoreCommonR.plurals.local_curation_apply_count,
+                        AppR.plurals.local_curation_apply_count,
                         session.selectedCount,
                         session.selectedCount
                     )
@@ -234,7 +235,7 @@ internal fun LocalCurationReviewContent(
             title = {
                 Text(
                     pluralStringResource(
-                        CoreCommonR.plurals.local_curation_confirm_title,
+                        AppR.plurals.local_curation_confirm_title,
                         session.selectedCount,
                         session.selectedCount
                     )
@@ -243,7 +244,7 @@ internal fun LocalCurationReviewContent(
             text = {
                 Text(
                     stringResource(
-                        CoreCommonR.string.local_curation_confirm_message,
+                        AppR.string.local_curation_confirm_message,
                         localCurationSizeDeltaText(sizeDelta)
                     )
                 )
@@ -253,7 +254,7 @@ internal fun LocalCurationReviewContent(
                     showConfirm = false
                     requestWriteAccess()
                 }) {
-                    Text(stringResource(CoreCommonR.string.local_curation_confirm_write))
+                    Text(stringResource(AppR.string.local_curation_confirm_write))
                 }
             },
             dismissButton = {
@@ -397,7 +398,7 @@ private fun CurationCoverThumb(item: LocalCurationItem) {
             AsyncImage(
                 model = offlineCachedImageRequest(context = context, data = model, sizePx = 160),
                 contentDescription = if (item.cover != null) {
-                    stringResource(CoreCommonR.string.local_curation_cd_cover_preview)
+                    stringResource(AppR.string.local_curation_cd_cover_preview)
                 } else {
                     null
                 },
@@ -417,7 +418,7 @@ private fun CurationProposalChips(item: LocalCurationItem) {
     ) {
         item.lyric?.let { lyric ->
             CurationChip(
-                text = stringResource(CoreCommonR.string.local_curation_section_lyrics) + " · " +
+                text = stringResource(AppR.string.local_curation_section_lyrics) + " · " +
                     lyricOriginLabel(lyric),
                 container = MaterialTheme.colorScheme.surfaceContainerHighest,
                 content = MaterialTheme.colorScheme.onSurface
@@ -433,7 +434,7 @@ private fun CurationProposalChips(item: LocalCurationItem) {
         }
         item.cover?.let { cover ->
             CurationChip(
-                text = stringResource(CoreCommonR.string.local_curation_section_cover) + " · " +
+                text = stringResource(AppR.string.local_curation_section_cover) + " · " +
                     coverOriginLabel(cover),
                 container = MaterialTheme.colorScheme.surfaceContainerHighest,
                 content = MaterialTheme.colorScheme.onSurface
@@ -512,7 +513,7 @@ private fun CurationProposalDetails(
                 CurationAlternatives(item.lyricAlternatives, onChooseAlternative)
             }
             CurationSwitchRow(
-                title = stringResource(CoreCommonR.string.local_curation_apply_lyric),
+                title = stringResource(AppR.string.local_curation_apply_lyric),
                 description = null,
                 checked = item.applyLyric,
                 onCheckedChange = onLyricSelected,
@@ -521,9 +522,9 @@ private fun CurationProposalDetails(
         }
         item.cover?.let { cover ->
             CurationSwitchRow(
-                title = stringResource(CoreCommonR.string.local_curation_apply_cover),
+                title = stringResource(AppR.string.local_curation_apply_cover),
                 description = stringResource(
-                    CoreCommonR.string.local_curation_cover_detail,
+                    AppR.string.local_curation_cover_detail,
                     cover.prepared.width,
                     cover.prepared.height,
                     formatFileSize(cover.prepared.byteSize.toLong())
@@ -544,7 +545,7 @@ private fun CurationAlternatives(
     val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            text = stringResource(CoreCommonR.string.local_curation_alternatives),
+            text = stringResource(AppR.string.local_curation_alternatives),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -578,7 +579,7 @@ private fun CurationAlternatives(
                 ConfidenceChip(alternative.confidence)
                 Icon(
                     imageVector = Icons.Outlined.SwapHoriz,
-                    contentDescription = stringResource(CoreCommonR.string.local_curation_use_alternative),
+                    contentDescription = stringResource(AppR.string.local_curation_use_alternative),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)
                 )
@@ -593,7 +594,7 @@ private fun CurationLyricPreview(lyric: LocalCurationLyricProposal) {
         if (lyric.origin == LocalCurationLyricOrigin.ONLINE) {
             Text(
                 text = stringResource(
-                    CoreCommonR.string.local_curation_matched_as,
+                    AppR.string.local_curation_matched_as,
                     lyric.matchedTitle,
                     lyric.matchedArtist
                 ),
@@ -605,7 +606,7 @@ private fun CurationLyricPreview(lyric: LocalCurationLyricProposal) {
         }
         if (lyric.timelineFit == EditableLyricTimelineFit.FITS) {
             Text(
-                text = stringResource(CoreCommonR.string.local_curation_timeline_fit),
+                text = stringResource(AppR.string.local_curation_timeline_fit),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -635,8 +636,8 @@ private fun LocalCurationItem.selectionState(): ToggleableState {
 }
 
 private fun LocalCurationFilter.labelRes(): Int = when (this) {
-    LocalCurationFilter.ALL -> CoreCommonR.string.local_curation_filter_all
-    LocalCurationFilter.READY -> CoreCommonR.string.local_curation_filter_ready
-    LocalCurationFilter.ATTENTION -> CoreCommonR.string.local_curation_filter_attention
-    LocalCurationFilter.SKIPPED -> CoreCommonR.string.local_curation_filter_skipped
+    LocalCurationFilter.ALL -> AppR.string.local_curation_filter_all
+    LocalCurationFilter.READY -> AppR.string.local_curation_filter_ready
+    LocalCurationFilter.ATTENTION -> AppR.string.local_curation_filter_attention
+    LocalCurationFilter.SKIPPED -> AppR.string.local_curation_filter_skipped
 }

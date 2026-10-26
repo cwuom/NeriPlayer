@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.R as AppR
 
 internal fun managedLibraryProcessingTitleId(reason: ManagedLibraryProcessingReason?): Int = when (reason) {
     ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE -> CoreCommonR.string.managed_library_processing_upgrade_title
@@ -455,7 +456,7 @@ private fun DownloadDirectoryMigrationFileCount(progress: ManagedDownloadStorage
     val resources = LocalResources.current
     Text(
         text = resources.getQuantityString(
-            CoreCommonR.plurals.settings_download_directory_migrating_progress_files,
+            AppR.plurals.settings_download_directory_migrating_progress_files,
             progress.stageTotal.coerceAtLeast(0),
             progress.stageProcessed.coerceAtLeast(0),
             progress.stageTotal.coerceAtLeast(0)

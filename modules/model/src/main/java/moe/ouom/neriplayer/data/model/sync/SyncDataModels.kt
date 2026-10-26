@@ -183,8 +183,17 @@ data class SyncResult(
     val playlistsDeleted: Int = 0,
     val songsAdded: Int = 0,
     val songsRemoved: Int = 0,
-    val conflicts: List<SyncConflict> = emptyList()
+    val conflicts: List<SyncConflict> = emptyList(),
+    val messageKind: SyncResultMessage = SyncResultMessage.CUSTOM
 )
+
+enum class SyncResultMessage {
+    CUSTOM,
+    MERGED,
+    INITIAL_UPLOADED,
+    NO_CHANGE,
+    LOCAL_CHANGES_PENDING
+}
 
 data class SyncConflict(
     val type: ConflictType,

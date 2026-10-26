@@ -30,10 +30,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.data.config.ConfigExportOptions
 import moe.ouom.neriplayer.ui.screen.tab.settings.backup.SettingsConfigExportOptionsDialog
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun SafeModeExportCard(
@@ -65,7 +65,7 @@ internal fun SafeModeExportCard(
         val options = configExportOptions
         if (kind == SafeModeExportKind.Config && options == null) {
             onShowMessage(
-                composeResources.getString(CoreCommonR.string.settings_config_export_options_expired),
+                composeResources.getString(AppR.string.settings_config_export_options_expired),
                 SnackbarDuration.Long
             )
             return
@@ -94,7 +94,7 @@ internal fun SafeModeExportCard(
                     onFailure = { error ->
                         onShowMessage(
                             composeResources.getString(
-                                CoreCommonR.string.safe_mode_export_failed,
+                                AppR.string.safe_mode_export_failed,
                                 error.message ?: error.javaClass.simpleName
                             ),
                             SnackbarDuration.Long
@@ -139,7 +139,7 @@ internal fun SafeModeExportCard(
                         cancelConfigExport()
                         if (error is CancellationException) throw error
                         onShowMessage(
-                            composeResources.getString(CoreCommonR.string.safe_mode_export_failed, error.javaClass.simpleName),
+                            composeResources.getString(AppR.string.safe_mode_export_failed, error.javaClass.simpleName),
                             SnackbarDuration.Long
                         )
                     }
@@ -155,12 +155,12 @@ internal fun SafeModeExportCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = stringResource(CoreCommonR.string.safe_mode_data_export_title),
+                text = stringResource(AppR.string.safe_mode_data_export_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = stringResource(CoreCommonR.string.safe_mode_data_export_desc),
+                text = stringResource(AppR.string.safe_mode_data_export_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -168,7 +168,7 @@ internal fun SafeModeExportCard(
             if (isExporting) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text(
-                    text = stringResource(exportingKind?.progressMessageRes ?: CoreCommonR.string.safe_mode_exporting),
+                    text = stringResource(exportingKind?.progressMessageRes ?: AppR.string.safe_mode_exporting),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -186,7 +186,7 @@ internal fun SafeModeExportCard(
                     enabled = !busy && !isExporting && configExportOptions == null,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(stringResource(CoreCommonR.string.safe_mode_export_config))
+                    Text(stringResource(AppR.string.safe_mode_export_config))
                 }
                 Button(
                     onClick = {
@@ -195,7 +195,7 @@ internal fun SafeModeExportCard(
                     enabled = !busy && !isExporting && configExportOptions == null,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(stringResource(CoreCommonR.string.safe_mode_export_playlists))
+                    Text(stringResource(AppR.string.safe_mode_export_playlists))
                 }
             }
         }
@@ -207,11 +207,11 @@ private enum class SafeModeExportKind(
     val progressMessageRes: Int
 ) {
     Config(
-        successMessageRes = CoreCommonR.string.safe_mode_export_config_done,
-        progressMessageRes = CoreCommonR.string.safe_mode_exporting_config
+        successMessageRes = AppR.string.safe_mode_export_config_done,
+        progressMessageRes = AppR.string.safe_mode_exporting_config
     ),
     Playlists(
-        successMessageRes = CoreCommonR.string.safe_mode_export_playlists_done,
-        progressMessageRes = CoreCommonR.string.safe_mode_exporting_playlists
+        successMessageRes = AppR.string.safe_mode_export_playlists_done,
+        progressMessageRes = AppR.string.safe_mode_exporting_playlists
     )
 }

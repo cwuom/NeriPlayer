@@ -34,12 +34,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.playback.PlayOptions
 import moe.ouom.neriplayer.core.di.AppContainer
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import moe.ouom.neriplayer.R as AppR
 
 data class BiliProbeUiState(
     val running: Boolean = false,
@@ -79,7 +79,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _ui.value = _ui.value.copy(
                 running = true,
-                lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_calling, label),
+                lastMessage = getApplication<Application>().getString(AppR.string.debug_calling, label),
                 lastJsonPreview = ""
             )
             try {
@@ -87,18 +87,18 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                 copyToClipboard("bili_api_$label", raw)
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_copied_label, label),
+                    lastMessage = getApplication<Application>().getString(AppR.string.debug_copied_label, label),
                     lastJsonPreview = raw
                 )
             } catch (e: IOException) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_network_error, e.message ?: e.javaClass.simpleName)
+                    lastMessage = getApplication<Application>().getString(AppR.string.debug_network_error, e.message ?: e.javaClass.simpleName)
                 )
             } catch (e: Exception) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_call_failed, e.message ?: e.javaClass.simpleName)
+                    lastMessage = getApplication<Application>().getString(AppR.string.debug_call_failed, e.message ?: e.javaClass.simpleName)
                 )
             }
         }
@@ -111,7 +111,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             ?: pages.firstOrNull()
             ?: throw IllegalArgumentException(
                 getApplication<Application>().resources.getQuantityString(
-                    CoreCommonR.plurals.debug_page_not_found,
+                    AppR.plurals.debug_page_not_found,
                     page,
                     page
                 )
@@ -126,7 +126,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             ?: pages.firstOrNull()
             ?: throw IllegalArgumentException(
                 getApplication<Application>().resources.getQuantityString(
-                    CoreCommonR.plurals.debug_page_not_found,
+                    AppR.plurals.debug_page_not_found,
                     page,
                     page
                 )
@@ -303,7 +303,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     // 支持通过 avid+page 获取 cid
     fun playInfoByAvidCidAndCopy() = launchAndCopy("playinfo_by_avid_cid") {
         val avid = ui.value.bvid.removePrefix("av").toLongOrNull()
-            ?: throw IllegalArgumentException(getApplication<Application>().getString(CoreCommonR.string.probe_invalid_avid))
+            ?: throw IllegalArgumentException(getApplication<Application>().getString(AppR.string.probe_invalid_avid))
 
         val cid = if (ui.value.cid.isNotBlank()) {
             ui.value.cid.toLongOrNull() ?: 0L

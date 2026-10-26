@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.util.Log
@@ -214,7 +215,7 @@ class YouTubeMusicCreatorTabletLayoutTest {
         composeRule.onNodeWithText("Song 1").assertIsEnabled()
         composeRule.runOnIdle {
             assertEquals(null, sectionPlayback)
-            state.value = state.value.copy(playbackQueueLoadingSectionKey = null, error = "fixture detail error")
+            state.value = state.value.copy(playbackQueueLoadingSectionKey = null, error = UiText.Literal("fixture detail error"))
         }
         composeRule.onNodeWithText("Song 11").assertIsEnabled()
         composeRule.onNodeWithText(string(CoreCommonR.string.action_retry)).assertIsDisplayed().performClick()
@@ -271,13 +272,13 @@ class YouTubeMusicCreatorTabletLayoutTest {
         renderItems(800.dp, 1000.dp, state)
         composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo)).assertIsDisplayed()
         composeRule.onNodeWithText(string(CoreCommonR.string.youtube_creator_load_more)).assertDoesNotExist()
-        composeRule.runOnIdle { state.value = state.value.copy(loading = false, error = "fixture initial error") }
+        composeRule.runOnIdle { state.value = state.value.copy(loading = false, error = UiText.Literal("fixture initial error")) }
         composeRule.onNodeWithText("fixture initial error").assertIsDisplayed()
         composeRule.onNodeWithText(string(CoreCommonR.string.action_retry)).assertIsEnabled().performClick()
         composeRule.runOnIdle {
             assertEquals(1, retryCount)
             assertEquals(0, loadMoreCount)
-            state.value = itemsState((0..2).map(::song)).copy(continuation = null, loadMoreError = "fixture pagination error")
+            state.value = itemsState((0..2).map(::song)).copy(continuation = null, loadMoreError = UiText.Literal("fixture pagination error"))
         }
         composeRule.onNodeWithText("fixture pagination error").assertIsDisplayed()
         composeRule.onNodeWithText(string(CoreCommonR.string.action_retry)).assertIsEnabled().performClick()

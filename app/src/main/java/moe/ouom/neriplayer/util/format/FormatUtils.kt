@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.concurrent.TimeUnit
+import moe.ouom.neriplayer.R as AppR
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -52,14 +53,14 @@ fun formatTotalDuration(context: Context, ms: Long): String {
     val resources = context.resources
     val minuteCount = m.toInt()
     val minutePart = resources.getQuantityString(
-        CoreCommonR.plurals.time_minutes_only,
+        AppR.plurals.time_minutes_only,
         minuteCount,
         minuteCount
     )
     return if (h > 0) {
         val hourCount = h.toInt()
         resources.getQuantityString(
-            CoreCommonR.plurals.time_hours_minutes,
+            AppR.plurals.time_hours_minutes,
             hourCount,
             hourCount,
             minutePart

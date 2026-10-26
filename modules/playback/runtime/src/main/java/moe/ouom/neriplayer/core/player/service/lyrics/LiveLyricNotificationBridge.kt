@@ -13,6 +13,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import moe.ouom.neriplayer.common.R
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 
 /** Publishes current lyrics as an Android 16 Live Update-compatible notification. */
@@ -87,7 +88,7 @@ internal class LiveLyricNotificationBridge(context: Context) {
         val cleanSongTitle = songTitle
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-            ?: appContext.getString(R.string.app_name)
+            ?: LanguageManager.applyLanguage(appContext).getString(R.string.app_name)
         val cleanSecondaryText = buildLiveLyricSecondaryText(secondaryLyric)
             ?: cleanSongTitle
         val payload = Payload(
@@ -207,19 +208,21 @@ internal class LiveLyricNotificationBridge(context: Context) {
     }
 
     private fun ensureChannel() {
-        if (notificationManager.getNotificationChannel(CHANNEL_ID) != null) return
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        val channelName = localizedContext.getString(R.string.notification_channel_live_lyrics)
+        val channel = notificationManager.getNotificationChannel(CHANNEL_ID)
+            ?: NotificationChannel(
                 CHANNEL_ID,
-                appContext.getString(R.string.notification_channel_live_lyrics),
+                channelName,
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = appContext.getString(R.string.notification_channel_live_lyrics_description)
                 setSound(null, null)
                 enableVibration(false)
                 setShowBadge(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
-        )
+        channel.name = channelName
+        channel.description = localizedContext.getString(R.string.notification_channel_live_lyrics_description)
+        notificationManager.createNotificationChannel(channel)
     }
 }

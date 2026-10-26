@@ -57,6 +57,7 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import java.util.concurrent.atomic.AtomicBoolean
+import moe.ouom.neriplayer.R as AppR
 
 private class PendingPlaylistExport(
     val targetName: String,
@@ -133,7 +134,7 @@ internal fun PlaylistExportSheet(
                 )
                 Text(
                     text = pluralStringResource(
-                        CoreCommonR.plurals.common_selected_count,
+                        AppR.plurals.common_selected_count,
                         selectedCount,
                         selectedCount
                     ),
@@ -203,7 +204,7 @@ internal fun PlaylistExportSheet(
             text = {
                 Text(
                     pluralStringResource(
-                        CoreCommonR.plurals.playlist_batch_export_confirm_message,
+                        AppR.plurals.playlist_batch_export_confirm_message,
                         selectedCount,
                         selectedCount,
                         export.targetName
@@ -266,7 +267,7 @@ private fun PlaylistExportRow(
         )
         Text(
             text = pluralStringResource(
-                CoreCommonR.plurals.explore_song_count,
+                AppR.plurals.explore_song_count,
                 playlist.songs.size,
                 playlist.songs.size
             ),

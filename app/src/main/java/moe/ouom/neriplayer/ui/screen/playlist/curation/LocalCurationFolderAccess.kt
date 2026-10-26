@@ -31,12 +31,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.coroutines.runCatchingNonCancellation
 import moe.ouom.neriplayer.data.local.media.curation.FolderArtworkLocator
 import moe.ouom.neriplayer.data.local.media.curation.StorageDocumentPath
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.R as AppR
 
 internal data class LocalCurationFolderAccess(
     val pendingSongs: Int = 0,
@@ -105,7 +105,7 @@ internal fun LocalCurationFolderAccessCard(songs: List<SongItem>) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = pluralStringResource(
-                        CoreCommonR.plurals.local_curation_folder_access_needed,
+                        AppR.plurals.local_curation_folder_access_needed,
                         access.pendingSongs,
                         access.pendingSongs
                     ),
@@ -116,7 +116,7 @@ internal fun LocalCurationFolderAccessCard(songs: List<SongItem>) {
             MiuixSettingsTextButton(
                 onClick = { launcher.launch(access.suggestedFolder?.let(FolderArtworkLocator::documentUriFor)) }
             ) {
-                Text(stringResource(CoreCommonR.string.local_curation_folder_access_grant))
+                Text(stringResource(AppR.string.local_curation_folder_access_grant))
             }
         }
     }

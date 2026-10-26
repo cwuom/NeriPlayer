@@ -19,7 +19,6 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistDetail
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistHeader
@@ -43,6 +42,7 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.data.model.playlist.PlaylistLoadFailure
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -91,8 +91,7 @@ class NeteasePlaylistCachedFailureTest {
         val state = withTimeout(5_000L) { vm.uiState.first { !it.loading } }
 
         assertEquals(listOf(7L), state.tracks.map { it.id })
-        assertEquals(application.getString(CoreCommonR.string.playlist_error_network), state.error)
-        assertFalse(state.error.orEmpty().contains("private diagnostic"))
+        assertEquals(PlaylistLoadFailure.Network, state.error)
     }
 
     @Test
@@ -104,7 +103,7 @@ class NeteasePlaylistCachedFailureTest {
         val state = withTimeout(5_000L) { vm.uiState.first { !it.loading } }
 
         assertEquals(listOf(7L), state.tracks.map { it.id })
-        assertEquals(application.getString(CoreCommonR.string.playlist_error_unknown), state.error)
+        assertEquals(PlaylistLoadFailure.Unknown, state.error)
     }
 
     @Test
@@ -145,7 +144,7 @@ class NeteasePlaylistCachedFailureTest {
         vm.startPlaylist(playlist(), offlineMode = true)
         val state = withTimeout(5_000L) { vm.uiState.first { !it.loading } }
 
-        assertEquals(application.getString(CoreCommonR.string.playlist_error_offline_no_cache), state.error)
+        assertEquals(PlaylistLoadFailure.Offline, state.error)
         assertEquals(emptyList<SongItem>(), state.tracks)
         verify(client, never()).getPlaylistDetailCancellable(41L)
     }
@@ -190,7 +189,7 @@ class NeteasePlaylistCachedFailureTest {
         vm.startAlbum(AlbumSummary(41L, "Album", "", 1), offlineMode = true)
         val state = withTimeout(5_000L) { vm.uiState.first { !it.loading } }
 
-        assertEquals(application.getString(CoreCommonR.string.playlist_error_offline_no_cache), state.error)
+        assertEquals(PlaylistLoadFailure.Offline, state.error)
         verify(client, never()).getAlbumDetail(41L)
     }
 

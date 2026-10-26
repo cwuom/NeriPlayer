@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab.explore
 
+import moe.ouom.neriplayer.ui.i18n.UiText
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -118,7 +120,7 @@ class ExploreSearchHeaderStateTest {
                 query = current.query,
                 source = current.source,
                 searching = current.searching,
-                searchError = current.error,
+                searchError = current.error?.let(UiText::Literal),
                 hasResults = current.resultCount > 0
             )
             Box(Modifier.width(300.dp).testTag(HEADER_TAG).exploreCollapsingHeader(header)) {

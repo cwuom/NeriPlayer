@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.units.day
 import moe.ouom.neriplayer.common.units.hour
 import moe.ouom.neriplayer.common.units.minute
+import moe.ouom.neriplayer.R as AppR
 
 /** 兼容性：统一走生命周期感知收集，避免设置页后台继续订阅 */
 @Composable
@@ -52,8 +53,8 @@ internal fun formatSyncTime(timestamp: Long): String {
 
     return when {
         diff < 1.minute -> stringResource(CoreCommonR.string.time_just_now)
-        diff < 1.hour -> pluralStringResource(CoreCommonR.plurals.time_minutes_ago, minutesAgo, minutesAgo)
-        diff < 1.day -> pluralStringResource(CoreCommonR.plurals.time_hours_ago, hoursAgo, hoursAgo)
-        else -> pluralStringResource(CoreCommonR.plurals.time_days_ago, daysAgo, daysAgo)
+        diff < 1.hour -> pluralStringResource(AppR.plurals.time_minutes_ago, minutesAgo, minutesAgo)
+        diff < 1.day -> pluralStringResource(AppR.plurals.time_hours_ago, hoursAgo, hoursAgo)
+        else -> pluralStringResource(AppR.plurals.time_days_ago, daysAgo, daysAgo)
     }
 }

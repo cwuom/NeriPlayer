@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.screen.playlist.FavoriteSongLookup
@@ -415,10 +417,10 @@ fun HomeScreen(
     val hasVisibleBiliMusicSections = showBilibiliCard && showOnlineFeeds && (
             ui.biliMusicRank.songs.isNotEmpty() ||
                     ui.biliMusicRank.loading ||
-                    !ui.biliMusicRank.error.isNullOrBlank() ||
+                    ui.biliMusicRank.error != null ||
                     ui.biliMusicHot.items.isNotEmpty() ||
                     ui.biliMusicHot.loading ||
-                    !ui.biliMusicHot.error.isNullOrBlank()
+                    ui.biliMusicHot.error != null
             )
 
     val hasVisibleSections =
@@ -657,7 +659,7 @@ fun HomeScreen(
                                             key = registerGridItemKey(HomeScrollKeyYtMoreError),
                                             span = { GridItemSpan(maxLineSpan) }
                                         ) {
-                                            SectionErrorState(detail = ui.ytMusicPlaylists.error ?: "")
+                                            SectionErrorState(detail = ui.ytMusicPlaylists.error?.asString().orEmpty())
                                         }
                                     }
                                 }
@@ -751,7 +753,7 @@ fun HomeScreen(
                                             key = registerGridItemKey(HomeScrollKeyYtShelvesError),
                                             span = { GridItemSpan(maxLineSpan) }
                                         ) {
-                                            SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
+                                            SectionErrorState(detail = ui.ytMusicHomeShelves.error?.asString().orEmpty())
                                         }
                                     }
                                 }
@@ -772,7 +774,7 @@ fun HomeScreen(
                                             key = registerGridItemKey(HomeScrollKeyYtEmptyFeedError),
                                             span = { GridItemSpan(maxLineSpan) }
                                         ) {
-                                            SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
+                                            SectionErrorState(detail = ui.ytMusicHomeShelves.error?.asString().orEmpty())
                                         }
                                     }
                                 }
@@ -924,7 +926,7 @@ fun HomeScreen(
 private fun <T> LazyGridScope.sectionContent(
     section: HomeSectionState<T>,
     loadingText: String,
-    errorDetail: String?,
+    errorDetail: UiText?,
     keyPrefix: String,
     registerKey: (String) -> String,
     content: LazyGridScope.() -> Unit
@@ -940,12 +942,12 @@ private fun <T> LazyGridScope.sectionContent(
             }
         }
 
-        !errorDetail.isNullOrBlank() -> {
+        errorDetail != null -> {
             item(
                 key = registerKey("$keyPrefix:error"),
                 span = { GridItemSpan(maxLineSpan) }
             ) {
-                SectionErrorState(errorDetail)
+                SectionErrorState(errorDetail.asString())
             }
         }
     }
@@ -1040,12 +1042,12 @@ private fun LazyGridScope.addNeteasePlaylistSection(
                 SectionLoadingState(loadingText)
             }
         }
-        !sectionState.section.error.isNullOrBlank() -> {
+        sectionState.section.error != null -> {
             item(
                 key = registerKey("$sectionKey:error"),
                 span = { GridItemSpan(maxLineSpan) }
             ) {
-                SectionErrorState(detail = sectionState.section.error.orEmpty())
+                SectionErrorState(detail = sectionState.section.error.asString())
             }
         }
     }

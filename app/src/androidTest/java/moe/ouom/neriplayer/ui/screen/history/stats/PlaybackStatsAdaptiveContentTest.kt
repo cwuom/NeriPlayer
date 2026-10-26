@@ -45,7 +45,6 @@ import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.model.stats.TrackStat
@@ -71,6 +70,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackStatsAdaptiveContentTest {
@@ -152,7 +152,7 @@ class PlaybackStatsAdaptiveContentTest {
     fun tabletPeriodSelectionAndTrackPlaybackKeepTheirExistingCallbacks() {
         render(1280.dp, 800.dp, tablet = true)
 
-        val dayLabel = string(CoreCommonR.string.stats_period_day)
+        val dayLabel = string(AppR.string.stats_period_day)
         composeRule.onNodeWithText(dayLabel).performClick().assertIsSelected()
         composeRule.runOnIdle { assertEquals(PlaybackStatsPeriod.DAY, selectedPeriod.value) }
         composeRule.onNodeWithTag("statsTrack_track1").performClick()
@@ -173,12 +173,12 @@ class PlaybackStatsAdaptiveContentTest {
             hasText("101") and hasAnyAncestor(hasTestTag("statsTrack_track1")),
             useUnmergedTree = true
         ).assertIsDisplayed()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_next_page)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.stats_next_page)).performClick()
         composeRule.runOnIdle {
             assertEquals(PlaybackStatsCursor(20L, "next"), pageRequest.value.cursor)
             assertEquals(105, pageRequest.value.offset)
         }
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_previous_page)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.stats_previous_page)).performClick()
         composeRule.runOnIdle {
             assertEquals(PlaybackStatsCursor(5L, "previous"), pageRequest.value.cursor)
             assertTrue(pageRequest.value.before)
@@ -231,7 +231,7 @@ class PlaybackStatsAdaptiveContentTest {
         }
         composeRule.onNodeWithTag("statsLoading").assertIsDisplayed()
         composeRule.onNodeWithTag("statsTrack_track1").assertIsNotEnabled()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_next_page)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(AppR.string.stats_next_page)).assertIsNotEnabled()
         composeRule.onNode(
             hasText("101") and hasAnyAncestor(hasTestTag("statsTrack_track1")), useUnmergedTree = true
         ).assertIsDisplayed()
@@ -291,9 +291,9 @@ class PlaybackStatsAdaptiveContentTest {
         }
 
         listOf(
-            PlaybackStatsPeriod.DAY to CoreCommonR.string.stats_period_day,
-            PlaybackStatsPeriod.MONTH to CoreCommonR.string.stats_period_month,
-            PlaybackStatsPeriod.YEAR to CoreCommonR.string.stats_period_year
+            PlaybackStatsPeriod.DAY to AppR.string.stats_period_day,
+            PlaybackStatsPeriod.MONTH to AppR.string.stats_period_month,
+            PlaybackStatsPeriod.YEAR to AppR.string.stats_period_year
         ).forEach { (period, labelResId) ->
             composeRule.onNodeWithText(string(labelResId)).performClick().assertIsSelected()
             composeRule.runOnIdle {
@@ -304,7 +304,7 @@ class PlaybackStatsAdaptiveContentTest {
             composeRule.onNodeWithTag("statsLoading").assertIsDisplayed()
             composeRule.onNodeWithTag("statsTrack_track1").assertIsNotEnabled()
                 .performTouchInput { click() }
-            composeRule.onNodeWithText(string(CoreCommonR.string.stats_next_page)).assertIsNotEnabled()
+            composeRule.onNodeWithText(string(AppR.string.stats_next_page)).assertIsNotEnabled()
             assertRetainedCards()
             composeRule.runOnIdle {
                 assertEquals(originalQuery, state.value.loadedQuery)
@@ -345,7 +345,7 @@ class PlaybackStatsAdaptiveContentTest {
         composeRule.runOnIdle { state.value = page(emptyList()).copy(summary = PlaybackStatsSummary(hasAnyStats = true)) }
         composeRule.onNodeWithTag("statsTabletColumns").assertIsDisplayed()
         composeRule.onNodeWithTag("statsTrack_track1").assertDoesNotExist()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_period_empty)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(AppR.string.stats_period_empty)).assertIsDisplayed()
         assertEquals(rankingId, composeRule.onNodeWithTag("statsRankingPane").fetchSemanticsNode().id)
         assertEquals(metricId, composeRule.onNodeWithTag("statsMetricPlays").fetchSemanticsNode().id)
         assertTrue(bounds("statsRankingPane").height < logicalPixels(400.dp))
@@ -359,10 +359,10 @@ class PlaybackStatsAdaptiveContentTest {
         composeRule.runOnIdle { state.value = state.value.copy(failed = true) }
 
         composeRule.onNodeWithTag("statsTrack_track1").assertIsNotEnabled()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_next_page)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(AppR.string.stats_next_page)).assertIsNotEnabled()
         composeRule.onNodeWithTag("statsRetry").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(1, pageRequest.value.retry) }
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_period_day)).performClick().assertIsSelected()
+        composeRule.onNodeWithText(string(AppR.string.stats_period_day)).performClick().assertIsSelected()
     }
 
     @Test
@@ -386,7 +386,7 @@ class PlaybackStatsAdaptiveContentTest {
         composeRule.onNodeWithTag("statsRankings").performScrollToNode(hasTestTag("statsTrack_track80"))
         composeRule.onNodeWithTag("statsTrack_track80").assertIsDisplayed()
         composeRule.onNodeWithTag("statsRankings").performScrollToNode(hasTestTag("statsPageNavigation"))
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_next_page)).assertIsDisplayed().performClick()
+        composeRule.onNodeWithText(string(AppR.string.stats_next_page)).assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(80, pageRequest.value.offset) }
         val rankLayouts = mutableListOf<TextLayoutResult>()
         composeRule.onNode(

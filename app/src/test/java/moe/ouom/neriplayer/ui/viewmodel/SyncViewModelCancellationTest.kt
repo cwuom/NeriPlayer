@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -62,7 +63,10 @@ class SyncViewModelCancellationTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val fixture = startWithoutConfirmationHandler(fixtures().first())
         testScheduler.runCurrent()
-        assertEquals("Sync failed: upgrade required", fixture.errorMessage())
+        assertEquals(
+            UiText.Resource(fixture.failureResource, listOf(UiText.Literal("upgrade required"))),
+            fixture.errorMessage()
+        )
         assertFalse(fixture.isSyncing())
         assertNull(fixture.successMessage())
     }
@@ -72,7 +76,10 @@ class SyncViewModelCancellationTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val fixture = startWithoutConfirmationHandler(fixtures().last())
         testScheduler.runCurrent()
-        assertEquals("Sync failed: upgrade required", fixture.errorMessage())
+        assertEquals(
+            UiText.Resource(fixture.failureResource, listOf(UiText.Literal("upgrade required"))),
+            fixture.errorMessage()
+        )
         assertFalse(fixture.isSyncing())
         assertNull(fixture.successMessage())
     }
@@ -131,7 +138,7 @@ class SyncViewModelCancellationTest {
                 newGate.complete(Unit)
                 testScheduler.runCurrent()
                 assertFalse(fixture.isSyncing())
-                assertEquals("fresh", fixture.successMessage())
+                assertEquals(UiText.Literal("fresh"), fixture.successMessage())
                 fixture.perform(context)
                 testScheduler.runCurrent()
                 assertEquals(3, calls)
@@ -181,20 +188,21 @@ class SyncViewModelCancellationTest {
         val github = GitHubSyncViewModel().also(viewModels::add)
         val webdav = WebDavSyncViewModel().also(viewModels::add)
         return listOf(
-            Fixture({ github.syncOperation = it }, { github.performSync(it) }, github::performSync, github::clearConfiguration,
+            Fixture(CoreCommonR.string.github_sync_failed, { github.syncOperation = it }, { github.performSync(it) }, github::performSync, github::clearConfiguration,
                 { github.uiState.value.isSyncing }, { github.uiState.value.successMessage }, { github.uiState.value.errorMessage }),
-            Fixture({ webdav.syncOperation = it }, { webdav.performSync(it) }, webdav::performSync, webdav::clearConfiguration,
+            Fixture(CoreCommonR.string.webdav_sync_failed, { webdav.syncOperation = it }, { webdav.performSync(it) }, webdav::performSync, webdav::clearConfiguration,
                 { webdav.uiState.value.isSyncing }, { webdav.uiState.value.successMessage }, { webdav.uiState.value.errorMessage })
         )
     }
 
     private data class Fixture(
+        val failureResource: Int,
         val setOperation: (suspend () -> Result<SyncResult>) -> Unit,
         val perform: (Context) -> Unit,
         val performWithPrompt: (Context, (SyncProtocolUpgradeChallenge) -> Unit) -> Unit,
         val clear: (Context) -> Unit,
         val isSyncing: () -> Boolean,
-        val successMessage: () -> String?,
-        val errorMessage: () -> String?
+        val successMessage: () -> UiText?,
+        val errorMessage: () -> UiText?
     )
 }

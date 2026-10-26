@@ -38,7 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material3.AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import moe.ouom.neriplayer.ui.component.overlay.ApplyOverlayWindowNavigationBarPolicy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -48,6 +48,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -143,6 +145,7 @@ import moe.ouom.neriplayer.core.startup.permission.StartupMediaPermission
 import moe.ouom.neriplayer.core.startup.permission.StartupNotificationPermission
 import moe.ouom.neriplayer.ui.theme.background.CustomBackground
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 private enum class StartupStep {
     Language,
@@ -356,8 +359,8 @@ fun StartupOnboardingScreen(
     var noPlatformWarningVisible by rememberSaveable { mutableStateOf(false) }
     var enhancedAdvancedBlurPromptVisible by rememberSaveable { mutableStateOf(false) }
 
-    var inlineMessage by remember { mutableStateOf<String?>(null) }
-    var loginSuccessTitle by remember { mutableStateOf<String?>(null) }
+    var inlineMessage by remember { mutableStateOf<UiText?>(null) }
+    var loginSuccessTitle by remember { mutableStateOf<Int?>(null) }
     var finishing by remember { mutableStateOf(false) }
     val rootView = LocalView.current
     var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -497,11 +500,12 @@ fun StartupOnboardingScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(githubVm, context) {
-        githubVm.initialize(context)
+    val applicationContext = context.applicationContext
+    LaunchedEffect(githubVm, applicationContext) {
+        githubVm.initialize(applicationContext)
     }
-    LaunchedEffect(webDavVm, context) {
-        webDavVm.initialize(context)
+    LaunchedEffect(webDavVm, applicationContext) {
+        webDavVm.initialize(applicationContext)
     }
 
     LaunchedEffect(neteaseVm) {
@@ -516,9 +520,7 @@ fun StartupOnboardingScreen(
                     showNeteaseSavedCookieDialog = false
                     inlineMessage = null
                     showNeteaseSheet = false
-                    loginSuccessTitle = composeResources.getString(
-                        CoreCommonR.string.settings_netease_login_success
-                    )
+                    loginSuccessTitle = CoreCommonR.string.settings_netease_login_success
                     neteaseVm.refreshAuthHealth()
                 }
             }
@@ -533,9 +535,7 @@ fun StartupOnboardingScreen(
                     showBiliSavedCookieDialog = false
                     inlineMessage = null
                     showBiliSheet = false
-                    loginSuccessTitle = composeResources.getString(
-                        CoreCommonR.string.settings_bili_login_success
-                    )
+                    loginSuccessTitle = CoreCommonR.string.settings_bili_login_success
                     biliVm.refreshAuthHealth()
                 }
             }
@@ -550,9 +550,7 @@ fun StartupOnboardingScreen(
                     showYouTubeSavedCookieDialog = false
                     inlineMessage = null
                     showYouTubeSheet = false
-                    loginSuccessTitle = composeResources.getString(
-                        CoreCommonR.string.settings_youtube_login_success
-                    )
+                    loginSuccessTitle = CoreCommonR.string.settings_youtube_login_success
                     youTubeVm.refreshAuthHealth()
                 }
             }
@@ -786,8 +784,8 @@ fun StartupOnboardingScreen(
                     onSelectLanguage = ::selectLanguage
                 )
                 StartupStep.Platforms -> StartupPlatformAccounts(
-                    inlineMessage = inlineMessage,
-                    onInlineMessageChange = { inlineMessage = it },
+                    inlineMessage = inlineMessage?.asString(),
+                    onInlineMessageChange = { inlineMessage = null },
                     biliState = biliState,
                     neteaseState = neteaseState,
                     youTubeState = youTubeState,
@@ -1031,7 +1029,7 @@ fun StartupOnboardingScreen(
                                     color = colorScheme.secondaryContainer
                                 ) {
                                     Text(
-                                        text = stringResource(CoreCommonR.string.onboarding_badge),
+                                        text = stringResource(AppR.string.onboarding_badge),
                                         modifier = Modifier.padding(
                                             horizontal = 12.dp,
                                             vertical = 6.dp
@@ -1043,14 +1041,14 @@ fun StartupOnboardingScreen(
                                 }
                                 Spacer(Modifier.height(14.dp))
                                 Text(
-                                    text = stringResource(CoreCommonR.string.onboarding_title),
+                                    text = stringResource(AppR.string.onboarding_title),
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = colorScheme.onSurface
                                 )
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    text = stringResource(CoreCommonR.string.onboarding_subtitle),
+                                    text = stringResource(AppR.string.onboarding_subtitle),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = colorScheme.onSurfaceVariant
                                 )
@@ -1065,7 +1063,7 @@ fun StartupOnboardingScreen(
                                 Spacer(Modifier.height(10.dp))
                                 Text(
                                     text = stringResource(
-                                        CoreCommonR.string.onboarding_step_counter,
+                                        AppR.string.onboarding_step_counter,
                                         stepIndex + 1,
                                         steps.size
                                     ),
@@ -1101,9 +1099,9 @@ fun StartupOnboardingScreen(
                                     ) {
                                         Text(
                                             text = if (stepIndex == steps.lastIndex) {
-                                                stringResource(CoreCommonR.string.onboarding_learning_enter_app)
+                                                stringResource(AppR.string.onboarding_learning_enter_app)
                                             } else {
-                                                stringResource(CoreCommonR.string.onboarding_action_next)
+                                                stringResource(AppR.string.onboarding_action_next)
                                             }
                                         )
                                     }
@@ -1267,7 +1265,7 @@ fun StartupOnboardingScreen(
             }
             loginSuccessTitle?.let { title ->
                 LoginSuccessDialog(
-                    title = title,
+                    title = stringResource(title),
                     onDismiss = { loginSuccessTitle = null }
                 )
             }
@@ -1310,8 +1308,8 @@ private fun LanguageContent(
 ) {
     StepHeader(
         icon = Icons.Outlined.Language,
-        title = stringResource(CoreCommonR.string.onboarding_language_title),
-        description = stringResource(CoreCommonR.string.onboarding_language_desc)
+        title = stringResource(AppR.string.onboarding_language_title),
+        description = stringResource(AppR.string.onboarding_language_desc)
     )
     Spacer(Modifier.height(18.dp))
     LanguageManager.Language.entries.forEach { language ->
@@ -1350,13 +1348,13 @@ private fun PersonalizeContent(
 
     StepHeader(
         icon = Icons.Outlined.Palette,
-        title = stringResource(CoreCommonR.string.onboarding_personalize_title),
-        description = stringResource(CoreCommonR.string.onboarding_personalize_desc)
+        title = stringResource(AppR.string.onboarding_personalize_title),
+        description = stringResource(AppR.string.onboarding_personalize_desc)
     )
     Spacer(Modifier.height(18.dp))
     HintCard(
         title = stringResource(CoreCommonR.string.settings_ui_scale),
-        body = stringResource(CoreCommonR.string.onboarding_ui_scale_hint, (pendingUiScale * 100).roundToInt())
+        body = stringResource(AppR.string.onboarding_ui_scale_hint, (pendingUiScale * 100).roundToInt())
     ) {
         Slider(
             value = pendingUiScale,
@@ -1368,7 +1366,7 @@ private fun PersonalizeContent(
     }
     Spacer(Modifier.height(14.dp))
     HintCard(
-        title = stringResource(CoreCommonR.string.onboarding_theme_mode_title),
+        title = stringResource(AppR.string.onboarding_theme_mode_title),
         body = if (isDarkTheme) {
             stringResource(CoreCommonR.string.settings_theme_toggle_light)
         } else {
@@ -1388,7 +1386,7 @@ private fun PersonalizeContent(
     Spacer(Modifier.height(14.dp))
     HintCard(
         title = stringResource(CoreCommonR.string.background_custom),
-        body = stringResource(CoreCommonR.string.onboarding_background_hint)
+        body = stringResource(AppR.string.onboarding_background_hint)
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             HapticOutlinedButton(
@@ -1399,9 +1397,9 @@ private fun PersonalizeContent(
             ) {
                 Text(
                     if (backgroundImageUri == null) {
-                        stringResource(CoreCommonR.string.onboarding_background_select)
+                        stringResource(AppR.string.onboarding_background_select)
                     } else {
-                        stringResource(CoreCommonR.string.onboarding_background_change)
+                        stringResource(AppR.string.onboarding_background_change)
                     },
                     maxLines = 1,
                     softWrap = false,
@@ -1416,7 +1414,7 @@ private fun PersonalizeContent(
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                 ) {
                     Text(
-                        text = stringResource(CoreCommonR.string.onboarding_background_clear),
+                        text = stringResource(AppR.string.onboarding_background_clear),
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis
@@ -1446,9 +1444,9 @@ private fun PersonalizeContent(
         HintCard(
             title = stringResource(CoreCommonR.string.settings_enhanced_advanced_blur),
             body = if (backgroundImageUri == null) {
-                stringResource(CoreCommonR.string.onboarding_enhanced_blur_no_background_desc)
+                stringResource(AppR.string.onboarding_enhanced_blur_no_background_desc)
             } else {
-                stringResource(CoreCommonR.string.onboarding_enhanced_blur_background_desc)
+                stringResource(AppR.string.onboarding_enhanced_blur_background_desc)
             }
         ) {
             Row(
@@ -1457,7 +1455,7 @@ private fun PersonalizeContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(CoreCommonR.string.onboarding_enhanced_blur_switch_title),
+                    text = stringResource(AppR.string.onboarding_enhanced_blur_switch_title),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
@@ -1472,7 +1470,7 @@ private fun PersonalizeContent(
     }
     Spacer(Modifier.height(14.dp))
     Text(
-        text = stringResource(CoreCommonR.string.onboarding_complete_hint),
+        text = stringResource(AppR.string.onboarding_complete_hint),
         style = MaterialTheme.typography.bodyMedium,
         color = colors.onSurfaceVariant
     )
@@ -1518,20 +1516,20 @@ private fun StartupNoPlatformWarningDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(stringResource(CoreCommonR.string.onboarding_platforms_no_login_title))
+            Text(stringResource(AppR.string.onboarding_platforms_no_login_title))
         },
         text = {
-            Text(stringResource(CoreCommonR.string.onboarding_platforms_no_login_desc))
+            Text(stringResource(AppR.string.onboarding_platforms_no_login_desc))
         },
         confirmButton = {
             ApplyOverlayWindowNavigationBarPolicy()
             HapticTextButton(onClick = onContinue) {
-                Text(stringResource(CoreCommonR.string.onboarding_platforms_no_login_continue))
+                Text(stringResource(AppR.string.onboarding_platforms_no_login_continue))
             }
         },
         dismissButton = {
             HapticTextButton(onClick = onDismiss) {
-                Text(stringResource(CoreCommonR.string.onboarding_platforms_no_login_connect))
+                Text(stringResource(AppR.string.onboarding_platforms_no_login_connect))
             }
         }
     )
@@ -1545,20 +1543,20 @@ private fun StartupEnhancedAdvancedBlurPromptDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(stringResource(CoreCommonR.string.onboarding_enhanced_blur_prompt_title))
+            Text(stringResource(AppR.string.onboarding_enhanced_blur_prompt_title))
         },
         text = {
-            Text(stringResource(CoreCommonR.string.onboarding_enhanced_blur_prompt_desc))
+            Text(stringResource(AppR.string.onboarding_enhanced_blur_prompt_desc))
         },
         confirmButton = {
             ApplyOverlayWindowNavigationBarPolicy()
             HapticTextButton(onClick = onEnable) {
-                Text(stringResource(CoreCommonR.string.onboarding_enhanced_blur_prompt_enable))
+                Text(stringResource(AppR.string.onboarding_enhanced_blur_prompt_enable))
             }
         },
         dismissButton = {
             HapticTextButton(onClick = onDismiss) {
-                Text(stringResource(CoreCommonR.string.onboarding_enhanced_blur_prompt_not_now))
+                Text(stringResource(AppR.string.onboarding_enhanced_blur_prompt_not_now))
             }
         }
     )
@@ -1577,9 +1575,9 @@ private fun StartupNotificationPermissionWarningDialog(
             Text(
                 stringResource(
                     if (isFinalWarning) {
-                        CoreCommonR.string.onboarding_notification_permission_final_warning_title
+                        AppR.string.onboarding_notification_permission_final_warning_title
                     } else {
-                        CoreCommonR.string.onboarding_notification_permission_warning_title
+                        AppR.string.onboarding_notification_permission_warning_title
                     }
                 )
             )
@@ -1588,9 +1586,9 @@ private fun StartupNotificationPermissionWarningDialog(
             Text(
                 stringResource(
                     if (isFinalWarning) {
-                        CoreCommonR.string.onboarding_notification_permission_final_warning_desc
+                        AppR.string.onboarding_notification_permission_final_warning_desc
                     } else {
-                        CoreCommonR.string.onboarding_notification_permission_warning_desc
+                        AppR.string.onboarding_notification_permission_warning_desc
                     }
                 )
             )
@@ -1601,9 +1599,9 @@ private fun StartupNotificationPermissionWarningDialog(
                 Text(
                     stringResource(
                         if (isFinalWarning) {
-                            CoreCommonR.string.onboarding_notification_permission_final_request
+                            AppR.string.onboarding_notification_permission_final_request
                         } else {
-                            CoreCommonR.string.onboarding_notification_permission_request_again
+                            AppR.string.onboarding_notification_permission_request_again
                         }
                     )
                 )
@@ -1614,9 +1612,9 @@ private fun StartupNotificationPermissionWarningDialog(
                 Text(
                     stringResource(
                         if (isFinalWarning) {
-                            CoreCommonR.string.onboarding_notification_permission_final_skip
+                            AppR.string.onboarding_notification_permission_final_skip
                         } else {
-                            CoreCommonR.string.onboarding_notification_permission_skip
+                            AppR.string.onboarding_notification_permission_skip
                         }
                     )
                 )

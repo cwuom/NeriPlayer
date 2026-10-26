@@ -82,6 +82,7 @@ import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import java.io.File
+import moe.ouom.neriplayer.R as AppR
 
 internal const val DOWNLOAD_MANAGER_STATS_TAG = "downloadManagerStats"
 internal const val DOWNLOAD_MANAGER_LIST_TAG = "downloadManagerList"
@@ -275,12 +276,12 @@ internal fun downloadDeleteResultMessage(
     val failedCount = result.failedSongs.size
     return when {
         result.physicalCleanupPending -> resources.getQuantityString(
-            CoreCommonR.plurals.local_files_delete_downloaded_cleanup_pending,
+            AppR.plurals.local_files_delete_downloaded_cleanup_pending,
             deletedCount + failedCount,
             deletedCount + failedCount
         )
         deletedCount > 0 && failedCount == 0 -> resources.getQuantityString(
-            CoreCommonR.plurals.local_files_delete_downloaded_success,
+            AppR.plurals.local_files_delete_downloaded_success,
             deletedCount,
             deletedCount
         )
@@ -467,7 +468,7 @@ private fun DownloadManagerTopBar(
                 // 多选模式下的操作按钮
                 Text(
                     text = pluralStringResource(
-                        CoreCommonR.plurals.download_selected_count,
+                        AppR.plurals.download_selected_count,
                         selectedCount,
                         selectedCount
                     ),
@@ -641,7 +642,7 @@ private fun DownloadSingleDeleteDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
+        title = { Text(stringResource(AppR.string.dialog_confirm_delete)) },
         text = { Text(stringResource(CoreCommonR.string.download_delete_confirm, songName)) },
         confirmButton = {
             TextButton(enabled = !deletionInProgress, onClick = onConfirm) {
@@ -665,11 +666,11 @@ private fun DownloadMultiDeleteDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
+        title = { Text(stringResource(AppR.string.dialog_confirm_delete)) },
         text = {
             Text(
                 pluralStringResource(
-                    CoreCommonR.plurals.download_delete_selected_confirm,
+                    AppR.plurals.download_delete_selected_confirm,
                     songCount,
                     songCount
                 )

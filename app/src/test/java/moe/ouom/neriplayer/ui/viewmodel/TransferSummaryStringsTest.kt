@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
-import android.content.Context
 import android.content.res.Resources
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.backup.BackupManager
@@ -8,30 +7,29 @@ import moe.ouom.neriplayer.data.model.config.AppConfigImportResult
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.Mockito.mock
+import moe.ouom.neriplayer.R as AppR
 
 class TransferSummaryStringsTest {
 
     private val resources: Resources = mock(Resources::class.java) { invocation ->
-        if (invocation.method.name == "getQuantityString") {
-            "q${invocation.arguments[0]}=${invocation.arguments[1]}"
-        } else {
-            null
-        }
-    }
-    private val context: Context = mock(Context::class.java) { invocation ->
         when (invocation.method.name) {
-            "getString" -> "s" + invocation.arguments.joinToString("|")
-            "getResources" -> resources
+            "getQuantityString" -> "q${invocation.arguments[0]}=${invocation.arguments[1]}"
+            "getString" -> when (invocation.arguments[0]) {
+                AppR.string.feedback_lines -> invocation.arguments.drop(1).joinToString("\n")
+                AppR.string.feedback_value -> invocation.arguments.drop(1).joinToString(": ")
+                AppR.string.settings_config_import_warning_item -> "- ${invocation.arguments[1]}"
+                else -> "s" + invocation.arguments.joinToString("|")
+            }
             else -> null
         }
     }
 
     @Test
     fun `playlist import summary lists only non empty merge and skip counts`() {
-        val strings = BackupRestoreViewModel.BackupRestoreStrings.from(context)
+        val strings = BackupRestoreViewModel.BackupRestoreStrings.create()
 
-        val plain = strings.importSummary(importResult(merged = 0, skipped = 0))
-        val detailed = strings.importSummary(importResult(merged = 2, skipped = 1))
+        val plain = strings.importSummary(importResult(merged = 0, skipped = 0)).resolve(resources)
+        val detailed = strings.importSummary(importResult(merged = 2, skipped = 1)).resolve(resources)
 
         assertEquals(
             listOf(
@@ -55,17 +53,17 @@ class TransferSummaryStringsTest {
 
     @Test
     fun `config import summary lists restored counts`() {
-        val strings = ConfigTransferViewModel.ConfigTransferStrings.from(context)
+        val strings = ConfigTransferViewModel.ConfigTransferStrings.create()
 
-        val summary = strings.importSuccess(AppConfigImportResult(4, 3, 2, 1))
+        val summary = strings.importSuccess(AppConfigImportResult(4, 3, 2, 1)).resolve(resources)
 
         assertEquals(
             listOf(
                 "s${CoreCommonR.string.settings_config_import_success}",
-                "q${CoreCommonR.plurals.settings_config_import_restored_settings}=4",
-                "q${CoreCommonR.plurals.settings_config_import_restored_listen_together}=3",
-                "q${CoreCommonR.plurals.settings_config_import_restored_auth}=2",
-                "q${CoreCommonR.plurals.settings_config_import_restored_sync}=1"
+                "q${AppR.plurals.settings_config_import_restored_settings}=4",
+                "q${AppR.plurals.settings_config_import_restored_listen_together}=3",
+                "q${AppR.plurals.settings_config_import_restored_auth}=2",
+                "q${AppR.plurals.settings_config_import_restored_sync}=1"
             ),
             summary.lines()
         )
@@ -73,7 +71,7 @@ class TransferSummaryStringsTest {
 
     @Test
     fun `config import summary appends warnings and restart hint`() {
-        val strings = ConfigTransferViewModel.ConfigTransferStrings.from(context)
+        val strings = ConfigTransferViewModel.ConfigTransferStrings.create()
 
         val summary = strings.importSuccess(
             AppConfigImportResult(
@@ -84,7 +82,7 @@ class TransferSummaryStringsTest {
                 warnings = listOf("token skipped", "theme reset"),
                 requiresActivityRecreate = true
             )
-        ).lines()
+        ).resolve(resources).lines()
 
         assertEquals(
             listOf(

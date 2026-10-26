@@ -77,7 +77,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistLoadErrorDialog
-import moe.ouom.neriplayer.ui.component.playlist.playlistLoadErrorMessage
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -149,6 +148,7 @@ import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -267,7 +267,7 @@ fun YouTubeMusicPlaylistDetailScreen(
 
     if (requestedError != null) {
         PlaylistLoadErrorDialog(
-            message = playlistLoadErrorMessage(context, requestedError),
+            message = requestedError,
             onRetry = retryPlaylist,
             onBack = { viewModel.stop(pageOwner); onBack() }
         )
@@ -580,7 +580,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                     title = {
                         Text(
                             pluralStringResource(
-                                CoreCommonR.plurals.common_selected_count,
+                                AppR.plurals.common_selected_count,
                                 selectedKeys.size,
                                 selectedKeys.size
                             )

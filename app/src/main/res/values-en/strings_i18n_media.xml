@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="media_cover_file_name">%1$s - %2$s cover</string>
+    <string name="media_folder_persist_permission_failed">Folder access could not be saved. Imported songs may become unavailable after restarting the app.</string>
+    <string name="media_favorite_netease_album">NetEase album</string>
+    <string name="media_follow_load_failed">Local favorites could not be loaded</string>
+    <string name="media_follow_save_failed">Local follow could not be saved</string>
+</resources>

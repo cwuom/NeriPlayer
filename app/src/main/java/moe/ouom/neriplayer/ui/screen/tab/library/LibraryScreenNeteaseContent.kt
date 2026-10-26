@@ -73,6 +73,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.R as AppR
 @Composable
 internal fun NeteaseLibraryList(
     playlists: List<PlaylistSummary>,
@@ -344,7 +345,7 @@ internal fun NeteaseAlbumRow(
             supportingContent = {
                 Text(
                     text = pluralStringResource(
-                        CoreCommonR.plurals.library_song_count,
+                        AppR.plurals.library_song_count,
                         album.size,
                         album.size
                     ),
@@ -505,7 +506,7 @@ internal fun NeteaseAlbumList(
                     headlineContent = { Text(pl.name) },
                     supportingContent = {
                         Text(
-                            pluralStringResource(CoreCommonR.plurals.library_song_count, pl.size, pl.size),
+                            pluralStringResource(AppR.plurals.library_song_count, pl.size, pl.size),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },

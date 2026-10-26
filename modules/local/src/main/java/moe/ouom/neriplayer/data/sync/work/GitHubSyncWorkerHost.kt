@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.data.sync.work
 import android.content.Context
 import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
+import moe.ouom.neriplayer.api.sync.github.GitHubRateLimitException
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.SyncProvider
 import moe.ouom.neriplayer.data.model.sync.SyncWorkerFailureKind
@@ -50,6 +52,20 @@ internal fun createGitHubWorkerHost(context: Context, triggerByAppStartup: Boole
     })
 }
 
-private fun gitHubFailureMessage(context: Context, error: Throwable?): String =
-    if (error is TokenExpiredException) context.getString(CoreCommonR.string.github_sync_token_expired)
-    else error?.message ?: context.getString(CoreCommonR.string.github_sync_failed_message)
+private fun gitHubFailureMessage(context: Context, error: Throwable?): String {
+    val localized = LanguageManager.applyLanguage(context.applicationContext)
+    return when (error) {
+        is TokenExpiredException -> localized.getString(CoreCommonR.string.github_sync_token_expired)
+        is GitHubRateLimitException -> {
+            val seconds = (error.retryAtMillis.coerceAtLeast(0L) - System.currentTimeMillis().coerceAtLeast(0L))
+                .coerceAtLeast(0L) / 1_000L + 1L
+            val continuation = localized.getString(if (error.automaticRetryAllowed)
+                CoreCommonR.string.github_rate_limit_continue else CoreCommonR.string.github_rate_limit_paused)
+            localized.resources.getQuantityString(
+                CoreCommonR.plurals.github_rate_limit_message,
+                seconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), seconds, continuation
+            )
+        }
+        else -> error?.message ?: localized.getString(CoreCommonR.string.github_sync_failed_message)
+    }
+}

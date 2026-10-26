@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.dialog
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.i18n.asString
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
@@ -144,14 +145,14 @@ internal fun SettingsGitHubDialogs(
                 ) {
                     githubState.errorMessage?.let { error ->
                         MiuixSettingsInlineMessage(
-                            message = error,
+                            message = error.asString(),
                             isSuccess = false,
                             onClose = githubVm::clearMessages
                         )
                     }
                     githubState.successMessage?.let { message ->
                         MiuixSettingsInlineMessage(
-                            message = message,
+                            message = message.asString(),
                             isSuccess = true,
                             onClose = githubVm::clearMessages
                         )

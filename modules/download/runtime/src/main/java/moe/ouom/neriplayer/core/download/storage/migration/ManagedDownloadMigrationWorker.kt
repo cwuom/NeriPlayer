@@ -51,6 +51,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
@@ -1392,12 +1393,13 @@ class ManagedDownloadMigrationWorker(
     private fun createForegroundInfo(
         progress: ManagedDownloadStorage.MigrationProgress? = null
     ): ForegroundInfo {
+        val localizedContext = LanguageManager.applyLanguage(applicationContext)
         val notificationManager =
             applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                applicationContext.getString(CoreCommonR.string.settings_download_directory_migrating),
+                localizedContext.getString(CoreCommonR.string.settings_download_directory_migrating),
                 NotificationManager.IMPORTANCE_LOW
             )
         )
@@ -1405,12 +1407,12 @@ class ManagedDownloadMigrationWorker(
             ?.coerceIn(0f, 1f)
             ?.times(100f)
             ?.toInt()
-        val notification = NotificationCompat.Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
+        val notification = NotificationCompat.Builder(localizedContext, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(CoreCommonR.drawable.ic_notification_small)
-            .setContentTitle(applicationContext.getString(CoreCommonR.string.settings_download_directory_migrating))
+            .setContentTitle(localizedContext.getString(CoreCommonR.string.settings_download_directory_migrating))
             .setContentText(
                 progress?.currentFileName?.takeIf(String::isNotBlank)
-                    ?: applicationContext.getString(
+                    ?: localizedContext.getString(
                         CoreCommonR.string.settings_download_directory_migrating_desc
                     )
             )

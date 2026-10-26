@@ -58,6 +58,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class MainActivityTrafficRiskDownloadTest {
@@ -112,7 +113,7 @@ class MainActivityTrafficRiskDownloadTest {
             grantRuntimePermissions(*playbackRuntimePermissions())
             scenario = ActivityScenario.launch(MainActivity::class.java)
             val localized = LanguageManager.localizedContext(context, LanguageManager.getCurrentLanguage(context))
-            awaitText(localized.getString(CoreCommonR.string.nav_explore))
+            awaitText(localized.getString(AppR.string.nav_explore))
             val song = createLocalSong(context, directory).also { fixtureSong = it }
             scenario.onActivity { activity ->
                 PlayerManager.release()

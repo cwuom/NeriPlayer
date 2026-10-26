@@ -218,7 +218,7 @@ class QQMusicSearchApi(
     @Throws(IOException::class)
     private suspend fun executeRequest(request: Request, asBytes: Boolean = false): Any {
         return client.newCall(request).awaitResponse { response ->
-            if (!response.isSuccessful) throw IOException("请求失败: ${response.code} for url: ${request.url}")
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
             val body = response.body
             if (asBytes) body.bytes() else body.string()
         }

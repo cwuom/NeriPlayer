@@ -32,6 +32,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
@@ -68,31 +69,31 @@ class PlaylistInsertDialogTest {
             }
         }
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_position_help, 11)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_preview_action)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_position_help, 11)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_preview_action)).assertIsNotEnabled()
         composeRule.onNode(hasSetTextAction()).performTextReplacement("abc")
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_invalid_position, 11)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_invalid_position, 11)).assertExists()
 
         composeRule.onNode(hasSetTextAction()).performTextReplacement("8")
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_preview_action)).performClick()
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_position_summary, 8)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_preview_range, 8, 9)).assertExists()
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.playlist_insert_section_selected, 2)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_position_summary, 8)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_preview_range, 8, 9)).assertExists()
+        composeRule.onNodeWithText(plural(AppR.plurals.playlist_insert_section_selected, 2)).assertExists()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(10)
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_section_after)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_section_after)).assertExists()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_section_before)).assertExists()
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.playlist_insert_omitted_before, 2)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_section_before)).assertExists()
+        composeRule.onNodeWithText(plural(AppR.plurals.playlist_insert_omitted_before, 2)).assertExists()
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_confirm_action)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_confirm_action)).performClick()
         assertEquals(8, confirmed.single().startPosition)
         assertEquals(
             listOf(0, 1, 4, 5, 6, 7, 8, 2, 3, 9, 10, 11).map { songs[it].stableKey() },
             confirmed.single().orderedKeys
         )
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_edit_position)).performClick()
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_preview_action)).assertIsEnabled()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_edit_position)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_preview_action)).assertIsEnabled()
         composeRule.onNodeWithText(string(CoreCommonR.string.action_cancel)).performClick()
         assertEquals(1, dismissed)
     }
@@ -115,17 +116,17 @@ class PlaylistInsertDialogTest {
         composeRule.onNode(hasSetTextAction()).performTextReplacement("1")
         composeRule.onNode(hasSetTextAction()).performImeAction()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(9)
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.playlist_insert_omitted_after, 14)).assertExists()
+        composeRule.onNodeWithText(plural(AppR.plurals.playlist_insert_omitted_after, 14)).assertExists()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_at_start)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_at_start)).assertExists()
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_edit_position)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_edit_position)).performClick()
         composeRule.onNode(hasSetTextAction()).performTextReplacement("20")
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_preview_action)).performClick()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(1)
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.playlist_insert_omitted_before, 14)).assertExists()
+        composeRule.onNodeWithText(plural(AppR.plurals.playlist_insert_omitted_before, 14)).assertExists()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(9)
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_at_end)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_at_end)).assertExists()
     }
 
     @Test
@@ -139,15 +140,15 @@ class PlaylistInsertDialogTest {
         }
 
         composeRule.onNode(hasSetTextAction()).performTextReplacement("3")
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_preview_action)).performClick()
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_position_summary, 3)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_position_summary, 3)).assertExists()
 
         songs = songs.dropLast(1)
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_stale)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_stale)).assertExists()
 
         selected = setOf("missing")
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_invalid_selection)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_insert_preview_action)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_invalid_selection)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.playlist_insert_preview_action)).assertIsNotEnabled()
     }
 
     private fun string(id: Int, vararg args: Any): String = context.getString(id, *args)

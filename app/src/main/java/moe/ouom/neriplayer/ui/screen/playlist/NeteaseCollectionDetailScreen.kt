@@ -99,7 +99,8 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistLoadErrorDialog
-import moe.ouom.neriplayer.ui.component.playlist.playlistLoadErrorMessage
+import moe.ouom.neriplayer.ui.component.playlist.playlistLoadErrorText
+import moe.ouom.neriplayer.ui.i18n.asString
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -175,6 +176,7 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.util.search.playlistSearchValues
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 internal fun isNeteaseCollectionHeaderForRoute(
     header: NeteaseCollectionHeader?,
@@ -333,7 +335,7 @@ fun DetailScreen(
     val loadFailure = ui.error
     if (loadFailure != null && (ui.header == null || isNeteaseCollectionHeaderForRoute(ui.header, playlistId, playlistSource))) {
         PlaylistLoadErrorDialog(
-            message = playlistLoadErrorMessage(context, loadFailure),
+            message = loadFailure,
             onRetry = onRetry,
             onBack = onBack
         )
@@ -577,7 +579,7 @@ fun DetailScreen(
                         TopAppBar(
                             title = {
                                 Text(
-                                    text = ui.header?.name ?: "Playlist Shuffling",
+                                    text = ui.header?.name ?: stringResource(CoreCommonR.string.playlist_title),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -652,7 +654,7 @@ fun DetailScreen(
                     title = {
                         Text(
                             pluralStringResource(
-                                CoreCommonR.plurals.common_selected_count,
+                                AppR.plurals.common_selected_count,
                                 selectedIds.size,
                                 selectedIds.size
                             )
@@ -868,7 +870,7 @@ fun DetailScreen(
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
                                                 Text(
-                                                    text = playlistLoadErrorMessage(context, loadError),
+                                                    text = playlistLoadErrorText(loadError).asString(),
                                                     color = MaterialTheme.colorScheme.error
                                                 )
                                                 Spacer(Modifier.height(8.dp))

@@ -22,7 +22,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.data.model.comments.CommentPlatform
 import moe.ouom.neriplayer.data.model.comments.CommentSource
@@ -32,6 +31,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState
 import moe.ouom.neriplayer.ui.viewmodel.CommentViewModel
+import moe.ouom.neriplayer.R as AppR
 
 private const val COMMENT_PREVIEW_LIMIT = 3
 
@@ -60,7 +60,7 @@ internal fun SongEncyclopediaCommentPreview(
     }
 
     SongEncyclopediaSectionCard(
-        titleRes = CoreCommonR.string.encyclopedia_section_comments,
+        titleRes = AppR.string.encyclopedia_section_comments,
         icon = Icons.Outlined.Forum
     ) {
         when (ui.status) {
@@ -71,7 +71,7 @@ internal fun SongEncyclopediaCommentPreview(
                 SongEncyclopediaActionSpacer()
                 SongEncyclopediaSectionAction(
                     icon = Icons.Outlined.Forum,
-                    text = stringResource(CoreCommonR.string.encyclopedia_comment_show_all),
+                    text = stringResource(AppR.string.encyclopedia_comment_show_all),
                     onClick = onOpenAll
                 )
             }
@@ -81,7 +81,7 @@ internal fun SongEncyclopediaCommentPreview(
                 SongEncyclopediaActionSpacer()
                 SongEncyclopediaSectionAction(
                     icon = Icons.Outlined.Forum,
-                    text = stringResource(CoreCommonR.string.encyclopedia_comment_show_all),
+                    text = stringResource(AppR.string.encyclopedia_comment_show_all),
                     onClick = onOpenAll
                 )
             }
@@ -118,7 +118,7 @@ internal fun SongEncyclopediaCommentPreview(
                 SongEncyclopediaActionSpacer()
                 SongEncyclopediaSectionAction(
                     icon = Icons.Outlined.Forum,
-                    text = stringResource(CoreCommonR.string.encyclopedia_comment_show_all),
+                    text = stringResource(AppR.string.encyclopedia_comment_show_all),
                     onClick = onOpenAll
                 )
             }
@@ -134,14 +134,14 @@ private fun SongEncyclopediaCommentLikeError(ui: CommentUiState, onDismiss: () -
     val error = ui.likeError ?: return
     val message = stringResource(
         when {
-            error == CommentError.PERMISSION -> CoreCommonR.string.comment_like_login_required
+            error == CommentError.PERMISSION -> AppR.string.comment_like_login_required
             ui.source?.platform == CommentPlatform.NETEASE && ui.likeErrorCode == 250 ->
-                CoreCommonR.string.comment_like_verification
-            else -> CoreCommonR.string.comment_like_failed
+                AppR.string.comment_like_verification
+            else -> AppR.string.comment_like_failed
         }
     )
     val failureText = ui.likeErrorCode?.let {
-        stringResource(CoreCommonR.string.comment_error_code_format, message, it)
+        stringResource(AppR.string.comment_error_code_format, message, it)
     } ?: message
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
@@ -151,7 +151,7 @@ private fun SongEncyclopediaCommentLikeError(ui: CommentUiState, onDismiss: () -
             color = MaterialTheme.colorScheme.error
         )
         HapticIconButton(onClick = onDismiss) {
-            Icon(Icons.Outlined.Close, stringResource(CoreCommonR.string.comment_dismiss_error))
+            Icon(Icons.Outlined.Close, stringResource(AppR.string.comment_dismiss_error))
         }
     }
 }

@@ -35,9 +35,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.ui.viewmodel.debug.SearchApiProbeViewModel
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 fun SearchApiProbeScreen() {
@@ -55,22 +55,22 @@ fun SearchApiProbeScreen() {
     val enabled = !ui.running && ui.keyword.isNotBlank()
 
     DebugProbePage(
-        title = stringResource(CoreCommonR.string.debug_search_probe),
-        description = stringResource(CoreCommonR.string.debug_search_desc)
+        title = stringResource(AppR.string.debug_search_probe),
+        description = stringResource(AppR.string.debug_search_desc)
     ) {
         DebugProbeSection(
-            title = stringResource(CoreCommonR.string.debug_search_section_platforms),
+            title = stringResource(AppR.string.debug_search_section_platforms),
             trailing = { DebugProbeRunningIndicator(ui.running) }
         ) {
-            DebugProbeField(ui.keyword, vm::onKeywordChange, stringResource(CoreCommonR.string.debug_search_keyword_label))
+            DebugProbeField(ui.keyword, vm::onKeywordChange, stringResource(AppR.string.debug_search_keyword_label))
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_search_netease),
+                title = stringResource(AppR.string.debug_search_netease),
                 icon = Icons.Rounded.Cloud,
                 onClick = { vm.callSearchAndCopy(MusicPlatform.CLOUD_MUSIC) },
                 enabled = enabled
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_search_qq),
+                title = stringResource(AppR.string.debug_search_qq),
                 icon = Icons.Rounded.MusicNote,
                 onClick = { vm.callSearchAndCopy(MusicPlatform.QQ_MUSIC) },
                 enabled = enabled
@@ -78,11 +78,11 @@ fun SearchApiProbeScreen() {
         }
 
         DebugProbeResult(
-            title = stringResource(CoreCommonR.string.debug_youtube_probe_section_result),
+            title = stringResource(AppR.string.debug_youtube_probe_section_result),
             status = ui.lastMessage,
             running = ui.running,
             output = ui.lastJsonPreview,
-            emptyOutput = stringResource(CoreCommonR.string.debug_search_preview_hint)
+            emptyOutput = stringResource(AppR.string.debug_search_preview_hint)
         )
     }
 }

@@ -54,7 +54,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.model.stats.TrackStat
@@ -62,6 +61,7 @@ import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.R as AppR
 
 private const val CompactMetricGlassTintStrength = 0.7f
 
@@ -149,17 +149,17 @@ internal fun StatsOverviewCard(
         val metrics: @Composable (Modifier) -> Unit = { metricModifier ->
             CompactStatMetric(
                 Icons.Outlined.Headphones, totalPlayCount.toString(),
-                stringResource(CoreCommonR.string.stats_total_plays),
+                stringResource(AppR.string.stats_total_plays),
                 metricModifier.testTag("statsMetricPlays")
             )
             CompactStatMetric(
                 Icons.Outlined.AccessTime, formatListenDuration(totalListenMs),
-                stringResource(CoreCommonR.string.stats_total_time),
+                stringResource(AppR.string.stats_total_time),
                 metricModifier.testTag("statsMetricListenTime")
             )
             CompactStatMetric(
                 Icons.Outlined.LibraryMusic, trackCount.toString(),
-                stringResource(CoreCommonR.string.stats_track_count),
+                stringResource(AppR.string.stats_track_count),
                 metricModifier.testTag("statsMetricTracks")
             )
         }
@@ -192,17 +192,17 @@ internal fun StatsOverviewCard(
             StatMetric(
                 icon = Icons.Outlined.Headphones,
                 value = totalPlayCount.toString(),
-                label = stringResource(CoreCommonR.string.stats_total_plays)
+                label = stringResource(AppR.string.stats_total_plays)
             )
             StatMetric(
                 icon = Icons.Outlined.AccessTime,
                 value = formatListenDuration(totalListenMs),
-                label = stringResource(CoreCommonR.string.stats_total_time)
+                label = stringResource(AppR.string.stats_total_time)
             )
             StatMetric(
                 icon = Icons.Outlined.LibraryMusic,
                 value = trackCount.toString(),
-                label = stringResource(CoreCommonR.string.stats_track_count)
+                label = stringResource(AppR.string.stats_track_count)
             )
         }
     }
@@ -276,7 +276,7 @@ internal fun TopTracksBarChart(
             .padding(horizontal = 8.dp)
     ) {
         Text(
-            stringResource(CoreCommonR.string.stats_top_tracks),
+            stringResource(AppR.string.stats_top_tracks),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(bottom = 12.dp)
@@ -441,7 +441,7 @@ internal fun StatTrackRow(
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         pluralStringResource(
-                            CoreCommonR.plurals.stats_play_count_value,
+                            AppR.plurals.stats_play_count_value,
                             stat.playCount,
                             stat.playCount
                         ),
@@ -463,11 +463,11 @@ private fun TrackStat.displayName(): String = customName ?: name
 private fun TrackStat.displayArtist(): String = customArtist ?: artist
 
 private fun PlaybackStatsPeriod.labelResId(): Int = when (this) {
-    PlaybackStatsPeriod.DAY -> CoreCommonR.string.stats_period_day
-    PlaybackStatsPeriod.WEEK -> CoreCommonR.string.stats_period_week
-    PlaybackStatsPeriod.MONTH -> CoreCommonR.string.stats_period_month
-    PlaybackStatsPeriod.YEAR -> CoreCommonR.string.stats_period_year
-    PlaybackStatsPeriod.ALL -> CoreCommonR.string.stats_period_all
+    PlaybackStatsPeriod.DAY -> AppR.string.stats_period_day
+    PlaybackStatsPeriod.WEEK -> AppR.string.stats_period_week
+    PlaybackStatsPeriod.MONTH -> AppR.string.stats_period_month
+    PlaybackStatsPeriod.YEAR -> AppR.string.stats_period_year
+    PlaybackStatsPeriod.ALL -> AppR.string.stats_period_all
 }
 
 internal fun formatListenDuration(ms: Long): String {

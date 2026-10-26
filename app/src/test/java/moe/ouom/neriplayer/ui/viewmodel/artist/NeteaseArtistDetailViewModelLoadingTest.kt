@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.app.Application
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -127,7 +128,7 @@ class NeteaseArtistDetailViewModelLoadingTest {
 
         val state = fixture.viewModel.uiState.value
         assertFalse(state.loading)
-        assertEquals("Load failed: API code 500", state.error)
+        assertEquals(UiText.Resource(CoreCommonR.string.artist_load_failed, listOf("API code 500")), state.error)
         assertEquals("Broken", state.header!!.name)
     }
 
@@ -139,7 +140,7 @@ class NeteaseArtistDetailViewModelLoadingTest {
         fixture.viewModel.start(NeteaseArtistSummary(5L, "Offline"))
         advanceUntilIdle()
 
-        assertEquals("Load failed: IOException", fixture.viewModel.uiState.value.error)
+        assertEquals(UiText.Resource(CoreCommonR.string.artist_load_failed, listOf("IOException")), fixture.viewModel.uiState.value.error)
     }
 
     @Test
@@ -346,7 +347,7 @@ class NeteaseArtistDetailViewModelLoadingTest {
 
         val state = fixture.viewModel.uiState.value
         assertEquals(1, fixture.addedFavorites.size)
-        assertEquals("Follow failed: Artist follow change could not be saved", state.error)
+        assertEquals(UiText.Resource(CoreCommonR.string.artist_follow_failed, listOf("Artist follow change could not be saved")), state.error)
         assertFalse(state.followUpdating)
     }
 

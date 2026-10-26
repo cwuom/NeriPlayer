@@ -62,6 +62,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class SafeModeConfigExportDeviceTest {
@@ -160,12 +161,12 @@ class SafeModeConfigExportDeviceTest {
     @Test
     fun recoveryExportWritesSelectedLoginSectionsInsideThePasswordProtectedFile() {
         render()
-        button(CoreCommonR.string.safe_mode_export_config).performClick()
-        button(CoreCommonR.string.settings_config_include_login_state).performClick()
-        button(CoreCommonR.string.settings_config_encrypt_file).performScrollTo().performClick()
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_password))
+        button(AppR.string.safe_mode_export_config).performClick()
+        button(AppR.string.settings_config_include_login_state).performClick()
+        button(AppR.string.settings_config_encrypt_file).performScrollTo().performClick()
+        composeRule.onNodeWithText(string(AppR.string.settings_config_password))
             .performScrollTo().performTextReplacement(PASSWORD)
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_confirm_password))
+        composeRule.onNodeWithText(string(AppR.string.settings_config_confirm_password))
             .performScrollTo().performTextReplacement(PASSWORD)
         onView(isRoot()).inRoot(isDialog()).perform(closeSoftKeyboard())
         button(CoreCommonR.string.settings_backup_action_export).performNativeClick()

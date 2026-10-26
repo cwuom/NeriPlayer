@@ -91,7 +91,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -232,6 +231,7 @@ import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
 import moe.ouom.neriplayer.ui.component.common.rememberRevealsUnderlying
+import moe.ouom.neriplayer.R as AppR
 
 private val EmptyLauncherShortcutRequestFlow =
     MutableStateFlow<LauncherShortcutRequest?>(null)
@@ -1331,7 +1331,7 @@ private fun NeriAppContent(
                         } else {
                             navigateToMainTab(Destinations.Library.route)
                             showLauncherShortcutToast(
-                                CoreCommonR.string.launcher_shortcut_no_resumable_queue
+                                AppR.string.launcher_shortcut_no_resumable_queue
                             )
                         }
                     }
@@ -1352,7 +1352,7 @@ private fun NeriAppContent(
                         if (favoritesSongs.isEmpty()) {
                             navigateToMainTab(Destinations.Library.route)
                             showLauncherShortcutToast(
-                                CoreCommonR.string.launcher_shortcut_favorites_empty
+                                AppR.string.launcher_shortcut_favorites_empty
                             )
                         } else {
                             PlayerManager.setShuffle(true)
@@ -1581,7 +1581,7 @@ private fun NeriAppContent(
                         val debugHomeScrollState = rememberScrollState()
                         val crashActionOwner = remember(context, composeResources) {
                             appDebugCrashActionOwner(context) {
-                                composeResources.getString(CoreCommonR.string.test_exception_message)
+                                composeResources.getString(AppR.string.test_exception_message)
                             }
                         }
                         navigationSceneRenderer.RenderMainTabNavigationScene(

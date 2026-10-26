@@ -8,6 +8,10 @@
 
 Sources are in `src/main/java/moe/ouom/neriplayer/common`, with resources in `src/main/res`. The module has no project implementation dependencies; shared business models belong to `:model`. Playback and download runtime libraries reuse `src/testFixtures`.
 
+app 独占的界面文案放在 `app/src/main/res`；仍被库模块消费的文案组保留在 `:common`，避免库反向依赖 app。默认 `values` 与 `values-zh` 以中文为基准，`values-en` 提供英文；`LocalizedResourceConsistencyTest` 在现有 app 单元测试中检查资源键、默认文案和格式参数一致性。
+
+UI text used only by app belongs in `app/src/main/res`. Resource groups still consumed by libraries stay in `:common` so libraries do not depend on app. Default `values` and `values-zh` use Chinese, while `values-en` supplies English. `LocalizedResourceConsistencyTest` runs with the existing app unit tests to check resource keys, default text, and format argument compatibility.
+
 账号凭据通过 `AccountPreferencesOpener` 打开系统加密存储。系统存储不可用时，兼容存储使用随机本地密钥和 AES-GCM；密钥与密文均位于 `noBackupFilesDir`，不提供 Keystore 硬件保护。兼容文件存在后优先读取，包括退出后的空状态，避免恢复旧登录。无法持久化时返回内存存储，登录入口据此阻止登录。同步凭据仍沿用 `SecurePreferencesOpener` 的原有恢复策略。
 
 Account credentials use `AccountPreferencesOpener`. When system encryption is unavailable, compatibility storage uses AES-GCM with a random local key; both key and ciphertext stay in `noBackupFilesDir`, without Keystore hardware protection. Existing compatibility storage, including an empty logout state, takes precedence over old credentials. Failed persistence falls back to memory so login can be blocked. Sync credentials retain the existing `SecurePreferencesOpener` recovery policy.

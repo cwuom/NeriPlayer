@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.api.sync.webdav.WebDavDirectoryNotFoundException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavNotDirectoryException
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.data.model.sync.SyncProvider
 import moe.ouom.neriplayer.data.model.sync.SyncWorkerFailureKind
 import moe.ouom.neriplayer.data.sync.host.SyncPlaybackActivity
@@ -50,6 +51,8 @@ internal fun createWebDavWorkerHost(context: Context, triggerByAppStartup: Boole
     )
 }
 
-private fun webDavFailureMessage(context: Context, error: Throwable?): String =
-    if (error is WebDavAuthException) context.getString(CoreCommonR.string.webdav_auth_failed)
-    else error?.message ?: context.getString(CoreCommonR.string.webdav_sync_failed_message)
+private fun webDavFailureMessage(context: Context, error: Throwable?): String {
+    val localized = LanguageManager.applyLanguage(context.applicationContext)
+    return if (error is WebDavAuthException) localized.getString(CoreCommonR.string.webdav_auth_failed)
+    else error?.message ?: localized.getString(CoreCommonR.string.webdav_sync_failed_message)
+}

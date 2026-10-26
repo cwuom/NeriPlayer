@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialogContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun PlaylistInsertDialog(
@@ -83,7 +84,7 @@ internal fun PlaylistInsertDialog(
     CompositionLocalProvider(LocalAdvancedGlassOverscrollBackdrop provides null) {
         MiuixSettingsDialog(
             onDismissRequest = onDismiss,
-            title = { Text(stringResource(CoreCommonR.string.playlist_insert_title)) },
+            title = { Text(stringResource(AppR.string.playlist_insert_title)) },
             text = {
                 BoxWithConstraints(
                     modifier = Modifier
@@ -107,14 +108,14 @@ internal fun PlaylistInsertDialog(
                                 ) {
                                     Text(
                                         text = stringResource(
-                                            CoreCommonR.string.playlist_insert_position_summary,
+                                            AppR.string.playlist_insert_position_summary,
                                             stagePreview.startPosition
                                         ),
                                         style = MaterialTheme.typography.bodyMedium,
                                         modifier = Modifier.weight(1f)
                                     )
                                     MiuixSettingsTextButton(onClick = { preview = null }) {
-                                        Text(stringResource(CoreCommonR.string.playlist_insert_edit_position))
+                                        Text(stringResource(AppR.string.playlist_insert_edit_position))
                                     }
                                 }
                                 PlaylistInsertPreviewCard(
@@ -130,7 +131,7 @@ internal fun PlaylistInsertDialog(
                                 MiuixSettingsDialogContent(verticalSpacing = 10.dp) {
                                     Text(
                                         text = pluralStringResource(
-                                            CoreCommonR.plurals.playlist_insert_description,
+                                            AppR.plurals.playlist_insert_description,
                                             selectedSnapshot.size,
                                             selectedSnapshot.size
                                         ),
@@ -143,10 +144,10 @@ internal fun PlaylistInsertDialog(
                                             preview = null
                                         },
                                         label = {
-                                            Text(stringResource(CoreCommonR.string.playlist_insert_position_label))
+                                            Text(stringResource(AppR.string.playlist_insert_position_label))
                                         },
                                         placeholder = {
-                                            Text(stringResource(CoreCommonR.string.playlist_insert_position_hint, maxPosition))
+                                            Text(stringResource(AppR.string.playlist_insert_position_hint, maxPosition))
                                         },
                                         singleLine = true,
                                         keyboardOptions = KeyboardOptions(
@@ -180,8 +181,8 @@ internal fun PlaylistInsertDialog(
                 ) {
                     Text(
                         stringResource(
-                            if (currentPreview == null) CoreCommonR.string.playlist_insert_preview_action
-                            else CoreCommonR.string.playlist_insert_confirm_action
+                            if (currentPreview == null) AppR.string.playlist_insert_preview_action
+                            else AppR.string.playlist_insert_confirm_action
                         )
                     )
                 }
@@ -203,10 +204,10 @@ private fun PlaylistInsertSupportText(
     maxPosition: Int
 ) {
     val message = when {
-        !selectionValid -> stringResource(CoreCommonR.string.playlist_insert_invalid_selection)
-        sourceChanged -> stringResource(CoreCommonR.string.playlist_insert_stale)
-        invalidInput -> stringResource(CoreCommonR.string.playlist_insert_invalid_position, maxPosition)
-        else -> stringResource(CoreCommonR.string.playlist_insert_position_help, maxPosition)
+        !selectionValid -> stringResource(AppR.string.playlist_insert_invalid_selection)
+        sourceChanged -> stringResource(AppR.string.playlist_insert_stale)
+        invalidInput -> stringResource(AppR.string.playlist_insert_invalid_position, maxPosition)
+        else -> stringResource(AppR.string.playlist_insert_position_help, maxPosition)
     }
     Text(
         text = message,

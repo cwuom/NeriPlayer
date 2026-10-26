@@ -20,6 +20,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackStatsWindowLayoutTest {
@@ -79,20 +80,20 @@ class PlaybackStatsWindowLayoutTest {
 
         composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.action_back))
             .performClick()
-        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.stats_clear_title))
+        composeRule.onNodeWithContentDescription(context.getString(AppR.string.stats_clear_title))
             .performClick()
-        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.stats_sort_play_count))
+        composeRule.onNodeWithContentDescription(context.getString(AppR.string.stats_sort_play_count))
             .performClick()
         StatsSortMode.entries.forEach { mode ->
             composeRule.onNodeWithText(context.getString(mode.labelRes)).assertIsDisplayed()
         }
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.stats_sort_recent))
+        composeRule.onNodeWithText(context.getString(AppR.string.stats_sort_recent))
             .performClick()
 
         assertEquals(1, backCount)
         assertEquals(1, clearCount)
         assertEquals(StatsSortMode.RECENT, sortMode)
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.stats_sort_first_played))
+        composeRule.onNodeWithText(context.getString(AppR.string.stats_sort_first_played))
             .assertDoesNotExist()
     }
 }

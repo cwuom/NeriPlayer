@@ -5,6 +5,8 @@ import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.model.transfer.TransferFailure
+import moe.ouom.neriplayer.data.model.transfer.TransferFailureKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -51,6 +53,7 @@ class BackupImportWithoutPlaylistsTest {
 
             assertTrue(json, failure is IllegalArgumentException)
             assertEquals(json, "No playlist data in backup file", failure?.message)
+            assertEquals(TransferFailureKind.NO_PLAYLIST_DATA, (failure as TransferFailure).kind)
         }
         verifyNoInteractions(storage)
         assertTrue(cache.walkTopDown().none { it.isFile })
@@ -64,6 +67,7 @@ class BackupImportWithoutPlaylistsTest {
 
         assertTrue(failure is IOException)
         assertEquals("Cannot open backup input", failure?.message)
+        assertEquals(TransferFailureKind.BACKUP_INPUT_UNAVAILABLE, (failure as TransferFailure).kind)
         verifyNoInteractions(storage)
     }
 }

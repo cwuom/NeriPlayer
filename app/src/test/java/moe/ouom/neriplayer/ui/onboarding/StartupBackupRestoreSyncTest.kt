@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.onboarding
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.content.Context
 import androidx.compose.runtime.AbstractApplier
 import androidx.compose.runtime.BroadcastFrameClock
@@ -187,7 +188,7 @@ class StartupBackupRestoreSyncTest {
 
                     completed.complete(Unit)
                     fixture.pump()
-                    assertEquals("restored", provider.successMessage())
+                    assertEquals(UiText.Literal("restored"), provider.successMessage())
                     assertEquals(true, model.uiState.value.approved)
                     assertNull(fixture.visibleDialog)
                     assertTrue(fixture.configurationVisible)
@@ -235,7 +236,7 @@ class StartupBackupRestoreSyncTest {
 
                     assertEquals(2, saves)
                     assertEquals(2, requests)
-                    assertEquals("restored", provider.successMessage())
+                    assertEquals(UiText.Literal("restored"), provider.successMessage())
                     assertNull(fixture.visibleDialog)
                     assertTrue(fixture.configurationVisible)
                 } finally {
@@ -316,8 +317,8 @@ class StartupBackupRestoreSyncTest {
         val setOperation: (suspend (String) -> Result<SyncResult>) -> Unit,
         val perform: (String, () -> Unit, (SyncProtocolUpgradeChallenge) -> Unit) -> Unit,
         val syncing: Flow<Boolean>,
-        val successMessage: () -> String?,
-        val errorMessage: () -> String?
+        val successMessage: () -> UiText?,
+        val errorMessage: () -> UiText?
     )
 
     private class BackupCompositionFixture(

@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun ArtistSongRow(
@@ -176,7 +177,7 @@ internal fun ArtistAlbumRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = pluralStringResource(CoreCommonR.plurals.count_songs_format, album.size, album.size),
+                    text = pluralStringResource(AppR.plurals.count_songs_format, album.size, album.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

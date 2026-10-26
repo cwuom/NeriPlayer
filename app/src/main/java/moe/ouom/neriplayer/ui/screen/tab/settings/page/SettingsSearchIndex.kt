@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSections
 import moe.ouom.neriplayer.ksp.annotations.SettingUiType
 import moe.ouom.neriplayer.common.search.SearchTextMatcher
 import moe.ouom.neriplayer.ui.settings.unavailableSettingKeys
+import moe.ouom.neriplayer.R as AppR
 
 internal data class SettingsSearchEntry(
     val id: String,
@@ -807,39 +808,39 @@ private fun audioEffectsSearchEntries(entry: ManualSearchEntryFactory): List<Set
         entry(page, titleRes, descriptionRes, id, aliases, target, page.ordinal * 100 + offset)
     return listOf(
         audio(
-            CoreCommonR.string.audio_effects_eq_title, CoreCommonR.string.audio_effects_eq_desc, "audio_effects_eq",
+            AppR.string.audio_effects_eq_title, AppR.string.audio_effects_eq_desc, "audio_effects_eq",
             listOf("equalizer", "eq", "10 band", "junhengqi", "均衡", "频段"), 10
         ),
         audio(
-            CoreCommonR.string.audio_effects_presets_title, CoreCommonR.string.audio_effects_presets_desc,
+            AppR.string.audio_effects_presets_title, AppR.string.audio_effects_presets_desc,
             "audio_effects_presets", listOf("preset", "rock", "pop", "jazz", "yuzhi", "风格", "摇滚", "流行"), 12
         ),
         audio(
-            CoreCommonR.string.audio_effects_peq_title, CoreCommonR.string.audio_effects_peq_desc, "audio_effects_peq",
+            AppR.string.audio_effects_peq_title, AppR.string.audio_effects_peq_desc, "audio_effects_peq",
             listOf("autoeq", "parametric", "peq", "headphone", "erji", "jiaozheng", "耳机", "校正"), 14
         ),
         audio(
-            CoreCommonR.string.audio_effects_tone_title, CoreCommonR.string.audio_effects_tone_desc, "audio_effects_tone",
+            AppR.string.audio_effects_tone_title, AppR.string.audio_effects_tone_desc, "audio_effects_tone",
             listOf("bass", "treble", "virtual bass", "diyin", "gaoyin", "低音", "高音", "重低音"), 16
         ),
         audio(
-            CoreCommonR.string.audio_effects_space_title, CoreCommonR.string.audio_effects_space_desc,
+            AppR.string.audio_effects_space_title, AppR.string.audio_effects_space_desc,
             "audio_effects_space", listOf("reverb", "surround", "3d", "crossfeed", "width", "hunxiang", "环绕", "混响"), 18
         ),
         audio(
-            CoreCommonR.string.audio_effects_dynamics_title, CoreCommonR.string.audio_effects_dynamics_desc,
+            AppR.string.audio_effects_dynamics_title, AppR.string.audio_effects_dynamics_desc,
             "audio_effects_dynamics", listOf("compressor", "limiter", "loudness", "yasuo", "压缩", "破音", "响度"), 20
         ),
         audio(
-            CoreCommonR.string.audio_effects_speaker_title, CoreCommonR.string.audio_effects_speaker_desc,
+            AppR.string.audio_effects_speaker_title, AppR.string.audio_effects_speaker_desc,
             "audio_effects_speaker", listOf("speaker", "waifang", "yangshengqi", "外放", "扬声器", "喇叭"), 22
         ),
         audio(
-            CoreCommonR.string.audio_effects_speed_title, CoreCommonR.string.audio_effects_speed_desc,
+            AppR.string.audio_effects_speed_title, AppR.string.audio_effects_speed_desc,
             "audio_effects_speed", listOf("speed", "pitch", "nightcore", "beisu", "yindiao", "倍速", "变调"), 24
         ),
         audio(
-            CoreCommonR.string.audio_effects_power_mode, CoreCommonR.string.audio_effects_power_note,
+            AppR.string.audio_effects_power_mode, AppR.string.audio_effects_power_note,
             "audio_effects_power", listOf("battery", "power", "gonghao", "shengdian", "功耗", "省电"), 26
         )
     )

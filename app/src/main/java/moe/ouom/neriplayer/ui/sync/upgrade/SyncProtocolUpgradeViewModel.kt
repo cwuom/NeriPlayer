@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenExceptio
 import moe.ouom.neriplayer.api.sync.webdav.WebDavNotDirectoryException
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.R as AppR
 
 internal data class SyncProtocolUpgradeError(
     @StringRes val messageRes: Int,
@@ -323,7 +324,7 @@ internal class SyncProtocolUpgradeViewModel(
         }
         return when {
             error is WebDavApiException || error is GitHubApiException -> CoreCommonR.string.sync_request_failed
-            isNetworkFailure(error) -> CoreCommonR.string.comment_error_network
+            isNetworkFailure(error) -> AppR.string.comment_error_network
             else -> null
         }
     }

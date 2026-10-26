@@ -41,10 +41,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaRelatedPlaylist
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import androidx.compose.ui.Alignment
+import moe.ouom.neriplayer.R as AppR
 private const val RELATED_PLAYLIST_EXPAND_THRESHOLD = 3
 private val ENCYCLOPEDIA_PLAYLIST_COVER_SIZE = 48.dp
 /**
@@ -60,11 +60,11 @@ internal fun SongEncyclopediaRelatedPlaylistsSection(
     var expanded by rememberSaveable { mutableStateOf(false) }
     val visible = if (expanded) playlists else playlists.take(RELATED_PLAYLIST_EXPAND_THRESHOLD)
     SongEncyclopediaSectionCard(
-        titleRes = CoreCommonR.string.encyclopedia_section_related_playlists,
+        titleRes = AppR.string.encyclopedia_section_related_playlists,
         icon = Icons.AutoMirrored.Outlined.QueueMusic
     ) {
         if (playlists.isEmpty()) {
-            SongEncyclopediaEmptyHint(CoreCommonR.string.encyclopedia_empty)
+            SongEncyclopediaEmptyHint(AppR.string.encyclopedia_empty)
         } else {
             visible.forEach { playlist ->
                 SongEncyclopediaRelatedPlaylistRow(
@@ -109,7 +109,7 @@ private fun SongEncyclopediaRelatedPlaylistRow(
             playlist.playCount?.let { playCount ->
                 Text(
                     text = stringResource(
-                        CoreCommonR.string.encyclopedia_playlist_play_count,
+                        AppR.string.encyclopedia_playlist_play_count,
                         formatPlayCount(LocalContext.current, playCount)
                     ),
                     style = MaterialTheme.typography.labelMedium,

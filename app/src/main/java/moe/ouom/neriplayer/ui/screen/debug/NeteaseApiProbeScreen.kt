@@ -49,8 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseApiProbeViewModel
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 fun NeteaseApiProbeScreen() {
@@ -69,10 +69,10 @@ fun NeteaseApiProbeScreen() {
     val idle = !ui.running
 
     DebugProbePage(
-        title = stringResource(CoreCommonR.string.debug_netease_probe),
-        description = stringResource(CoreCommonR.string.debug_netease_desc)
+        title = stringResource(AppR.string.debug_netease_probe),
+        description = stringResource(AppR.string.debug_netease_desc)
     ) {
-        DebugProbeSection(title = stringResource(CoreCommonR.string.debug_netease_probe_section_auth)) {
+        DebugProbeSection(title = stringResource(AppR.string.debug_netease_probe_section_auth)) {
             Text(
                 ui.authSummary,
                 style = MaterialTheme.typography.bodyMedium,
@@ -81,27 +81,27 @@ fun NeteaseApiProbeScreen() {
             )
         }
 
-        DebugProbeSection(title = stringResource(CoreCommonR.string.debug_netease_probe_section_inputs)) {
-            DebugProbeField(ui.keyword, vm::onKeywordChange, stringResource(CoreCommonR.string.debug_netease_probe_input_keyword))
+        DebugProbeSection(title = stringResource(AppR.string.debug_netease_probe_section_inputs)) {
+            DebugProbeField(ui.keyword, vm::onKeywordChange, stringResource(AppR.string.debug_netease_probe_input_keyword))
             DebugProbeField(
                 ui.songId, vm::onSongIdChange,
-                stringResource(CoreCommonR.string.debug_netease_probe_input_song_id),
+                stringResource(AppR.string.debug_netease_probe_input_song_id),
                 numeric = true
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_netease_probe_action_search),
+                title = stringResource(AppR.string.debug_netease_probe_action_search),
                 icon = Icons.Rounded.Search,
                 onClick = vm::callSearchAndCopy,
                 enabled = idle
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_netease_probe_action_song_detail),
+                title = stringResource(AppR.string.debug_netease_probe_action_song_detail),
                 icon = Icons.Rounded.Info,
                 onClick = vm::callSongDetailAndCopy,
                 enabled = idle
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_netease_probe_action_song_lyric),
+                title = stringResource(AppR.string.debug_netease_probe_action_song_lyric),
                 icon = Icons.Rounded.Subtitles,
                 onClick = vm::callSongLyricAndCopy,
                 enabled = idle
@@ -109,53 +109,53 @@ fun NeteaseApiProbeScreen() {
         }
 
         DebugProbeSection(
-            title = stringResource(CoreCommonR.string.debug_netease_probe_section_actions),
+            title = stringResource(AppR.string.debug_netease_probe_section_actions),
             trailing = { DebugProbeRunningIndicator(ui.running) }
         ) {
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_call_all_copy),
+                title = stringResource(AppR.string.debug_call_all_copy),
                 icon = Icons.Rounded.Bolt,
                 onClick = { vm.callAllAndCopy() },
                 enabled = idle
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_account_only),
+                title = stringResource(AppR.string.debug_account_only),
                 icon = Icons.Rounded.Person,
                 onClick = { vm.callAccountAndCopy() },
                 enabled = idle
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_userid_only),
+                title = stringResource(AppR.string.debug_userid_only),
                 icon = Icons.Rounded.Badge,
                 onClick = { vm.callUserIdAndCopy() },
                 enabled = idle
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_created_playlists),
+                title = stringResource(AppR.string.debug_created_playlists),
                 icon = Icons.AutoMirrored.Rounded.QueueMusic,
                 onClick = { vm.callCreatedPlaylistsAndCopy() },
                 enabled = idle
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_subscribed_playlists),
+                title = stringResource(AppR.string.debug_subscribed_playlists),
                 icon = Icons.Rounded.LibraryMusic,
                 onClick = { vm.callSubscribedPlaylistsAndCopy() },
                 enabled = idle
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_stared_albums),
+                title = stringResource(AppR.string.debug_stared_albums),
                 icon = Icons.Rounded.Album,
                 onClick = { vm.callStaredAlbums() },
                 enabled = idle
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_liked_playlist_id),
+                title = stringResource(AppR.string.debug_liked_playlist_id),
                 icon = Icons.Rounded.Favorite,
                 onClick = { vm.callLikedPlaylistIdAndCopy() },
                 enabled = idle
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_lyric_sample),
+                title = stringResource(AppR.string.debug_lyric_sample),
                 icon = Icons.Rounded.Lyrics,
                 onClick = { vm.callLyric33894312AndCopy() },
                 enabled = idle
@@ -163,11 +163,11 @@ fun NeteaseApiProbeScreen() {
         }
 
         DebugProbeResult(
-            title = stringResource(CoreCommonR.string.debug_netease_probe_section_result),
+            title = stringResource(AppR.string.debug_netease_probe_section_result),
             status = ui.lastMessage,
             running = ui.running,
             output = ui.lastJsonPreview,
-            emptyOutput = stringResource(CoreCommonR.string.debug_netease_probe_raw_empty),
+            emptyOutput = stringResource(AppR.string.debug_netease_probe_raw_empty),
             summary = ui.resultSummary
         )
     }

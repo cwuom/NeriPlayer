@@ -55,6 +55,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import kotlin.math.abs
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class PlaylistInsertDialogTest {
@@ -89,10 +90,10 @@ class PlaylistInsertDialogTest {
         showDialog(songs, selectedKeys) { confirmed = it }
 
         replaceInput("2")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
         savePreviewScreenshot()
 
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_title)).assertIsDisplayed()
         composeRule.onNodeWithText("星河漫游").assertIsDisplayed()
         composeRule.onNodeWithText("青岚").assertIsDisplayed()
         composeRule.onNodeWithTag("playlist-insert-artwork-${songs[1].stableKey()}").assertIsDisplayed()
@@ -114,7 +115,7 @@ class PlaylistInsertDialogTest {
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
         savePreviewScreenshot()
 
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_confirm_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_confirm_action)).performClick()
         composeRule.runOnIdle {
             val result = requireNotNull(confirmed)
             assertEquals(2, result.startPosition)
@@ -132,16 +133,16 @@ class PlaylistInsertDialogTest {
         var confirmed: PlaylistInsertPreview? = null
         showDialog(songs, setOf(songs[2].stableKey())) { confirmed = it }
         replaceInput("2")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
 
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_edit_position)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_edit_position)).performClick()
         composeRule.onNode(hasSetTextAction()).assertTextContains("2")
         replaceInput("4")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_confirm_action)).assertDoesNotExist()
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_confirm_action)).assertDoesNotExist()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
         composeRule.runOnIdle { assertNull(confirmed) }
 
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_confirm_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_confirm_action)).performClick()
         composeRule.runOnIdle { assertEquals(4, confirmed?.startPosition) }
     }
 
@@ -157,14 +158,14 @@ class PlaylistInsertDialogTest {
             }
         }
         replaceInput("2")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
 
         composeRule.runOnIdle { source.value = songs.reversed() }
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_confirm_action)).assertDoesNotExist()
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_stale)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_confirm_action)).assertDoesNotExist()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_stale)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
         composeRule.runOnIdle { assertNull(confirmed) }
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_confirm_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_confirm_action)).performClick()
         composeRule.runOnIdle { assertEquals(songs.reversed().map { it.stableKey() }, confirmed?.sourceKeys) }
     }
 
@@ -174,11 +175,11 @@ class PlaylistInsertDialogTest {
         var confirmCount = 0
         showDialog(songs, setOf(songs[0].stableKey())) { confirmCount += 1 }
 
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).assertIsNotEnabled()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).assertIsNotEnabled()
         replaceInput("0")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).assertIsNotEnabled()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).assertIsNotEnabled()
         replaceInput("7")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).assertIsNotEnabled()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).assertIsNotEnabled()
         composeRule.runOnIdle { assertEquals(0, confirmCount) }
     }
 
@@ -199,12 +200,12 @@ class PlaylistInsertDialogTest {
             }
         }
         replaceInput("2")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
         composeRule.runOnIdle { source.value = songs.filterNot { it == songs[2] } }
 
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_confirm_action)).assertDoesNotExist()
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).assertIsNotEnabled()
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_invalid_selection)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_confirm_action)).assertDoesNotExist()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).assertIsNotEnabled()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_invalid_selection)).assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(0, confirmCount) }
     }
 
@@ -226,13 +227,13 @@ class PlaylistInsertDialogTest {
         var confirmed: PlaylistInsertPreview? = null
         showDialog(songs, selectedKeys) { confirmed = it }
         replaceInput("5")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
 
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(67)
         composeRule.onNodeWithText("曲目 5").assertIsDisplayed()
         composeRule.onNodeWithText("65").assertIsDisplayed()
         composeRule.runOnIdle { assertNull(confirmed) }
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_confirm_action))
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_confirm_action))
             .assertIsDisplayed()
             .performClick()
 
@@ -262,11 +263,11 @@ class PlaylistInsertDialogTest {
         val selectedKeys = songs.subList(8, 10).mapTo(mutableSetOf()) { it.stableKey() }
         showDialog(songs, selectedKeys) {}
         replaceInput("9")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
 
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(1)
         composeRule.onNodeWithText(
-            context.resources.getQuantityString(CoreCommonR.plurals.playlist_insert_omitted_before, 3, 3)
+            context.resources.getQuantityString(AppR.plurals.playlist_insert_omitted_before, 3, 3)
         ).assertIsDisplayed()
         for (index in 4..8) {
             composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(index - 2)
@@ -278,7 +279,7 @@ class PlaylistInsertDialogTest {
         }
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(16)
         composeRule.onNodeWithText(
-            context.resources.getQuantityString(CoreCommonR.plurals.playlist_insert_omitted_after, 5, 5)
+            context.resources.getQuantityString(AppR.plurals.playlist_insert_omitted_after, 5, 5)
         ).assertIsDisplayed()
         composeRule.onNodeWithText("上下文曲目 3").assertDoesNotExist()
         composeRule.onNodeWithText("上下文曲目 16").assertDoesNotExist()
@@ -299,7 +300,7 @@ class PlaylistInsertDialogTest {
         val songs = gestureSongs()
         showGestureDialog(songs, setOf(songs[40].stableKey())) {}
         replaceInput("1")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
         val list = composeRule.onNode(hasScrollToIndexAction())
         list.performScrollToIndex(0)
         captureRestingPreviewGeometry()
@@ -351,7 +352,7 @@ class PlaylistInsertDialogTest {
         replaceInput("1")
 
         repeat(2) { stage ->
-            composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+            composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
             val list = composeRule.onNode(hasScrollToIndexAction())
             list.performScrollToIndex(0)
             val restingLabelY = boundaryLabelY(top = true)
@@ -381,7 +382,7 @@ class PlaylistInsertDialogTest {
                     assertEquals(37f, parentBackdropOffset.value, 0.01f)
                 }
                 composeRule.onNodeWithText(
-                    text(if (stage == 0) CoreCommonR.string.playlist_insert_edit_position else CoreCommonR.string.action_cancel)
+                    text(if (stage == 0) AppR.string.playlist_insert_edit_position else CoreCommonR.string.action_cancel)
                 ).performClick()
                 composeRule.runOnIdle { assertEquals(37f, parentBackdropOffset.value, 0.01f) }
             } finally {
@@ -410,7 +411,7 @@ class PlaylistInsertDialogTest {
             confirmations += 1
         }
         replaceInput("11")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(30)
         captureRestingPreviewGeometry()
         composeRule.mainClock.autoAdvance = false
@@ -432,7 +433,7 @@ class PlaylistInsertDialogTest {
         composeRule.mainClock.autoAdvance = true
         composeRule.waitForIdle()
         assertPreviewHasNoOverscroll()
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_confirm_action)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_confirm_action)).assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(0, confirmations) }
     }
 
@@ -441,7 +442,7 @@ class PlaylistInsertDialogTest {
         val songs = gestureSongs()
         showGestureDialog(songs, setOf(songs[40].stableKey())) {}
         replaceInput("1")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
         captureRestingPreviewGeometry()
         val restingLabelY = boundaryLabelY(top = true)
@@ -468,8 +469,8 @@ class PlaylistInsertDialogTest {
         var confirmations = 0
         showGestureDialog(songs, setOf(songs[40].stableKey())) { confirmations += 1 }
         replaceInput("1")
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.playlist_insert_position_summary, 1))
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(context.getString(AppR.string.playlist_insert_position_summary, 1))
             .assertIsDisplayed()
         val list = composeRule.onNode(hasScrollToIndexAction())
         list.performScrollToIndex(if (top) 0 else 9)
@@ -538,7 +539,7 @@ class PlaylistInsertDialogTest {
                 list.performScrollToIndex(0)
                 assertCompactFirstPositionHeader()
             }
-            composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_confirm_action)).assertIsDisplayed()
+            composeRule.onNodeWithText(text(AppR.string.playlist_insert_confirm_action)).assertIsDisplayed()
             composeRule.runOnIdle { assertEquals(0, confirmations) }
         } finally {
             if (pointerDown) list.performTouchInput { cancel() }
@@ -613,8 +614,8 @@ class PlaylistInsertDialogTest {
     }
 
     private fun boundaryLabelY(top: Boolean): Float {
-        val label = if (top) text(CoreCommonR.string.playlist_insert_at_start)
-        else context.resources.getQuantityString(CoreCommonR.plurals.playlist_insert_omitted_after, 74, 74)
+        val label = if (top) text(AppR.string.playlist_insert_at_start)
+        else context.resources.getQuantityString(AppR.plurals.playlist_insert_omitted_after, 74, 74)
         return composeRule.onNodeWithText(label).fetchSemanticsNode().positionInRoot.y
     }
 
@@ -635,9 +636,9 @@ class PlaylistInsertDialogTest {
 
     private fun assertCompactFirstPositionHeader() {
         val rangeBottom = composeRule.onNodeWithText(
-            context.getString(CoreCommonR.string.playlist_insert_preview_range, 1, 1)
+            context.getString(AppR.string.playlist_insert_preview_range, 1, 1)
         ).fetchSemanticsNode().boundsInRoot.bottom
-        val firstLabelTop = composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_at_start))
+        val firstLabelTop = composeRule.onNodeWithText(text(AppR.string.playlist_insert_at_start))
             .assertIsDisplayed().fetchSemanticsNode().boundsInRoot.top
         assertTrue(
             "preview retains an empty gap above the playlist start: ${firstLabelTop - rangeBottom}px",

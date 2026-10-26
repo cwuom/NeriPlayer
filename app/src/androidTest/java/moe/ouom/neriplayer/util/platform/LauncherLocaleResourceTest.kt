@@ -13,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.Locale
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class LauncherLocaleResourceTest {
@@ -29,15 +30,15 @@ class LauncherLocaleResourceTest {
         assertEquals(expectedAppName, resources.getString(CoreCommonR.string.app_name))
         assertEquals(
             "继续播放",
-            resources.getString(CoreCommonR.string.launcher_shortcut_continue_short)
+            resources.getString(AppR.string.launcher_shortcut_continue_short)
         )
         assertEquals(
             "打开探索",
-            resources.getString(CoreCommonR.string.launcher_shortcut_explore_long)
+            resources.getString(AppR.string.launcher_shortcut_explore_long)
         )
         assertEquals(
             "媒体库",
-            resources.getString(CoreCommonR.string.launcher_shortcut_library_short)
+            resources.getString(AppR.string.launcher_shortcut_library_short)
         )
     }
 

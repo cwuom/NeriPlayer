@@ -25,6 +25,7 @@ import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
+import moe.ouom.neriplayer.R as AppR
 import org.mockito.Mockito.`when`
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -189,10 +190,10 @@ class PlaylistDeleteFeedbackSnackbarTest {
 
     private fun feedbackContext(): Context {
         val resources = mock(Resources::class.java)
-        stubPlural(resources, CoreCommonR.plurals.local_playlist_delete_snackbar, "playlists-deleted")
-        stubPlural(resources, CoreCommonR.plurals.local_playlist_delete_undone, "playlists-restored")
-        stubPlural(resources, CoreCommonR.plurals.local_playlist_delete_songs_snackbar, "songs-deleted")
-        stubPlural(resources, CoreCommonR.plurals.local_playlist_delete_songs_undone, "songs-restored")
+        stubPlural(resources, AppR.plurals.local_playlist_delete_snackbar, "playlists-deleted")
+        stubPlural(resources, AppR.plurals.local_playlist_delete_undone, "playlists-restored")
+        stubPlural(resources, AppR.plurals.local_playlist_delete_songs_snackbar, "songs-deleted")
+        stubPlural(resources, AppR.plurals.local_playlist_delete_songs_undone, "songs-restored")
 
         val context = mock(Context::class.java)
         `when`(context.resources).thenReturn(resources)

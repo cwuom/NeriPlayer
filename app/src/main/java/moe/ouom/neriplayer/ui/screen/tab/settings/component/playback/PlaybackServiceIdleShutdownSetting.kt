@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun PlaybackServiceIdleShutdownSetting(
@@ -79,6 +80,6 @@ private fun playbackServiceIdleShutdownLabel(minutes: Int): String {
     return if (minutes == 0) {
         stringResource(CoreCommonR.string.settings_playback_idle_shutdown_off)
     } else {
-        pluralStringResource(CoreCommonR.plurals.settings_playback_idle_shutdown_minutes, minutes, minutes)
+        pluralStringResource(AppR.plurals.settings_playback_idle_shutdown_minutes, minutes, minutes)
     }
 }

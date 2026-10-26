@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.content.res.Configuration
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.MaterialTheme
@@ -164,7 +165,7 @@ class BiliUploaderTabletLayoutTest {
             height = 800.dp,
             ui = BiliUploaderDetailUiState(
                 loading = false,
-                error = "fixture load failure",
+                error = UiText.Literal("fixture load failure"),
                 header = BiliUploaderHeader(UPLOADER_MID, UPLOADER_NAME, "", "", "")
             ),
             onRetry = { retryRequests++ }

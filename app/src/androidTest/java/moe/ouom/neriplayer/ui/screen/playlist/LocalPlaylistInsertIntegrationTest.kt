@@ -45,6 +45,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
 import kotlin.math.abs
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class LocalPlaylistInsertIntegrationTest {
@@ -106,10 +107,10 @@ class LocalPlaylistInsertIntegrationTest {
         awaitOrder(originalOrder)
         assertPersistedOrder(originalOrder)
         composeRule.waitUntil(UiTimeoutMs) {
-            composeRule.onAllNodesWithText(text(CoreCommonR.string.playlist_insert_undone))
+            composeRule.onAllNodesWithText(text(AppR.string.playlist_insert_undone))
                 .fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_undone)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_undone)).assertIsDisplayed()
     }
 
     @Test
@@ -244,14 +245,14 @@ class LocalPlaylistInsertIntegrationTest {
 
     private fun openInsertPreview(position: Int) {
         composeRule.onNodeWithContentDescription(text(CoreCommonR.string.cd_more_actions)).performClick()
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_action)).performClick()
         composeRule.onNode(hasSetTextAction()).performTextReplacement(position.toString())
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_action)).performClick()
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_preview_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_preview_title)).assertIsDisplayed()
     }
 
     private fun confirmInsert() {
-        composeRule.onNodeWithText(text(CoreCommonR.string.playlist_insert_confirm_action)).performClick()
+        composeRule.onNodeWithText(text(AppR.string.playlist_insert_confirm_action)).performClick()
     }
 
     private fun awaitUndo() {

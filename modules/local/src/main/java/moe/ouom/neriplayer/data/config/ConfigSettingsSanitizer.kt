@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.data.config
 
 import moe.ouom.neriplayer.data.model.config.TypedPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.config.AppConfigImportWarning
 
 import android.content.Context
 import android.net.Uri
 import androidx.core.net.toUri
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.policy.settings.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
@@ -75,7 +75,7 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         )
 
         if (adjustedInvalidValue) {
-            warnings += context.getString(CoreCommonR.string.config_import_warning_invalid_setting_values)
+            warnings.addConfigImportWarning(context, AppConfigImportWarning.INVALID_SETTING_VALUES)
         }
 
         return TypedPreferenceSnapshot(
@@ -272,7 +272,7 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         }
         if (!backgroundImageUri.isNullOrBlank() && !canAccessImportedContentUri(backgroundImageUri)) {
             strings.remove(SettingsKeys.BACKGROUND_IMAGE_URI.name)
-            warnings += context.getString(CoreCommonR.string.config_import_warning_background_image)
+            warnings.addConfigImportWarning(context, AppConfigImportWarning.BACKGROUND_IMAGE)
         }
     }
 
@@ -301,10 +301,10 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         when {
             shouldClearImportedDownloadDirectory(access) -> {
                 strings.removeDownloadDirectory()
-                warnings += context.getString(CoreCommonR.string.config_import_warning_download_directory)
+                warnings.addConfigImportWarning(context, AppConfigImportWarning.DOWNLOAD_DIRECTORY)
             }
             shouldWarnImportedDownloadDirectory(access) -> {
-                warnings += context.getString(CoreCommonR.string.config_import_warning_download_directory)
+                warnings.addConfigImportWarning(context, AppConfigImportWarning.DOWNLOAD_DIRECTORY)
             }
             normalized != rawDirectoryUri -> {
                 strings[DOWNLOAD_DIRECTORY_KEY] = normalized

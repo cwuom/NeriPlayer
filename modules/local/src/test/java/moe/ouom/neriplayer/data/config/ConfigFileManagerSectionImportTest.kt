@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.runCurrent
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.model.config.AppConfigImportResult
+import moe.ouom.neriplayer.data.model.config.AppConfigImportWarning
 import moe.ouom.neriplayer.data.model.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.config.ListenTogetherConfigSnapshot
 import moe.ouom.neriplayer.data.model.config.SyncPreferencesConfigSnapshot
@@ -259,7 +260,10 @@ class ConfigFileManagerSectionImportTest {
         )
 
         assertEquals(
-            AppConfigImportResult(0, 0, 1, 0, listOf("netease rejected"), requiresActivityRecreate = false),
+            AppConfigImportResult(
+                0, 0, 1, 0, listOf("netease rejected"), requiresActivityRecreate = false,
+                warningCodes = mapOf(0 to AppConfigImportWarning.NETEASE_COOKIE)
+            ),
             result
         )
         verify(bili).saveCookies(mapOf("SESSDATA" to "session"), 88L)

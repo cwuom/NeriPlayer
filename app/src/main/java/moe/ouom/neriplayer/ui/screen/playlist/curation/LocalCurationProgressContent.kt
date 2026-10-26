@@ -65,6 +65,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.stringResId
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsInlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun LocalCurationProgressContent(
@@ -101,9 +102,9 @@ internal fun LocalCurationProgressContent(
                     Text(
                         text = stringResource(
                             if (applying) {
-                                CoreCommonR.string.local_curation_applying_progress
+                                AppR.string.local_curation_applying_progress
                             } else {
-                                CoreCommonR.string.local_curation_analyzing_progress
+                                AppR.string.local_curation_analyzing_progress
                             },
                             done,
                             total
@@ -147,16 +148,16 @@ internal fun LocalCurationProgressContent(
                 Text(
                     stringResource(
                         if (applying) {
-                            CoreCommonR.string.local_curation_stop_applying
+                            AppR.string.local_curation_stop_applying
                         } else {
-                            CoreCommonR.string.local_curation_stop_analyzing
+                            AppR.string.local_curation_stop_analyzing
                         }
                     )
                 )
             }
             if (applying) {
                 Text(
-                    text = stringResource(CoreCommonR.string.local_curation_stop_applying_hint),
+                    text = stringResource(AppR.string.local_curation_stop_applying_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -223,7 +224,7 @@ internal fun LocalCurationFinishedContent(
         }
         Text(
             text = pluralStringResource(
-                CoreCommonR.plurals.local_curation_written_count,
+                AppR.plurals.local_curation_written_count,
                 session.appliedCount,
                 session.appliedCount
             ),
@@ -232,7 +233,7 @@ internal fun LocalCurationFinishedContent(
         if (hasFailures) {
             Text(
                 text = pluralStringResource(
-                    CoreCommonR.plurals.local_curation_failed_count,
+                    AppR.plurals.local_curation_failed_count,
                     session.failedCount,
                     session.failedCount
                 ),
@@ -251,7 +252,7 @@ internal fun LocalCurationFinishedContent(
             }
             if (writeAccessDenied) {
                 MiuixSettingsInlineMessage(
-                    message = stringResource(CoreCommonR.string.local_curation_write_access_denied),
+                    message = stringResource(AppR.string.local_curation_write_access_denied),
                     isSuccess = false,
                     onClose = { writeAccessDenied = false }
                 )
@@ -268,7 +269,7 @@ internal fun LocalCurationFinishedContent(
                     onClick = requestWriteAccess,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(stringResource(CoreCommonR.string.local_curation_retry_failed))
+                    Text(stringResource(AppR.string.local_curation_retry_failed))
                 }
             }
             MiuixSettingsButton(onClick = onDone, modifier = Modifier.weight(1f)) {
@@ -286,19 +287,19 @@ internal fun LocalCurationStatsRow(session: LocalCurationSession) {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         CurationStatPill(
-            text = stringResource(CoreCommonR.string.local_curation_stat_ready, session.count(LocalCurationItemPhase.READY)),
+            text = stringResource(AppR.string.local_curation_stat_ready, session.count(LocalCurationItemPhase.READY)),
             dotColor = MaterialTheme.colorScheme.primary
         )
         CurationStatPill(
             text = stringResource(
-                CoreCommonR.string.local_curation_stat_complete,
+                AppR.string.local_curation_stat_complete,
                 session.count(LocalCurationItemPhase.COMPLETE)
             ),
             dotColor = MaterialTheme.colorScheme.tertiary
         )
         CurationStatPill(
             text = stringResource(
-                CoreCommonR.string.local_curation_stat_no_match,
+                AppR.string.local_curation_stat_no_match,
                 session.count(LocalCurationItemPhase.NO_MATCH)
             ),
             dotColor = MaterialTheme.colorScheme.outline
@@ -306,7 +307,7 @@ internal fun LocalCurationStatsRow(session: LocalCurationSession) {
         val unsupported = session.count(LocalCurationItemPhase.UNSUPPORTED)
         if (unsupported > 0) {
             CurationStatPill(
-                text = stringResource(CoreCommonR.string.local_curation_stat_unsupported, unsupported),
+                text = stringResource(AppR.string.local_curation_stat_unsupported, unsupported),
                 dotColor = MaterialTheme.colorScheme.error
             )
         }
@@ -402,20 +403,20 @@ private fun PhaseIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, tin
 
 @Composable
 internal fun localCurationItemStatus(item: LocalCurationItem): String = when (item.phase) {
-    LocalCurationItemPhase.QUEUED -> stringResource(CoreCommonR.string.local_curation_phase_queued)
+    LocalCurationItemPhase.QUEUED -> stringResource(AppR.string.local_curation_phase_queued)
     LocalCurationItemPhase.ANALYZING,
     LocalCurationItemPhase.APPLYING -> item.song.displayArtist()
     LocalCurationItemPhase.READY -> localCurationProposalSummary(item)
-    LocalCurationItemPhase.COMPLETE -> stringResource(CoreCommonR.string.local_curation_phase_complete)
-    LocalCurationItemPhase.NO_MATCH -> stringResource(CoreCommonR.string.local_curation_phase_no_match)
-    LocalCurationItemPhase.UNSUPPORTED -> stringResource(CoreCommonR.string.local_curation_phase_unsupported)
-    LocalCurationItemPhase.APPLIED -> stringResource(CoreCommonR.string.local_curation_phase_applied)
+    LocalCurationItemPhase.COMPLETE -> stringResource(AppR.string.local_curation_phase_complete)
+    LocalCurationItemPhase.NO_MATCH -> stringResource(AppR.string.local_curation_phase_no_match)
+    LocalCurationItemPhase.UNSUPPORTED -> stringResource(AppR.string.local_curation_phase_unsupported)
+    LocalCurationItemPhase.APPLIED -> stringResource(AppR.string.local_curation_phase_applied)
     LocalCurationItemPhase.FAILED -> stringResource(
         when (item.failure) {
-            LocalCurationFailure.COVER_PREPARE -> CoreCommonR.string.local_curation_failure_cover_prepare
-            LocalCurationFailure.COVER_WRITE -> CoreCommonR.string.local_curation_failure_cover_write
-            LocalCurationFailure.FILE_WRITE -> CoreCommonR.string.local_curation_failure_file_write
-            LocalCurationFailure.LYRICS_WRITE, null -> CoreCommonR.string.local_curation_failure_lyrics
+            LocalCurationFailure.COVER_PREPARE -> AppR.string.local_curation_failure_cover_prepare
+            LocalCurationFailure.COVER_WRITE -> AppR.string.local_curation_failure_cover_write
+            LocalCurationFailure.FILE_WRITE -> AppR.string.local_curation_failure_file_write
+            LocalCurationFailure.LYRICS_WRITE, null -> AppR.string.local_curation_failure_lyrics
         }
     )
 }
@@ -425,13 +426,13 @@ private fun localCurationProposalSummary(item: LocalCurationItem): String {
     val parts = buildList {
         item.lyric?.let { lyric ->
             add(
-                stringResource(CoreCommonR.string.local_curation_section_lyrics) + " · " +
+                stringResource(AppR.string.local_curation_section_lyrics) + " · " +
                     lyricOriginLabel(lyric)
             )
         }
         item.cover?.let { cover ->
             add(
-                stringResource(CoreCommonR.string.local_curation_section_cover) + " · " +
+                stringResource(AppR.string.local_curation_section_cover) + " · " +
                     coverOriginLabel(cover)
             )
         }
@@ -443,7 +444,7 @@ private fun localCurationProposalSummary(item: LocalCurationItem): String {
 internal fun lyricOriginLabel(lyric: LocalCurationLyricProposal): String {
     val source = lyric.source
     return if (lyric.origin == LocalCurationLyricOrigin.EXISTING || source == null) {
-        stringResource(CoreCommonR.string.local_curation_lyric_existing)
+        stringResource(AppR.string.local_curation_lyric_existing)
     } else {
         stringResource(source.stringResId())
     }
@@ -452,7 +453,7 @@ internal fun lyricOriginLabel(lyric: LocalCurationLyricProposal): String {
 @Composable
 internal fun coverOriginLabel(cover: LocalCurationCoverProposal): String = stringResource(
     when (cover.origin) {
-        LocalCurationCoverOrigin.FOLDER -> CoreCommonR.string.local_curation_cover_folder
-        LocalCurationCoverOrigin.ONLINE -> CoreCommonR.string.local_curation_cover_online
+        LocalCurationCoverOrigin.FOLDER -> AppR.string.local_curation_cover_folder
+        LocalCurationCoverOrigin.ONLINE -> AppR.string.local_curation_cover_online
     }
 )

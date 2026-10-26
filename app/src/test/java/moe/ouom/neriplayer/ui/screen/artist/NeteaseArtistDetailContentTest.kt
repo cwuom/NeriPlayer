@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.app.Application
 import android.content.Context
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -36,6 +37,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class, qualifiers = "w411dp-h1600dp")
@@ -98,8 +100,8 @@ class NeteaseArtistDetailContentTest {
 
         composeRule.onNodeWithText("The Seventh").assertExists()
         composeRule.onNodeWithText("Brief artist description").assertExists()
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.artist_song_count, 4)).assertExists()
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.artist_album_count, 2)).assertExists()
+        composeRule.onNodeWithText(plural(AppR.plurals.artist_song_count, 4)).assertExists()
+        composeRule.onNodeWithText(plural(AppR.plurals.artist_album_count, 2)).assertExists()
         composeRule.onNodeWithText("Singer").assertExists()
         composeRule.onNodeWithText(" · First Album").assertExists()
         composeRule.onNodeWithText("Second Album").assertExists()
@@ -113,7 +115,7 @@ class NeteaseArtistDetailContentTest {
 
         composeRule.onNodeWithText(string(CoreCommonR.string.artist_tab_albums)).performClick()
         composeRule.onNodeWithText("Album Twelve").assertExists()
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.count_songs_format, 3)).assertExists()
+        composeRule.onNodeWithText(plural(AppR.plurals.count_songs_format, 3)).assertExists()
         composeRule.onNodeWithText("Album Eleven").performClick()
         composeRule.onNode(hasText(string(CoreCommonR.string.artist_load_more)) and hasClickAction())
             .assertIsNotEnabled()
@@ -134,16 +136,16 @@ class NeteaseArtistDetailContentTest {
         composeRule.onNodeWithText(string(CoreCommonR.string.playlist_loading_content)).assertExists()
         composeRule.onNode(hasText(string(CoreCommonR.string.artist_follow)) and hasClickAction())
             .assertIsNotEnabled()
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.artist_song_count, 0)).assertExists()
+        composeRule.onNodeWithText(plural(AppR.plurals.artist_song_count, 0)).assertExists()
 
-        ui = NeteaseArtistDetailUiState(loading = false, error = "Network down")
+        ui = NeteaseArtistDetailUiState(loading = false, error = UiText.Literal("Network down"))
         composeRule.onNodeWithText("Network down").assertExists()
         composeRule.onNodeWithText(string(CoreCommonR.string.action_retry)).performClick()
         assertEquals(listOf("retry"), events)
 
         ui = NeteaseArtistDetailUiState(
             loading = false,
-            error = "Refresh failed",
+            error = UiText.Literal("Refresh failed"),
             header = header.copy(followed = true, briefDesc = "", alias = ""),
             followUpdating = true,
             songs = songs.take(1)
@@ -183,7 +185,7 @@ class NeteaseArtistDetailContentTest {
         composeRule.onNodeWithText(string(CoreCommonR.string.artist_tab_songs)).assertDoesNotExist()
         composeRule.onNodeWithText("The Seventh").assertDoesNotExist()
 
-        ui = NeteaseArtistDetailUiState(loading = false, error = "Tablet failure")
+        ui = NeteaseArtistDetailUiState(loading = false, error = UiText.Literal("Tablet failure"))
         composeRule.onNodeWithText("Tablet failure").assertExists()
         composeRule.onNodeWithText(string(CoreCommonR.string.artist_tab_songs)).assertDoesNotExist()
 

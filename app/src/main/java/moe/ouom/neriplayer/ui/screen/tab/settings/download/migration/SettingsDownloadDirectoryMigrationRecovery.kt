@@ -22,7 +22,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
@@ -32,6 +31,7 @@ import moe.ouom.neriplayer.core.download.storage.migration.migrationProgressFrom
 import moe.ouom.neriplayer.common.logging.NPLogger
 import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 internal interface DownloadDirectoryMigrationRecoveryGateway {
     fun readSnapshot(): PersistedMigrationUiSnapshot
@@ -409,7 +409,7 @@ internal class DownloadDirectoryMigrationRecoveryController(
     private fun completeFinishedWork(workInfo: WorkInfo?) {
         if (workInfo == null) {
             clearPersistedMigrationUi()
-            onInlineMessageChange(resources.getQuantityString(CoreCommonR.plurals.settings_download_directory_migrate_failed, 1, 1))
+            onInlineMessageChange(resources.getQuantityString(AppR.plurals.settings_download_directory_migrate_failed, 1, 1))
             return
         }
         persistedMigrationProgress = migrationProgressFromWorkData(workInfo.progress)
@@ -429,13 +429,13 @@ internal class DownloadDirectoryMigrationRecoveryController(
         )
         return if (cleanupFailedFiles > 0) {
             resources.getQuantityString(
-                CoreCommonR.plurals.settings_download_directory_migrated_partial,
+                AppR.plurals.settings_download_directory_migrated_partial,
                 movedFiles,
                 movedFiles,
                 cleanupFailedFiles
             )
         } else {
-            resources.getQuantityString(CoreCommonR.plurals.settings_download_directory_migrated, movedFiles, movedFiles)
+            resources.getQuantityString(AppR.plurals.settings_download_directory_migrated, movedFiles, movedFiles)
         }
     }
 
@@ -443,7 +443,7 @@ internal class DownloadDirectoryMigrationRecoveryController(
         val skippedFiles = workInfo.outputData.getInt(ManagedDownloadMigrationWorker.KEY_SKIPPED_FILES, 0)
             .coerceAtLeast(1)
         return resources.getQuantityString(
-            CoreCommonR.plurals.settings_download_directory_migrate_failed,
+            AppR.plurals.settings_download_directory_migrate_failed,
             skippedFiles,
             skippedFiles
         )

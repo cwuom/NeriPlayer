@@ -30,6 +30,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowToast
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = "w411dp-h891dp")
@@ -176,11 +177,11 @@ class DownloadManagerContentTest {
             .performClick()
         composeRule.onNodeWithContentDescription(string(CoreCommonR.string.action_select_all))
             .performClick()
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.download_selected_count, 2, 2))
+        composeRule.onNodeWithText(plural(AppR.plurals.download_selected_count, 2, 2))
             .assertIsDisplayed()
         composeRule.onNodeWithContentDescription(string(CoreCommonR.string.download_delete_selected))
             .performClick()
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.download_delete_selected_confirm, 2, 2))
+        composeRule.onNodeWithText(plural(AppR.plurals.download_delete_selected_confirm, 2, 2))
             .assertIsDisplayed()
         composeRule.onNodeWithText(string(CoreCommonR.string.action_delete)).performClick()
 
@@ -195,7 +196,7 @@ class DownloadManagerContentTest {
         }
         composeRule.waitForIdle()
         assertEquals(
-            plural(CoreCommonR.plurals.local_files_delete_downloaded_success, 2, 2),
+            plural(AppR.plurals.local_files_delete_downloaded_success, 2, 2),
             ShadowToast.getTextOfLatestToast()
         )
     }
@@ -205,10 +206,10 @@ class DownloadManagerContentTest {
         val callbacks = setContent(songs = listOf(alpha, beta, gamma))
 
         composeRule.onNodeWithText("Alpha Track").performTouchInput { longClick() }
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.download_selected_count, 1, 1))
+        composeRule.onNodeWithText(plural(AppR.plurals.download_selected_count, 1, 1))
             .assertIsDisplayed()
         composeRule.onNodeWithText("Gamma Track").performClick()
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.download_selected_count, 2, 2))
+        composeRule.onNodeWithText(plural(AppR.plurals.download_selected_count, 2, 2))
             .assertIsDisplayed()
         composeRule.onNodeWithContentDescription(string(CoreCommonR.string.download_delete_selected))
             .performClick()
@@ -229,7 +230,7 @@ class DownloadManagerContentTest {
             .performClick()
         composeRule.onNodeWithContentDescription(string(CoreCommonR.string.action_deselect_all))
             .performClick()
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.download_selected_count, 0, 0))
+        composeRule.onNodeWithText(plural(AppR.plurals.download_selected_count, 0, 0))
             .assertIsDisplayed()
         composeRule.onNodeWithContentDescription(string(CoreCommonR.string.download_exit_selection))
             .performClick()
@@ -247,7 +248,7 @@ class DownloadManagerContentTest {
         composeRule.onNodeWithText(string(CoreCommonR.string.action_cancel)).performClick()
 
         assertTrue(callbacks.deleteCalls.isEmpty())
-        composeRule.onNodeWithText(plural(CoreCommonR.plurals.download_selected_count, 1, 1))
+        composeRule.onNodeWithText(plural(AppR.plurals.download_selected_count, 1, 1))
             .assertIsDisplayed()
     }
 
@@ -310,14 +311,14 @@ class DownloadManagerContentTest {
     fun `delete result messages cover cleanup success partial and failure`() {
         val resources = context.resources
         assertEquals(
-            plural(CoreCommonR.plurals.local_files_delete_downloaded_cleanup_pending, 2, 2),
+            plural(AppR.plurals.local_files_delete_downloaded_cleanup_pending, 2, 2),
             downloadDeleteResultMessage(
                 resources,
                 DownloadedSongDeleteResult(listOf(alpha), listOf(beta), physicalCleanupPending = true)
             )
         )
         assertEquals(
-            plural(CoreCommonR.plurals.local_files_delete_downloaded_success, 1, 1),
+            plural(AppR.plurals.local_files_delete_downloaded_success, 1, 1),
             downloadDeleteResultMessage(resources, DownloadedSongDeleteResult(listOf(alpha), emptyList()))
         )
         assertEquals(

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.util.Log
@@ -275,7 +276,7 @@ class NeteaseArtistTabletLayoutTest {
     @Test
     fun tabletInitialError_keepsRetryInWorksPane() {
         var retryRequests = 0
-        val ui = artistFixture().copy(error = "fixture error", songs = emptyList(), albums = emptyList())
+        val ui = artistFixture().copy(error = UiText.Literal("fixture error"), songs = emptyList(), albums = emptyList())
         setFixture(width = 600.dp, height = 800.dp, ui = ui, onRetry = { retryRequests++ })
 
         val profile = composeRule.onNodeWithText(FIXTURE_ARTIST).fetchSemanticsNode().boundsInRoot

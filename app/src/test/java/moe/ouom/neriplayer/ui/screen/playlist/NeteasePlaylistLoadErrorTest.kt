@@ -12,11 +12,13 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.netease.collection.NeteaseCollectionDetailUiState
 import moe.ouom.neriplayer.data.model.netease.collection.NeteaseCollectionHeader
+import moe.ouom.neriplayer.data.model.playlist.PlaylistLoadFailure
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
@@ -30,7 +32,7 @@ class NeteasePlaylistLoadErrorTest {
         var returns = 0
         val state = NeteaseCollectionDetailUiState(
             loading = false,
-            error = "<html>private diagnostics</html>",
+            error = PlaylistLoadFailure.Unknown,
             header = NeteaseCollectionHeader(11L, false, "Cached playlist", "", 0L, 1),
             tracks = listOf(SongItem(1L, "Cached song", "Artist", "Album", 0L, 1000L, null))
         )
@@ -46,7 +48,7 @@ class NeteasePlaylistLoadErrorTest {
             }
         }
 
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.playlist_error_title)).assertExists()
+        composeRule.onNodeWithText(context.getString(AppR.string.playlist_error_title)).assertExists()
         composeRule.onNodeWithText("private diagnostics", substring = true).assertDoesNotExist()
         composeRule.onNodeWithText("Cached song").assertDoesNotExist()
         composeRule.onNodeWithText("Cached playlist").assertDoesNotExist()

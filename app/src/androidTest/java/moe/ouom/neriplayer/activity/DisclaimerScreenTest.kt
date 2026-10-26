@@ -16,7 +16,6 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -24,6 +23,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class DisclaimerScreenTest {
@@ -39,9 +39,9 @@ class DisclaimerScreenTest {
     @Test
     fun agreeButton_remainsDisabledUntilCountdownFinishes_thenCallsCallback() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val title = context.getString(CoreCommonR.string.disclaimer_title)
-        val initialButtonLabel = context.getString(CoreCommonR.string.disclaimer_read_countdown, 1)
-        val agreeButtonLabel = context.getString(CoreCommonR.string.disclaimer_agree_countdown)
+        val title = context.getString(AppR.string.disclaimer_title)
+        val initialButtonLabel = context.getString(AppR.string.disclaimer_read_countdown, 1)
+        val agreeButtonLabel = context.getString(AppR.string.disclaimer_agree_countdown)
         var agreed = false
 
         composeRule.setContent {
@@ -74,8 +74,8 @@ class DisclaimerScreenTest {
     @Test
     fun fullDetails_areHiddenUntilUserExpandsThem() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val showDetails = context.getString(CoreCommonR.string.disclaimer_show_details)
-        val firstDetailTitle = context.getString(CoreCommonR.string.disclaimer_section1_title)
+        val showDetails = context.getString(AppR.string.disclaimer_show_details)
+        val firstDetailTitle = context.getString(AppR.string.disclaimer_section1_title)
 
         composeRule.setContent {
             MaterialTheme {
@@ -98,9 +98,9 @@ class DisclaimerScreenTest {
     @Test
     fun shortLandscape_expandedDetailsKeepAgreeActionVisible() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val showDetails = context.getString(CoreCommonR.string.disclaimer_show_details)
-        val firstDetailTitle = context.getString(CoreCommonR.string.disclaimer_section1_title)
-        val agreeButtonLabel = context.getString(CoreCommonR.string.disclaimer_agree_countdown)
+        val showDetails = context.getString(AppR.string.disclaimer_show_details)
+        val firstDetailTitle = context.getString(AppR.string.disclaimer_section1_title)
+        val agreeButtonLabel = context.getString(AppR.string.disclaimer_agree_countdown)
         var agreed = false
 
         composeRule.setContent {

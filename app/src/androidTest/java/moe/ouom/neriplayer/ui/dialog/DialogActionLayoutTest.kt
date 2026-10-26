@@ -35,6 +35,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class DialogActionLayoutTest {
@@ -149,14 +150,14 @@ class DialogActionLayoutTest {
                 )
             }
         }
-        clickAction(CoreCommonR.string.audio_effects_reset_all)
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.audio_effects_reset_all_confirm))
+        clickAction(AppR.string.audio_effects_reset_all)
+        composeRule.onNodeWithText(context.getString(AppR.string.audio_effects_reset_all_confirm))
             .assertIsDisplayed()
 
         composeRule.runOnIdle { route = AudioOutputRoute.BLUETOOTH }
         settle()
 
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.audio_effects_reset_all_confirm))
+        composeRule.onNodeWithText(context.getString(AppR.string.audio_effects_reset_all_confirm))
             .assertDoesNotExist()
     }
 }

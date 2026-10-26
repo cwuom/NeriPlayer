@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
 import android.app.Application
+import moe.ouom.neriplayer.ui.i18n.UiText
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -82,7 +83,10 @@ class YouTubeMusicCreatorDetailPlaybackTest {
         val state = viewModel.uiState.first { it.playbackQueueError != null }
         assertEquals(youtubeMusicCreatorSectionKey(section), state.playbackQueueErrorSectionKey)
         assertEquals(
-            "${CoreCommonR.string.youtube_creator_items_load_failed}|Albums|No playable YouTube Music items",
+            UiText.Resource(
+                CoreCommonR.string.youtube_creator_items_load_failed,
+                listOf("Albums", "No playable YouTube Music items")
+            ),
             state.playbackQueueError
         )
         assertNull(state.playbackQueueLoadingSectionKey)

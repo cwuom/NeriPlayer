@@ -68,6 +68,7 @@ import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun NeteasePlaylistSearchRow(
@@ -107,7 +108,7 @@ internal fun BiliPlaylistSearchRow(
         title = playlist.title,
         subtitle = biliCollectionSubtitle(
             playlist.subtitle,
-            pluralStringResource(CoreCommonR.plurals.bili_content_count, playlist.count, playlist.count)
+            pluralStringResource(AppR.plurals.bili_content_count, playlist.count, playlist.count)
         ),
         coverUrl = playlist.coverUrl,
         offlineMode = offlineMode,
@@ -135,7 +136,7 @@ internal fun YouTubePlaylistSearchRow(
             playlist.subtitle,
             playlist.trackCount,
             pluralStringResource(
-                CoreCommonR.plurals.count_songs_format,
+                AppR.plurals.count_songs_format,
                 playlist.trackCount,
                 playlist.trackCount
             )
@@ -176,12 +177,12 @@ internal fun NeteaseArtistSearchRow(
         title = result.artist.name,
         subtitle = listOf(
             pluralStringResource(
-                CoreCommonR.plurals.artist_song_count,
+                AppR.plurals.artist_song_count,
                 result.musicSize,
                 result.musicSize
             ),
             pluralStringResource(
-                CoreCommonR.plurals.artist_album_count,
+                AppR.plurals.artist_album_count,
                 result.albumSize,
                 result.albumSize
             )
