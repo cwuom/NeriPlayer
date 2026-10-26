@@ -288,6 +288,8 @@ Current positioning:
   user's manual scale remains an additional multiplier.
   Enhanced Advanced Blur and Coherent Feedback are off by default. With Coherent
   Feedback off, playlist and related detail pages use a drawer-style transition.
+  Predictive Back Preview can be toggled on any ROM; gesture-following previews depend
+  on the system providing back gesture progress.
   Enhanced Advanced Blur is available only on Android 13+ while its parent blur
   setting is enabled. It adds shared live-glass material to
   screen-level top tabs, the bottom tab bar, and structural settings cards without

@@ -14,7 +14,7 @@ import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.NavigationEventInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 
-/** 只有平台兼容性和用户开关都允许时，返回手势才预览页面 */
+/** 用户开关控制返回手势是否预览页面 */
 val LocalPredictiveBackPreviewEnabled = staticCompositionLocalOf { true }
 
 /**

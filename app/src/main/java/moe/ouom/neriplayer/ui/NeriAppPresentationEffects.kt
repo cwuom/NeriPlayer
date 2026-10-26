@@ -22,7 +22,6 @@ import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
-import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPlatformSupported
 
 internal data class AppStylePreferences(
     val uiStyle: UiStyle,
@@ -52,8 +51,7 @@ internal fun rememberAppStylePreferences(
         .collectAsStateWithLifecycle(initialValue = true)
     SideEffect { NeriMotionStyle.clean = uiStyle == UiStyle.Clean }
     return AppStylePreferences(
-        uiStyle, liquidGlassEnabled,
-        predictiveBackPreviewEnabled && LocalPredictiveBackPlatformSupported.current
+        uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled
     )
 }
 

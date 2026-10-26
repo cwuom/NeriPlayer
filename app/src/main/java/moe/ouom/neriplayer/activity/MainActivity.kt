@@ -75,9 +75,6 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPlatformSupported
-import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
-import moe.ouom.neriplayer.ui.navigation.rememberPredictiveBackPlatformSupport
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -297,7 +294,6 @@ private fun MainActivity.setNeriContent(
 ) {
     setContent {
         val configuration = LocalConfiguration.current
-        val predictiveBackSupported by rememberPredictiveBackPlatformSupport()
         val hideNavigationBar = shouldHideTabletNavigationBar(
             smallestScreenWidthDp = configuration.smallestScreenWidthDp,
             isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
@@ -308,8 +304,6 @@ private fun MainActivity.setNeriContent(
             LocalActivityResultRegistryOwner provides this@setNeriContent,
             LocalOverscrollFactory provides AdvancedGlassOverscrollFactory,
             LocalOverlayNavigationBarHidden provides hideNavigationBar,
-            LocalPredictiveBackPlatformSupported provides predictiveBackSupported,
-            LocalPredictiveBackPreviewEnabled provides predictiveBackSupported,
             content = content
         )
     }
