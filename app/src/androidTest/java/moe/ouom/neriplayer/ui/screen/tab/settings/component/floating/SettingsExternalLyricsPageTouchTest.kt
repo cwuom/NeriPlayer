@@ -65,6 +65,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.testutil.EmulatorOfflineNetworkFixture
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.performNativeClick
@@ -126,8 +127,10 @@ class SettingsExternalLyricsPageTouchTest {
         val originalQueue = runBlocking { SavedPlaybackQueue.read(context) }
         val directory = File(context.cacheDir, "external-lyrics-touch-${System.nanoTime()}")
         var scenario: ActivityScenario<MainActivity>? = null
+        var networkFixture: EmulatorOfflineNetworkFixture? = null
         var failure: Throwable? = null
         try {
+            networkFixture = EmulatorOfflineNetworkFixture.start(context)
             if (allControls) {
                 setOverlayMode(AppOpsManager.MODE_ALLOWED)
                 assertTrue("全控件测试不得跳转系统授权页", Settings.canDrawOverlays(context))
@@ -228,6 +231,7 @@ class SettingsExternalLyricsPageTouchTest {
                 originalCaches.forEach { it.assertRestored(context) }
             }
             cleanup { check(!directory.exists() || directory.deleteRecursively()) }
+            cleanup { networkFixture?.close() }
             NeriMotionStyle.clean = originalCleanMotion
             logPhase("cleanup-after")
             if (failure != null) cleanupFailures.forEach(failure::addSuppressed)

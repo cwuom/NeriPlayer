@@ -52,6 +52,7 @@ import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.appearance.PreviewThemePromptRepository
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.testutil.EmulatorOfflineNetworkFixture
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.performNativeClick
@@ -108,8 +109,10 @@ class MainActivityRotationContinuityTest {
             Settings.System.ACCELEROMETER_ROTATION, 1) != 0
         val directory = File(context.cacheDir, "rotation-continuity-${System.nanoTime()}")
         var scenario: ActivityScenario<MainActivity>? = null
+        var networkFixture: EmulatorOfflineNetworkFixture? = null
         var failure: Throwable? = null
         try {
+            networkFixture = EmulatorOfflineNetworkFixture.start(context)
             logPhase("prepare")
             check(directory.mkdirs())
             val song = createPausedSong(directory)
@@ -227,6 +230,7 @@ class MainActivityRotationContinuityTest {
             cleanup { assertTrue(automation.setRotation(savedRotation)) }
             if (savedAutoRotation) cleanup { assertTrue(automation.setRotation(UiAutomation.ROTATION_UNFREEZE)) }
             cleanup { check(!directory.exists() || directory.deleteRecursively()) }
+            cleanup { networkFixture?.close() }
             NeriMotionStyle.clean = savedMotion
             if (failure != null) cleanupFailures.forEach(failure::addSuppressed)
             else if (cleanupFailures.isNotEmpty()) {
