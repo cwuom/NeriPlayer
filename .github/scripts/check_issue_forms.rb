@@ -21,6 +21,18 @@ Dir.glob(File.join(root, '.github/ISSUE_TEMPLATE/*.yml')).sort.each do |path|
   abort "#{path}: unknown static label" unless (form.fetch('labels') - names).empty?
   ids = form.fetch('body').map { |field| field['id'] }.compact
   abort "#{path}: duplicate field IDs" unless ids.uniq == ids
+  if File.basename(path) == 'feature-request.yml'
+    fields = form.fetch('body').to_h { |field| [field['id'], field] }
+    diagnostic_ids = %w[app-version build-uuid distribution]
+    abort "#{path}: feature requests must not collect diagnostic fields" unless (ids & diagnostic_ids).empty?
+    area = fields.fetch('affected-area')
+    unless area['type'] == 'dropdown' && area.fetch('attributes')['multiple'] == true &&
+           area.fetch('validations')['required'] == true
+      abort "#{path}: affected-area must be a required multi-select dropdown"
+    end
+    platform = fields.fetch('affected-platforms')
+    abort "#{path}: affected-platforms must be optional" unless platform.fetch('validations')['required'] == false
+  end
   form.fetch('body').each do |field|
     next unless field['type'] == 'dropdown'
     attributes = field.fetch('attributes')

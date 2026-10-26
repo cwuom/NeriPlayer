@@ -9,15 +9,13 @@ body:
       value: |
         感谢您给 NeriPlayer 提出建议！
         为了使我们更好地帮助您，请提供以下信息。
-        请重点说明要解决的问题、使用场景和期望结果。
+        只需说明要解决的问题、使用场景、期望功能和涉及模块，无需提供应用版本、构建 UUID 或安装来源。
         优化已有体验请使用“提交建议”模板；附件中请移除账号和密钥等隐私信息。
-        下拉框中的“请选择”仅为填写提示，请改为实际情况后再提交。
 
         Thank you for providing suggestions for NeriPlayer!
         To help us assist you better, please provide the following information.
-        Describe the problem, use case, and expected outcome.
+        Describe the problem, use case, proposed feature, and affected areas. No app version, Build UUID, or distribution details are needed.
         Use the suggestion form for existing behavior and redact private data from attachments.
-        Replace "Please select" in dropdowns with the actual value before submitting.
 
   - type: textarea
     id: motivation
@@ -59,7 +57,7 @@ body:
     id: affected-area
     attributes:
       label: 涉及模块 / Affected area
-      description: 可多选；请选择此功能涉及的模块 / Select the areas this feature would affect
+      description: 必填，可多选；不确定时选择“其他或不确定”，提交后会自动添加模块标签 / Required, multiple choices allowed; choose unsure if needed. Area labels are added automatically after submission
       multiple: true
       options:
         - 账号与登录 / Accounts and login
@@ -89,7 +87,7 @@ body:
     id: affected-platforms
     attributes:
       label: 涉及平台 / Affected platforms
-      description: 可多选；不依赖在线平台时选择“不涉及在线平台” / Select all affected platforms or choose not related
+      description: 可选，可多选；仅当功能针对特定平台时填写，通用功能可留空 / Optional, multiple choices allowed; select only if the feature targets specific platforms
       multiple: true
       options:
         - 网易云音乐 / NetEase Cloud Music
@@ -99,40 +97,7 @@ body:
         - 不涉及在线平台 / Not related to online platforms
         - 其他或不确定 / Other or unsure
     validations:
-      required: true
-
-  - type: input
-    id: app-version
-    attributes:
-      label: 应用版本与构建信息 / App version and build information
-      description: 从设置的“关于”复制版本号；尚未安装或无法确认可填“未知” / Copy the version from About or enter unknown
-      placeholder: 例如 c362c9a.10251232，或未知
-    validations:
-      required: true
-
-  - type: input
-    id: build-uuid
-    attributes:
-      label: 构建 UUID / Build UUID
-      description: 如方便获取，可从设置的“关于”复制构建 UUID；找不到时可留空 / Copy the Build UUID from About if available; otherwise leave blank
-      placeholder: 可选：构建 UUID；无法获取可留空
-    validations:
       required: false
-
-  - type: dropdown
-    id: distribution
-    attributes:
-      label: 安装来源 / Distribution
-      default: 0
-      options:
-        - 请选择 / Please select
-        - GitHub Release
-        - GitHub Actions CI
-        - Telegram CI 频道 / Telegram CI channel
-        - 本地源码构建 / Local source build
-        - 其他或不确定 / Other or unsure
-    validations:
-      required: true
 
   - type: textarea
     id: additional-context
