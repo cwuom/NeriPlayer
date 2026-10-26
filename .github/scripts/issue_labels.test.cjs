@@ -24,6 +24,27 @@ test('功能与建议表单使用 enhancement', () => {
   }
 });
 
+test('精简功能请求不填平台和诊断信息时仍按多选模块分类', () => {
+  const body = '### 功能背景与需求 / Motivation\n\n希望改进使用体验' +
+    '\n\n### 期望的功能 / Proposed feature\n\n支持自定义显示方式' +
+    `\n\n### ${areaHeading}\n\n歌词 / Lyrics, 界面与交互 / UI and interaction`;
+  for (const platform of ['', `\n\n### ${platformHeading}\n\n_No response_`]) {
+    assert.deepEqual(collectIssueLabels({ body: body + platform, labels: [] }),
+      ['enhancement', 'status: needs-triage', 'area: lyrics', 'area: ui']);
+    assert.deepEqual(collectIssueLabels({ body: body + platform, labels: ['enhancement', 'P1', 'status: confirmed'] }),
+      ['area: lyrics', 'area: ui']);
+  }
+});
+
+test('精简功能请求仍支持可选平台和正文平台识别', () => {
+  const body = '### 功能背景与需求 / Motivation\n\n希望支持 Bilibili 视频播放' +
+    `\n\n### ${areaHeading}\n\n播放与音频 / Playback and audio`;
+  assert.deepEqual(collectIssueLabels({ body, labels: [] }),
+    ['enhancement', 'status: needs-triage', 'area: playback', 'platform: bilibili']);
+  assert.deepEqual(collectIssueLabels({ body: body + `\n\n### ${platformHeading}\n\nYouTube Music`, labels: [] }),
+    ['enhancement', 'status: needs-triage', 'area: playback', 'platform: youtube']);
+});
+
 test('已有 question 标签阻止从其他表单标题添加 bug 或 enhancement', () => {
   for (const body of [bugBody('其他或不确定 / Other or unsure'), '### 功能背景与需求 / Motivation\n\n需要帮助']) {
     assert.deepEqual(collectIssueLabels({ body, labels: ['question', 'P1', 'status: confirmed'] }), []);
