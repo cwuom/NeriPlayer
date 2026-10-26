@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component.floating
 import android.app.Application
 import android.app.AppOpsManager
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -55,6 +56,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.persistence.PlaybackQueueRoomStore
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.core.startup.debug.debugBuildWarningDataStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -118,6 +120,7 @@ class SettingsExternalLyricsPageTouchTest {
         assumeTrue("仅在 API 30+ 手机模拟器运行真实宿主触摸回归", Build.VERSION.SDK_INT >= 30 &&
             Build.HARDWARE in setOf("ranchu", "goldfish") &&
             context.resources.configuration.smallestScreenWidthDp < 600)
+        assertFalse("测试开始前不能有残留的播放服务", AudioPlayerService.isInstanceActiveForDiagnostics())
         val originalOverlayMode = if (allControls) readSupportedPackageOverlayMode() else null
         val originalCaches = CachePreferenceNames.map { SavedSharedPreferences.read(context, it) }
         val originalCleanMotion = NeriMotionStyle.clean
@@ -144,6 +147,8 @@ class SettingsExternalLyricsPageTouchTest {
                 repository.setUiStyle(UiStyle.Clean)
                 repository.setUiDensityScale(uiDensityScale)
                 repository.setKeepLastPlaybackProgress(true)
+                repository.setPreemptAudioFocus(true)
+                repository.setAllowMixedPlayback(false)
                 repository.setFloatingLyricsPreferences(
                     FloatingLyricsPreferences(enabled = false, hideInApp = allControls, showTranslation = false)
                 )
@@ -172,7 +177,8 @@ class SettingsExternalLyricsPageTouchTest {
             }
             composeRule.waitUntil(UiTimeoutMs) {
                 PlayerManager.currentSongFlow.value?.mediaUri == song.mediaUri &&
-                    composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).isDisplayed()
+                    composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).isDisplayed() &&
+                    AudioPlayerService.isInstanceActiveForDiagnostics()
             }
             logPhase("mini-player-ready")
             assertMiniPlayer(song.name)
@@ -215,6 +221,12 @@ class SettingsExternalLyricsPageTouchTest {
                 runCatching(action).exceptionOrNull()?.let(cleanupFailures::add)
             }
             cleanup { scenario?.close() }
+            cleanup {
+                instrumentation.runOnMainSync {
+                    context.stopService(Intent(context, AudioPlayerService::class.java))
+                }
+                composeRule.waitUntil(UiTimeoutMs) { !AudioPlayerService.isInstanceActiveForDiagnostics() }
+            }
             cleanup { instrumentation.runOnMainSync { PlayerManager.release() } }
             // 恢复本包该项的原始 mode，appops 历史由外层模拟器快照恢复
             cleanup { originalOverlayMode?.let(::setOverlayMode) }

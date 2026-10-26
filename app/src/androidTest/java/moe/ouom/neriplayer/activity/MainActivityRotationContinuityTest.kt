@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.activity
 import android.app.Application
 import android.app.UiAutomation
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -42,6 +43,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.persistence.PlaybackQueueRoomStore
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.core.startup.debug.debugBuildWarningDataStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -94,6 +96,7 @@ class MainActivityRotationContinuityTest {
         assumeTrue("需要 API 30+ 手机模拟器", Build.VERSION.SDK_INT >= 30 &&
             Build.HARDWARE in setOf("ranchu", "goldfish") &&
             context.resources.configuration.smallestScreenWidthDp < 600)
+        assertFalse("测试开始前不能有残留的播放服务", AudioPlayerService.isInstanceActiveForDiagnostics())
         val settings = SettingsRepository(context)
         val savedSettings = runBlocking { context.dataStore.data.first() }
         val savedWarning = runBlocking { context.debugBuildWarningDataStore.data.first() }
@@ -123,10 +126,12 @@ class MainActivityRotationContinuityTest {
                 settings.setUiStyle(style)
                 settings.setUiDensityScale(1f)
                 settings.setKeepLastPlaybackProgress(true)
+                settings.setPreemptAudioFocus(true)
+                settings.setAllowMixedPlayback(false)
                 settings.setNowPlayingDynamicBackgroundEnabled(false)
                 settings.setNowPlayingCoverBlurBackgroundEnabled(false)
                 settings.setNowPlayingImmersiveMode(false)
-                // 暂停恢复只建立真实迷你播放器，避免播放统计和音频服务影响方向回归
+                // 暂停恢复避免播放统计影响方向回归
                 QueueFiles.forEach { name ->
                     val file = File(context.filesDir, name)
                     check(!file.exists() || file.delete())
@@ -144,7 +149,8 @@ class MainActivityRotationContinuityTest {
                 awaitUi {
                     composeRule.onNode(hasSetTextAction()).isDisplayed() &&
                         composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).isDisplayed() &&
-                        PlayerManager.currentSongFlow.value?.mediaUri == song.mediaUri
+                        PlayerManager.currentSongFlow.value?.mediaUri == song.mediaUri &&
+                        AudioPlayerService.isInstanceActiveForDiagnostics()
                 }
                 logPhase("home-ready")
                 val search = composeRule.onNode(hasSetTextAction())
@@ -215,6 +221,12 @@ class MainActivityRotationContinuityTest {
                 runCatching(action).exceptionOrNull()?.let(cleanupFailures::add)
             }
             cleanup { scenario?.close() }
+            cleanup {
+                instrumentation.runOnMainSync {
+                    context.stopService(Intent(context, AudioPlayerService::class.java))
+                }
+                composeRule.waitUntil(UiTimeoutMs) { !AudioPlayerService.isInstanceActiveForDiagnostics() }
+            }
             cleanup { instrumentation.runOnMainSync { PlayerManager.release() } }
             cleanup { runBlocking { savedQueue.restore(context) } }
             cleanup { runBlocking { context.dataStore.updateData { savedSettings } } }
