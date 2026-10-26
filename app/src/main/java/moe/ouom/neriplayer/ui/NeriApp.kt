@@ -74,6 +74,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.compose.rememberNavController
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import coil.Coil
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
@@ -316,6 +318,20 @@ internal fun AppContentMountGate(
     Box(modifier = modifier) {
         content()
     }
+}
+
+@Composable
+internal fun AppUnderlayBackScope(
+    enabled: Boolean,
+    content: @Composable () -> Unit
+) {
+    val parentOwner = LocalNavigationEventDispatcherOwner.current
+    if (parentOwner == null) {
+        content()
+        return
+    }
+    val underlayOwner = rememberNavigationEventDispatcherOwner(enabled = enabled, parent = parentOwner)
+    CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides underlayOwner, content = content)
 }
 
 @Composable
@@ -1678,6 +1694,8 @@ private fun NeriAppContent(
                         navHostStartDestination = navHostStartDestination
                     )
 
+                    // 播放层退场结束前，底层重建的页面也不能抢走系统返回
+                    AppUnderlayBackScope(enabled = !showNowPlaying && !nowPlayingOverlayMounted) {
                     Box(
                         Modifier.fillMaxSize()
                             .nowPlayingBackdropRecede(sharedCoverFlight)
@@ -1797,6 +1815,7 @@ private fun NeriAppContent(
                                 }
                             )
                         }
+                    }
                     }
                     }
 

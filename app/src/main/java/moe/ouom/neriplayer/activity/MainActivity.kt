@@ -1306,11 +1306,11 @@ class MainActivity : ComponentActivity() {
             safeModeActive = safeModeActive
         )
         val controller = WindowInsetsControllerCompat(window, window.decorView)
+        // 隐藏导航栏时仍允许侧边返回，避免平板首滑只唤出系统栏
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
         if (hideNavigationBar) {
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.navigationBars())
         } else {
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
             controller.show(WindowInsetsCompat.Type.navigationBars())
         }
     }

@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.ui
 
 import android.content.res.Configuration
+import android.os.ParcelFileDescriptor
+import android.provider.Settings
 import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
@@ -16,6 +18,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +29,7 @@ import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.component.common.PredictiveDismissState
 import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.playback.visual.AppNowPlayingOverlay
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayBackground
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayCover
@@ -33,6 +37,7 @@ import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -44,6 +49,7 @@ class AppTabletNowPlayingBackTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     private val visible = mutableStateOf(false)
+    private val previewEnabled = mutableStateOf(true)
     private val flight = SharedCoverFlightState()
     private val queue = MutableStateFlow<List<SongItem>>(emptyList())
     private val visibilityEvents = mutableListOf<Boolean>()
@@ -64,7 +70,8 @@ class AppTabletNowPlayingBackTest {
             dismiss = rememberPredictiveDismissState()
             CompositionLocalProvider(
                 LocalConfiguration provides configuration,
-                LocalSharedCoverFlight provides flight
+                LocalSharedCoverFlight provides flight,
+                LocalPredictiveBackPreviewEnabled provides previewEnabled.value
             ) {
                 Box(Modifier.fillMaxSize()) {
                     AppNowPlayingOverlay(
@@ -134,6 +141,49 @@ class AppTabletNowPlayingBackTest {
 
         composeRule.runOnIdle { dispatcher.onBackPressed() }
         advance(400)
+        assertClosed()
+    }
+
+    @Test
+    fun disabledPreviewKeepsTheTabletFullSizeAndOneBackClosesIt() {
+        composeRule.runOnIdle { previewEnabled.value = false }
+        openPlayer()
+        val originalWidth = playerWidth()
+        val dispatcher = composeRule.activity.onBackPressedDispatcher
+        composeRule.runOnIdle { dispatcher.dispatchOnBackStarted(backEvent(0f)) }
+        composeRule.runOnIdle { dispatcher.dispatchOnBackProgressed(backEvent(0.8f)) }
+        advance(32)
+
+        assertEquals(originalWidth, playerWidth(), 1f)
+        composeRule.runOnIdle {
+            assertEquals(0f, dismiss.progress, 0f)
+            assertEquals(0, closeRequests)
+            dispatcher.onBackPressed()
+        }
+        advance(400)
+        assertClosed()
+    }
+
+    @Test
+    fun disabledPreviewClosesWithOneSystemEdgeSwipe() {
+        assumeTrue(
+            "需要系统手势导航",
+            Settings.Secure.getInt(composeRule.activity.contentResolver, "navigation_mode", -1) == 2
+        )
+        composeRule.runOnIdle { previewEnabled.value = false }
+        openPlayer()
+        val (width, height) = composeRule.runOnIdle {
+            composeRule.activity.window.decorView.let { it.width to it.height }
+        }
+        composeRule.mainClock.autoAdvance = true
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        ParcelFileDescriptor.AutoCloseInputStream(
+            automation.executeShellCommand(
+                "input swipe ${width - 1} ${height / 2} ${width / 2} ${height / 2} 350"
+            )
+        ).use { it.readBytes() }
+        composeRule.waitUntil(timeoutMillis = 5_000) { !visible.value }
+        composeRule.waitForIdle()
         assertClosed()
     }
 

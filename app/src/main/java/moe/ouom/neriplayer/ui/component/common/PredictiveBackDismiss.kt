@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -94,21 +95,23 @@ internal fun PredictiveDismissHandler(
 ) {
     val scope = rememberCoroutineScope()
     val currentOnDismiss by rememberUpdatedState(onDismiss)
-    val currentPreviewEnabled by rememberUpdatedState(LocalPredictiveBackPreviewEnabled.current)
+    val previewEnabled = LocalPredictiveBackPreviewEnabled.current
+    val currentPreviewEnabled by rememberUpdatedState(previewEnabled)
+    LaunchedEffect(state, previewEnabled) {
+        if (!previewEnabled) state.reset()
+    }
     PredictiveBackHandler(enabled = enabled) { events ->
-        val previewEnabled = currentPreviewEnabled
-        state.settleJob?.cancel()
-        if (!previewEnabled) state.progress = 0f
+        state.reset()
         try {
             events.collect { event ->
-                if (previewEnabled) {
+                if (currentPreviewEnabled) {
                     state.swipeEdge = event.swipeEdge
                     state.progress = event.progress
                 }
             }
             currentOnDismiss()
         } catch (cancelled: CancellationException) {
-            if (previewEnabled) {
+            if (currentPreviewEnabled) {
                 state.settleJob = scope.launch {
                     animate(
                         initialValue = state.progress,
@@ -116,6 +119,8 @@ internal fun PredictiveDismissHandler(
                         animationSpec = tween(PREDICTIVE_DISMISS_CANCEL_DURATION_MS)
                     ) { value, _ -> state.progress = value }
                 }
+            } else {
+                state.reset()
             }
             throw cancelled
         }

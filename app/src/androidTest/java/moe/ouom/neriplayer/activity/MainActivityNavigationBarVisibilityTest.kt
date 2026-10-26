@@ -165,8 +165,7 @@ class MainActivityNavigationBarVisibilityTest {
             val insets = checkNotNull(ViewCompat.getRootWindowInsets(activity.window.decorView))
             assertTrue("状态栏应保留", insets.isVisible(WindowInsetsCompat.Type.statusBars()))
             val controller = WindowInsetsControllerCompat(activity.window, activity.window.decorView)
-            assertEquals(if (hidden) WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                else WindowInsetsControllerCompat.BEHAVIOR_DEFAULT, controller.systemBarsBehavior)
+            assertEquals(WindowInsetsControllerCompat.BEHAVIOR_DEFAULT, controller.systemBarsBehavior)
             if (hidden) {
                 assertEquals("隐藏导航栏不应继续占据布局边距", Insets.NONE,
                     insets.getInsets(WindowInsetsCompat.Type.navigationBars()))
