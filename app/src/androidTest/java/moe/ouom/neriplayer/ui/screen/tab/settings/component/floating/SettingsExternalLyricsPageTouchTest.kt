@@ -68,6 +68,7 @@ import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
+import moe.ouom.neriplayer.testutil.MediaBrowserIsolationRule
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.performNativeClick
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsPageTransitionSceneTag
@@ -79,6 +80,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
+import org.junit.ClassRule
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -927,6 +929,10 @@ class SettingsExternalLyricsPageTouchTest {
     }
 
     private companion object {
+        @ClassRule
+        @JvmField
+        val mediaBrowserIsolation: org.junit.rules.TestRule = MediaBrowserIsolationRule()
+
         const val UiTimeoutMs = 20_000L
         const val MiniPlayerTag = "appMiniPlayer"
         const val DiagnosticTag = "ExternalLyricsPageTouch"
