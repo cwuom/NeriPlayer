@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui
 
+import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -7,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.media3.common.Player
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
@@ -22,10 +24,12 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.testutil.MediaBrowserIsolationRule
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.grantRuntimePermissions
 import moe.ouom.neriplayer.testutil.playbackRuntimePermissions
@@ -33,6 +37,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.ClassRule
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -62,11 +67,30 @@ class PlaybackFailureLimitTest {
     @After
     fun tearDown() {
         observerScope.cancel()
-        composeRule.runOnIdle {
-            cycleRepeatModeTo(originalRepeatMode)
-            PlayerManager.release()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        try {
+            try {
+                composeRule.activityRule.scenario.close()
+            } finally {
+                try {
+                    instrumentation.runOnMainSync {
+                        context.stopService(Intent(context, AudioPlayerService::class.java))
+                    }
+                    composeRule.waitUntil(15_000L) { !AudioPlayerService.isInstanceActiveForDiagnostics() }
+                } finally {
+                    instrumentation.runOnMainSync {
+                        try {
+                            cycleRepeatModeTo(originalRepeatMode)
+                        } finally {
+                            PlayerManager.release()
+                        }
+                    }
+                }
+            }
+        } finally {
+            createdFiles.forEach(File::delete)
         }
-        createdFiles.forEach(File::delete)
     }
 
     @Test
@@ -160,6 +184,10 @@ class PlaybackFailureLimitTest {
     }
 
     private companion object {
+        @ClassRule
+        @JvmField
+        val mediaBrowserIsolation: org.junit.rules.TestRule = MediaBrowserIsolationRule()
+
         const val MAX_CONSECUTIVE_FAILURES = 10
         const val STARTUP_SCREEN_TIMEOUT_MS = 30_000L
         const val FAILURE_LIMIT_TIMEOUT_MS = 45_000L
