@@ -23,7 +23,7 @@
 </p>
 
 <p>
-  <img src="icon/neriplayer.svg" width="260" alt="NeriPlayer logo" />
+  <img src="icon/readme-banner.svg" width="100%" alt="NeriPlayer — Modern Music Player" />
 </p>
 
 <p>
