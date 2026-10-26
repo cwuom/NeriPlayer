@@ -9,12 +9,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -34,16 +36,18 @@ class PredictiveBackDismissRenderTest {
 
     private fun setSurface() {
         composeRule.setContent {
-            hostView = LocalView.current
-            Box(Modifier.size(300.dp, 200.dp).background(Color.Blue)) {
-                val state = rememberPredictiveDismissState()
-                PredictiveDismissHandler(state = state, onDismiss = {})
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .predictiveDismissTransform(state)
-                        .background(Color.Red)
-                )
+            CompositionLocalProvider(LocalPredictiveBackPreviewEnabled provides true) {
+                hostView = LocalView.current
+                Box(Modifier.size(300.dp, 200.dp).background(Color.Blue)) {
+                    val state = rememberPredictiveDismissState()
+                    PredictiveDismissHandler(state = state, onDismiss = {})
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .predictiveDismissTransform(state)
+                            .background(Color.Red)
+                    )
+                }
             }
         }
         composeRule.waitForIdle()

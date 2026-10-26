@@ -9,6 +9,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -37,20 +39,22 @@ class HostPredictiveBackMotionTest {
 
     private fun setHost() {
         composeRule.setContent {
-            transition = rememberHostPredictiveBackTransition(
-                targetState = selected,
-                backEnabled = selected,
-                backTargetState = false,
-                onBack = { seeked -> backs += seeked; selected = false },
-                label = "slow_start_back_motion",
-                previewEasing = FastOutLinearInEasing,
-                cancelMinimumDurationMillis = MinimumCancelMillis
-            )
-            progress = transition.animateFloat(
-                transitionSpec = { tween(DurationMillis, easing = LinearEasing) },
-                label = "auditable_host_fraction"
-            ) { if (it) 0f else 1f }
-            Box(Modifier.size(20.dp))
+            CompositionLocalProvider(LocalPredictiveBackPreviewEnabled provides true) {
+                transition = rememberHostPredictiveBackTransition(
+                    targetState = selected,
+                    backEnabled = selected,
+                    backTargetState = false,
+                    onBack = { seeked -> backs += seeked; selected = false },
+                    label = "slow_start_back_motion",
+                    previewEasing = FastOutLinearInEasing,
+                    cancelMinimumDurationMillis = MinimumCancelMillis
+                )
+                progress = transition.animateFloat(
+                    transitionSpec = { tween(DurationMillis, easing = LinearEasing) },
+                    label = "auditable_host_fraction"
+                ) { if (it) 0f else 1f }
+                Box(Modifier.size(20.dp))
+            }
         }
         composeRule.waitForIdle()
         composeRule.mainClock.autoAdvance = false

@@ -19,6 +19,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
+import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
@@ -48,7 +49,9 @@ internal fun rememberAppStylePreferences(
     val uiStyle by repo.uiStyleFlow.collectAsStateWithLifecycle(initialValue = initialUiStyle)
     val liquidGlassEnabled by repo.liquidGlassEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
     val predictiveBackPreviewEnabled by repo.predictiveBackPreviewEnabledFlow
-        .collectAsStateWithLifecycle(initialValue = true)
+        .collectAsStateWithLifecycle(
+            initialValue = AutoSettingsSchema.motion.predictiveBackPreviewEnabled.defaultValue
+        )
     SideEffect { NeriMotionStyle.clean = uiStyle == UiStyle.Clean }
     return AppStylePreferences(
         uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled

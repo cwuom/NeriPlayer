@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.datastore.preferences.core.edit
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.first
@@ -16,10 +17,14 @@ import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.dataStore
+import moe.ouom.neriplayer.data.settings.preferencesKey
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.rememberAppStylePreferences
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -32,6 +37,21 @@ import org.robolectric.shadows.ShadowBuild
 class SettingsPredictiveBackPreferenceTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun `fresh pixel defaults off without persisting a choice and can opt in`() {
+        assertUserControlsPreview(manufacturer = "Google", brand = "google", saveInitialChoice = false)
+    }
+
+    @Test
+    fun `fresh oneplus defaults off and can opt in`() {
+        assertUserControlsPreview(manufacturer = "OnePlus", brand = "OnePlus", saveInitialChoice = false)
+    }
+
+    @Test
+    fun `fresh oppo defaults off and can opt in`() {
+        assertUserControlsPreview(manufacturer = "OPPO", brand = "OPPO", saveInitialChoice = false)
+    }
 
     @Test
     fun `pixel can enable preview and the app honors the saved choice`() {
@@ -54,19 +74,46 @@ class SettingsPredictiveBackPreferenceTest {
         assertUserControlsPreview(manufacturer = "Google", brand = "google")
     }
 
-    private fun assertUserControlsPreview(manufacturer: String, brand: String) {
+    private fun assertUserControlsPreview(
+        manufacturer: String,
+        brand: String,
+        saveInitialChoice: Boolean = true
+    ) {
         ShadowBuild.setManufacturer(manufacturer)
         ShadowBuild.setBrand(brand)
         val application = ApplicationProvider.getApplicationContext<Application>()
         val repository = SettingsRepository(application)
         val autoRepository = AutoSettingsRepository(application)
         runBlocking {
-            repository.setSetting(AutoSettingsSchema.motion.predictiveBackPreviewEnabled, false)
+            if (saveInitialChoice) {
+                repository.setSetting(AutoSettingsSchema.motion.predictiveBackPreviewEnabled, false)
+            } else {
+                application.dataStore.edit {
+                    it.remove(AutoSettingsSchema.motion.predictiveBackPreviewEnabled.preferencesKey)
+                }
+            }
+            assertFalse(repository.predictiveBackPreviewEnabledFlow.first())
+            assertFalse(autoRepository.predictiveBackPreviewEnabledFlow.first())
+            if (!saveInitialChoice) {
+                assertNull(
+                    application.dataStore.data.first()[
+                        AutoSettingsSchema.motion.predictiveBackPreviewEnabled.preferencesKey
+                    ]
+                )
+            }
         }
         var runtimePreviewEnabled: Boolean? = null
+        var initialRuntimePreviewEnabled: Boolean? = null
         composeRule.setContent {
             val preferences = rememberAppStylePreferences(repository, UiStyle.Material)
-            SideEffect { runtimePreviewEnabled = preferences.predictiveBackPreviewEnabled }
+            val inheritedPreviewEnabled = LocalPredictiveBackPreviewEnabled.current
+            SideEffect {
+                runtimePreviewEnabled = preferences.predictiveBackPreviewEnabled
+                if (initialRuntimePreviewEnabled == null) {
+                    initialRuntimePreviewEnabled = preferences.predictiveBackPreviewEnabled
+                }
+                assertFalse(inheritedPreviewEnabled)
+            }
             NeriTheme(
                 followSystemDark = false,
                 forceDark = false,
@@ -109,6 +156,7 @@ class SettingsPredictiveBackPreferenceTest {
             }
         }
         composeRule.waitUntil { runtimePreviewEnabled == false }
+        assertFalse(requireNotNull(initialRuntimePreviewEnabled))
         val preview = composeRule.onNodeWithText(
             application.getString(CoreCommonR.string.settings_predictive_back_preview)
         )

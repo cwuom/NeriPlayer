@@ -842,7 +842,7 @@ object AutoSettingsSchema {
         @AutoSetting(order = 17)
         val predictiveBackPreviewEnabled = autoSwitchSetting(
             key = "predictive_back_preview_enabled",
-            defaultValue = true,
+            defaultValue = false,
             titleRes = CoreCommonR.string.settings_predictive_back_preview,
             descriptionRes = CoreCommonR.string.settings_predictive_back_preview_desc,
             icon = AutoSettingIcon.ZoomInMap

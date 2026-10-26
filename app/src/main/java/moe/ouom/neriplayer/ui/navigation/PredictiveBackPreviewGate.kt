@@ -13,9 +13,12 @@ import androidx.navigationevent.NavigationEventHandler
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.NavigationEventInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 
 /** 用户开关控制返回手势是否预览页面 */
-val LocalPredictiveBackPreviewEnabled = staticCompositionLocalOf { true }
+val LocalPredictiveBackPreviewEnabled = staticCompositionLocalOf {
+    AutoSettingsSchema.motion.predictiveBackPreviewEnabled.defaultValue
+}
 
 /**
  * Sits between the activity dispatcher and a subtree. With preview on, gestures pass through

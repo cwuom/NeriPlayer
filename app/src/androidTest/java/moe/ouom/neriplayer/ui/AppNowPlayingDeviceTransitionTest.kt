@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.playback.visual.AppNowPlayingOverlay
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayBackground
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayCover
@@ -228,7 +229,8 @@ class AppNowPlayingDeviceTransitionTest {
             }
             CompositionLocalProvider(
                 LocalConfiguration provides configuration,
-                LocalSharedCoverFlight provides flight
+                LocalSharedCoverFlight provides flight,
+                LocalPredictiveBackPreviewEnabled provides true
             ) {
                 Box(Modifier.fillMaxSize().onGloballyPositioned { viewportLayout = describeLayout(it) }) {
                 AppNowPlayingOverlay(
