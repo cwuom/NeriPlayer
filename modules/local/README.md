@@ -26,6 +26,10 @@ Room 数据由 `:database` 保存，平台账号和缓存由 `:platform` 管理�
 
 Configuration import checks account storage before restoring any section. Restoring credentials into software compatibility storage requires explicit UI confirmation; direct `ConfigFileManager.importConfig` calls reject it by default. Cancellation or unavailable persistent account storage leaves all configuration sections unchanged. Confirmation retains the same parsed backup without reading the source file again.
 
+未保存过选择时，预抢占音频焦点默认开启；用户手动关闭后，设置读取和启动快照会保留该选择。混合播放模式仍按现有策略处理音频焦点。
+
+Preempt audio focus defaults to enabled when no choice has been saved. Settings reads and startup snapshots preserve an explicit opt-out. Mixed playback continues to use the existing audio focus policy.
+
 缓存清理保留已下载的音频、歌词和封面。`ExtraCacheClearResult` 区分文件释放空间与 Room 可复用空间；删除记录不会立即缩小数据库文件。已有目录、索引文件名及同步 Worker 类名需保持升级兼容。
 
 本地编辑保留首次修改前的歌词和封面，恢复时优先使用持久化原始值，重扫不会用当前侧载内容覆盖原始值。未知内容与明确为空分开处理；缺失且为空的翻译、罗马字歌词不会创建额外文件，已有歌词文件按类型复用。

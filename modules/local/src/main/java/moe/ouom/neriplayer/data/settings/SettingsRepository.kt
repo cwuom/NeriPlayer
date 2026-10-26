@@ -687,7 +687,7 @@ class SettingsRepository(private val context: Context) {
         dataStoreSettingFlow { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false }
 
     val preemptAudioFocusFlow: Flow<Boolean> =
-        dataStoreSettingFlow { it[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: false }
+        dataStoreSettingFlow { it[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: true }
 
     // 中文系统默认关闭国际化
     private val defaultInternationalization: Boolean

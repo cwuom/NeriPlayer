@@ -487,7 +487,7 @@ abstract class PlaybackSettingsSection protected constructor() {
     @AutoSetting(
         key = "preempt_audio_focus",
         type = SettingValueType.Boolean,
-        defaultBoolean = false,
+        defaultBoolean = true,
         order = 180,
         ui = SettingUiType.Custom,
         access = SettingAccessMode.KeyOnly
