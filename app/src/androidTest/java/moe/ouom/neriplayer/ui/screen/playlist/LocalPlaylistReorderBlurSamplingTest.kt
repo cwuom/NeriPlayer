@@ -58,6 +58,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.platform.graphics.HardwareRendererCompat
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -93,7 +94,6 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
-import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
