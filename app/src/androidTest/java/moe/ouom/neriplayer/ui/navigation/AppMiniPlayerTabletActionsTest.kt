@@ -35,6 +35,9 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso
+import androidx.test.espresso.action.ViewActions.pressBack
+import androidx.test.espresso.matcher.RootMatchers.isDialog as isDialogRoot
+import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -209,7 +212,7 @@ class AppMiniPlayerTabletActionsTest {
     }
 
     private fun dismissPanelWithBack() {
-        Espresso.pressBack()
+        Espresso.onView(isRoot()).inRoot(isDialogRoot()).perform(pressBack())
         waitForNoPanel()
         composeRule.onNodeWithTag(PlayerTag).assertIsDisplayed()
     }
