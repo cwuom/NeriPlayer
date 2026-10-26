@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.page
 
-import android.content.Context
+import android.content.res.Resources
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSections
@@ -549,7 +549,7 @@ class SettingsPageTest {
 
     @Test
     fun backupImportExportActionsAreSearchable() {
-        val entries = manualSettingsSearchEntries(settingsStringContext())
+        val entries = manualSettingsSearchEntries(settingsStringResources())
 
         assertEquals(
             listOf("manual:playlist_export"),
@@ -571,7 +571,7 @@ class SettingsPageTest {
 
     @Test
     fun dynamicIslandLyricsSettingIsSearchable() {
-        val entries = buildSettingsSearchEntries(settingsStringContext())
+        val entries = buildSettingsSearchEntries(settingsStringResources())
 
         assertTrue(
             searchSettingsEntries(entries, "dynamic island").any {
@@ -582,7 +582,7 @@ class SettingsPageTest {
 
     @Test
     fun internationalHomeCardTitlesAreSearchable() {
-        val entries = buildSettingsSearchEntries(settingsStringContext())
+        val entries = buildSettingsSearchEntries(settingsStringResources())
         val expectedTargets = listOf(
             "guess you like" to "setting:home_card_trending",
             "猜你喜欢" to "setting:home_card_trending",
@@ -793,8 +793,8 @@ class SettingsPageTest {
         assertEquals(listOf("page:About"), results.map { it.id })
     }
 
-    private fun settingsStringContext(): Context {
-        return Mockito.mock(Context::class.java, Answer { invocation ->
+    private fun settingsStringResources(): Resources {
+        return Mockito.mock(Resources::class.java, Answer { invocation ->
             val resourceId = invocation.arguments.firstOrNull() as? Int
             if (invocation.method.name == "getString" && resourceId != null) {
                 TestSettingsStrings[resourceId] ?: "res:$resourceId"

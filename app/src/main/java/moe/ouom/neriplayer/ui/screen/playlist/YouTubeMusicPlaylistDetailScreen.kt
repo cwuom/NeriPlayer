@@ -425,10 +425,11 @@ fun YouTubeMusicPlaylistDetailScreen(
         favoriteRepo.isFavorite(playlistFavoriteId, "youtubeMusic")
     }
     val resolvedTrackCount = resolvedPlaylist.trackCount.takeIf { it > 0 } ?: visibleTracks.size
+    val searchContext = rememberPlaylistSearchContext()
     val displayedTracks = rememberPlaylistSearchResults(
         query = searchQuery,
         items = visibleTracks,
-        tokens = { song -> song.playlistSearchValues(context) }
+        tokens = { song -> song.playlistSearchValues(searchContext) }
     )
     val currentIndex = displayedTracks.indexOfFirst { it.sameIdentityAs(currentSong) }
     val heroSubtitle = listOfNotNull(

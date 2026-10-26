@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.page
 
-import android.content.Context
+import android.content.res.Resources
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -27,10 +27,10 @@ internal data class SettingsSearchScrollAnchor(
     val scrollOffset: Dp = 0.dp
 )
 
-internal fun buildSettingsSearchEntries(context: Context): List<SettingsSearchEntry> {
+internal fun buildSettingsSearchEntries(resources: Resources): List<SettingsSearchEntry> {
     val pageEntries = SettingsPage.entries.map { page ->
-        val title = context.safeString(page.titleRes)
-        val description = context.safeString(page.descriptionRes)
+        val title = resources.safeString(page.titleRes)
+        val description = resources.safeString(page.descriptionRes)
         SettingsSearchEntry(
             id = "page:${page.name}",
             page = page,
@@ -50,9 +50,9 @@ internal fun buildSettingsSearchEntries(context: Context): List<SettingsSearchEn
         }
         .mapNotNull { setting ->
             val page = setting.settingsPage() ?: return@mapNotNull null
-            val title = context.safeString(setting.titleRes)
-            val description = context.safeString(setting.descriptionRes)
-            val pageTitle = context.safeString(page.titleRes)
+            val title = resources.safeString(setting.titleRes)
+            val description = resources.safeString(setting.descriptionRes)
+            val pageTitle = resources.safeString(page.titleRes)
             SettingsSearchEntry(
                 id = "setting:${setting.keyName}",
                 page = page,
@@ -66,7 +66,7 @@ internal fun buildSettingsSearchEntries(context: Context): List<SettingsSearchEn
             )
         }
 
-    return pageEntries + settingEntries + manualSettingsSearchEntries(context)
+    return pageEntries + settingEntries + manualSettingsSearchEntries(resources)
 }
 
 internal fun searchSettingsEntries(
@@ -415,7 +415,7 @@ private fun SettingsPage.searchAliases(): List<String> {
     return PageSearchAliases[this].orEmpty()
 }
 
-internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchEntry> {
+internal fun manualSettingsSearchEntries(resources: Resources): List<SettingsSearchEntry> {
     fun entry(
         page: SettingsPage,
         titleRes: Int,
@@ -425,8 +425,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         targetId: String = "manual:$id",
         order: Int = page.ordinal * 100 + 80
     ): SettingsSearchEntry {
-        val title = context.safeString(titleRes)
-        val description = context.safeString(descriptionRes)
+        val title = resources.safeString(titleRes)
+        val description = resources.safeString(descriptionRes)
         return SettingsSearchEntry(
             id = "manual:$id",
             page = page,
@@ -846,7 +846,7 @@ private fun audioEffectsSearchEntries(entry: ManualSearchEntryFactory): List<Set
     )
 }
 
-private fun Context.safeString(resId: Int): String {
+private fun Resources.safeString(resId: Int): String {
     if (resId == 0) return ""
     return runCatching { getString(resId) }.getOrDefault("")
 }

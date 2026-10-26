@@ -722,10 +722,11 @@ fun DetailScreen(
                         },
                         dockedProgress = searchDockedVisualProgress
                     )
+                    val searchContext = rememberPlaylistSearchContext()
                     val displayedTracks = rememberPlaylistSearchResults(
                         query = searchQuery,
                         items = ui.tracks,
-                        tokens = { song -> song.playlistSearchValues(context) }
+                        tokens = { song -> song.playlistSearchValues(searchContext) }
                     )
                     val trackCount = ui.header?.trackCount ?: ui.tracks.size
                     val heroTitle = ui.header?.name ?: stringResource(CoreCommonR.string.playlist_title)

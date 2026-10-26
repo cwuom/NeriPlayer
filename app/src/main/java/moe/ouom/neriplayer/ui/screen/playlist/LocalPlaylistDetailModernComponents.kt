@@ -73,6 +73,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import android.content.Context
+import android.content.res.Configuration
+import android.os.LocaleList
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -356,6 +360,36 @@ internal fun shouldBuildPlaylistSearchIndex(
 ): Boolean = searchVisible || query.isNotBlank()
 
 @Composable
+private fun playlistSearchLocaleTags(): String {
+    val configuration = Configuration(LocalConfiguration.current)
+    configuration.setLocales(LocalResources.current.configuration.locales)
+    return configuration.locales.toLanguageTags()
+}
+
+@Composable
+internal fun rememberPlaylistSearchContext(): Context {
+    val context = LocalContext.current
+    val localeTags = playlistSearchLocaleTags()
+    return remember(context, localeTags) {
+        val configuration = Configuration().apply {
+            setLocales(LocaleList.forLanguageTags(localeTags))
+        }
+        context.createConfigurationContext(configuration)
+    }
+}
+
+private class PlaylistSearchIndexState<T>(
+    val owner: Any,
+    val index: SearchTextMatcher.Index<T>
+)
+
+private class PlaylistSearchResultState<T>(
+    val index: PlaylistSearchIndexState<T>,
+    val query: String,
+    val items: List<T>
+)
+
+@Composable
 internal fun <T> rememberPlaylistSearchResults(
     query: String,
     items: List<T>,
@@ -364,18 +398,25 @@ internal fun <T> rememberPlaylistSearchResults(
 ): List<T> {
     if (!buildIndex) return items
 
-    val indexState = produceState<SearchTextMatcher.Index<T>?>(initialValue = null, key1 = items) {
-        value = withContext(Dispatchers.Default) { SearchTextMatcher.index(items, tokens) }
+    val localeTags = playlistSearchLocaleTags()
+    val indexOwner = remember(items, localeTags) { Any() }
+    val preparedIndex by produceState<PlaylistSearchIndexState<T>?>(null, indexOwner) {
+        value = withContext(Dispatchers.Default) {
+            PlaylistSearchIndexState(indexOwner, SearchTextMatcher.index(items, tokens))
+        }
     }
-    val displayedItems by produceState(
-        initialValue = items,
-        key1 = items,
-        key2 = indexState.value,
-        key3 = query
+    val activeIndex = preparedIndex?.takeIf { it.owner === indexOwner }
+    val displayedItems by produceState<PlaylistSearchResultState<T>?>(
+        initialValue = null,
+        key1 = activeIndex,
+        key2 = query
     ) {
-        value = rankPlaylistSearchResults(items, indexState.value, query)
+        value = activeIndex?.let { index ->
+            PlaylistSearchResultState(index, query, rankPlaylistSearchResults(items, index.index, query))
+        }
     }
-    return displayedItems
+    if (query.isBlank()) return items
+    return displayedItems?.takeIf { it.index === activeIndex && it.query == query }?.items.orEmpty()
 }
 
 private suspend fun <T> rankPlaylistSearchResults(

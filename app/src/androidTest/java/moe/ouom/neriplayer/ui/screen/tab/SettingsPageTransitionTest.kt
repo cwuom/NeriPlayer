@@ -38,7 +38,6 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
@@ -269,7 +268,6 @@ class SettingsPageTransitionTest {
             Fixture(420f, 700f, smallestWidth = 360) {
                 val homeListState = rememberLazyListState()
                 val owner = rememberSettingsNavigationState(
-                    context = LocalContext.current,
                     listState = homeListState,
                     dynamicColor = false,
                     mobileDataFollowDefaultAudioQuality = true,

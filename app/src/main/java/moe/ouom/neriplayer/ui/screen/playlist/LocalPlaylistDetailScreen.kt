@@ -1189,10 +1189,11 @@ fun LocalPlaylistDetailScreen(
                 if (!isListArtworkIdle) return@LaunchedEffect
                 CoverArtColorCache.preload(context, headerCover, offlineMode)
             }
+            val searchContext = rememberPlaylistSearchContext()
             val displayedSongs = rememberPlaylistSearchResults(
                 query = searchQuery,
                 items = tabSongs,
-                tokens = { song -> song.playlistSearchValues(context) },
+                tokens = { song -> song.playlistSearchValues(searchContext) },
                 buildIndex = shouldBuildPlaylistSearchIndex(
                     searchVisible = showSearch,
                     query = searchQuery

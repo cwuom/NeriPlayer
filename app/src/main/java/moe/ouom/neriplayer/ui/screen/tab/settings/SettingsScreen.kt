@@ -275,7 +275,6 @@ internal fun SettingsScreen(
     val effectiveDefaultStartDestination = homeStartPresentation.destination
     val defaultStartDestinationLabel = homeStartPresentation.destinationLabel
     val navigation = rememberSettingsNavigationState(
-        context = context,
         listState = listState,
         dynamicColor = appearanceState.theme.dynamicColorEnabled,
         mobileDataFollowDefaultAudioQuality = playbackState.defaultAudioQuality.mobileDataFollowDefaultAudioQuality,

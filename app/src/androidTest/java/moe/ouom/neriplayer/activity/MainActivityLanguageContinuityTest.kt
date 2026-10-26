@@ -7,21 +7,34 @@ import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.text.AnnotatedString
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.espresso.Espresso
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -37,6 +50,8 @@ import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsPageTransitionSceneTag
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.buildSettingsSearchEntries
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.searchSettingsEntries
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsPageRowTestTag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -152,6 +167,104 @@ class MainActivityLanguageContinuityTest {
             waitForTag(detailScene)
             assertSameActivity(scenario, originalActivity)
         }
+
+    @Test
+    fun settingsSearchLanguageRoundTripsKeepQueryAndLocalizeTitlesAndCategories() =
+        withPreparedActivity(onboarding = false) { scenario, originalActivity ->
+            val homeScene = settingsPageTransitionSceneTag(null)
+            val languagePage = settingsPageRowTestTag(SettingsPage.Language)
+            val detailScene = settingsPageTransitionSceneTag(SettingsPage.Language)
+            waitForTag(homeScene)
+            val search = composeRule.onNode(
+                hasSetTextAction() and hasAnyAncestor(hasTestTag(homeScene))
+            )
+            // 通过真实输入框更新草稿，避免键盘返回事件干扰设置页返回路径
+            search.performSemanticsAction(SemanticsActions.SetText) {
+                assertTrue(it(AnnotatedString(BluetoothSearchQuery)))
+            }
+            assertBluetoothSearchResults(Language.CHINESE)
+
+            LanguageRoundTrips.forEach { language ->
+                settingsHomeList().performScrollToNode(hasTestTag(languagePage))
+                composeRule.onNodeWithTag(languagePage).performScrollTo().assertIsEnabled()
+                    .performSemanticsAction(SemanticsActions.OnClick) { assertTrue(it()) }
+                waitForTag(detailScene)
+                val previous = LanguageManager.getCurrentLanguage(context)
+                clickText(CoreCommonR.string.language_setting_title, previous)
+                waitForText(label(CoreCommonR.string.language_select_title, previous))
+                val option = if (language == Language.CHINESE) {
+                    CoreCommonR.string.language_display_chinese
+                } else {
+                    CoreCommonR.string.language_display_english
+                }
+                composeRule.onNodeWithText(label(option, previous)).performClick()
+                awaitUi { composeRule.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
+                waitForText(label(CoreCommonR.string.language_setting_title, language))
+                assertSameActivity(scenario, originalActivity)
+
+                Espresso.pressBack()
+                waitForTag(homeScene)
+                assertBluetoothSearchResults(language)
+                assertSameActivity(scenario, originalActivity)
+                capture("settings-search-${language.code}")
+            }
+        }
+
+    private fun settingsHomeList() = composeRule.onNode(
+        hasScrollToIndexAction() and hasAnyAncestor(hasTestTag(settingsPageTransitionSceneTag(null)))
+    )
+
+    private fun assertBluetoothSearchResults(language: Language) {
+        val homeScene = settingsPageTransitionSceneTag(null)
+        settingsHomeList().performScrollToIndex(0)
+        composeRule.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag(homeScene)))
+            .assertIsDisplayed().assertTextEquals(BluetoothSearchQuery)
+        val resources = localizedContext(language).resources
+        // 中文别名的排名不保证蓝牙开关进入前八，按当前语言独立重建期望索引来检查全部实际结果
+        val results = searchSettingsEntries(
+            entries = buildSettingsSearchEntries(resources),
+            query = BluetoothSearchQuery,
+            limit = 8
+        )
+        assertTrue("blueto 应产生真实设置搜索结果", results.isNotEmpty())
+        try {
+            results.forEach { entry ->
+                val title = entry.title
+                val category = resources.getString(entry.page.titleRes)
+                val result = hasClickAction() and SemanticsMatcher.expectValue(
+                    SemanticsProperties.Text,
+                    listOf(AnnotatedString(title), AnnotatedString(category))
+                ) and hasAnyAncestor(hasTestTag(homeScene))
+                settingsHomeList().performScrollToNode(result)
+                composeRule.onNode(result).performScrollTo().assertIsDisplayed()
+                    .assertTextEquals(title, category)
+            }
+        } catch (failure: AssertionError) {
+            runCatching { settingsHomeList().performScrollToIndex(1) }
+            val actualRows = runCatching {
+                composeRule.onAllNodes(hasClickAction() and hasAnyAncestor(hasTestTag(homeScene)))
+                    .fetchSemanticsNodes().map { node ->
+                        node.config.getOrNull(SemanticsProperties.Text)?.map { it.text }
+                    }
+            }.getOrNull()
+            val expectedRows = results.map { entry ->
+                "${entry.id}: ${entry.title} / ${resources.getString(entry.page.titleRes)}"
+            }
+            throw AssertionError(
+                "设置搜索结果不一致，language=${language.code}, query=$BluetoothSearchQuery, " +
+                    "expectedTop8=$expectedRows, actualClickableRows=$actualRows",
+                failure
+            )
+        }
+        settingsHomeList().performScrollToIndex(0)
+        awaitUi {
+            val headings = composeRule.onAllNodes(
+                hasText(label(CoreCommonR.string.settings_title, language)) and
+                    hasAnyAncestor(hasTestTag(homeScene))
+            )
+            headings.fetchSemanticsNodes().indices.any { headings[it].isDisplayed() }
+        }
+    }
 
     private fun capture(stage: String) {
         val prefix = InstrumentationRegistry.getArguments().getString("capturePrefix")
@@ -303,6 +416,7 @@ class MainActivityLanguageContinuityTest {
     }
 
     private companion object {
+        const val BluetoothSearchQuery = "blueto"
         val LanguageRoundTrips = listOf(Language.ENGLISH, Language.CHINESE, Language.ENGLISH, Language.CHINESE)
     }
 }

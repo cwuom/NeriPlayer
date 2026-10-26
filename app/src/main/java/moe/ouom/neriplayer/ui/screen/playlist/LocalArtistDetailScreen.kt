@@ -230,10 +230,11 @@ fun LocalArtistDetailScreen(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
+    val searchContext = rememberPlaylistSearchContext()
     val displayedSongs = rememberPlaylistSearchResults(
         query = searchQuery,
         items = baseSongs,
-        tokens = { song -> song.localArtistSongSearchTokens(context) },
+        tokens = { song -> song.localArtistSongSearchTokens(searchContext) },
         buildIndex = shouldBuildPlaylistSearchIndex(
             searchVisible = showSearch,
             query = searchQuery

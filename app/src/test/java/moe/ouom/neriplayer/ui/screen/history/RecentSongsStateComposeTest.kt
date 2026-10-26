@@ -5,14 +5,22 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.Looper
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
@@ -145,10 +153,16 @@ class RecentSongsStateComposeTest {
         )
         val displayed = AtomicReference<RecentSongsSnapshot>()
         composeRule.setContent {
-            val snapshot = rememberRecentSongs(history)
-            val results = rememberRecentSearchResults(snapshot, query, displayContext, searchVisible = true)
-            SideEffect { displayed.set(results) }
-            Text(results.songs.size.toString())
+            CompositionLocalProvider(
+                LocalContext provides displayContext,
+                LocalConfiguration provides displayContext.resources.configuration,
+                LocalResources provides displayContext.resources
+            ) {
+                val snapshot = rememberRecentSongs(history)
+                val results = rememberRecentSearchResults(snapshot, query, displayContext, searchVisible = true)
+                SideEffect { displayed.set(results) }
+                Text(results.songs.size.toString())
+            }
         }
 
         waitForSongs(displayed, listOf(1L))
@@ -174,14 +188,20 @@ class RecentSongsStateComposeTest {
         val displayed = AtomicReference<RecentSongsSnapshot>()
         val englishResults = ConcurrentLinkedQueue<List<Long>>()
         composeRule.setContent {
-            val snapshot = rememberRecentSongs(history)
-            val results = rememberRecentSearchResults(snapshot, "本地文件", displayContext, searchVisible = true)
-            val isEnglish = displayContext === english
-            SideEffect {
-                displayed.set(results)
-                if (isEnglish) englishResults.add(results.songs.map { it.id })
+            CompositionLocalProvider(
+                LocalContext provides displayContext,
+                LocalConfiguration provides displayContext.resources.configuration,
+                LocalResources provides displayContext.resources
+            ) {
+                val snapshot = rememberRecentSongs(history)
+                val results = rememberRecentSearchResults(snapshot, "本地文件", displayContext, searchVisible = true)
+                val isEnglish = displayContext === english
+                SideEffect {
+                    displayed.set(results)
+                    if (isEnglish) englishResults.add(results.songs.map { it.id })
+                }
+                Text(results.songs.size.toString())
             }
-            Text(results.songs.size.toString())
         }
 
         waitForSongs(displayed, listOf(1L))
@@ -190,6 +210,94 @@ class RecentSongsStateComposeTest {
 
         assertEquals(false, englishResults.isEmpty())
         englishResults.forEach { ids -> assertEquals(emptyList<Long>(), ids) }
+    }
+
+    @Test
+    fun `same context locale changes rebuild the album index without publishing previous language matches`() {
+        val englishResources = context.createConfigurationContext(
+            Configuration(context.resources.configuration).apply { setLocale(Locale.ENGLISH) }
+        ).resources
+        val chineseResources = context.createConfigurationContext(
+            Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) }
+        ).resources
+        var resources by mutableStateOf(englishResources)
+        var query by mutableStateOf("local files")
+        val history = listOf(entry(1L, "Track").copy(album = "__local_files__"))
+        val displayed = AtomicReference<RecentSongsSnapshot>()
+        val observations = ConcurrentLinkedQueue<Triple<String, String, List<Long>>>()
+        composeRule.setContent {
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalConfiguration provides Configuration(resources.configuration),
+                LocalResources provides resources
+            ) {
+                val language = LocalConfiguration.current.locales[0].language
+                val snapshot = rememberRecentSongs(history)
+                val results = rememberRecentSearchResults(snapshot, query, context, searchVisible = true)
+                val currentQuery = query
+                SideEffect {
+                    displayed.set(results)
+                    observations.add(Triple(language, currentQuery, results.songs.map { it.id }))
+                }
+                Text(stringResource(CoreCommonR.string.local_files))
+                Text(results.songs.size.toString())
+            }
+        }
+        waitForSongs(displayed, listOf(1L))
+        composeRule.onNodeWithText("Local Files").assertIsDisplayed()
+
+        composeRule.runOnIdle { resources = chineseResources }
+        composeRule.onNodeWithText("本地文件").assertIsDisplayed()
+        waitForSongs(displayed, emptyList())
+        assertTrue(observations.any { it.first == "zh" && it.second == "local files" })
+        observations.filter { it.first == "zh" && it.second == "local files" }.forEach {
+            assertEquals("新配置不能暴露上一种语言的搜索匹配", emptyList<Long>(), it.third)
+        }
+        composeRule.runOnIdle { query = "本地文件" }
+        waitForSongs(displayed, listOf(1L))
+
+        composeRule.runOnIdle { resources = englishResources }
+        composeRule.onNodeWithText("Local Files").assertIsDisplayed()
+        waitForSongs(displayed, emptyList())
+        observations.filter { it.first == "en" && it.second == "本地文件" }.forEach {
+            assertEquals("切回英文后也不能发布中文索引的匹配", emptyList<Long>(), it.third)
+        }
+        composeRule.runOnIdle { query = "local files" }
+        waitForSongs(displayed, listOf(1L))
+    }
+
+    @Test
+    fun `album search tokens follow compose resources when the host context keeps another locale`() {
+        val englishContext = context.createConfigurationContext(
+            Configuration(context.resources.configuration).apply { setLocale(Locale.ENGLISH) }
+        )
+        val chineseContext = context.createConfigurationContext(
+            Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) }
+        )
+        var resources by mutableStateOf(englishContext.resources)
+        var query by mutableStateOf("local files")
+        val history = listOf(entry(1L, "Track").copy(album = "__local_files__"))
+        val displayed = AtomicReference<RecentSongsSnapshot>()
+        composeRule.setContent {
+            CompositionLocalProvider(
+                LocalContext provides englishContext,
+                LocalResources provides resources
+            ) {
+                val snapshot = rememberRecentSongs(history)
+                val results = rememberRecentSearchResults(snapshot, query, englishContext, searchVisible = true)
+                SideEffect { displayed.set(results) }
+                Text(results.songs.size.toString())
+            }
+        }
+        waitForSongs(displayed, listOf(1L))
+
+        composeRule.runOnIdle {
+            resources = chineseContext.resources
+            query = "本地文件"
+        }
+        waitForSongs(displayed, listOf(1L))
+        composeRule.runOnIdle { query = "local files" }
+        waitForSongs(displayed, emptyList())
     }
 
     @Test
