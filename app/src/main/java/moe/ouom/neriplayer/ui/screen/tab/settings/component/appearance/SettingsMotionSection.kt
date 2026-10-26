@@ -76,7 +76,6 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
-import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPlatformSupported
 import moe.ouom.neriplayer.ui.effect.glass.ADVANCED_GLASS_MIN_SDK
 import moe.ouom.neriplayer.ui.effect.glass.shouldShowAdvancedBlurSettings
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -234,26 +233,10 @@ internal fun SettingsMotionSection(
                     repository = autoSettingsRepository,
                     scope = scope,
                     sectionScope = AutoSettingsScopes.motion,
-                    excludedKeys = if (LocalPredictiveBackPlatformSupported.current) emptySet()
-                        else setOf(AutoSettingsKeys.PREDICTIVE_BACK_PREVIEW_ENABLED.name),
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
                 )
-                if (!LocalPredictiveBackPlatformSupported.current) {
-                    MotionSwitchItem(
-                        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.PREDICTIVE_BACK_PREVIEW_ENABLED),
-                        disabledSuffix = stringResource(CoreCommonR.string.settings_predictive_back_coloros_only),
-                        checked = false,
-                        enabled = false,
-                        alpha = 0.5f,
-                        onToggle = {},
-                        onCheckedChange = {},
-                        highlightTargetId = highlightTargetId,
-                        highlightPulse = highlightPulse,
-                        onHighlightFinished = onHighlightFinished
-                    )
-                }
             }
             if (cardIndex == null) MotionDetailGap(showHeader)
 

@@ -41,6 +41,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsBoundsTransform
 import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsEnterTransition
 import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsExitTransition
@@ -88,7 +89,10 @@ class HostPredictiveCoverGeometryTest {
         selected = initialLyrics
         composeRule.setContent {
             NowPlayingLyricsSharedMotion(previewAnimationActive) {
-                CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                CompositionLocalProvider(
+                    LocalPredictiveBackPreviewEnabled provides true,
+                    LocalDensity provides Density(1f)
+                ) {
                     val observer = previewObserver
                     transition = rememberHostPredictiveBackTransition(
                         targetState = selected,

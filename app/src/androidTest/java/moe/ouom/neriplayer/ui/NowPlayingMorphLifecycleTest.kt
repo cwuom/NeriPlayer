@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui
 
 import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.ImageBitmap
@@ -11,6 +12,7 @@ import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.component.common.PredictiveDismissHandler
 import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingMorphState
 import moe.ouom.neriplayer.ui.playback.visual.rememberNowPlayingMorphState
 import org.junit.Assert.assertEquals
@@ -39,15 +41,17 @@ class NowPlayingMorphLifecycleTest {
         assumeComposeHostAvailable()
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
-            val dismiss = rememberPredictiveDismissState()
-            val currentArtwork = artwork.value
-            morph = rememberNowPlayingMorphState(
-                visible.value, flight, artwork = { currentArtwork }
-            ) { dismiss.progress }
-            if (morph.mounted) {
-                PredictiveDismissHandler(dismiss, onDismiss = { visible.value = false })
+            CompositionLocalProvider(LocalPredictiveBackPreviewEnabled provides true) {
+                val dismiss = rememberPredictiveDismissState()
+                val currentArtwork = artwork.value
+                morph = rememberNowPlayingMorphState(
+                    visible.value, flight, artwork = { currentArtwork }
+                ) { dismiss.progress }
+                if (morph.mounted) {
+                    PredictiveDismissHandler(dismiss, onDismiss = { visible.value = false })
+                }
+                SideEffect { hostCompositionCount++ }
             }
-            SideEffect { hostCompositionCount++ }
         }
     }
 

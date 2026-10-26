@@ -6,11 +6,13 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Transition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -34,22 +36,24 @@ class HostPredictiveBackTransitionTest {
 
     private fun setHost(seekEnabled: Boolean = true) {
         composeRule.setContent {
-            transition = rememberHostPredictiveBackTransition(
-                targetState = selected,
-                backEnabled = selected != null && backAllowed,
-                backTargetState = null,
-                onBack = { seeked ->
-                    seekedBacks += seeked
-                    selected = null
-                },
-                label = "test_host",
-                seekEnabled = seekEnabled
-            )
-            val visibility by transition.animateFloat(
-                transitionSpec = { tween(DURATION_MS, easing = LinearEasing) },
-                label = "detail_visibility"
-            ) { state -> if (state == null) 0f else 1f }
-            detailVisibility = visibility
+            CompositionLocalProvider(LocalPredictiveBackPreviewEnabled provides true) {
+                transition = rememberHostPredictiveBackTransition(
+                    targetState = selected,
+                    backEnabled = selected != null && backAllowed,
+                    backTargetState = null,
+                    onBack = { seeked ->
+                        seekedBacks += seeked
+                        selected = null
+                    },
+                    label = "test_host",
+                    seekEnabled = seekEnabled
+                )
+                val visibility by transition.animateFloat(
+                    transitionSpec = { tween(DURATION_MS, easing = LinearEasing) },
+                    label = "detail_visibility"
+                ) { state -> if (state == null) 0f else 1f }
+                detailVisibility = visibility
+            }
         }
         composeRule.waitForIdle()
     }
