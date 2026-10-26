@@ -6,7 +6,6 @@ import android.os.Build
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.core.player.service.car.CarMediaBrowserService
 import org.junit.Assert.assertEquals
-import org.junit.Assume.assumeTrue
 import org.junit.rules.TestRule
 import org.junit.runner.Description
 import org.junit.runners.model.Statement
@@ -15,9 +14,11 @@ internal class MediaBrowserIsolationRule : TestRule {
     override fun apply(base: Statement, description: Description): Statement = object : Statement() {
         override fun evaluate() {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
-            assumeTrue("仅在手机模拟器隔离媒体浏览入口", Build.VERSION.SDK_INT >= 30 &&
-                Build.HARDWARE in setOf("ranchu", "goldfish") &&
-                context.resources.configuration.smallestScreenWidthDp < 600)
+            if (Build.VERSION.SDK_INT < 30 || Build.HARDWARE !in setOf("ranchu", "goldfish") ||
+                context.resources.configuration.smallestScreenWidthDp >= 600) {
+                base.evaluate()
+                return
+            }
             val manager = context.packageManager
             val component = ComponentName(context, CarMediaBrowserService::class.java)
             val originalState = manager.getComponentEnabledSetting(component)

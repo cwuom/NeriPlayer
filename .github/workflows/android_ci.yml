@@ -312,10 +312,13 @@ jobs:
           # 保留 Launcher 组件，用设置页承接测试前的前台焦点
           # 首次沉浸模式提示会抢走原生输入，测试 AVD 预先标记已确认
           # 隐藏错误弹窗不会关闭已有 ANR，停止启动器和 SDK Setup 以清理无关窗口
+          # 系统通知横幅可能覆盖原生触摸坐标，测试 AVD 关闭横幅
           # 完整宿主使用固定离线夹具，避免虚拟 Wi-Fi 失联反复移动迷你播放器
           script: >-
             { ps -eLo pid,tid,comm > build/reports/emulator-host/before-tests-threads.txt || true; } &&
             adb shell settings put global hide_error_dialogs 1 &&
+            adb shell settings put global heads_up_notifications_enabled 0 &&
+            adb shell 'test "$(settings get global heads_up_notifications_enabled)" = 0' &&
             adb shell settings --user 0 put secure anr_show_background 0 &&
             adb shell settings --user 0 put secure immersive_mode_confirmations confirmed &&
             adb shell am start -W -a android.settings.SETTINGS &&
