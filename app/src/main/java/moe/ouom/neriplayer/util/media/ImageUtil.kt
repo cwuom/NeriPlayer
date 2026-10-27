@@ -35,6 +35,8 @@ import java.util.LinkedHashMap
 
 private const val DEFAULT_LOCAL_IMAGE_REQUEST_SIZE_PX = 512
 private const val DEFAULT_IMAGE_CROSSFADE_DURATION_MILLIS = 180
+// mini player artwork also supplies the expanded player's first frame
+internal const val PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX = 512
 
 /**
  * 创建支持离线缓存的图片请求

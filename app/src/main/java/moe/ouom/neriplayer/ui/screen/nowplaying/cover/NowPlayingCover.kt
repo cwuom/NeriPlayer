@@ -80,6 +80,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsBoundsTrans
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedTransitionElement
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmap
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
+import moe.ouom.neriplayer.util.media.PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX
 import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.animation.sharedCoverTarget
@@ -93,7 +94,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 private const val NowPlayingCoverImageCrossfadeMs = 220
 private const val NowPlayingCoverFrameCacheLimit = 3
-internal const val NowPlayingCoverBitmapMaxDimensionPx = 512
+internal const val NowPlayingCoverBitmapMaxDimensionPx = PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX
 private const val NowPlayingCoverNullGraceMs = 500L
 
 internal data class NowPlayingCoverFrame(

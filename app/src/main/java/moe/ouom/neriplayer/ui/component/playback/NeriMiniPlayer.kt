@@ -112,6 +112,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
+import moe.ouom.neriplayer.util.media.PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 import kotlin.math.abs
@@ -154,7 +155,6 @@ private const val MINI_PLAYER_ARTIST_LINE_HEIGHT_DP = 20f
 private const val MINI_PLAYER_TITLE_MIN_VISUAL_FONT_SIZE_SP = 10f
 private const val MINI_PLAYER_ARTIST_MIN_VISUAL_FONT_SIZE_SP = 9f
 private const val MINI_PLAYER_METADATA_AUTO_SIZE_STEP_SP = 0.25f
-private const val MINI_PLAYER_COVER_BITMAP_MAX_DIMENSION_PX = 128
 private const val MINI_PLAYER_COVER_FRAME_CACHE_LIMIT = 4
 
 internal data class MiniPlayerTextAutoSizeRange(
@@ -379,7 +379,7 @@ internal fun miniPlayerCoverCacheKey(frame: MiniPlayerCoverFrame): String {
 
 internal fun resolveMiniPlayerCoverBitmap(drawable: Drawable): ImageBitmap? {
     return runCatching {
-        val maxDimension = MINI_PLAYER_COVER_BITMAP_MAX_DIMENSION_PX
+        val maxDimension = PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX
         if (drawable is BitmapDrawable) {
             val sourceBitmap = drawable.bitmap
             val scale = min(
@@ -779,7 +779,7 @@ fun NeriMiniPlayer(
                         model = fastScrollableImageRequest(
                             context = context,
                             data = visibleFrame.coverUrl,
-                            sizePx = 128,
+                            sizePx = PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX,
                             crossfade = false,
                             offlineMode = offlineMode,
                             cacheKey = miniPlayerCoverCacheKey(visibleFrame)
@@ -819,7 +819,7 @@ fun NeriMiniPlayer(
                         model = fastScrollableImageRequest(
                             context = context,
                             data = requestedFrame.coverUrl,
-                            sizePx = 128,
+                            sizePx = PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX,
                             crossfade = false,
                             offlineMode = offlineMode,
                             cacheKey = miniPlayerCoverCacheKey(requestedFrame)
