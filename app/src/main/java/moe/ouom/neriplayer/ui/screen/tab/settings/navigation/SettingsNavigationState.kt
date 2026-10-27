@@ -82,6 +82,22 @@ internal fun settingsSearchResultsState(
 }
 
 @Composable
+private fun rememberSettingsSearchResults(
+    queryState: State<String>,
+    internationalEnabled: Boolean
+): State<List<SettingsSearchEntry>> {
+    val resources = LocalResources.current
+    val configurations = Configuration(LocalConfiguration.current) to Configuration(resources.configuration)
+    // 宿主 Context 身份不变时，搜索文案和关键词也必须随语言配置刷新
+    val searchEntries = remember(resources, configurations, internationalEnabled) {
+        buildSettingsSearchEntries(resources, internationalEnabled)
+    }
+    return remember(searchEntries) {
+        settingsSearchResultsState(searchEntries, queryState)
+    }
+}
+
+@Composable
 private fun rememberInitialSettingsPageState(): MutableState<SettingsPage?> =
     rememberSaveable { mutableStateOf(null) }
 
@@ -244,16 +260,7 @@ internal fun rememberSettingsNavigationState(
     val highlightPulseState = rememberSaveable { mutableIntStateOf(0) }
     val searchRequestIdState = rememberSaveable { mutableIntStateOf(0) }
     val pendingNavigationState = remember { mutableStateOf<PendingSettingsSearchNavigation?>(null) }
-    val resources = LocalResources.current
-    val configuration = Configuration(LocalConfiguration.current)
-    val resourceConfiguration = Configuration(resources.configuration)
-    // 宿主 Context 身份不变时，搜索文案和关键词也必须随语言配置刷新
-    val searchEntries = remember(resources, configuration, resourceConfiguration, internationalEnabled) {
-        buildSettingsSearchEntries(resources, internationalEnabled)
-    }
-    val searchResultsState = remember(searchEntries) {
-        settingsSearchResultsState(searchEntries, searchQueryState)
-    }
+    val searchResultsState = rememberSettingsSearchResults(searchQueryState, internationalEnabled)
     val density = LocalDensity.current
     val navigation = SettingsNavigationState(
         splitLayout = splitLayout,
