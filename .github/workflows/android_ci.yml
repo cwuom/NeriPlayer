@@ -266,6 +266,8 @@ jobs:
           script: >-
             { ps -eLo pid,tid,comm > build/reports/emulator-host/before-tests-threads.txt || true; } &&
             adb shell settings put global hide_error_dialogs 1 &&
+            adb shell settings put global heads_up_notifications_enabled 0 &&
+            adb shell 'test "$(settings get global heads_up_notifications_enabled)" = 0' &&
             adb shell settings --user 0 put secure anr_show_background 0 &&
             adb shell settings --user 0 put secure immersive_mode_confirmations confirmed &&
             adb shell am start -W -a android.settings.SETTINGS &&

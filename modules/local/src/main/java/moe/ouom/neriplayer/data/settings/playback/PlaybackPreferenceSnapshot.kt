@@ -438,7 +438,7 @@ fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnapshot {
             DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
         ),
         allowMixedPlayback = valueOr(SettingsKeys.ALLOW_MIXED_PLAYBACK, false),
-        preemptAudioFocus = valueOr(SettingsKeys.PREEMPT_AUDIO_FOCUS, false),
+        preemptAudioFocus = valueOr(SettingsKeys.PREEMPT_AUDIO_FOCUS, true),
         cloudMusicLyricDefaultOffsetMs =
             valueOr(SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS, DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS),
         qqMusicLyricDefaultOffsetMs =
@@ -569,7 +569,7 @@ private fun SharedPreferences.toCachedPlaybackPreferenceSnapshot(): PlaybackPref
         usbExclusiveBackgroundBufferMs = usbExclusivePreferences.backgroundBufferMs,
         usbExclusiveVolumeRiskThresholdDbfs = usbExclusivePreferences.volumeRiskThresholdDbfs,
         allowMixedPlayback = prefs.getBoolean(PLAYBACK_ALLOW_MIXED_KEY, false),
-        preemptAudioFocus = prefs.getBoolean(PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY, false),
+        preemptAudioFocus = prefs.getBoolean(PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY, true),
         cloudMusicLyricDefaultOffsetMs = prefs.getLong(
             PLAYBACK_CLOUD_MUSIC_LYRIC_OFFSET_KEY,
             DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS

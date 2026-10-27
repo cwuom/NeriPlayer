@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -10,14 +11,17 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.MediaBrowserIsolationRule
 import moe.ouom.neriplayer.testutil.grantRuntimePermissions
 import moe.ouom.neriplayer.testutil.playbackRuntimePermissions
 import moe.ouom.neriplayer.data.model.SongItem
@@ -25,6 +29,7 @@ import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
+import org.junit.ClassRule
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -57,8 +62,19 @@ class MiniPlayerPlaybackTransitionTest {
 
     @After
     fun tearDown() {
-        composeRule.runOnIdle {
-            PlayerManager.release()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        try {
+            composeRule.activityRule.scenario.close()
+        } finally {
+            try {
+                instrumentation.runOnMainSync {
+                    context.stopService(Intent(context, AudioPlayerService::class.java))
+                }
+                composeRule.waitUntil(15_000L) { !AudioPlayerService.isInstanceActiveForDiagnostics() }
+            } finally {
+                instrumentation.runOnMainSync { PlayerManager.release() }
+            }
         }
     }
 
@@ -73,7 +89,8 @@ class MiniPlayerPlaybackTransitionTest {
         }
 
         composeRule.waitUntil(timeoutMillis = PLAYER_STATE_TIMEOUT_MS) {
-            PlayerManager.currentSongFlow.value?.name == song.name
+            PlayerManager.currentSongFlow.value?.name == song.name &&
+                AudioPlayerService.isInstanceActiveForDiagnostics()
         }
         composeRule.waitForIdle()
         composeRule.waitUntil(timeoutMillis = MINI_PLAYER_TIMEOUT_MS) {
@@ -203,6 +220,10 @@ class MiniPlayerPlaybackTransitionTest {
     )
 
     private companion object {
+        @ClassRule
+        @JvmField
+        val mediaBrowserIsolation: org.junit.rules.TestRule = MediaBrowserIsolationRule()
+
         const val TAG = "MiniPlayerPerfTest"
         const val STARTUP_SCREEN_TIMEOUT_MS = 30_000L
         const val PLAYER_STATE_TIMEOUT_MS = 10_000L

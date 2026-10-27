@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.dialog
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Log
@@ -32,6 +33,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.persistence.PlaybackQueueRoomStore
 import moe.ouom.neriplayer.core.player.persistence.stats.flushPlaybackStatsPendingWrites
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.core.startup.debug.debugBuildWarningDataStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -48,13 +50,16 @@ import moe.ouom.neriplayer.data.stats.PlaybackStatsCursor
 import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.testutil.MediaBrowserIsolationRule
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.grantRuntimePermissions
 import moe.ouom.neriplayer.testutil.performNativeClick
 import moe.ouom.neriplayer.testutil.playbackRuntimePermissions
 import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.ClassRule
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -75,6 +80,7 @@ class MainActivityTrafficRiskDownloadTest {
 
     private fun assertConfirmationAboveRealPlayer(style: UiStyle) {
         assumeComposeHostAvailable()
+        assertFalse("测试开始前不能有残留的播放服务", AudioPlayerService.isInstanceActiveForDiagnostics())
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val settings = SettingsRepository(context)
@@ -108,6 +114,8 @@ class MainActivityTrafficRiskDownloadTest {
                 settings.setNowPlayingDynamicBackgroundEnabled(false)
                 settings.setNowPlayingCoverBlurBackgroundEnabled(false)
                 settings.setUsbExclusivePlayback(false)
+                settings.setPreemptAudioFocus(true)
+                settings.setAllowMixedPlayback(false)
                 PreviewThemePromptRepository(context).answer(enable = false)
             }
             grantRuntimePermissions(*playbackRuntimePermissions())
@@ -122,7 +130,8 @@ class MainActivityTrafficRiskDownloadTest {
             }
             composeRule.waitUntil(15_000L) {
                 PlayerManager.currentSongFlow.value?.localFilePath == song.localFilePath &&
-                    PlayerManager.isPlayingFlow.value
+                    PlayerManager.isPlayingFlow.value &&
+                    AudioPlayerService.isInstanceActiveForDiagnostics()
             }
             scenario.onActivity { PlayerManager.pause() }
             composeRule.waitUntil(15_000L) { !PlayerManager.playbackControlPlayingFlow.value }
@@ -177,37 +186,47 @@ class MainActivityTrafficRiskDownloadTest {
             }
         } finally {
             try {
-                instrumentation.runOnMainSync { PlayerManager.release() }
                 scenario?.close()
             } finally {
                 try {
                     try {
-                        runBlocking { removeFixtureStats(context, directory, listOfNotNull(fixtureSong)) }
+                        instrumentation.runOnMainSync {
+                            context.stopService(Intent(context, AudioPlayerService::class.java))
+                        }
+                        composeRule.waitUntil(15_000L) { !AudioPlayerService.isInstanceActiveForDiagnostics() }
                     } finally {
-                        runBlocking {
-                            if (roomPrimary && queue != null) queueStore.replaceSnapshot(queue) else queueStore.clear()
-                            if (!roomPrimary) queueStore.markLegacyJsonPrimary()
-                        }
-                        legacyQueue.forEach { (name, bytes) ->
-                            val file = File(context.filesDir, name)
-                            if (bytes != null) file.writeBytes(bytes)
-                            else check(!file.exists() || file.delete())
-                        }
+                        instrumentation.runOnMainSync { PlayerManager.release() }
                     }
                 } finally {
                     try {
-                        runBlocking {
-                            settings.setUiStyle(originalStyle)
-                            settings.setDisclaimerAccepted(originalDisclaimer)
-                            settings.setStartupOnboardingCompleted(originalOnboarding)
-                            settings.setUsbExclusivePlayback(originalUsbExclusive)
-                            settings.setThemeMode(originalFollowSystemDark, originalForceDark)
-                            context.dataStore.updateData { preferences }
-                            context.debugBuildWarningDataStore.updateData { debugWarning }
+                        try {
+                            runBlocking { removeFixtureStats(context, directory, listOfNotNull(fixtureSong)) }
+                        } finally {
+                            runBlocking {
+                                if (roomPrimary && queue != null) queueStore.replaceSnapshot(queue) else queueStore.clear()
+                                if (!roomPrimary) queueStore.markLegacyJsonPrimary()
+                            }
+                            legacyQueue.forEach { (name, bytes) ->
+                                val file = File(context.filesDir, name)
+                                if (bytes != null) file.writeBytes(bytes)
+                                else check(!file.exists() || file.delete())
+                            }
                         }
                     } finally {
-                        NeriMotionStyle.clean = originalMotionStyle
-                        check(directory.deleteRecursively())
+                        try {
+                            runBlocking {
+                                settings.setUiStyle(originalStyle)
+                                settings.setDisclaimerAccepted(originalDisclaimer)
+                                settings.setStartupOnboardingCompleted(originalOnboarding)
+                                settings.setUsbExclusivePlayback(originalUsbExclusive)
+                                settings.setThemeMode(originalFollowSystemDark, originalForceDark)
+                                context.dataStore.updateData { preferences }
+                                context.debugBuildWarningDataStore.updateData { debugWarning }
+                            }
+                        } finally {
+                            NeriMotionStyle.clean = originalMotionStyle
+                            check(directory.deleteRecursively())
+                        }
                     }
                 }
             }
@@ -289,5 +308,11 @@ class MainActivityTrafficRiskDownloadTest {
         } finally {
             bitmap.recycle()
         }
+    }
+
+    private companion object {
+        @ClassRule
+        @JvmField
+        val mediaBrowserIsolation: org.junit.rules.TestRule = MediaBrowserIsolationRule()
     }
 }
