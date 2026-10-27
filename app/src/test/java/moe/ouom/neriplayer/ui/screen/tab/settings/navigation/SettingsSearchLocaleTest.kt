@@ -37,6 +37,7 @@ class SettingsSearchLocaleTest {
 
     private val application = ApplicationProvider.getApplicationContext<Application>()
     private val language = mutableStateOf("en")
+    private val internationalEnabled = mutableStateOf(false)
     private lateinit var navigation: SettingsNavigationState
 
     @Test
@@ -71,6 +72,31 @@ class SettingsSearchLocaleTest {
         assertSearchLanguage("zh")
     }
 
+    @Test
+    fun internationalModeRemovesOnlyTheBilibiliHomeSwitchWithoutResettingSearchState() {
+        render(updateHostResources = true)
+        composeRule.runOnIdle { navigation.searchQueryState.value = "bilibili" }
+        val queryState = navigation.searchQueryState
+        val pageState = navigation.activePageState
+        val listState = navigation.detailListStates.getValue(SettingsPage.Personalization)
+        val targetId = "setting:home_card_bilibili"
+        composeRule.runOnIdle {
+            assertTrue(navigation.searchResults.any { it.targetId == targetId })
+        }
+
+        listOf(true, false, true, false).forEach { enabled ->
+            composeRule.runOnIdle { internationalEnabled.value = enabled }
+            composeRule.runOnIdle {
+                assertEquals(!enabled, navigation.searchResults.any { it.targetId == targetId })
+                assertTrue(navigation.searchResults.any { it.targetId != targetId })
+                assertEquals("bilibili", navigation.searchQueryState.value)
+                assertTrue(queryState === navigation.searchQueryState)
+                assertTrue(pageState === navigation.activePageState)
+                assertTrue(listState === navigation.detailListStates.getValue(SettingsPage.Personalization))
+            }
+        }
+    }
+
     private fun render(updateHostResources: Boolean) {
         var hostResources = resourcesFor("en")
         val hostContext = object : ContextWrapper(application) {
@@ -89,7 +115,8 @@ class SettingsSearchLocaleTest {
                     dynamicColor = false,
                     mobileDataFollowDefaultAudioQuality = false,
                     backgroundImageUri = null,
-                    splitLayout = false
+                    splitLayout = false,
+                    internationalEnabled = internationalEnabled.value
                 )
                 Column {
                     Text(stringResource(CoreCommonR.string.settings_title))

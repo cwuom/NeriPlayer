@@ -27,7 +27,10 @@ internal data class SettingsSearchScrollAnchor(
     val scrollOffset: Dp = 0.dp
 )
 
-internal fun buildSettingsSearchEntries(resources: Resources): List<SettingsSearchEntry> {
+internal fun buildSettingsSearchEntries(
+    resources: Resources,
+    internationalEnabled: Boolean = false
+): List<SettingsSearchEntry> {
     val pageEntries = SettingsPage.entries.map { page ->
         val title = resources.safeString(page.titleRes)
         val description = resources.safeString(page.descriptionRes)
@@ -46,7 +49,8 @@ internal fun buildSettingsSearchEntries(resources: Resources): List<SettingsSear
         .filter {
             it.ui != SettingUiType.None &&
                 it.titleRes != 0 &&
-                it.keyName !in unavailableSettingKeys
+                it.keyName !in unavailableSettingKeys &&
+                (!internationalEnabled || it.keyName != "home_card_bilibili")
         }
         .mapNotNull { setting ->
             val page = setting.settingsPage() ?: return@mapNotNull null

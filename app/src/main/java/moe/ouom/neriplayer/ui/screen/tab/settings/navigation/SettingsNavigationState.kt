@@ -230,7 +230,8 @@ internal fun rememberSettingsNavigationState(
     dynamicColor: Boolean,
     mobileDataFollowDefaultAudioQuality: Boolean,
     backgroundImageUri: String?,
-    splitLayout: Boolean = settingsSplitLayout()
+    splitLayout: Boolean = settingsSplitLayout(),
+    internationalEnabled: Boolean = false
 ): SettingsNavigationState {
     val activePageState = rememberInitialSettingsPageState()
     val homeTopAppBarState = rememberTopAppBarState()
@@ -247,8 +248,8 @@ internal fun rememberSettingsNavigationState(
     val configuration = Configuration(LocalConfiguration.current)
     val resourceConfiguration = Configuration(resources.configuration)
     // 宿主 Context 身份不变时，搜索文案和关键词也必须随语言配置刷新
-    val searchEntries = remember(resources, configuration, resourceConfiguration) {
-        buildSettingsSearchEntries(resources)
+    val searchEntries = remember(resources, configuration, resourceConfiguration, internationalEnabled) {
+        buildSettingsSearchEntries(resources, internationalEnabled)
     }
     val searchResultsState = remember(searchEntries) {
         settingsSearchResultsState(searchEntries, searchQueryState)

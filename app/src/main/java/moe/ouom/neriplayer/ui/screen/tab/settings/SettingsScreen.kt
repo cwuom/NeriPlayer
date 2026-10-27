@@ -278,7 +278,8 @@ internal fun SettingsScreen(
         listState = listState,
         dynamicColor = appearanceState.theme.dynamicColorEnabled,
         mobileDataFollowDefaultAudioQuality = playbackState.defaultAudioQuality.mobileDataFollowDefaultAudioQuality,
-        backgroundImageUri = appearanceState.visualBackground.backgroundImageUri
+        backgroundImageUri = appearanceState.visualBackground.backgroundImageUri,
+        internationalEnabled = otherState.internationalizationEnabled
     )
     val isSettingsSplitLayout = navigation.splitLayout
     val activeSettingsPage = navigation.activePage
