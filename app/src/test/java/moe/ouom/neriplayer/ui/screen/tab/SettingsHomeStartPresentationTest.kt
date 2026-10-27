@@ -30,6 +30,18 @@ class SettingsHomeStartPresentationTest {
     }
 
     @Test
+    fun `international mode excludes Bilibili from home availability without hiding other sections`() {
+        assertFalse(isSettingsHomeStartAvailable(false, false, false, false, false, true, true))
+        assertFalse(isSettingsHomeStartAvailable(false, false, false, false, false, false, true))
+        assertTrue(isSettingsHomeStartAvailable(false, false, false, false, false, true, false))
+        assertTrue(isSettingsHomeStartAvailable(true, false, false, false, false, true, true))
+        assertTrue(isSettingsHomeStartAvailable(false, true, false, false, false, true, true))
+        assertTrue(isSettingsHomeStartAvailable(false, false, true, false, false, true, true))
+        assertTrue(isSettingsHomeStartAvailable(false, false, false, true, true, true, true))
+        assertFalse(isSettingsHomeStartAvailable(false, false, false, true, false, true, true))
+    }
+
+    @Test
     fun `unavailable home redirects only a configured home destination`() {
         assertEquals("explore", effectiveSettingsStartDestination("home", false))
         assertEquals("home", effectiveSettingsStartDestination("home", true))

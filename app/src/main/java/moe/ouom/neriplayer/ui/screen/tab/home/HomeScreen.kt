@@ -345,6 +345,7 @@ fun HomeScreen(
         hasUsage = usageEntries.isNotEmpty()
     )
     val isInternational = ui.internationalizationEnabled
+    val showBiliMusic = showBilibiliCard && ui.biliMusicHomeEnabled
     val showNeteaseTrending = showTrendingCard
     val showNeteaseRadar = showRadarCard
     val showOnlineFeeds = !offlineMode
@@ -414,7 +415,7 @@ fun HomeScreen(
         }
     }
 
-    val hasVisibleBiliMusicSections = showBilibiliCard && showOnlineFeeds && (
+    val hasVisibleBiliMusicSections = showBiliMusic && showOnlineFeeds && (
             ui.biliMusicRank.songs.isNotEmpty() ||
                     ui.biliMusicRank.loading ||
                     ui.biliMusicRank.error != null ||
@@ -510,11 +511,9 @@ fun HomeScreen(
                     nextGridItemIndex += 1
                     return key
                 }
-                // Bilibili 音乐模块：版权音乐榜（热门榜/原创榜）与音乐分区热门视频
-                // 网易云模式：排在「私人雷达 / 雷达歌单」之后、「热力飙升 / 我的推荐」之前；
-                // 国际化模式：排在「猜你喜欢 / 每日发现」之后、「更多推荐」之前。
+                // Bilibili 音乐模块只在非国际化模式展示，排在私人雷达之后
                 val addBiliMusicSections: LazyGridScope.() -> Unit = biliSections@ {
-                    if (!showBilibiliCard) return@biliSections
+                    if (!showBiliMusic) return@biliSections
                     addBiliMusicRankSection(
                         registerKey = ::registerGridItemKey,
                         state = ui.biliMusicRank,
@@ -608,10 +607,6 @@ fun HomeScreen(
                                     offlineMode = offlineMode
                                 )
                             }
-
-                            // Bilibili 音乐模块：国际化模式下排在「猜你喜欢 / 每日发现」之后、
-                            // 「更多推荐」之前，与网易云模式的相对位置保持一致。
-                            addBiliMusicSections()
 
                             if (showRecommendedCard) {
                                 item(

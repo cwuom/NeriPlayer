@@ -41,8 +41,10 @@ internal fun isSettingsHomeStartAvailable(
     showRecommended: Boolean,
     showContinue: Boolean,
     hasRecentUsage: Boolean,
-    showBilibili: Boolean = false
-): Boolean = showTrending || showRadar || showRecommended || showBilibili || (showContinue && hasRecentUsage)
+    showBilibili: Boolean = false,
+    internationalEnabled: Boolean = false
+): Boolean = showTrending || showRadar || showRecommended ||
+    (showBilibili && !internationalEnabled) || (showContinue && hasRecentUsage)
 
 internal fun effectiveSettingsStartDestination(
     configured: String,
@@ -83,7 +85,8 @@ internal fun rememberSettingsHomeStartPresentation(
         showRecommended,
         showContinue,
         hasRecentUsage,
-        showBilibili
+        showBilibili,
+        internationalEnabled
     )
     val destination = effectiveSettingsStartDestination(configuredDestination, available)
     return SettingsHomeStartPresentation(

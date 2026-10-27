@@ -219,6 +219,7 @@ data class HomeUiState(
     val ytMusicHomeShelves: HomeSectionState<YouTubeMusicHomeShelf> = HomeSectionState(),
     val biliMusicRank: HomeBiliMusicRankState = HomeBiliMusicRankState(),
     val biliMusicHot: HomeSectionState<BiliMusicHotVideo> = HomeSectionState(),
+    val biliMusicHomeEnabled: Boolean = false,
     val hasLogin: Boolean = false,
     val internationalizationEnabled: Boolean = false
 )
@@ -363,17 +364,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         lastYouTubeAuthFingerprint = buildYouTubeAuthFingerprint(youtubeAuthRepo.getAuthOnce())
 
         viewModelScope.launch {
-            AppContainer.settingsRepo.homeCardBilibiliFlow.collect { enabled ->
+            combine(
+                AppContainer.settingsRepo.homeCardBilibiliFlow,
+                AppContainer.settingsRepo.internationalizationEnabledFlow
+            ) { savedEnabled, internationalEnabled ->
+                savedEnabled && !internationalEnabled
+            }.collect { enabled ->
                 if (biliMusicHomeEnabled == enabled) return@collect
                 biliMusicHomeEnabled = enabled
                 if (enabled) {
+                    _uiState.update { state -> state.copy(biliMusicHomeEnabled = true) }
                     if (homeRecommendationsBootstrapped) loadBiliMusicHome()
                 } else {
                     cancelBiliMusicJobs()
                     _uiState.update { state ->
                         state.copy(
-                            biliMusicRank = state.biliMusicRank.copy(loading = false, error = null),
-                            biliMusicHot = state.biliMusicHot.copy(loading = false, error = null)
+                            biliMusicHomeEnabled = false,
+                            biliMusicRank = HomeBiliMusicRankState(type = state.biliMusicRank.type),
+                            biliMusicHot = HomeSectionState()
                         )
                     }
                 }
@@ -486,7 +494,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 homeRecommendationsBootstrapped = true
                 refreshNeteaseHome()
             }
-            // 国际版首页不触发网易云推荐，B 站音乐模块独立加载
+            // 非国际化首页按保存的开关独立加载 B 站音乐模块
             loadBiliMusicHome(force = false)
         }
     }
@@ -544,13 +552,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         loadBiliMusicHot(force = force)
     }
 
-    /**
-     * 首页刷新入口使用的合并加载：某个模块已经在加载时不再强制重启它。
-     *
-     * 国际化启动时，设置收集器会走 [refreshYtMusicHome]，而独立的 250ms 引导仍会走
-     * [refreshNeteaseHome]，两条路径都会触达这里；若无条件 `force = true`，后一条会取消并
-     * 重启前一条刚发起的榜单 / 热门请求，重复拉取列表并可能重复逐条补全官方 MV。
-     */
+    /** 首页刷新复用正在加载的分区，避免重复请求和补全官方 MV */
     private fun loadBiliMusicHomeCoalesced() {
         if (biliMusicRankJob?.isActive != true) {
             loadBiliMusicRank(force = true)

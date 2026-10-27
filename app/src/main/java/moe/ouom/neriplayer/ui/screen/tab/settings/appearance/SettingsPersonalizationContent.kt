@@ -200,18 +200,20 @@ internal fun SettingsPersonalizationHomeCard(
             onHighlightFinished = onHighlightFinished
         )
 
-        SettingsHomeCardSwitch(
-            title = stringResource(CoreCommonR.string.settings_home_card_bilibili),
-            description = stringResource(CoreCommonR.string.settings_home_card_bilibili_desc),
-            icon = Icons.Outlined.LiveTv,
-            checked = showHomeBilibiliCard,
-            onCheckedChange = onShowHomeBilibiliCardChange,
-            enabled = true,
-            targetId = "setting:home_card_bilibili",
-            highlightTargetId = highlightTargetId,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        )
+        if (!internationalEnabled) {
+            SettingsHomeCardSwitch(
+                title = stringResource(CoreCommonR.string.settings_home_card_bilibili),
+                description = stringResource(CoreCommonR.string.settings_home_card_bilibili_desc),
+                icon = Icons.Outlined.LiveTv,
+                checked = showHomeBilibiliCard,
+                onCheckedChange = onShowHomeBilibiliCardChange,
+                enabled = true,
+                targetId = "setting:home_card_bilibili",
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+        }
 
         LazyAnimatedVisibility(visible = !homeStartAvailable) {
             Text(
