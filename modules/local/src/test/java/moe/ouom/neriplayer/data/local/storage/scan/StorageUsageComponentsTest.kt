@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.storage.scan
 
 import java.io.File
+import java.nio.file.Files
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -26,6 +27,33 @@ import org.junit.rules.TemporaryFolder
 class StorageUsageComponentsTest {
     @get:Rule
     val temporary = TemporaryFolder()
+
+    @Test
+    fun disappearingFileDoesNotDiscardOtherFilesInTheDirectory() {
+        val root = temporary.newFolder()
+        val gone = write(root, "gone", 2)
+        val kept = write(root, "kept", 7)
+        val disappearing = object : File(gone.path) {
+            override fun isFile(): Boolean = super.isFile().also { if (it) delete() }
+        }
+        val directory = object : File(root.path) {
+            override fun listFiles(): Array<File> = arrayOf(disappearing, kept)
+        }
+        assertEquals(FileStats(7, 1), statsOf(directory))
+    }
+
+    @Test
+    fun scannerPropagatesDirectoryReadFailuresInsteadOfReportingZero() = runBlocking<Unit> {
+        val locations = locations()
+        val brokenCache = object : File(locations.cacheDir.path) {
+            override fun listFiles(): Array<File> = throw SecurityException("read denied")
+        }
+        val brokenLocations = StorageLocations(locations.filesDir, brokenCache, temporary.newFolder(),
+            locations.databaseFiles, locations.downloadMetadataFiles)
+        assertThrows(SecurityException::class.java) {
+            runBlocking { StorageUsageScanner(brokenLocations, TestSource()).scan() }
+        }
+    }
 
     @Test
     fun scannerCountsFilesAndDatabasePagesWithoutInitializingApplication() = runBlocking {
@@ -114,6 +142,183 @@ class StorageUsageComponentsTest {
 
         assertEquals(ExtraCacheClearResult(false, 11, 0, 1), result)
         assertTrue(retained.exists())
+    }
+
+    @Test
+    fun cleanerCountsFilesRemovedBeforeAReportedFailure() = runBlocking {
+        val locations = locations()
+        val removed = write(locations.sharedMediaDir, "removed", 7)
+        val retained = write(locations.sharedMediaDir, "retained", 11)
+        val files = object : StorageCacheFileAccess {
+            override fun stats(file: File) = statsOf(file)
+            override suspend fun clear(file: File, kind: StorageCacheKind): Boolean {
+                check(removed.delete())
+                return false
+            }
+        }
+
+        val result = StorageCacheCleaner(locations, files, TestPlatformCaches()).clear(
+            StorageCacheClearOptions(audioCache = false, imageCache = false, sharedMedia = true)
+        )
+
+        assertEquals(ExtraCacheClearResult(false, 7, 0, 1), result)
+        assertTrue(retained.exists())
+    }
+
+    @Test
+    fun scannerDoesNotFollowSymbolicLinksOutsideTheScannedDirectory() {
+        val root = temporary.newFolder()
+        val outside = temporary.newFolder()
+        write(root, "local", 7)
+        write(outside, "private", 11)
+        Files.createSymbolicLink(File(root, "linked-directory").toPath(), outside.toPath())
+        Files.createSymbolicLink(File(root, "linked-file").toPath(), File(outside, "private").toPath())
+
+        assertEquals(FileStats(7, 1), statsOf(root))
+    }
+
+    @Test
+    fun cleanerMeasuresRemainingFilesEvenWhenClearClaimsSuccess() = runBlocking {
+        val locations = locations()
+        val removed = write(locations.sharedMediaDir, "removed", 7)
+        write(locations.sharedMediaDir, "retained", 11)
+        val files = object : StorageCacheFileAccess {
+            override fun stats(file: File) = statsOf(file)
+            override suspend fun clear(file: File, kind: StorageCacheKind): Boolean = removed.delete()
+        }
+
+        val result = StorageCacheCleaner(locations, files, TestPlatformCaches()).clear(
+            StorageCacheClearOptions(audioCache = false, imageCache = false, sharedMedia = true)
+        )
+
+        assertEquals(ExtraCacheClearResult(false, 7, 0, 1), result)
+    }
+
+    @Test
+    fun otherCacheScanAndCleanupUseTheSameAllowlist() = runBlocking {
+        val locations = locations()
+        val shareCard = write(File(locations.cacheDir, "lyric_share_cards"), "card.png", 7)
+        val protected = listOf(
+            "sync-v3", "backup-playback", "sync-deletions-volatile", "local_curation_covers",
+            "youtube/ejs_webview", "unknown"
+        ).map { write(File(locations.cacheDir, it), "working", 3) } +
+            write(locations.cacheDir, "unknown.tmp", 5)
+        val download = write(File(locations.cacheDir, "download_staging"), "resume", 11)
+        val audio = write(locations.mediaCacheDir, "audio", 13)
+        val image = write(locations.imageCacheDir, "image", 17)
+        val shared = write(locations.sharedMediaDir, "shared", 19)
+
+        val before = StorageUsageScanner(locations, TestSource()).scan()
+        assertEquals(FileStats(7, 1), before.items.getValue(StorageUsageItemKind.OtherCache).stats)
+        assertEquals(FileStats(23, 7), before.items.getValue(StorageUsageItemKind.ProtectedCache).stats)
+
+        val result = StorageCacheCleaner(locations, TestCacheFiles(), TestPlatformCaches()).clear(
+            StorageCacheClearOptions(audioCache = false, imageCache = false, otherCache = true)
+        )
+
+        assertEquals(ExtraCacheClearResult(true, 7, 0, 1), result)
+        assertFalse(shareCard.exists())
+        (protected + listOf(download, audio, image, shared)).forEach { assertTrue(it.exists()) }
+        val after = StorageUsageScanner(locations, TestSource()).scan()
+        assertEquals(FileStats.Empty, after.items.getValue(StorageUsageItemKind.OtherCache).stats)
+        assertEquals(FileStats(23, 7), after.items.getValue(StorageUsageItemKind.ProtectedCache).stats)
+    }
+
+    @Test
+    fun otherCacheAllowlistAcceptsAnOrdinaryFileWithoutDeletingSiblings() = runBlocking {
+        val locations = locations()
+        write(locations.cacheDir, "lyric_share_cards", 7)
+        val sibling = write(File(locations.cacheDir, "lyric_share_cards-backup"), "keep", 11)
+
+        val result = StorageCacheCleaner(locations, TestCacheFiles(), TestPlatformCaches()).clear(
+            StorageCacheClearOptions(audioCache = false, imageCache = false, otherCache = true)
+        )
+
+        assertEquals(ExtraCacheClearResult(true, 7, 0, 1), result)
+        assertEquals(11L, sibling.length())
+        assertEquals(FileStats(11, 1), StorageUsageScanner(locations, TestSource()).scan()
+            .items.getValue(StorageUsageItemKind.ProtectedCache).stats)
+    }
+
+    @Test
+    fun otherCacheSymbolicLinkRootIsNeitherCountedNorCleared() = runBlocking {
+        val locations = locations()
+        val outside = temporary.newFolder()
+        val privateFile = write(outside, "private", 11)
+        val linked = File(locations.cacheDir, "lyric_share_cards")
+        Files.createSymbolicLink(linked.toPath(), outside.toPath())
+        val files = TestCacheFiles()
+
+        val before = StorageUsageScanner(locations, TestSource()).scan()
+        val result = StorageCacheCleaner(locations, files, TestPlatformCaches()).clear(
+            StorageCacheClearOptions(audioCache = false, imageCache = false, otherCache = true)
+        )
+
+        assertEquals(FileStats.Empty, before.items.getValue(StorageUsageItemKind.OtherCache).stats)
+        assertEquals(ExtraCacheClearResult(true, 0, 0, 0), result)
+        assertTrue(files.cleared.isEmpty())
+        assertEquals(11L, privateFile.length())
+        assertTrue(Files.isSymbolicLink(linked.toPath()))
+    }
+
+    @Test
+    fun cleanerCountsPartialDeletionBeforeAnException() = runBlocking {
+        val locations = locations()
+        val removed = write(locations.sharedMediaDir, "removed", 7)
+        write(locations.sharedMediaDir, "retained", 11)
+        val files = object : StorageCacheFileAccess {
+            override fun stats(file: File) = statsOf(file)
+            override suspend fun clear(file: File, kind: StorageCacheKind): Boolean {
+                check(removed.delete())
+                error("failed after deleting one file")
+            }
+        }
+
+        val result = StorageCacheCleaner(locations, files, TestPlatformCaches()).clear(
+            StorageCacheClearOptions(audioCache = false, imageCache = false, sharedMedia = true)
+        )
+
+        assertEquals(ExtraCacheClearResult(false, 7, 0, 1), result)
+    }
+
+    @Test
+    fun cleanerPropagatesFileCleanupCancellation() {
+        val locations = locations()
+        write(locations.sharedMediaDir, "cached", 7)
+        val files = object : StorageCacheFileAccess {
+            override fun stats(file: File) = statsOf(file)
+            override suspend fun clear(file: File, kind: StorageCacheKind): Boolean =
+                throw CancellationException("cancelled")
+        }
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking {
+                StorageCacheCleaner(locations, files, TestPlatformCaches()).clear(
+                    StorageCacheClearOptions(audioCache = false, imageCache = false, sharedMedia = true)
+                )
+            }
+        }
+    }
+
+    @Test
+    fun cleanerDoesNotClaimBytesWhenPostClearMeasurementFails() = runBlocking {
+        val locations = locations()
+        val cached = write(locations.sharedMediaDir, "cached", 7)
+        var measurementCount = 0
+        val files = object : StorageCacheFileAccess {
+            override fun stats(file: File): FileStats {
+                measurementCount += 1
+                if (measurementCount == 2) error("measurement unavailable")
+                return statsOf(file)
+            }
+            override suspend fun clear(file: File, kind: StorageCacheKind): Boolean = cached.delete()
+        }
+
+        val result = StorageCacheCleaner(locations, files, TestPlatformCaches()).clear(
+            StorageCacheClearOptions(audioCache = false, imageCache = false, sharedMedia = true)
+        )
+
+        assertEquals(ExtraCacheClearResult(false, 0, 0, 0), result)
     }
 
     @Test
@@ -241,7 +446,7 @@ class StorageUsageComponentsTest {
     private class TestCacheFiles(private val failKind: StorageCacheKind? = null) : StorageCacheFileAccess {
         val cleared = mutableListOf<StorageCacheKind>()
         override fun stats(file: File) = statsOf(file)
-        override fun clear(file: File, kind: StorageCacheKind): Boolean {
+        override suspend fun clear(file: File, kind: StorageCacheKind): Boolean {
             cleared += kind
             if (kind == failKind) return false
             return file.deleteRecursively().also { if (it) file.mkdirs() }

@@ -40,10 +40,8 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
@@ -63,6 +61,7 @@ import moe.ouom.neriplayer.ui.feedback.showNeriViewSnackbar
 import moe.ouom.neriplayer.network.security.hostMatchesAnyDomain
 import moe.ouom.neriplayer.network.security.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
+import moe.ouom.neriplayer.activity.enableNeriEdgeToEdge
 
 class NeteaseWebLoginActivity : ComponentActivity() {
 
@@ -92,8 +91,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (finishIfWebViewUnavailable()) return
         lockPortraitIfPhone()
-        enableEdgeToEdge()
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        enableNeriEdgeToEdge()
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("netease")
         val webLoginSettings = resolveNeteaseWebLoginWebSettings(
             smallestScreenWidthDp = resources.configuration.smallestScreenWidthDp,

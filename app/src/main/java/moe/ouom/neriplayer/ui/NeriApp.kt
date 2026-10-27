@@ -74,6 +74,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.compose.rememberNavController
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import coil.Coil
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
@@ -89,7 +91,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -194,6 +195,7 @@ import moe.ouom.neriplayer.ui.navigation.shouldAcceptObservedMainTabRoute
 import moe.ouom.neriplayer.ui.navigation.shouldDispatchMainTabNavigation
 import moe.ouom.neriplayer.ui.navigation.shouldUseAdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.playback.visual.AppNowPlayingOverlay
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingCoverAssetRefresh
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayBackground
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayCover
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
@@ -229,6 +231,7 @@ import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
 import moe.ouom.neriplayer.ui.component.common.rememberRevealsUnderlying
+import moe.ouom.neriplayer.R as AppR
 
 private val EmptyLauncherShortcutRequestFlow =
     MutableStateFlow<LauncherShortcutRequest?>(null)
@@ -315,6 +318,20 @@ internal fun AppContentMountGate(
     Box(modifier = modifier) {
         content()
     }
+}
+
+@Composable
+internal fun AppUnderlayBackScope(
+    enabled: Boolean,
+    content: @Composable () -> Unit
+) {
+    val parentOwner = LocalNavigationEventDispatcherOwner.current
+    if (parentOwner == null) {
+        content()
+        return
+    }
+    val underlayOwner = rememberNavigationEventDispatcherOwner(enabled = enabled, parent = parentOwner)
+    CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides underlayOwner, content = content)
 }
 
 @Composable
@@ -435,7 +452,9 @@ private fun NeriAppContent(
     val showHomeTrendingCard by repo.homeCardTrendingFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRadarCard by repo.homeCardRadarFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRecommendedCard by repo.homeCardRecommendedFlow.collectAsStateWithLifecycle(initialValue = true)
-    val showHomeBilibiliCard by repo.homeCardBilibiliFlow.collectAsStateWithLifecycle(initialValue = true)
+    val homeBilibiliCardEnabled by repo.homeCardBilibiliFlow.collectAsStateWithLifecycle(initialValue = true)
+    val internationalizationEnabled by repo.internationalizationEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
+    val showHomeBilibiliCard = homeBilibiliCardEnabled && !internationalizationEnabled
     val storedUsbExclusivePlayback by repo.usbExclusivePlaybackFlow
         .collectAsStateWithLifecycle(initialValue = null)
     val usbExclusivePlayback = storedUsbExclusivePlayback
@@ -598,15 +617,14 @@ private fun NeriAppContent(
             }
         })
     }
-    val coverAssetRefreshKey = remember(
+    val coverAssetRefresh = remember(
         coverArtRefreshToken,
-        coverAssetRootGeneration,
-        coverAssetSongRevision
+        coverAssetRootGeneration
     ) {
-        var result = coverArtRefreshToken
-        result = 31 * result + coverAssetRootGeneration.hashCode()
-        result = 31 * result + coverAssetSongRevision.hashCode()
-        result
+        NowPlayingCoverAssetRefresh(coverArtRefreshToken, coverAssetRootGeneration)
+    }
+    val coverAssetRefreshKey = remember(coverAssetRefresh, coverAssetSongRevision) {
+        coverAssetRefresh.key(coverAssetSongRevision)
     }
     val scope = rememberCoroutineScope()
     var pendingTrafficRiskDownloadRequest by remember {
@@ -1194,7 +1212,7 @@ private fun NeriAppContent(
             var mainTabDetailContentHeightPx by remember {
                 mutableIntStateOf(0)
             }
-            val mainTabBackgroundProgress by animateFloatAsState(
+            val mainTabBackgroundProgress = animateFloatAsState(
                 targetValue = mainTabMotionTarget.targetProgress,
                 animationSpec = tween(
                     durationMillis = resolveMainTabBackgroundMotionDurationMillis(
@@ -1206,10 +1224,17 @@ private fun NeriAppContent(
                 ),
                 label = "main_tab_detail_content_handoff"
             )
-            val mainTabNavigationMotion = resolveMainTabNavigationMotionState(
-                backgroundMotion = mainTabMotionTarget.backgroundMotion,
-                progress = mainTabBackgroundProgress
-            )
+            val mainTabNavigationMotion = remember(
+                mainTabMotionTarget.backgroundMotion,
+                mainTabBackgroundProgress
+            ) {
+                {
+                    resolveMainTabNavigationMotionState(
+                        backgroundMotion = mainTabMotionTarget.backgroundMotion,
+                        progress = mainTabBackgroundProgress.value
+                    )
+                }
+            }
             val effectiveStartDestination = remember(
                 currentDefaultStartDestination,
                 showHomeTab,
@@ -1308,7 +1333,7 @@ private fun NeriAppContent(
                         } else {
                             navigateToMainTab(Destinations.Library.route)
                             showLauncherShortcutToast(
-                                CoreCommonR.string.launcher_shortcut_no_resumable_queue
+                                AppR.string.launcher_shortcut_no_resumable_queue
                             )
                         }
                     }
@@ -1329,7 +1354,7 @@ private fun NeriAppContent(
                         if (favoritesSongs.isEmpty()) {
                             navigateToMainTab(Destinations.Library.route)
                             showLauncherShortcutToast(
-                                CoreCommonR.string.launcher_shortcut_favorites_empty
+                                AppR.string.launcher_shortcut_favorites_empty
                             )
                         } else {
                             PlayerManager.setShuffle(true)
@@ -1558,7 +1583,7 @@ private fun NeriAppContent(
                         val debugHomeScrollState = rememberScrollState()
                         val crashActionOwner = remember(context, composeResources) {
                             appDebugCrashActionOwner(context) {
-                                composeResources.getString(CoreCommonR.string.test_exception_message)
+                                composeResources.getString(AppR.string.test_exception_message)
                             }
                         }
                         navigationSceneRenderer.RenderMainTabNavigationScene(
@@ -1671,7 +1696,17 @@ private fun NeriAppContent(
                         navHostStartDestination = navHostStartDestination
                     )
 
-                    Box(Modifier.fillMaxSize().nowPlayingBackdropRecede(sharedCoverFlight)) {
+                    // 播放层退场结束前，底层重建的页面也不能抢走系统返回
+                    AppUnderlayBackScope(enabled = !showNowPlaying && !nowPlayingOverlayMounted) {
+                    Box(
+                        Modifier.fillMaxSize()
+                            .nowPlayingBackdropRecede(sharedCoverFlight)
+                            .drawNowPlayingUnderlay(
+                                flight = sharedCoverFlight,
+                                playbackVisible = { showNowPlaying },
+                                backProgress = { nowPlayingDismissState.progress }
+                            )
+                    ) {
                     AppNavigationScaffold(
                         bottomBar = AppBottomBarPresentation(
                             items = bottomBarItems,
@@ -1760,16 +1795,17 @@ private fun NeriAppContent(
                                         IntOffset(
                                             x = 0,
                                             y = (
-                                                    mainTabNavigationMotion.tabLayerTransform
+                                                    mainTabNavigationMotion().tabLayerTransform
                                                         .translationYFraction *
                                                             mainTabDetailContentHeightPx
                                                     ).roundToInt()
                                         )
                                     }
                                     .graphicsLayer {
-                                        scaleX = mainTabNavigationMotion.tabLayerTransform.scale
-                                        scaleY = mainTabNavigationMotion.tabLayerTransform.scale
-                                        alpha = mainTabNavigationMotion.tabLayerTransform.alpha
+                                        val tabLayerTransform = mainTabNavigationMotion().tabLayerTransform
+                                        scaleX = tabLayerTransform.scale
+                                        scaleY = tabLayerTransform.scale
+                                        alpha = tabLayerTransform.alpha
                                         transformOrigin = TransformOrigin.Center
                                     }
                                     .zIndex(MAIN_TAB_LAYER_Z_INDEX),
@@ -1783,6 +1819,7 @@ private fun NeriAppContent(
                         }
                     }
                     }
+                    }
 
                     AppNowPlayingOverlay(
                         visible = showNowPlaying,
@@ -1790,7 +1827,8 @@ private fun NeriAppContent(
                             url = playbackVisualCoverUrl,
                             songKey = currentSongVisualKey,
                             song = currentSong,
-                            assetRefreshKey = coverAssetRefreshKey
+                            assetRefreshKey = coverAssetRefreshKey,
+                            assetRefresh = coverAssetRefresh
                         ),
                         queueFlow = PlayerManager.currentQueueFlow,
                         theme = NowPlayingOverlayTheme(

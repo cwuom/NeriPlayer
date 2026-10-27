@@ -40,13 +40,25 @@ import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.haptic.HapticButton
 import java.io.IOException
+import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
+
+internal class CreatorFollowException(val unavailable: Boolean) : IOException()
+
+internal fun creatorFollowFailureText(error: Exception): UiText = when (error) {
+    is CreatorFollowException -> UiText.Resource(
+        if (error.unavailable) AppR.string.media_follow_load_failed else AppR.string.media_follow_save_failed
+    )
+    else -> UiText.Literal(error.message ?: error.javaClass.simpleName)
+}
 
 internal suspend fun toggleCreatorFollow(
     repository: FavoritePlaylistRepository,
     favorite: FavoritePlaylist
 ) {
     if (!repository.awaitInitialized()) {
-        throw IOException("Local favorites could not be loaded")
+        throw CreatorFollowException(unavailable = true)
     }
     val followed = repository.isFavorite(favorite.id, favorite.source)
     if (followed) {
@@ -67,7 +79,7 @@ internal suspend fun toggleCreatorFollow(
     if (!repository.awaitInitialized() ||
         repository.isFavorite(favorite.id, favorite.source) == followed
     ) {
-        throw IOException("Local follow could not be saved")
+        throw CreatorFollowException(unavailable = false)
     }
 }
 
@@ -88,7 +100,7 @@ internal fun CreatorFollowButton(
     key(favorite.source, favorite.id) {
         val scope = rememberCoroutineScope()
         var updating by remember { mutableStateOf(false) }
-        var error by remember { mutableStateOf<String?>(null) }
+        var error by remember { mutableStateOf<UiText?>(null) }
         val buttonContentColor = if (followed) {
             MaterialTheme.colorScheme.onPrimaryContainer
         } else {
@@ -108,7 +120,7 @@ internal fun CreatorFollowButton(
                             } catch (cancellation: CancellationException) {
                                 throw cancellation
                             } catch (failure: Exception) {
-                                error = failure.message ?: failure.javaClass.simpleName
+                                error = creatorFollowFailureText(failure)
                             } finally {
                                 updating = false
                             }
@@ -156,7 +168,7 @@ internal fun CreatorFollowButton(
             error?.let { message ->
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = stringResource(CoreCommonR.string.artist_follow_failed, message),
+                    text = stringResource(CoreCommonR.string.artist_follow_failed, message.asString()),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )

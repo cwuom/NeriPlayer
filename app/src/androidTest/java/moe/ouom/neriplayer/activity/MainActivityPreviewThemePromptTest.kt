@@ -17,7 +17,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.core.startup.debug.debugBuildWarningDataStore
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
@@ -31,6 +30,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class MainActivityPreviewThemePromptTest {
@@ -108,7 +108,7 @@ class MainActivityPreviewThemePromptTest {
 
             scenario.recreate()
             composeRule.waitUntil(timeoutMillis = 20_000L) {
-                composeRule.onAllNodesWithText(context.getString(CoreCommonR.string.nav_home))
+                composeRule.onAllNodesWithText(context.getString(AppR.string.nav_home))
                     .fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithText(context.getString(R.string.preview_theme_prompt_title))
@@ -120,7 +120,7 @@ class MainActivityPreviewThemePromptTest {
     fun onboardingCompletionMakesPreviewInvitationAvailable() {
         runBlocking { settings.setStartupOnboardingCompleted(false) }
         ActivityScenario.launch(MainActivity::class.java).use {
-            val onboardingTitle = context.getString(CoreCommonR.string.onboarding_title)
+            val onboardingTitle = context.getString(AppR.string.onboarding_title)
             composeRule.waitUntil(timeoutMillis = 20_000L) {
                 composeRule.onAllNodesWithText(onboardingTitle).fetchSemanticsNodes().isNotEmpty()
             }

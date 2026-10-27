@@ -16,12 +16,15 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.config.AppConfigImportResult
+import moe.ouom.neriplayer.data.model.config.AppConfigImportWarning
 import moe.ouom.neriplayer.data.config.ConfigFileManager
 import moe.ouom.neriplayer.data.config.ConfigImportCancelledException
 import moe.ouom.neriplayer.data.config.ConfigExportOptions
 import moe.ouom.neriplayer.data.config.ConfigBackupPasswordException
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.ui.i18n.UiText
 
 class ConfigTransferViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(ConfigTransferUiState())
@@ -37,7 +40,7 @@ class ConfigTransferViewModel : ViewModel() {
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
-        strings = ConfigTransferStrings.from(appContext)
+        strings = ConfigTransferStrings.create()
         if (configFileManager == null) {
             configFileManager = ConfigFileManager(
                 context = appContext,
@@ -110,7 +113,7 @@ class ConfigTransferViewModel : ViewModel() {
                         isExporting = false,
                         exportProgress = null,
                         lastExportSuccess = false,
-                        lastExportMessage = resources.exportFailed(exception.message)
+                        lastExportMessage = resources.exportFailed(transferFailureText(exception))
                     )
                 }
             )
@@ -149,7 +152,7 @@ class ConfigTransferViewModel : ViewModel() {
                             isImporting = false,
                             importProgress = null,
                             lastImportSuccess = if (cancelled) null else false,
-                            lastImportMessage = if (cancelled) null else resources.importFailed(exception.message),
+                            lastImportMessage = if (cancelled) null else resources.importFailed(transferFailureText(exception)),
                             importRequiresActivityRecreate = false
                         )
                     }
@@ -277,84 +280,56 @@ class ConfigTransferViewModel : ViewModel() {
         strings = null
     }
 
-    internal data class ConfigTransferStrings(
-        private val context: Context
-    ) {
-        val exporting: String = context.getString(CoreCommonR.string.settings_config_exporting)
-        val importing: String = context.getString(CoreCommonR.string.settings_config_importing)
-        val exportOptionsExpired: String = context.getString(CoreCommonR.string.settings_config_export_options_expired)
-        private val exportSuccessPrefix: String =
-            context.getString(CoreCommonR.string.settings_config_export_success)
-        private val exportFailedPrefix: String =
-            context.getString(CoreCommonR.string.settings_config_export_failed)
-        private val importSuccessPrefix: String =
-            context.getString(CoreCommonR.string.settings_config_import_success)
-        private val importFailedPrefix: String =
-            context.getString(CoreCommonR.string.settings_config_import_failed)
+    internal class ConfigTransferStrings private constructor() {
+        val exporting: UiText = UiText.Resource(CoreCommonR.string.settings_config_exporting)
+        val importing: UiText = UiText.Resource(CoreCommonR.string.settings_config_importing)
+        val exportOptionsExpired: UiText = UiText.Resource(AppR.string.settings_config_export_options_expired)
 
-        fun exportSuccess(fileName: String): String = "$exportSuccessPrefix: $fileName"
+        fun exportSuccess(fileName: String): UiText =
+            feedbackValue(UiText.Resource(CoreCommonR.string.settings_config_export_success), fileName)
 
-        fun exportFailed(message: String?): String = "$exportFailedPrefix: ${message.orEmpty()}"
+        fun exportFailed(message: Any?): UiText =
+            feedbackValue(UiText.Resource(CoreCommonR.string.settings_config_export_failed), message ?: "")
 
-        fun importFailed(message: String?): String = "$importFailedPrefix: ${message.orEmpty()}"
+        fun importFailed(message: Any?): UiText =
+            feedbackValue(UiText.Resource(CoreCommonR.string.settings_config_import_failed), message ?: "")
 
-        private fun quantityText(resId: Int, count: Int): String {
-            return context.resources.getQuantityString(resId, count, count)
-        }
-
-        fun importSuccess(result: AppConfigImportResult): String {
-            return buildString {
-                append(importSuccessPrefix)
-                append('\n')
-                append(
-                    quantityText(
-                        CoreCommonR.plurals.settings_config_import_restored_settings,
-                        result.restoredSettingsCount
-                    )
-                )
-                append('\n')
-                append(
-                    quantityText(
-                        CoreCommonR.plurals.settings_config_import_restored_listen_together,
-                        result.restoredListenTogetherCount
-                    )
-                )
-                append('\n')
-                append(
-                    quantityText(
-                        CoreCommonR.plurals.settings_config_import_restored_auth,
-                        result.restoredAuthCount
-                    )
-                )
-                append('\n')
-                append(
-                    quantityText(
-                        CoreCommonR.plurals.settings_config_import_restored_sync,
-                        result.restoredSyncCount
-                    )
-                )
-
-                if (result.warnings.isNotEmpty()) {
-                    append('\n')
-                    append('\n')
-                    append(context.getString(CoreCommonR.string.settings_config_import_warning_title))
-                    result.warnings.forEach { warning ->
-                        append('\n')
-                        append("- ")
-                        append(warning)
+        fun importSuccess(result: AppConfigImportResult): UiText = feedbackLines(buildList {
+            add(UiText.Resource(CoreCommonR.string.settings_config_import_success))
+            add(UiText.Plural(AppR.plurals.settings_config_import_restored_settings,
+                result.restoredSettingsCount, listOf(result.restoredSettingsCount)))
+            add(UiText.Plural(AppR.plurals.settings_config_import_restored_listen_together,
+                result.restoredListenTogetherCount, listOf(result.restoredListenTogetherCount)))
+            add(UiText.Plural(AppR.plurals.settings_config_import_restored_auth,
+                result.restoredAuthCount, listOf(result.restoredAuthCount)))
+            add(UiText.Plural(AppR.plurals.settings_config_import_restored_sync,
+                result.restoredSyncCount, listOf(result.restoredSyncCount)))
+            if (result.warnings.isNotEmpty()) {
+                add(UiText.Literal(""))
+                add(UiText.Resource(CoreCommonR.string.settings_config_import_warning_title))
+                result.warnings.forEachIndexed { index, warning ->
+                    val message = when (result.warningCodes[index]) {
+                        AppConfigImportWarning.INVALID_SETTING_VALUES ->
+                            UiText.Resource(CoreCommonR.string.config_import_warning_invalid_setting_values)
+                        AppConfigImportWarning.BACKGROUND_IMAGE ->
+                            UiText.Resource(CoreCommonR.string.config_import_warning_background_image)
+                        AppConfigImportWarning.DOWNLOAD_DIRECTORY ->
+                            UiText.Resource(CoreCommonR.string.config_import_warning_download_directory)
+                        AppConfigImportWarning.NETEASE_COOKIE ->
+                            UiText.Resource(CoreCommonR.string.config_import_warning_netease_cookie)
+                        null -> UiText.Literal(warning)
                     }
-                }
-
-                if (result.requiresActivityRecreate) {
-                    append('\n')
-                    append('\n')
-                    append(context.getString(CoreCommonR.string.settings_config_import_restart_hint))
+                    add(UiText.Resource(AppR.string.settings_config_import_warning_item, listOf(message)))
                 }
             }
-        }
+            if (result.requiresActivityRecreate) {
+                add(UiText.Literal(""))
+                add(UiText.Resource(CoreCommonR.string.settings_config_import_restart_hint))
+            }
+        })
 
         companion object {
-            fun from(context: Context): ConfigTransferStrings = ConfigTransferStrings(context)
+            fun create(): ConfigTransferStrings = ConfigTransferStrings()
         }
     }
 }
@@ -362,12 +337,12 @@ class ConfigTransferViewModel : ViewModel() {
 data class ConfigTransferUiState(
     val isExporting: Boolean = false,
     val isImporting: Boolean = false,
-    val exportProgress: String? = null,
-    val importProgress: String? = null,
+    val exportProgress: UiText? = null,
+    val importProgress: UiText? = null,
     val lastExportSuccess: Boolean? = null,
-    val lastExportMessage: String? = null,
+    val lastExportMessage: UiText? = null,
     val lastImportSuccess: Boolean? = null,
-    val lastImportMessage: String? = null,
+    val lastImportMessage: UiText? = null,
     val requiresAuthStorageConfirmation: Boolean = false,
     val showExportOptions: Boolean = false,
     val requiresConfigPassword: Boolean = false,

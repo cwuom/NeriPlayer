@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -90,7 +91,7 @@ class SyncViewModelCompletionTimeTest {
 
                 assertEquals(completedAt, fixture.lastSyncTime())
                 assertFalse(fixture.isSyncing())
-                assertEquals("completed", fixture.successMessage())
+                assertEquals(UiText.Literal("completed"), fixture.successMessage())
             }
         }
     }
@@ -211,7 +212,7 @@ class SyncViewModelCompletionTimeTest {
         val initialize: () -> Unit,
         val lastSyncTime: () -> Long,
         val isSyncing: () -> Boolean,
-        val successMessage: () -> String?,
+        val successMessage: () -> UiText?,
         val setOperation: (suspend () -> Result<SyncResult>) -> Unit,
         val perform: (Boolean) -> Unit,
         val clear: () -> Unit,

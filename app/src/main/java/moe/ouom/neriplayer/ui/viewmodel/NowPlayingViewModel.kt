@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.viewmodel
  * Created: 2025/8/17
  */
 
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -95,7 +97,7 @@ data class ManualSearchState(
     val selectedPlatform: MusicPlatform = MusicPlatform.QQ_MUSIC,
     val searchResults: List<SongSearchInfo> = emptyList(),
     val isLoading: Boolean = false,
-    val error: String? = null,
+    val error: UiText? = null,
     val isCloudMusicAvailable: Boolean = false,
     val isApplyingMetadata: Boolean = false
 )
@@ -262,7 +264,7 @@ class NowPlayingViewModel : ViewModel() {
                 it.copy(
                     isLoading = false,
                     searchResults = emptyList(),
-                    error = AppContainer.applicationContext.getString(CoreCommonR.string.netease_login_required_search)
+                    error = feedbackText(CoreCommonR.string.netease_login_required_search)
                 )
             }
             return
@@ -300,7 +302,7 @@ class NowPlayingViewModel : ViewModel() {
                 if (searchRequestCoordinator.isLatest(requestToken)) {
                     _manualSearchState.update { current ->
                         if (!current.matches(request)) current else current.copy(
-                            error = AppContainer.applicationContext.getString(
+                            error = feedbackText(
                                 CoreCommonR.string.error_search_failed,
                                 e.message.orEmpty()
                             )
@@ -472,7 +474,7 @@ class NowPlayingViewModel : ViewModel() {
             selectedSong.source == MusicPlatform.CLOUD_MUSIC &&
             AppContainer.neteaseCookieRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing
         ) {
-            onComplete(false, context.getString(CoreCommonR.string.netease_login_required_metadata))
+            onComplete(false, LanguageManager.applyLanguage(context).getString(CoreCommonR.string.netease_login_required_metadata))
             return
         }
         viewModelScope.launch {
@@ -499,21 +501,21 @@ class NowPlayingViewModel : ViewModel() {
                         )
                         onComplete(
                             false,
-                            context.getString(CoreCommonR.string.local_song_lyrics_write_failed)
+                            LanguageManager.applyLanguage(context).getString(CoreCommonR.string.local_song_lyrics_write_failed)
                         )
                         return@launch
                     }
                     NPLogger.d("NowPlayingViewModel", "歌词已保存: songId=${song.id}, album=${song.album}, lyrics length=${songDetails.lyric.orEmpty().length}, hasTranslation=${!songDetails.translatedLyric.isNullOrBlank()}")
-                    onComplete(true, context.getString(CoreCommonR.string.music_lyrics_filled_success))
+                    onComplete(true, LanguageManager.applyLanguage(context).getString(CoreCommonR.string.music_lyrics_filled_success))
                 } else {
                     NPLogger.w("NowPlayingViewModel", "获取的歌词为空: searchSongId=${selectedSong.id}")
-                    onComplete(false, context.getString(CoreCommonR.string.music_lyrics_empty))
+                    onComplete(false, LanguageManager.applyLanguage(context).getString(CoreCommonR.string.music_lyrics_empty))
                 }
             } catch (error: CancellationException) {
                 throw error
             } catch (e: Exception) {
                 NPLogger.e("NowPlayingViewModel", "获取歌词失败", e)
-                onComplete(false, context.getString(CoreCommonR.string.music_lyrics_fill_failed))
+                onComplete(false, LanguageManager.applyLanguage(context).getString(CoreCommonR.string.music_lyrics_fill_failed))
             }
         }
     }
@@ -588,7 +590,7 @@ class NowPlayingViewModel : ViewModel() {
                         coverFallbackUrl = coverFallbackUrl
                     )
                     if (request.isCurrent) {
-                        onResult(true, info, context.getString(CoreCommonR.string.music_restore_success))
+                        onResult(true, info, LanguageManager.applyLanguage(context).getString(CoreCommonR.string.music_restore_success))
                     }
                 } else if (isBili) {
                     val resolved = resolveBiliSong(originalSong, AppContainer.biliClient)
@@ -605,7 +607,7 @@ class NowPlayingViewModel : ViewModel() {
                         shouldClearLyrics = true  // B站音源应该清除歌词
                     )
                     if (request.isCurrent) {
-                        onResult(true, info, context.getString(CoreCommonR.string.music_restore_success))
+                        onResult(true, info, LanguageManager.applyLanguage(context).getString(CoreCommonR.string.music_restore_success))
                     }
                 } else {
                     // 网易云音乐: 从网易云获取原始信息
@@ -625,13 +627,13 @@ class NowPlayingViewModel : ViewModel() {
                         translatedLyric = songDetails.translatedLyric  // 保存原始翻译歌词
                     )
                     if (request.isCurrent) {
-                        onResult(true, info, context.getString(CoreCommonR.string.music_restore_success))
+                        onResult(true, info, LanguageManager.applyLanguage(context).getString(CoreCommonR.string.music_restore_success))
                     }
                 }
             } catch (e: Exception) {
                 NPLogger.e("NowPlayingViewModel", "获取原始信息失败", e)
                 if (request.isCurrent) {
-                    onResult(false, null, context.getString(CoreCommonR.string.music_restore_failed))
+                    onResult(false, null, LanguageManager.applyLanguage(context).getString(CoreCommonR.string.music_restore_failed))
                 }
             }
         }

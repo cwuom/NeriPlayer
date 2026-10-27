@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Debug
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import android.view.FrameMetrics
@@ -90,6 +91,9 @@ class NowPlayingManualPerformanceReplayTest {
         val output = File(checkNotNull(context.getExternalFilesDir(null)), "now-playing-perf-$token")
         check(fixtures.mkdirs() && output.mkdirs())
         val settings = SettingsRepository(context)
+        val requestedStyle = InstrumentationRegistry.getArguments().getString("uiStyle") ?: "Clean"
+        val uiStyle = UiStyle.entries.singleOrNull { it.name.equals(requestedStyle, ignoreCase = true) }
+            ?: error("未知主题: $requestedStyle")
         val restoreSettings = runBlocking { saveSettings(settings) }
         val savedQueue = runBlocking { SavedQueue.read(context) }
         val promptKey = booleanPreferencesKey("preview_theme_prompt_answered")
@@ -118,7 +122,7 @@ class NowPlayingManualPerformanceReplayTest {
                 settings.setDisclaimerAccepted(true)
                 settings.setStartupOnboardingCompleted(true)
                 settings.setDefaultStartDestination(Destinations.Library.route)
-                settings.setUiStyle(UiStyle.Clean)
+                settings.setUiStyle(uiStyle)
                 settings.setFollowSystemDark(false)
                 settings.setForceDark(InstrumentationRegistry.getArguments().getString("forceDark") == "true")
                 settings.setDynamicColor(true)
@@ -173,6 +177,7 @@ class NowPlayingManualPerformanceReplayTest {
                 }
             }
             scenario = ActivityScenario.launch(MainActivity::class.java)
+            Log.i(Tag, "uiStyle=$uiStyle forceDark=${InstrumentationRegistry.getArguments().getString("forceDark")}")
             waitUntil("created playlist '${playlist.name}' visible") { nativeNodes(playlist.name).isNotEmpty() }
             if (recentHistorySize > 0) {
                 Log.i(Tag, "recentHistorySize=$recentHistorySize")
@@ -206,7 +211,9 @@ class NowPlayingManualPerformanceReplayTest {
             }
             SystemClock.sleep(1_000L)
             measure(scenario, output, "existing-mini-player") { clickText(songs[0].name, bottommost = true) }
-            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            measure(scenario, output, "player-system-back") {
+                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            }
             waitUntil("created playlist '${playlist.name}' visible after player back", fixturePlaylistVisible)
             SystemClock.sleep(700L)
             measure(scenario, output, "new-playlist-song") { clickText(songs[1].name) }
@@ -287,6 +294,8 @@ class NowPlayingManualPerformanceReplayTest {
     }
 
     private fun saveWindow(directory: File, name: String) {
+        // 等弹层进场结束后再采集稳定布局
+        SystemClock.sleep(1_000L)
         val bitmap = checkNotNull(automation.takeScreenshot())
         try {
             File(directory, "$name.png").outputStream().use {
@@ -299,7 +308,10 @@ class NowPlayingManualPerformanceReplayTest {
 
     private fun measure(scenario: ActivityScenario<MainActivity>, directory: File, name: String, action: () -> Unit) {
         val recorder = FrameRecorder(checkNotNull(scenarioWindow(scenario)))
-        val sampleMethods = InstrumentationRegistry.getArguments().getString("sampleMethods") != "false"
+        val sampleMethods = InstrumentationRegistry.getArguments().getString("sampleMethods") == "true"
+        val pssBeforeKb = Debug.getPss()
+        val cpuBeforeMs = Process.getElapsedCpuTime()
+        val startedMs = SystemClock.elapsedRealtime()
         var tracing = false
         try {
             recorder.start()
@@ -313,7 +325,18 @@ class NowPlayingManualPerformanceReplayTest {
             SystemClock.sleep(3_500L)
         } finally {
             try { if (tracing) Debug.stopMethodTracing() }
-            finally { recorder.stop(File(directory, "$name-frames.csv")) }
+            finally {
+                val wallMs = SystemClock.elapsedRealtime() - startedMs
+                val cpuMs = Process.getElapsedCpuTime() - cpuBeforeMs
+                recorder.stop(File(directory, "$name-frames.csv"))
+                val pssAfterKb = Debug.getPss()
+                File(directory, "$name-resources.csv").writeText(
+                    "wallMs,processCpuMs,pssBeforeKb,pssAfterKb,methodTracing\n" +
+                        "$wallMs,$cpuMs,$pssBeforeKb,$pssAfterKb,$sampleMethods\n"
+                )
+                Log.i(Tag, "$name: wallMs=$wallMs processCpuMs=$cpuMs " +
+                    "pssBeforeKb=$pssBeforeKb pssAfterKb=$pssAfterKb")
+            }
         }
     }
 
@@ -324,8 +347,14 @@ class NowPlayingManualPerformanceReplayTest {
             FrameMetrics.LAYOUT_MEASURE_DURATION, FrameMetrics.ANIMATION_DURATION, FrameMetrics.SYNC_DURATION,
             FrameMetrics.COMMAND_ISSUE_DURATION, FrameMetrics.SWAP_BUFFERS_DURATION, FrameMetrics.UNKNOWN_DELAY_DURATION)
         private val listener = Window.OnFrameMetricsAvailableListener { _, frame, dropped ->
+            val deadline = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                frame.getMetric(FrameMetrics.DEADLINE)
+            } else -1L
+            val gpu = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                frame.getMetric(FrameMetrics.GPU_DURATION)
+            } else -1L
             val row = longArrayOf(SystemClock.elapsedRealtimeNanos(), dropped.toLong()) +
-                LongArray(metrics.size) { frame.getMetric(metrics[it]) }
+                LongArray(metrics.size) { frame.getMetric(metrics[it]) } + longArrayOf(deadline, gpu)
             synchronized(samples) { samples.add(row) }
         }
 
@@ -342,14 +371,17 @@ class NowPlayingManualPerformanceReplayTest {
                 check(drained.await(2, TimeUnit.SECONDS)) { "FrameMetrics callback queue did not drain" }
                 val rows = synchronized(samples) { samples.toList() }
                 file.bufferedWriter().use { writer ->
-                    writer.appendLine("callbackMonotonicNs,droppedReports,totalNs,drawNs,layoutNs,animationNs,syncNs,commandNs,swapNs,unknownNs")
+                    writer.appendLine("callbackMonotonicNs,droppedReports,totalNs,drawNs,layoutNs,animationNs,syncNs,commandNs,swapNs,unknownNs,deadlineNs,gpuNs")
                     rows.forEach { writer.appendLine(it.joinToString(",")) }
                 }
                 check(rows.isNotEmpty()) { "没有收到 FrameMetrics，不能生成性能对比" }
                 val durations = rows.map { it[2] / 1_000_000.0 }.sorted()
                 fun percentile(fraction: Double) = durations.getOrNull(((durations.size - 1) * fraction).toInt())
+                val timedRows = rows.filter { it[10] > 0L }
+                val overBudget = timedRows.count { it[2] > it[10] }
                 Log.i(Tag, "${file.name}: frames=${rows.size} droppedReports=${rows.sumOf { it[1] }} " +
-                    "p50Ms=${percentile(0.5)} p95Ms=${percentile(0.95)} maxMs=${durations.lastOrNull()}")
+                    "p50Ms=${percentile(0.5)} p95Ms=${percentile(0.95)} p99Ms=${percentile(0.99)} " +
+                    "maxMs=${durations.lastOrNull()} overBudget=$overBudget deadlineSamples=${timedRows.size}")
             } finally {
                 thread.quitSafely()
                 thread.join(2_000L)

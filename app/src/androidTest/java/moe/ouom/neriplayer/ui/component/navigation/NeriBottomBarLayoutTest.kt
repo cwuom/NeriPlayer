@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.component.navigation
 
 import android.os.Build
+import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -21,7 +22,9 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -34,6 +37,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.captureCommittedFrame
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassHost
 import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
@@ -197,7 +201,9 @@ class NeriBottomBarLayoutTest {
     @Test
     @SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
     fun bottomBarBlursLazyContentInsideNavHost() {
+        lateinit var hostView: View
         composeRule.setContent {
+            hostView = LocalView.current
             val backgroundBackdrop = rememberAdvancedGlassBackdrop()
             val contentBackdrop = rememberAdvancedGlassBackdrop()
             val navController = rememberNavController()
@@ -280,7 +286,10 @@ class NeriBottomBarLayoutTest {
             .onNodeWithTag(NavHostBottomBarTag)
             .fetchSemanticsNode()
             .boundsInRoot
-        val image = composeRule.onNodeWithTag(NavHostBlurRootTag).captureToImage()
+        val image = composeRule.captureCommittedFrame(
+            hostView,
+            composeRule.onNodeWithTag(NavHostBlurRootTag).fetchSemanticsNode().boundsInRoot
+        ).asImageBitmap()
         val sampleX = image.width / 2
         val sampleY = (bottomBarBounds.top + bottomBarBounds.height / 3f)
             .roundToInt()

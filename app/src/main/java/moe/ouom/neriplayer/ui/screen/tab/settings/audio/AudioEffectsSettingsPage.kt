@@ -82,6 +82,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun AudioEffectsSettingsPage(usbExclusive: Boolean, modifier: Modifier = Modifier) {
@@ -118,7 +119,7 @@ internal fun AudioEffectsSettingsPage(usbExclusive: Boolean, modifier: Modifier 
         if (section.resettable) {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.End) {
                 AudioEffectsGlassButton(
-                    text = stringResource(CoreCommonR.string.audio_effects_section_reset),
+                    text = stringResource(AppR.string.audio_effects_section_reset),
                     onClick = { confirmReset = section }
                 )
             }
@@ -128,8 +129,8 @@ internal fun AudioEffectsSettingsPage(usbExclusive: Boolean, modifier: Modifier 
         val name = stringResource(target.labelRes)
         MiuixSettingsDialog(
             onDismissRequest = { confirmReset = null },
-            title = { Text(stringResource(CoreCommonR.string.audio_effects_section_reset)) },
-            text = { Text(stringResource(CoreCommonR.string.audio_effects_section_reset_confirm, name)) },
+            title = { Text(stringResource(AppR.string.audio_effects_section_reset)) },
+            text = { Text(stringResource(AppR.string.audio_effects_section_reset_confirm, name)) },
             confirmButton = {
                 MiuixSettingsTextButton(onClick = {
                     editor.resetSection(target)
@@ -185,14 +186,14 @@ private fun AudioEffectsSectionSwitch(
     onCheckedChange: (Boolean) -> Unit
 ) {
     val description = when (section) {
-        AudioEffectsSection.SPEED -> stringResource(CoreCommonR.string.audio_effects_section_switch_speed_desc)
-        AudioEffectsSection.DYNAMICS -> stringResource(CoreCommonR.string.audio_effects_section_switch_dynamics_desc)
+        AudioEffectsSection.SPEED -> stringResource(AppR.string.audio_effects_section_switch_speed_desc)
+        AudioEffectsSection.DYNAMICS -> stringResource(AppR.string.audio_effects_section_switch_dynamics_desc)
         AudioEffectsSection.SPEAKER -> when {
-            checked && speakerBlockedByMaster -> stringResource(CoreCommonR.string.audio_effects_speaker_master_off)
-            checked && route != AudioOutputRoute.SPEAKER -> stringResource(CoreCommonR.string.audio_effects_speaker_inactive)
-            else -> stringResource(CoreCommonR.string.audio_effects_section_switch_desc)
+            checked && speakerBlockedByMaster -> stringResource(AppR.string.audio_effects_speaker_master_off)
+            checked && route != AudioOutputRoute.SPEAKER -> stringResource(AppR.string.audio_effects_speaker_inactive)
+            else -> stringResource(AppR.string.audio_effects_section_switch_desc)
         }
-        else -> stringResource(CoreCommonR.string.audio_effects_section_switch_desc)
+        else -> stringResource(AppR.string.audio_effects_section_switch_desc)
     }
     AudioEffectsSwitchRow(
         title = stringResource(section.switchTitleRes ?: section.labelRes),
@@ -302,21 +303,21 @@ private fun AudioEffectsOverview(
     editor: AudioEffectsEditor
 ) {
     AudioEffectsSwitchRow(
-        title = stringResource(CoreCommonR.string.audio_effects_master),
-        description = stringResource(CoreCommonR.string.audio_effects_master_desc),
+        title = stringResource(AppR.string.audio_effects_master),
+        description = stringResource(AppR.string.audio_effects_master_desc),
         checked = profile.enabled,
         onCheckedChange = { enabled -> editor.profile { it.copy(enabled = enabled) } }
     )
     val routeLabel = stringResource(route.labelRes())
-    AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_route_format, routeLabel))
+    AudioEffectsNote(stringResource(AppR.string.audio_effects_route_format, routeLabel))
     if (settings.perOutputEnabled) {
-        AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_editing_route, routeLabel))
+        AudioEffectsNote(stringResource(AppR.string.audio_effects_editing_route, routeLabel))
     }
     val statusText = when (val status = resolveAudioEffectsStatus(stats)) {
         is AudioEffectsStatus.Processing -> if (status.sampleRateKhz != null) {
-            stringResource(CoreCommonR.string.audio_effects_status_active_rate, status.sampleRateKhz, status.cpuLoad)
+            stringResource(AppR.string.audio_effects_status_active_rate, status.sampleRateKhz, status.cpuLoad)
         } else {
-            stringResource(CoreCommonR.string.audio_effects_status_active, status.cpuLoad)
+            stringResource(AppR.string.audio_effects_status_active, status.cpuLoad)
         }
         is AudioEffectsStatus.Bypassed -> stringResource(status.messageRes)
     }
@@ -355,9 +356,9 @@ private fun AudioEffectsLimiterLine(stats: AudioEffectsRuntimeStats, limiterEnab
         }
     }
     val text = when {
-        !limiterEnabled -> stringResource(CoreCommonR.string.audio_effects_status_limiter_off)
-        heldReductionDb > 0f -> stringResource(CoreCommonR.string.audio_effects_status_limiter, formatSignedDb(-heldReductionDb))
-        else -> stringResource(CoreCommonR.string.audio_effects_status_limiter_idle)
+        !limiterEnabled -> stringResource(AppR.string.audio_effects_status_limiter_off)
+        heldReductionDb > 0f -> stringResource(AppR.string.audio_effects_status_limiter, formatSignedDb(-heldReductionDb))
+        else -> stringResource(AppR.string.audio_effects_status_limiter_idle)
     }
     Text(
         text = text,
@@ -385,8 +386,8 @@ internal fun AudioEffectsPresetCard(
     var showImport by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<AudioEffectsUserPreset?>(null) }
     AudioEffectsCardIntro(
-        title = stringResource(CoreCommonR.string.audio_effects_presets_title),
-        description = stringResource(CoreCommonR.string.audio_effects_presets_desc)
+        title = stringResource(AppR.string.audio_effects_presets_title),
+        description = stringResource(AppR.string.audio_effects_presets_desc)
     )
     MiuixSettingsSegmentedTabs(
         labels = AudioEffectsPresetTabs.map { stringResource(it.tabLabelRes()) },
@@ -407,7 +408,7 @@ internal fun AudioEffectsPresetCard(
                 NeriChoiceChip(
                     selected = profile.enabled && profile.presetId == preset.id,
                     onClick = { editor.profile { it.applyBuiltInPreset(preset) } },
-                    label = stringResource(audioEffectsPresetNameRes(preset.id) ?: CoreCommonR.string.audio_effects_preset_custom)
+                    label = stringResource(audioEffectsPresetNameRes(preset.id) ?: AppR.string.audio_effects_preset_custom)
                 )
             }
         }
@@ -423,8 +424,8 @@ internal fun AudioEffectsPresetCard(
     if (profile.presetId == AudioEffectsPresetIds.CUSTOM && profile.enabled) {
         AudioEffectsNote(
             stringResource(
-                CoreCommonR.string.audio_effects_current_preset,
-                stringResource(CoreCommonR.string.audio_effects_preset_custom)
+                AppR.string.audio_effects_current_preset,
+                stringResource(AppR.string.audio_effects_preset_custom)
             )
         )
     }
@@ -435,10 +436,10 @@ internal fun AudioEffectsPresetCard(
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
     ) {
         MiuixSettingsOutlinedButton(onClick = { showImport = true }) {
-            Text(stringResource(CoreCommonR.string.audio_effects_import_preset))
+            Text(stringResource(AppR.string.audio_effects_import_preset))
         }
         MiuixSettingsOutlinedButton(onClick = { showSave = true }) {
-            Text(stringResource(CoreCommonR.string.audio_effects_save_preset))
+            Text(stringResource(AppR.string.audio_effects_save_preset))
         }
     }
     if (showSave) {
@@ -448,7 +449,7 @@ internal fun AudioEffectsPresetCard(
                 val id = newUserPresetId(System.currentTimeMillis())
                 editor.settings { it.saveUserPreset(id, name, profile.sound) }
                 editor.profile { it.copy(presetId = id) }
-                AppFeedback.showToast(context = context, message = resources.getString(CoreCommonR.string.audio_effects_preset_saved, name.trim()))
+                AppFeedback.showToast(context = context, message = resources.getString(AppR.string.audio_effects_preset_saved, name.trim()))
                 showSave = false
             }
         )
@@ -459,12 +460,12 @@ internal fun AudioEffectsPresetCard(
             onImport = { code ->
                 val imported = AudioEffectsSettingsCodec.decodeUserPresetOrNull(code)
                 if (imported == null) {
-                    AppFeedback.showToast(context = context, message = resources.getString(CoreCommonR.string.audio_effects_import_failed))
+                    AppFeedback.showToast(context = context, message = resources.getString(AppR.string.audio_effects_import_failed))
                 } else {
                     val id = newUserPresetId(System.currentTimeMillis())
                     editor.settings { it.saveUserPreset(id, imported.name, imported.sound) }
                     editor.profile { it.applyUserPreset(imported.copy(id = id)) }
-                    AppFeedback.showToast(context = context, message = resources.getString(CoreCommonR.string.audio_effects_preset_saved, imported.name))
+                    AppFeedback.showToast(context = context, message = resources.getString(AppR.string.audio_effects_preset_saved, imported.name))
                     showImport = false
                 }
             }
@@ -473,8 +474,8 @@ internal fun AudioEffectsPresetCard(
     deleting?.let { preset ->
         MiuixSettingsDialog(
             onDismissRequest = { deleting = null },
-            title = { Text(stringResource(CoreCommonR.string.audio_effects_delete_preset)) },
-            text = { Text(stringResource(CoreCommonR.string.audio_effects_delete_preset_confirm, preset.name)) },
+            title = { Text(stringResource(AppR.string.audio_effects_delete_preset)) },
+            text = { Text(stringResource(AppR.string.audio_effects_delete_preset_confirm, preset.name)) },
             confirmButton = {
                 MiuixSettingsTextButton(onClick = {
                     editor.settings { it.deleteUserPreset(preset.id) }
@@ -501,7 +502,7 @@ private fun UserPresetList(
     onDelete: (AudioEffectsUserPreset) -> Unit
 ) {
     if (presets.isEmpty()) {
-        AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_user_presets_empty))
+        AudioEffectsNote(stringResource(AppR.string.audio_effects_user_presets_empty))
         return
     }
     presets.forEach { preset ->
@@ -517,10 +518,10 @@ private fun UserPresetList(
             trailingContent = {
                 Row {
                     IconButton(onClick = { onShare(preset) }) {
-                        Icon(Icons.Outlined.Share, contentDescription = stringResource(CoreCommonR.string.audio_effects_share_preset))
+                        Icon(Icons.Outlined.Share, contentDescription = stringResource(AppR.string.audio_effects_share_preset))
                     }
                     IconButton(onClick = { onDelete(preset) }) {
-                        Icon(Icons.Outlined.Delete, contentDescription = stringResource(CoreCommonR.string.audio_effects_delete_preset))
+                        Icon(Icons.Outlined.Delete, contentDescription = stringResource(AppR.string.audio_effects_delete_preset))
                     }
                 }
             },
@@ -534,14 +535,14 @@ private fun SavePresetDialog(onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(CoreCommonR.string.audio_effects_save_preset)) },
+        title = { Text(stringResource(AppR.string.audio_effects_save_preset)) },
         text = {
             MiuixSettingsTextField(
                 value = name,
                 onValueChange = { name = it.take(24) },
                 singleLine = true,
-                label = { Text(stringResource(CoreCommonR.string.audio_effects_save_preset_name)) },
-                placeholder = { Text(stringResource(CoreCommonR.string.audio_effects_save_preset_hint)) }
+                label = { Text(stringResource(AppR.string.audio_effects_save_preset_name)) },
+                placeholder = { Text(stringResource(AppR.string.audio_effects_save_preset_hint)) }
             )
         },
         confirmButton = {
@@ -562,14 +563,14 @@ private fun ImportPresetDialog(onDismiss: () -> Unit, onImport: (String) -> Unit
     var code by remember { mutableStateOf("") }
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(CoreCommonR.string.audio_effects_import_preset)) },
+        title = { Text(stringResource(AppR.string.audio_effects_import_preset)) },
         text = {
             MiuixSettingsTextField(
                 value = code,
                 onValueChange = { code = it },
                 minLines = 3,
                 maxLines = 8,
-                placeholder = { Text(stringResource(CoreCommonR.string.audio_effects_import_preset_hint)) }
+                placeholder = { Text(stringResource(AppR.string.audio_effects_import_preset_hint)) }
             )
         },
         confirmButton = {
@@ -588,5 +589,5 @@ private fun ImportPresetDialog(onDismiss: () -> Unit, onImport: (String) -> Unit
 private fun copyPresetCode(context: Context, preset: AudioEffectsUserPreset) {
     val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
     clipboard.setPrimaryClip(ClipData.newPlainText(preset.name, AudioEffectsSettingsCodec.encodeUserPreset(preset)))
-    AppFeedback.showToast(context = context, message = context.getString(CoreCommonR.string.audio_effects_share_copied))
+    AppFeedback.showToast(context = context, message = context.getString(AppR.string.audio_effects_share_copied))
 }

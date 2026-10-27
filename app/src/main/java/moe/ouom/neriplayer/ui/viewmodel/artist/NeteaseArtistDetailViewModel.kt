@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.viewmodel.feedbackText
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -49,7 +51,7 @@ data class NeteaseArtistHeader(
 data class NeteaseArtistDetailUiState(
     val loading: Boolean = true,
     val followUpdating: Boolean = false,
-    val error: String? = null,
+    val error: UiText? = null,
     val header: NeteaseArtistHeader? = null,
     val songs: List<SongItem> = emptyList(),
     val albums: List<AlbumSummary> = emptyList(),
@@ -147,7 +149,7 @@ class NeteaseArtistDetailViewModel internal constructor(
         _uiState.update {
             it.copy(
                 loading = false,
-                error = getApplication<Application>().getString(
+                error = feedbackText(
                     CoreCommonR.string.artist_load_failed,
                     error.message ?: error.javaClass.simpleName
                 )
@@ -292,7 +294,7 @@ class NeteaseArtistDetailViewModel internal constructor(
             if (currentFollowHeader(state, generation, headerId) == null) return@update state
             state.copy(
                 followUpdating = false,
-                error = getApplication<Application>().getString(
+                error = feedbackText(
                     CoreCommonR.string.artist_follow_failed,
                     error.message ?: error.javaClass.simpleName
                 )
@@ -328,7 +330,7 @@ class NeteaseArtistDetailViewModel internal constructor(
     private fun parseArtistDetail(raw: String, fallback: NeteaseArtistSummary): NeteaseArtistHeader {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
+        require(code == 200) { "API code $code" }
 
         val artist = root.optJSONObject("data")?.optJSONObject("artist")
             ?: root.optJSONObject("artist")
@@ -353,7 +355,7 @@ class NeteaseArtistDetailViewModel internal constructor(
     private fun parseArtistSongs(raw: String): Page<SongItem> {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
+        require(code == 200) { "API code $code" }
 
         val songs = root.optJSONArray("songs") ?: JSONArray()
         val items = ArrayList<SongItem>(songs.length())
@@ -367,7 +369,7 @@ class NeteaseArtistDetailViewModel internal constructor(
     private fun parseArtistAlbums(raw: String): Page<AlbumSummary> {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
+        require(code == 200) { "API code $code" }
 
         val albums = root.optJSONArray("hotAlbums") ?: JSONArray()
         val items = ArrayList<AlbumSummary>(albums.length())

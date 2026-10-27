@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.util.format.convertTimestampToDate
+import moe.ouom.neriplayer.R as AppR
 
 internal fun LazyListScope.settingsAboutSection(
     devModeEnabled: Boolean,
@@ -94,7 +95,7 @@ private fun SettingsAboutIntroItem() {
                 style = MaterialTheme.typography.titleMedium
             )
         },
-        supportingContent = { Text(stringResource(CoreCommonR.string.about_app_footer)) },
+        supportingContent = { Text(stringResource(AppR.string.about_app_footer)) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }

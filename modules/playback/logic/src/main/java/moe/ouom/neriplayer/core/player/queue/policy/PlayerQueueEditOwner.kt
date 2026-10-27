@@ -49,22 +49,33 @@ class PlayerQueueEditOwner(private val identity: QueueSongIdentity) {
         queueSize > 1 && validMoveEndpoints(fromIndex, toIndex, queueSize) && fromIndex != toIndex
 
     fun remove(queue: PlayerQueueSnapshot, index: Int): RemoveQueueEdit? {
-        if (index !in queue.playlist.indices) return null
-        val songs = queue.playlist.toMutableList()
-        val removedSong = songs.removeAt(index)
-        val updated = PlayerQueueSnapshot.from(
-            songs,
-            resolveQueueCurrentIndexAfterRemoval(queue.currentIndex, index, queue.playlist.size),
-        )
+        val removedSong = queue.playlist.getOrNull(index) ?: return null
+        val updated = remove(queue, setOf(index)) ?: return null
         return RemoveQueueEdit(updated, removedSong, index == queue.currentIndex)
+    }
+
+    fun remove(queue: PlayerQueueSnapshot, indices: Set<Int>): PlayerQueueSnapshot? {
+        val removedIndices = indices.filterTo(HashSet()) { it in queue.playlist.indices }
+        if (removedIndices.isEmpty()) return null
+        val songs = queue.playlist.filterIndexed { index, _ -> index !in removedIndices }
+        val removedBeforeCurrent = removedIndices.count { it < queue.currentIndex }
+        // 当前行被删时继续选后方第一首保留的歌，没有后续歌曲则选剩余末尾
+        val currentIndex = (queue.currentIndex - removedBeforeCurrent).coerceAtMost(songs.lastIndex)
+        return PlayerQueueSnapshot.from(songs, currentIndex)
     }
 
     fun removalPlaybackAction(
         edit: RemoveQueueEdit,
         transportActive: Boolean,
+    ): RemovedQueuePlaybackAction = removalPlaybackAction(edit.queue, edit.removedCurrent, transportActive)
+
+    fun removalPlaybackAction(
+        queue: PlayerQueueSnapshot,
+        removedCurrent: Boolean,
+        transportActive: Boolean,
     ): RemovedQueuePlaybackAction = when {
-        edit.queue.playlist.isEmpty() -> RemovedQueuePlaybackAction.STOP
-        !edit.removedCurrent -> RemovedQueuePlaybackAction.KEEP_PLAYING
+        queue.playlist.isEmpty() -> RemovedQueuePlaybackAction.STOP
+        !removedCurrent -> RemovedQueuePlaybackAction.KEEP_PLAYING
         transportActive -> RemovedQueuePlaybackAction.PLAY_NEXT
         else -> RemovedQueuePlaybackAction.STOP
     }

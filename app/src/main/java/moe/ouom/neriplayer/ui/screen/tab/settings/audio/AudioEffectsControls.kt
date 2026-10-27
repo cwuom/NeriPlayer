@@ -28,7 +28,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsPresetIds
@@ -42,6 +41,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickabl
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
+import moe.ouom.neriplayer.R as AppR
 
 /** 所有音效修改都按当前输出设备写入对应配置，并由播放器统一防抖保存 */
 internal class AudioEffectsEditor(private val route: AudioOutputRoute) {
@@ -212,7 +212,7 @@ internal fun AudioEffectsSliderRow(
 @Composable
 internal fun AudioEffectsValueChip(text: String, editable: Boolean, onClick: () -> Unit) {
     val primary = MaterialTheme.colorScheme.primary
-    val label = stringResource(CoreCommonR.string.audio_effects_input_edit)
+    val label = stringResource(AppR.string.audio_effects_input_edit)
     Text(
         text = text,
         style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace),

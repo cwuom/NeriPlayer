@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import moe.ouom.neriplayer.activity.applyNeriSystemBarTransparency
 
 internal val LocalOverlayNavigationBarHidden = compositionLocalOf { false }
 
@@ -76,12 +77,9 @@ private fun View.findOverlayDialogWindow(): Window? {
 }
 
 private fun Window.applyOverlayNavigationBarVisibility(hidden: Boolean) {
+    applyNeriSystemBarTransparency()
     WindowInsetsControllerCompat(this, decorView).apply {
-        systemBarsBehavior = if (hidden) {
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        } else {
-            WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
-        }
+        systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
         if (hidden) hide(WindowInsetsCompat.Type.navigationBars())
         else show(WindowInsetsCompat.Type.navigationBars())
     }

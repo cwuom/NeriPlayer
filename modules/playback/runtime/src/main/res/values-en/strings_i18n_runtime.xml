@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_channel_playback">NeriPlayer Playback</string>
+    <string name="notification_channel_xiaomi_super_island_lyrics">Xiaomi Super Island Lyrics</string>
+    <string name="notification_channel_xiaomi_super_island_lyrics_description">HyperOS Super Island lyric updates</string>
+    <string name="notification_xiaomi_super_island_play_pause">Play/Pause</string>
+</resources>

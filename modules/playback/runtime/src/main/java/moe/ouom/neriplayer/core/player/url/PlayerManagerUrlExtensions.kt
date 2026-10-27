@@ -1243,7 +1243,6 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
     resumePlaybackAfterRefresh: Boolean
 ): Boolean {
     if (!gate.runMutation {}) return false
-
     val cacheKey = cacheKeyOverride ?: computeCacheKey(song)
     configureActivePlaybackCandidates(
         result = result,
@@ -1266,6 +1265,7 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
         selectedCandidate?.representationIdentity ?: result.representationIdentity
     val cacheSynchronization = synchronizeCachedPlaybackDescriptor(
         cacheKey = cacheKey,
+        ownerSong = song,
         audioInfo = selectedAudioInfo,
         expectedContentLength = selectedExpectedContentLength,
         representationIdentity = selectedRepresentationIdentity,

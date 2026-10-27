@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsBoundsTransform
 import moe.ouom.neriplayer.ui.screen.nowplaying.PlaybackActionToolbarLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.rememberAudioDeviceInfo
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayout
@@ -378,6 +379,7 @@ private fun NowPlayingCoverToolbarButton(
             onClick = onClick,
             modifier = modifier.sharedBounds(
                 rememberSharedContentState(key = sharedKey),
+                boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                 animatedVisibilityScope = animatedVisibilityScope,
                 enter = EnterTransition.None,
                 exit = ExitTransition.None
@@ -410,6 +412,7 @@ private fun NowPlayingCoverLyricsButton(
             enabled = status.lyricsAvailable,
             modifier = modifier.testTag("nowPlayingLyricsAction").sharedBounds(
                 rememberSharedContentState(key = "btn_lyrics"),
+                boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
                 animatedVisibilityScope = animatedVisibilityScope,
                 enter = EnterTransition.None,
                 exit = ExitTransition.None

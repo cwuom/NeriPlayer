@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.data.model.download.BatchDownloadOverallProgress
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.data.model.download.DownloadTask
@@ -126,24 +127,25 @@ internal fun buildDownloadExecutionNotification(
     context: Context,
     snapshot: DownloadExecutionNotificationSnapshot = currentDownloadExecutionNotificationSnapshot()
 ): Notification {
+    val localizedContext = LanguageManager.applyLanguage(context)
     val notificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     notificationManager.createNotificationChannel(
         NotificationChannel(
             DOWNLOAD_EXECUTION_NOTIFICATION_CHANNEL_ID,
-            context.getString(CoreCommonR.string.download_execution_notification_channel),
+            localizedContext.getString(CoreCommonR.string.download_execution_notification_channel),
             NotificationManager.IMPORTANCE_LOW
         )
     )
-    val contentText = notificationContent(context, snapshot)
-    val detailText = notificationDetail(context, snapshot, contentText)
+    val contentText = notificationContent(localizedContext, snapshot)
+    val detailText = notificationDetail(localizedContext, snapshot, contentText)
     val percentage = snapshot.overallPercentage
     return NotificationCompat.Builder(
-        context,
+        localizedContext,
         DOWNLOAD_EXECUTION_NOTIFICATION_CHANNEL_ID
     )
         .setSmallIcon(CoreCommonR.drawable.ic_notification_small)
-        .setContentTitle(context.getString(CoreCommonR.string.download_execution_notification_title))
+        .setContentTitle(localizedContext.getString(CoreCommonR.string.download_execution_notification_title))
         .setContentText(contentText)
         .setSubText(snapshot.currentSong)
         .setStyle(NotificationCompat.BigTextStyle().bigText(detailText))

@@ -19,9 +19,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentImage
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.R as AppR
 
 /** 缩略图请求的像素边长, 兼顾清晰度与内存占用。 */
 private const val CommentImageThumbRequestSizePx = 480
@@ -139,7 +139,7 @@ private fun CommentImageThumb(
                 offlineMode = offlineMode
             )
         },
-        contentDescription = stringResource(CoreCommonR.string.comment_image_content_description),
+        contentDescription = stringResource(AppR.string.comment_image_content_description),
         contentScale = contentScale,
         modifier = modifier
     )

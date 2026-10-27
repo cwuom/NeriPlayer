@@ -110,6 +110,7 @@ import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import moe.ouom.neriplayer.R as AppR
 
 internal data class DebugField(
     val label: String,
@@ -534,7 +535,11 @@ fun ListenTogetherRoomPanel(
                                     persistSettings(preferences, baseUrl, effectiveBaseUrl, userUuid, nickname, updated)
                                     if (isInRoom && isController) {
                                         val result = sessionManager.updateRoomSettings(updated)
-                                        check(result.ok) { result.error ?: "websocket unavailable" }
+                                        check(result.ok) {
+                                            result.error ?: composeResources.getString(
+                                                CoreCommonR.string.listen_together_debug_ws_unavailable
+                                            )
+                                        }
                                     }
                                 }.onFailure { showMessage(it.message ?: it.javaClass.simpleName) }
                             } ?: showMessage(
@@ -1574,7 +1579,7 @@ private fun String.prefixedNoticeMessage(context: Context): String? = when {
     startsWith(CONTROLLER_OFFLINE_NOTICE_PREFIX) -> {
         val minutes = controllerOfflineNoticeMinutes()
         context.resources.getQuantityString(
-            CoreCommonR.plurals.listen_together_notice_controller_offline,
+            AppR.plurals.listen_together_notice_controller_offline,
             minutes,
             minutes
         )

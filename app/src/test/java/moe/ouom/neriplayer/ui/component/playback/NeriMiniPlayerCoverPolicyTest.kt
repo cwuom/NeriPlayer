@@ -143,13 +143,13 @@ class NeriMiniPlayerCoverPolicyTest {
     }
 
     @Test
-    fun `large bitmap covers are downscaled to the mini player size`() {
-        val source = Bitmap.createBitmap(512, 256, Bitmap.Config.ARGB_8888)
+    fun `large bitmap covers retain enough detail for the expanded player`() {
+        val source = Bitmap.createBitmap(1024, 512, Bitmap.Config.ARGB_8888)
 
         val bitmap = resolveMiniPlayerCoverBitmap(BitmapDrawable(context.resources, source))
 
-        assertEquals(128, bitmap?.width)
-        assertEquals(64, bitmap?.height)
+        assertEquals(512, bitmap?.width)
+        assertEquals(256, bitmap?.height)
     }
 
     @Test
@@ -170,8 +170,8 @@ class NeriMiniPlayerCoverPolicyTest {
     fun `non bitmap drawables are rasterized at the maximum cover size`() {
         val bitmap = resolveMiniPlayerCoverBitmap(ColorDrawable(Color.RED))
 
-        assertEquals(128, bitmap?.width)
-        assertEquals(128, bitmap?.height)
+        assertEquals(512, bitmap?.width)
+        assertEquals(512, bitmap?.height)
     }
 
     @Test

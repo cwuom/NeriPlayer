@@ -72,6 +72,7 @@ import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.SongEncyclopediaUiState
 import androidx.compose.ui.Alignment
+import moe.ouom.neriplayer.R as AppR
 internal const val SONG_ENCYCLOPEDIA_TEST_TAG = "song_encyclopedia_content"
 /**
  * 歌曲百科二级页。
@@ -163,10 +164,10 @@ private fun SongEncyclopediaStateContent(
                 SongEncyclopediaUiState.Idle,
                 SongEncyclopediaUiState.Loading -> SongEncyclopediaLoading()
                 SongEncyclopediaUiState.NotSupported -> SongEncyclopediaMessage(
-                    CoreCommonR.string.encyclopedia_not_supported
+                    AppR.string.encyclopedia_not_supported
                 )
                 SongEncyclopediaUiState.Empty -> SongEncyclopediaMessage(
-                    CoreCommonR.string.encyclopedia_empty
+                    AppR.string.encyclopedia_empty
                 )
                 is SongEncyclopediaUiState.Failed -> SongEncyclopediaFailure(onRetry)
                 is SongEncyclopediaUiState.Success -> {
@@ -210,7 +211,7 @@ private fun SongEncyclopediaHeader(
         }
         Spacer(Modifier.width(4.dp))
         Text(
-            text = stringResource(CoreCommonR.string.encyclopedia_title),
+            text = stringResource(AppR.string.encyclopedia_title),
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.weight(1f)
         )
@@ -224,9 +225,9 @@ private fun SongEncyclopediaHeader(
                     },
                     contentDescription = stringResource(
                         if (isFullScreen) {
-                            CoreCommonR.string.encyclopedia_action_collapse
+                            AppR.string.encyclopedia_action_collapse
                         } else {
-                            CoreCommonR.string.encyclopedia_action_expand
+                            AppR.string.encyclopedia_action_expand
                         }
                     )
                 )
@@ -246,7 +247,7 @@ private fun SongEncyclopediaLoading() {
             CircularProgressIndicator(modifier = Modifier.size(28.dp))
             Spacer(Modifier.height(12.dp))
             Text(
-                text = stringResource(CoreCommonR.string.encyclopedia_loading),
+                text = stringResource(AppR.string.encyclopedia_loading),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -277,13 +278,13 @@ private fun SongEncyclopediaFailure(onRetry: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = stringResource(CoreCommonR.string.encyclopedia_failed),
+            text = stringResource(AppR.string.encyclopedia_failed),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
         Text(
-            text = stringResource(CoreCommonR.string.encyclopedia_retry),
+            text = stringResource(AppR.string.encyclopedia_retry),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
@@ -357,7 +358,7 @@ private fun SongEncyclopediaBody(
 private fun SongEncyclopediaSourceNote() {
     Spacer(Modifier.height(12.dp))
     Text(
-        text = stringResource(CoreCommonR.string.encyclopedia_source_note),
+        text = stringResource(AppR.string.encyclopedia_source_note),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )

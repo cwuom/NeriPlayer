@@ -6,6 +6,7 @@ import android.graphics.Color as AndroidColor
 import android.graphics.Paint
 import android.os.Build
 import android.util.Log
+import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,14 +21,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsProperties.SelectableGroup
 import androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
@@ -49,12 +49,14 @@ import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.captureCommittedFrame
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
@@ -94,6 +96,7 @@ class LocalPlaylistReorderBlurSamplingTest {
     private lateinit var contentBackdrop: AdvancedGlassBackdrop
     private lateinit var backgroundBackdrop: AdvancedGlassBackdrop
     private lateinit var regionRegistry: AdvancedGlassRegionRegistry
+    private lateinit var hostView: View
     private var oneDpPx = 0f
     private var navigationActions = 0
 
@@ -240,6 +243,7 @@ class LocalPlaylistReorderBlurSamplingTest {
         ownedPlaylistId = playlist.id
         screenVisible.value = true
         composeRule.setContent {
+            hostView = LocalView.current
             val background = rememberAdvancedGlassBackdrop()
             val content = rememberAdvancedGlassBackdrop()
             backgroundBackdrop = background
@@ -309,7 +313,10 @@ class LocalPlaylistReorderBlurSamplingTest {
         if (withMiniPlayer) assertTrue("the MiniPlayer did not register an active blur region", regionRegistry.regions.any { it.role == AdvancedGlassRole.MiniPlayer && it.boundsInWindow.width > 0f })
     }
 
-    private fun snapshot(): Bitmap = composeRule.onRoot(useUnmergedTree = true).captureToImage().asAndroidBitmap()
+    private fun snapshot(): Bitmap {
+        val bounds = composeRule.onRoot(useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        return composeRule.captureCommittedFrame(hostView, bounds)
+    }
 
     private fun saveScreenshot(image: Bitmap, name: String) {
         File(context.cacheDir, name).outputStream().use { assertTrue(image.compress(Bitmap.CompressFormat.PNG, 100, it)) }
@@ -384,7 +391,7 @@ class LocalPlaylistReorderBlurSamplingTest {
     private fun songRow(song: SongItem): SemanticsNodeInteraction = composeRule.onNode(hasClickAction().and(hasAnyDescendant(hasText(song.name))), useUnmergedTree = true)
     private fun miniPlayer(song: SongItem): SemanticsNodeInteraction = songRow(song)
     private fun songHandle(song: SongItem): SemanticsNodeInteraction = composeRule.onNode(hasContentDescription(context.getString(CoreCommonR.string.common_drag_handle)).and(hasAnyAncestor(hasClickAction().and(hasAnyDescendant(hasText(song.name))))), useUnmergedTree = true)
-    private fun bottomTabs(): SemanticsNodeInteraction = composeRule.onNode(SemanticsMatcher.keyIsDefined(SelectableGroup).and(hasAnyDescendant(hasContentDescription(context.getString(CoreCommonR.string.nav_home)))), useUnmergedTree = true)
+    private fun bottomTabs(): SemanticsNodeInteraction = composeRule.onNode(SemanticsMatcher.keyIsDefined(SelectableGroup).and(hasAnyDescendant(hasContentDescription(context.getString(AppR.string.nav_home)))), useUnmergedTree = true)
     private fun playlistList(): SemanticsNodeInteraction = composeRule.onNode(hasScrollToIndexAction().and(SemanticsMatcher.keyIsDefined(VerticalScrollAxisRange)))
     private fun scrollPosition(): Float = playlistList().fetchSemanticsNode().config[VerticalScrollAxisRange].value()
     private fun currentOrder(): List<Long> = repository.playlists.value.single { it.id == ownedPlaylistId }.songs.map { it.id }

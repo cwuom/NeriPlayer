@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageDeletionPolicy
 import moe.ouom.neriplayer.data.model.sync.SyncResult
+import moe.ouom.neriplayer.data.model.sync.SyncResultMessage
 
 class SyncDataMerger(
     private val host: SyncMergeHost,
@@ -123,6 +124,7 @@ class SyncDataMerger(
             syncResult = SyncResult(
                 success = true,
                 message = host.mergeSuccessMessage,
+                messageKind = SyncResultMessage.MERGED,
                 playlistsAdded = collection.playlistsAdded,
                 playlistsUpdated = collection.playlistsUpdated,
                 playlistsDeleted = collection.playlistsDeleted,
@@ -164,6 +166,7 @@ class SyncDataMerger(
             syncResult = SyncResult(
                 success = true,
                 message = host.initialUploadMessage,
+                messageKind = SyncResultMessage.INITIAL_UPLOADED,
                 playlistsAdded = playlistsAdded,
                 playlistsDeleted = playlistsDeleted,
                 songsAdded = songsAdded

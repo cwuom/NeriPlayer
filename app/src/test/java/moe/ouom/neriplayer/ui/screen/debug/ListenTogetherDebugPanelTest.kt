@@ -37,6 +37,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class ListenTogetherDebugPanelTest {
@@ -106,7 +107,7 @@ class ListenTogetherDebugPanelTest {
     fun `notices map prefixes exact codes and known fragments to localized text`() {
         val plural = { minutes: Int ->
             context.resources.getQuantityString(
-                CoreCommonR.plurals.listen_together_notice_controller_offline,
+                AppR.plurals.listen_together_notice_controller_offline,
                 minutes,
                 minutes
             )

@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
+import moe.ouom.neriplayer.R as AppR
 
 internal fun CoroutineScope.showPlaylistBatchExportCreatedResult(
     context: Context,
@@ -112,7 +113,7 @@ private fun CoroutineScope.showPlaylistBatchExportSnackbar(
 ) {
     val addedCount = addedSongs.size
     val message = context.resources.getQuantityString(
-        CoreCommonR.plurals.playlist_batch_export_success,
+        AppR.plurals.playlist_batch_export_success,
         addedCount,
         addedCount,
         targetPlaylistName

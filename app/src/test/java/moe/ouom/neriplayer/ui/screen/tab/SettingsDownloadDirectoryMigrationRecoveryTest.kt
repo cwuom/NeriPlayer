@@ -11,7 +11,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
@@ -34,6 +33,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
+import moe.ouom.neriplayer.R as AppR
 import org.mockito.Mockito.`when`
 
 class SettingsDownloadDirectoryMigrationRecoveryTest {
@@ -356,7 +356,7 @@ class SettingsDownloadDirectoryMigrationRecoveryTest {
             override suspend fun updateSharedProgress(operationId: String, processed: Int, total: Int) = Unit
         }
         val resources = mock(Resources::class.java)
-        `when`(resources.getQuantityString(CoreCommonR.plurals.settings_download_directory_migrated, 0, 0))
+        `when`(resources.getQuantityString(AppR.plurals.settings_download_directory_migrated, 0, 0))
             .thenReturn("migrated")
         val controller = controller(gateway, resources = resources)
         controller.recordActiveWorkId("active-work")
@@ -382,7 +382,7 @@ class SettingsDownloadDirectoryMigrationRecoveryTest {
             override suspend fun updateSharedProgress(operationId: String, processed: Int, total: Int) = Unit
         }
         val resources = mock(Resources::class.java)
-        `when`(resources.getQuantityString(CoreCommonR.plurals.settings_download_directory_migrated, 0, 0))
+        `when`(resources.getQuantityString(AppR.plurals.settings_download_directory_migrated, 0, 0))
             .thenReturn("migrated")
         val controller = controller(gateway, resources = resources)
         controller.recordActiveWorkId("finished-work")

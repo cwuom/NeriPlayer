@@ -50,9 +50,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo
 import androidx.compose.ui.Alignment
+import moe.ouom.neriplayer.R as AppR
 private const val ENCYCLOPEDIA_ARTIST_BRIEF_MAX_LINES = 4
 private const val ENCYCLOPEDIA_ARTIST_AVATAR_SIZE_DP = 48
 private val ENCYCLOPEDIA_ARTIST_TEXT_FOLLOW_MIN_WIDTH = 320.dp
@@ -68,7 +68,7 @@ internal fun SongEncyclopediaArtistSection(
     onOpenArtist: () -> Unit
 ) {
     SongEncyclopediaSectionCard(
-        titleRes = CoreCommonR.string.encyclopedia_section_artist,
+        titleRes = AppR.string.encyclopedia_section_artist,
         icon = Icons.Outlined.Person
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -133,7 +133,7 @@ private fun SongEncyclopediaArtistAvatar(artist: EncyclopediaArtistInfo, modifie
 internal fun SongEncyclopediaArtistBrief(artist: EncyclopediaArtistInfo) {
     val brief = artist.briefDesc?.takeIf { it.isNotBlank() }
     if (brief == null) {
-        SongEncyclopediaEmptyHint(CoreCommonR.string.encyclopedia_empty)
+        SongEncyclopediaEmptyHint(AppR.string.encyclopedia_empty)
         return
     }
     var expanded by rememberSaveable(artist.artistId, brief) { mutableStateOf(false) }
@@ -159,5 +159,5 @@ internal fun SongEncyclopediaArtistBrief(artist: EncyclopediaArtistInfo) {
 private fun buildEncyclopediaArtistMeta(artist: EncyclopediaArtistInfo): String? {
     val albums = artist.albumSize ?: return null
     val songs = artist.musicSize ?: return null
-    return stringResource(CoreCommonR.string.encyclopedia_artist_bio_note, albums, songs)
+    return stringResource(AppR.string.encyclopedia_artist_bio_note, albums, songs)
 }

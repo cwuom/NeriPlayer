@@ -49,6 +49,7 @@ import moe.ouom.neriplayer.data.model.playback.usb.UsbHostDeviceDebugInfo
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 fun UsbExclusiveDebugScreen() {
@@ -60,6 +61,7 @@ fun UsbExclusiveDebugScreen() {
     var copied by remember { mutableStateOf(false) }
     var debugActionRunning by remember { mutableStateOf(false) }
     val miniH = LocalMiniPlayerHeight.current
+    val noneText = stringResource(AppR.string.debug_usb_exclusive_none)
 
     fun runDebugAction(
         reason: String,
@@ -98,7 +100,7 @@ fun UsbExclusiveDebugScreen() {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = stringResource(CoreCommonR.string.debug_usb_exclusive_title),
+            text = stringResource(AppR.string.debug_usb_exclusive_title),
             style = MaterialTheme.typography.titleLarge
         )
 
@@ -129,9 +131,9 @@ fun UsbExclusiveDebugScreen() {
             ) {
                 Icon(
                     imageVector = Icons.Outlined.ContentCopy,
-                    contentDescription = stringResource(CoreCommonR.string.debug_usb_exclusive_copy_report)
+                    contentDescription = stringResource(AppR.string.debug_usb_exclusive_copy_report)
                 )
-                Text(stringResource(CoreCommonR.string.debug_usb_exclusive_copy_report))
+                Text(stringResource(AppR.string.debug_usb_exclusive_copy_report))
             }
         }
 
@@ -149,9 +151,9 @@ fun UsbExclusiveDebugScreen() {
         ) {
             Icon(
                 imageVector = Icons.Outlined.Usb,
-                contentDescription = stringResource(CoreCommonR.string.debug_usb_exclusive_request_permission)
+                contentDescription = stringResource(AppR.string.debug_usb_exclusive_request_permission)
             )
-            Text(stringResource(CoreCommonR.string.debug_usb_exclusive_request_permission))
+            Text(stringResource(AppR.string.debug_usb_exclusive_request_permission))
         }
 
         Row(
@@ -174,9 +176,9 @@ fun UsbExclusiveDebugScreen() {
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Usb,
-                    contentDescription = stringResource(CoreCommonR.string.debug_usb_exclusive_start_native_tone)
+                    contentDescription = stringResource(AppR.string.debug_usb_exclusive_start_native_tone)
                 )
-                Text(stringResource(CoreCommonR.string.debug_usb_exclusive_start_native_tone))
+                Text(stringResource(AppR.string.debug_usb_exclusive_start_native_tone))
             }
             OutlinedButton(
                 onClick = {
@@ -191,24 +193,24 @@ fun UsbExclusiveDebugScreen() {
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Stop,
-                    contentDescription = stringResource(CoreCommonR.string.debug_usb_exclusive_stop_native_tone)
+                    contentDescription = stringResource(AppR.string.debug_usb_exclusive_stop_native_tone)
                 )
-                Text(stringResource(CoreCommonR.string.debug_usb_exclusive_stop_native_tone))
+                Text(stringResource(AppR.string.debug_usb_exclusive_stop_native_tone))
             }
         }
 
         if (copied) {
             Text(
-                text = stringResource(CoreCommonR.string.log_copied),
+                text = stringResource(AppR.string.log_copied),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary
             )
         }
 
-        DebugCard(title = stringResource(CoreCommonR.string.debug_usb_exclusive_section_summary)) {
-            DebugRow(stringResource(CoreCommonR.string.debug_usb_exclusive_mode), snapshot.systemRouteSummary)
+        DebugCard(title = stringResource(AppR.string.debug_usb_exclusive_section_summary)) {
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_mode), snapshot.systemRouteSummary)
             DebugRow(
-                stringResource(CoreCommonR.string.debug_usb_exclusive_limitation),
+                stringResource(AppR.string.debug_usb_exclusive_limitation),
                 snapshot.systemRouteLimitation
             )
             DebugRow(
@@ -220,48 +222,48 @@ fun UsbExclusiveDebugScreen() {
                 snapshot.allowMixedPlaybackEnabled.yesNoText()
             )
             DebugRow(
-                stringResource(CoreCommonR.string.debug_usb_exclusive_player_state),
+                stringResource(AppR.string.debug_usb_exclusive_player_state),
                 "init=${snapshot.playerInitialized}, playing=${snapshot.playerPlaying}"
             )
             DebugRow(
-                stringResource(CoreCommonR.string.debug_usb_exclusive_current_output),
-                "${snapshot.currentPlayerDeviceType ?: "none"}:${snapshot.currentPlayerDeviceName ?: "none"}"
+                stringResource(AppR.string.debug_usb_exclusive_current_output),
+                "${snapshot.currentPlayerDeviceType ?: noneText}:${snapshot.currentPlayerDeviceName ?: noneText}"
             )
             DebugRow(
-                stringResource(CoreCommonR.string.debug_usb_exclusive_last_permission),
-                snapshot.lastPermissionEvent?.compactLine() ?: "none"
+                stringResource(AppR.string.debug_usb_exclusive_last_permission),
+                snapshot.lastPermissionEvent?.compactLine() ?: noneText
             )
         }
 
-        DebugCard(title = stringResource(CoreCommonR.string.debug_usb_exclusive_section_native_runtime)) {
-            DebugRow("Native", snapshot.nativeExclusiveSummary)
-            DebugRow("Available", nativeState.available.yesNoText())
-            DebugRow("Opened", nativeState.opened.yesNoText())
-            DebugRow("Streaming", nativeState.streaming.yesNoText())
-            DebugRow("Paused", nativeState.paused.yesNoText())
-            DebugRow("Transitioning", nativeState.transitioning.yesNoText())
-            DebugRow("Source", nativeState.source)
-            DebugRow("Device", nativeState.selectedDeviceName ?: "none")
-            DebugRow("Requested path", snapshot.requestedPath)
-            DebugRow("Effective path", snapshot.effectivePath)
-            DebugRow("Fallback reason", snapshot.fallbackReason ?: "none")
-            DebugRow("Input format", nativeState.inputFormat)
-            DebugRow("Output format", nativeState.outputFormat)
-            DebugRow("Buffer", "${nativeState.bufferDurationMs}ms")
-            DebugRow("Completed frames", nativeState.completedAudioFrames.toString())
-            DebugRow("Queued frames", nativeState.queuedAudioFrames.toString())
-            DebugRow("PCM bytes", "${nativeState.pcmLevelBytes}/${nativeState.pcmCapacityBytes}")
-            DebugRow("PCM free", nativeState.pcmFreeBytes.toString())
-            DebugRow("Backpressure", "events=${nativeState.pcmBackpressureEvents}, current=${nativeState.pcmBackpressureCurrentMs}ms, max=${nativeState.pcmBackpressureMaxMs}ms")
-            DebugRow("Service", "instance=${snapshot.audioServiceInstanceActive.yesNoText()}, foreground=${snapshot.audioServiceForegroundActive.yesNoText()}, wakeLock=${snapshot.usbWakeLockHeld.yesNoText()}")
-            DebugRow("Runtime", nativeState.runtimeReport)
-            DebugRow("Error", nativeState.lastError ?: "none")
+        DebugCard(title = stringResource(AppR.string.debug_usb_exclusive_section_native_runtime)) {
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_native), snapshot.nativeExclusiveSummary)
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_available), nativeState.available.yesNoText())
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_opened), nativeState.opened.yesNoText())
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_streaming), nativeState.streaming.yesNoText())
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_paused), nativeState.paused.yesNoText())
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_transitioning), nativeState.transitioning.yesNoText())
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_source), nativeState.source)
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_device), nativeState.selectedDeviceName ?: noneText)
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_requested_path), snapshot.requestedPath)
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_effective_path), snapshot.effectivePath)
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_fallback_reason), snapshot.fallbackReason ?: noneText)
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_input_format), nativeState.inputFormat)
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_output_format), nativeState.outputFormat)
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_buffer), "${nativeState.bufferDurationMs}ms")
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_completed_frames), nativeState.completedAudioFrames.toString())
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_queued_frames), nativeState.queuedAudioFrames.toString())
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_pcm_bytes), "${nativeState.pcmLevelBytes}/${nativeState.pcmCapacityBytes}")
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_pcm_free), nativeState.pcmFreeBytes.toString())
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_backpressure), "events=${nativeState.pcmBackpressureEvents}, current=${nativeState.pcmBackpressureCurrentMs}ms, max=${nativeState.pcmBackpressureMaxMs}ms")
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_service), "instance=${snapshot.audioServiceInstanceActive.yesNoText()}, foreground=${snapshot.audioServiceForegroundActive.yesNoText()}, wakeLock=${snapshot.usbWakeLockHeld.yesNoText()}")
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_runtime), nativeState.runtimeReport)
+            DebugRow(stringResource(AppR.string.debug_usb_exclusive_error), nativeState.lastError ?: noneText)
         }
 
-        DebugCard(title = stringResource(CoreCommonR.string.debug_usb_exclusive_section_audio_outputs)) {
+        DebugCard(title = stringResource(AppR.string.debug_usb_exclusive_section_audio_outputs)) {
             if (snapshot.audioOutputs.isEmpty()) {
                 Text(
-                    text = stringResource(CoreCommonR.string.debug_usb_exclusive_empty),
+                    text = stringResource(AppR.string.debug_usb_exclusive_empty),
                     style = MaterialTheme.typography.bodyMedium
                 )
             } else {
@@ -271,10 +273,10 @@ fun UsbExclusiveDebugScreen() {
             }
         }
 
-        DebugCard(title = stringResource(CoreCommonR.string.debug_usb_exclusive_section_usb_host)) {
+        DebugCard(title = stringResource(AppR.string.debug_usb_exclusive_section_usb_host)) {
             if (snapshot.usbHostDevices.isEmpty()) {
                 Text(
-                    text = stringResource(CoreCommonR.string.debug_usb_exclusive_empty),
+                    text = stringResource(AppR.string.debug_usb_exclusive_empty),
                     style = MaterialTheme.typography.bodyMedium
                 )
             } else {
@@ -284,7 +286,7 @@ fun UsbExclusiveDebugScreen() {
             }
         }
 
-        DebugCard(title = stringResource(CoreCommonR.string.debug_usb_exclusive_section_report)) {
+        DebugCard(title = stringResource(AppR.string.debug_usb_exclusive_section_report)) {
             Text(
                 text = snapshot.toReport(),
                 style = MaterialTheme.typography.bodySmall,
@@ -323,12 +325,12 @@ private fun AudioOutputBlock(output: UsbAudioOutputDebugInfo) {
             text = "${output.typeName} | ${output.productName}",
             style = MaterialTheme.typography.titleSmall
         )
-        DebugRow("ID", output.id.toString())
-        DebugRow("USB", output.isUsbOutput.yesNoText())
-        DebugRow("Address", output.address)
-        DebugRow("Rates", output.sampleRates.joinToString().ifBlank { "[]" })
-        DebugRow("Channels", output.channelCounts.joinToString().ifBlank { "[]" })
-        DebugRow("Encodings", output.encodings.joinToString().ifBlank { "[]" })
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_id), output.id.toString())
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_usb), output.isUsbOutput.yesNoText())
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_address), output.address)
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_rates), output.sampleRates.joinToString().ifBlank { "[]" })
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_channels), output.channelCounts.joinToString().ifBlank { "[]" })
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_encodings), output.encodings.joinToString().ifBlank { "[]" })
     }
 }
 
@@ -339,14 +341,14 @@ private fun UsbHostDeviceBlock(device: UsbHostDeviceDebugInfo) {
             text = "${device.productName} | ${device.vendorProductId}",
             style = MaterialTheme.typography.titleSmall
         )
-        DebugRow("Name", device.deviceName)
-        DebugRow("Manufacturer", device.manufacturerName)
-        DebugRow("Class", "${device.deviceClassName}(${device.deviceClass})")
-        DebugRow("Audio", device.hasAudioInterface.yesNoText())
-        DebugRow("Streaming", device.hasAudioStreamingInterface.yesNoText())
-        DebugRow("Permission", device.hasPermission.yesNoText())
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_name), device.deviceName)
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_manufacturer), device.manufacturerName)
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_class), "${device.deviceClassName}(${device.deviceClass})")
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_audio), device.hasAudioInterface.yesNoText())
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_streaming), device.hasAudioStreamingInterface.yesNoText())
+        DebugRow(stringResource(AppR.string.debug_usb_exclusive_permission), device.hasPermission.yesNoText())
         DebugRow(
-            "Interfaces",
+            stringResource(AppR.string.debug_usb_exclusive_interfaces),
             device.interfaces.joinToString { it.compactLine() }.ifBlank { "[]" }
         )
     }
@@ -370,8 +372,11 @@ private fun DebugRow(
     }
 }
 
+@Composable
 private fun Boolean.yesNoText(): String {
-    return if (this) "yes" else "no"
+    return stringResource(
+        if (this) AppR.string.debug_usb_exclusive_yes else AppR.string.debug_usb_exclusive_no
+    )
 }
 
 private fun copyUsbReport(

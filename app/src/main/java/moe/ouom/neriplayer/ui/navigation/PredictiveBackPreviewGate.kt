@@ -13,9 +13,12 @@ import androidx.navigationevent.NavigationEventHandler
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.NavigationEventInput
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 
-/** False when the user turned off "predictive back preview"; hosts then stop seeking on drag. */
-val LocalPredictiveBackPreviewEnabled = staticCompositionLocalOf { true }
+/** 用户开关控制返回手势是否预览页面 */
+val LocalPredictiveBackPreviewEnabled = staticCompositionLocalOf {
+    AutoSettingsSchema.motion.predictiveBackPreviewEnabled.defaultValue
+}
 
 /**
  * Sits between the activity dispatcher and a subtree. With preview on, gestures pass through

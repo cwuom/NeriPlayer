@@ -82,6 +82,7 @@ import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun SettingsDownloadSection(
@@ -212,7 +213,7 @@ private fun SettingsDownloadExpandedContent(
                         taskSummary.hasPendingTasks -> {
                             Text(
                                 pluralStringResource(
-                                    CoreCommonR.plurals.download_tasks_count,
+                                    AppR.plurals.download_tasks_count,
                                     taskSummary.pendingTaskCount,
                                     taskSummary.pendingTaskCount
                                 )
@@ -222,7 +223,7 @@ private fun SettingsDownloadExpandedContent(
                         else -> {
                             Text(
                                 pluralStringResource(
-                                    CoreCommonR.plurals.download_failed_songs_count,
+                                    AppR.plurals.download_failed_songs_count,
                                     taskSummary.failedTaskCount,
                                     taskSummary.failedTaskCount
                                 )

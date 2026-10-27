@@ -52,7 +52,7 @@
     <string name="storage_desc_bili_favorite_cache">哔哩哔哩收藏夹详情的 Room 缓存，按 SQLite 页面分摊统计，清理后可重新获取</string>
     <string name="storage_desc_bili_archive_cache">哔哩哔哩合集和系列的 Room 缓存，按 SQLite 页面分摊统计，清理后可重新获取</string>
     <string name="storage_desc_youtube_playlist_cache">YouTube Music 歌单详情的 Room 缓存，按 SQLite 页面分摊统计，清理后可重新获取</string>
-    <string name="storage_desc_other_cache">缓存目录内未归入上述类型的文件</string>
+    <string name="storage_desc_other_cache">可重新生成的歌词分享卡片</string>
     <string name="storage_desc_downloaded_music">用户主动下载保存的歌曲，不会通过清缓存删除</string>
     <string name="storage_desc_downloaded_lyrics">下载歌曲附带的原文和翻译歌词文件，不会通过清缓存删除</string>
     <string name="storage_desc_downloaded_covers">下载歌曲附带的封面文件，不会通过清缓存删除</string>
@@ -84,4 +84,27 @@
         <item quantity="other">Room 缓存 %1$d 条</item>
     </plurals>
     <string name="storage_details_empty">暂未发现可计量文件</string>
+    <string name="storage_cleanup_title">清理缓存</string>
+    <string name="storage_cleanup_media_group">音频与封面</string>
+    <string name="storage_cleanup_other_group">更多缓存</string>
+    <string name="storage_cleanup_selected_size">已选预计可清理 %1$s</string>
+    <string name="storage_cleanup_size_notice">预计释放已排除当前歌曲、保留缓存和索引占用，实际释放空间以清理结果为准</string>
+    <string name="storage_cleanup_retain_label">保留最近播放的歌曲数</string>
+    <string name="storage_cleanup_retain_help">滑动选择 0 至 1000 首，每次调整 50 首。按最近播放的不同歌曲保留，音频与封面共用名单，仅保留已有缓存</string>
+    <string name="storage_cleanup_select_all">全选</string>
+    <string name="storage_cleanup_deselect_all">取消全选</string>
+    <string name="storage_cleanup_running">正在清理…</string>
+    <string name="storage_cleanup_waiting_scan">扫描完成后显示各类容量</string>
+    <string name="storage_type_protected_cache">受保护的临时数据</string>
+    <string name="storage_desc_protected_cache">同步、备份和进行中的任务等临时数据，由各功能管理，普通缓存清理保留</string>
+    <string name="storage_cleanup_retain_notice">0 表示不按历史保留，并清除已选图片缓存；当前歌曲的音频缓存即使暂停也会保留。保留数大于 0 时，还会保留当前封面和旧版无法识别歌曲归属的缓存，实际保留可能多于指定首数</string>
+    <string name="storage_scan_failed">存储扫描失败</string>
+    <string name="storage_scan_failed_desc">暂时无法读取完整存储用量，请重新扫描后再清理</string>
+    <string name="storage_cleanup_size_unavailable">--</string>
+    <string name="storage_cleanup_estimated_total">预计可清理空间</string>
+    <string name="storage_cleanup_retain_count">%1$d 首</string>
+    <string name="storage_cleanup_estimate_label">预计可清理</string>
+    <string name="storage_cleanup_estimating">正在根据保留数量更新预计容量…</string>
+    <string name="storage_cleanup_occupied_size">实际占用 %1$s</string>
+    <string name="storage_cleanup_estimate_unavailable">部分缓存暂时无法估算，-- 不代表没有缓存，实际占用见各分类</string>
 </resources>

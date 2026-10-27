@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.tab.explore
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.component.common.NeriSearchFieldGlass
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.semantics.semantics
@@ -192,6 +194,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.common.logging.NPLogger
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
 private val ExplorePrimaryTabShape = RoundedCornerShape(20.dp)
@@ -263,7 +266,7 @@ internal fun rememberExploreSearchCollapsingHeaderState(
     query: String,
     source: SearchSource,
     searching: Boolean,
-    searchError: String?,
+    searchError: UiText?,
     hasResults: Boolean
 ): ExploreCollapsingHeaderState {
     val state = rememberExploreCollapsingHeaderState()
@@ -319,8 +322,8 @@ internal fun shouldShowBiliPartsPicker(song: SongItem): Boolean {
 private fun searchSourceLabel(source: SearchSource): String {
     return when (source) {
         SearchSource.YOUTUBE_MUSIC -> stringResource(CoreCommonR.string.explore_tab_youtube)
-        SearchSource.NETEASE -> stringResource(CoreCommonR.string.platform_netease_short)
-        SearchSource.BILIBILI -> stringResource(CoreCommonR.string.platform_bilibili)
+        SearchSource.NETEASE -> stringResource(AppR.string.platform_netease_short)
+        SearchSource.BILIBILI -> stringResource(AppR.string.platform_bilibili)
         SearchSource.LINK_RECOGNITION -> stringResource(CoreCommonR.string.explore_tab_links)
     }
 }
@@ -556,16 +559,9 @@ fun ExploreScreen(
 
     // Translated tag labels for display
     val tagLabels = listOf(
-        stringResource(CoreCommonR.string.tag_all), stringResource(CoreCommonR.string.tag_pop), stringResource(CoreCommonR.string.tag_soundtrack), stringResource(CoreCommonR.string.tag_chinese), stringResource(CoreCommonR.string.tag_nostalgia), stringResource(CoreCommonR.string.tag_rock), stringResource(CoreCommonR.string.tag_acg), stringResource(CoreCommonR.string.tag_western), stringResource(CoreCommonR.string.tag_fresh), stringResource(CoreCommonR.string.tag_night), stringResource(CoreCommonR.string.tag_children), stringResource(CoreCommonR.string.tag_folk), stringResource(CoreCommonR.string.tag_japanese), stringResource(CoreCommonR.string.tag_romantic),
-        stringResource(CoreCommonR.string.tag_study), stringResource(CoreCommonR.string.tag_korean), stringResource(CoreCommonR.string.tag_work), stringResource(CoreCommonR.string.tag_electronic), stringResource(CoreCommonR.string.tag_cantonese), stringResource(CoreCommonR.string.tag_dance), stringResource(CoreCommonR.string.tag_sad), stringResource(CoreCommonR.string.tag_game), stringResource(CoreCommonR.string.tag_afternoon_tea), stringResource(CoreCommonR.string.tag_healing), stringResource(CoreCommonR.string.tag_rap), stringResource(CoreCommonR.string.tag_light_music)
+        stringResource(AppR.string.tag_all), stringResource(AppR.string.tag_pop), stringResource(AppR.string.tag_soundtrack), stringResource(AppR.string.tag_chinese), stringResource(AppR.string.tag_nostalgia), stringResource(AppR.string.tag_rock), stringResource(AppR.string.tag_acg), stringResource(AppR.string.tag_western), stringResource(AppR.string.tag_fresh), stringResource(AppR.string.tag_night), stringResource(AppR.string.tag_children), stringResource(AppR.string.tag_folk), stringResource(AppR.string.tag_japanese), stringResource(AppR.string.tag_romantic),
+        stringResource(AppR.string.tag_study), stringResource(AppR.string.tag_korean), stringResource(AppR.string.tag_work), stringResource(AppR.string.tag_electronic), stringResource(AppR.string.tag_cantonese), stringResource(AppR.string.tag_dance), stringResource(AppR.string.tag_sad), stringResource(AppR.string.tag_game), stringResource(AppR.string.tag_afternoon_tea), stringResource(AppR.string.tag_healing), stringResource(AppR.string.tag_rap), stringResource(AppR.string.tag_light_music)
     )
-
-    // Initialize with default tag
-    LaunchedEffect(Unit) {
-        if (ui.selectedTag == "tag_all" && ui.playlists.isEmpty()) {
-            vm.loadHighQuality("tag_all")
-        }
-    }
 
     var lastRecordedSearchKeyword by remember { mutableStateOf<String?>(null) }
     var pendingSearchHistoryRecord by remember { mutableStateOf<String?>(null) }
@@ -734,7 +730,7 @@ fun ExploreScreen(
         },
         topBar = {
             LargeTopAppBar(
-                title = { Text(stringResource(CoreCommonR.string.nav_explore)) },
+                title = { Text(stringResource(AppR.string.nav_explore)) },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
@@ -930,7 +926,7 @@ fun ExploreScreen(
                                         .padding(bottom = miniPlayerHeight),
                                     Alignment.Center
                                 ) {
-                                    Text(ui.searchError!!, color = MaterialTheme.colorScheme.error)
+                                    Text(ui.searchError!!.asString(), color = MaterialTheme.colorScheme.error)
                                 }
                             }
                             ui.searchItems.isEmpty() -> {
@@ -1109,7 +1105,7 @@ fun ExploreScreen(
                                 } else if (ui.searchLoadMoreError != null) {
                                     item(key = "search-load-more-error") {
                                         SearchLoadMoreErrorRow(
-                                            error = ui.searchLoadMoreError!!,
+                                            error = ui.searchLoadMoreError!!.asString(),
                                             onRetry = vm::loadMoreSearchResults
                                         )
                                     }
@@ -1129,7 +1125,7 @@ fun ExploreScreen(
                                     selectedTag = ui.selectedTag,
                                     playlists = ui.playlists,
                                     loading = ui.loading,
-                                    error = ui.error
+                                    error = ui.error?.asString()
                                 ),
                                 tagKeys = tagKeys,
                                 tagLabels = tagLabels,
@@ -1144,7 +1140,7 @@ fun ExploreScreen(
                         }
                         SearchSource.BILIBILI -> {
                             Box(Modifier.fillMaxSize(), Alignment.Center) {
-                                Text(stringResource(CoreCommonR.string.explore_bili_desc), style = MaterialTheme.typography.bodyLarge)
+                                Text(stringResource(AppR.string.explore_bili_desc), style = MaterialTheme.typography.bodyLarge)
                             }
                         }
                         SearchSource.YOUTUBE_MUSIC -> {
@@ -1152,7 +1148,7 @@ fun ExploreScreen(
                                 browse = YouTubeBrowseState(
                                     playlists = ui.ytMusicPlaylists,
                                     loading = ui.ytMusicPlaylistsLoading,
-                                    error = ui.ytMusicPlaylistsError
+                                    error = ui.ytMusicPlaylistsError?.asString()
                                 ),
                                 onRetry = vm::loadYtMusicPlaylists,
                                 onClick = onYouTubeMusicPlaylistClick,
@@ -1197,7 +1193,7 @@ fun ExploreScreen(
                     title = {
                         Text(
                             pluralStringResource(
-                                CoreCommonR.plurals.common_selected_count,
+                                AppR.plurals.common_selected_count,
                                 selectedParts.size,
                                 selectedParts.size
                             )
@@ -1205,7 +1201,7 @@ fun ExploreScreen(
                     },
                         navigationIcon = {
                             HapticIconButton(onClick = { exitPartsSelection() }) {
-                                Icon(Icons.Filled.Close, contentDescription = stringResource(CoreCommonR.string.explore_exit_selection))
+                                Icon(Icons.Filled.Close, contentDescription = stringResource(AppR.string.explore_exit_selection))
                             }
                         },
                         actions = {
@@ -1218,7 +1214,7 @@ fun ExploreScreen(
                             }) {
                                 Icon(
                                     imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                    contentDescription = if (allSelected) stringResource(CoreCommonR.string.explore_deselect_all) else stringResource(CoreCommonR.string.explore_select_all)
+                                    contentDescription = if (allSelected) stringResource(AppR.string.explore_deselect_all) else stringResource(AppR.string.explore_select_all)
                                 )
                             }
                             HapticIconButton(
@@ -1234,7 +1230,7 @@ fun ExploreScreen(
                                 },
                                 enabled = selectedParts.isNotEmpty()
                             ) {
-                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(CoreCommonR.string.explore_export_to_playlist))
+                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(AppR.string.explore_export_to_playlist))
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -1389,7 +1385,7 @@ private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
         containerColor = Color.Transparent,
         topBar = {
             LargeTopAppBar(
-                title = { Text(stringResource(CoreCommonR.string.nav_explore)) },
+                title = { Text(stringResource(AppR.string.nav_explore)) },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
@@ -1415,7 +1411,7 @@ private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = stringResource(CoreCommonR.string.explore_offline_disabled),
+                    text = stringResource(AppR.string.explore_offline_disabled),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center

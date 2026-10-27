@@ -84,34 +84,35 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
 import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.R as AppR
 
 enum class DebugCrashTestType(
     @param:StringRes val titleRes: Int,
     @param:StringRes val descriptionRes: Int
 ) {
     JvmHandled(
-        titleRes = CoreCommonR.string.debug_test_exception_jvm_handled,
-        descriptionRes = CoreCommonR.string.debug_test_exception_jvm_handled_desc
+        titleRes = AppR.string.debug_test_exception_jvm_handled,
+        descriptionRes = AppR.string.debug_test_exception_jvm_handled_desc
     ),
     JvmUncaughtMain(
-        titleRes = CoreCommonR.string.debug_test_exception_jvm_uncaught_main,
-        descriptionRes = CoreCommonR.string.debug_test_exception_jvm_uncaught_main_desc
+        titleRes = AppR.string.debug_test_exception_jvm_uncaught_main,
+        descriptionRes = AppR.string.debug_test_exception_jvm_uncaught_main_desc
     ),
     JvmUncaughtWorker(
-        titleRes = CoreCommonR.string.debug_test_exception_jvm_uncaught_worker,
-        descriptionRes = CoreCommonR.string.debug_test_exception_jvm_uncaught_worker_desc
+        titleRes = AppR.string.debug_test_exception_jvm_uncaught_worker,
+        descriptionRes = AppR.string.debug_test_exception_jvm_uncaught_worker_desc
     ),
     MainThreadAnr(
-        titleRes = CoreCommonR.string.debug_test_exception_anr,
-        descriptionRes = CoreCommonR.string.debug_test_exception_anr_desc
+        titleRes = AppR.string.debug_test_exception_anr,
+        descriptionRes = AppR.string.debug_test_exception_anr_desc
     ),
     NativeSigSegv(
-        titleRes = CoreCommonR.string.debug_test_exception_native_sigsegv,
-        descriptionRes = CoreCommonR.string.debug_test_exception_native_sigsegv_desc
+        titleRes = AppR.string.debug_test_exception_native_sigsegv,
+        descriptionRes = AppR.string.debug_test_exception_native_sigsegv_desc
     ),
     NativeSigAbrt(
-        titleRes = CoreCommonR.string.debug_test_exception_native_sigabrt,
-        descriptionRes = CoreCommonR.string.debug_test_exception_native_sigabrt_desc
+        titleRes = AppR.string.debug_test_exception_native_sigabrt,
+        descriptionRes = AppR.string.debug_test_exception_native_sigabrt_desc
     ),
 }
 
@@ -171,37 +172,37 @@ fun DebugHomeScreen(
         DebugHeader()
 
         MiuixSettingsSectionIntro(
-            title = stringResource(CoreCommonR.string.debug_section_platforms),
-            description = stringResource(CoreCommonR.string.debug_section_platforms_desc)
+            title = stringResource(AppR.string.debug_section_platforms),
+            description = stringResource(AppR.string.debug_section_platforms_desc)
         )
         MiuixSettingsSectionCard {
             Column {
                 DebugRow(
                     glyph = rememberVectorPainter(Icons.Rounded.SmartDisplay),
                     hue = DebugRed,
-                    title = stringResource(CoreCommonR.string.debug_youtube_probe_title),
-                    description = stringResource(CoreCommonR.string.debug_youtube_probe_desc_short),
+                    title = stringResource(AppR.string.debug_youtube_probe_title),
+                    description = stringResource(AppR.string.debug_youtube_probe_desc_short),
                     onClick = onOpenYouTubeDebug
                 )
                 DebugRow(
                     glyph = painterResource(CoreCommonR.drawable.ic_bilibili),
                     hue = DebugPink,
-                    title = stringResource(CoreCommonR.string.debug_bili_api),
-                    description = stringResource(CoreCommonR.string.debug_bili_api_desc),
+                    title = stringResource(AppR.string.debug_bili_api),
+                    description = stringResource(AppR.string.debug_bili_api_desc),
                     onClick = onOpenBiliDebug
                 )
                 DebugRow(
                     glyph = painterResource(CoreCommonR.drawable.ic_netease_cloud_music),
                     hue = DebugRed,
-                    title = stringResource(CoreCommonR.string.debug_netease_api),
-                    description = stringResource(CoreCommonR.string.debug_netease_api_desc),
+                    title = stringResource(AppR.string.debug_netease_api),
+                    description = stringResource(AppR.string.debug_netease_api_desc),
                     onClick = onOpenNeteaseDebug
                 )
                 DebugRow(
                     glyph = rememberVectorPainter(Icons.AutoMirrored.Rounded.ManageSearch),
                     hue = DebugBlue,
-                    title = stringResource(CoreCommonR.string.debug_search_api),
-                    description = stringResource(CoreCommonR.string.debug_search_api_desc),
+                    title = stringResource(AppR.string.debug_search_api),
+                    description = stringResource(AppR.string.debug_search_api_desc),
                     onClick = onOpenSearchDebug,
                     divider = false
                 )
@@ -209,8 +210,8 @@ fun DebugHomeScreen(
         }
 
         MiuixSettingsSectionIntro(
-            title = stringResource(CoreCommonR.string.debug_section_diagnostics),
-            description = stringResource(CoreCommonR.string.debug_section_diagnostics_desc)
+            title = stringResource(AppR.string.debug_section_diagnostics),
+            description = stringResource(AppR.string.debug_section_diagnostics_desc)
         )
         MiuixSettingsSectionCard {
             Column {
@@ -224,15 +225,15 @@ fun DebugHomeScreen(
                 DebugRow(
                     glyph = rememberVectorPainter(Icons.Rounded.Usb),
                     hue = DebugGreen,
-                    title = stringResource(CoreCommonR.string.debug_usb_exclusive_title),
-                    description = stringResource(CoreCommonR.string.debug_usb_exclusive_desc_short),
+                    title = stringResource(AppR.string.debug_usb_exclusive_title),
+                    description = stringResource(AppR.string.debug_usb_exclusive_desc_short),
                     onClick = onOpenUsbExclusiveDebug
                 )
                 DebugRow(
                     glyph = rememberVectorPainter(Icons.Rounded.Description),
                     hue = DebugTeal,
-                    title = stringResource(CoreCommonR.string.debug_view_logs),
-                    description = stringResource(CoreCommonR.string.debug_view_logs_desc),
+                    title = stringResource(AppR.string.debug_view_logs),
+                    description = stringResource(AppR.string.debug_view_logs_desc),
                     onClick = onOpenLogs
                 )
                 DebugRow(
@@ -251,8 +252,8 @@ fun DebugHomeScreen(
                 DebugRow(
                     glyph = rememberVectorPainter(Icons.Rounded.ErrorOutline),
                     hue = DebugOrange,
-                    title = stringResource(CoreCommonR.string.crash_log_title),
-                    description = stringResource(CoreCommonR.string.crash_log_desc),
+                    title = stringResource(AppR.string.crash_log_title),
+                    description = stringResource(AppR.string.crash_log_desc),
                     onClick = onOpenCrashLogs,
                     divider = false
                 )
@@ -260,15 +261,15 @@ fun DebugHomeScreen(
         }
 
         MiuixSettingsSectionIntro(
-            title = stringResource(CoreCommonR.string.debug_section_stability),
-            description = stringResource(CoreCommonR.string.debug_section_stability_desc)
+            title = stringResource(AppR.string.debug_section_stability),
+            description = stringResource(AppR.string.debug_section_stability_desc)
         )
         MiuixSettingsSectionCard {
             DebugRow(
                 glyph = rememberVectorPainter(Icons.Rounded.Warning),
                 hue = DebugRed,
-                title = stringResource(CoreCommonR.string.debug_test_exception),
-                description = stringResource(CoreCommonR.string.debug_test_exception_desc),
+                title = stringResource(AppR.string.debug_test_exception),
+                description = stringResource(AppR.string.debug_test_exception_desc),
                 onClick = { showCrashTypeDialog = true },
                 divider = false
             )
@@ -277,7 +278,7 @@ fun DebugHomeScreen(
         Spacer(Modifier.height(12.dp))
         DebugHideButton(onClick = onHideDebugMode)
         Text(
-            text = stringResource(CoreCommonR.string.debug_hide_hint),
+            text = stringResource(AppR.string.debug_hide_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp)
@@ -298,12 +299,12 @@ private fun DebugHeader() {
         Spacer(Modifier.width(14.dp))
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = stringResource(CoreCommonR.string.debug_tools),
+                text = stringResource(AppR.string.debug_tools),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.onSurface
             )
             Text(
-                text = stringResource(CoreCommonR.string.debug_select_platform),
+                text = stringResource(AppR.string.debug_select_platform),
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.onSurfaceVariant
             )
@@ -417,7 +418,7 @@ private fun DebugHideButton(onClick: () -> Unit) {
         Icon(Icons.Rounded.VisibilityOff, contentDescription = null, tint = colors.error, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
         Text(
-            text = stringResource(CoreCommonR.string.debug_hide),
+            text = stringResource(AppR.string.debug_hide),
             style = MaterialTheme.typography.labelLarge,
             color = colors.error
         )
@@ -431,11 +432,11 @@ private fun DebugCrashTypeDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(CoreCommonR.string.debug_test_exception_picker_title)) },
+        title = { Text(stringResource(AppR.string.debug_test_exception_picker_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = stringResource(CoreCommonR.string.debug_test_exception_picker_desc),
+                    text = stringResource(AppR.string.debug_test_exception_picker_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

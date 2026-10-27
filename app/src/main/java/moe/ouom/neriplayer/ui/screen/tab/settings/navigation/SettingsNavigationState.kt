@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.navigation
 
-import android.content.Context
+import android.content.res.Configuration
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TopAppBarState
@@ -19,6 +19,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -78,6 +79,22 @@ internal fun settingsSearchResultsState(
     queryState: State<String>
 ): State<List<SettingsSearchEntry>> = derivedStateOf {
     searchSettingsEntries(entries, queryState.value, limit = 8)
+}
+
+@Composable
+private fun rememberSettingsSearchResults(
+    queryState: State<String>,
+    internationalEnabled: Boolean
+): State<List<SettingsSearchEntry>> {
+    val resources = LocalResources.current
+    val configurations = Configuration(LocalConfiguration.current) to Configuration(resources.configuration)
+    // 宿主 Context 身份不变时，搜索文案和关键词也必须随语言配置刷新
+    val searchEntries = remember(resources, configurations, internationalEnabled) {
+        buildSettingsSearchEntries(resources, internationalEnabled)
+    }
+    return remember(searchEntries) {
+        settingsSearchResultsState(searchEntries, queryState)
+    }
 }
 
 @Composable
@@ -225,12 +242,12 @@ private fun CompletePendingSettingsNavigationEffect(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 internal fun rememberSettingsNavigationState(
-    context: Context,
     listState: LazyListState,
     dynamicColor: Boolean,
     mobileDataFollowDefaultAudioQuality: Boolean,
     backgroundImageUri: String?,
-    splitLayout: Boolean = settingsSplitLayout()
+    splitLayout: Boolean = settingsSplitLayout(),
+    internationalEnabled: Boolean = false
 ): SettingsNavigationState {
     val activePageState = rememberInitialSettingsPageState()
     val homeTopAppBarState = rememberTopAppBarState()
@@ -243,10 +260,7 @@ internal fun rememberSettingsNavigationState(
     val highlightPulseState = rememberSaveable { mutableIntStateOf(0) }
     val searchRequestIdState = rememberSaveable { mutableIntStateOf(0) }
     val pendingNavigationState = remember { mutableStateOf<PendingSettingsSearchNavigation?>(null) }
-    val searchEntries = remember(context) { buildSettingsSearchEntries(context) }
-    val searchResultsState = remember(searchEntries) {
-        settingsSearchResultsState(searchEntries, searchQueryState)
-    }
+    val searchResultsState = rememberSettingsSearchResults(searchQueryState, internationalEnabled)
     val density = LocalDensity.current
     val navigation = SettingsNavigationState(
         splitLayout = splitLayout,

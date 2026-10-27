@@ -55,9 +55,9 @@ internal fun nowPlayingBlurImageRequest(
 
 internal fun preloadNowPlayingBlurCovers(
     hasCoverBlur: Boolean,
-    coverUrls: List<String>,
-    enqueue: (String) -> Unit
+    covers: List<NowPlayingBlurCoverRequest>,
+    enqueue: (NowPlayingBlurCoverRequest) -> Unit
 ) {
     if (!hasCoverBlur) return
-    coverUrls.forEach(enqueue)
+    covers.forEach(enqueue)
 }

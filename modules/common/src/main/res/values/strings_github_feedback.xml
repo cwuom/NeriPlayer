@@ -1,0 +1,7 @@
+<resources>
+    <plurals name="github_rate_limit_message">
+        <item quantity="other">GitHub 请求被限流，已保留同步进度。约 %1$d 秒后可重试，%2$s</item>
+    </plurals>
+    <string name="github_rate_limit_continue">稍后重试会从已有进度继续</string>
+    <string name="github_rate_limit_paused">自动续传已暂停，请稍后重试同步</string>
+</resources>

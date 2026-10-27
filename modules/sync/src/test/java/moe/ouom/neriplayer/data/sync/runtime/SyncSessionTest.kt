@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.sync.SyncData
+import moe.ouom.neriplayer.data.model.sync.SyncResultMessage
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetRemoteSnapshot
@@ -42,7 +43,9 @@ class SyncSessionTest {
 
     @Test
     fun `initial upload persists remote version and sync time`() = runTest {
-        assertEquals("initial", session.execute { backend }.getOrThrow().message)
+        val result = session.execute { backend }.getOrThrow()
+        assertEquals("initial", result.message)
+        assertEquals(SyncResultMessage.INITIAL_UPLOADED, result.messageKind)
         assertEquals(listOf(7L), backend.data!!.playlists.map { it.id })
         assertEquals(2, backend.savedVersion)
         assertEquals(900L, backend.savedTime)
@@ -55,7 +58,9 @@ class SyncSessionTest {
     fun `unchanged existing remote avoids uploading timestamp only differences`() = runTest {
         backend.data = local.data.copy(deviceId = "remote", lastModified = 1234L)
         backend.firstSync = false
-        assertEquals("unchanged", session.execute { backend }.getOrThrow().message)
+        val result = session.execute { backend }.getOrThrow()
+        assertEquals("unchanged", result.message)
+        assertEquals(SyncResultMessage.NO_CHANGE, result.messageKind)
         assertEquals(1, backend.version)
         assertFalse(local.remoteChanged)
         assertEquals(900L, backend.savedTime)
@@ -100,6 +105,7 @@ class SyncSessionTest {
 
         assertFalse(result.success)
         assertEquals("pending", result.message)
+        assertEquals(SyncResultMessage.LOCAL_CHANGES_PENDING, result.messageKind)
         assertEquals(null, backend.completedTime)
     }
 
@@ -108,7 +114,9 @@ class SyncSessionTest {
         backend.data = local.data.copy()
         backend.firstSync = false
         backend.changed = true
-        assertEquals("merged", session.execute { backend }.getOrThrow().message)
+        val result = session.execute { backend }.getOrThrow()
+        assertEquals("merged", result.message)
+        assertEquals(SyncResultMessage.MERGED, result.messageKind)
         assertEquals(1, backend.version)
         assertTrue(local.remoteChanged)
     }

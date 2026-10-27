@@ -114,6 +114,7 @@ import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
+import moe.ouom.neriplayer.R as AppR
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun FavoritePlaylistList(
@@ -308,7 +309,7 @@ internal fun FavoritePlaylistList(
                         headlineContent = {
                             Text(
                                 pluralStringResource(
-                                    CoreCommonR.plurals.common_selected_count,
+                                    AppR.plurals.common_selected_count,
                                     selectedKeys.size,
                                     selectedKeys.size
                                 )
@@ -360,7 +361,7 @@ internal fun FavoritePlaylistList(
         if (isHotCategory) {
             if (hotPlaylistResult?.isFailure == true) {
                 item(key = "favorite_hot_failed") {
-                    HapticTextButton(onClick = { hotPlaylistRetry += 1 }) { Text(stringResource(CoreCommonR.string.stats_load_failed)) }
+                    HapticTextButton(onClick = { hotPlaylistRetry += 1 }) { Text(stringResource(AppR.string.stats_load_failed)) }
                 }
             } else if (hotPlaylists == null) {
                 item(key = "favorite_hot_loading") {
@@ -670,11 +671,11 @@ internal fun FavoritePlaylistList(
     if (showDeleteSelectedConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteSelectedConfirm = false },
-            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
+            title = { Text(stringResource(AppR.string.dialog_confirm_delete)) },
             text = {
                 Text(
                     pluralStringResource(
-                        CoreCommonR.plurals.library_delete_selected_confirm,
+                        AppR.plurals.library_delete_selected_confirm,
                         selectedKeys.size,
                         selectedKeys.size
                     )
@@ -706,7 +707,7 @@ internal fun FavoritePlaylistList(
 internal fun favoriteSourceLabel(source: String): String {
     return when (source) {
         "youtubeMusic" -> "YouTube"
-        "neteaseAlbum" -> "Netease Album"
+        "neteaseAlbum" -> stringResource(AppR.string.media_favorite_netease_album)
         "netease" -> "Netease"
         "bili" -> "Bilibili"
         FAVORITE_SOURCE_NETEASE_ARTIST -> stringResource(CoreCommonR.string.library_favorite_source_artist)

@@ -223,6 +223,7 @@ private fun Modifier.nowPlayingArtistSharedModifier(
 ): Modifier = with(sharedTransitionScope) {
     this@nowPlayingArtistSharedModifier.sharedElement(
         rememberSharedContentState(key = NowPlayingLyricsSharedTransitionElement.ARTIST.key),
+        boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
         animatedVisibilityScope = animatedVisibilityScope
     )
 }

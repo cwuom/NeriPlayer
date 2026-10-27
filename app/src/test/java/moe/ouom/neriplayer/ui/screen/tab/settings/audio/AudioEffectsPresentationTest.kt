@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.audio
 
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsBuiltInPresets
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsInactiveReason
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsProfile
@@ -14,6 +13,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.R as AppR
 
 class AudioEffectsPresentationTest {
     @Test
@@ -31,11 +31,11 @@ class AudioEffectsPresentationTest {
             resolveAudioEffectsStatus(AudioEffectsRuntimeStats(active = true, sampleRate = 48_000, cpuLoadPercent = 0.42f))
         )
         val expected = mapOf(
-            AudioEffectsInactiveReason.DISABLED to CoreCommonR.string.audio_effects_status_disabled,
-            AudioEffectsInactiveReason.NEUTRAL to CoreCommonR.string.audio_effects_status_neutral,
-            AudioEffectsInactiveReason.USB_EXCLUSIVE to CoreCommonR.string.audio_effects_status_usb,
-            AudioEffectsInactiveReason.UNSUPPORTED_FORMAT to CoreCommonR.string.audio_effects_status_unsupported,
-            AudioEffectsInactiveReason.NATIVE_UNAVAILABLE to CoreCommonR.string.audio_effects_status_native_unavailable
+            AudioEffectsInactiveReason.DISABLED to AppR.string.audio_effects_status_disabled,
+            AudioEffectsInactiveReason.NEUTRAL to AppR.string.audio_effects_status_neutral,
+            AudioEffectsInactiveReason.USB_EXCLUSIVE to AppR.string.audio_effects_status_usb,
+            AudioEffectsInactiveReason.UNSUPPORTED_FORMAT to AppR.string.audio_effects_status_unsupported,
+            AudioEffectsInactiveReason.NATIVE_UNAVAILABLE to AppR.string.audio_effects_status_native_unavailable
         )
         expected.forEach { (reason, res) ->
             assertEquals(

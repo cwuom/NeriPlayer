@@ -1,0 +1,23 @@
+name: Issue labels
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { applyIssueLabels } = require('./.github/scripts/issue_labels.cjs');
+            await applyIssueLabels({ github, context, core });

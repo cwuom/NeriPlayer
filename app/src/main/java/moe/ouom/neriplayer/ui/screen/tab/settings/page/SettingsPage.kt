@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingsSectionEntry
+import moe.ouom.neriplayer.R as AppR
 
 internal enum class SettingsPage(
     val titleRes: Int,
@@ -44,8 +45,8 @@ internal enum class SettingsPage(
         icon = Icons.Outlined.Translate
     ),
     AudioEffects(
-        titleRes = CoreCommonR.string.settings_audio_effects_title,
-        descriptionRes = CoreCommonR.string.settings_audio_effects_desc,
+        titleRes = AppR.string.settings_audio_effects_title,
+        descriptionRes = AppR.string.settings_audio_effects_desc,
         icon = Icons.Outlined.GraphicEq
     ),
     Theme(

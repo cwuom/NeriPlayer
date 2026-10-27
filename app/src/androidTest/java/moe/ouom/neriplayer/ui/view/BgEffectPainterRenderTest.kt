@@ -225,6 +225,7 @@ class BgEffectPainterRenderTest {
             val lightPixelRatio = coloredPixelRatio(lightFrame, MinLightThemeColorChannel)
             assertTrue("浅色主题必须在隐藏前真实绘制，浅色像素比例=$lightPixelRatio",
                 lightPixelRatio >= MinColoredPixelRatio)
+            awaitProductionFrame { changedPixelRatio(lightFrame, it) >= MinChangedPixelRatio }
             composeRule.runOnIdle { visible.value = false }
             composeRule.mainClock.advanceTimeByFrame()
             composeRule.onNodeWithTag(ProductionTag).assertDoesNotExist()
@@ -238,6 +239,7 @@ class BgEffectPainterRenderTest {
             val reopenedDarkPixelRatio = darkPixelRatio(reopenedDarkFrame)
             assertTrue("深色主题重显后必须真实绘制，深色像素比例=$reopenedDarkPixelRatio",
                 reopenedDarkPixelRatio >= MinColoredPixelRatio)
+            awaitProductionFrame { changedPixelRatio(reopenedDarkFrame, it) >= MinChangedPixelRatio }
         }
     }
 

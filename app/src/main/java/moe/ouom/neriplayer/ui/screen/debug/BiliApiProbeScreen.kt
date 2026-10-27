@@ -43,9 +43,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.viewmodel.debug.BiliApiProbeViewModel
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 fun BiliApiProbeScreen() {
@@ -65,60 +65,60 @@ fun BiliApiProbeScreen() {
     val page = ui.page.ifBlank { "1" }
 
     DebugProbePage(
-        title = stringResource(CoreCommonR.string.debug_bili_probe_title),
-        description = stringResource(CoreCommonR.string.debug_probe_autocopy)
+        title = stringResource(AppR.string.debug_bili_probe_title),
+        description = stringResource(AppR.string.debug_probe_autocopy)
     ) {
-        DebugProbeSection(title = stringResource(CoreCommonR.string.debug_bili_section_search)) {
-            DebugProbeField(ui.keyword, vm::onKeywordChange, stringResource(CoreCommonR.string.debug_search_keyword))
+        DebugProbeSection(title = stringResource(AppR.string.debug_bili_section_search)) {
+            DebugProbeField(ui.keyword, vm::onKeywordChange, stringResource(AppR.string.debug_search_keyword))
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_search_copy_json),
+                title = stringResource(AppR.string.debug_search_copy_json),
                 icon = Icons.Rounded.Search,
                 onClick = vm::searchAndCopy,
                 enabled = idle
             )
         }
 
-        DebugProbeSection(title = stringResource(CoreCommonR.string.debug_bili_section_video)) {
-            DebugProbeField(ui.bvid, vm::onBvidChange, stringResource(CoreCommonR.string.debug_bvid_hint))
+        DebugProbeSection(title = stringResource(AppR.string.debug_bili_section_video)) {
+            DebugProbeField(ui.bvid, vm::onBvidChange, stringResource(AppR.string.debug_bvid_hint))
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_get_info_copy),
+                title = stringResource(AppR.string.debug_get_info_copy),
                 icon = Icons.Rounded.Info,
                 onClick = vm::viewByBvidAndCopy,
                 enabled = idle && hasBvid
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_has_liked),
+                title = stringResource(AppR.string.debug_has_liked),
                 icon = Icons.Rounded.ThumbUp,
                 onClick = vm::hasLikeByBvidAndCopy,
                 enabled = idle && hasBvid
             )
         }
 
-        DebugProbeSection(title = stringResource(CoreCommonR.string.debug_bili_section_stream)) {
+        DebugProbeSection(title = stringResource(AppR.string.debug_bili_section_stream)) {
             DebugProbeFieldRow {
                 DebugProbeField(
-                    ui.page, vm::onPageChange, stringResource(CoreCommonR.string.debug_page_hint),
+                    ui.page, vm::onPageChange, stringResource(AppR.string.debug_page_hint),
                     modifier = Modifier.weight(1f), numeric = true, inRow = true
                 )
                 DebugProbeField(
-                    ui.cid, vm::onCidChange, stringResource(CoreCommonR.string.debug_cid_hint),
+                    ui.cid, vm::onCidChange, stringResource(AppR.string.debug_cid_hint),
                     modifier = Modifier.weight(1f), numeric = true, inRow = true
                 )
             }
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_get_stream_by_page, page),
+                title = stringResource(AppR.string.debug_get_stream_by_page, page),
                 icon = Icons.Rounded.Stream,
                 onClick = vm::playInfoByBvidPageAndCopy,
                 enabled = idle && hasBvid
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_get_audio_by_page, page),
+                title = stringResource(AppR.string.debug_get_audio_by_page, page),
                 icon = Icons.Rounded.AudioFile,
                 onClick = vm::allAudioStreamsByBvidPageAndCopy,
                 enabled = idle && hasBvid
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_get_mp4_by_page, page),
+                title = stringResource(AppR.string.debug_get_mp4_by_page, page),
                 icon = Icons.Rounded.Movie,
                 onClick = vm::mp4DurlByBvidPageAndCopy,
                 enabled = idle && hasBvid
@@ -126,49 +126,49 @@ fun BiliApiProbeScreen() {
             // with a CID the part number is skipped; without one these calls equal the rows above
             if (hasCid) {
                 DebugProbeAction(
-                    title = stringResource(CoreCommonR.string.debug_get_stream_by, "CID"),
+                    title = stringResource(AppR.string.debug_get_stream_by, "CID"),
                     icon = Icons.Rounded.Stream,
                     onClick = vm::playInfoByBvidCidAndCopy,
                     enabled = idle && hasBvid
                 )
                 DebugProbeAction(
-                    title = stringResource(CoreCommonR.string.debug_get_audio_by, "CID"),
+                    title = stringResource(AppR.string.debug_get_audio_by, "CID"),
                     icon = Icons.Rounded.AudioFile,
                     onClick = vm::allAudioStreamsByBvidCidAndCopy,
                     enabled = idle && hasBvid
                 )
                 DebugProbeAction(
-                    title = stringResource(CoreCommonR.string.debug_get_mp4_by, "CID"),
+                    title = stringResource(AppR.string.debug_get_mp4_by, "CID"),
                     icon = Icons.Rounded.Movie,
                     onClick = vm::mp4DurlByBvidCidAndCopy,
                     enabled = idle && hasBvid
                 )
             }
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_get_by_avid),
+                title = stringResource(AppR.string.debug_get_by_avid),
                 icon = Icons.Rounded.Tag,
                 onClick = vm::playInfoByAvidCidAndCopy,
                 enabled = idle && hasBvid
             )
         }
 
-        DebugProbeSection(title = stringResource(CoreCommonR.string.debug_bili_section_favorites)) {
-            DebugProbeField(ui.upMid, vm::onUpMidChange, stringResource(CoreCommonR.string.debug_up_mid_hint), numeric = true)
+        DebugProbeSection(title = stringResource(AppR.string.debug_bili_section_favorites)) {
+            DebugProbeField(ui.upMid, vm::onUpMidChange, stringResource(AppR.string.debug_up_mid_hint), numeric = true)
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_get_fav_list),
+                title = stringResource(AppR.string.debug_get_fav_list),
                 icon = Icons.Rounded.Bookmarks,
                 onClick = vm::createdFavsAndCopy,
                 enabled = idle && ui.upMid.isNotBlank()
             )
-            DebugProbeField(ui.mediaId, vm::onMediaIdChange, stringResource(CoreCommonR.string.debug_media_id_hint), numeric = true)
+            DebugProbeField(ui.mediaId, vm::onMediaIdChange, stringResource(AppR.string.debug_media_id_hint), numeric = true)
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_fav_info),
+                title = stringResource(AppR.string.debug_fav_info),
                 icon = Icons.Rounded.Info,
                 onClick = vm::favInfoAndCopy,
                 enabled = idle && ui.mediaId.isNotBlank()
             )
             DebugProbeAction(
-                title = stringResource(CoreCommonR.string.debug_fav_contents),
+                title = stringResource(AppR.string.debug_fav_contents),
                 icon = Icons.AutoMirrored.Rounded.ListAlt,
                 onClick = vm::favContentsAndCopy,
                 enabled = idle && ui.mediaId.isNotBlank()
@@ -176,14 +176,14 @@ fun BiliApiProbeScreen() {
         }
 
         DebugProbeResult(
-            title = stringResource(CoreCommonR.string.debug_youtube_probe_section_result),
+            title = stringResource(AppR.string.debug_youtube_probe_section_result),
             status = ui.lastMessage,
             running = ui.running,
             output = ui.lastJsonPreview,
-            emptyOutput = stringResource(CoreCommonR.string.debug_preview_empty)
+            emptyOutput = stringResource(AppR.string.debug_preview_empty)
         ) {
             MiuixSettingsTextButton(onClick = vm::clearPreview, enabled = idle) {
-                Text(stringResource(CoreCommonR.string.debug_clear_preview))
+                Text(stringResource(AppR.string.debug_clear_preview))
             }
         }
     }

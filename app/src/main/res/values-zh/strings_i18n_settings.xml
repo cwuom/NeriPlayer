@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_config_import_warning_item">- %1$s</string>
+    <string name="settings_download_file_name_sample_title">晴天</string>
+    <string name="settings_download_file_name_sample_artist">周杰伦</string>
+    <string name="settings_download_file_name_sample_album">叶惠美</string>
+    <string name="debug_usb_exclusive_native">Native</string>
+    <string name="debug_usb_exclusive_available">可用</string>
+    <string name="debug_usb_exclusive_opened">已打开</string>
+    <string name="debug_usb_exclusive_streaming">正在传输</string>
+    <string name="debug_usb_exclusive_paused">已暂停</string>
+    <string name="debug_usb_exclusive_transitioning">正在切换</string>
+    <string name="debug_usb_exclusive_source">来源</string>
+    <string name="debug_usb_exclusive_device">设备</string>
+    <string name="debug_usb_exclusive_requested_path">请求路径</string>
+    <string name="debug_usb_exclusive_effective_path">实际路径</string>
+    <string name="debug_usb_exclusive_fallback_reason">回退原因</string>
+    <string name="debug_usb_exclusive_input_format">输入格式</string>
+    <string name="debug_usb_exclusive_output_format">输出格式</string>
+    <string name="debug_usb_exclusive_buffer">缓冲时长</string>
+    <string name="debug_usb_exclusive_completed_frames">已完成帧数</string>
+    <string name="debug_usb_exclusive_queued_frames">排队帧数</string>
+    <string name="debug_usb_exclusive_pcm_bytes">PCM 字节数</string>
+    <string name="debug_usb_exclusive_pcm_free">PCM 空闲字节数</string>
+    <string name="debug_usb_exclusive_backpressure">背压</string>
+    <string name="debug_usb_exclusive_service">服务</string>
+    <string name="debug_usb_exclusive_runtime">运行状态</string>
+    <string name="debug_usb_exclusive_error">错误</string>
+    <string name="debug_usb_exclusive_id">ID</string>
+    <string name="debug_usb_exclusive_usb">USB</string>
+    <string name="debug_usb_exclusive_address">地址</string>
+    <string name="debug_usb_exclusive_rates">采样率</string>
+    <string name="debug_usb_exclusive_channels">声道数</string>
+    <string name="debug_usb_exclusive_encodings">编码</string>
+    <string name="debug_usb_exclusive_name">名称</string>
+    <string name="debug_usb_exclusive_manufacturer">制造商</string>
+    <string name="debug_usb_exclusive_class">设备类别</string>
+    <string name="debug_usb_exclusive_audio">音频接口</string>
+    <string name="debug_usb_exclusive_permission">权限</string>
+    <string name="debug_usb_exclusive_interfaces">接口</string>
+    <string name="debug_usb_exclusive_yes">是</string>
+    <string name="debug_usb_exclusive_no">否</string>
+    <string name="debug_usb_exclusive_none">无</string>
+</resources>

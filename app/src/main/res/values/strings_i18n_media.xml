@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="media_cover_file_name">%1$s - %2$s 封面</string>
+    <string name="media_folder_persist_permission_failed">目录持久授权失败，导入的歌曲在应用重启后可能无法访问</string>
+    <string name="media_favorite_netease_album">网易云专辑</string>
+    <string name="media_follow_load_failed">无法加载本地收藏</string>
+    <string name="media_follow_save_failed">无法保存本地关注</string>
+</resources>

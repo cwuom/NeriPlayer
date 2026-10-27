@@ -38,6 +38,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class SettingsConfigProtectionDialogsTest {
@@ -97,15 +98,15 @@ class SettingsConfigProtectionDialogsTest {
 
     private fun assertExport(style: UiStyle, dark: Boolean) {
         render(style, dark, Dialog.Export)
-        action(CoreCommonR.string.settings_config_include_login_state).assertIsOff()
-        action(CoreCommonR.string.settings_config_encrypt_file).assertIsOff()
+        action(AppR.string.settings_config_include_login_state).assertIsOff()
+        action(AppR.string.settings_config_encrypt_file).assertIsOff()
         capture(style, dark, "export-default")
         action(CoreCommonR.string.settings_backup_action_export).performNativeClick()
         composeRule.runOnIdle { assertEquals(listOf(false to null), exports) }
 
         open(Dialog.Export)
-        action(CoreCommonR.string.settings_config_include_login_state).performClick().assertIsOn()
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_plaintext_login_warning))
+        action(AppR.string.settings_config_include_login_state).performClick().assertIsOn()
+        composeRule.onNodeWithText(string(AppR.string.settings_config_plaintext_login_warning))
             .performScrollTo().assertIsDisplayed()
         capture(style, dark, "export-plaintext-warning")
         action(CoreCommonR.string.action_cancel).performNativeClick()
@@ -115,21 +116,21 @@ class SettingsConfigProtectionDialogsTest {
         }
 
         open(Dialog.Export)
-        action(CoreCommonR.string.settings_config_include_login_state).assertIsOff().performClick()
-        action(CoreCommonR.string.settings_config_encrypt_file).performScrollTo().performClick()
+        action(AppR.string.settings_config_include_login_state).assertIsOff().performClick()
+        action(AppR.string.settings_config_encrypt_file).performScrollTo().performClick()
         action(CoreCommonR.string.settings_backup_action_export).assertIsNotEnabled()
-        replacePassword(CoreCommonR.string.settings_config_password, "short")
-        replacePassword(CoreCommonR.string.settings_config_confirm_password, "short")
+        replacePassword(AppR.string.settings_config_password, "short")
+        replacePassword(AppR.string.settings_config_confirm_password, "short")
         action(CoreCommonR.string.settings_backup_action_export).assertIsNotEnabled()
-        replacePassword(CoreCommonR.string.settings_config_password, "        ")
-        replacePassword(CoreCommonR.string.settings_config_confirm_password, "        ")
+        replacePassword(AppR.string.settings_config_password, "        ")
+        replacePassword(AppR.string.settings_config_confirm_password, "        ")
         action(CoreCommonR.string.settings_backup_action_export).assertIsNotEnabled()
-        replacePassword(CoreCommonR.string.settings_config_password, SYNTHETIC_PASSWORD)
-        replacePassword(CoreCommonR.string.settings_config_confirm_password, "Different-demo-password")
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_password_mismatch))
+        replacePassword(AppR.string.settings_config_password, SYNTHETIC_PASSWORD)
+        replacePassword(AppR.string.settings_config_confirm_password, "Different-demo-password")
+        composeRule.onNodeWithText(string(AppR.string.settings_config_password_mismatch))
             .performScrollTo().assertIsDisplayed()
         action(CoreCommonR.string.settings_backup_action_export).assertIsNotEnabled()
-        replacePassword(CoreCommonR.string.settings_config_confirm_password, SYNTHETIC_PASSWORD)
+        replacePassword(AppR.string.settings_config_confirm_password, SYNTHETIC_PASSWORD)
         onView(isRoot()).inRoot(isDialog()).perform(closeSoftKeyboard())
         action(CoreCommonR.string.settings_backup_action_export).assertIsEnabled()
         capture(style, dark, "export-encrypted")
@@ -138,20 +139,20 @@ class SettingsConfigProtectionDialogsTest {
         composeRule.runOnIdle {
             assertEquals(listOf(false to null, true to SYNTHETIC_PASSWORD), exports)
         }
-        assertPasswordCleared(CoreCommonR.string.settings_config_password)
-        assertPasswordCleared(CoreCommonR.string.settings_config_confirm_password)
+        assertPasswordCleared(AppR.string.settings_config_password)
+        assertPasswordCleared(AppR.string.settings_config_confirm_password)
         action(CoreCommonR.string.settings_backup_action_export).assertIsNotEnabled()
         action(CoreCommonR.string.action_cancel).performNativeClick()
 
         open(Dialog.Export)
-        action(CoreCommonR.string.settings_config_encrypt_file).assertIsOff().performClick()
-        replacePassword(CoreCommonR.string.settings_config_password, SYNTHETIC_PASSWORD)
+        action(AppR.string.settings_config_encrypt_file).assertIsOff().performClick()
+        replacePassword(AppR.string.settings_config_password, SYNTHETIC_PASSWORD)
         onView(isRoot()).inRoot(isDialog()).perform(closeSoftKeyboard(), pressBack())
         composeRule.runOnIdle {
             assertEquals(2, exports.size)
             assertEquals(3, dismissCalls)
         }
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_export_options_title))
+        composeRule.onNodeWithText(string(AppR.string.settings_config_export_options_title))
             .assertDoesNotExist()
     }
 
@@ -169,7 +170,7 @@ class SettingsConfigProtectionDialogsTest {
         }
 
         open(Dialog.Import)
-        replacePassword(CoreCommonR.string.settings_config_password, SYNTHETIC_PASSWORD)
+        replacePassword(AppR.string.settings_config_password, SYNTHETIC_PASSWORD)
         onView(isRoot()).inRoot(isDialog()).perform(closeSoftKeyboard())
         composeRule.runOnIdle { retainAfterConfirm = true }
         action(CoreCommonR.string.settings_backup_action_import).performNativeClick()
@@ -177,18 +178,18 @@ class SettingsConfigProtectionDialogsTest {
             assertEquals(listOf(SYNTHETIC_PASSWORD), imports)
             passwordInvalid.value = true
         }
-        assertPasswordCleared(CoreCommonR.string.settings_config_password)
+        assertPasswordCleared(AppR.string.settings_config_password)
         action(CoreCommonR.string.settings_backup_action_import).assertIsNotEnabled()
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_password_invalid))
+        composeRule.onNodeWithText(string(AppR.string.settings_config_password_invalid))
             .assertIsDisplayed()
         capture(style, dark, "import-password-error")
-        replacePassword(CoreCommonR.string.settings_config_password, "Retry-demo-password")
+        replacePassword(AppR.string.settings_config_password, "Retry-demo-password")
         onView(isRoot()).inRoot(isDialog()).perform(closeSoftKeyboard())
         action(CoreCommonR.string.settings_backup_action_import).assertIsEnabled().performNativeClick()
         composeRule.runOnIdle {
             assertEquals(listOf(SYNTHETIC_PASSWORD, "Retry-demo-password"), imports)
         }
-        assertPasswordCleared(CoreCommonR.string.settings_config_password)
+        assertPasswordCleared(AppR.string.settings_config_password)
     }
 
     private fun replacePassword(id: Int, value: String) {

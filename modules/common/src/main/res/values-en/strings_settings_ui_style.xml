@@ -8,7 +8,7 @@
     <string name="ui_style_clean_desc">Neutral colors, continuous corners and glass chrome that stay easy on the eyes</string>
     <string name="ui_style_preview_badge">Preview</string>
     <string name="settings_predictive_back_preview">Predictive back preview</string>
-    <string name="settings_predictive_back_preview_desc">Preview the previous page while the back gesture follows your finger; going back and the release animation stay the same when off</string>
+    <string name="settings_predictive_back_preview_desc">Preview the previous page as you swipe back</string>
     <string name="settings_liquid_glass">Liquid glass</string>
     <string name="settings_liquid_glass_desc">Adds edge refraction and highlights to the bottom bar and mini player in the clean style; scales down automatically on low-end devices and in battery saver</string>
     <string name="settings_liquid_glass_requires_clean">Requires the clean style</string>

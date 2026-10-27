@@ -49,6 +49,7 @@ import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.history.stats.StatTrackRow
 import moe.ouom.neriplayer.util.format.formatPlayCount
+import moe.ouom.neriplayer.R as AppR
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,7 +91,7 @@ fun HotPlaylistDetailScreen(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Outlined.PlaylistPlay,
-                            contentDescription = stringResource(if (state.summary.trackCount <= 100) CoreCommonR.string.cd_play_all else CoreCommonR.string.stats_play_page)
+                            contentDescription = stringResource(if (state.summary.trackCount <= 100) CoreCommonR.string.cd_play_all else AppR.string.stats_play_page)
                         )
                     }
                 },
@@ -112,7 +113,7 @@ fun HotPlaylistDetailScreen(
             }
         } else if (state.failed) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                moe.ouom.neriplayer.ui.haptic.HapticTextButton(onClick = { pageRequest = pageRequest.copy(retry = pageRequest.retry + 1) }) { Text(stringResource(CoreCommonR.string.stats_load_failed)) }
+                moe.ouom.neriplayer.ui.haptic.HapticTextButton(onClick = { pageRequest = pageRequest.copy(retry = pageRequest.retry + 1) }) { Text(stringResource(AppR.string.stats_load_failed)) }
             }
         } else {
             LazyColumn(

@@ -96,7 +96,7 @@ class QQMusicSearchApiTest {
         assertEquals("响应中找不到 songinfo 字段", metadataFailure().message)
         assertEquals("找不到ID为 mid-1 的歌曲详情", metadataFailure().message)
         assertEquals("找不到ID为 mid-1 的歌曲详情", metadataFailure().message)
-        assertTrue(metadataFailure().message!!.startsWith("请求失败: 500"))
+        assertEquals("HTTP 500", metadataFailure().message)
     }
 
     @Test

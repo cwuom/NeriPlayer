@@ -30,7 +30,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.data.model.comments.commentLengthLimit
@@ -40,6 +39,7 @@ import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
 import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun CommentComposer(
@@ -83,12 +83,12 @@ internal fun CommentComposer(
         ui.replyTarget?.let { target ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    stringResource(CoreCommonR.string.comment_reply_to, target.username.ifBlank { stringResource(CoreCommonR.string.comment_anonymous_user) }),
+                    stringResource(AppR.string.comment_reply_to, target.username.ifBlank { stringResource(AppR.string.comment_anonymous_user) }),
                     Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelLarge
                 )
                 HapticIconButton(onClick = { onReply(null) }, enabled = !ui.isSending) {
-                    Icon(Icons.Outlined.Close, stringResource(CoreCommonR.string.comment_cancel_reply))
+                    Icon(Icons.Outlined.Close, stringResource(AppR.string.comment_cancel_reply))
                 }
             }
         }
@@ -101,21 +101,21 @@ internal fun CommentComposer(
                 shape = neriSearchFieldShape(MaterialTheme.shapes.extraLarge),
                 colors = neriSearchFieldColors(),
                 placeholder = {
-                    Text(stringResource(CoreCommonR.string.comment_write_hint),
+                    Text(stringResource(AppR.string.comment_write_hint),
                         maxLines = if (compact) 1 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis)
                 },
                 maxLines = if (compact) 1 else 3,
                 isError = ui.draft.length > limit,
                 trailingIcon = if (compact && ui.draft.isNotEmpty()) {
                     {
-                        Text(stringResource(CoreCommonR.string.comment_length_format, ui.draft.length, limit),
+                        Text(stringResource(AppR.string.comment_length_format, ui.draft.length, limit),
                             Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall,
                             color = if (ui.draft.length > limit) MaterialTheme.colorScheme.error
                                 else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else null,
                 supportingText = if (!compact && ui.draft.isNotEmpty()) {
-                    { Text(stringResource(CoreCommonR.string.comment_length_format, ui.draft.length, limit)) }
+                    { Text(stringResource(AppR.string.comment_length_format, ui.draft.length, limit)) }
                 } else null
             )
             HapticIconButton(
@@ -130,19 +130,19 @@ internal fun CommentComposer(
                 )
             ) {
                 if (ui.isSending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Icon(Icons.AutoMirrored.Filled.Send, stringResource(CoreCommonR.string.comment_send))
+                else Icon(Icons.AutoMirrored.Filled.Send, stringResource(AppR.string.comment_send))
             }
         }
         val message = when {
-            ui.sendError == CommentError.PERMISSION -> stringResource(CoreCommonR.string.comment_send_login_required)
-            ui.sendError == CommentError.NETWORK -> stringResource(CoreCommonR.string.comment_send_uncertain)
-            ui.sendError != null -> stringResource(CoreCommonR.string.comment_send_failed)
-            ui.sendSucceeded -> stringResource(CoreCommonR.string.comment_send_success)
+            ui.sendError == CommentError.PERMISSION -> stringResource(AppR.string.comment_send_login_required)
+            ui.sendError == CommentError.NETWORK -> stringResource(AppR.string.comment_send_uncertain)
+            ui.sendError != null -> stringResource(AppR.string.comment_send_failed)
+            ui.sendSucceeded -> stringResource(AppR.string.comment_send_success)
             else -> null
         }
         if (message != null) {
             Text(
-                text = ui.sendErrorCode?.let { code -> stringResource(CoreCommonR.string.comment_error_code_format, message, code) } ?: message,
+                text = ui.sendErrorCode?.let { code -> stringResource(AppR.string.comment_error_code_format, message, code) } ?: message,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (ui.sendError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
             )

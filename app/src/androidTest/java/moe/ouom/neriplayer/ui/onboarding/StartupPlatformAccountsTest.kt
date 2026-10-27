@@ -68,6 +68,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class StartupPlatformAccountsTest {
@@ -294,15 +295,15 @@ class StartupPlatformAccountsTest {
                             StartupOnboardingLayout(
                                 header = {
                                     Text(
-                                        stringResource(CoreCommonR.string.onboarding_title),
+                                        stringResource(AppR.string.onboarding_title),
                                         modifier = Modifier.testTag(INTRO),
                                         style = MaterialTheme.typography.headlineSmall
                                     )
-                                    Text(stringResource(CoreCommonR.string.onboarding_subtitle))
+                                    Text(stringResource(AppR.string.onboarding_subtitle))
                                 },
                                 actions = {
                                     Button(onClick = { continueCalls += 1 }, modifier = Modifier.testTag(NEXT)) {
-                                        Text(stringResource(CoreCommonR.string.onboarding_action_next))
+                                        Text(stringResource(AppR.string.onboarding_action_next))
                                     }
                                 }
                             ) {

@@ -1,36 +1,120 @@
-name: Feature Request / 功能请求
-description: Propose the feature you need / 提出你需要的功能
+name: Feature request / 功能请求
+description: 提议一项明确的新功能，并说明实际使用场景 / Propose a new capability and its use case
 title: "[Feature] "
-labels: enhancement
+labels: ["enhancement", "status: needs-triage"]
 
 body:
   - type: markdown
     attributes:
       value: |
-        感谢您给 NeriPlayer 提出建议！  
+        感谢您给 NeriPlayer 提出建议！
         为了使我们更好地帮助您，请提供以下信息。
-        
-        Thank you for providing suggestions for NeriPlayer!  
-        To help us assist you better, please provide the following information.  
+        只需说明要解决的问题、使用场景、期望功能和涉及模块，无需提供应用版本、构建 UUID 或安装来源。
+        优化已有体验请使用“提交建议”模板；附件中请移除账号和密钥等隐私信息。
+
+        Thank you for providing suggestions for NeriPlayer!
+        To help us assist you better, please provide the following information.
+        Describe the problem, use case, proposed feature, and affected areas. No app version, Build UUID, or distribution details are needed.
+        Use the suggestion form for existing behavior and redact private data from attachments.
 
   - type: textarea
-    id: why
+    id: motivation
     attributes:
-      label: 为什么你认为需要此功能 / Why do you think this feature is needed
+      label: 功能背景与需求 / Motivation
+      description: 当前遇到了什么限制？谁会在什么场景使用此功能？ / Describe the limitation, users, and use case
+      placeholder: |
+        用简洁的语言描述您需要的功能（例如：支持 B 站播放源的视频播放功能）
+        说明您需要此功能的场景或痛点（例如：部分 B 站鬼畜视频的核心价值在于视觉呈现，仅播放音频无法完整体验内容）
+
+        Describe the feature you need concisely (e.g.: Support video playback for Bilibili sources)
+        Explain the scenario or pain point that leads to this request (e.g.: The core value of some Bilibili meme videos lies in visual presentation, and audio-only playback fails to deliver the complete experience)
     validations:
       required: true
 
   - type: textarea
-    id: related-feature
+    id: proposed-feature
     attributes:
-      label: 联系到哪些已经存在的 BUG 或者功能 / Which existing bugs or features is this related to
-      description: 如果没有留空即可 / Leave blank if there are none
+      label: 期望的功能 / Proposed feature
+      description: 说明期望行为和完成标准，可附已有功能或相关 Issue / Describe the expected behavior and acceptance criteria
+      placeholder: |
+        描述您期望的实现方式（例如：在「正在播放」界面向上滑动封面，让封面变形为视频播放窗口）
+        说明预期效果（例如：满足用户对视频内容的观看需求，提升 B 站资源的使用体验）
+
+        Describe your expected implementation method (e.g.: Swipe up on the cover in the "Now Playing" interface to bring up the video playback window)
+        Explain the expected improvements (e.g.: Meet users' needs for viewing video content and enhance the experience of using Bilibili resources)
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案 / Alternatives considered
+      description: 已尝试的办法或当前临时解决方式；没有可留空 / Describe alternatives or workarounds if any
+    validations:
+      required: false
+
+  - type: dropdown
+    id: affected-area
+    attributes:
+      label: 涉及模块 / Affected area
+      description: 必填，可多选；不确定时选择“其他或不确定”，提交后会自动添加模块标签 / Required, multiple choices allowed; choose unsure if needed. Area labels are added automatically after submission
+      multiple: true
+      options:
+        - 账号与登录 / Accounts and login
+        - 播放与音频 / Playback and audio
+        - 车载与 Android Auto / Automotive and Android Auto
+        - 蓝牙连接与控制 / Bluetooth connectivity and controls
+        - 自动换源 / Automatic source switching
+        - 通知与锁屏控制 / Notifications and lock screen controls
+        - 音频焦点与中断 / Audio focus and interruptions
+        - USB 独占播放 / USB exclusive playback
+        - 网络与代理 / Network and proxy
+        - 歌词 / Lyrics
+        - 下载与存储 / Downloads and storage
+        - 本地音乐与歌单 / Local music and playlists
+        - 云同步与备份 / Cloud sync and backup
+        - 一起听 / Listen Together
+        - 界面与交互 / UI and interaction
+        - 性能与资源占用 / Performance and resource usage
+        - 文档与翻译 / Documentation and translation
+        - 构建、CI 与发布 / Build and CI and release
+        - 安装、启动与更新 / Installation and startup and update
+        - 其他或不确定 / Other or unsure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected-platforms
+    attributes:
+      label: 涉及平台 / Affected platforms
+      description: 可选，可多选；仅当功能针对特定平台时填写，通用功能可留空 / Optional, multiple choices allowed; select only if the feature targets specific platforms
+      multiple: true
+      options:
+        - 网易云音乐 / NetEase Cloud Music
+        - Bilibili
+        - YouTube Music
+        - 本地音频或下载文件 / Local audio or downloaded files
+        - 不涉及在线平台 / Not related to online platforms
+        - 其他或不确定 / Other or unsure
     validations:
       required: false
 
   - type: textarea
-    id: details
+    id: additional-context
     attributes:
-      label: 具体功能需求 / Detailed Feature Requirements
+      label: 补充材料 / Additional context
+      description: 可附截图、参考产品、相关 Issue；跨端功能请说明与 Desktop 的关系 / Add references and note Desktop compatibility when relevant
     validations:
-      required: true
+      required: false
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: 提交前确认 / Confirmation
+      options:
+        - label: 我确认本 Issue 只提交一个问题；多个问题需要分多个 Issue 提交，否则只有第一个问题会被考虑 / I confirm this issue covers only one topic; multiple topics require separate issues, otherwise only the first will be considered
+          required: true
+        - label: 我已搜索现有 Issue，未找到相同或高度相似的功能请求 / I searched existing issues and found no duplicate request
+          required: true
+        - label: 我已说明此功能要解决的问题和使用场景 / I described the problem and use case
+          required: true

@@ -7,7 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.coroutines.runCatchingNonCancellation
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -30,6 +29,7 @@ import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.R as AppR
 
 internal object LocalCurationRuntime {
     val coordinator: LocalCurationCoordinator by lazy {
@@ -154,7 +154,7 @@ internal class AppLocalCurationPorts(private val context: Context) : LocalCurati
         if (applied == 0 && failed == 0) return
         AppFeedback.show(
             context = context,
-            message = context.getString(CoreCommonR.string.local_curation_notify_finished, applied, failed)
+            message = context.getString(AppR.string.local_curation_notify_finished, applied, failed)
         )
     }
 

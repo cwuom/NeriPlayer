@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
 import moe.ouom.neriplayer.data.model.config.AppConfigBackup
 import moe.ouom.neriplayer.data.model.config.AppConfigImportResult
+import moe.ouom.neriplayer.data.model.config.AppConfigImportWarning
 import moe.ouom.neriplayer.data.model.config.LanguageConfigSnapshot
 import moe.ouom.neriplayer.data.model.config.SavedCookieConfigSnapshot
 import moe.ouom.neriplayer.data.model.config.TypedPreferenceSnapshot
@@ -22,7 +23,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.transfer.TransferFailureKind
+import moe.ouom.neriplayer.data.model.transfer.TransferStateException
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.platform.bilibili.auth.BiliCookieRepository
 import moe.ouom.neriplayer.platform.netease.auth.NeteaseCookieRepository
@@ -122,7 +124,7 @@ class ConfigFileManager(
             currentCoroutineContext().ensureActive()
             context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use {
                 it.write(encoded)
-            } ?: throw IllegalStateException(context.getString(CoreCommonR.string.error_cannot_open_output))
+            } ?: throw TransferStateException(TransferFailureKind.OUTPUT_UNAVAILABLE, "Cannot open output stream")
 
             val fileName = DocumentFile.fromSingleUri(context, uri)?.name
                 ?.takeIf { it.isNotBlank() }
@@ -161,8 +163,9 @@ class ConfigFileManager(
             }
             currentCoroutineContext().ensureActive()
             SyncCoordinator.withExclusive {
-                check(!authImportRequiresConfirmation(payload, sections) || needsConfirmation) {
-                    context.getString(CoreCommonR.string.auth_storage_compatibility_message)
+                if (authImportRequiresConfirmation(payload, sections) && !needsConfirmation) {
+                    throw TransferStateException(TransferFailureKind.AUTH_STORAGE_CONFIRMATION_REQUIRED,
+                        "Authentication storage confirmation required")
                 }
                 applyImport(payload, sections, allowCompatibilityStorage = needsConfirmation)
             }
@@ -201,21 +204,21 @@ class ConfigFileManager(
     ): Boolean {
         var requiresConfirmation = false
         if (sections.neteaseAuth) {
-            check(neteaseRepository.isAuthStoragePersistent) {
-                context.getString(CoreCommonR.string.auth_storage_unavailable_message)
+            if (!neteaseRepository.isAuthStoragePersistent) {
+                throw TransferStateException(TransferFailureKind.AUTH_STORAGE_UNAVAILABLE, "Authentication storage unavailable")
             }
             requiresConfirmation = payload.neteaseAuth.hasData() && neteaseRepository.requiresCompatibilityStorageWarning
         }
         if (sections.biliAuth) {
-            check(biliRepository.isAuthStoragePersistent) {
-                context.getString(CoreCommonR.string.auth_storage_unavailable_message)
+            if (!biliRepository.isAuthStoragePersistent) {
+                throw TransferStateException(TransferFailureKind.AUTH_STORAGE_UNAVAILABLE, "Authentication storage unavailable")
             }
             requiresConfirmation = requiresConfirmation ||
                 (payload.biliAuth.hasData() && biliRepository.requiresCompatibilityStorageWarning)
         }
         if (sections.youTubeAuth) {
-            check(youTubeRepository.isAuthStoragePersistent) {
-                context.getString(CoreCommonR.string.auth_storage_unavailable_message)
+            if (!youTubeRepository.isAuthStoragePersistent) {
+                throw TransferStateException(TransferFailureKind.AUTH_STORAGE_UNAVAILABLE, "Authentication storage unavailable")
             }
             requiresConfirmation = requiresConfirmation ||
                 (payload.youTubeAuth.toAuthBundle().hasSavedAuthMaterial() &&
@@ -232,7 +235,7 @@ class ConfigFileManager(
         if (sections.touchesSyncTargets) {
             registerStartupSyncTargets()
         }
-        val warnings = mutableListOf<String>()
+        val warnings = ConfigImportWarnings(context)
         val sanitizedSettings = restoreSettingsSection(payload, sections, warnings)
         if (sections.listenTogether) {
             listenTogetherRepository.restore(payload.listenTogether)
@@ -248,7 +251,8 @@ class ConfigFileManager(
                 restoredAuthCount = restoredAuthCount,
                 restoredSyncCount = payload.syncSectionCount(sections),
                 warnings = warnings,
-                requiresActivityRecreate = languageChanged
+                requiresActivityRecreate = languageChanged,
+                warningCodes = warnings.codes.toMap()
             )
         )
     }
@@ -342,7 +346,7 @@ class ConfigFileManager(
             savedAt = importedSavedAt(snapshot.savedAt)
         )
         if (!saved) {
-            warnings += context.getString(CoreCommonR.string.config_import_warning_netease_cookie)
+            warnings.addConfigImportWarning(context, AppConfigImportWarning.NETEASE_COOKIE)
         }
         return saved
     }

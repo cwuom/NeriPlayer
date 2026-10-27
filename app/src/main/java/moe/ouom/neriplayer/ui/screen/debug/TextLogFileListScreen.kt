@@ -50,12 +50,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.io.File
-import java.text.SimpleDateFormat
+import java.text.DateFormat
+import java.text.NumberFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +70,7 @@ import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import moe.ouom.neriplayer.R as AppR
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,7 +135,7 @@ internal fun TextLogFileListScreen(
                 actions = {
                     if (!logFilesState.value.isNullOrEmpty()) {
                         IconButton(onClick = { showClearConfirmDialog.value = true }) {
-                            Icon(Icons.Outlined.DeleteOutline, contentDescription = stringResource(CoreCommonR.string.log_clear))
+                            Icon(Icons.Outlined.DeleteOutline, contentDescription = stringResource(AppR.string.log_clear))
                         }
                     }
                 }
@@ -162,7 +165,7 @@ private fun TextLogClearConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(CoreCommonR.string.dialog_confirm_clear)) },
+        title = { Text(stringResource(AppR.string.dialog_confirm_clear)) },
         text = { Text(stringResource(messageRes)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
@@ -262,7 +265,8 @@ private fun TextLogFileList(
 
 @Composable
 private fun TextLogFileRow(file: File, icon: ImageVector, hue: Color, onClick: () -> Unit) {
-    val meta = remember(file) { formatLogFileMeta(file) }
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.ROOT
+    val meta = remember(file, locale) { formatLogFileMeta(file, locale) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -304,8 +308,9 @@ internal fun deleteTextLogFiles(directory: File?): Int =
 
 private fun isTextLogFile(file: File): Boolean = file.isFile && file.name.endsWith(".txt")
 
-internal fun formatLogFileMeta(file: File): String {
-    val date = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(file.lastModified()))
+internal fun formatLogFileMeta(file: File, locale: Locale): String {
+    val date = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, locale)
+        .format(Date(file.lastModified()))
     val size = file.length() / 1024 // KB
-    return "$date · ${size} KB"
+    return "$date · ${NumberFormat.getIntegerInstance(locale).format(size)} KB"
 }

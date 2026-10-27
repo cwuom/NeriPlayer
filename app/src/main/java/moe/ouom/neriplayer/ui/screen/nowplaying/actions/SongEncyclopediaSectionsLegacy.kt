@@ -42,12 +42,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaAward
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaCredits
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaMusicInfo
 import moe.ouom.neriplayer.data.model.encyclopedia.SongEncyclopedia
 import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.R as AppR
 
 /** 基本信息、音乐标签、创作团队与获奖收录各自独立成卡，详情字段只在歌曲详情展示 */
 @Composable
@@ -55,14 +55,14 @@ internal fun SongEncyclopediaLegacySections(data: SongEncyclopedia) {
     val basic = data.basicInfo
     if (basic.name.isNotBlank() || basic.artists.isNotEmpty()) {
         SongEncyclopediaSectionCard(
-            titleRes = CoreCommonR.string.encyclopedia_section_basic,
+            titleRes = AppR.string.encyclopedia_section_basic,
             icon = Icons.Outlined.Info
         ) {
             basic.name.takeIf { it.isNotBlank() }?.let { name ->
-                SongEncyclopediaRow(CoreCommonR.string.encyclopedia_label_song, name)
+                SongEncyclopediaRow(AppR.string.encyclopedia_label_song, name)
             }
             SongEncyclopediaRowIfAny(
-                labelRes = CoreCommonR.string.encyclopedia_label_artists,
+                labelRes = AppR.string.encyclopedia_label_artists,
                 values = basic.artists
             )
         }
@@ -73,12 +73,12 @@ internal fun SongEncyclopediaLegacySections(data: SongEncyclopedia) {
 
     if (data.awards.isNotEmpty() || data.appearances.isNotEmpty()) {
         SongEncyclopediaSectionCard(
-            titleRes = CoreCommonR.string.encyclopedia_section_awards,
+            titleRes = AppR.string.encyclopedia_section_awards,
             icon = Icons.Outlined.EmojiEvents
         ) {
             data.awards.forEach { SongEncyclopediaAwardRow(it) }
             data.appearances.forEach { appearance ->
-                SongEncyclopediaRow(CoreCommonR.string.encyclopedia_label_appearance, appearance)
+                SongEncyclopediaRow(AppR.string.encyclopedia_label_appearance, appearance)
             }
         }
     }
@@ -88,10 +88,10 @@ internal fun SongEncyclopediaLegacySections(data: SongEncyclopedia) {
 private fun SongEncyclopediaMusicSection(musicInfo: EncyclopediaMusicInfo) {
     if (musicInfo.tags.none { it.isNotBlank() }) return
     SongEncyclopediaSectionCard(
-        titleRes = CoreCommonR.string.encyclopedia_section_music,
+        titleRes = AppR.string.encyclopedia_section_music,
         icon = Icons.Outlined.GraphicEq
     ) {
-        SongEncyclopediaRowIfAny(CoreCommonR.string.encyclopedia_label_tags, musicInfo.tags)
+        SongEncyclopediaRowIfAny(AppR.string.encyclopedia_label_tags, musicInfo.tags)
     }
 }
 
@@ -104,13 +104,13 @@ private fun SongEncyclopediaCreditsSection(credits: EncyclopediaCredits) {
         credits.otherRoles.isNotEmpty()
     if (!hasContent) return
     SongEncyclopediaSectionCard(
-        titleRes = CoreCommonR.string.encyclopedia_section_credits,
+        titleRes = AppR.string.encyclopedia_section_credits,
         icon = Icons.Outlined.People
     ) {
-        SongEncyclopediaRowIfAny(CoreCommonR.string.encyclopedia_label_lyricist, credits.lyricists)
-        SongEncyclopediaRowIfAny(CoreCommonR.string.encyclopedia_label_composer, credits.composers)
-        SongEncyclopediaRowIfAny(CoreCommonR.string.encyclopedia_label_arranger, credits.arrangers)
-        SongEncyclopediaRowIfAny(CoreCommonR.string.encyclopedia_label_producer, credits.producers)
+        SongEncyclopediaRowIfAny(AppR.string.encyclopedia_label_lyricist, credits.lyricists)
+        SongEncyclopediaRowIfAny(AppR.string.encyclopedia_label_composer, credits.composers)
+        SongEncyclopediaRowIfAny(AppR.string.encyclopedia_label_arranger, credits.arrangers)
+        SongEncyclopediaRowIfAny(AppR.string.encyclopedia_label_producer, credits.producers)
         credits.otherRoles.forEach { role ->
             SongEncyclopediaNamedRowIfAny(role.role, role.names)
         }

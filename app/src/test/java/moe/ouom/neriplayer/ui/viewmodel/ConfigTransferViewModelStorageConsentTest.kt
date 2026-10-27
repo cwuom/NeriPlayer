@@ -209,7 +209,7 @@ class ConfigTransferViewModelStorageConsentTest {
                 ioDispatcher = ioDispatcher
             )
             setField("configFileManager", manager)
-            setField("strings", ConfigTransferViewModel.ConfigTransferStrings.from(context))
+            setField("strings", ConfigTransferViewModel.ConfigTransferStrings.create())
             store.put("config", viewModel)
         }
 

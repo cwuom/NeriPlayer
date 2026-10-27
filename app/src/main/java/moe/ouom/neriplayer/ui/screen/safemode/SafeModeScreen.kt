@@ -53,6 +53,7 @@ import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
 import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 fun SafeModeScreen(
@@ -96,11 +97,11 @@ fun SafeModeScreen(
                     destination = uri
                 )
             }.onSuccess {
-                showMessage(composeResources.getString(CoreCommonR.string.log_exported))
+                showMessage(composeResources.getString(AppR.string.log_exported))
             }.onFailure { error ->
                 showMessage(
                     composeResources.getString(
-                        CoreCommonR.string.log_export_failed,
+                        AppR.string.log_export_failed,
                         error.message ?: error.javaClass.simpleName
                     ),
                     duration = SnackbarDuration.Long
@@ -117,8 +118,8 @@ fun SafeModeScreen(
     if (showResetLoginDialog) {
         AlertDialog(
             onDismissRequest = { if (!busy) showResetLoginDialog = false },
-            title = { Text(stringResource(CoreCommonR.string.safe_mode_reset_login_confirm_title)) },
-            text = { Text(stringResource(CoreCommonR.string.safe_mode_reset_login_confirm_message)) },
+            title = { Text(stringResource(AppR.string.safe_mode_reset_login_confirm_title)) },
+            text = { Text(stringResource(AppR.string.safe_mode_reset_login_confirm_message)) },
             confirmButton = {
                 TextButton(
                     enabled = !busy,
@@ -130,12 +131,12 @@ fun SafeModeScreen(
                             }.onSuccess {
                                 showResetLoginDialog = false
                                 showMessage(
-                                    composeResources.getString(CoreCommonR.string.safe_mode_reset_login_done)
+                                    composeResources.getString(AppR.string.safe_mode_reset_login_done)
                                 )
                             }.onFailure { error ->
                                 showMessage(
                                     composeResources.getString(
-                                        CoreCommonR.string.safe_mode_reset_login_failed,
+                                        AppR.string.safe_mode_reset_login_failed,
                                         error.message ?: error.javaClass.simpleName
                                     ),
                                     duration = SnackbarDuration.Long
@@ -162,8 +163,8 @@ fun SafeModeScreen(
     if (showResetSettingsDialog) {
         AlertDialog(
             onDismissRequest = { if (!busy) showResetSettingsDialog = false },
-            title = { Text(stringResource(CoreCommonR.string.safe_mode_reset_settings_confirm_title)) },
-            text = { Text(stringResource(CoreCommonR.string.safe_mode_reset_settings_confirm_message)) },
+            title = { Text(stringResource(AppR.string.safe_mode_reset_settings_confirm_title)) },
+            text = { Text(stringResource(AppR.string.safe_mode_reset_settings_confirm_message)) },
             confirmButton = {
                 TextButton(
                     enabled = !busy,
@@ -175,12 +176,12 @@ fun SafeModeScreen(
                             }.onSuccess {
                                 showResetSettingsDialog = false
                                 showMessage(
-                                    composeResources.getString(CoreCommonR.string.safe_mode_reset_settings_done)
+                                    composeResources.getString(AppR.string.safe_mode_reset_settings_done)
                                 )
                             }.onFailure { error ->
                                 showMessage(
                                     composeResources.getString(
-                                        CoreCommonR.string.safe_mode_reset_settings_failed,
+                                        AppR.string.safe_mode_reset_settings_failed,
                                         error.message ?: error.javaClass.simpleName
                                     ),
                                     duration = SnackbarDuration.Long
@@ -246,10 +247,10 @@ fun SafeModeScreen(
                                     is ClipboardCopyResult.Copied -> if (copyResult.wasTruncated) {
                                         CoreCommonR.string.toast_copy_truncated
                                     } else {
-                                        CoreCommonR.string.log_copied
+                                        AppR.string.log_copied
                                     }
                                     ClipboardCopyResult.TransactionTooLarge -> CoreCommonR.string.toast_copy_failed
-                                    null -> CoreCommonR.string.log_cannot_read
+                                    null -> AppR.string.log_cannot_read
                                 }
                                 showMessage(composeResources.getString(messageRes))
                             }
@@ -283,17 +284,17 @@ fun SafeModeScreen(
 private fun SafeModeHeader() {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = stringResource(CoreCommonR.string.safe_mode_title),
+            text = stringResource(AppR.string.safe_mode_title),
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.SemiBold
         )
         Text(
-            text = stringResource(CoreCommonR.string.safe_mode_subtitle),
+            text = stringResource(AppR.string.safe_mode_subtitle),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = stringResource(CoreCommonR.string.safe_mode_component_lock),
+            text = stringResource(AppR.string.safe_mode_component_lock),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error
         )
@@ -316,20 +317,20 @@ internal fun CrashLogPreviewCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = stringResource(CoreCommonR.string.safe_mode_log_preview),
+                text = stringResource(AppR.string.safe_mode_log_preview),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             if (report == null) {
                 Text(
-                    text = stringResource(CoreCommonR.string.safe_mode_log_empty),
+                    text = stringResource(AppR.string.safe_mode_log_empty),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 return@Column
             }
 
             Text(
-                text = stringResource(CoreCommonR.string.safe_mode_log_file, report.file.name),
+                text = stringResource(AppR.string.safe_mode_log_file, report.file.name),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
@@ -337,7 +338,7 @@ internal fun CrashLogPreviewCard(
             )
             if (report.previewTruncated) {
                 Text(
-                    text = stringResource(CoreCommonR.string.startup_crash_report_truncated),
+                    text = stringResource(AppR.string.startup_crash_report_truncated),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -351,7 +352,7 @@ internal fun CrashLogPreviewCard(
             ) {
                 Text(
                     text = report.previewContent.ifBlank {
-                        stringResource(CoreCommonR.string.log_cannot_read)
+                        stringResource(AppR.string.log_cannot_read)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
@@ -365,13 +366,13 @@ internal fun CrashLogPreviewCard(
                     onClick = onCopy,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(stringResource(CoreCommonR.string.safe_mode_copy_log))
+                    Text(stringResource(AppR.string.safe_mode_copy_log))
                 }
                 Button(
                     onClick = onExport,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(stringResource(CoreCommonR.string.safe_mode_export_log))
+                    Text(stringResource(AppR.string.safe_mode_export_log))
                 }
             }
         }
@@ -391,12 +392,12 @@ internal fun RecoveryActionCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = stringResource(CoreCommonR.string.safe_mode_reset_login),
+                text = stringResource(AppR.string.safe_mode_reset_login),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = stringResource(CoreCommonR.string.safe_mode_reset_login_desc),
+                text = stringResource(AppR.string.safe_mode_reset_login_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -405,16 +406,16 @@ internal fun RecoveryActionCard(
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(stringResource(CoreCommonR.string.safe_mode_reset_login))
+                Text(stringResource(AppR.string.safe_mode_reset_login))
             }
             HorizontalDivider()
             Text(
-                text = stringResource(CoreCommonR.string.safe_mode_reset_settings),
+                text = stringResource(AppR.string.safe_mode_reset_settings),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = stringResource(CoreCommonR.string.safe_mode_reset_settings_desc),
+                text = stringResource(AppR.string.safe_mode_reset_settings_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -423,11 +424,11 @@ internal fun RecoveryActionCard(
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(stringResource(CoreCommonR.string.safe_mode_reset_settings))
+                Text(stringResource(AppR.string.safe_mode_reset_settings))
             }
             HorizontalDivider()
             Text(
-                text = stringResource(CoreCommonR.string.safe_mode_restore_normal_desc),
+                text = stringResource(AppR.string.safe_mode_restore_normal_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -436,7 +437,7 @@ internal fun RecoveryActionCard(
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(stringResource(CoreCommonR.string.safe_mode_restore_normal))
+                Text(stringResource(AppR.string.safe_mode_restore_normal))
             }
         }
     }

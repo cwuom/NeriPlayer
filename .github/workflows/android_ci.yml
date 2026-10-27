@@ -7,12 +7,30 @@ on:
     paths-ignore:
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
+      - '.github/labels.json'
+      - '.github/scripts/issue_labels*'
+      - '.github/scripts/sync_labels.cjs'
+      - '.github/scripts/check_issue_forms.rb'
+      - '.github/workflows/issue_labels.yml'
+      - '.github/workflows/sync_labels.yml'
+      - '.github/workflows/automation_checks.yml'
+      - '.github/workflows/manual_release.yml'
+      - '.github/workflows/recover_keystore.yml'
       - 'site/**'
       - '.github/workflows/site_pages.yml'
   pull_request:
     paths-ignore:
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
+      - '.github/labels.json'
+      - '.github/scripts/issue_labels*'
+      - '.github/scripts/sync_labels.cjs'
+      - '.github/scripts/check_issue_forms.rb'
+      - '.github/workflows/issue_labels.yml'
+      - '.github/workflows/sync_labels.yml'
+      - '.github/workflows/automation_checks.yml'
+      - '.github/workflows/manual_release.yml'
+      - '.github/workflows/recover_keystore.yml'
       - 'site/**'
       - '.github/workflows/site_pages.yml'
   workflow_dispatch:
@@ -20,29 +38,68 @@ on:
 permissions:
   contents: read
 
+env:
+  GRADLE_OPTS: -Dorg.gradle.caching=true
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  ci-tooling:
+    name: CI tooling
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
+    outputs:
+      build_uuid: ${{ steps.metadata.outputs.build_uuid }}
+      build_timestamp: ${{ steps.metadata.outputs.build_timestamp }}
+      build_version_timestamp: ${{ steps.metadata.outputs.build_version_timestamp }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Test automation scripts
+        run: |
+          python3 -B -m unittest discover -s .github/scripts -p 'test_*.py'
+          node --test .github/scripts/*.test.cjs
+
+      - name: Prepare shared build identity
+        id: metadata
+        run: python3 .github/scripts/release_artifacts.py prepare --github-output "$GITHUB_OUTPUT"
+
   gradle-tests:
     name: Gradle tests
+    needs: ci-tooling
     runs-on: ubuntu-latest
     timeout-minutes: 60
     if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
+    env:
+      ORG_GRADLE_PROJECT_buildUuid: ${{ needs.ci-tooling.outputs.build_uuid }}
+      ORG_GRADLE_PROJECT_buildTimestamp: ${{ needs.ci-tooling.outputs.build_timestamp }}
+      ORG_GRADLE_PROJECT_buildVersionTimestamp: ${{ needs.ci-tooling.outputs.build_version_timestamp }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
-          cache: gradle
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' || github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
 
       - name: Grant execute permission
         run: chmod +x gradlew
@@ -55,11 +112,12 @@ jobs:
           ./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
           :lyrics:verifyCrap :platform:verifyCrap :platform:verifyDomainDependencies :sync:verifyCrap :sync:verifyDomainDependencies
           :local:verifySyncIntegrationCrap :download:logic:verifyCrap :download:runtime:verifyCrap
+          :listentogether:verifyCrap :listentogether:verifyDomainDependencies
           verifyModularization --warning-mode all --stacktrace
 
       - name: Upload Gradle test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gradle-test-reports
           path: |
@@ -67,69 +125,21 @@ jobs:
             **/build/test-results/**/*.xml
             **/build/reports/lint-results-debug.html
             **/build/reports/crap/**
+            **/build/reports/domain-dependencies/**
             **/build/reports/problems/**
-          if-no-files-found: ignore
-
-  listen-together-tests:
-    name: Listen Together tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-          cache: gradle
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: np-submodule/NeriPlayer-LTW/package-lock.json
-
-      - name: Grant execute permission
-        run: chmod +x gradlew
-
-      - name: Install Android NDK
-        uses: ./.github/actions/android-ndk
-
-      - name: Install Worker dependencies
-        run: npm ci --prefix np-submodule/NeriPlayer-LTW
-
-      - name: Run Android Listen Together tests
-        run: ./gradlew :listentogether:verifyCrap :listentogether:verifyDomainDependencies :listentogether:lintDebug :listentogether:testDebugUnitTest :app:testDebugUnitTest --tests "*ListenTogether*" --warning-mode all --stacktrace
-
-      - name: Run Worker protocol tests
-        run: npm run check --prefix np-submodule/NeriPlayer-LTW
-
-      - name: Upload Listen Together test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: listen-together-test-reports
-          path: |
-            **/build/reports/tests/**
-            **/build/test-results/**/*.xml
-            modules/listentogether/build/reports/crap/**
-            modules/listentogether/build/reports/domain-dependencies/**
-            modules/listentogether/build/reports/lint-results-debug.html
           if-no-files-found: ignore
 
   android-instrumented-tests:
     name: Android instrumented tests (${{ matrix.test_group }})
+    needs: ci-tooling
     runs-on: ubuntu-latest
     timeout-minutes: 60
     if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
-    # app 仪器测试单分片已接近 60 分钟上限，按 AndroidJUnitRunner 分片拆成两个模拟器并行；库模块只在 0 号分片完整运行
+    env:
+      ORG_GRADLE_PROJECT_buildUuid: ${{ needs.ci-tooling.outputs.build_uuid }}
+      ORG_GRADLE_PROJECT_buildTimestamp: ${{ needs.ci-tooling.outputs.build_timestamp }}
+      ORG_GRADLE_PROJECT_buildVersionTimestamp: ${{ needs.ci-tooling.outputs.build_version_timestamp }}
+    # 普通 app 测试按四个模拟器并行，库模块只在 0 号分片完整运行
     strategy:
       fail-fast: false
       matrix:
@@ -144,51 +154,74 @@ jobs:
               :database:connectedDebugAndroidTest :local:connectedDebugAndroidTest
               :playback:runtime:connectedDebugAndroidTest
             app_test_arguments: >-
-              -Pandroid.testInstrumentationRunnerArguments.numShards=2
+              -Pandroid.testInstrumentationRunnerArguments.numShards=4
               -Pandroid.testInstrumentationRunnerArguments.shardIndex=0
               -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
           - shard: 1
             test_group: shard 1
+            # 该分片在 SwiftShader 宿主上重复掉线，用 ANGLE 路径隔离图形后端影响
+            emulator_gpu: swangle
+            build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
+            module_tests: ""
+            app_test_arguments: >-
+              -Pandroid.testInstrumentationRunnerArguments.numShards=4
+              -Pandroid.testInstrumentationRunnerArguments.shardIndex=1
+              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
+              -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
+          - shard: 2
+            test_group: shard 2
             emulator_gpu: swiftshader
             build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
             module_tests: ""
             app_test_arguments: >-
-              -Pandroid.testInstrumentationRunnerArguments.numShards=2
-              -Pandroid.testInstrumentationRunnerArguments.shardIndex=1
+              -Pandroid.testInstrumentationRunnerArguments.numShards=4
+              -Pandroid.testInstrumentationRunnerArguments.shardIndex=2
+              -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
+              -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
+          - shard: 3
+            test_group: shard 3
+            emulator_gpu: swiftshader
+            build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
+            module_tests: ""
+            app_test_arguments: >-
+              -Pandroid.testInstrumentationRunnerArguments.numShards=4
+              -Pandroid.testInstrumentationRunnerArguments.shardIndex=3
               -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
           # 完整宿主触摸回归使用独立的新 AVD，隔离套件间图形状态并保留全部断言
-          - shard: 2
+          - shard: 4
             test_group: External Lyrics host
             emulator_gpu: swangle
-            offline: true
             build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
             module_tests: ""
             app_test_arguments: >-
               -Pandroid.testInstrumentationRunnerArguments.class=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
           # 真实 Activity 旋转单独运行，避免共享图形宿主的状态影响连续性回归
-          - shard: 3
+          - shard: 5
             test_group: Player rotation host
             emulator_gpu: swangle
-            offline: true
             build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
             module_tests: ""
             app_test_arguments: >-
               -Pandroid.testInstrumentationRunnerArguments.class=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' || github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
 
       - name: Grant execute permission
         run: chmod +x gradlew
@@ -223,23 +256,23 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          # 完整歌词宿主使用 ANGLE 的 GLES 路径，常规分片保留原后端作为对照
+          # 完整宿主和曾掉线的分片使用 ANGLE，其余分片保留原后端作为对照
           emulator-options: >-
             -no-window -gpu ${{ matrix.emulator_gpu }} -no-snapshot -noaudio -no-boot-anim
           # 保留 Launcher 组件，用设置页承接测试前的前台焦点
           # 首次沉浸模式提示会抢走原生输入，测试 AVD 预先标记已确认
           # 隐藏错误弹窗不会关闭已有 ANR，停止启动器和 SDK Setup 以清理无关窗口
-          # 完整宿主使用固定离线夹具，避免虚拟 Wi-Fi 失联反复移动迷你播放器
+          # 完整宿主测试在 Activity 启动前自行确认并恢复离线网络夹具
           script: >-
             { ps -eLo pid,tid,comm > build/reports/emulator-host/before-tests-threads.txt || true; } &&
             adb shell settings put global hide_error_dialogs 1 &&
+            adb shell settings put global heads_up_notifications_enabled 0 &&
+            adb shell 'test "$(settings get global heads_up_notifications_enabled)" = 0' &&
             adb shell settings --user 0 put secure anr_show_background 0 &&
             adb shell settings --user 0 put secure immersive_mode_confirmations confirmed &&
             adb shell am start -W -a android.settings.SETTINGS &&
             adb shell am force-stop --user 0 com.google.android.apps.nexuslauncher &&
             adb shell am force-stop --user 0 com.google.android.googlesdksetup &&
-            { [ "${{ matrix.offline }}" != "true" ] ||
-            { adb shell cmd connectivity airplane-mode enable && adb shell svc wifi disable; }; } &&
             { [ -z "${{ matrix.module_tests }}" ] || ./gradlew ${{ matrix.module_tests }}
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
             --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace; } &&
@@ -249,7 +282,7 @@ jobs:
             --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace
 
       - name: Verify instrumented test routing
-        if: ${{ matrix.shard < 2 || matrix.test_group == 'Player rotation host' }}
+        if: ${{ matrix.shard < 4 || matrix.test_group == 'Player rotation host' }}
         shell: python
         env:
           TEST_GROUP: ${{ matrix.test_group }}
@@ -309,7 +342,7 @@ jobs:
 
       - name: Upload Android test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: android-instrumented-test-reports-${{ matrix.shard }}
           path: |
@@ -325,13 +358,14 @@ jobs:
     if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
           submodules: recursive
+          sparse-checkout: np-submodule/NeriPlayer-LTW
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -343,34 +377,43 @@ jobs:
       - name: Run Worker check
         run: npm run check --prefix np-submodule/NeriPlayer-LTW
 
-  build:
-    needs:
-      - gradle-tests
-      - listen-together-tests
-      - worker-check
-      - android-instrumented-tests
+  release-build:
+    name: Release build
+    needs: ci-tooling
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    if: ${{ (github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]')) && (github.ref == 'refs/heads/master' || github.event_name == 'pull_request') }}
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
+    env:
+      ORG_GRADLE_PROJECT_buildUuid: ${{ needs.ci-tooling.outputs.build_uuid }}
+      ORG_GRADLE_PROJECT_buildTimestamp: ${{ needs.ci-tooling.outputs.build_timestamp }}
+      ORG_GRADLE_PROJECT_buildVersionTimestamp: ${{ needs.ci-tooling.outputs.build_version_timestamp }}
+      NERI_BUILD_UUID: ${{ needs.ci-tooling.outputs.build_uuid }}
+      NERI_BUILD_TIMESTAMP: ${{ needs.ci-tooling.outputs.build_timestamp }}
+      NERI_BUILD_VERSION_TIMESTAMP: ${{ needs.ci-tooling.outputs.build_version_timestamp }}
+      NERI_SIGNING_MODE: ${{ github.repository == 'cwuom/NeriPlayer' && github.event_name == 'push' && github.ref == 'refs/heads/master' && 'signed' || 'unsigned' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' || github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
 
       - name: Decode keystore
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: env.NERI_SIGNING_MODE == 'signed'
         run: |
           mkdir -p app
-          echo "$KEYSTORE_B64" | base64 -d > app/neri.jks
+          printf '%s' "$KEYSTORE_B64" | base64 -d > app/neri.jks
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
 
@@ -386,40 +429,136 @@ jobs:
             --manifest modules/native/src/main/cpp/tests/usb/config/run-manifest.example.yaml \
             --profile release-werror-asserts
 
-      - name: Build unsigned Release for PR
-        if: github.event_name == 'pull_request'
+      - name: Build unsigned Release
+        if: env.NERI_SIGNING_MODE == 'unsigned'
         run: ./gradlew :app:assembleRelease -PallowUnsignedRelease=true --warning-mode all --stacktrace
 
       - name: Build signed Release for master
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        run: |
-          ./gradlew :app:assembleRelease \
-            -PKEYSTORE_FILE=neri.jks \
-            -PKEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }} \
-            -PKEY_ALIAS=key0 \
-            -PKEY_PASSWORD=${{ secrets.KEY_PASSWORD }} \
-            --warning-mode all --stacktrace
+        if: env.NERI_SIGNING_MODE == 'signed'
+        env:
+          ORG_GRADLE_PROJECT_KEYSTORE_FILE: neri.jks
+          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_KEY_ALIAS: key0
+          ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --warning-mode all --stacktrace
 
-      - name: Upload Release APK
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        uses: actions/upload-artifact@v4
+      - name: Verify and stage Release artifacts
+        run: >-
+          python3 .github/scripts/release_artifacts.py stage
+          --apk-dir app/build/outputs/apk/release --output-dir build/release-artifacts
+
+      - name: Summarize APK candidate identity
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: >-
+          python3 -B .github/scripts/release_artifacts.py summary
+          --metadata-file build/release-artifacts/build-metadata.json --status candidate
+          --expected-sha "$EXPECTED_SHA" --expected-build-uuid "$NERI_BUILD_UUID"
+
+      - name: Upload APK candidate
+        uses: actions/upload-artifact@v6
         with:
-          name: neri-apk
-          path: app/build/outputs/apk/release/**/*.apk
+          name: release-apk-candidate
+          path: build/release-artifacts/*
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Remove temporary signing keystore
+        if: ${{ always() && env.NERI_SIGNING_MODE == 'signed' }}
+        run: rm -f app/neri.jks
+
+  build:
+    name: Verify and publish APK
+    needs:
+      - ci-tooling
+      - gradle-tests
+      - worker-check
+      - android-instrumented-tests
+      - release-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    steps:
+      - name: Require every CI gate to pass
+        shell: python
+        env:
+          NEEDS_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["NEEDS_RESULTS"])
+          failed = {name: job["result"] for name, job in results.items() if job["result"] != "success"}
+          if failed:
+              print(f"Required CI gates did not pass: {failed}")
+              sys.exit(1)
+          print("All required CI gates passed")
+
+      - name: Checkout test report verifier
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - name: Download emulator reports
+        uses: actions/download-artifact@v7
+        with:
+          pattern: android-instrumented-test-reports-*
+          path: build/instrumentation-reports
+
+      - name: Verify complete and disjoint emulator routes
+        run: >-
+          python3 -B .github/scripts/verify_instrumentation.py build/instrumentation-reports
+          --inventory-output build/instrumentation-inventory.json
+
+      - name: Upload test inventory
+        uses: actions/upload-artifact@v6
+        with:
+          name: instrumentation-inventory
+          path: build/instrumentation-inventory.json
+          if-no-files-found: error
+
+      - name: Download verified build candidate
+        uses: actions/download-artifact@v7
+        with:
+          name: release-apk-candidate
+          path: build/release-artifacts
+
+      - name: Verify candidate checksums
+        working-directory: build/release-artifacts
+        run: sha256sum --check --strict SHA256SUMS.txt
+
+      - name: Publish CI APKs after all gates pass
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ github.repository == 'cwuom/NeriPlayer' && github.event_name == 'push' && github.ref == 'refs/heads/master' && 'neri-apk' || 'neri-apk-unsigned' }}
+          path: build/release-artifacts/*
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Summarize published APK identity
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_BUILD_UUID: ${{ needs.ci-tooling.outputs.build_uuid }}
+        run: >-
+          python3 -B .github/scripts/release_artifacts.py summary
+          --metadata-file build/release-artifacts/build-metadata.json --status published
+          --expected-sha "$EXPECTED_SHA" --expected-build-uuid "$EXPECTED_BUILD_UUID"
 
   upload-telegram:
     needs:
       - build
     runs-on: ubuntu-latest
-    if: ${{ success() && github.ref == 'refs/heads/master' }}
+    if: ${{ success() && github.repository == 'cwuom/NeriPlayer' && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
       - name: Download APK artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: neri-apk
           path: artifacts

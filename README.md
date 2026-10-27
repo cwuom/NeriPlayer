@@ -23,7 +23,7 @@
 </p>
 
 <p>
-  <img src="icon/neriplayer.svg" width="260" alt="NeriPlayer logo" />
+  <img src="icon/readme-banner.svg" width="100%" alt="NeriPlayer — Modern Music Player" />
 </p>
 
 <p>
@@ -222,6 +222,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   OnePlus 的高密度屏幕（系统 `densityDpi >= 500`）会自动叠加 `0.95x` UI 修正，
   普通密度机型不触发修正，用户手动设置值仍会作为额外乘数参与计算。
   “进阶高级模糊”和“连贯反馈”默认关闭；关闭连贯反馈时，歌单等详情页使用抽屉式展开；
+  “预测性返回预览”默认关闭，所有系统均可手动开启；
   进阶高级模糊仅在 Android 13+ 且父级高级模糊开启时可用；
   它会增强屏幕级顶部 Tab、底部 Tab 和设置结构卡片的实时玻璃材质，
   并提供 `12-64 dp` 的模糊度调节，不改变文字、图标、布局与点击区域。
@@ -405,7 +406,14 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - 💾 **可配置流媒体缓存**：
   使用 `SimpleCache + LRU` 缓存音频，默认上限 **1 GB**，
   支持分别清理音频缓存、图片缓存、分享暂存和平台歌单缓存，
-  并可查看分组后的存储占用详情；下载暂存包含续传与恢复凭据，由下载恢复管理。
+  清理面板会先扫描分类容量，完成后刷新占用并显示实际释放空间。
+  清理音频和封面时，通过 **0–1000 首、步进 50 首**的滑块保留最近播放的不同歌曲，音频与封面共用名单；
+  两类缓存和合计的预计可清理容量会随选择平滑更新，计算中或无法估算时显示占位，并同时列出实际占用。
+  详情统计目录物理占用；预计释放排除当前歌曲（含暂停）、保留缓存和索引文件，缓存实例不可读取时不会误报为 0。
+  **0** 表示不保留历史歌曲缓存，当前播放的音频仍受保护，不会为保留名单补下载。
+  开启保留时，无法确认歌曲归属的旧缓存会保守保留，实际留下的缓存可能多于 X 首。
+  “其他缓存”目前可清理歌词分享卡片；同步、备份恢复、下载续传和未知用途文件单独列为受保护数据。
+  下载暂存包含续传与恢复凭据，由下载恢复管理；已下载歌曲、歌词和封面不会被普通缓存清理删除。
 - 🛰️ **脱机模式**：
   自动感知系统默认网络承载状态，脱机时停用在线探索和首页远程刷新，
   远程图片只走本地缓存；本地文件、已下载音频、播放缓存、歌单、
@@ -1167,8 +1175,14 @@ NeriPlayer 使用 **GPL-3.0** 开源许可证发布。
 
 <p align="center">
   <img src="https://moe-counter.lxchapu.com/:neriplayer?theme=moebooru" alt="访问计数 (Moe Counter)">
-  <br/>
-  <a href="https://starchart.cc/cwuom/NeriPlayer">
-    <img src="https://starchart.cc/cwuom/NeriPlayer.svg" alt="Star 历史趋势图">
-  </a>
 </p>
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=cwuom%2Fneriplayer&type=timeline&legend=bottom-right">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cwuom/neriplayer&type=timeline&theme=dark&legend=bottom-right" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cwuom/neriplayer&type=timeline&legend=bottom-right" />
+    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cwuom/neriplayer&type=timeline&legend=bottom-right" />
+  </picture>
+</a>

@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistSongDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
+import moe.ouom.neriplayer.R as AppR
 
 internal fun CoroutineScope.showPlaylistDeleteResult(
     context: Context,
@@ -79,7 +80,7 @@ internal fun CoroutineScope.showPlaylistDeletedSnackbar(
     val deletedCount = deleteResults.size
     val displayName = deleteResults.singleOrNull()?.playlist?.name.orEmpty()
     val message = context.resources.getQuantityString(
-        CoreCommonR.plurals.local_playlist_delete_snackbar,
+        AppR.plurals.local_playlist_delete_snackbar,
         deletedCount,
         deletedCount,
         displayName
@@ -98,7 +99,7 @@ internal fun CoroutineScope.showPlaylistDeletedSnackbar(
         }.getOrDefault(false)
         val undoMessage = if (undoSucceeded) {
             context.resources.getQuantityString(
-                CoreCommonR.plurals.local_playlist_delete_undone,
+                AppR.plurals.local_playlist_delete_undone,
                 deletedCount,
                 deletedCount,
                 displayName
@@ -122,7 +123,7 @@ internal fun showPlaylistDeletedGlobalSnackbar(
     val deletedCount = deleteResults.size
     val displayName = deleteResults.singleOrNull()?.playlist?.name.orEmpty()
     val message = context.resources.getQuantityString(
-        CoreCommonR.plurals.local_playlist_delete_snackbar,
+        AppR.plurals.local_playlist_delete_snackbar,
         deletedCount,
         deletedCount,
         displayName
@@ -138,7 +139,7 @@ internal fun showPlaylistDeletedGlobalSnackbar(
         }.getOrDefault(false)
         val undoMessage = if (undoSucceeded) {
             context.resources.getQuantityString(
-                CoreCommonR.plurals.local_playlist_delete_undone,
+                AppR.plurals.local_playlist_delete_undone,
                 deletedCount,
                 deletedCount,
                 displayName
@@ -171,7 +172,7 @@ internal fun CoroutineScope.showPlaylistSongDeletedSnackbar(
     }
     val deletedCount = deleteResults.size
     val message = context.resources.getQuantityString(
-        CoreCommonR.plurals.local_playlist_delete_songs_snackbar,
+        AppR.plurals.local_playlist_delete_songs_snackbar,
         deletedCount,
         deletedCount
     )
@@ -189,7 +190,7 @@ internal fun CoroutineScope.showPlaylistSongDeletedSnackbar(
         }.getOrDefault(false)
         val undoMessage = if (undoSucceeded) {
             context.resources.getQuantityString(
-                CoreCommonR.plurals.local_playlist_delete_songs_undone,
+                AppR.plurals.local_playlist_delete_songs_undone,
                 deletedCount,
                 deletedCount
             )

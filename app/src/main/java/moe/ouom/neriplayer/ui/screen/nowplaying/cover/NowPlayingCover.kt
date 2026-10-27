@@ -31,8 +31,12 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
@@ -40,11 +44,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.structuralEqualityPolicy
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -69,9 +76,11 @@ import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.ui.component.playback.NowPlayingCoverPreviewDialog
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceBadge
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
+import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsBoundsTransform
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedTransitionElement
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmap
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
+import moe.ouom.neriplayer.util.media.PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX
 import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.animation.sharedCoverTarget
@@ -85,7 +94,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 private const val NowPlayingCoverImageCrossfadeMs = 220
 private const val NowPlayingCoverFrameCacheLimit = 3
-private const val NowPlayingCoverBitmapMaxDimensionPx = 512
+internal const val NowPlayingCoverBitmapMaxDimensionPx = PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX
 private const val NowPlayingCoverNullGraceMs = 500L
 
 internal data class NowPlayingCoverFrame(
@@ -849,14 +858,15 @@ internal fun NowPlayingCoverPanel(
     playbackSourceType: PlaybackSourceType?,
     onPreviewUnavailable: () -> Unit,
     modifier: Modifier,
-    preferredSize: Dp? = null
+    preferredSize: Dp? = null,
+    coverFlight: NowPlayingLyricsCoverFlight? = null
 ) {
     val viewport = currentNowPlayingCoverViewport()
     NowPlayingCoverSizedPanel(
         owner, source, song, previewSessionKey, offlineMode,
         sharedTransitionScope, animatedVisibilityScope, showSourceBadge,
         animateSourceBadge, playbackSourceType, onPreviewUnavailable,
-        viewport, modifier, preferredSize
+        viewport, modifier, preferredSize, coverFlight
     )
 }
 
@@ -876,7 +886,8 @@ private fun NowPlayingCoverSizedPanel(
     onPreviewUnavailable: () -> Unit,
     viewport: NowPlayingCoverViewport,
     modifier: Modifier,
-    preferredSize: Dp?
+    preferredSize: Dp?,
+    coverFlight: NowPlayingLyricsCoverFlight?
 ) {
     val density = LocalDensity.current
     BoxWithConstraints(modifier = modifier) {
@@ -888,24 +899,25 @@ private fun NowPlayingCoverSizedPanel(
             )
         }
         val requestSizePx = with(density) { coverSize.roundToPx().coerceAtLeast(256) }
-        val coverFlight = LocalSharedCoverFlight.current
+        val sharedCoverFlight = LocalSharedCoverFlight.current
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
                 .size(coverSize)
                 // the source badge rides with the artwork, so it hides while the artwork flies
-                .graphicsLayer { alpha = nowPlayingCoverArtworkAlpha(coverFlight) }
+                .graphicsLayer { alpha = nowPlayingCoverArtworkAlpha(sharedCoverFlight) }
         ) {
             NowPlayingCoverPanelImage(
                 owner = owner,
                 content = NowPlayingCoverPanelImageContent(source, offlineMode, requestSizePx),
                 preview = NowPlayingCoverPanelPreview(song, previewSessionKey, onPreviewUnavailable),
                 sharedTransitionScope = sharedTransitionScope,
-                animatedVisibilityScope = animatedVisibilityScope
+                animatedVisibilityScope = animatedVisibilityScope,
+                coverFlight = coverFlight
             )
             NowPlayingCoverSourceBadge(
                 showSourceBadge, animateSourceBadge, playbackSourceType,
-                Modifier.align(Alignment.BottomEnd).padding(10.dp)
+                Modifier.align(Alignment.BottomEnd).padding(10.dp), coverFlight
             )
         }
     }
@@ -934,11 +946,14 @@ private fun NowPlayingCoverPanelImage(
     content: NowPlayingCoverPanelImageContent,
     preview: NowPlayingCoverPanelPreview,
     sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    coverFlight: NowPlayingLyricsCoverFlight?
 ) {
-    val sharedModifier = Modifier.nowPlayingCoverSharedModifier(
-        sharedTransitionScope, animatedVisibilityScope
-    )
+    val sharedModifier = if (coverFlight != null) {
+        Modifier.nowPlayingCoverFlightEndpoint(coverFlight)
+    } else {
+        Modifier.nowPlayingCoverSharedModifier(sharedTransitionScope, animatedVisibilityScope)
+    }
     NowPlayingCoverInteractiveImage(owner, content, preview, sharedModifier)
 }
 
@@ -950,6 +965,7 @@ private fun Modifier.nowPlayingCoverSharedModifier(
 ): Modifier = with(sharedTransitionScope) {
     this@nowPlayingCoverSharedModifier.sharedElement(
         rememberSharedContentState(NowPlayingLyricsSharedTransitionElement.COVER.key),
+        boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
         animatedVisibilityScope = animatedVisibilityScope
     )
 }
@@ -1024,18 +1040,87 @@ private fun Modifier.nowPlayingCoverPreviewModifier(
 } else this
 
 @Composable
-private fun NowPlayingCoverSourceBadge(
+internal fun NowPlayingCoverSourceBadge(
     show: Boolean,
     animate: Boolean,
     sourceType: PlaybackSourceType?,
-    modifier: Modifier
+    modifier: Modifier,
+    coverFlight: NowPlayingLyricsCoverFlight? = null
 ) {
-    val scale by animateFloatAsState(
-        targetValue = nowPlayingCoverBadgeScaleTarget(show, sourceType),
-        animationSpec = nowPlayingCoverBadgeAnimationSpec(animate),
+    val binding = NowPlayingCoverBadgeDrawingBinding(LocalSharedCoverFlight.current, coverFlight)
+    val unobscured by rememberNowPlayingCoverBadgeUnobscured(binding)
+    val visibleSource = sourceType.takeIf { show && unobscured }
+    val scale = rememberNowPlayingCoverBadgeScale(animate, visibleSource)
+    NowPlayingCoverVisibleBadge(visibleSource, scale, modifier)
+}
+
+private data class NowPlayingCoverBadgeDrawingBinding(
+    val parentFlight: SharedCoverFlightState?,
+    val coverFlight: NowPlayingLyricsCoverFlight?
+) {
+    val unobscured: Boolean
+        get() {
+            val parent = parentFlight
+            val child = coverFlight
+            if (parent != null && (parent.linked || parent.hidesCovers)) return false
+            return child == null || !child.hidesEndpoints
+        }
+}
+
+@Composable
+private fun rememberNowPlayingCoverBadgeUnobscured(
+    binding: NowPlayingCoverBadgeDrawingBinding
+): State<Boolean> = remember(binding) {
+    derivedStateOf(structuralEqualityPolicy()) { binding.unobscured }
+}
+
+@Composable
+private fun rememberNowPlayingCoverBadgeScale(
+    animate: Boolean,
+    sourceType: PlaybackSourceType?
+): State<Float> {
+    val input = NowPlayingCoverBadgeEntryInput(animate, sourceType)
+    val enterReady = rememberNowPlayingCoverBadgeEnterReady(input)
+    return animateFloatAsState(
+        targetValue = nowPlayingCoverBadgeScaleTarget(enterReady, sourceType),
+        animationSpec = nowPlayingCoverBadgeAnimationSpec(animate && enterReady),
         label = "cover_source_badge_scale"
     )
-    NowPlayingCoverVisibleBadge(sourceType.takeIf { show }, scale, modifier)
+}
+
+private data class NowPlayingCoverBadgeEntryInput(
+    val animate: Boolean,
+    val sourceType: PlaybackSourceType?
+)
+
+@Stable
+private class NowPlayingCoverBadgeEntryOwner {
+    private var input: NowPlayingCoverBadgeEntryInput? = null
+    var enterReady by mutableStateOf(false)
+        private set
+
+    fun updateInput(next: NowPlayingCoverBadgeEntryInput) {
+        if (input == next) return
+        input = next
+        enterReady = !next.animate
+    }
+
+    suspend fun awaitEntry(expected: NowPlayingCoverBadgeEntryInput) {
+        if (!expected.animate || expected.sourceType == null) return
+        // 等真实封面接回绘制后再开始，避免入场动画在父转场里提前播完
+        withFrameNanos { }
+        if (input == expected) enterReady = true
+    }
+}
+
+@Composable
+private fun rememberNowPlayingCoverBadgeEnterReady(
+    input: NowPlayingCoverBadgeEntryInput
+): Boolean {
+    val owner = remember { NowPlayingCoverBadgeEntryOwner() }
+    owner.updateInput(input)
+    LaunchedEffect(input) { owner.awaitEntry(input) }
+    return owner.enterReady
 }
 
 internal fun nowPlayingCoverBadgeScaleTarget(show: Boolean, sourceType: PlaybackSourceType?): Float =
@@ -1048,7 +1133,7 @@ private fun nowPlayingCoverBadgeAnimationSpec(animate: Boolean): AnimationSpec<F
 @Composable
 private fun NowPlayingCoverVisibleBadge(
     sourceType: PlaybackSourceType?,
-    scale: Float,
+    scale: State<Float>,
     modifier: Modifier
 ) {
     sourceType?.let { source -> NowPlayingCoverBadgeImage(source, scale, modifier) }
@@ -1057,15 +1142,17 @@ private fun NowPlayingCoverVisibleBadge(
 @Composable
 private fun NowPlayingCoverBadgeImage(
     source: PlaybackSourceType,
-    scale: Float,
+    scale: State<Float>,
     modifier: Modifier
 ) {
     PlaybackSourceBadge(
         source = source,
         modifier = modifier.graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-            alpha = scale
+            val value = scale.value
+            transformOrigin = TransformOrigin.Center
+            scaleX = value
+            scaleY = value
+            alpha = value
         }
     )
 }
@@ -1124,6 +1211,23 @@ internal fun StableNowPlayingCoverImage(
     modifier: Modifier,
     songKeyAliases: List<String>
 ) {
+    val presentation = rememberNowPlayingCoverPresentation(
+        owner, coverUrl, songKey, coverCacheKey, songKeyAliases
+    )
+    NowPlayingCoverSurface(
+        owner, presentation, context, coverRequestSizePx, offlineMode,
+        contentDescription, modifier
+    )
+}
+
+@Composable
+private fun rememberNowPlayingCoverPresentation(
+    owner: NowPlayingCoverOwner,
+    coverUrl: String?,
+    songKey: String?,
+    coverCacheKey: String?,
+    songKeyAliases: List<String>
+): NowPlayingCoverPresentation {
     val request = owner.requestFor(NowPlayingCoverRequestInput(coverUrl, songKey, coverCacheKey))
     // 封面页重建时只从当前歌曲恢复，留在页面内切歌时才保留交接帧
     var surfaceFrame by remember(owner) { mutableStateOf<NowPlayingCoverFrame?>(null) }
@@ -1132,10 +1236,41 @@ internal fun StableNowPlayingCoverImage(
         surfaceFrame = presentation.visibleFrame
         owner.onPresented(songKey, presentation)
     }
-    NowPlayingCoverSurface(
-        owner, presentation, context, coverRequestSizePx, offlineMode,
-        contentDescription, modifier
+    return presentation
+}
+
+@Composable
+internal fun PassiveNowPlayingCoverImage(
+    owner: NowPlayingCoverOwner,
+    source: NowPlayingCoverSource,
+    modifier: Modifier
+) {
+    val request = owner.requestFor(
+        NowPlayingCoverRequestInput(source.coverUrl, source.songKey, source.cacheKey)
     )
+    var surfaceFrame by remember(owner) { mutableStateOf<NowPlayingCoverFrame?>(null) }
+    val presentation = owner.presentation(
+        request, source.songKey, source.songKeyAliases, fallbackFrame = surfaceFrame
+    )
+    val animateVisibleFrame = shouldAnimateNowPlayingCoverFrame(surfaceFrame, presentation.visibleFrame)
+    // 被动层只维护自己的渐变，不与新挂载的端点争写 owner 的上一帧
+    SideEffect { surfaceFrame = presentation.visibleFrame }
+    Box(modifier = modifier) {
+        Crossfade(
+            targetState = presentation.visibleFrame,
+            animationSpec = if (animateVisibleFrame) {
+                tween(durationMillis = NowPlayingCoverImageCrossfadeMs)
+            } else snap(),
+            label = "NowPlayingPassiveCoverImage"
+        ) { frame ->
+            val bitmap = frame?.decodedBitmap
+            if (bitmap != null) {
+                NowPlayingCoverBitmap(bitmap, source.contentDescription)
+            } else {
+                NowPlayingCoverPlaceholder()
+            }
+        }
+    }
 }
 
 internal data class NowPlayingCoverRequestInput(
@@ -1202,17 +1337,22 @@ private fun NowPlayingCoverLoadedFrame(
 ) {
     val bitmap = frame.decodedBitmap
     if (bitmap != null) {
-        Image(
-            bitmap = bitmap,
-            contentDescription = contentDescription,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
+        NowPlayingCoverBitmap(bitmap, contentDescription)
     } else {
         NowPlayingCoverAsyncFrame(
             owner, request, frame, context, sizePx, offlineMode, contentDescription
         )
     }
+}
+
+@Composable
+private fun NowPlayingCoverBitmap(bitmap: ImageBitmap, contentDescription: String?) {
+    Image(
+        bitmap = bitmap,
+        contentDescription = contentDescription,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize()
+    )
 }
 
 @Composable

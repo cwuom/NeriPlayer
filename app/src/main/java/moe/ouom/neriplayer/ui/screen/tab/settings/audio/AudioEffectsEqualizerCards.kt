@@ -57,6 +57,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedBut
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import java.util.Locale
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun AudioEffectsEqualizerCard(
@@ -65,8 +66,8 @@ internal fun AudioEffectsEqualizerCard(
     editor: AudioEffectsEditor
 ) {
     AudioEffectsCardIntro(
-        title = stringResource(CoreCommonR.string.audio_effects_eq_title),
-        description = stringResource(CoreCommonR.string.audio_effects_eq_desc)
+        title = stringResource(AppR.string.audio_effects_eq_title),
+        description = stringResource(AppR.string.audio_effects_eq_desc)
     )
     var selectedBand by rememberSaveable { mutableIntStateOf(DEFAULT_SELECTED_BAND) }
     val changeBand: (Int, Float) -> Unit = { index, gain ->
@@ -89,10 +90,10 @@ internal fun AudioEffectsEqualizerCard(
         onSelect = { selectedBand = it },
         onChange = { gain -> changeBand(selectedBand, gain) }
     )
-    AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_eq_hint))
+    AudioEffectsNote(stringResource(AppR.string.audio_effects_eq_hint))
     AudioEffectsSliderRow(
-        title = stringResource(CoreCommonR.string.audio_effects_preamp),
-        description = stringResource(CoreCommonR.string.audio_effects_preamp_desc),
+        title = stringResource(AppR.string.audio_effects_preamp),
+        description = stringResource(AppR.string.audio_effects_preamp_desc),
         value = sound.preampDb,
         valueRange = AUDIO_EFFECTS_PREAMP_MIN_DB..AUDIO_EFFECTS_PREAMP_MAX_DB,
         step = 0.5f,
@@ -101,8 +102,8 @@ internal fun AudioEffectsEqualizerCard(
         onValueChange = { value -> editor.sound { it.copy(preampDb = value) } }
     )
     AudioEffectsSwitchRow(
-        title = stringResource(CoreCommonR.string.audio_effects_auto_headroom),
-        description = stringResource(CoreCommonR.string.audio_effects_auto_headroom_desc),
+        title = stringResource(AppR.string.audio_effects_auto_headroom),
+        description = stringResource(AppR.string.audio_effects_auto_headroom_desc),
         checked = settings.autoHeadroom,
         onCheckedChange = { enabled -> editor.settings { it.copy(autoHeadroom = enabled) } }
     )
@@ -133,7 +134,7 @@ private fun EqualizerBandStrip(
         IconButton(onClick = { onSelect(index - 1) }, enabled = index > 0) {
             Icon(
                 Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                contentDescription = stringResource(CoreCommonR.string.audio_effects_eq_band_previous)
+                contentDescription = stringResource(AppR.string.audio_effects_eq_band_previous)
             )
         }
         Text(
@@ -145,16 +146,16 @@ private fun EqualizerBandStrip(
         IconButton(onClick = { onSelect(index + 1) }, enabled = index < bands.lastIndex) {
             Icon(
                 Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = stringResource(CoreCommonR.string.audio_effects_eq_band_next)
+                contentDescription = stringResource(AppR.string.audio_effects_eq_band_next)
             )
         }
         Spacer(Modifier.weight(1f))
         IconButton(onClick = { onChange((gain - BAND_STEP_DB).coerceIn(-limit, limit)) }, enabled = active && gain > -limit) {
-            Icon(Icons.Outlined.Remove, contentDescription = stringResource(CoreCommonR.string.audio_effects_eq_band_decrease))
+            Icon(Icons.Outlined.Remove, contentDescription = stringResource(AppR.string.audio_effects_eq_band_decrease))
         }
         AudioEffectsValueChip(text = formatSignedDb(gain), editable = active, onClick = { editing = true })
         IconButton(onClick = { onChange((gain + BAND_STEP_DB).coerceIn(-limit, limit)) }, enabled = active && gain < limit) {
-            Icon(Icons.Outlined.Add, contentDescription = stringResource(CoreCommonR.string.audio_effects_eq_band_increase))
+            Icon(Icons.Outlined.Add, contentDescription = stringResource(AppR.string.audio_effects_eq_band_increase))
         }
     }
     if (editing) {
@@ -180,17 +181,17 @@ internal fun AudioEffectsCorrectionCard(sound: AudioEffectsSound, editor: AudioE
     var showImport by remember { mutableStateOf(false) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
     AudioEffectsCardIntro(
-        title = stringResource(CoreCommonR.string.audio_effects_peq_title),
-        description = stringResource(CoreCommonR.string.audio_effects_peq_desc)
+        title = stringResource(AppR.string.audio_effects_peq_title),
+        description = stringResource(AppR.string.audio_effects_peq_desc)
     )
     AudioEffectsSwitchRow(
-        title = stringResource(CoreCommonR.string.audio_effects_peq_enabled),
+        title = stringResource(AppR.string.audio_effects_peq_enabled),
         description = null,
         checked = sound.parametricEnabled,
         onCheckedChange = { enabled -> editor.sound { it.copy(parametricEnabled = enabled) } }
     )
     if (sound.parametricBands.isEmpty()) {
-        AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_peq_empty))
+        AudioEffectsNote(stringResource(AppR.string.audio_effects_peq_empty))
     }
     sound.parametricBands.forEachIndexed { index, band ->
         ParametricBandRow(band = band, enabled = active, onClick = { editingIndex = index })
@@ -203,7 +204,7 @@ internal fun AudioEffectsCorrectionCard(sound: AudioEffectsSound, editor: AudioE
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         MiuixSettingsOutlinedButton(onClick = { showImport = true }, enabled = active) {
-            Text(stringResource(CoreCommonR.string.audio_effects_peq_import))
+            Text(stringResource(AppR.string.audio_effects_peq_import))
         }
         MiuixSettingsOutlinedButton(
             onClick = {
@@ -214,13 +215,13 @@ internal fun AudioEffectsCorrectionCard(sound: AudioEffectsSound, editor: AudioE
             },
             enabled = active && sound.parametricBands.size < AUDIO_EFFECTS_PARAMETRIC_BAND_LIMIT
         ) {
-            Text(stringResource(CoreCommonR.string.audio_effects_peq_add))
+            Text(stringResource(AppR.string.audio_effects_peq_add))
         }
         if (sound.parametricBands.isNotEmpty()) {
             MiuixSettingsOutlinedButton(onClick = {
                 editor.sound { it.copy(parametricBands = emptyList(), parametricEnabled = false) }
             }, enabled = active) {
-                Text(stringResource(CoreCommonR.string.audio_effects_peq_clear))
+                Text(stringResource(AppR.string.audio_effects_peq_clear))
             }
         }
     }
@@ -263,12 +264,12 @@ internal fun AudioEffectsCorrectionCard(sound: AudioEffectsSound, editor: AudioE
 
 private fun autoEqImportMessage(context: android.content.Context, result: AutoEqImportResult): String = when (result) {
     is AutoEqImportResult.Parametric -> if (result.skippedFilters > 0) {
-        context.getString(CoreCommonR.string.audio_effects_peq_import_skipped, result.bands.size, result.skippedFilters)
+        context.getString(AppR.string.audio_effects_peq_import_skipped, result.bands.size, result.skippedFilters)
     } else {
-        context.getString(CoreCommonR.string.audio_effects_peq_import_done, result.bands.size)
+        context.getString(AppR.string.audio_effects_peq_import_done, result.bands.size)
     }
-    is AutoEqImportResult.Graphic -> context.getString(CoreCommonR.string.audio_effects_peq_import_graphic_done)
-    AutoEqImportResult.Invalid -> context.getString(CoreCommonR.string.audio_effects_peq_import_failed)
+    is AutoEqImportResult.Graphic -> context.getString(AppR.string.audio_effects_peq_import_graphic_done)
+    AutoEqImportResult.Invalid -> context.getString(AppR.string.audio_effects_peq_import_failed)
 }
 
 @Composable
@@ -280,7 +281,7 @@ private fun ParametricBandRow(band: ParametricEqBand, enabled: Boolean, onClick:
         supportingContent = {
             Text(
                 stringResource(
-                    CoreCommonR.string.audio_effects_peq_band_summary,
+                    AppR.string.audio_effects_peq_band_summary,
                     formatFrequency(band.frequencyHz),
                     if (type.usesGain) formatSignedDb(band.gainDb) else "—",
                     String.format(Locale.US, "%.2f", band.q)
@@ -288,7 +289,7 @@ private fun ParametricBandRow(band: ParametricEqBand, enabled: Boolean, onClick:
             )
         },
         trailingContent = if (!band.enabled) {
-            { Text(stringResource(CoreCommonR.string.audio_effects_off)) }
+            { Text(stringResource(AppR.string.audio_effects_off)) }
         } else {
             null
         },
@@ -301,14 +302,14 @@ private fun AutoEqImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit
     var text by remember { mutableStateOf("") }
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(CoreCommonR.string.audio_effects_peq_import)) },
+        title = { Text(stringResource(AppR.string.audio_effects_peq_import)) },
         text = {
             MiuixSettingsTextField(
                 value = text,
                 onValueChange = { text = it },
                 minLines = 4,
                 maxLines = 10,
-                placeholder = { Text(stringResource(CoreCommonR.string.audio_effects_peq_import_hint)) }
+                placeholder = { Text(stringResource(AppR.string.audio_effects_peq_import_hint)) }
             )
         },
         confirmButton = {
@@ -335,11 +336,11 @@ private fun ParametricBandDialog(
     val type = ParametricEqBandType.fromStorageValue(band.type)
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(CoreCommonR.string.audio_effects_peq_edit)) },
+        title = { Text(stringResource(AppR.string.audio_effects_peq_edit)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 AudioEffectsSwitchRow(
-                    title = stringResource(CoreCommonR.string.audio_effects_peq_band_enabled),
+                    title = stringResource(AppR.string.audio_effects_peq_band_enabled),
                     description = null,
                     checked = band.enabled,
                     onCheckedChange = { onChange(band.copy(enabled = it)) }
@@ -357,7 +358,7 @@ private fun ParametricBandDialog(
                     }
                 }
                 AudioEffectsSliderRow(
-                    title = stringResource(CoreCommonR.string.audio_effects_peq_frequency),
+                    title = stringResource(AppR.string.audio_effects_peq_frequency),
                     value = frequencyToSlider(band.frequencyHz),
                     valueRange = 0f..1f,
                     formatValue = { formatFrequency(sliderToFrequency(it)) },
@@ -366,7 +367,7 @@ private fun ParametricBandDialog(
                 )
                 if (type.usesGain) {
                     AudioEffectsSliderRow(
-                        title = stringResource(CoreCommonR.string.audio_effects_peq_gain),
+                        title = stringResource(AppR.string.audio_effects_peq_gain),
                         value = band.gainDb,
                         valueRange = -AUDIO_EFFECTS_EQ_BAND_LIMIT_DB..AUDIO_EFFECTS_EQ_BAND_LIMIT_DB,
                         step = 0.1f,
@@ -376,7 +377,7 @@ private fun ParametricBandDialog(
                     )
                 }
                 AudioEffectsSliderRow(
-                    title = stringResource(CoreCommonR.string.audio_effects_peq_q),
+                    title = stringResource(AppR.string.audio_effects_peq_q),
                     value = band.q,
                     valueRange = 0.1f..10f,
                     step = 0.05f,
@@ -393,7 +394,7 @@ private fun ParametricBandDialog(
         },
         dismissButton = {
             MiuixSettingsTextButton(onClick = onDelete) {
-                Text(stringResource(CoreCommonR.string.audio_effects_delete_preset))
+                Text(stringResource(AppR.string.audio_effects_delete_preset))
             }
         }
     )

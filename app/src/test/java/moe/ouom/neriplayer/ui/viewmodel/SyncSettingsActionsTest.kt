@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.content.Context
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import org.junit.Assert.assertEquals
@@ -52,13 +53,13 @@ class SyncSettingsActionsTest {
     fun `GitHub repository setup without a saved token reports the missing token`() {
         val creating = GitHubSyncViewModel()
         creating.createRepository(context, "neri-backup")
-        assertEquals("Token required", creating.uiState.value.errorMessage)
+        assertEquals(UiText.Resource(CoreCommonR.string.github_token_required), creating.uiState.value.errorMessage)
         assertFalse(creating.uiState.value.isCreatingRepo)
         assertFalse(creating.uiState.value.isConfigured)
 
         val linking = GitHubSyncViewModel()
         linking.useExistingRepository(context, "owner/neri-backup")
-        assertEquals("Token required", linking.uiState.value.errorMessage)
+        assertEquals(UiText.Resource(CoreCommonR.string.github_token_required), linking.uiState.value.errorMessage)
         assertFalse(linking.uiState.value.isCheckingRepo)
         assertEquals("", linking.uiState.value.repoName)
     }
@@ -76,7 +77,7 @@ class SyncSettingsActionsTest {
             viewModel.validateAndSaveConfiguration(context, serverUrl, username, password, basePath = "/neri")
 
             val state = viewModel.uiState.value
-            assertEquals("Fill all fields", state.errorMessage)
+            assertEquals(UiText.Resource(CoreCommonR.string.webdav_required_fields), state.errorMessage)
             assertFalse(state.isValidating)
             assertFalse(state.isConfigured)
         }

@@ -26,10 +26,8 @@ internal object GitHubRateLimitPolicy {
     }
 
     fun exception(statusCode: Int, retryAt: Long, automatic: Boolean, nowMillis: Long): GitHubRateLimitException {
-        val seconds = (retryAt.coerceAtLeast(0L) - nowMillis.coerceAtLeast(0L)).coerceAtLeast(0L) / 1_000L + 1L
-        val continuation = if (automatic) "稍后重试会从已有进度继续" else "自动续传已暂停，请稍后重试同步"
         return GitHubRateLimitException(statusCode, retryAt, automatic,
-            "GitHub 请求被限流，已保留同步进度。约 $seconds 秒后可重试，$continuation")
+            "GitHub rate limit: retryAt=$retryAt, automaticRetry=$automatic, observedAt=$nowMillis")
     }
 
     private fun isRateLimited(response: Response, body: String): Boolean {

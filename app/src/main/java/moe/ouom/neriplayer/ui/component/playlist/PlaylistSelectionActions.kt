@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun PlaylistSelectionActions(
@@ -89,7 +90,7 @@ private fun PlaylistSelectionMoreMenu(
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (onInsert != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(CoreCommonR.string.playlist_insert_action)) },
+                    text = { Text(stringResource(AppR.string.playlist_insert_action)) },
                     leadingIcon = { Icon(Icons.Outlined.LowPriority, contentDescription = null) },
                     enabled = canInsert,
                     onClick = {
@@ -100,7 +101,7 @@ private fun PlaylistSelectionMoreMenu(
             }
             if (onCurateLocalAssets != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(CoreCommonR.string.local_curation_entry)) },
+                    text = { Text(stringResource(AppR.string.local_curation_entry)) },
                     leadingIcon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
                     enabled = canCurateLocalAssets,
                     onClick = {

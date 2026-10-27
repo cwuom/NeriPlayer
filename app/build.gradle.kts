@@ -57,7 +57,20 @@ val releaseSigningReady = releaseKeystoreFile.exists() &&
 
 android {
     namespace = "moe.ouom.neriplayer"
-    val buildUUID = UUID.randomUUID()
+    val suppliedBuildUuid = providers.gradleProperty("buildUuid")
+        .orElse(providers.environmentVariable("NERI_BUILD_UUID")).orNull
+    val buildUUID = suppliedBuildUuid?.let { value ->
+        val normalized = value.trim()
+        require(normalized.matches(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"))) {
+            "buildUuid must be a complete UUID"
+        }
+        UUID.fromString(normalized)
+    } ?: UUID.randomUUID()
+    val suppliedBuildTimestamp = providers.gradleProperty("buildTimestamp").orNull
+    val buildTimestamp = suppliedBuildTimestamp?.let { value ->
+        value.toLongOrNull()?.takeIf { it > 0L }
+            ?: throw GradleException("buildTimestamp must be positive epoch milliseconds")
+    } ?: System.currentTimeMillis()
     val buildAllReleaseAbis = (project.findProperty("buildAllReleaseAbis") as String?)?.toBoolean() == true
     val defaultReleaseAbiFilters = listOf("arm64-v8a")
     val allReleaseAbiFilters = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
@@ -92,7 +105,7 @@ android {
 
         buildConfigField("String", "BUILD_UUID", "\"${buildUUID}\"")
         buildConfigField("String", "TAG", "\"[NeriPlayer]\"")
-        buildConfigField("long", "BUILD_TIMESTAMP", "${System.currentTimeMillis()}L")
+        buildConfigField("long", "BUILD_TIMESTAMP", "${buildTimestamp}L")
 
 
         testInstrumentationRunner = "moe.ouom.neriplayer.testing.NeriPlayerInstrumentationTestRunner"
@@ -129,6 +142,18 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+
+        if (providers.gradleProperty("enablePerformanceBenchmark").orNull == "true") {
+            create("benchmark") {
+                initWith(getByName("release"))
+                applicationIdSuffix = ".benchmark"
+                signingConfig = signingConfigs.getByName("debug")
+                matchingFallbacks += "release"
+                val inviteScheme = "neriplayer-benchmark"
+                manifestPlaceholders["listenTogetherInviteScheme"] = inviteScheme
+                buildConfigField("String", "LISTEN_TOGETHER_INVITE_SCHEME", "\"$inviteScheme\"")
+            }
         }
     }
     buildFeatures {
@@ -237,6 +262,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 }
 
 tasks.withType<Test>().configureEach {
+    // Android 16 的 Robolectric 沙箱需要通过 JDK 文件描述符接口创建共享内存
+    jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
     // Robolectric 用沙箱类加载器加载被测类，这些类没有代码源位置，需要显式纳入覆盖率
     extensions.configure<JacocoTaskExtension> {
         isIncludeNoLocationClasses = true

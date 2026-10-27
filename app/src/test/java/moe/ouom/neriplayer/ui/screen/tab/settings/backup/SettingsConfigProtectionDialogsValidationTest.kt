@@ -18,6 +18,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
@@ -46,7 +47,7 @@ class SettingsConfigProtectionDialogsValidationTest {
                 SettingsConfigExportOptionsDialog(onConfirm = { _, _ -> }, onDismiss = {})
             }
         }
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_encrypt_file))
+        composeRule.onNodeWithText(string(AppR.string.settings_config_encrypt_file))
             .performScrollTo().performClick()
 
         enterPassword("x".repeat(1024))
@@ -57,7 +58,7 @@ class SettingsConfigProtectionDialogsValidationTest {
     }
 
     private fun enterPassword(password: String) {
-        for (id in listOf(CoreCommonR.string.settings_config_password, CoreCommonR.string.settings_config_confirm_password)) {
+        for (id in listOf(AppR.string.settings_config_password, AppR.string.settings_config_confirm_password)) {
             composeRule.onNodeWithText(string(id)).performScrollTo().performTextReplacement(password)
         }
     }

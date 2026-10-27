@@ -132,6 +132,7 @@ import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.screen.playlist.shouldRequestPlaylistSearchFocus
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -448,14 +449,14 @@ fun RecentScreen(
             stringResource(CoreCommonR.string.download_delete_confirm, songName)
         } else {
             pluralStringResource(
-                CoreCommonR.plurals.download_delete_selected_confirm,
+                AppR.plurals.download_delete_selected_confirm,
                 deleteCount,
                 deleteCount
             )
         }
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
+            title = { Text(stringResource(AppR.string.dialog_confirm_delete)) },
             text = { Text(deleteMessage) },
             confirmButton = {
                 HapticTextButton(onClick = {
@@ -583,7 +584,7 @@ internal fun RecentSelectionTopBar(
         title = {
             Text(
                 pluralStringResource(
-                    CoreCommonR.plurals.common_selected_count,
+                    AppR.plurals.common_selected_count,
                     selectedKeys.size,
                     selectedKeys.size
                 )

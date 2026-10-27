@@ -24,7 +24,8 @@ val storageCacheItemKinds = mapOf(
     StorageCacheKind.BiliArchive to StorageUsageItemKind.BiliArchiveCache,
     StorageCacheKind.YouTubePlaylist to StorageUsageItemKind.YouTubePlaylistCache,
     StorageCacheKind.LogFiles to StorageUsageItemKind.LogFiles,
-    StorageCacheKind.CrashLogs to StorageUsageItemKind.CrashLogs
+    StorageCacheKind.CrashLogs to StorageUsageItemKind.CrashLogs,
+    StorageCacheKind.Other to StorageUsageItemKind.OtherCache
 )
 
 class StorageLocations(
@@ -39,6 +40,8 @@ class StorageLocations(
     val downloadStagingDirs = listOf(File(filesDir, "download_staging"), File(cacheDir, "download_staging"))
         .distinctBy { it.absolutePath }
     val sharedMediaDir = File(cacheDir, "shared_media_exports")
+    // 仅清理确认可重建的分享产物，未知目录可能承载同步或恢复中的数据
+    val otherCacheDirs = listOf(File(cacheDir, "lyric_share_cards"))
     val lyricsCacheDir = File(filesDir, LYRICS_CACHE_DIRECTORY_NAME)
     val localCoverDir = File(filesDir, "local_audio_covers")
     val backgroundDir = File(filesDir, "custom_background")
@@ -58,11 +61,12 @@ class StorageLocations(
         StorageCacheKind.BiliArchive to listOf(File(filesDir, "bili_archive_cache")),
         StorageCacheKind.YouTubePlaylist to listOf(File(filesDir, "youtube_music_playlist_cache")),
         StorageCacheKind.LogFiles to listOf(logDir),
-        StorageCacheKind.CrashLogs to listOf(crashDir)
+        StorageCacheKind.CrashLogs to listOf(crashDir),
+        StorageCacheKind.Other to otherCacheDirs
     )
 
     internal fun cacheExclusions(): List<File> =
-        listOf(mediaCacheDir, imageCacheDir, sharedMediaDir, lyricsCacheDir) + downloadStagingDirs
+        listOf(mediaCacheDir, imageCacheDir, sharedMediaDir, lyricsCacheDir) + downloadStagingDirs + otherCacheDirs
 
     internal fun appDataExclusions(downloadedFiles: List<File>): List<File> = knownAppDataRoots(
         platformCacheDirs = storagePlatformCaches.keys.flatMap { cacheFiles.getValue(it) },

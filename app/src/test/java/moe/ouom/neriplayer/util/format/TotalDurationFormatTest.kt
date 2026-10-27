@@ -8,6 +8,7 @@ import org.junit.Test
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verifyNoInteractions
+import moe.ouom.neriplayer.R as AppR
 
 class TotalDurationFormatTest {
 
@@ -25,7 +26,7 @@ class TotalDurationFormatTest {
 
     @Test
     fun `totals under an hour show whole minutes and drop leftover seconds`() {
-        `when`(resources.getQuantityString(CoreCommonR.plurals.time_minutes_only, 45, 45))
+        `when`(resources.getQuantityString(AppR.plurals.time_minutes_only, 45, 45))
             .thenReturn("45 minutes")
 
         assertEquals("45 minutes", formatTotalDuration(context, 45 * 60_000L + 59_999L))
@@ -33,9 +34,9 @@ class TotalDurationFormatTest {
 
     @Test
     fun `totals of an hour or more wrap the minute text with the hour count`() {
-        `when`(resources.getQuantityString(CoreCommonR.plurals.time_minutes_only, 30, 30))
+        `when`(resources.getQuantityString(AppR.plurals.time_minutes_only, 30, 30))
             .thenReturn("30 minutes")
-        `when`(resources.getQuantityString(CoreCommonR.plurals.time_hours_minutes, 1, 1, "30 minutes"))
+        `when`(resources.getQuantityString(AppR.plurals.time_hours_minutes, 1, 1, "30 minutes"))
             .thenReturn("1 hour 30 minutes")
 
         assertEquals("1 hour 30 minutes", formatTotalDuration(context, 90 * 60_000L))
@@ -43,9 +44,9 @@ class TotalDurationFormatTest {
 
     @Test
     fun `whole hours still pass a zero minute part`() {
-        `when`(resources.getQuantityString(CoreCommonR.plurals.time_minutes_only, 0, 0))
+        `when`(resources.getQuantityString(AppR.plurals.time_minutes_only, 0, 0))
             .thenReturn("0 minutes")
-        `when`(resources.getQuantityString(CoreCommonR.plurals.time_hours_minutes, 2, 2, "0 minutes"))
+        `when`(resources.getQuantityString(AppR.plurals.time_hours_minutes, 2, 2, "0 minutes"))
             .thenReturn("2 hours 0 minutes")
 
         assertEquals("2 hours 0 minutes", formatTotalDuration(context, 2 * 3_600_000L))

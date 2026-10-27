@@ -115,6 +115,8 @@
     "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveSinkVolumeOwner.kt",
     "moe/ouom/neriplayer/core/player/usb/sink/AndroidUsbExclusiveSinkVolumePort.kt",
     "moe/ouom/neriplayer/core/player/usb/sink/UsbExclusiveTransportStartPolicy.kt",
+    "moe/ouom/neriplayer/ui/screen/nowplaying/cover/NowPlayingLyricsCoverFlight.kt",
+    "moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingLyricsSharedMotion.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/cover/NowPlayingCover.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/cover/NowPlayingCoverTopBar.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingTrackIdentity.kt",
@@ -146,6 +148,7 @@
     "moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/SettingsDownloadDirectoryController.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/appearance/SettingsBackgroundAppearanceController.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/storage/SettingsStoragePageController.kt",
+    "moe/ouom/neriplayer/ui/screen/tab/settings/component/storage/StorageCacheEstimateState.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/home/SettingsHomeStartPresentation.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/operation/SettingsDownloadDirectoryApplyOwner.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/download/directory/operation/SettingsDownloadDirectoryPreparationOwner.kt",
@@ -557,15 +560,16 @@
       "class": "moe.ouom.neriplayer.ui.NeriAppKt",
       "methods": [
         "NeriAppContent",
-        "NeriAppContent$lambda$179",
-        "NeriAppContent$lambda$179$RenderMainTabRoute",
-        "NeriAppContent$lambda$179$RenderMainTabRoute$24",
-        "NeriAppContent$lambda$179$RenderMainTabRoute$25",
-        "NeriAppContent$lambda$179$RenderMainTabRoute$26",
-        "NeriAppContent$lambda$179$RenderMainTabRoute$27",
-        "NeriAppContent$lambda$179$RenderMainTabRoute$28",
-        "NeriAppContent$lambda$179$RenderMainTabRoute$28$1",
-        "NeriAppContent$lambda$179$30"
+        "NeriAppContent$lambda$181",
+        "NeriAppContent$lambda$181$4$0",
+        "NeriAppContent$lambda$181$RenderMainTabRoute",
+        "NeriAppContent$lambda$181$RenderMainTabRoute$24",
+        "NeriAppContent$lambda$181$RenderMainTabRoute$25",
+        "NeriAppContent$lambda$181$RenderMainTabRoute$26",
+        "NeriAppContent$lambda$181$RenderMainTabRoute$27",
+        "NeriAppContent$lambda$181$RenderMainTabRoute$28",
+        "NeriAppContent$lambda$181$RenderMainTabRoute$28$1",
+        "NeriAppContent$lambda$181$30"
       ]
     },
     {
@@ -1101,23 +1105,35 @@
       ]
     },
     {
+      "source": "moe/ouom/neriplayer/ui/animation/SharedCoverFlight.kt",
+      "class": "moe.ouom.neriplayer.ui.animation.SharedCoverFlightState",
+      "methods": [
+        "updateMiniPlayerGeometryMode",
+        "followLatestMiniBounds",
+        "freezeEffectiveMiniBounds",
+        "clearMiniBoundsCorrection",
+        "miniBoundsDifference",
+        "correctedMiniBounds"
+      ]
+    },
+    {
       "source": "moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingScreen.kt",
       "class": "moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingScreenKt",
       "methods": [
         "NowPlayingScreen",
         "NowPlayingImmersivePortraitLayout-EUb7tLY",
         "resolveNowPlayingCoverPagePresentation",
-        "NowPlayingScreen$lambda$156$1$0$1",
-        "NowPlayingScreen$lambda$156$1$0$1$22",
-        "NowPlayingScreen$lambda$156$1$0$1$23",
-        "NowPlayingScreen$lambda$156$1$0$1$24",
-        "NowPlayingScreen$lambda$156$1$0$1$25",
-        "NowPlayingScreen$lambda$156$1$0$1$26",
-        "NowPlayingScreen$lambda$156$1$0$1$27",
-        "NowPlayingScreen$lambda$156$1$0$1$28",
-        "NowPlayingScreen$lambda$156$1$0$1$29",
-        "NowPlayingScreen$lambda$156$1$0$1$30",
-        "NowPlayingScreen$lambda$156$1$0$1$24$0"
+        "NowPlayingScreen$lambda$160$0$2$0$1",
+        "NowPlayingScreen$lambda$160$0$2$0$1$23",
+        "NowPlayingScreen$lambda$160$0$2$0$1$24",
+        "NowPlayingScreen$lambda$160$0$2$0$1$25",
+        "NowPlayingScreen$lambda$160$0$2$0$1$26",
+        "NowPlayingScreen$lambda$160$0$2$0$1$27",
+        "NowPlayingScreen$lambda$160$0$2$0$1$28",
+        "NowPlayingScreen$lambda$160$0$2$0$1$29",
+        "NowPlayingScreen$lambda$160$0$2$0$1$30",
+        "NowPlayingScreen$lambda$160$0$2$0$1$31",
+        "NowPlayingScreen$lambda$160$0$2$0$1$25$0"
       ]
     },
     {

@@ -33,7 +33,8 @@ import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material3.AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.ApplyOverlayWindowNavigationBarPolicy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -92,6 +93,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingMainControlsLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingMainControlsLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayout
 import kotlin.math.roundToInt
+import moe.ouom.neriplayer.R as AppR
 
 internal val OnboardingCardShape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
 internal val OnboardingControlShape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
@@ -171,18 +173,18 @@ internal fun StartupPermissionContent(
 ) {
     OnboardingSectionHeader(
         icon = Icons.Outlined.Info,
-        title = stringResource(CoreCommonR.string.onboarding_permissions_title),
-        description = stringResource(CoreCommonR.string.onboarding_permissions_desc)
+        title = stringResource(AppR.string.onboarding_permissions_title),
+        description = stringResource(AppR.string.onboarding_permissions_desc)
     )
     Spacer(Modifier.height(18.dp))
     PermissionGuidanceItem(
         icon = Icons.Outlined.Info,
-        title = stringResource(CoreCommonR.string.onboarding_permission_notification_title),
+        title = stringResource(AppR.string.onboarding_permission_notification_title),
         description = stringResource(
             if (notificationPermissionSupported) {
-                CoreCommonR.string.onboarding_permission_notification_desc
+                AppR.string.onboarding_permission_notification_desc
             } else {
-                CoreCommonR.string.onboarding_permission_notification_legacy_desc
+                AppR.string.onboarding_permission_notification_legacy_desc
             }
         ),
         granted = notificationPermissionGranted || !notificationPermissionSupported,
@@ -191,14 +193,14 @@ internal fun StartupPermissionContent(
     Spacer(Modifier.height(12.dp))
     PermissionGuidanceItem(
         icon = Icons.Outlined.LibraryMusic,
-        title = stringResource(CoreCommonR.string.onboarding_permission_media_title),
-        description = stringResource(CoreCommonR.string.onboarding_permission_media_desc),
+        title = stringResource(AppR.string.onboarding_permission_media_title),
+        description = stringResource(AppR.string.onboarding_permission_media_desc),
         granted = localMediaPermissionGranted,
         onRequest = onRequestLocalMediaPermission
     )
     Spacer(Modifier.height(16.dp))
     Text(
-        text = stringResource(CoreCommonR.string.onboarding_permissions_hint),
+        text = stringResource(AppR.string.onboarding_permissions_hint),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -216,8 +218,8 @@ internal fun StartupPlaybackSourceContent(
 
     OnboardingSectionHeader(
         icon = Icons.Outlined.Tune,
-        title = stringResource(CoreCommonR.string.onboarding_playback_sources_title),
-        description = stringResource(CoreCommonR.string.onboarding_playback_sources_desc)
+        title = stringResource(AppR.string.onboarding_playback_sources_title),
+        description = stringResource(AppR.string.onboarding_playback_sources_desc)
     )
     Spacer(Modifier.height(18.dp))
     OnboardingGlassSurface(
@@ -232,21 +234,21 @@ internal fun StartupPlaybackSourceContent(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(CoreCommonR.string.onboarding_playback_sources_switch_title),
+                    text = stringResource(AppR.string.onboarding_playback_sources_switch_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = stringResource(CoreCommonR.string.onboarding_playback_sources_switch_desc),
+                    text = stringResource(AppR.string.onboarding_playback_sources_switch_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (partiallyEnabled) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = stringResource(CoreCommonR.string.onboarding_playback_sources_partial_status),
+                        text = stringResource(AppR.string.onboarding_playback_sources_partial_status),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.tertiary
                     )
@@ -266,11 +268,11 @@ internal fun StartupPlaybackSourceContent(
     }
     Spacer(Modifier.height(14.dp))
     ControlSection(
-        title = stringResource(CoreCommonR.string.onboarding_playback_sources_detail_title),
-        description = stringResource(CoreCommonR.string.onboarding_playback_sources_detail_desc)
+        title = stringResource(AppR.string.onboarding_playback_sources_detail_title),
+        description = stringResource(AppR.string.onboarding_playback_sources_detail_desc)
     ) {
         Text(
-            text = stringResource(CoreCommonR.string.onboarding_playback_sources_detail_bullets),
+            text = stringResource(AppR.string.onboarding_playback_sources_detail_bullets),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -280,19 +282,20 @@ internal fun StartupPlaybackSourceContent(
         AlertDialog(
             onDismissRequest = { showConfirmation = false },
             title = {
-                Text(stringResource(CoreCommonR.string.onboarding_playback_sources_confirm_title))
+                Text(stringResource(AppR.string.onboarding_playback_sources_confirm_title))
             },
             text = {
-                Text(stringResource(CoreCommonR.string.onboarding_playback_sources_confirm_desc))
+                Text(stringResource(AppR.string.onboarding_playback_sources_confirm_desc))
             },
             confirmButton = {
+                ApplyOverlayWindowNavigationBarPolicy()
                 HapticTextButton(
                     onClick = {
                         showConfirmation = false
                         onSetFallbackEnabled(true)
                     }
                 ) {
-                    Text(stringResource(CoreCommonR.string.onboarding_playback_sources_confirm_enable))
+                    Text(stringResource(AppR.string.onboarding_playback_sources_confirm_enable))
                 }
             },
             dismissButton = {
@@ -308,45 +311,45 @@ internal fun StartupPlaybackSourceContent(
 internal fun StartupLearningGuideContent() {
     OnboardingSectionHeader(
         icon = Icons.Outlined.Info,
-        title = stringResource(CoreCommonR.string.onboarding_learning_title),
-        description = stringResource(CoreCommonR.string.onboarding_learning_desc)
+        title = stringResource(AppR.string.onboarding_learning_title),
+        description = stringResource(AppR.string.onboarding_learning_desc)
     )
     Spacer(Modifier.height(18.dp))
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         LearningGuideItem(
             icon = Icons.Filled.PlayArrow,
-            title = stringResource(CoreCommonR.string.onboarding_learning_now_playing_title),
-            body = stringResource(CoreCommonR.string.onboarding_learning_now_playing_desc)
+            title = stringResource(AppR.string.onboarding_learning_now_playing_title),
+            body = stringResource(AppR.string.onboarding_learning_now_playing_desc)
         )
         LearningGuideItem(
             icon = Icons.Outlined.LibraryMusic,
-            title = stringResource(CoreCommonR.string.onboarding_learning_lyrics_title),
-            body = stringResource(CoreCommonR.string.onboarding_learning_lyrics_desc)
+            title = stringResource(AppR.string.onboarding_learning_lyrics_title),
+            body = stringResource(AppR.string.onboarding_learning_lyrics_desc)
         )
         LearningGuideItem(
             icon = Icons.AutoMirrored.Outlined.QueueMusic,
-            title = stringResource(CoreCommonR.string.onboarding_learning_playlist_selection_title),
-            body = stringResource(CoreCommonR.string.onboarding_learning_playlist_selection_desc)
+            title = stringResource(AppR.string.onboarding_learning_playlist_selection_title),
+            body = stringResource(AppR.string.onboarding_learning_playlist_selection_desc)
         )
         LearningGuideItem(
             icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
-            title = stringResource(CoreCommonR.string.onboarding_learning_download_title),
-            body = stringResource(CoreCommonR.string.onboarding_learning_download_desc)
+            title = stringResource(AppR.string.onboarding_learning_download_title),
+            body = stringResource(AppR.string.onboarding_learning_download_desc)
         )
         LearningGuideItem(
             icon = Icons.Outlined.CloudSync,
-            title = stringResource(CoreCommonR.string.onboarding_learning_backup_title),
-            body = stringResource(CoreCommonR.string.onboarding_learning_backup_desc)
+            title = stringResource(AppR.string.onboarding_learning_backup_title),
+            body = stringResource(AppR.string.onboarding_learning_backup_desc)
         )
         LearningGuideItem(
             icon = Icons.Filled.SpeakerGroup,
-            title = stringResource(CoreCommonR.string.onboarding_learning_listen_together_title),
-            body = stringResource(CoreCommonR.string.onboarding_learning_listen_together_desc)
+            title = stringResource(AppR.string.onboarding_learning_listen_together_title),
+            body = stringResource(AppR.string.onboarding_learning_listen_together_desc)
         )
         LearningGuideItem(
             icon = Icons.Outlined.Tune,
-            title = stringResource(CoreCommonR.string.onboarding_learning_queue_title),
-            body = stringResource(CoreCommonR.string.onboarding_learning_queue_desc)
+            title = stringResource(AppR.string.onboarding_learning_queue_title),
+            body = stringResource(AppR.string.onboarding_learning_queue_desc)
         )
     }
 }
@@ -429,8 +432,8 @@ internal fun StartupPlaybackControlsContent(
 
     OnboardingSectionHeader(
         icon = Icons.Outlined.Tune,
-        title = stringResource(CoreCommonR.string.onboarding_controls_title),
-        description = stringResource(CoreCommonR.string.onboarding_controls_desc)
+        title = stringResource(AppR.string.onboarding_controls_title),
+        description = stringResource(AppR.string.onboarding_controls_desc)
     )
     Spacer(Modifier.height(18.dp))
     PlaybackLayoutPreview(
@@ -439,8 +442,8 @@ internal fun StartupPlaybackControlsContent(
     )
     Spacer(Modifier.height(18.dp))
     ControlSection(
-        title = stringResource(CoreCommonR.string.onboarding_controls_size_title),
-        description = stringResource(CoreCommonR.string.onboarding_controls_size_desc)
+        title = stringResource(AppR.string.onboarding_controls_size_title),
+        description = stringResource(AppR.string.onboarding_controls_size_desc)
     ) {
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             PlaybackControlSize.entries.forEachIndexed { index, size ->
@@ -466,8 +469,8 @@ internal fun StartupPlaybackControlsContent(
     }
     Spacer(Modifier.height(14.dp))
     ControlSection(
-        title = stringResource(CoreCommonR.string.onboarding_controls_position_title),
-        description = stringResource(CoreCommonR.string.onboarding_controls_position_desc)
+        title = stringResource(AppR.string.onboarding_controls_position_title),
+        description = stringResource(AppR.string.onboarding_controls_position_desc)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             NowPlayingControlPlacement.entries.forEach { placement ->
@@ -483,12 +486,12 @@ internal fun StartupPlaybackControlsContent(
     }
     Spacer(Modifier.height(14.dp))
     ControlSection(
-        title = stringResource(CoreCommonR.string.onboarding_controls_cover_lyrics_size_title),
-        description = stringResource(CoreCommonR.string.onboarding_controls_cover_lyrics_size_desc)
+        title = stringResource(AppR.string.onboarding_controls_cover_lyrics_size_title),
+        description = stringResource(AppR.string.onboarding_controls_cover_lyrics_size_desc)
     ) {
         Text(
             text = stringResource(
-                CoreCommonR.string.onboarding_lyrics_size_value,
+                AppR.string.onboarding_lyrics_size_value,
                 (pendingCoverLyricFontScale * 100).roundToInt()
             ),
             style = MaterialTheme.typography.labelLarge,
@@ -533,13 +536,13 @@ internal fun StartupLyricsContent(
 
     OnboardingSectionHeader(
         icon = Icons.Outlined.LibraryMusic,
-        title = stringResource(CoreCommonR.string.onboarding_lyrics_title),
-        description = stringResource(CoreCommonR.string.onboarding_lyrics_desc)
+        title = stringResource(AppR.string.onboarding_lyrics_title),
+        description = stringResource(AppR.string.onboarding_lyrics_desc)
     )
     Spacer(Modifier.height(18.dp))
     ControlSection(
-        title = stringResource(CoreCommonR.string.onboarding_lyrics_page_preview_title),
-        description = stringResource(CoreCommonR.string.onboarding_lyrics_page_preview_desc)
+        title = stringResource(AppR.string.onboarding_lyrics_page_preview_title),
+        description = stringResource(AppR.string.onboarding_lyrics_page_preview_desc)
     ) {
         LyricsPagePreview(
             preferences = previewPreferences,
@@ -548,8 +551,8 @@ internal fun StartupLyricsContent(
     }
     Spacer(Modifier.height(14.dp))
     ControlSection(
-        title = stringResource(CoreCommonR.string.onboarding_lyrics_control_size_title),
-        description = stringResource(CoreCommonR.string.onboarding_lyrics_control_size_desc)
+        title = stringResource(AppR.string.onboarding_lyrics_control_size_title),
+        description = stringResource(AppR.string.onboarding_lyrics_control_size_desc)
     ) {
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             PlaybackControlSize.entries.forEachIndexed { index, size ->
@@ -582,12 +585,12 @@ internal fun StartupLyricsContent(
     }
     Spacer(Modifier.height(14.dp))
     ControlSection(
-        title = stringResource(CoreCommonR.string.onboarding_lyrics_page_size_title),
-        description = stringResource(CoreCommonR.string.onboarding_lyrics_page_size_desc)
+        title = stringResource(AppR.string.onboarding_lyrics_page_size_title),
+        description = stringResource(AppR.string.onboarding_lyrics_page_size_desc)
     ) {
         Text(
             text = stringResource(
-                CoreCommonR.string.onboarding_lyrics_size_value,
+                AppR.string.onboarding_lyrics_size_value,
                 (pendingLyricFontScale * 100).roundToInt()
             ),
             style = MaterialTheme.typography.labelLarge,
@@ -607,19 +610,20 @@ internal fun StartupLyricsContent(
         AlertDialog(
             onDismissRequest = { showControlSizeWarning = false },
             title = {
-                Text(stringResource(CoreCommonR.string.onboarding_lyrics_control_size_warning_title))
+                Text(stringResource(AppR.string.onboarding_lyrics_control_size_warning_title))
             },
             text = {
-                Text(stringResource(CoreCommonR.string.onboarding_lyrics_control_size_warning_desc))
+                Text(stringResource(AppR.string.onboarding_lyrics_control_size_warning_desc))
             },
             confirmButton = {
+                ApplyOverlayWindowNavigationBarPolicy()
                 HapticTextButton(
                     onClick = {
                         showControlSizeWarning = false
                         applyControlSize(pendingControlSize)
                     }
                 ) {
-                    Text(stringResource(CoreCommonR.string.onboarding_lyrics_control_size_warning_confirm))
+                    Text(stringResource(AppR.string.onboarding_lyrics_control_size_warning_confirm))
                 }
             },
             dismissButton = {
@@ -643,18 +647,18 @@ private fun LyricsPagePreview(
     val preferredControlSpacing = 20.dp * controlSize.scale
     val controlIconSize = controlSize.scaleIconSize(24.dp)
     val previewLyricTexts = listOf(
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_1),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_2),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_3),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_4),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_5),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_6),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_7),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_8),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_9),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_10),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_11),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_12)
+        stringResource(AppR.string.onboarding_controls_preview_lyric_1),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_2),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_3),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_4),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_5),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_6),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_7),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_8),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_9),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_10),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_11),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_12)
     )
     val previewLyrics = remember(previewLyricTexts) {
         previewLyricTexts.mapIndexed { index, text ->
@@ -770,14 +774,14 @@ private fun LyricsPagePreviewTopBar(preferences: PlaybackControlLayoutPreference
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = stringResource(CoreCommonR.string.onboarding_controls_preview_song),
+                text = stringResource(AppR.string.onboarding_controls_preview_song),
                 style = MaterialTheme.typography.titleMedium,
                 color = colors.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = stringResource(CoreCommonR.string.onboarding_controls_preview_artist),
+                text = stringResource(AppR.string.onboarding_controls_preview_artist),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -917,9 +921,9 @@ private fun PermissionGuidanceItem(
             ) {
                 Text(
                     text = if (granted) {
-                        stringResource(CoreCommonR.string.onboarding_permission_granted)
+                        stringResource(AppR.string.onboarding_permission_granted)
                     } else {
-                        stringResource(CoreCommonR.string.onboarding_permission_allow)
+                        stringResource(AppR.string.onboarding_permission_allow)
                     },
                     maxLines = 1
                 )
@@ -1016,14 +1020,14 @@ private fun PlaybackLayoutPreview(
                     PlaybackPreviewCover(size = coverSize)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = stringResource(CoreCommonR.string.onboarding_controls_preview_song),
+                        text = stringResource(AppR.string.onboarding_controls_preview_song),
                         style = MaterialTheme.typography.titleMedium,
                         color = colors.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = stringResource(CoreCommonR.string.onboarding_controls_preview_artist),
+                        text = stringResource(AppR.string.onboarding_controls_preview_artist),
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.onSurfaceVariant,
                         maxLines = 1,
@@ -1201,18 +1205,18 @@ private fun PlaybackPreviewLyrics(
 ) {
     val colors = MaterialTheme.colorScheme
     val allLyrics = listOf(
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_1),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_2),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_3),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_4),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_5),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_6),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_7),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_8),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_9),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_10),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_11),
-        stringResource(CoreCommonR.string.onboarding_controls_preview_lyric_12)
+        stringResource(AppR.string.onboarding_controls_preview_lyric_1),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_2),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_3),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_4),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_5),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_6),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_7),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_8),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_9),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_10),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_11),
+        stringResource(AppR.string.onboarding_controls_preview_lyric_12)
     )
     val previewWindow = resolveOnboardingCoverPreviewWindow(
         totalLineCount = allLyrics.size,

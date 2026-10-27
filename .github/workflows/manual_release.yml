@@ -8,31 +8,114 @@ on:
         required: true
         default: master
         type: string
+      test_release:
+        description: Build unsigned test APKs and create only a draft prerelease
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.caching=true
+
+concurrency:
+  group: manual-release-${{ github.repository }}-${{ inputs.target_ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
       contents: write
     steps:
+      - name: Guard release destination
+        env:
+          TEST_RELEASE: ${{ inputs.test_release }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REPOSITORY" != "cwuom/NeriPlayer" && "$TEST_RELEASE" != "true" ]]; then
+            echo "::error::Only unsigned test releases are allowed outside cwuom/NeriPlayer."
+            exit 1
+          fi
+
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.target_ref }}
           fetch-depth: 0
           submodules: recursive
+          persist-credentials: false
+
+      - name: Checkout trusted release tooling
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tooling
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            .github/actions/android-ndk
+
+      - name: Exclude CI tooling from the target source fingerprint
+        run: printf '\n/.release-tooling/\n' >> "$(git rev-parse --git-path info/exclude)"
+
+      - name: Prepare shared build identity
+        id: identity
+        run: python3 -B .release-tooling/.github/scripts/release_artifacts.py prepare --github-output "$GITHUB_OUTPUT"
+
+      - name: Prepare release metadata
+        id: meta
+        env:
+          BUILD_VERSION_TIMESTAMP: ${{ steps.identity.outputs.build_version_timestamp }}
+          TEST_RELEASE: ${{ inputs.test_release }}
+        run: |
+          set -euo pipefail
+          short_sha="$(git rev-parse --short HEAD)"
+          target_sha="$(git rev-parse HEAD)"
+          tag_name="NeriPlayer-${short_sha}.${BUILD_VERSION_TIMESTAMP}"
+          if [[ "$TEST_RELEASE" == "true" ]]; then
+            tag_name="${tag_name}-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          previous_tag="$(git for-each-ref --merged HEAD --sort=-creatordate --format='%(refname:short)' 'refs/tags/NeriPlayer-*' | head -n 1 || true)"
+          {
+            echo "tag_name=${tag_name}"
+            echo "target_sha=${target_sha}"
+            echo "previous_tag=${previous_tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Share build identity with Gradle
+        env:
+          BUILD_UUID: ${{ steps.identity.outputs.build_uuid }}
+          BUILD_TIMESTAMP: ${{ steps.identity.outputs.build_timestamp }}
+          BUILD_VERSION_TIMESTAMP: ${{ steps.identity.outputs.build_version_timestamp }}
+        run: |
+          {
+            echo "ORG_GRADLE_PROJECT_buildUuid=${BUILD_UUID}"
+            echo "ORG_GRADLE_PROJECT_buildTimestamp=${BUILD_TIMESTAMP}"
+            echo "ORG_GRADLE_PROJECT_buildVersionTimestamp=${BUILD_VERSION_TIMESTAMP}"
+          } >> "$GITHUB_ENV"
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
-          cache: gradle
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
 
       - name: Decode keystore
+        if: ${{ !inputs.test_release }}
         run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64"
           mkdir -p app
-          echo "$KEYSTORE_B64" | base64 -d > app/neri.jks
+          printf '%s' "$KEYSTORE_B64" | base64 -d > app/neri.jks
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
 
@@ -40,23 +123,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Install Android NDK
-        uses: ./.github/actions/android-ndk
-
-      - name: Prepare release metadata
-        id: meta
-        run: |
-          set -euo pipefail
-
-          short_sha="$(git rev-parse --short HEAD)"
-          target_sha="$(git rev-parse HEAD)"
-          release_time="$(TZ=Asia/Taipei date +'%m%d%H%M')"
-          tag_name="NeriPlayer-${short_sha}.${release_time}"
-          previous_tag="$(git for-each-ref --merged HEAD --sort=-creatordate --format='%(refname:short)' 'refs/tags/NeriPlayer-*' | head -n 1 || true)"
-
-          echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
-          echo "release_time=${release_time}" >> "$GITHUB_OUTPUT"
-          echo "target_sha=${target_sha}" >> "$GITHUB_OUTPUT"
-          echo "previous_tag=${previous_tag}" >> "$GITHUB_OUTPUT"
+        uses: ./.release-tooling/.github/actions/android-ndk
 
       - name: Verify the checked out release sources
         run: |
@@ -89,19 +156,38 @@ jobs:
           fi
 
       - name: Build signed Release APKs
+        if: ${{ !inputs.test_release }}
+        env:
+          ORG_GRADLE_PROJECT_KEYSTORE_FILE: neri.jks
+          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_KEY_ALIAS: key0
+          ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           ./gradlew :app:assembleRelease \
             -PbuildAllReleaseAbis=true \
-            -PbuildVersionTimestamp=${{ steps.meta.outputs.release_time }} \
-            -PKEYSTORE_FILE=neri.jks \
-            -PKEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }} \
-            -PKEY_ALIAS=key0 \
-            -PKEY_PASSWORD=${{ secrets.KEY_PASSWORD }} \
             --warning-mode all --stacktrace
+
+      - name: Build unsigned test Release APKs
+        if: ${{ inputs.test_release }}
+        run: |
+          ./gradlew :app:assembleRelease \
+            -PbuildAllReleaseAbis=true -PallowUnsignedRelease=true \
+            --warning-mode all --stacktrace
+
+      - name: Stage and verify release artifacts
+        env:
+          NERI_BUILD_UUID: ${{ steps.identity.outputs.build_uuid }}
+          NERI_BUILD_TIMESTAMP: ${{ steps.identity.outputs.build_timestamp }}
+          NERI_BUILD_VERSION_TIMESTAMP: ${{ steps.identity.outputs.build_version_timestamp }}
+          NERI_SIGNING_MODE: ${{ inputs.test_release && 'unsigned' || 'signed' }}
+        run: |
+          python3 -B .release-tooling/.github/scripts/release_artifacts.py stage \
+            --apk-dir app/build/outputs/apk/release --output-dir release-assets \
+            --expected-abis arm64-v8a,armeabi-v7a,x86,x86_64
 
       - name: Upload verification reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-verification-${{ steps.meta.outputs.target_sha }}
           path: |
@@ -147,25 +233,43 @@ jobs:
             fi
           } >> release-notes.md
 
+          python3 -B .release-tooling/.github/scripts/release_artifacts.py notes \
+            --notes-file release-notes.md --metadata-file release-assets/build-metadata.json
+          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-${{ steps.meta.outputs.tag_name }}
+          path: |
+            release-assets/*
+            release-notes.md
+          if-no-files-found: error
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           TAG_NAME: ${{ steps.meta.outputs.tag_name }}
           TARGET_SHA: ${{ steps.meta.outputs.target_sha }}
+          TEST_RELEASE: ${{ inputs.test_release }}
         run: |
           set -euo pipefail
           shopt -s nullglob
 
-          apk_files=(app/build/outputs/apk/release/*.apk)
-          if [ "${#apk_files[@]}" -eq 0 ]; then
-            echo "No release APKs were produced."
+          release_files=(release-assets/*)
+          if [ "${#release_files[@]}" -lt 7 ]; then
+            echo "The verified APKs and release metadata are incomplete."
             exit 1
           fi
 
-          gh release create "${TAG_NAME}" "${apk_files[@]}" \
+          release_options=(--latest)
+          if [[ "$TEST_RELEASE" == "true" ]]; then
+            release_options=(--draft --prerelease --latest=false)
+          fi
+          gh release create "${TAG_NAME}" "${release_files[@]}" \
             --repo "${REPO}" \
             --target "${TARGET_SHA}" \
             --title "${TAG_NAME}" \
             --notes-file release-notes.md \
-            --latest
+            "${release_options[@]}"

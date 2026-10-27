@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +29,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
@@ -38,8 +40,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.ouom.neriplayer.ui.theme.addContinuousRoundRect
+import moe.ouom.neriplayer.ui.theme.addSmoothedRoundRect
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 private const val TARGET_LAYOUT_WAIT_MS = 420L
@@ -57,26 +60,49 @@ private const val CLOSE_STIFFNESS = 420f
  */
 @Stable
 class SharedCoverFlightState {
-    private var sourceBounds: Rect? = null
+    private data class VisualTarget(
+        val token: Any,
+        val coordinates: LayoutCoordinates,
+        val frame: () -> CoverFlightFrame?
+    )
+
+    private var sourceBounds: Rect? by mutableStateOf(null)
     private var sourceCornerPx = 0f
+    private var sourceCornerSmoothing = 1f
     private var sourceBitmap: ImageBitmap? by mutableStateOf(null)
     private var targetBounds: Rect? = null
     private var targetCornerPx = 0f
     private var targetAttached = false
+    private var visualTarget by mutableStateOf<VisualTarget?>(null)
     private var job: Job? = null
+    private var followsMiniPlayerGeometry = false
+    private var latestSourceBounds: Rect? = null
+    private var latestContainerBounds: Rect? = null
+    private var sourceBoundsCorrection: Rect? = null
+    private var containerBoundsCorrection: Rect? = null
+    private var correctionStartProgress = 0f
+    private var containerBounds: Rect? by mutableStateOf(null)
 
     internal val progress = Animatable(0f)
 
     /** Window bounds of the whole mini player capsule; the clean style morphs Now Playing from it. */
-    var miniPlayerContainerBounds: Rect? = null
-        private set
+    val miniPlayerContainerBounds: Rect?
+        get() = correctedMiniBounds(containerBounds, containerBoundsCorrection)
 
     val miniCoverBounds: Rect?
-        get() = sourceBounds
+        get() = correctedMiniBounds(sourceBounds, sourceBoundsCorrection)
+
+    internal val miniCoverCornerPx: Float
+        get() = sourceCornerPx
+
+    internal val miniCoverCornerSmoothing: Float
+        get() = sourceCornerSmoothing
 
     fun reportMiniPlayerContainer(bounds: Rect) {
-        if (!bounds.isEmpty && ((!linked && !flying) || miniPlayerContainerBounds == null)) {
-            miniPlayerContainerBounds = bounds
+        if (bounds.isEmpty) return
+        latestContainerBounds = bounds
+        if ((!linked && !flying) || (linked && followsMiniPlayerGeometry) || containerBounds == null) {
+            containerBounds = bounds
         }
     }
     internal var flightBitmap: ImageBitmap? by mutableStateOf(null)
@@ -84,13 +110,20 @@ class SharedCoverFlightState {
     var flying: Boolean by mutableStateOf(false)
         private set
 
-    internal fun reportSource(bounds: Rect, cornerPx: Float, bitmap: ImageBitmap?) {
+    internal fun reportSource(
+        bounds: Rect,
+        cornerPx: Float,
+        bitmap: ImageBitmap?,
+        continuousCorners: Boolean = true
+    ) {
         sourceBitmap = bitmap
         if (bounds.isEmpty) return
-        // the mini player can slide out while its backdrop scales, but the flight starts at rest
-        if ((!linked && !flying) || sourceBounds == null) {
+        latestSourceBounds = bounds
+        // 展开保留静止起点，关闭时跟随重新入场的 Mini，避免交还时跳到另一个位置
+        if ((!linked && !flying) || (linked && followsMiniPlayerGeometry) || sourceBounds == null) {
             sourceBounds = bounds
             sourceCornerPx = cornerPx
+            sourceCornerSmoothing = if (continuousCorners) 1f else 0f
         }
     }
 
@@ -104,6 +137,56 @@ class SharedCoverFlightState {
     internal fun detachTarget() {
         targetAttached = false
         targetCoordinates = null
+    }
+
+    internal fun reportVisualTarget(
+        token: Any,
+        coordinates: LayoutCoordinates,
+        frame: () -> CoverFlightFrame?
+    ) {
+        if (coordinates.isAttached) visualTarget = VisualTarget(token, coordinates, frame)
+    }
+
+    internal fun detachVisualTarget(token: Any) {
+        if (visualTarget?.token === token) visualTarget = null
+    }
+
+    private fun hasVisualTarget(): Boolean = visualTarget?.let {
+        it.coordinates.isAttached && it.frame()?.bounds?.isFiniteBounds() == true
+    } == true
+
+    internal fun targetFrameIn(coordinates: LayoutCoordinates): CoverFlightFrame? {
+        visualTargetFrame(coordinates)?.let { return it }
+        val target = targetCoordinates ?: return null
+        if (!coordinates.isAttached || !target.isAttached ||
+            coordinates.findRootCoordinates() !== target.findRootCoordinates()
+        ) return null
+        val bounds = coordinates.localBoundingBoxOf(target, clipBounds = false)
+        return bounds.takeIf(Rect::isFiniteBounds)?.let { CoverFlightFrame(it, targetCornerPx) }
+    }
+
+    private fun visualTargetFrame(destination: LayoutCoordinates? = null): CoverFlightFrame? {
+        val target = visualTarget ?: return null
+        val owner = target.coordinates
+        if (!owner.isAttached) return null
+        if (destination != null && (!destination.isAttached ||
+                destination.findRootCoordinates() !== owner.findRootCoordinates())
+        ) return null
+        val frame = target.frame() ?: return null
+        if (!frame.bounds.isFiniteBounds()) return null
+        fun map(point: Offset): Offset = if (destination == null) owner.localToWindow(point)
+            else destination.localPositionOf(owner, point)
+        val a = map(frame.bounds.topLeft)
+        val b = map(frame.bounds.topRight)
+        val c = map(frame.bounds.bottomLeft)
+        val d = map(frame.bounds.bottomRight)
+        val bounds = Rect(
+            minOf(a.x, b.x, c.x, d.x), minOf(a.y, b.y, c.y, d.y),
+            maxOf(a.x, b.x, c.x, d.x), maxOf(a.y, b.y, c.y, d.y)
+        )
+        if (!bounds.isFiniteBounds()) return null
+        val scale = min(bounds.width / frame.bounds.width, bounds.height / frame.bounds.height)
+        return frame.copy(bounds = bounds, cornerPx = frame.cornerPx * scale)
     }
 
     /** Live layout coordinates of the Now Playing artwork, for transforms that move it. */
@@ -126,6 +209,9 @@ class SharedCoverFlightState {
     /** Clean container morph progress (0 closed, 1 open); the page underneath recedes with it. */
     var nowPlayingMorphProgress: Float by mutableFloatStateOf(0f)
 
+    // 绘制门控直接观察动画状态，不能用异步同步的进度判断是否已经完整遮挡
+    internal var nowPlayingMorphProgressState: State<Float>? by mutableStateOf(null)
+
     /** Set while the clean container morph draws the artwork itself. */
     var linked: Boolean by mutableStateOf(false)
         private set
@@ -136,9 +222,13 @@ class SharedCoverFlightState {
     /** 替代封面的位图和两端坐标齐备后才隐藏真实封面 */
     val hidesCovers: Boolean
         get() = flying || (linked && linkedBitmap != null && sourceBounds != null &&
-            targetCoordinates?.isAttached == true)
+            (hasVisualTarget() || targetCoordinates?.isAttached == true))
 
-    fun beginLinked(preferredBitmap: ImageBitmap? = null) {
+    fun beginLinked(
+        preferredBitmap: ImageBitmap? = null,
+        followMiniPlayerGeometry: Boolean = false
+    ) {
+        updateMiniPlayerGeometryMode(followMiniPlayerGeometry)
         if (linked) return
         // a Material flight must not keep painting its bitmap under the morph
         job?.cancel()
@@ -151,6 +241,56 @@ class SharedCoverFlightState {
     fun endLinked() {
         linked = false
         linkedBitmap = null
+        followsMiniPlayerGeometry = false
+        clearMiniBoundsCorrection()
+    }
+
+    private fun updateMiniPlayerGeometryMode(follow: Boolean) {
+        if (followsMiniPlayerGeometry == follow) return
+        if (linked) {
+            if (follow) followLatestMiniBounds() else freezeEffectiveMiniBounds()
+        }
+        followsMiniPlayerGeometry = follow
+    }
+
+    private fun followLatestMiniBounds() {
+        clearMiniBoundsCorrection()
+        val p = nowPlayingMorphProgressState?.value ?: nowPlayingMorphProgress
+        if (p > 0f && p < 1f) {
+            correctionStartProgress = p
+            sourceBoundsCorrection = miniBoundsDifference(sourceBounds, latestSourceBounds)
+            containerBoundsCorrection = miniBoundsDifference(containerBounds, latestContainerBounds)
+        }
+        sourceBounds = latestSourceBounds ?: sourceBounds
+        containerBounds = latestContainerBounds ?: containerBounds
+    }
+
+    private fun freezeEffectiveMiniBounds() {
+        sourceBounds = miniCoverBounds
+        containerBounds = miniPlayerContainerBounds
+        clearMiniBoundsCorrection()
+    }
+
+    private fun clearMiniBoundsCorrection() {
+        sourceBoundsCorrection = null
+        containerBoundsCorrection = null
+        correctionStartProgress = 0f
+    }
+
+    private fun miniBoundsDifference(frozen: Rect?, live: Rect?): Rect? {
+        if (frozen == null || live == null || frozen == live) return null
+        return Rect(frozen.left - live.left, frozen.top - live.top,
+            frozen.right - live.right, frozen.bottom - live.bottom)
+    }
+
+    private fun correctedMiniBounds(bounds: Rect?, correction: Rect?): Rect? {
+        if (bounds == null || correction == null) return bounds
+        // 反向先保留已画出的端点，再随剩余关闭进度交还实时 Mini 几何
+        val p = nowPlayingMorphProgressState?.value ?: nowPlayingMorphProgress
+        val remaining = (p / correctionStartProgress).coerceIn(0f, 1f)
+        if (remaining == 0f) return bounds
+        return Rect(bounds.left + correction.left * remaining, bounds.top + correction.top * remaining,
+            bounds.right + correction.right * remaining, bounds.bottom + correction.bottom * remaining)
     }
 
     fun open(scope: CoroutineScope, preferredBitmap: ImageBitmap? = null) {
@@ -164,7 +304,7 @@ class SharedCoverFlightState {
             try {
                 progress.snapTo(0f)
                 val ready = withTimeoutOrNull(TARGET_LAYOUT_WAIT_MS) {
-                    while (!targetAttached) withFrameNanos { }
+                    while (!targetAttached && !hasVisualTarget()) withFrameNanos { }
                     true
                 } == true
                 if (!ready) return@launch
@@ -176,7 +316,7 @@ class SharedCoverFlightState {
     }
 
     fun close(scope: CoroutineScope, preferredBitmap: ImageBitmap? = null) {
-        if (!targetAttached || sourceBounds == null) return
+        if ((!targetAttached && !hasVisualTarget()) || sourceBounds == null) return
         val bitmap = preferredBitmap ?: sourceBitmap ?: return
         job?.cancel()
         flightBitmap = bitmap
@@ -198,16 +338,27 @@ class SharedCoverFlightState {
 
     internal fun currentFrame(): CoverFlightFrame? {
         val source = sourceBounds ?: return null
-        val target = targetBounds ?: return null
+        val targetFrame = visualTargetFrame()
+            ?: targetBounds?.let { CoverFlightFrame(it, targetCornerPx) } ?: return null
         val fraction = progress.value
         return CoverFlightFrame(
-            bounds = lerp(source, target, fraction),
-            cornerPx = sourceCornerPx + (targetCornerPx - sourceCornerPx) * fraction
+            bounds = lerp(source, targetFrame.bounds, fraction),
+            cornerPx = sourceCornerPx + (targetFrame.cornerPx - sourceCornerPx) * fraction,
+            continuousCorners = targetFrame.continuousCorners,
+            cornerSmoothing = sourceCornerSmoothing +
+                (targetFrame.cornerSmoothing - sourceCornerSmoothing) * fraction
         )
     }
 }
 
-internal data class CoverFlightFrame(val bounds: Rect, val cornerPx: Float)
+internal data class CoverFlightFrame(
+    val bounds: Rect,
+    val cornerPx: Float,
+    val continuousCorners: Boolean = true,
+    val cornerSmoothing: Float = if (continuousCorners) 1f else 0f
+)
+
+private fun Rect.isFiniteBounds(): Boolean = isFinite && !isEmpty
 
 val LocalSharedCoverFlight = staticCompositionLocalOf<SharedCoverFlightState?> { null }
 
@@ -231,12 +382,16 @@ private fun lerp(start: Rect, stop: Rect, fraction: Float): Rect = Rect(
 )
 
 /** Marks the mini player cover as the flight origin and hides it while a flight runs. */
-fun Modifier.sharedCoverSource(cornerRadius: Dp, bitmap: ImageBitmap?): Modifier = composed {
+fun Modifier.sharedCoverSource(
+    cornerRadius: Dp,
+    bitmap: ImageBitmap?,
+    continuousCorners: Boolean = true
+): Modifier = composed {
     val state = LocalSharedCoverFlight.current ?: return@composed this
     val cornerPx = with(LocalDensity.current) { cornerRadius.toPx() }
     this
         .onGloballyPositioned { coordinates ->
-            state.reportSource(coordinates.boundsInWindow(), cornerPx, bitmap)
+            state.reportSource(coordinates.boundsInWindow(), cornerPx, bitmap, continuousCorners)
         }
         .graphicsLayer { alpha = if (state.hidesCovers) 0f else 1f }
 }
@@ -271,14 +426,7 @@ fun SharedCoverFlightLayer(state: SharedCoverFlightState) {
         val bounds = frame.bounds.translate(-layerOrigin)
         if (bounds.width <= 1f || bounds.height <= 1f) return@Canvas
         path.reset()
-        path.addContinuousRoundRect(
-            width = bounds.width,
-            height = bounds.height,
-            topLeft = frame.cornerPx,
-            topRight = frame.cornerPx,
-            bottomRight = frame.cornerPx,
-            bottomLeft = frame.cornerPx
-        )
+        path.addSmoothedRoundRect(bounds.width, bounds.height, frame.cornerPx, frame.cornerSmoothing)
         translate(bounds.left, bounds.top) {
             clipPath(path) {
                 val src = centerCropSource(bitmap.width, bitmap.height, bounds.width, bounds.height)

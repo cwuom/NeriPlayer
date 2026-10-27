@@ -87,6 +87,77 @@ class PlayerQueueEditOwnerTest {
     }
 
     @Test
+    fun `batch removal keeps the selected occurrence when another copy is removed`() {
+        val original = queue(listOf(first, second, first, third, fourth), 2)
+
+        val remaining = requireNotNull(editOwner.remove(original, setOf(0, 3)))
+
+        assertEquals(listOf(second, first, fourth), remaining.playlist)
+        assertEquals(1, remaining.currentIndex)
+        assertEquals(listOf(first, second, first, third, fourth), original.playlist)
+        assertEquals(
+            RemovedQueuePlaybackAction.KEEP_PLAYING,
+            editOwner.removalPlaybackAction(remaining, removedCurrent = false, transportActive = true)
+        )
+    }
+
+    @Test
+    fun `batch removal skips selected successors and continues at the next retained row`() {
+        val remaining = requireNotNull(editOwner.remove(
+            queue(listOf(first, second, third, fourth), 1), setOf(0, 1, 2)
+        ))
+
+        assertEquals(listOf(fourth), remaining.playlist)
+        assertEquals(0, remaining.currentIndex)
+        assertEquals(
+            RemovedQueuePlaybackAction.PLAY_NEXT,
+            editOwner.removalPlaybackAction(remaining, removedCurrent = true, transportActive = true)
+        )
+        assertEquals(
+            RemovedQueuePlaybackAction.STOP,
+            editOwner.removalPlaybackAction(remaining, removedCurrent = true, transportActive = false)
+        )
+    }
+
+    @Test
+    fun `batch removal falls back to the last retained row when no successor remains`() {
+        val remaining = requireNotNull(editOwner.remove(
+            queue(listOf(first, second, third, fourth), 2), setOf(0, 2, 3)
+        ))
+
+        assertEquals(listOf(second), remaining.playlist)
+        assertEquals(0, remaining.currentIndex)
+    }
+
+    @Test
+    fun `batch removal ignores invalid indices and preserves an unselected queue`() {
+        val original = queue(listOf(first, second, third), -1)
+
+        assertNull(editOwner.remove(original, emptySet()))
+        assertNull(editOwner.remove(original, setOf(-1, 3, Int.MAX_VALUE)))
+        assertNull(editOwner.remove(PlayerQueueSnapshot.EMPTY, setOf(0)))
+        val remaining = requireNotNull(editOwner.remove(original, setOf(-1, 1, 3)))
+        assertEquals(listOf(first, third), remaining.playlist)
+        assertEquals(-1, remaining.currentIndex)
+    }
+
+    @Test
+    fun `removing hundreds of rows produces an empty queue and stops even without a current row`() {
+        val songs = (1L..500L).map { song(it, "Song $it") }
+
+        for (currentIndex in listOf(-1, 0, 250, 499)) {
+            val remaining = requireNotNull(editOwner.remove(queue(songs, currentIndex), songs.indices.toSet()))
+
+            assertEquals(emptyList<SongItem>(), remaining.playlist)
+            assertEquals(-1, remaining.currentIndex)
+            assertEquals(
+                RemovedQueuePlaybackAction.STOP,
+                editOwner.removalPlaybackAction(remaining, removedCurrent = false, transportActive = true)
+            )
+        }
+    }
+
+    @Test
     fun `reorder retains latest song metadata and follows the current song`() {
         val updatedSecond = second.copy(name = "Updated")
         val original = queue(listOf(first, updatedSecond, third), 1)

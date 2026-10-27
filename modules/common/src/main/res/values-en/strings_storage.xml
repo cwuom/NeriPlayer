@@ -52,7 +52,7 @@
     <string name="storage_desc_bili_favorite_cache">Room cache for Bilibili favorite details, apportioned by SQLite pages and safe to fetch again</string>
     <string name="storage_desc_bili_archive_cache">Room cache for Bilibili collection and series details, apportioned by SQLite pages and safe to fetch again</string>
     <string name="storage_desc_youtube_playlist_cache">Room cache for YouTube Music playlist details, apportioned by SQLite pages and safe to fetch again</string>
-    <string name="storage_desc_other_cache">Files in the cache directory not covered above</string>
+    <string name="storage_desc_other_cache">Generated lyric share cards that can be recreated</string>
     <string name="storage_desc_downloaded_music">Songs saved by the user. These are not removed by clearing cache</string>
     <string name="storage_desc_downloaded_lyrics">Original and translated lyric sidecar files for downloads. These are not removed by clearing cache</string>
     <string name="storage_desc_downloaded_covers">Cover art sidecar files for downloads. These are not removed by clearing cache</string>
@@ -85,4 +85,27 @@
         <item quantity="other">%1$d Room cache entries</item>
     </plurals>
     <string name="storage_details_empty">No measurable files found yet</string>
+    <string name="storage_cleanup_title">Clear cache</string>
+    <string name="storage_cleanup_media_group">Audio and artwork</string>
+    <string name="storage_cleanup_other_group">More caches</string>
+    <string name="storage_cleanup_selected_size">Estimated selected cleanup: %1$s</string>
+    <string name="storage_cleanup_size_notice">Estimates exclude the current song, retained cache and cache indexes. Actual space released may vary</string>
+    <string name="storage_cleanup_retain_label">Recent songs to keep</string>
+    <string name="storage_cleanup_retain_help">Choose 0–1000 songs in steps of 50. Audio and artwork share the most recently played distinct songs, retaining existing cache only</string>
+    <string name="storage_cleanup_select_all">Select all</string>
+    <string name="storage_cleanup_deselect_all">Deselect all</string>
+    <string name="storage_cleanup_running">Clearing…</string>
+    <string name="storage_cleanup_waiting_scan">Category sizes appear after scanning</string>
+    <string name="storage_type_protected_cache">Protected temporary data</string>
+    <string name="storage_desc_protected_cache">Temporary sync, backup and active task data, managed by each feature and kept during cache cleanup</string>
+    <string name="storage_cleanup_retain_notice">0 disables history retention and clears selected image caches; audio for the current song is kept even while paused. With a count above 0, current artwork and older caches with unknown song ownership are also kept, so more songs may remain</string>
+    <string name="storage_scan_failed">Storage scan failed</string>
+    <string name="storage_scan_failed_desc">Storage usage could not be read completely. Scan again before clearing caches</string>
+    <string name="storage_cleanup_size_unavailable">--</string>
+    <string name="storage_cleanup_estimated_total">Estimated space to clear</string>
+    <string name="storage_cleanup_retain_count">%1$d songs</string>
+    <string name="storage_cleanup_estimate_label">Estimated cleanup</string>
+    <string name="storage_cleanup_estimating">Updating estimates for the retained songs…</string>
+    <string name="storage_cleanup_occupied_size">Occupied: %1$s</string>
+    <string name="storage_cleanup_estimate_unavailable">Some caches cannot be estimated right now. -- does not mean empty; occupied sizes appear in each category</string>
 </resources>

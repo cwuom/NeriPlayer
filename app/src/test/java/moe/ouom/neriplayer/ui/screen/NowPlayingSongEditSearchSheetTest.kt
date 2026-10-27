@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.edit.musicPlatformLabelResource
 import moe.ouom.neriplayer.ui.viewmodel.ManualSearchState
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import moe.ouom.neriplayer.R as AppR
 
 class NowPlayingSongEditSearchSheetTest {
     @Test
@@ -28,7 +29,7 @@ class NowPlayingSongEditSearchSheetTest {
 
     @Test
     fun `search platform tabs keep their existing labels`() {
-        assertEquals(CoreCommonR.string.platform_netease_short,
+        assertEquals(AppR.string.platform_netease_short,
             musicPlatformLabelResource(MusicPlatform.CLOUD_MUSIC)
         )
         assertEquals(CoreCommonR.string.settings_qq_music, musicPlatformLabelResource(MusicPlatform.QQ_MUSIC))

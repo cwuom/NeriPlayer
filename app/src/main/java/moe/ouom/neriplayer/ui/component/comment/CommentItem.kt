@@ -38,7 +38,6 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.SongComment
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
@@ -47,6 +46,7 @@ import moe.ouom.neriplayer.ui.theme.cleanTintedAccent
 import moe.ouom.neriplayer.util.format.formatDate
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.R as AppR
 
 /**
  * 一级评论底部动作按钮的统一尺寸: 高度 / contentPadding / 字体三者一致,
@@ -97,11 +97,11 @@ internal fun CommentItem(
     showReplyActions: Boolean = true
 ) {
     val context = LocalContext.current
-    val anonymous = stringResource(CoreCommonR.string.comment_anonymous_user)
+    val anonymous = stringResource(AppR.string.comment_anonymous_user)
     val username = comment.username.trim().ifBlank { anonymous }
     val timeText = comment.createTime?.takeIf { it > 0L }?.let { formatDate(it) }
-    val likeAction = stringResource(if (comment.isLiked) CoreCommonR.string.comment_unlike else CoreCommonR.string.comment_like)
-    val likeState = stringResource(if (comment.isLiked) CoreCommonR.string.comment_liked else CoreCommonR.string.comment_not_liked)
+    val likeAction = stringResource(if (comment.isLiked) AppR.string.comment_unlike else AppR.string.comment_like)
+    val likeState = stringResource(if (comment.isLiked) AppR.string.comment_liked else AppR.string.comment_not_liked)
     // 当前放大的配图下标, null 表示未打开预览
     var previewIndex by remember(comment.id) { mutableStateOf<Int?>(null) }
 
@@ -157,7 +157,7 @@ internal fun CommentItem(
                                 else MaterialTheme.colorScheme.secondaryContainer
                         ) {
                             Text(
-                                text = stringResource(CoreCommonR.string.comment_user_level_format, level),
+                                text = stringResource(AppR.string.comment_user_level_format, level),
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurfaceVariant
@@ -167,7 +167,7 @@ internal fun CommentItem(
                         Spacer(Modifier.width(10.dp))
                     }
                     Text(
-                        text = stringResource(CoreCommonR.string.comment_floor_format, floor),
+                        text = stringResource(AppR.string.comment_floor_format, floor),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -218,8 +218,8 @@ internal fun CommentItem(
                                 contentPadding = CommentActionContentPadding
                             ) {
                                 Text(
-                                    text = if (repliesExpanded) stringResource(CoreCommonR.string.comment_collapse_replies)
-                                        else stringResource(CoreCommonR.string.comment_reply_count_format,
+                                    text = if (repliesExpanded) stringResource(AppR.string.comment_collapse_replies)
+                                        else stringResource(AppR.string.comment_reply_count_format,
                                             formatPlayCount(context, comment.replyCount ?: comment.previewReplies.size.toLong())),
                                     style = MaterialTheme.typography.labelLarge
                                 )
@@ -235,7 +235,7 @@ internal fun CommentItem(
                                 ),
                                 contentPadding = CommentActionContentPadding
                             ) {
-                                Text(stringResource(CoreCommonR.string.comment_reply), style = MaterialTheme.typography.labelLarge)
+                                Text(stringResource(AppR.string.comment_reply), style = MaterialTheme.typography.labelLarge)
                             }
                         }
                         Spacer(Modifier.width(8.dp))

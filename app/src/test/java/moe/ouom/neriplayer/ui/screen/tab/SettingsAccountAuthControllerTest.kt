@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import androidx.compose.runtime.mutableIntStateOf
+import moe.ouom.neriplayer.ui.i18n.UiText
 import androidx.compose.runtime.mutableStateOf
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountAuthController
@@ -29,8 +30,8 @@ class SettingsAccountAuthControllerTest {
         neteaseTab = mutableIntStateOf(0),
         youtubeTab = mutableIntStateOf(0)
     )
-    private val messages = mutableListOf<String?>()
-    private val latestMessageAction = mutableStateOf<(String?) -> Unit>({ messages += it })
+    private val messages = mutableListOf<UiText?>()
+    private val latestMessageAction = mutableStateOf<(UiText?) -> Unit>({ messages += it })
     private val controller = SettingsAccountAuthController(
         neteaseVm, biliVm, youtubeVm, dialogs, latestMessageAction
     )
@@ -58,7 +59,7 @@ class SettingsAccountAuthControllerTest {
             assertEquals(if (platform == SettingsAccountPlatform.Bilibili) 0 else 3, dialogs.biliTab.intValue)
             assertEquals(if (platform == SettingsAccountPlatform.YouTube) 0 else 4, dialogs.youtubeTab.intValue)
         }
-        assertEquals(listOf<String?>(null, null, null), messages)
+        assertEquals(listOf<UiText?>(null, null, null), messages)
         verifyNoInteractions(neteaseVm, biliVm, youtubeVm)
     }
 
@@ -82,13 +83,13 @@ class SettingsAccountAuthControllerTest {
             assertFalse(dialogs.showBiliSheet)
             assertFalse(dialogs.showYouTubeSheet)
         }
-        assertEquals(listOf<String?>(null, null, null), messages)
+        assertEquals(listOf<UiText?>(null, null, null), messages)
         verifyNoInteractions(neteaseVm, biliVm, youtubeVm)
     }
 
     @Test
     fun `unavailable qq platform does not open a dialog or clear an existing message`() {
-        messages += "retained"
+        messages += UiText.Literal("retained")
         dialogs.neteaseTab.intValue = 2
         dialogs.biliTab.intValue = 3
         dialogs.youtubeTab.intValue = 4
@@ -105,7 +106,7 @@ class SettingsAccountAuthControllerTest {
         assertEquals(2, dialogs.neteaseTab.intValue)
         assertEquals(3, dialogs.biliTab.intValue)
         assertEquals(4, dialogs.youtubeTab.intValue)
-        assertEquals(listOf("retained"), messages)
+        assertEquals(listOf(UiText.Literal("retained")), messages)
         verifyNoInteractions(neteaseVm, biliVm, youtubeVm)
     }
 
@@ -113,7 +114,7 @@ class SettingsAccountAuthControllerTest {
     fun `login events own their sheet and success state`() {
         controller.actions.openNeteaseAtTab(2)
         controller.actions.openNeteaseSavedCookieDialog()
-        controller.onNeteaseEvent(NeteaseAuthEvent.ShowSnack("netease error"))
+        controller.onNeteaseEvent(NeteaseAuthEvent.ShowSnack(UiText.Literal("netease error")))
         controller.onNeteaseEvent(NeteaseAuthEvent.AskConfirmSend("***1234"))
         assertEquals(2, dialogs.neteaseTab.intValue)
         assertTrue(dialogs.showNeteaseConfirmDialog)
@@ -123,7 +124,7 @@ class SettingsAccountAuthControllerTest {
         assertFalse(dialogs.showNeteaseSheet)
         assertFalse(dialogs.showNeteaseSavedCookieDialog)
         assertEquals(CoreCommonR.string.settings_netease_login_success, dialogs.loginSuccessTitleRes)
-        assertEquals(listOf(null, null, "netease error", null), messages)
+        assertEquals(listOf(null, null, UiText.Literal("netease error"), null), messages)
         verify(neteaseVm).refreshAuthHealth()
         controller.actions.dismissLoginSuccess()
         assertEquals(null, dialogs.loginSuccessTitleRes)
@@ -133,7 +134,7 @@ class SettingsAccountAuthControllerTest {
     fun `bili and youtube actions keep their own tabs and credentials`() {
         controller.actions.openBiliAtTab(1)
         controller.actions.openBiliSavedCookieDialog()
-        controller.onBiliEvent(BiliAuthEvent.ShowSnack("bili error"))
+        controller.onBiliEvent(BiliAuthEvent.ShowSnack(UiText.Literal("bili error")))
         controller.onBiliEvent(BiliAuthEvent.LoginSuccess)
         assertEquals(1, dialogs.biliTab.intValue)
         assertFalse(dialogs.showBiliSheet)
@@ -143,13 +144,13 @@ class SettingsAccountAuthControllerTest {
 
         controller.actions.openYouTubeAtTab(2)
         controller.actions.openYouTubeSavedCookieDialog()
-        controller.onYouTubeEvent(YouTubeAuthEvent.ShowSnack("youtube error"))
+        controller.onYouTubeEvent(YouTubeAuthEvent.ShowSnack(UiText.Literal("youtube error")))
         controller.onYouTubeEvent(YouTubeAuthEvent.LoginSuccess)
         assertEquals(2, dialogs.youtubeTab.intValue)
         assertFalse(dialogs.showYouTubeSheet)
         assertFalse(dialogs.showYouTubeSavedCookieDialog)
         assertEquals(CoreCommonR.string.settings_youtube_login_success, dialogs.loginSuccessTitleRes)
-        assertEquals(listOf(null, null, "bili error", null, null, null, "youtube error", null), messages)
+        assertEquals(listOf(null, null, UiText.Literal("bili error"), null, null, null, UiText.Literal("youtube error"), null), messages)
         verify(youtubeVm).refreshAuthHealth()
     }
 
@@ -173,12 +174,12 @@ class SettingsAccountAuthControllerTest {
 
     @Test
     fun `event callback uses the latest inline message recipient`() {
-        val replacementMessages = mutableListOf<String?>()
+        val replacementMessages = mutableListOf<UiText?>()
         latestMessageAction.value = { replacementMessages += it }
 
-        controller.onYouTubeEvent(YouTubeAuthEvent.ShowSnack("updated"))
+        controller.onYouTubeEvent(YouTubeAuthEvent.ShowSnack(UiText.Literal("updated")))
 
         assertTrue(messages.isEmpty())
-        assertEquals(listOf("updated"), replacementMessages)
+        assertEquals(listOf(UiText.Literal("updated")), replacementMessages)
     }
 }

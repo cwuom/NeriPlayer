@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.onboarding
 
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +39,7 @@ import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncUiState
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeUiState
 import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeViewModel
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun StartupBackupRestoreSyncGate(
@@ -97,8 +100,8 @@ internal fun BackupRestoreContent(
 ) {
     StepHeader(
         icon = Icons.Outlined.CloudSync,
-        title = stringResource(CoreCommonR.string.onboarding_backup_restore_title),
-        description = stringResource(CoreCommonR.string.onboarding_backup_restore_desc)
+        title = stringResource(AppR.string.onboarding_backup_restore_title),
+        description = stringResource(AppR.string.onboarding_backup_restore_desc)
     )
     Spacer(Modifier.height(18.dp))
     BackupSyncMessage(gitHubState.errorMessage, onDismissGitHubMessage)
@@ -121,13 +124,13 @@ internal fun BackupRestoreContent(
         onSyncNow = onWebDavSyncNow
     )
     Spacer(Modifier.height(18.dp))
-    HintCard(body = stringResource(CoreCommonR.string.onboarding_backup_restore_hint))
+    HintCard(body = stringResource(AppR.string.onboarding_backup_restore_hint))
 }
 
 @Composable
-private fun BackupSyncMessage(message: String?, onDismiss: () -> Unit) {
+private fun BackupSyncMessage(message: UiText?, onDismiss: () -> Unit) {
     if (message == null) return
-    InlineMessage(text = message, onClose = onDismiss)
+    InlineMessage(text = message.asString(), onClose = onDismiss)
     Spacer(Modifier.height(14.dp))
 }
 
@@ -141,7 +144,7 @@ private fun GitHubSyncCard(
 ) {
     SyncServiceCard(state.isConfigured) {
         SyncCardHeader(
-            title = stringResource(CoreCommonR.string.onboarding_backup_restore_github_title),
+            title = stringResource(AppR.string.onboarding_backup_restore_github_title),
             configured = state.isConfigured,
             onOpenConfig = onOpenConfig,
             icon = {
@@ -181,7 +184,7 @@ private fun GitHubRepoText(repoFullName: String?) {
         text = if (repoFullName == null) {
             stringResource(CoreCommonR.string.settings_configured)
         } else {
-            stringResource(CoreCommonR.string.onboarding_github_repo_configured, repoFullName)
+            stringResource(AppR.string.onboarding_github_repo_configured, repoFullName)
         },
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -203,13 +206,13 @@ private fun WebDavSyncCard(
 ) {
     SyncServiceCard(state.isConfigured) {
         SyncCardHeader(
-            title = stringResource(CoreCommonR.string.onboarding_backup_restore_webdav_title),
+            title = stringResource(AppR.string.onboarding_backup_restore_webdav_title),
             configured = state.isConfigured,
             onOpenConfig = onOpenConfig,
             icon = {
                 Icon(
                     imageVector = Icons.Outlined.CloudSync,
-                    contentDescription = stringResource(CoreCommonR.string.onboarding_backup_restore_webdav_title),
+                    contentDescription = stringResource(AppR.string.onboarding_backup_restore_webdav_title),
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(28.dp)
                 )
@@ -241,7 +244,7 @@ private fun WebDavEndpointText(endpoint: String?) {
     if (endpoint == null) return
     Spacer(Modifier.height(8.dp))
     Text(
-        text = stringResource(CoreCommonR.string.onboarding_backup_restore_webdav_endpoint, endpoint),
+        text = stringResource(AppR.string.onboarding_backup_restore_webdav_endpoint, endpoint),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 2,
@@ -341,7 +344,7 @@ private fun SyncStatusPill(configured: Boolean) {
 private fun SyncConfigButton(configured: Boolean, onOpenConfig: () -> Unit) {
     OnboardingActionButton(
         text = if (configured) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
+            stringResource(AppR.string.onboarding_platform_action_manage)
         } else {
             stringResource(CoreCommonR.string.settings_configure)
         },

@@ -44,6 +44,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import moe.ouom.neriplayer.ui.i18n.UiText
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.NonRestartableComposable
@@ -224,7 +225,7 @@ internal fun SettingsScreen(
     var showClearWebDavConfigDialog by remember { mutableStateOf(false) }
     // ------------------------------------
 
-    var inlineMsg by remember { mutableStateOf<String?>(null) }
+    var inlineMsg by remember { mutableStateOf<UiText?>(null) }
     val accountAuth = rememberSettingsAccountAuthController { inlineMsg = it }
 
     val backupTransfer =
@@ -237,7 +238,7 @@ internal fun SettingsScreen(
     val downloadDirectorySettings = rememberDownloadDirectorySettingsController(
         downloadDirectoryUri = otherState.storage.downloadDirectoryUri,
         onDownloadDirectoryUriChange = storageActions.onDownloadDirectoryUriChange,
-        onInlineMessageChange = { inlineMsg = it },
+        onInlineMessageChange = { inlineMsg = it?.let(UiText::Literal) },
         onShowMessage = ::showSettingsMessage
     )
 
@@ -274,11 +275,11 @@ internal fun SettingsScreen(
     val effectiveDefaultStartDestination = homeStartPresentation.destination
     val defaultStartDestinationLabel = homeStartPresentation.destinationLabel
     val navigation = rememberSettingsNavigationState(
-        context = context,
         listState = listState,
         dynamicColor = appearanceState.theme.dynamicColorEnabled,
         mobileDataFollowDefaultAudioQuality = playbackState.defaultAudioQuality.mobileDataFollowDefaultAudioQuality,
-        backgroundImageUri = appearanceState.visualBackground.backgroundImageUri
+        backgroundImageUri = appearanceState.visualBackground.backgroundImageUri,
+        internationalEnabled = otherState.internationalizationEnabled
     )
     val isSettingsSplitLayout = navigation.splitLayout
     val activeSettingsPage = navigation.activePage
@@ -286,6 +287,10 @@ internal fun SettingsScreen(
         isActive, environment.settingsVisible, activeSettingsPage
     )
     val storageDetailsController = rememberSettingsStorageDetailsController(context)
+    var isClearingStorageCache by remember { mutableStateOf(false) }
+    LaunchedEffect(storageSelection.showClearCacheDialog) {
+        if (storageSelection.showClearCacheDialog) storageDetailsController.requestRefresh()
+    }
     LaunchedEffect(activeSettingsPage) {
         storageDetailsController.requestIfDetailsPage(activeSettingsPage)
     }
@@ -1062,7 +1067,26 @@ internal fun SettingsScreen(
                                 },
                                 storageDetails = storageDetailsController.details,
                                 selection = storageSelection,
-                                onClearCacheClick = storageActions.onClearCacheClick,
+                                isStorageScanning = storageDetailsController.isScanning,
+                                hasStorageScan = storageDetailsController.hasScanned,
+                                isClearing = isClearingStorageCache,
+                                scanFailed = storageDetailsController.scanFailed,
+                                onRetryScan = storageDetailsController::requestRefresh,
+                                estimateCacheClear = storageActions.estimateCacheClear,
+                                onClearCacheClick = { options ->
+                                    if (!isClearingStorageCache) {
+                                        isClearingStorageCache = true
+                                        scope.launch {
+                                            try {
+                                                storageActions.onClearCacheClick(options)
+                                                storageSelection.showClearCacheDialog = false
+                                            } finally {
+                                                isClearingStorageCache = false
+                                                storageDetailsController.requestRefresh()
+                                            }
+                                        }
+                                    }
+                                },
                                 highlightTargetId = settingsHighlightTargetId,
                                 highlightPulse = settingsHighlightPulse,
                                 onHighlightFinished = onSettingsHighlightFinished
@@ -1072,7 +1096,8 @@ internal fun SettingsScreen(
                         SettingsPage.StorageCacheDetails to {
                             settingsStorageCacheDetailsItem(
                                 storageDetails = storageDetailsController.details,
-                                isScanning = storageDetailsController.isScanning,
+                                isScanning = storageDetailsController.isWaitingForScan,
+                                scanFailed = storageDetailsController.scanFailed,
                                 onRefresh = storageDetailsController::requestRefresh,
                                 onClearCache = {
                                     navigation.activePage = SettingsPage.Storage
@@ -1142,7 +1167,7 @@ internal fun SettingsScreen(
                                 SettingsAboutPageContent(
                                     devModeEnabled = appearanceState.theme.devModeEnabled,
                                     onDevModeChange = appearanceActions.onDevModeChange,
-                                    onInlineMessageChange = { inlineMsg = it },
+                                    onInlineMessageChange = { inlineMsg = UiText.Literal(it) },
                                     onShowMessage = ::showSettingsMessage
                                 )
                             }

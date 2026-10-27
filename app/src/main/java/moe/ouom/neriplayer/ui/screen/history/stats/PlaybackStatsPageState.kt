@@ -15,7 +15,6 @@ import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.stats.PlaybackStatsCursor
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPage
@@ -23,6 +22,7 @@ import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsSummary
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.R as AppR
 
 internal data class StatsPageRequest(val cursor: PlaybackStatsCursor? = null, val before: Boolean = false, val offset: Int = 0, val retry: Int = 0)
 internal data class StatsPageState(
@@ -79,10 +79,10 @@ internal fun StatsPageNavigation(state: StatsPageState, request: StatsPageReques
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         HapticTextButton(enabled = idle && hasPreviousStatsPage(state, request), onClick = {
             change(previousStatsPageRequest(state, request))
-        }) { Text(stringResource(CoreCommonR.string.stats_previous_page)) }
+        }) { Text(stringResource(AppR.string.stats_previous_page)) }
         HapticTextButton(enabled = idle && state.page.nextCursor != null, onClick = {
             change(nextStatsPageRequest(state, request))
-        }) { Text(stringResource(CoreCommonR.string.stats_next_page)) }
+        }) { Text(stringResource(AppR.string.stats_next_page)) }
     }
 }
 

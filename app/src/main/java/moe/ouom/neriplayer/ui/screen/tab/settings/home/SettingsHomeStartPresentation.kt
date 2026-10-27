@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.home
 import android.content.res.Resources
 import androidx.compose.runtime.Composable
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.R as AppR
 
 internal data class SettingsHomeCardCopy(
     val trendingLabelRes: Int,
@@ -40,8 +41,10 @@ internal fun isSettingsHomeStartAvailable(
     showRecommended: Boolean,
     showContinue: Boolean,
     hasRecentUsage: Boolean,
-    showBilibili: Boolean = false
-): Boolean = showTrending || showRadar || showRecommended || showBilibili || (showContinue && hasRecentUsage)
+    showBilibili: Boolean = false,
+    internationalEnabled: Boolean = false
+): Boolean = showTrending || showRadar || showRecommended ||
+    (showBilibili && !internationalEnabled) || (showContinue && hasRecentUsage)
 
 internal fun effectiveSettingsStartDestination(
     configured: String,
@@ -49,13 +52,13 @@ internal fun effectiveSettingsStartDestination(
 ): String = if (!homeAvailable && configured == "home") "explore" else configured
 
 private val settingsStartDestinationLabels = mapOf(
-    "explore" to CoreCommonR.string.nav_explore,
-    "library" to CoreCommonR.string.nav_library,
-    "settings" to CoreCommonR.string.nav_settings
+    "explore" to AppR.string.nav_explore,
+    "library" to AppR.string.nav_library,
+    "settings" to AppR.string.nav_settings
 )
 
 internal fun settingsStartDestinationLabelRes(destination: String): Int =
-    settingsStartDestinationLabels[destination] ?: CoreCommonR.string.nav_home
+    settingsStartDestinationLabels[destination] ?: AppR.string.nav_home
 
 internal data class SettingsHomeStartPresentation(
     val available: Boolean,
@@ -82,7 +85,8 @@ internal fun rememberSettingsHomeStartPresentation(
         showRecommended,
         showContinue,
         hasRecentUsage,
-        showBilibili
+        showBilibili,
+        internationalEnabled
     )
     val destination = effectiveSettingsStartDestination(configuredDestination, available)
     return SettingsHomeStartPresentation(

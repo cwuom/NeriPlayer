@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.R as AppR
 
 class SettingsHomeStartPresentationTest {
     @Test
@@ -26,6 +27,18 @@ class SettingsHomeStartPresentationTest {
     fun `Bilibili alone keeps home available until its own switch is disabled`() {
         assertTrue(isSettingsHomeStartAvailable(false, false, false, false, false, showBilibili = true))
         assertFalse(isSettingsHomeStartAvailable(false, false, false, false, false, showBilibili = false))
+    }
+
+    @Test
+    fun `international mode excludes Bilibili from home availability without hiding other sections`() {
+        assertFalse(isSettingsHomeStartAvailable(false, false, false, false, false, true, true))
+        assertFalse(isSettingsHomeStartAvailable(false, false, false, false, false, false, true))
+        assertTrue(isSettingsHomeStartAvailable(false, false, false, false, false, true, false))
+        assertTrue(isSettingsHomeStartAvailable(true, false, false, false, false, true, true))
+        assertTrue(isSettingsHomeStartAvailable(false, true, false, false, false, true, true))
+        assertTrue(isSettingsHomeStartAvailable(false, false, true, false, false, true, true))
+        assertTrue(isSettingsHomeStartAvailable(false, false, false, true, true, true, true))
+        assertFalse(isSettingsHomeStartAvailable(false, false, false, true, false, true, true))
     }
 
     @Test
@@ -66,10 +79,10 @@ class SettingsHomeStartPresentationTest {
 
     @Test
     fun `start destination labels keep the original fallback`() {
-        assertEquals(CoreCommonR.string.nav_explore, settingsStartDestinationLabelRes("explore"))
-        assertEquals(CoreCommonR.string.nav_library, settingsStartDestinationLabelRes("library"))
-        assertEquals(CoreCommonR.string.nav_settings, settingsStartDestinationLabelRes("settings"))
-        assertEquals(CoreCommonR.string.nav_home, settingsStartDestinationLabelRes("home"))
-        assertEquals(CoreCommonR.string.nav_home, settingsStartDestinationLabelRes("unknown"))
+        assertEquals(AppR.string.nav_explore, settingsStartDestinationLabelRes("explore"))
+        assertEquals(AppR.string.nav_library, settingsStartDestinationLabelRes("library"))
+        assertEquals(AppR.string.nav_settings, settingsStartDestinationLabelRes("settings"))
+        assertEquals(AppR.string.nav_home, settingsStartDestinationLabelRes("home"))
+        assertEquals(AppR.string.nav_home, settingsStartDestinationLabelRes("unknown"))
     }
 }

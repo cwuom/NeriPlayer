@@ -81,6 +81,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -100,6 +101,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
@@ -131,6 +134,9 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import org.burnoutcrew.reorderable.ItemPosition
+import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistNameError
+import moe.ouom.neriplayer.ui.i18n.asString
 @Composable
 internal fun LocalPlaylistList(
     playlists: List<LocalPlaylist>,
@@ -154,7 +160,7 @@ internal fun LocalPlaylistList(
     }
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var newName by rememberSaveable { mutableStateOf("") }
-    var nameError by rememberSaveable { mutableStateOf<String?>(null) }
+    var nameError by rememberSaveable { mutableStateOf<PlaylistNameError?>(null) }
     var selectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showDeleteSelectedConfirm by rememberSaveable { mutableStateOf(false) }
@@ -164,14 +170,34 @@ internal fun LocalPlaylistList(
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsStateWithLifecycle(
         initialValue = false
     )
-    val localArtists = remember(playlists, context) {
-        buildLocalArtistSummaries(playlists, context)
-    }
-    val filteredLocalArtists = remember(localArtists, localSearchQuery) {
-        filterLocalArtists(localArtists, localSearchQuery)
-    }
-    val displayedLocalArtists = remember(filteredLocalArtists, localArtistSortMode) {
-        sortLocalArtists(filteredLocalArtists, localArtistSortMode)
+    val displayedLocalArtists = if (selectedLocalCategory == LOCAL_CATEGORY_ARTIST) {
+        val localArtists by produceState<List<LocalArtistSummary>?>(
+            initialValue = null,
+            key1 = playlists,
+            key2 = context
+        ) {
+            value = withContext(Dispatchers.Default) {
+                buildLocalArtistSummaries(playlists, context)
+            }
+        }
+        val artistSnapshot = localArtists
+        val artistQuery = localSearchQuery
+        val artistSortMode = localArtistSortMode
+        val displayedArtists by produceState<List<LocalArtistSummary>?>(
+            initialValue = null,
+            key1 = artistSnapshot,
+            key2 = artistQuery,
+            key3 = artistSortMode
+        ) {
+            value = withContext(Dispatchers.Default) {
+                artistSnapshot?.let { artists ->
+                    sortLocalArtists(filterLocalArtists(artists, artistQuery), artistSortMode)
+                }
+            }
+        }
+        displayedArtists
+    } else {
+        emptyList()
     }
     val editablePlaylists = remember(playlists, context) {
         playlists.filterNot { SystemLocalPlaylists.isSystemPlaylist(it, context) }
@@ -239,18 +265,16 @@ internal fun LocalPlaylistList(
         val trimmedInput = newName.trim().take(maxNameLength)
         val finalName = trimmedInput.ifBlank { defaultPlaylistName }.take(maxNameLength)
 
-        val favoritesName = composeResources.getString(CoreCommonR.string.favorite_my_music)
-        val localFilesName = composeResources.getString(CoreCommonR.string.local_files)
         if (FavoritesPlaylist.matches(finalName, context)) {
-            nameError = composeResources.getString(CoreCommonR.string.library_name_reserved, favoritesName)
+            nameError = PlaylistNameError.FAVORITES_RESERVED
             return false
         }
         if (LocalFilesPlaylist.matches(finalName, context)) {
-            nameError = composeResources.getString(CoreCommonR.string.library_name_reserved, localFilesName)
+            nameError = PlaylistNameError.LOCAL_FILES_RESERVED
             return false
         }
         if (playlists.any { it.name.equals(finalName, ignoreCase = true) }) {
-            nameError = composeResources.getString(CoreCommonR.string.library_name_exists)
+            nameError = PlaylistNameError.DUPLICATE
             return false
         }
 
@@ -265,12 +289,20 @@ internal fun LocalPlaylistList(
     val favoritesPlaylist = playlists.firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
     val localFilesPlaylist = playlists.firstOrNull { LocalFilesPlaylist.isSystemPlaylist(it, context) }
 
+    val showingLocalPlaylists = selectedLocalCategory == LOCAL_CATEGORY_PLAYLIST
     val displayedFavoritesPlaylist = favoritesPlaylist
-        ?.takeIf { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
+        ?.takeIf { playlist ->
+            showingLocalPlaylists && playlist.matchesLocalPlaylistSearch(localSearchQuery, context)
+        }
     val displayedLocalFilesPlaylist = localFilesPlaylist
-        ?.takeIf { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
-    val displayedPlaylists = reorderablePlaylists
-        .filter { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
+        ?.takeIf { playlist ->
+            showingLocalPlaylists && playlist.matchesLocalPlaylistSearch(localSearchQuery, context)
+        }
+    val displayedPlaylists = if (showingLocalPlaylists) {
+        reorderablePlaylists.filter { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
+    } else {
+        emptyList()
+    }
     val hasPlaylistSearchMatches =
         displayedFavoritesPlaylist != null ||
             displayedPlaylists.isNotEmpty() ||
@@ -290,7 +322,7 @@ internal fun LocalPlaylistList(
         ((windowWidthDp.value - 16f + 10f) / 130f).toInt().coerceAtLeast(1)
     }
     val localArtistRows = remember(displayedLocalArtists, localArtistColumnCount) {
-        displayedLocalArtists.chunked(localArtistColumnCount)
+        displayedLocalArtists.orEmpty().chunked(localArtistColumnCount)
     }
 
     val cardShape = neriRoundedShape(12.dp)
@@ -334,7 +366,7 @@ internal fun LocalPlaylistList(
         }
 
         if (selectedLocalCategory == LOCAL_CATEGORY_ARTIST) {
-            if (displayedLocalArtists.isEmpty()) {
+            if (displayedLocalArtists?.isEmpty() == true) {
                 item(key = "local_artist_empty") {
                     LibrarySearchEmptyCard(
                         titleResId = if (localSearchQuery.isBlank()) {
@@ -394,7 +426,7 @@ internal fun LocalPlaylistList(
                         headlineContent = {
                             Text(
                                 pluralStringResource(
-                                    CoreCommonR.plurals.common_selected_count,
+                                    AppR.plurals.common_selected_count,
                                     selectedIds.size,
                                     selectedIds.size
                                 )
@@ -491,7 +523,7 @@ internal fun LocalPlaylistList(
                             )
                             if (nameError != null) {
                                 Text(
-                                    text = nameError.orEmpty(),
+                                    text = nameError?.message()?.asString().orEmpty(),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error
                                 )
@@ -521,11 +553,11 @@ internal fun LocalPlaylistList(
             if (showDeleteSelectedConfirm) {
                 AlertDialog(
                     onDismissRequest = { showDeleteSelectedConfirm = false },
-                    title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
+                    title = { Text(stringResource(AppR.string.dialog_confirm_delete)) },
                     text = {
                         Text(
                             pluralStringResource(
-                                CoreCommonR.plurals.library_delete_selected_confirm,
+                                AppR.plurals.library_delete_selected_confirm,
                                 selectedIds.size,
                                 selectedIds.size
                             )
@@ -588,7 +620,7 @@ internal fun LocalPlaylistList(
                         },
                         supportingContent = {
                             Text(
-                                pluralStringResource(CoreCommonR.plurals.library_song_count, system.songs.size, system.songs.size),
+                                pluralStringResource(AppR.plurals.library_song_count, system.songs.size, system.songs.size),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -700,7 +732,7 @@ internal fun LocalPlaylistList(
                         },
                         supportingContent = {
                             Text(
-                                pluralStringResource(CoreCommonR.plurals.library_song_count, pl.songs.size, pl.songs.size),
+                                pluralStringResource(AppR.plurals.library_song_count, pl.songs.size, pl.songs.size),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -882,7 +914,7 @@ internal fun LocalPlaylistList(
                         },
                         supportingContent = {
                             Text(
-                                pluralStringResource(CoreCommonR.plurals.library_song_count, system.songs.size, system.songs.size),
+                                pluralStringResource(AppR.plurals.library_song_count, system.songs.size, system.songs.size),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },

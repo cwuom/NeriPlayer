@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.ui
 
 import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -10,6 +12,7 @@ import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.component.common.PredictiveDismissHandler
 import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingMorphState
 import moe.ouom.neriplayer.ui.playback.visual.rememberNowPlayingMorphState
 import org.junit.Assert.assertEquals
@@ -31,19 +34,44 @@ class NowPlayingMorphLifecycleTest {
     private val artwork = mutableStateOf<ImageBitmap?>(null)
     private val flight = SharedCoverFlightState()
     private lateinit var morph: NowPlayingMorphState
+    private var hostCompositionCount = 0
 
     @Before
     fun setUp() {
         assumeComposeHostAvailable()
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
-            val dismiss = rememberPredictiveDismissState()
-            val currentArtwork = artwork.value
-            morph = rememberNowPlayingMorphState(
-                visible.value, flight, artwork = { currentArtwork }
-            ) { dismiss.progress }
-            if (morph.mounted) {
-                PredictiveDismissHandler(dismiss, onDismiss = { visible.value = false })
+            CompositionLocalProvider(LocalPredictiveBackPreviewEnabled provides true) {
+                val dismiss = rememberPredictiveDismissState()
+                val currentArtwork = artwork.value
+                morph = rememberNowPlayingMorphState(
+                    visible.value, flight, artwork = { currentArtwork }
+                ) { dismiss.progress }
+                if (morph.mounted) {
+                    PredictiveDismissHandler(dismiss, onDismiss = { visible.value = false })
+                }
+                SideEffect { hostCompositionCount++ }
+            }
+        }
+    }
+
+    @Test
+    fun dragProgressUpdatesDoNotRecomposeTheMorphHost() {
+        composeRule.runOnIdle { flight.dragOpenProgress = 0.18f }
+        settle()
+        val compositionsAfterDragStarts = composeRule.runOnIdle { hostCompositionCount }
+
+        for (progress in listOf(0.32f, 0.57f, 0.81f, 0.64f)) {
+            composeRule.runOnIdle { flight.dragOpenProgress = progress }
+            settle()
+            composeRule.runOnIdle {
+                assertTrue(morph.mounted)
+                assertEquals(progress, morph.progress.value, 0.001f)
+                assertEquals(
+                    "拖动进度变化不应重新组合播放页宿主: progress=$progress",
+                    compositionsAfterDragStarts,
+                    hostCompositionCount
+                )
             }
         }
     }

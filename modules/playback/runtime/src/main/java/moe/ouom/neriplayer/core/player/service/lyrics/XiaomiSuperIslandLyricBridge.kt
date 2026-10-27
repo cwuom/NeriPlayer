@@ -37,6 +37,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R
+import moe.ouom.neriplayer.common.locale.LanguageManager
+import moe.ouom.neriplayer.feature.player.R as PlaybackR
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.data.model.SongItem
@@ -542,6 +544,8 @@ internal class XiaomiSuperIslandLyricBridge(context: Context) {
         artwork: Bitmap?,
         activeSettings: XiaomiSuperIslandSettings
     ): Notification {
+        ensureChannel()
+        val localizedContext = LanguageManager.applyLanguage(appContext)
         val actionBundle = Bundle()
         val cachedArtwork = cachedArtworkResources(artwork)
         val songTitle = song.displayName().ifBlank { "♪" }
@@ -590,7 +594,7 @@ internal class XiaomiSuperIslandLyricBridge(context: Context) {
                                 3610,
                                 AudioPlayerService.ACTION_PREV,
                                 R.drawable.round_skip_previous_24,
-                                "Previous"
+                                localizedContext.getString(R.string.player_previous)
                             )
                             actionIcon = createPicture(
                                 "miui.focus.pic_btn_prev",
@@ -607,7 +611,7 @@ internal class XiaomiSuperIslandLyricBridge(context: Context) {
                             3611,
                             AudioPlayerService.ACTION_TOGGLE_PLAY_PAUSE,
                             R.drawable.round_pause_24,
-                            "Play/Pause"
+                            localizedContext.getString(PlaybackR.string.notification_xiaomi_super_island_play_pause)
                         )
                         actionIcon = createPicture(
                             "miui.focus.pic_btn_play_pause",
@@ -623,7 +627,7 @@ internal class XiaomiSuperIslandLyricBridge(context: Context) {
                             3612,
                             AudioPlayerService.ACTION_NEXT,
                             R.drawable.round_skip_next_24,
-                            "Next"
+                            localizedContext.getString(R.string.player_next)
                         )
                         actionIcon = createPicture(
                             "miui.focus.pic_btn_next",
@@ -807,8 +811,9 @@ internal class XiaomiSuperIslandLyricBridge(context: Context) {
         )
 
     private fun shareContent(song: SongItem, lyric: String, format: Int): String {
-        val title = song.displayName().ifBlank { "未知歌曲" }
-        val artist = song.displayArtist().ifBlank { "未知歌手" }
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        val title = song.displayName().ifBlank { localizedContext.getString(R.string.lyrics_unknown_song) }
+        val artist = song.displayArtist().ifBlank { localizedContext.getString(R.string.lyrics_unknown_artist) }
         return when (format) {
             XiaomiSuperIslandSettings.SHARE_FORMAT_INLINE -> "$lyric -$artist，$title"
             XiaomiSuperIslandSettings.SHARE_FORMAT_ARTIST_AND_SONG -> "$lyric\n$artist，$title"
@@ -855,19 +860,23 @@ internal class XiaomiSuperIslandLyricBridge(context: Context) {
     }
 
     private fun ensureChannel() {
-        if (notificationManager.getNotificationChannel(CHANNEL_ID) != null) return
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        val channelName = localizedContext.getString(PlaybackR.string.notification_channel_xiaomi_super_island_lyrics)
+        val channel = notificationManager.getNotificationChannel(CHANNEL_ID)
+            ?: NotificationChannel(
                 CHANNEL_ID,
-                "小米超级岛歌词",
+                channelName,
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "HyperOS Super Island lyric updates"
                 setSound(null, null)
                 enableVibration(false)
                 setShowBadge(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
+        channel.name = channelName
+        channel.description = localizedContext.getString(
+            PlaybackR.string.notification_channel_xiaomi_super_island_lyrics_description
         )
+        notificationManager.createNotificationChannel(channel)
     }
 }

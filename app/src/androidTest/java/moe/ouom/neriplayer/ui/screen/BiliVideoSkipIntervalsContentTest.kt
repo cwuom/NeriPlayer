@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.assertTextContains
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTargetOption
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
@@ -15,6 +16,9 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BILI_VIDEO_SKIP_ADD_BUTT
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BILI_VIDEO_SKIP_END_INPUT_TEST_TAG
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BILI_VIDEO_SKIP_START_INPUT_TEST_TAG
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsContent
+import moe.ouom.neriplayer.activity.LocalizedAppContent
+import moe.ouom.neriplayer.common.locale.LanguageManager
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -28,6 +32,40 @@ class BiliVideoSkipIntervalsContentTest {
     @Before
     fun assumeDeviceUnlocked() {
         assumeComposeHostAvailable()
+    }
+
+    @Test
+    fun validationErrorChangesLanguageWithoutReloadingTargetsOrLosingInput() {
+        val target = BiliVideoSkipTarget("bili-skip-language-${System.nanoTime()}", 1L)
+        val language = mutableStateOf(LanguageManager.Language.CHINESE)
+        var loads = 0
+        composeRule.setContent {
+            LocalizedAppContent(language.value) {
+                MaterialTheme {
+                    BiliVideoSkipIntervalsContent(
+                        title = "Skip intervals",
+                        targetResolverKey = target,
+                        loadTargetOptions = {
+                            loads++
+                            listOf(BiliVideoSkipTargetOption(target, "Test P1", 60_000L))
+                        },
+                        initialTarget = target,
+                        onDismiss = {}
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithTag(BILI_VIDEO_SKIP_START_INPUT_TEST_TAG).performTextInput("bad")
+        composeRule.onNodeWithTag(BILI_VIDEO_SKIP_END_INPUT_TEST_TAG).performTextInput("2")
+        composeRule.onNodeWithTag(BILI_VIDEO_SKIP_ADD_BUTTON_TEST_TAG).performClick()
+        composeRule.onNodeWithText("请输入秒数、MM:SS 或 HH:MM:SS").assertExists()
+
+        composeRule.runOnIdle { language.value = LanguageManager.Language.ENGLISH }
+
+        composeRule.onNodeWithText("Enter seconds, MM:SS, or HH:MM:SS").assertExists()
+        composeRule.onNodeWithTag(BILI_VIDEO_SKIP_START_INPUT_TEST_TAG).assertTextContains("bad")
+        composeRule.onNodeWithTag(BILI_VIDEO_SKIP_END_INPUT_TEST_TAG).assertTextContains("2")
+        composeRule.runOnIdle { assertEquals(1, loads) }
     }
 
     @Test

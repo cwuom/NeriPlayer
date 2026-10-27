@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.navigation
 
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import moe.ouom.neriplayer.R as AppR
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -28,10 +29,10 @@ import java.nio.charset.StandardCharsets
 
 sealed class Destinations(val route: String, val labelResId: Int) {
     // TAB
-    data object Home : Destinations("home", moe.ouom.neriplayer.common.R.string.nav_home)
-    data object Explore : Destinations("explore", moe.ouom.neriplayer.common.R.string.nav_explore)
-    data object Library : Destinations("library", moe.ouom.neriplayer.common.R.string.nav_library)
-    data object Settings : Destinations("settings", moe.ouom.neriplayer.common.R.string.nav_settings)
+    data object Home : Destinations("home", AppR.string.nav_home)
+    data object Explore : Destinations("explore", AppR.string.nav_explore)
+    data object Library : Destinations("library", AppR.string.nav_library)
+    data object Settings : Destinations("settings", AppR.string.nav_settings)
     object Recent {
         const val ROUTE = "recent"
         val route: String
@@ -45,15 +46,15 @@ sealed class Destinations(val route: String, val labelResId: Int) {
     }
 
     // DEBUG
-    data object Debug : Destinations("debug", moe.ouom.neriplayer.common.R.string.nav_debug)
+    data object Debug : Destinations("debug", AppR.string.nav_debug)
     data object DebugListenTogether : Destinations("debug/listen_together", moe.ouom.neriplayer.common.R.string.listen_together_title)
-    data object DebugUsbExclusive : Destinations("debug/usb_exclusive", moe.ouom.neriplayer.common.R.string.debug_usb_exclusive_title)
+    data object DebugUsbExclusive : Destinations("debug/usb_exclusive", AppR.string.debug_usb_exclusive_title)
     data object DebugYouTube : Destinations("debug/youtube", moe.ouom.neriplayer.common.R.string.common_youtube)
-    data object DebugBili : Destinations("debug/bili", moe.ouom.neriplayer.common.R.string.debug_bili_api)
-    data object DebugNetease : Destinations("debug/netease", moe.ouom.neriplayer.common.R.string.debug_netease_api)
-    data object DebugSearch : Destinations("debug/search", moe.ouom.neriplayer.common.R.string.debug_search_api)
-    data object DebugLogsList : Destinations("debug_logs_list", moe.ouom.neriplayer.common.R.string.log_list)
-    data object DebugCrashLogsList : Destinations("debug_crash_logs_list", moe.ouom.neriplayer.common.R.string.log_list)
+    data object DebugBili : Destinations("debug/bili", AppR.string.debug_bili_api)
+    data object DebugNetease : Destinations("debug/netease", AppR.string.debug_netease_api)
+    data object DebugSearch : Destinations("debug/search", AppR.string.debug_search_api)
+    data object DebugLogsList : Destinations("debug_logs_list", AppR.string.log_list)
+    data object DebugCrashLogsList : Destinations("debug_crash_logs_list", AppR.string.log_list)
 
     // 网易云歌单详情路由
     data object PlaylistDetail : Destinations("playlist_detail/{playlistJson}", moe.ouom.neriplayer.common.R.string.playlist_detail)
@@ -85,7 +86,7 @@ sealed class Destinations(val route: String, val labelResId: Int) {
     // 下载进度路由
     data object DownloadProgress : Destinations("download_progress", moe.ouom.neriplayer.common.R.string.download_progress)
 
-    data object DebugLogViewer : Destinations("debug_log_viewer/{filePath}", moe.ouom.neriplayer.common.R.string.log_view) {
+    data object DebugLogViewer : Destinations("debug_log_viewer/{filePath}", AppR.string.log_view) {
         fun createRoute(filePath: String): String {
             val encodedPath = URLEncoder.encode(filePath, StandardCharsets.UTF_8.name())
             return "debug_log_viewer/$encodedPath"

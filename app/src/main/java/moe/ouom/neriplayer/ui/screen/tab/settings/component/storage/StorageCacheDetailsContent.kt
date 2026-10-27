@@ -25,30 +25,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.DeleteForever
-import androidx.compose.material.icons.outlined.Backup
-import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.CloudDownload
-import androidx.compose.material.icons.outlined.ColorLens
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.DownloadDone
-import androidx.compose.material.icons.outlined.Favorite
-import androidx.compose.material.icons.outlined.Layers
-import androidx.compose.material.icons.outlined.LibraryMusic
-import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.PictureInPictureAlt
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.SdStorage
-import androidx.compose.material.icons.outlined.Subtitles
-import androidx.compose.material.icons.outlined.Storage
-import androidx.compose.material.icons.outlined.Tab
-import androidx.compose.material.icons.outlined.VideoLibrary
-import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -83,6 +59,7 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
+import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
 import moe.ouom.neriplayer.common.format.formatFileSize
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -92,7 +69,8 @@ internal fun StorageCacheDetailsContent(
     isScanning: Boolean,
     onRefresh: () -> Unit,
     onClearCache: () -> Unit,
-    onOpenSystemSettings: () -> Unit
+    onOpenSystemSettings: () -> Unit,
+    scanFailed: Boolean = false
 ) {
     AnimatedContent(
         targetState = isScanning,
@@ -109,6 +87,26 @@ internal fun StorageCacheDetailsContent(
         AdvancedGlassScene(active = scanning == isScanning) {
             if (scanning) {
                 StorageScanCard()
+            } else if (scanFailed) {
+                MiuixSettingsSectionCard {
+                    Column(
+                        Modifier.fillMaxWidth().padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            stringResource(CoreCommonR.string.storage_scan_failed),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            stringResource(CoreCommonR.string.storage_scan_failed_desc),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        MiuixSettingsOutlinedButton(onClick = onRefresh) {
+                            Text(stringResource(CoreCommonR.string.storage_scan_refresh))
+                        }
+                    }
+                }
             } else {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                     val useTwoColumns = maxWidth >= TABLET_CONTENT_MIN_WIDTH
@@ -281,7 +279,7 @@ private fun StorageScanGlyph() {
             )
         }
         Icon(
-            imageVector = Icons.Outlined.SdStorage,
+            imageVector = StorageGlyphs.Scan,
             contentDescription = null,
             modifier = Modifier.size(34.dp),
             tint = primary
@@ -390,14 +388,14 @@ private fun StorageUsageSummaryCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     MiuixSettingsOutlinedButton(onClick = onRefresh) {
                         Icon(
-                            imageVector = Icons.Outlined.Refresh,
+                            imageVector = StorageGlyphs.Refresh,
                             contentDescription = stringResource(CoreCommonR.string.storage_scan_refresh),
                             modifier = Modifier.size(18.dp)
                         )
                     }
                     MiuixSettingsOutlinedButton(onClick = onClearCache) {
                         Icon(
-                            imageVector = Icons.Outlined.DeleteForever,
+                            imageVector = StorageGlyphs.Clear,
                             contentDescription = stringResource(CoreCommonR.string.action_clear),
                             modifier = Modifier.size(18.dp)
                         )
@@ -438,7 +436,7 @@ private fun StorageUsageRing(fraction: Float) {
             )
         }
         Icon(
-            imageVector = Icons.Outlined.Storage,
+            imageVector = StorageGlyphs.Storage,
             contentDescription = null,
             tint = primary
         )
@@ -503,15 +501,15 @@ private fun StorageUsageItemRow(item: StorageUsageItem) {
         Box(
             modifier = Modifier
                 .size(36.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.secondaryContainer),
+                .clip(ContinuousRoundedCornerShape(11.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.09f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                modifier = Modifier.size(19.dp),
-                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary
             )
         }
         Column(modifier = Modifier.weight(1f)) {
@@ -551,27 +549,28 @@ private fun StorageUsageItemRow(item: StorageUsageItem) {
 
 private fun StorageUsageItemKind.toStorageIcon(): ImageVector {
     return when (this) {
-        StorageUsageItemKind.AudioCache -> Icons.Outlined.MusicNote
-        StorageUsageItemKind.ImageCache -> Icons.Outlined.PictureInPictureAlt
-        StorageUsageItemKind.DownloadStaging -> Icons.Outlined.CloudDownload
-        StorageUsageItemKind.SharedMedia -> Icons.Outlined.Share
-        StorageUsageItemKind.LyricsCache -> Icons.Outlined.Subtitles
-        StorageUsageItemKind.NeteasePlaylistCache -> Icons.Outlined.LibraryMusic
-        StorageUsageItemKind.BiliFavoriteCache -> Icons.Outlined.Favorite
-        StorageUsageItemKind.BiliArchiveCache -> Icons.Outlined.VideoLibrary
-        StorageUsageItemKind.YouTubePlaylistCache -> Icons.Outlined.PlayArrow
-        StorageUsageItemKind.OtherCache -> Icons.Outlined.Layers
-        StorageUsageItemKind.DownloadedMusic -> Icons.Outlined.DownloadDone
-        StorageUsageItemKind.DownloadedLyrics -> Icons.Outlined.Subtitles
-        StorageUsageItemKind.DownloadedCovers -> Icons.Outlined.PictureInPictureAlt
-        StorageUsageItemKind.DownloadIndex -> Icons.Outlined.Tab
-        StorageUsageItemKind.LogFiles -> Icons.Outlined.Description
-        StorageUsageItemKind.CrashLogs -> Icons.Outlined.BugReport
-        StorageUsageItemKind.LocalCovers -> Icons.Outlined.ColorLens
-        StorageUsageItemKind.CustomBackground -> Icons.Outlined.Wallpaper
-        StorageUsageItemKind.LegacyMigrationFiles -> Icons.Outlined.Backup
-        StorageUsageItemKind.Database -> Icons.Outlined.Memory
-        StorageUsageItemKind.AppData -> Icons.Outlined.Settings
+        StorageUsageItemKind.AudioCache -> StorageGlyphs.Audio
+        StorageUsageItemKind.ImageCache -> StorageGlyphs.Image
+        StorageUsageItemKind.DownloadStaging -> StorageGlyphs.DownloadStaging
+        StorageUsageItemKind.SharedMedia -> StorageGlyphs.Share
+        StorageUsageItemKind.LyricsCache -> StorageGlyphs.Lyrics
+        StorageUsageItemKind.NeteasePlaylistCache -> StorageGlyphs.Playlist
+        StorageUsageItemKind.BiliFavoriteCache -> StorageGlyphs.Favorite
+        StorageUsageItemKind.BiliArchiveCache -> StorageGlyphs.Archive
+        StorageUsageItemKind.YouTubePlaylistCache -> StorageGlyphs.VideoPlaylist
+        StorageUsageItemKind.OtherCache -> StorageGlyphs.Layers
+        StorageUsageItemKind.ProtectedCache -> StorageGlyphs.Protected
+        StorageUsageItemKind.DownloadedMusic -> StorageGlyphs.DownloadedMusic
+        StorageUsageItemKind.DownloadedLyrics -> StorageGlyphs.DownloadedLyrics
+        StorageUsageItemKind.DownloadedCovers -> StorageGlyphs.DownloadedCovers
+        StorageUsageItemKind.DownloadIndex -> StorageGlyphs.Index
+        StorageUsageItemKind.LogFiles -> StorageGlyphs.Logs
+        StorageUsageItemKind.CrashLogs -> StorageGlyphs.Crash
+        StorageUsageItemKind.LocalCovers -> StorageGlyphs.LocalCovers
+        StorageUsageItemKind.CustomBackground -> StorageGlyphs.Background
+        StorageUsageItemKind.LegacyMigrationFiles -> StorageGlyphs.Migration
+        StorageUsageItemKind.Database -> StorageGlyphs.Database
+        StorageUsageItemKind.AppData -> StorageGlyphs.AppData
     }
 }
 

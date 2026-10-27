@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.activity
 import android.app.Application
 import android.app.UiAutomation
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -42,6 +43,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.persistence.PlaybackQueueRoomStore
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.core.startup.debug.debugBuildWarningDataStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -52,7 +54,9 @@ import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.appearance.PreviewThemePromptRepository
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.testutil.EmulatorOfflineNetworkFixture
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
+import moe.ouom.neriplayer.testutil.MediaBrowserIsolationRule
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.performNativeClick
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsPageTransitionSceneTag
@@ -63,6 +67,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
+import org.junit.ClassRule
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -94,6 +99,7 @@ class MainActivityRotationContinuityTest {
         assumeTrue("需要 API 30+ 手机模拟器", Build.VERSION.SDK_INT >= 30 &&
             Build.HARDWARE in setOf("ranchu", "goldfish") &&
             context.resources.configuration.smallestScreenWidthDp < 600)
+        assertFalse("测试开始前不能有残留的播放服务", AudioPlayerService.isInstanceActiveForDiagnostics())
         val settings = SettingsRepository(context)
         val savedSettings = runBlocking { context.dataStore.data.first() }
         val savedWarning = runBlocking { context.debugBuildWarningDataStore.data.first() }
@@ -108,8 +114,10 @@ class MainActivityRotationContinuityTest {
             Settings.System.ACCELEROMETER_ROTATION, 1) != 0
         val directory = File(context.cacheDir, "rotation-continuity-${System.nanoTime()}")
         var scenario: ActivityScenario<MainActivity>? = null
+        var networkFixture: EmulatorOfflineNetworkFixture? = null
         var failure: Throwable? = null
         try {
+            networkFixture = EmulatorOfflineNetworkFixture.start(context)
             logPhase("prepare")
             check(directory.mkdirs())
             val song = createPausedSong(directory)
@@ -123,10 +131,12 @@ class MainActivityRotationContinuityTest {
                 settings.setUiStyle(style)
                 settings.setUiDensityScale(1f)
                 settings.setKeepLastPlaybackProgress(true)
+                settings.setPreemptAudioFocus(true)
+                settings.setAllowMixedPlayback(false)
                 settings.setNowPlayingDynamicBackgroundEnabled(false)
                 settings.setNowPlayingCoverBlurBackgroundEnabled(false)
                 settings.setNowPlayingImmersiveMode(false)
-                // 暂停恢复只建立真实迷你播放器，避免播放统计和音频服务影响方向回归
+                // 暂停恢复避免播放统计影响方向回归
                 QueueFiles.forEach { name ->
                     val file = File(context.filesDir, name)
                     check(!file.exists() || file.delete())
@@ -144,7 +154,8 @@ class MainActivityRotationContinuityTest {
                 awaitUi {
                     composeRule.onNode(hasSetTextAction()).isDisplayed() &&
                         composeRule.onNodeWithTag(MiniPlayerTag, useUnmergedTree = true).isDisplayed() &&
-                        PlayerManager.currentSongFlow.value?.mediaUri == song.mediaUri
+                        PlayerManager.currentSongFlow.value?.mediaUri == song.mediaUri &&
+                        AudioPlayerService.isInstanceActiveForDiagnostics()
                 }
                 logPhase("home-ready")
                 val search = composeRule.onNode(hasSetTextAction())
@@ -215,6 +226,12 @@ class MainActivityRotationContinuityTest {
                 runCatching(action).exceptionOrNull()?.let(cleanupFailures::add)
             }
             cleanup { scenario?.close() }
+            cleanup {
+                instrumentation.runOnMainSync {
+                    context.stopService(Intent(context, AudioPlayerService::class.java))
+                }
+                composeRule.waitUntil(UiTimeoutMs) { !AudioPlayerService.isInstanceActiveForDiagnostics() }
+            }
             cleanup { instrumentation.runOnMainSync { PlayerManager.release() } }
             cleanup { runBlocking { savedQueue.restore(context) } }
             cleanup { runBlocking { context.dataStore.updateData { savedSettings } } }
@@ -227,6 +244,7 @@ class MainActivityRotationContinuityTest {
             cleanup { assertTrue(automation.setRotation(savedRotation)) }
             if (savedAutoRotation) cleanup { assertTrue(automation.setRotation(UiAutomation.ROTATION_UNFREEZE)) }
             cleanup { check(!directory.exists() || directory.deleteRecursively()) }
+            cleanup { networkFixture?.close() }
             NeriMotionStyle.clean = savedMotion
             if (failure != null) cleanupFailures.forEach(failure::addSuppressed)
             else if (cleanupFailures.isNotEmpty()) {
@@ -416,6 +434,10 @@ class MainActivityRotationContinuityTest {
     }
 
     private companion object {
+        @ClassRule
+        @JvmField
+        val mediaBrowserIsolation: org.junit.rules.TestRule = MediaBrowserIsolationRule()
+
         const val UiTimeoutMs = 30_000L
         const val SearchDraft = "lyrics"
         const val MiniPlayerTag = "appMiniPlayer"

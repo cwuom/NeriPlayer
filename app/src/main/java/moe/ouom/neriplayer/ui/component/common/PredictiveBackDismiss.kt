@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -22,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 
 /** Material 全屏界面的预测性返回：缩小到 90%，朝手势方向偏移，四角逐渐变圆 */
 internal const val PREDICTIVE_DISMISS_MIN_SCALE = 0.9f
@@ -93,21 +95,32 @@ internal fun PredictiveDismissHandler(
 ) {
     val scope = rememberCoroutineScope()
     val currentOnDismiss by rememberUpdatedState(onDismiss)
+    val previewEnabled = LocalPredictiveBackPreviewEnabled.current
+    val currentPreviewEnabled by rememberUpdatedState(previewEnabled)
+    LaunchedEffect(state, previewEnabled) {
+        if (!previewEnabled) state.reset()
+    }
     PredictiveBackHandler(enabled = enabled) { events ->
-        state.settleJob?.cancel()
+        state.reset()
         try {
             events.collect { event ->
-                state.swipeEdge = event.swipeEdge
-                state.progress = event.progress
+                if (currentPreviewEnabled) {
+                    state.swipeEdge = event.swipeEdge
+                    state.progress = event.progress
+                }
             }
             currentOnDismiss()
         } catch (cancelled: CancellationException) {
-            state.settleJob = scope.launch {
-                animate(
-                    initialValue = state.progress,
-                    targetValue = 0f,
-                    animationSpec = tween(PREDICTIVE_DISMISS_CANCEL_DURATION_MS)
-                ) { value, _ -> state.progress = value }
+            if (currentPreviewEnabled) {
+                state.settleJob = scope.launch {
+                    animate(
+                        initialValue = state.progress,
+                        targetValue = 0f,
+                        animationSpec = tween(PREDICTIVE_DISMISS_CANCEL_DURATION_MS)
+                    ) { value, _ -> state.progress = value }
+                }
+            } else {
+                state.reset()
             }
             throw cancelled
         }

@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
+import moe.ouom.neriplayer.R as AppR
 
 internal enum class LocalCurationScreen {
     CONFIGURE,
@@ -201,7 +202,7 @@ private fun LocalCurationHeader(
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = stringResource(CoreCommonR.string.local_curation_title),
+                text = stringResource(AppR.string.local_curation_title),
                 style = MaterialTheme.typography.titleLarge
             )
             AnimatedContent(
@@ -227,27 +228,27 @@ private fun LocalCurationHeader(
 @Composable
 private fun localCurationHeaderSubtitle(session: LocalCurationSession?, songCount: Int): String {
     return when (session?.stage) {
-        null -> pluralStringResource(CoreCommonR.plurals.local_curation_song_count, songCount, songCount)
+        null -> pluralStringResource(AppR.plurals.local_curation_song_count, songCount, songCount)
         LocalCurationStage.ANALYZING -> stringResource(
-            CoreCommonR.string.local_curation_analyzing_progress,
+            AppR.string.local_curation_analyzing_progress,
             session.analyzedCount,
             session.total
         )
         LocalCurationStage.REVIEW -> pluralStringResource(
-            CoreCommonR.plurals.local_curation_song_count,
+            AppR.plurals.local_curation_song_count,
             session.total,
             session.total
         )
         LocalCurationStage.APPLYING -> stringResource(
-            CoreCommonR.string.local_curation_applying_progress,
+            AppR.string.local_curation_applying_progress,
             session.applyingDoneCount,
             session.applyTotal
         )
         LocalCurationStage.FINISHED -> stringResource(
             if (session.cancelled) {
-                CoreCommonR.string.local_curation_finished_stopped
+                AppR.string.local_curation_finished_stopped
             } else {
-                CoreCommonR.string.local_curation_finished_title
+                AppR.string.local_curation_finished_title
             }
         )
     }
@@ -263,8 +264,8 @@ internal fun localCurationMaxHeight(fraction: Float): Dp {
 @Composable
 internal fun localCurationSizeDeltaText(bytes: Long): String {
     return if (bytes >= 0L) {
-        stringResource(CoreCommonR.string.local_curation_review_grow, formatFileSize(bytes))
+        stringResource(AppR.string.local_curation_review_grow, formatFileSize(bytes))
     } else {
-        stringResource(CoreCommonR.string.local_curation_review_shrink, formatFileSize(-bytes))
+        stringResource(AppR.string.local_curation_review_shrink, formatFileSize(-bytes))
     }
 }

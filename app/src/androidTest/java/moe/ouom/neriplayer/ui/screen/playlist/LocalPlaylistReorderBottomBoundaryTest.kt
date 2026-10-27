@@ -88,6 +88,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class LocalPlaylistReorderBottomBoundaryTest {
@@ -580,7 +581,7 @@ class LocalPlaylistReorderBottomBoundaryTest {
 
     private fun bottomTabs(): SemanticsNodeInteraction = composeRule.onNode(
         SemanticsMatcher.keyIsDefined(SelectableGroup).and(
-            hasAnyDescendant(hasContentDescription(context.getString(CoreCommonR.string.nav_home)))
+            hasAnyDescendant(hasContentDescription(context.getString(AppR.string.nav_home)))
         ),
         useUnmergedTree = true
     )

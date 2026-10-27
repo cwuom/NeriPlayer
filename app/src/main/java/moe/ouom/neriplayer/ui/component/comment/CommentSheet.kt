@@ -83,6 +83,7 @@ import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState
 import moe.ouom.neriplayer.ui.viewmodel.CommentViewModel
 import moe.ouom.neriplayer.util.format.formatPlayCount
+import moe.ouom.neriplayer.R as AppR
 
 /**
  * 评论弹窗。
@@ -219,7 +220,7 @@ internal fun CommentSheetContent(
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val sortLoadingDescription = stringResource(CoreCommonR.string.comment_sort_loading)
+    val sortLoadingDescription = stringResource(AppR.string.comment_sort_loading)
     val listState = rememberLazyListState()
     var replyFocusRequest by remember(ui.source) { mutableIntStateOf(0) }
     val requestReply: (CommentReplyTarget?) -> Unit = { target ->
@@ -272,12 +273,12 @@ internal fun CommentSheetContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val totalText = ui.total?.let {
-                    stringResource(CoreCommonR.string.comment_total_format, formatPlayCount(context, it))
-                } ?: stringResource(CoreCommonR.string.comment_loading)
+                    stringResource(AppR.string.comment_total_format, formatPlayCount(context, it))
+                } ?: stringResource(AppR.string.comment_loading)
                 if (landscape) {
                     Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stringResource(CoreCommonR.string.comment_title),
+                        Text(stringResource(AppR.string.comment_title),
                             style = MaterialTheme.typography.titleLarge, maxLines = 1)
                         Text(totalText, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -285,7 +286,7 @@ internal fun CommentSheetContent(
                     }
                 } else {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(stringResource(CoreCommonR.string.comment_title),
+                        Text(stringResource(AppR.string.comment_title),
                             style = MaterialTheme.typography.headlineSmall)
                         Text(totalText, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -298,7 +299,7 @@ internal fun CommentSheetContent(
                     Icon(
                         imageVector = if (isFullScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
                         contentDescription = stringResource(
-                            if (isFullScreen) CoreCommonR.string.comment_action_collapse else CoreCommonR.string.comment_action_expand
+                            if (isFullScreen) AppR.string.comment_action_collapse else AppR.string.comment_action_expand
                         )
                     )
                 }
@@ -391,9 +392,9 @@ internal fun CommentSheetContent(
                                     thread.hasMore -> HapticTextButton(
                                         onClick = { onLoadReplies(comment.id) }, enabled = !offlineMode,
                                         modifier = Modifier.fillMaxWidth()
-                                    ) { Text(stringResource(CoreCommonR.string.comment_more_replies)) }
+                                    ) { Text(stringResource(AppR.string.comment_more_replies)) }
                                     thread.comments.isEmpty() -> Text(
-                                        stringResource(CoreCommonR.string.comment_empty_replies), Modifier.padding(16.dp),
+                                        stringResource(AppR.string.comment_empty_replies), Modifier.padding(16.dp),
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                 }
@@ -422,7 +423,7 @@ internal fun CommentSheetContent(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = stringResource(CoreCommonR.string.comment_no_more),
+                                    text = stringResource(AppR.string.comment_no_more),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -435,15 +436,15 @@ internal fun CommentSheetContent(
                 ui.likeError != null -> {
                     val message = stringResource(
                         when {
-                            ui.likeError == CommentError.PERMISSION -> CoreCommonR.string.comment_like_login_required
+                            ui.likeError == CommentError.PERMISSION -> AppR.string.comment_like_login_required
                             ui.source?.platform == moe.ouom.neriplayer.data.model.comments.CommentPlatform.NETEASE &&
-                                ui.likeErrorCode == 250 -> CoreCommonR.string.comment_like_verification
-                            else -> CoreCommonR.string.comment_like_failed
+                                ui.likeErrorCode == 250 -> AppR.string.comment_like_verification
+                            else -> AppR.string.comment_like_failed
                         }
                     )
-                    ui.likeErrorCode?.let { stringResource(CoreCommonR.string.comment_error_code_format, message, it) } ?: message
+                    ui.likeErrorCode?.let { stringResource(AppR.string.comment_error_code_format, message, it) } ?: message
                 }
-                ui.error != null && ui.comments.isNotEmpty() -> stringResource(CoreCommonR.string.comment_reload_failed)
+                ui.error != null && ui.comments.isNotEmpty() -> stringResource(AppR.string.comment_reload_failed)
                 else -> null
             }
             if (failureText != null) {
@@ -455,7 +456,7 @@ internal fun CommentSheetContent(
                     Row(modifier = Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(failureText, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                         HapticIconButton(onClick = if (ui.likeError != null) onDismissLikeError else onDismissLoadError) {
-                            Icon(Icons.Outlined.Close, stringResource(CoreCommonR.string.comment_dismiss_error))
+                            Icon(Icons.Outlined.Close, stringResource(AppR.string.comment_dismiss_error))
                         }
                     }
                 }
@@ -479,7 +480,7 @@ internal fun CommentSheetContent(
 @Composable
 private fun CommentSortMenu(ui: CommentUiState, onSort: (CommentSort) -> Unit) {
     var expanded by remember(ui.source) { mutableStateOf(false) }
-    val description = stringResource(CoreCommonR.string.comment_sort)
+    val description = stringResource(AppR.string.comment_sort)
     Box {
         HapticTextButton(
             onClick = { expanded = true },
@@ -526,7 +527,7 @@ private fun CommentSortMenu(ui: CommentUiState, onSort: (CommentSort) -> Unit) {
 
 /** 评论排序 [sort] 对应的文案资源 id (排序按钮与下拉菜单共用)。 */
 private fun commentSortTextRes(sort: CommentSort): Int = when (sort) {
-    CommentSort.HOT -> CoreCommonR.string.comment_sort_hot
-    CommentSort.NEWEST -> CoreCommonR.string.comment_sort_newest
-    CommentSort.RECOMMENDED -> CoreCommonR.string.comment_sort_recommended
+    CommentSort.HOT -> AppR.string.comment_sort_hot
+    CommentSort.NEWEST -> AppR.string.comment_sort_newest
+    CommentSort.RECOMMENDED -> AppR.string.comment_sort_recommended
 }

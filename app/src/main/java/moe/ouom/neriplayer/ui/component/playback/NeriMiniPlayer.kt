@@ -100,6 +100,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
 import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.supportsContinuousCornerOutline
 import moe.ouom.neriplayer.ui.playback.visual.shouldUseNowPlayingContainerMorph
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -111,6 +112,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
+import moe.ouom.neriplayer.util.media.PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 import kotlin.math.abs
@@ -153,7 +155,6 @@ private const val MINI_PLAYER_ARTIST_LINE_HEIGHT_DP = 20f
 private const val MINI_PLAYER_TITLE_MIN_VISUAL_FONT_SIZE_SP = 10f
 private const val MINI_PLAYER_ARTIST_MIN_VISUAL_FONT_SIZE_SP = 9f
 private const val MINI_PLAYER_METADATA_AUTO_SIZE_STEP_SP = 0.25f
-private const val MINI_PLAYER_COVER_BITMAP_MAX_DIMENSION_PX = 128
 private const val MINI_PLAYER_COVER_FRAME_CACHE_LIMIT = 4
 
 internal data class MiniPlayerTextAutoSizeRange(
@@ -378,7 +379,7 @@ internal fun miniPlayerCoverCacheKey(frame: MiniPlayerCoverFrame): String {
 
 internal fun resolveMiniPlayerCoverBitmap(drawable: Drawable): ImageBitmap? {
     return runCatching {
-        val maxDimension = MINI_PLAYER_COVER_BITMAP_MAX_DIMENSION_PX
+        val maxDimension = PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX
         if (drawable is BitmapDrawable) {
             val sourceBitmap = drawable.bitmap
             val scale = min(
@@ -747,11 +748,13 @@ fun NeriMiniPlayer(
 
     val coverCornerRadius = if (cleanStyle) 10.dp else 8.dp
     val coverShape = if (cleanStyle) NeriDesign.tokens.coverSmallShape else RoundedCornerShape(8.dp)
+    val coverSizePx = with(density) { NeriMiniPlayerDefaults.CoverSize.toPx() }
+    val continuousCoverCorners = cleanStyle && supportsContinuousCornerOutline(coverSizePx, coverSizePx)
     val cover: @Composable () -> Unit = {
         Box(
             modifier = Modifier
                 .size(NeriMiniPlayerDefaults.CoverSize)
-                .sharedCoverSource(coverCornerRadius, visibleFrame?.decodedBitmap)
+                .sharedCoverSource(coverCornerRadius, visibleFrame?.decodedBitmap, continuousCoverCorners)
                 .background(
                     color = if (visibleFrame != null) {
                         Color.Transparent
@@ -776,7 +779,7 @@ fun NeriMiniPlayer(
                         model = fastScrollableImageRequest(
                             context = context,
                             data = visibleFrame.coverUrl,
-                            sizePx = 128,
+                            sizePx = PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX,
                             crossfade = false,
                             offlineMode = offlineMode,
                             cacheKey = miniPlayerCoverCacheKey(visibleFrame)
@@ -816,7 +819,7 @@ fun NeriMiniPlayer(
                         model = fastScrollableImageRequest(
                             context = context,
                             data = requestedFrame.coverUrl,
-                            sizePx = 128,
+                            sizePx = PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX,
                             crossfade = false,
                             offlineMode = offlineMode,
                             cacheKey = miniPlayerCoverCacheKey(requestedFrame)

@@ -38,11 +38,9 @@ import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
@@ -80,6 +78,7 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.ui.feedback.showNeriViewSnackbar
 import moe.ouom.neriplayer.network.security.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
+import moe.ouom.neriplayer.activity.enableNeriEdgeToEdge
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -178,8 +177,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (finishIfWebViewUnavailable()) return
         lockPortraitIfPhone()
-        enableEdgeToEdge()
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        enableNeriEdgeToEdge()
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("youtube")
         persistedAuthBaseline = YouTubeAuthRepository(applicationContext).getAuthOnce()
 
