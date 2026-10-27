@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.audio
 
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsInactiveReason
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsPowerMode
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsPresetCategory
@@ -12,6 +11,7 @@ import moe.ouom.neriplayer.data.model.playback.effects.SpeakerSize
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import moe.ouom.neriplayer.R as AppR
 
 internal val AudioEffectsPresetTabs: List<AudioEffectsPresetCategory?> = listOf(
     AudioEffectsPresetCategory.STYLE,
@@ -22,82 +22,82 @@ internal val AudioEffectsPresetTabs: List<AudioEffectsPresetCategory?> = listOf(
 )
 
 private val PresetNameRes = mapOf(
-    AudioEffectsPresetIds.FLAT to CoreCommonR.string.audio_effects_preset_flat,
-    AudioEffectsPresetIds.CUSTOM to CoreCommonR.string.audio_effects_preset_custom,
-    "pop" to CoreCommonR.string.audio_effects_preset_pop,
-    "rock" to CoreCommonR.string.audio_effects_preset_rock,
-    "classical" to CoreCommonR.string.audio_effects_preset_classical,
-    "jazz" to CoreCommonR.string.audio_effects_preset_jazz,
-    "electronic" to CoreCommonR.string.audio_effects_preset_electronic,
-    "hip_hop" to CoreCommonR.string.audio_effects_preset_hip_hop,
-    "rnb" to CoreCommonR.string.audio_effects_preset_rnb,
-    "folk" to CoreCommonR.string.audio_effects_preset_folk,
-    "metal" to CoreCommonR.string.audio_effects_preset_metal,
-    "acg" to CoreCommonR.string.audio_effects_preset_acg,
-    "piano" to CoreCommonR.string.audio_effects_preset_piano,
-    "vocal_boost" to CoreCommonR.string.audio_effects_preset_vocal_boost,
-    "bass_boost" to CoreCommonR.string.audio_effects_preset_bass_boost,
-    "deep_bass" to CoreCommonR.string.audio_effects_preset_deep_bass,
-    "treble_boost" to CoreCommonR.string.audio_effects_preset_treble_boost,
-    "warm" to CoreCommonR.string.audio_effects_preset_warm,
-    "live" to CoreCommonR.string.audio_effects_preset_live,
-    "concert_hall" to CoreCommonR.string.audio_effects_preset_concert_hall,
-    "cinema" to CoreCommonR.string.audio_effects_preset_cinema,
-    "surround_3d" to CoreCommonR.string.audio_effects_preset_surround_3d,
-    "karaoke" to CoreCommonR.string.audio_effects_preset_karaoke,
-    "night" to CoreCommonR.string.audio_effects_preset_night,
-    "spoken" to CoreCommonR.string.audio_effects_preset_spoken,
-    "loudness_max" to CoreCommonR.string.audio_effects_preset_loudness_max,
-    "headphone_hifi" to CoreCommonR.string.audio_effects_preset_headphone_hifi,
-    "studio" to CoreCommonR.string.audio_effects_preset_studio,
-    "car" to CoreCommonR.string.audio_effects_preset_car,
-    "small_speaker" to CoreCommonR.string.audio_effects_preset_small_speaker
+    AudioEffectsPresetIds.FLAT to AppR.string.audio_effects_preset_flat,
+    AudioEffectsPresetIds.CUSTOM to AppR.string.audio_effects_preset_custom,
+    "pop" to AppR.string.audio_effects_preset_pop,
+    "rock" to AppR.string.audio_effects_preset_rock,
+    "classical" to AppR.string.audio_effects_preset_classical,
+    "jazz" to AppR.string.audio_effects_preset_jazz,
+    "electronic" to AppR.string.audio_effects_preset_electronic,
+    "hip_hop" to AppR.string.audio_effects_preset_hip_hop,
+    "rnb" to AppR.string.audio_effects_preset_rnb,
+    "folk" to AppR.string.audio_effects_preset_folk,
+    "metal" to AppR.string.audio_effects_preset_metal,
+    "acg" to AppR.string.audio_effects_preset_acg,
+    "piano" to AppR.string.audio_effects_preset_piano,
+    "vocal_boost" to AppR.string.audio_effects_preset_vocal_boost,
+    "bass_boost" to AppR.string.audio_effects_preset_bass_boost,
+    "deep_bass" to AppR.string.audio_effects_preset_deep_bass,
+    "treble_boost" to AppR.string.audio_effects_preset_treble_boost,
+    "warm" to AppR.string.audio_effects_preset_warm,
+    "live" to AppR.string.audio_effects_preset_live,
+    "concert_hall" to AppR.string.audio_effects_preset_concert_hall,
+    "cinema" to AppR.string.audio_effects_preset_cinema,
+    "surround_3d" to AppR.string.audio_effects_preset_surround_3d,
+    "karaoke" to AppR.string.audio_effects_preset_karaoke,
+    "night" to AppR.string.audio_effects_preset_night,
+    "spoken" to AppR.string.audio_effects_preset_spoken,
+    "loudness_max" to AppR.string.audio_effects_preset_loudness_max,
+    "headphone_hifi" to AppR.string.audio_effects_preset_headphone_hifi,
+    "studio" to AppR.string.audio_effects_preset_studio,
+    "car" to AppR.string.audio_effects_preset_car,
+    "small_speaker" to AppR.string.audio_effects_preset_small_speaker
 )
 
 internal fun audioEffectsPresetNameRes(id: String): Int? = PresetNameRes[id]
 
 internal fun AudioEffectsPresetCategory?.tabLabelRes(): Int = when (this) {
-    AudioEffectsPresetCategory.STYLE -> CoreCommonR.string.audio_effects_preset_tab_style
-    AudioEffectsPresetCategory.TONE -> CoreCommonR.string.audio_effects_preset_tab_tone
-    AudioEffectsPresetCategory.SCENE -> CoreCommonR.string.audio_effects_preset_tab_scene
-    AudioEffectsPresetCategory.DEVICE -> CoreCommonR.string.audio_effects_preset_tab_device
-    null -> CoreCommonR.string.audio_effects_preset_tab_mine
+    AudioEffectsPresetCategory.STYLE -> AppR.string.audio_effects_preset_tab_style
+    AudioEffectsPresetCategory.TONE -> AppR.string.audio_effects_preset_tab_tone
+    AudioEffectsPresetCategory.SCENE -> AppR.string.audio_effects_preset_tab_scene
+    AudioEffectsPresetCategory.DEVICE -> AppR.string.audio_effects_preset_tab_device
+    null -> AppR.string.audio_effects_preset_tab_mine
 }
 
 internal fun AudioOutputRoute.labelRes(): Int = when (this) {
-    AudioOutputRoute.SPEAKER -> CoreCommonR.string.audio_effects_route_speaker
-    AudioOutputRoute.WIRED -> CoreCommonR.string.audio_effects_route_wired
-    AudioOutputRoute.BLUETOOTH -> CoreCommonR.string.audio_effects_route_bluetooth
-    AudioOutputRoute.USB -> CoreCommonR.string.audio_effects_route_usb
-    AudioOutputRoute.OTHER -> CoreCommonR.string.audio_effects_route_other
+    AudioOutputRoute.SPEAKER -> AppR.string.audio_effects_route_speaker
+    AudioOutputRoute.WIRED -> AppR.string.audio_effects_route_wired
+    AudioOutputRoute.BLUETOOTH -> AppR.string.audio_effects_route_bluetooth
+    AudioOutputRoute.USB -> AppR.string.audio_effects_route_usb
+    AudioOutputRoute.OTHER -> AppR.string.audio_effects_route_other
 }
 
 internal fun AudioEffectsPowerMode.labelRes(): Int = when (this) {
-    AudioEffectsPowerMode.ECO -> CoreCommonR.string.audio_effects_power_eco
-    AudioEffectsPowerMode.BALANCED -> CoreCommonR.string.audio_effects_power_balanced
-    AudioEffectsPowerMode.HIGH -> CoreCommonR.string.audio_effects_power_high
+    AudioEffectsPowerMode.ECO -> AppR.string.audio_effects_power_eco
+    AudioEffectsPowerMode.BALANCED -> AppR.string.audio_effects_power_balanced
+    AudioEffectsPowerMode.HIGH -> AppR.string.audio_effects_power_high
 }
 
 internal fun AudioEffectsPowerMode.descriptionRes(): Int = when (this) {
-    AudioEffectsPowerMode.ECO -> CoreCommonR.string.audio_effects_power_eco_desc
-    AudioEffectsPowerMode.BALANCED -> CoreCommonR.string.audio_effects_power_balanced_desc
-    AudioEffectsPowerMode.HIGH -> CoreCommonR.string.audio_effects_power_high_desc
+    AudioEffectsPowerMode.ECO -> AppR.string.audio_effects_power_eco_desc
+    AudioEffectsPowerMode.BALANCED -> AppR.string.audio_effects_power_balanced_desc
+    AudioEffectsPowerMode.HIGH -> AppR.string.audio_effects_power_high_desc
 }
 
 internal fun SpeakerSize.labelRes(): Int = when (this) {
-    SpeakerSize.PHONE -> CoreCommonR.string.audio_effects_speaker_size_phone
-    SpeakerSize.TABLET -> CoreCommonR.string.audio_effects_speaker_size_tablet
-    SpeakerSize.LARGE -> CoreCommonR.string.audio_effects_speaker_size_large
+    SpeakerSize.PHONE -> AppR.string.audio_effects_speaker_size_phone
+    SpeakerSize.TABLET -> AppR.string.audio_effects_speaker_size_tablet
+    SpeakerSize.LARGE -> AppR.string.audio_effects_speaker_size_large
 }
 
 internal fun ParametricEqBandType.labelRes(): Int = when (this) {
-    ParametricEqBandType.PEAK -> CoreCommonR.string.audio_effects_filter_peak
-    ParametricEqBandType.LOW_SHELF -> CoreCommonR.string.audio_effects_filter_low_shelf
-    ParametricEqBandType.HIGH_SHELF -> CoreCommonR.string.audio_effects_filter_high_shelf
-    ParametricEqBandType.LOW_PASS -> CoreCommonR.string.audio_effects_filter_low_pass
-    ParametricEqBandType.HIGH_PASS -> CoreCommonR.string.audio_effects_filter_high_pass
-    ParametricEqBandType.NOTCH -> CoreCommonR.string.audio_effects_filter_notch
-    ParametricEqBandType.BAND_PASS -> CoreCommonR.string.audio_effects_filter_band_pass
+    ParametricEqBandType.PEAK -> AppR.string.audio_effects_filter_peak
+    ParametricEqBandType.LOW_SHELF -> AppR.string.audio_effects_filter_low_shelf
+    ParametricEqBandType.HIGH_SHELF -> AppR.string.audio_effects_filter_high_shelf
+    ParametricEqBandType.LOW_PASS -> AppR.string.audio_effects_filter_low_pass
+    ParametricEqBandType.HIGH_PASS -> AppR.string.audio_effects_filter_high_pass
+    ParametricEqBandType.NOTCH -> AppR.string.audio_effects_filter_notch
+    ParametricEqBandType.BAND_PASS -> AppR.string.audio_effects_filter_band_pass
 }
 
 internal sealed interface AudioEffectsStatus {
@@ -112,11 +112,11 @@ internal fun resolveAudioEffectsStatus(stats: AudioEffectsRuntimeStats): AudioEf
         return AudioEffectsStatus.Processing(rate, formatCpuLoad(stats.cpuLoadPercent))
     }
     val res = when (stats.inactiveReason) {
-        AudioEffectsInactiveReason.NEUTRAL -> CoreCommonR.string.audio_effects_status_neutral
-        AudioEffectsInactiveReason.USB_EXCLUSIVE -> CoreCommonR.string.audio_effects_status_usb
-        AudioEffectsInactiveReason.UNSUPPORTED_FORMAT -> CoreCommonR.string.audio_effects_status_unsupported
-        AudioEffectsInactiveReason.NATIVE_UNAVAILABLE -> CoreCommonR.string.audio_effects_status_native_unavailable
-        AudioEffectsInactiveReason.DISABLED, null -> CoreCommonR.string.audio_effects_status_disabled
+        AudioEffectsInactiveReason.NEUTRAL -> AppR.string.audio_effects_status_neutral
+        AudioEffectsInactiveReason.USB_EXCLUSIVE -> AppR.string.audio_effects_status_usb
+        AudioEffectsInactiveReason.UNSUPPORTED_FORMAT -> AppR.string.audio_effects_status_unsupported
+        AudioEffectsInactiveReason.NATIVE_UNAVAILABLE -> AppR.string.audio_effects_status_native_unavailable
+        AudioEffectsInactiveReason.DISABLED, null -> AppR.string.audio_effects_status_disabled
     }
     return AudioEffectsStatus.Bypassed(res)
 }

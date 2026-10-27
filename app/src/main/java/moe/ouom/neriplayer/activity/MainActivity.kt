@@ -29,6 +29,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.content.res.Resources
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -77,6 +78,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -91,6 +93,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -181,6 +184,7 @@ import moe.ouom.neriplayer.util.platform.isAmbientRefreshRateIdle
 import moe.ouom.neriplayer.util.platform.resolveOnePlusHighDensityUiScale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 private const val STARTUP_SETTINGS_READ_TIMEOUT_MS = 3_000L
 private const val STATE_NOW_PLAYING_OPEN = "nowPlayingOpen"
@@ -270,6 +274,15 @@ internal fun AppUiDensityRoot(
     )
 }
 
+private data class AppResourceConfiguration(
+    val resources: Resources,
+    val configuration: Configuration
+)
+
+private val LocalAppResourceConfiguration = compositionLocalOf<AppResourceConfiguration> {
+    error("App resources have not been provided")
+}
+
 @Composable
 internal fun LocalizedAppContent(
     language: LanguageManager.Language,
@@ -281,9 +294,18 @@ internal fun LocalizedAppContent(
         // 语言 Context 会替换已有密度覆盖，在应用入口恢复设备适配
         applyOnePlusHighDensityDisplayCorrection(LanguageManager.localizedContext(baseContext, language))
     }
+    val appResources = remember(localizedContext, configuration) {
+        AppResourceConfiguration(
+            resources = localizedContext.resources,
+            configuration = Configuration(localizedContext.resources.configuration)
+        )
+    }
     CompositionLocalProvider(
         LocalContext provides localizedContext,
-        LocalConfiguration provides localizedContext.resources.configuration,
+        LocalConfiguration provides appResources.configuration,
+        LocalAppResourceConfiguration provides appResources,
+        // 独立窗口会重设平台 Context，文案资源仍需跟随应用配置快照更新
+        LocalResources providesComputed { LocalAppResourceConfiguration.currentValue.resources },
         content = content
     )
 }
@@ -534,7 +556,7 @@ class MainActivity : ComponentActivity() {
                                     withContext(Dispatchers.Main) {
                                         AppFeedback.show(
                                             context = this@MainActivity,
-                                            message = getString(CoreCommonR.string.log_exported)
+                                            message = getString(AppR.string.log_exported)
                                         )
                                     }
                                 }.onFailure { error ->
@@ -542,7 +564,7 @@ class MainActivity : ComponentActivity() {
                                         AppFeedback.show(
                                             context = this@MainActivity,
                                             message = getString(
-                                                CoreCommonR.string.log_export_failed,
+                                                AppR.string.log_export_failed,
                                                 error.message
                                             ),
                                             duration = SnackbarDuration.Long
@@ -980,7 +1002,7 @@ class MainActivity : ComponentActivity() {
                                         if (showDialog) {
                                             AlertDialog(
                                                 onDismissRequest = { showDialog = false },
-                                                title = { Text(stringResource(CoreCommonR.string.dialog_hint)) },
+                                                title = { Text(stringResource(AppR.string.dialog_hint)) },
                                                 text = { Text(dialogMessage) },
                                                 confirmButton = {
                                                     HapticTextButton(onClick = {
@@ -1235,7 +1257,7 @@ class MainActivity : ComponentActivity() {
                                                     is ClipboardCopyResult.Copied -> if (result.wasTruncated) {
                                                         CoreCommonR.string.toast_copy_truncated
                                                     } else {
-                                                        CoreCommonR.string.log_copied
+                                                        AppR.string.log_copied
                                                     }
 
                                                     ClipboardCopyResult.TransactionTooLarge,
@@ -1248,7 +1270,7 @@ class MainActivity : ComponentActivity() {
                                             } else {
                                                 AppFeedback.show(
                                                     context = this@MainActivity,
-                                                    message = getString(CoreCommonR.string.log_cannot_read)
+                                                    message = getString(AppR.string.log_cannot_read)
                                                 )
                                             }
                                         }
@@ -1343,7 +1365,7 @@ class MainActivity : ComponentActivity() {
             AppFeedback.show(
                 context = this,
                 message = getString(
-                    CoreCommonR.string.safe_mode_restore_failed,
+                    AppR.string.safe_mode_restore_failed,
                     error.message ?: error.javaClass.simpleName
                 ),
                 duration = SnackbarDuration.Long
@@ -1545,7 +1567,7 @@ class MainActivity : ComponentActivity() {
                     ?.toInt()
                     ?: 10
                 resources.getQuantityString(
-                    CoreCommonR.plurals.listen_together_notice_controller_offline,
+                    AppR.plurals.listen_together_notice_controller_offline,
                     minutes,
                     minutes
                 )
@@ -1785,16 +1807,16 @@ private fun StartupCrashReportDialog(
             Text(
                 text = when (report.origin) {
                     CrashReportStore.CrashOrigin.Jvm ->
-                        stringResource(CoreCommonR.string.startup_crash_report_title_jvm)
+                        stringResource(AppR.string.startup_crash_report_title_jvm)
 
                     CrashReportStore.CrashOrigin.Native ->
-                        stringResource(CoreCommonR.string.startup_crash_report_title_native)
+                        stringResource(AppR.string.startup_crash_report_title_native)
 
                     CrashReportStore.CrashOrigin.Anr ->
-                        stringResource(CoreCommonR.string.startup_crash_report_title_anr)
+                        stringResource(AppR.string.startup_crash_report_title_anr)
 
                     CrashReportStore.CrashOrigin.Unknown ->
-                        stringResource(CoreCommonR.string.startup_crash_report_title)
+                        stringResource(AppR.string.startup_crash_report_title)
                 }
             )
         },
@@ -1808,20 +1830,20 @@ private fun StartupCrashReportDialog(
             ) {
                 Text(
                     text = stringResource(
-                        CoreCommonR.string.startup_crash_report_desc,
+                        AppR.string.startup_crash_report_desc,
                         report.file.name
                     )
                 )
                 if (report.previewTruncated) {
                     Text(
-                        text = stringResource(CoreCommonR.string.startup_crash_report_truncated),
+                        text = stringResource(AppR.string.startup_crash_report_truncated),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
                 Text(
                     text = report.previewContent.ifBlank {
-                        stringResource(CoreCommonR.string.log_cannot_read)
+                        stringResource(AppR.string.log_cannot_read)
                     },
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -1830,10 +1852,10 @@ private fun StartupCrashReportDialog(
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 HapticTextButton(onClick = onCopy) {
-                    Text(stringResource(CoreCommonR.string.debug_copy_all))
+                    Text(stringResource(AppR.string.debug_copy_all))
                 }
                 HapticTextButton(onClick = onExport) {
-                    Text(stringResource(CoreCommonR.string.log_export))
+                    Text(stringResource(AppR.string.log_export))
                 }
                 HapticTextButton(onClick = onClose) {
                     Text(stringResource(CoreCommonR.string.action_close))

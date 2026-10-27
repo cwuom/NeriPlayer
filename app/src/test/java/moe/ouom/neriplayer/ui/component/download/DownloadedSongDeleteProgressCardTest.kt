@@ -15,6 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class DownloadedSongDeleteProgressCardTest {
@@ -67,7 +68,7 @@ class DownloadedSongDeleteProgressCardTest {
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.download_delete_phase_preparing))
             .assertIsDisplayed()
         composeRule.onNodeWithText(
-            context.resources.getQuantityString(CoreCommonR.plurals.download_delete_in_progress_message, 2, 2)
+            context.resources.getQuantityString(AppR.plurals.download_delete_in_progress_message, 2, 2)
         ).assertIsDisplayed()
     }
 }

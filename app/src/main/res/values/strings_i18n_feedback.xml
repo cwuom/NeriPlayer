@@ -1,0 +1,8 @@
+<resources>
+    <string name="feedback_history_not_ready">播放历史初始化失败，请稍后重试</string>
+    <string name="feedback_stats_not_ready">播放统计初始化失败，请稍后重试</string>
+    <string name="feedback_backup_input_unavailable">无法打开备份文件</string>
+    <string name="feedback_backup_no_playlists">备份文件中没有歌单数据</string>
+    <string name="feedback_value">%1$s: %2$s</string>
+    <string name="feedback_lines">%1$s\n%2$s</string>
+</resources>

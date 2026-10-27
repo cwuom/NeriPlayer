@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.app.Application
 import android.content.Context
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -174,7 +175,7 @@ class YouTubeMusicCreatorScreensTest {
         setContent(isTabletLayout = false) { uiState }
 
         composeRule.onNodeWithTag("youtubeCreatorWorksList").assertDoesNotExist()
-        uiState = YouTubeMusicCreatorDetailUiState(loading = false, error = "Creator missing")
+        uiState = YouTubeMusicCreatorDetailUiState(loading = false, error = UiText.Literal("Creator missing"))
         composeRule.onNodeWithText("Creator missing").assertExists()
         composeRule.onNodeWithText(string(CoreCommonR.string.action_retry)).performClick()
         assertEquals(listOf("retry"), events)
@@ -204,7 +205,7 @@ class YouTubeMusicCreatorScreensTest {
         var uiState by mutableStateOf(
             YouTubeMusicCreatorDetailUiState(
                 loading = true,
-                error = "Refresh failed",
+                error = UiText.Literal("Refresh failed"),
                 detail = YouTubeMusicCreatorDetail(
                     header = header.copy(subtitle = "Artist channel · 1M subscribers"),
                     sections = listOf(albums)
@@ -274,14 +275,14 @@ class YouTubeMusicCreatorScreensTest {
         }
 
         composeRule.onNodeWithText(string(CoreCommonR.string.youtube_creator_items_empty)).assertDoesNotExist()
-        uiState = YouTubeMusicCreatorItemsUiState(loading = false, error = "Items failed")
+        uiState = YouTubeMusicCreatorItemsUiState(loading = false, error = UiText.Literal("Items failed"))
         composeRule.onNodeWithText(string(CoreCommonR.string.action_retry)).performClick()
 
         uiState = YouTubeMusicCreatorItemsUiState(
             loading = true,
-            error = "Stale items",
-            loadMoreError = "Next page failed",
-            playbackQueueError = "Queue failed",
+            error = UiText.Literal("Stale items"),
+            loadMoreError = UiText.Literal("Next page failed"),
+            playbackQueueError = UiText.Literal("Queue failed"),
             items = items,
             continuation = "next"
         )

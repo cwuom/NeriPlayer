@@ -67,6 +67,7 @@ import moe.ouom.neriplayer.platform.bilibili.skip.policy.normalizeBiliVideoSkipI
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
 import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
+import moe.ouom.neriplayer.R as AppR
 
 private const val MAX_BILI_VIDEO_SKIP_TIMESTAMP_MS = 24L * 60L * 60L * 1_000L
 internal const val BILI_VIDEO_SKIP_SMALL_SEEK_STEP_MS = 1_000L
@@ -191,17 +192,13 @@ internal fun BiliVideoSkipIntervalsContent(
     var hasLocalIntervalEdits by remember { mutableStateOf(false) }
     var startText by remember { mutableStateOf("") }
     var endText by remember { mutableStateOf("") }
-    var inputError by remember { mutableStateOf<String?>(null) }
+    var inputError by remember { mutableStateOf<Int?>(null) }
     var targetMenuExpanded by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var restoredInputDraftTarget by remember { mutableStateOf<BiliVideoSkipTarget?>(null) }
     var intervalPendingDeletion by remember { mutableStateOf<BiliVideoSkipInterval?>(null) }
     var showClearConfirmation by remember { mutableStateOf(false) }
 
-    val invalidTimeText = stringResource(CoreCommonR.string.bili_video_skip_invalid_time)
-    val invalidRangeText = stringResource(CoreCommonR.string.bili_video_skip_invalid_range)
-    val exceedsDurationText = stringResource(CoreCommonR.string.bili_video_skip_exceeds_duration)
-    val saveFailedText = stringResource(CoreCommonR.string.bili_video_skip_save_failed)
     val deleteConfirmationText = stringResource(CoreCommonR.string.bili_video_skip_delete_confirm)
     val clearConfirmationText = stringResource(CoreCommonR.string.bili_video_skip_clear_confirm)
 
@@ -529,7 +526,7 @@ internal fun BiliVideoSkipIntervalsContent(
                 }
                 inputError?.let { error ->
                     Text(
-                        text = error,
+                        text = stringResource(error),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 4.dp)
@@ -541,10 +538,10 @@ internal fun BiliVideoSkipIntervalsContent(
                         val startMs = parseBiliVideoSkipTimestamp(startText)
                         val endMs = parseBiliVideoSkipTimestamp(endText)
                         inputError = when {
-                            startMs == null || endMs == null -> invalidTimeText
-                            endMs <= startMs -> invalidRangeText
+                            startMs == null || endMs == null -> CoreCommonR.string.bili_video_skip_invalid_time
+                            endMs <= startMs -> CoreCommonR.string.bili_video_skip_invalid_range
                             activeTarget.durationMs > 0L && endMs > activeTarget.durationMs -> {
-                                exceedsDurationText
+                                CoreCommonR.string.bili_video_skip_exceeds_duration
                             }
 
                             else -> null
@@ -645,7 +642,7 @@ internal fun BiliVideoSkipIntervalsContent(
                                 if (saved) {
                                     onDismiss()
                                 } else {
-                                    inputError = saveFailedText
+                                    inputError = CoreCommonR.string.bili_video_skip_save_failed
                                 }
                             }
                         },
@@ -663,7 +660,7 @@ internal fun BiliVideoSkipIntervalsContent(
     intervalPendingDeletion?.let { interval ->
         AlertDialog(
             onDismissRequest = { intervalPendingDeletion = null },
-            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
+            title = { Text(stringResource(AppR.string.dialog_confirm_delete)) },
             text = { Text(deleteConfirmationText) },
             confirmButton = {
                 TextButton(
@@ -688,7 +685,7 @@ internal fun BiliVideoSkipIntervalsContent(
     if (showClearConfirmation) {
         AlertDialog(
             onDismissRequest = { showClearConfirmation = false },
-            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_clear)) },
+            title = { Text(stringResource(AppR.string.dialog_confirm_clear)) },
             text = { Text(clearConfirmationText) },
             confirmButton = {
                 TextButton(

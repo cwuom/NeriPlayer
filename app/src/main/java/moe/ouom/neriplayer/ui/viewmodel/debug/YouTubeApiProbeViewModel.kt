@@ -45,6 +45,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
+import moe.ouom.neriplayer.R as AppR
 
 data class YouTubeApiProbeUiState(
     val running: Boolean = false,
@@ -67,7 +68,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     private val _ui = MutableStateFlow(
         YouTubeApiProbeUiState(
             authSummary = buildAuthSummary(),
-            status = string(CoreCommonR.string.debug_youtube_probe_status_idle),
+            status = string(AppR.string.debug_youtube_probe_status_idle),
             hl = preferredLocale.hl,
             gl = preferredLocale.gl
         )
@@ -95,7 +96,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun probeBootstrap() {
-        runProbe(CoreCommonR.string.debug_youtube_probe_action_bootstrap) {
+        runProbe(AppR.string.debug_youtube_probe_action_bootstrap) {
             client.debugBootstrap(
                 hl = ui.value.hl,
                 gl = ui.value.gl,
@@ -105,7 +106,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun probeHomeFeed() {
-        runProbe(CoreCommonR.string.debug_youtube_probe_action_home) {
+        runProbe(AppR.string.debug_youtube_probe_action_home) {
             client.debugHomeFeedRaw(
                 hl = ui.value.hl,
                 gl = ui.value.gl,
@@ -115,7 +116,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun probeLibraryPlaylists() {
-        runProbe(CoreCommonR.string.debug_youtube_probe_action_library) {
+        runProbe(AppR.string.debug_youtube_probe_action_library) {
             client.debugLibraryPlaylistsRaw(
                 hl = ui.value.hl,
                 gl = ui.value.gl,
@@ -129,14 +130,14 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         if (browseId.isBlank()) {
             _ui.value = _ui.value.copy(
                 status = string(
-                    CoreCommonR.string.debug_youtube_probe_status_failed_generic,
-                    string(CoreCommonR.string.debug_youtube_probe_action_browse),
-                    string(CoreCommonR.string.debug_youtube_probe_browse_required)
+                    AppR.string.debug_youtube_probe_status_failed_generic,
+                    string(AppR.string.debug_youtube_probe_action_browse),
+                    string(AppR.string.debug_youtube_probe_browse_required)
                 )
             )
             return
         }
-        runProbe(CoreCommonR.string.debug_youtube_probe_action_browse) {
+        runProbe(AppR.string.debug_youtube_probe_action_browse) {
             client.debugBrowseRaw(
                 browseId = browseId,
                 hl = ui.value.hl,
@@ -151,14 +152,14 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         if (videoId.isBlank()) {
             _ui.value = _ui.value.copy(
                 status = string(
-                    CoreCommonR.string.debug_youtube_probe_status_failed_generic,
-                    string(CoreCommonR.string.debug_youtube_probe_action_player),
-                    string(CoreCommonR.string.debug_youtube_probe_video_required)
+                    AppR.string.debug_youtube_probe_status_failed_generic,
+                    string(AppR.string.debug_youtube_probe_action_player),
+                    string(AppR.string.debug_youtube_probe_video_required)
                 )
             )
             return
         }
-        runProbe(CoreCommonR.string.debug_youtube_probe_action_player) {
+        runProbe(AppR.string.debug_youtube_probe_action_player) {
             client.debugPlayerRaw(
                 videoId = videoId,
                 hl = ui.value.hl,
@@ -173,14 +174,14 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         if (videoId.isBlank()) {
             _ui.value = _ui.value.copy(
                 status = string(
-                    CoreCommonR.string.debug_youtube_probe_status_failed_generic,
-                    string(CoreCommonR.string.debug_youtube_probe_action_lyrics),
-                    string(CoreCommonR.string.debug_youtube_probe_video_required)
+                    AppR.string.debug_youtube_probe_status_failed_generic,
+                    string(AppR.string.debug_youtube_probe_action_lyrics),
+                    string(AppR.string.debug_youtube_probe_video_required)
                 )
             )
             return
         }
-        runProbe(CoreCommonR.string.debug_youtube_probe_action_lyrics) {
+        runProbe(AppR.string.debug_youtube_probe_action_lyrics) {
             client.debugLyricsRaw(
                 videoId = videoId,
                 hl = ui.value.hl,
@@ -206,7 +207,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             _ui.value = _ui.value.copy(
                 running = false,
                 authSummary = buildAuthSummary(),
-                status = string(CoreCommonR.string.debug_youtube_probe_status_auth_cleared),
+                status = string(AppR.string.debug_youtube_probe_status_auth_cleared),
                 summary = "",
                 rawJson = ""
             )
@@ -231,7 +232,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             ClipData.newPlainText("youtube_api_probe_raw_json", rawJson)
         )
         _ui.value = _ui.value.copy(
-            status = string(CoreCommonR.string.debug_youtube_probe_status_copied_raw)
+            status = string(AppR.string.debug_youtube_probe_status_copied_raw)
         )
     }
 
@@ -239,10 +240,10 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val health = authRepo.getAuthHealthOnce()
         val cookies = authRepo.getAuthOnce().normalized().cookies
         if (health.state == YouTubeAuthState.Missing) {
-            return string(CoreCommonR.string.debug_youtube_probe_auth_anonymous)
+            return string(AppR.string.debug_youtube_probe_auth_anonymous)
         }
         return string(
-            CoreCommonR.string.debug_youtube_probe_auth_logged_in,
+            AppR.string.debug_youtube_probe_auth_logged_in,
             resolveAuthStateLabel(health.state),
             cookies.size
         )
@@ -257,7 +258,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             _ui.value = _ui.value.copy(
                 running = true,
                 authSummary = buildAuthSummary(),
-                status = string(CoreCommonR.string.debug_youtube_probe_status_loading_generic, actionLabel),
+                status = string(AppR.string.debug_youtube_probe_status_loading_generic, actionLabel),
                 summary = "",
                 rawJson = ""
             )
@@ -267,7 +268,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                     running = false,
                     authSummary = buildAuthSummary(),
                     status = string(
-                        CoreCommonR.string.debug_youtube_probe_status_success_generic,
+                        AppR.string.debug_youtube_probe_status_success_generic,
                         actionLabel,
                         result.summary
                     ),
@@ -279,7 +280,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                     running = false,
                     authSummary = buildAuthSummary(),
                     status = string(
-                        CoreCommonR.string.debug_youtube_probe_status_failed_generic,
+                        AppR.string.debug_youtube_probe_status_failed_generic,
                         actionLabel,
                         error.message ?: error.javaClass.simpleName
                     ),
@@ -292,8 +293,8 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun resolveAuthStateLabel(state: YouTubeAuthState): String {
         return when (state) {
-            YouTubeAuthState.Missing -> string(CoreCommonR.string.debug_youtube_probe_auth_state_missing)
-            YouTubeAuthState.Valid -> string(CoreCommonR.string.debug_youtube_probe_auth_state_valid)
+            YouTubeAuthState.Missing -> string(AppR.string.debug_youtube_probe_auth_state_missing)
+            YouTubeAuthState.Valid -> string(AppR.string.debug_youtube_probe_auth_state_valid)
         }
     }
 

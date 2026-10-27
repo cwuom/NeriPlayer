@@ -49,6 +49,7 @@ import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -390,7 +391,7 @@ class LocalPlaylistReorderBlurSamplingTest {
     private fun songRow(song: SongItem): SemanticsNodeInteraction = composeRule.onNode(hasClickAction().and(hasAnyDescendant(hasText(song.name))), useUnmergedTree = true)
     private fun miniPlayer(song: SongItem): SemanticsNodeInteraction = songRow(song)
     private fun songHandle(song: SongItem): SemanticsNodeInteraction = composeRule.onNode(hasContentDescription(context.getString(CoreCommonR.string.common_drag_handle)).and(hasAnyAncestor(hasClickAction().and(hasAnyDescendant(hasText(song.name))))), useUnmergedTree = true)
-    private fun bottomTabs(): SemanticsNodeInteraction = composeRule.onNode(SemanticsMatcher.keyIsDefined(SelectableGroup).and(hasAnyDescendant(hasContentDescription(context.getString(CoreCommonR.string.nav_home)))), useUnmergedTree = true)
+    private fun bottomTabs(): SemanticsNodeInteraction = composeRule.onNode(SemanticsMatcher.keyIsDefined(SelectableGroup).and(hasAnyDescendant(hasContentDescription(context.getString(AppR.string.nav_home)))), useUnmergedTree = true)
     private fun playlistList(): SemanticsNodeInteraction = composeRule.onNode(hasScrollToIndexAction().and(SemanticsMatcher.keyIsDefined(VerticalScrollAxisRange)))
     private fun scrollPosition(): Float = playlistList().fetchSemanticsNode().config[VerticalScrollAxisRange].value()
     private fun currentOrder(): List<Long> = repository.playlists.value.single { it.id == ownedPlaylistId }.songs.map { it.id }

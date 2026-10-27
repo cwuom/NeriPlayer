@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun FailedDownloadTaskList(
@@ -59,7 +60,7 @@ internal fun FailedDownloadTaskList(
         ) {
             Text(
                 text = pluralStringResource(
-                    CoreCommonR.plurals.download_failed_songs_count,
+                    AppR.plurals.download_failed_songs_count,
                     failedTasks.size,
                     failedTasks.size
                 ),

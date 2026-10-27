@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auth_phone_required">请输入11位手机号</string>
+    <string name="auth_phone_invalid">手机号无效</string>
+    <string name="auth_captcha_required">请输入验证码</string>
+    <string name="auth_captcha_sent">验证码已发送</string>
+    <string name="auth_captcha_send_error">无法发送验证码</string>
+    <string name="auth_captcha_send_failed">发送失败：%1$s</string>
+    <string name="auth_captcha_invalid">验证码错误</string>
+    <string name="auth_login_failed">登录失败：%1$s</string>
+    <string name="auth_login_retry">请尝试其他登录方式</string>
+    <string name="auth_network_error">网络连接失败，请检查网络后重试</string>
+</resources>

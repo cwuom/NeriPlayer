@@ -31,8 +31,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.activity.auth.NeteaseQrLoginActivity
@@ -47,8 +48,8 @@ internal fun SettingsNeteaseAuthDialogs(
     showSheet: Boolean,
     initialTab: Int,
     onDismissSheet: () -> Unit,
-    inlineMsg: String?,
-    onInlineMsgChange: (String?) -> Unit,
+    inlineMsg: UiText?,
+    onInlineMsgChange: (UiText?) -> Unit,
     showConfirmDialog: Boolean,
     confirmPhoneMasked: String?,
     onDismissConfirmDialog: () -> Unit,
@@ -60,7 +61,6 @@ internal fun SettingsNeteaseAuthDialogs(
     onBrowserLogin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val composeResources = LocalResources.current
 
     if (showSavedCookieDialog) {
         SavedCookieActionDialog(
@@ -97,7 +97,7 @@ internal fun SettingsNeteaseAuthDialogs(
                 MiuixSettingsTextButton(
                     onClick = {
                         onDismissConfirmDialog()
-                        onInlineMsgChange(composeResources.getString(CoreCommonR.string.sync_send_cancelled))
+                        onInlineMsgChange(UiText.Resource(CoreCommonR.string.sync_send_cancelled))
                     }
                 ) {
                     Text(stringResource(CoreCommonR.string.action_cancel))
@@ -121,7 +121,7 @@ internal fun SettingsNeteaseAuthDialogs(
                     val json = result.data?.getStringExtra(NeteaseQrLoginActivity.RESULT_COOKIE) ?: "{}"
                     vm.importCookiesFromMap(parseCookieMap(json))
                 } else {
-                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.settings_cookie_cancelled))
+                    onInlineMsgChange(UiText.Resource(CoreCommonR.string.settings_cookie_cancelled))
                 }
             }
             val defaultBrowserLogin: () -> Unit = {
@@ -135,8 +135,8 @@ internal fun SettingsNeteaseAuthDialogs(
         SettingsCookieLoginSheet(
             title = stringResource(CoreCommonR.string.login_netease),
             initialTab = initialTab,
-            inlineMsg = inlineMsg,
-            onInlineMsgChange = onInlineMsgChange,
+            inlineMsg = inlineMsg?.asString(),
+            onInlineMsgChange = { onInlineMsgChange(null) },
             onDismiss = onDismissSheet,
             browserTabLabel = stringResource(CoreCommonR.string.login_qr),
             browserButtonLabel = stringResource(CoreCommonR.string.login_start_netease_qr),
@@ -151,7 +151,7 @@ internal fun SettingsNeteaseAuthDialogs(
             onBrowserLogin = launchBrowserLogin,
             onSaveCookie = { rawCookie ->
                 if (rawCookie.isBlank()) {
-                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.settings_cookie_input_hint))
+                    onInlineMsgChange(UiText.Resource(CoreCommonR.string.settings_cookie_input_hint))
                 } else {
                     vm.importCookiesFromRaw(rawCookie)
                 }

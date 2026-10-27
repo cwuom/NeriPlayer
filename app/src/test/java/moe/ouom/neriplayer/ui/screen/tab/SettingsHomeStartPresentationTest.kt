@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.R as AppR
 
 class SettingsHomeStartPresentationTest {
     @Test
@@ -66,10 +67,10 @@ class SettingsHomeStartPresentationTest {
 
     @Test
     fun `start destination labels keep the original fallback`() {
-        assertEquals(CoreCommonR.string.nav_explore, settingsStartDestinationLabelRes("explore"))
-        assertEquals(CoreCommonR.string.nav_library, settingsStartDestinationLabelRes("library"))
-        assertEquals(CoreCommonR.string.nav_settings, settingsStartDestinationLabelRes("settings"))
-        assertEquals(CoreCommonR.string.nav_home, settingsStartDestinationLabelRes("home"))
-        assertEquals(CoreCommonR.string.nav_home, settingsStartDestinationLabelRes("unknown"))
+        assertEquals(AppR.string.nav_explore, settingsStartDestinationLabelRes("explore"))
+        assertEquals(AppR.string.nav_library, settingsStartDestinationLabelRes("library"))
+        assertEquals(AppR.string.nav_settings, settingsStartDestinationLabelRes("settings"))
+        assertEquals(AppR.string.nav_home, settingsStartDestinationLabelRes("home"))
+        assertEquals(AppR.string.nav_home, settingsStartDestinationLabelRes("unknown"))
     }
 }

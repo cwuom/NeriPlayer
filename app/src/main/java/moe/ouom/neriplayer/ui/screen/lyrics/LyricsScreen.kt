@@ -207,6 +207,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsCoverFligh
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsCoverFlightRow
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingLyricsToolbarAction
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
+import moe.ouom.neriplayer.R as AppR
 
 private const val LyricsSwipeBackThresholdPx = 50f
 
@@ -327,8 +328,6 @@ fun LyricsScreen(
         }
     }
     val durationMs = currentSong?.durationMs ?: 0L
-    val favoriteActionLabel = stringResource(CoreCommonR.string.favorite_add)
-    val playlistAddActionLabel = stringResource(CoreCommonR.string.playlist_add_to)
 
     val context = LocalContext.current
     val lowPowerLyricsRendering = remember(context) {
@@ -344,7 +343,7 @@ fun LyricsScreen(
     var startMoreOptionsWithLyricBehavior by remember { mutableStateOf(false) }
     var detailSong by remember { mutableStateOf<SongItem?>(null) }
     var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var pendingSyncConfirmLabel by remember { mutableStateOf("") }
+    var pendingSyncConfirmLabel by remember { mutableIntStateOf(CoreCommonR.string.favorite_add) }
     var lyricShareInitialLine by remember(currentSong?.stableKey()) {
         mutableStateOf<LyricEntry?>(null)
     }
@@ -389,7 +388,7 @@ fun LyricsScreen(
 
     fun launchWithLocalSyncWarning(
         song: SongItem?,
-        actionLabel: String,
+        actionLabel: Int,
         warnForLocalSync: Boolean = true,
         action: () -> Unit
     ) {
@@ -660,7 +659,7 @@ fun LyricsScreen(
                     val willFav = nextFavoriteStateAfterTap(isFavorite)
                     launchWithLocalSyncWarning(
                         song = song,
-                        actionLabel = favoriteActionLabel,
+                        actionLabel = CoreCommonR.string.favorite_add,
                         warnForLocalSync = shouldConfirmFavoriteSync(song, willFav, context)
                     ) {
                         favOverride = willFav
@@ -1297,7 +1296,7 @@ fun LyricsScreen(
                                     .clickable {
                                         launchWithLocalSyncWarning(
                                             song = currentSong,
-                                            actionLabel = playlistAddActionLabel,
+                                            actionLabel = CoreCommonR.string.playlist_add_to,
                                             warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(pl, context) ||
                                                 shouldConfirmFavoriteSync(currentSong, adding = true, context = context)
                                         ) {
@@ -1312,7 +1311,7 @@ fun LyricsScreen(
                                 Spacer(modifier = Modifier.weight(1f))
                             Text(
                                 pluralStringResource(
-                                    CoreCommonR.plurals.lyrics_song_count,
+                                    AppR.plurals.lyrics_song_count,
                                     pl.songs.size,
                                     pl.songs.size
                                 ),
@@ -1340,15 +1339,13 @@ fun LyricsScreen(
 
         pendingSyncConfirmAction?.let { action ->
             LocalSongSyncConfirmDialog(
-                actionLabel = pendingSyncConfirmLabel,
+                actionLabel = stringResource(pendingSyncConfirmLabel),
                 onConfirm = {
                     pendingSyncConfirmAction = null
-                    pendingSyncConfirmLabel = ""
                     action()
                 },
                 onDismiss = {
                     pendingSyncConfirmAction = null
-                    pendingSyncConfirmLabel = ""
                 }
             )
         }

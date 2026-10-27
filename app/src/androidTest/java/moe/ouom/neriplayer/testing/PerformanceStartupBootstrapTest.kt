@@ -16,7 +16,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.data.settings.SettingsRepository
@@ -27,6 +26,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @ManualInstrumentedTest
@@ -60,10 +60,10 @@ class PerformanceStartupBootstrapTest {
             context,
             LanguageManager.getCurrentLanguage(context)
         )
-        val mainTabLabel = localizedContext.getString(CoreCommonR.string.nav_explore)
+        val mainTabLabel = localizedContext.getString(AppR.string.nav_explore)
         val startupTitles = listOf(
-            localizedContext.getString(CoreCommonR.string.disclaimer_title),
-            localizedContext.getString(CoreCommonR.string.onboarding_title),
+            localizedContext.getString(AppR.string.disclaimer_title),
+            localizedContext.getString(AppR.string.onboarding_title),
             localizedContext.getString(R.string.debug_build_warning_title)
         )
         ActivityScenario.launch(MainActivity::class.java).use {

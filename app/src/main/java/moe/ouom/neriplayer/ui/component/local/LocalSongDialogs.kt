@@ -70,15 +70,17 @@ import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.util.format.convertTimestampToDate
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.common.format.formatFileSize
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 
 internal data class LocalSongDetailsLoadState(
     val details: LocalMediaDetails?,
-    val error: String?
+    val error: UiText?
 )
 
 internal fun resolveLocalSongDetailsLoadState(
     details: LocalMediaDetails?,
-    unavailableMessage: String
+    unavailableMessage: UiText
 ): LocalSongDetailsLoadState {
     return if (details != null) {
         LocalSongDetailsLoadState(details = details, error = null)
@@ -98,7 +100,7 @@ fun LocalSongDetailsDialog(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember(song) { SnackbarHostState() }
     var details by remember(song) { mutableStateOf<LocalMediaDetails?>(null) }
-    var error by remember(song) { mutableStateOf<String?>(null) }
+    var error by remember(song) { mutableStateOf<UiText?>(null) }
 
     LaunchedEffect(song) {
         details = null
@@ -107,12 +109,12 @@ fun LocalSongDetailsDialog(
             .onSuccess {
                 val loadState = resolveLocalSongDetailsLoadState(
                     details = it,
-                    unavailableMessage = composeResources.getString(CoreCommonR.string.local_song_details_unavailable)
+                    unavailableMessage = UiText.Resource(CoreCommonR.string.local_song_details_unavailable)
                 )
                 details = loadState.details
                 error = loadState.error
             }
-            .onFailure { error = it.message ?: it.javaClass.simpleName }
+            .onFailure { error = UiText.Literal(it.message ?: it.javaClass.simpleName) }
     }
 
     AlertDialog(
@@ -151,7 +153,7 @@ fun LocalSongDetailsDialog(
 
                         error != null -> {
                             Text(
-                                text = stringResource(CoreCommonR.string.local_song_details_failed, error.orEmpty()),
+                                text = stringResource(CoreCommonR.string.local_song_details_failed, error?.asString().orEmpty()),
                                 color = MaterialTheme.colorScheme.error
                             )
                         }

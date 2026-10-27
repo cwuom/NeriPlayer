@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.viewmodel.artist
  * Created: 2026/8/3
  */
 
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.viewmodel.feedbackText
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -57,7 +59,7 @@ data class BiliUploaderHeader(
 
 data class BiliUploaderDetailUiState(
     val loading: Boolean = true,
-    val error: String? = null,
+    val error: UiText? = null,
     val header: BiliUploaderHeader? = null,
     val videos: List<UploaderVideo> = emptyList(),
     val collections: List<UploaderContent> = emptyList(),
@@ -110,7 +112,7 @@ class BiliUploaderDetailViewModel(application: Application) : AndroidViewModel(a
                 _uiState.update {
                     it.copy(
                         loading = false,
-                        error = getApplication<Application>().getString(
+                        error = feedbackText(
                             CoreCommonR.string.bili_uploader_load_failed,
                             error.message ?: error.javaClass.simpleName
                         )
@@ -155,7 +157,7 @@ class BiliUploaderDetailViewModel(application: Application) : AndroidViewModel(a
                 _uiState.update {
                     it.copy(
                         videosLoadingMore = false,
-                        error = getApplication<Application>().getString(
+                        error = feedbackText(
                             CoreCommonR.string.bili_uploader_load_failed,
                             error.message ?: error.javaClass.simpleName
                         )
@@ -191,7 +193,7 @@ class BiliUploaderDetailViewModel(application: Application) : AndroidViewModel(a
                 _uiState.update {
                     it.copy(
                         contentsLoadingMore = false,
-                        error = getApplication<Application>().getString(
+                        error = feedbackText(
                             CoreCommonR.string.bili_uploader_load_failed,
                             error.message ?: error.javaClass.simpleName
                         )

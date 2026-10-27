@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
@@ -210,7 +211,7 @@ internal fun YouTubeMusicCreatorItemsContent(
                 if (uiState.error != null && songs.isEmpty()) {
                     item(key = "creator-items-error") {
                         CreatorItemsErrorBlock(
-                            message = uiState.error,
+                            message = uiState.error.asString(),
                             onRetry = onRetry
                         )
                     }
@@ -220,7 +221,7 @@ internal fun YouTubeMusicCreatorItemsContent(
                     item(key = "creator-items-stale-error") {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = uiState.error,
+                                text = uiState.error.asString(),
                                 modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
@@ -234,7 +235,7 @@ internal fun YouTubeMusicCreatorItemsContent(
                 if (uiState.playbackQueueError != null) {
                     item(key = "creator-items-playback-error") {
                         Text(
-                            text = uiState.playbackQueueError,
+                            text = uiState.playbackQueueError.asString(),
                             modifier = Modifier.padding(vertical = 4.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
@@ -272,7 +273,7 @@ internal fun YouTubeMusicCreatorItemsContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = uiState.loadMoreError,
+                                text = uiState.loadMoreError.asString(),
                                 modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error

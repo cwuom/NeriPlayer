@@ -9,12 +9,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class MainActivityLocalizedStartupTest {
@@ -36,7 +36,7 @@ class MainActivityLocalizedStartupTest {
             }
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 var onboardingTitle = ""
-                scenario.onActivity { onboardingTitle = it.getString(CoreCommonR.string.onboarding_title) }
+                scenario.onActivity { onboardingTitle = it.getString(AppR.string.onboarding_title) }
                 composeRule.waitForIdle()
                 composeRule.onNodeWithText(onboardingTitle).assertIsDisplayed()
             }

@@ -109,6 +109,7 @@ import moe.ouom.neriplayer.util.format.formatTotalDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.search.playlistSearchValues
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 private fun hasCachedLocalArtistDownload(song: SongItem): Boolean {
     return GlobalDownloadManager.hasDownloadedSongCached(song)
@@ -229,10 +230,11 @@ fun LocalArtistDetailScreen(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
+    val searchContext = rememberPlaylistSearchContext()
     val displayedSongs = rememberPlaylistSearchResults(
         query = searchQuery,
         items = baseSongs,
-        tokens = { song -> song.localArtistSongSearchTokens(context) },
+        tokens = { song -> song.localArtistSongSearchTokens(searchContext) },
         buildIndex = shouldBuildPlaylistSearchIndex(
             searchVisible = showSearch,
             query = searchQuery
@@ -400,7 +402,7 @@ fun LocalArtistDetailScreen(
                         title = {
                             Text(
                                 pluralStringResource(
-                                    CoreCommonR.plurals.common_selected_count,
+                                    AppR.plurals.common_selected_count,
                                     selectedKeys.size,
                                     selectedKeys.size
                                 )

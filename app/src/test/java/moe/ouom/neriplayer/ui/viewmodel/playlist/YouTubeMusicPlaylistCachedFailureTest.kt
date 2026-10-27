@@ -17,7 +17,6 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
@@ -38,6 +37,7 @@ import org.junit.runner.RunWith
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.data.model.playlist.PlaylistLoadFailure
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -73,8 +73,7 @@ class YouTubeMusicPlaylistCachedFailureTest {
         val state = vm.uiState.value
 
         assertEquals(listOf("Cached song"), state.tracks.map { it.name })
-        assertEquals(application.getString(CoreCommonR.string.playlist_error_network), state.error)
-        assertFalse(state.error.orEmpty().contains("private diagnostic"))
+        assertEquals(PlaylistLoadFailure.Network, state.error)
         assertEquals(0, prefetches.size)
         assertEquals(0, gateway.detailRequests)
     }
@@ -89,7 +88,7 @@ class YouTubeMusicPlaylistCachedFailureTest {
         val state = vm.uiState.value
 
         assertEquals(listOf("Cached song"), state.tracks.map { it.name })
-        assertEquals(application.getString(CoreCommonR.string.playlist_error_network), state.error)
+        assertEquals(PlaylistLoadFailure.Network, state.error)
         assertEquals(0, prefetches.size)
     }
 
@@ -155,7 +154,7 @@ class YouTubeMusicPlaylistCachedFailureTest {
         vm.start(playlist(), offlineMode = true)
         awaitJobs(vm)
 
-        assertEquals(application.getString(CoreCommonR.string.playlist_error_offline_no_cache), vm.uiState.value.error)
+        assertEquals(PlaylistLoadFailure.Offline, vm.uiState.value.error)
         assertEquals(0, gateway.previewRequests)
         assertEquals(0, gateway.detailRequests)
         assertEquals(0, prefetches.size)

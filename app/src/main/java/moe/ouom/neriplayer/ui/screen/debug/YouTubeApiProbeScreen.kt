@@ -48,10 +48,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.viewmodel.debug.YouTubeApiProbeViewModel
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 fun YouTubeApiProbeScreen() {
@@ -68,28 +68,28 @@ fun YouTubeApiProbeScreen() {
     val idle = !ui.running
 
     DebugProbePage(
-        title = stringResource(CoreCommonR.string.debug_youtube_probe_title),
+        title = stringResource(AppR.string.debug_youtube_probe_title),
         description = ui.authSummary
     ) {
-        DebugProbeSection(title = stringResource(CoreCommonR.string.debug_youtube_probe_section_inputs)) {
+        DebugProbeSection(title = stringResource(AppR.string.debug_youtube_probe_section_inputs)) {
             DebugProbeFieldRow {
                 DebugProbeField(
-                    ui.hl, vm::onHlChange, stringResource(CoreCommonR.string.debug_youtube_probe_input_hl),
+                    ui.hl, vm::onHlChange, stringResource(AppR.string.debug_youtube_probe_input_hl),
                     modifier = Modifier.weight(1f), inRow = true
                 )
                 DebugProbeField(
-                    ui.gl, vm::onGlChange, stringResource(CoreCommonR.string.debug_youtube_probe_input_gl),
+                    ui.gl, vm::onGlChange, stringResource(AppR.string.debug_youtube_probe_input_gl),
                     modifier = Modifier.weight(1f), inRow = true
                 )
             }
-            DebugProbeField(ui.videoId, vm::onVideoIdChange, stringResource(CoreCommonR.string.debug_youtube_probe_input_video_id))
-            DebugProbeField(ui.browseId, vm::onBrowseIdChange, stringResource(CoreCommonR.string.debug_youtube_probe_input_browse_id))
+            DebugProbeField(ui.videoId, vm::onVideoIdChange, stringResource(AppR.string.debug_youtube_probe_input_video_id))
+            DebugProbeField(ui.browseId, vm::onBrowseIdChange, stringResource(AppR.string.debug_youtube_probe_input_browse_id))
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    stringResource(CoreCommonR.string.debug_youtube_probe_force_refresh),
+                    stringResource(AppR.string.debug_youtube_probe_force_refresh),
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.weight(1f)
                 )
@@ -102,52 +102,52 @@ fun YouTubeApiProbeScreen() {
         }
 
         DebugProbeSection(
-            title = stringResource(CoreCommonR.string.debug_youtube_probe_section_actions),
+            title = stringResource(AppR.string.debug_youtube_probe_section_actions),
             trailing = { DebugProbeRunningIndicator(ui.running) }
         ) {
             DebugProbeAction(
-                stringResource(CoreCommonR.string.debug_youtube_probe_action_bootstrap),
+                stringResource(AppR.string.debug_youtube_probe_action_bootstrap),
                 Icons.Rounded.RocketLaunch, vm::probeBootstrap, enabled = idle, copiesResult = false
             )
             DebugProbeAction(
-                stringResource(CoreCommonR.string.debug_youtube_probe_action_home),
+                stringResource(AppR.string.debug_youtube_probe_action_home),
                 Icons.Rounded.Home, vm::probeHomeFeed, enabled = idle, copiesResult = false
             )
             DebugProbeAction(
-                stringResource(CoreCommonR.string.debug_youtube_probe_action_library),
+                stringResource(AppR.string.debug_youtube_probe_action_library),
                 Icons.AutoMirrored.Rounded.QueueMusic, vm::probeLibraryPlaylists, enabled = idle, copiesResult = false
             )
             DebugProbeAction(
-                stringResource(CoreCommonR.string.debug_youtube_probe_action_browse),
+                stringResource(AppR.string.debug_youtube_probe_action_browse),
                 Icons.Rounded.Explore, vm::probeBrowse, enabled = idle && ui.browseId.isNotBlank(), copiesResult = false
             )
             DebugProbeAction(
-                stringResource(CoreCommonR.string.debug_youtube_probe_action_player),
+                stringResource(AppR.string.debug_youtube_probe_action_player),
                 Icons.Rounded.PlayCircle, vm::probePlayer, enabled = idle && ui.videoId.isNotBlank(), copiesResult = false
             )
             DebugProbeAction(
-                stringResource(CoreCommonR.string.debug_youtube_probe_action_lyrics),
+                stringResource(AppR.string.debug_youtube_probe_action_lyrics),
                 Icons.Rounded.Lyrics, vm::probeLyrics, enabled = idle && ui.videoId.isNotBlank(), copiesResult = false
             )
             DebugProbeAction(
-                stringResource(CoreCommonR.string.debug_youtube_probe_action_clear_auth),
+                stringResource(AppR.string.debug_youtube_probe_action_clear_auth),
                 Icons.Rounded.LockReset, vm::clearAuth, enabled = idle, copiesResult = false
             )
         }
 
         DebugProbeResult(
-            title = stringResource(CoreCommonR.string.debug_youtube_probe_section_result),
+            title = stringResource(AppR.string.debug_youtube_probe_section_result),
             status = ui.status,
             running = ui.running,
             output = ui.rawJson,
-            emptyOutput = stringResource(CoreCommonR.string.debug_youtube_probe_raw_empty),
+            emptyOutput = stringResource(AppR.string.debug_youtube_probe_raw_empty),
             summary = ui.summary
         ) {
             MiuixSettingsTextButton(onClick = vm::copyRawJson, enabled = idle && ui.rawJson.isNotBlank()) {
-                Text(stringResource(CoreCommonR.string.debug_youtube_probe_copy_raw))
+                Text(stringResource(AppR.string.debug_youtube_probe_copy_raw))
             }
             MiuixSettingsTextButton(onClick = vm::clearPreview, enabled = idle) {
-                Text(stringResource(CoreCommonR.string.debug_clear_preview))
+                Text(stringResource(AppR.string.debug_clear_preview))
             }
         }
     }

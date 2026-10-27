@@ -16,7 +16,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.locale.getDisplayName
 import moe.ouom.neriplayer.data.settings.SettingsRepository
@@ -29,6 +28,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class MainActivityTabletStartupLayoutTest {
@@ -75,12 +75,12 @@ class MainActivityTabletStartupLayoutTest {
                             activity,
                             LanguageManager.getCurrentLanguage(activity)
                         )
-                        disclaimerTitle = localized.getString(CoreCommonR.string.disclaimer_title)
-                        agreeLabel = localized.getString(CoreCommonR.string.disclaimer_agree_countdown)
-                        onboardingTitle = localized.getString(CoreCommonR.string.onboarding_title)
+                        disclaimerTitle = localized.getString(AppR.string.disclaimer_title)
+                        agreeLabel = localized.getString(AppR.string.disclaimer_agree_countdown)
+                        onboardingTitle = localized.getString(AppR.string.onboarding_title)
                         firstLanguageLabel = LanguageManager.Language.entries.first().getDisplayName(localized)
                         lastLanguageLabel = LanguageManager.Language.entries.last().getDisplayName(localized)
-                        nextLabel = localized.getString(CoreCommonR.string.onboarding_action_next)
+                        nextLabel = localized.getString(AppR.string.onboarding_action_next)
                     }
                     waitForText(disclaimerTitle)
                     composeRule.onNodeWithText(disclaimerTitle).assertIsDisplayed()

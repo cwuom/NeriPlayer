@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auth_phone_required">Enter an 11-digit phone number</string>
+    <string name="auth_phone_invalid">Invalid phone number</string>
+    <string name="auth_captcha_required">Enter the verification code</string>
+    <string name="auth_captcha_sent">Verification code sent</string>
+    <string name="auth_captcha_send_error">Unable to send the verification code</string>
+    <string name="auth_captcha_send_failed">Could not send code: %1$s</string>
+    <string name="auth_captcha_invalid">Incorrect verification code</string>
+    <string name="auth_login_failed">Sign-in failed: %1$s</string>
+    <string name="auth_login_retry">Try another sign-in method</string>
+    <string name="auth_network_error">Unable to connect. Check your connection and retry.</string>
+</resources>

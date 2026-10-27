@@ -55,6 +55,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class AppMiniPlayerTabletActionsTest {
@@ -194,7 +195,7 @@ class AppMiniPlayerTabletActionsTest {
             Panel.Queue -> {
                 val count = PlayerManager.currentQueueDisplaySnapshot().items.size
                 val countLabel = composeRule.activity.resources.getQuantityString(
-                    CoreCommonR.plurals.nowplaying_queue_count_format, count, count
+                    AppR.plurals.nowplaying_queue_count_format, count, count
                 )
                 composeRule.onNode(hasText(countLabel) and hasAnyAncestor(isDialog())).assertIsDisplayed()
             }

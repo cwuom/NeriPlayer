@@ -28,8 +28,8 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 fun LogListScreen(
@@ -38,11 +38,11 @@ fun LogListScreen(
 ) {
     val context = LocalContext.current
     TextLogFileListScreen(
-        titleRes = CoreCommonR.string.log_app,
-        clearConfirmRes = CoreCommonR.string.log_delete_confirm,
-        clearedCountRes = CoreCommonR.plurals.log_cleared_count,
-        emptyTitleRes = CoreCommonR.string.log_no_file,
-        emptyHintRes = CoreCommonR.string.log_enable_hint,
+        titleRes = AppR.string.log_app,
+        clearConfirmRes = AppR.string.log_delete_confirm,
+        clearedCountRes = AppR.plurals.log_cleared_count,
+        emptyTitleRes = AppR.string.log_no_file,
+        emptyHintRes = AppR.string.log_enable_hint,
         resolveDirectory = { NPLogger.getLogDirectory(context) },
         onBack = onBack,
         onLogFileClick = onLogFileClick,

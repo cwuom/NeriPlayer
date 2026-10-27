@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.home
 
+import moe.ouom.neriplayer.ui.i18n.asString
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -75,7 +76,7 @@ internal fun LazyGridScope.addBiliMusicRankSection(
     offlineMode: Boolean
 ) {
     val hasContent = state.songs.isNotEmpty()
-    if (!hasContent && !state.loading && state.error.isNullOrBlank()) return
+    if (!hasContent && !state.loading && state.error == null) return
 
     item(
         key = registerKey("home:biliMusic:rank:header"),
@@ -118,7 +119,7 @@ internal fun LazyGridScope.addBiliMusicRankSection(
             span = { GridItemSpan(maxLineSpan) }
         ) {
             BiliMusicSectionError(
-                detail = state.error.orEmpty(),
+                detail = state.error?.asString().orEmpty(),
                 onRetry = onRetry
             )
         }
@@ -140,7 +141,7 @@ internal fun LazyGridScope.addBiliMusicHotSection(
     offlineMode: Boolean
 ) {
     val hasContent = state.items.isNotEmpty()
-    if (!hasContent && !state.loading && state.error.isNullOrBlank()) return
+    if (!hasContent && !state.loading && state.error == null) return
 
     item(
         key = registerKey("home:biliMusic:hot:header"),
@@ -177,7 +178,7 @@ internal fun LazyGridScope.addBiliMusicHotSection(
             span = { GridItemSpan(maxLineSpan) }
         ) {
             BiliMusicSectionError(
-                detail = state.error.orEmpty(),
+                detail = state.error?.asString().orEmpty(),
                 onRetry = onRetry
             )
         }

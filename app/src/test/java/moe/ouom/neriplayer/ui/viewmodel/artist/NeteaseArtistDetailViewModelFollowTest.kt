@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.app.Application
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -116,7 +117,7 @@ class NeteaseArtistDetailViewModelFollowTest {
         assertTrue(fixture.viewModel.uiState.value.header!!.followed)
         assertTrue(fixture.removedIds.isEmpty())
         assertFalse(fixture.viewModel.uiState.value.followUpdating)
-        assertEquals("Follow failed", fixture.viewModel.uiState.value.error)
+        assertEquals(UiText.Resource(CoreCommonR.string.artist_follow_failed, listOf("Favorites are not initialized")), fixture.viewModel.uiState.value.error)
     }
 
     @Test

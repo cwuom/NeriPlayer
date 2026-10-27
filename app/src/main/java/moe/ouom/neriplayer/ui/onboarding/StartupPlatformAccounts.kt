@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthUiState
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthUiState
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthUiState
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun StartupPlatformAccounts(
@@ -180,8 +181,8 @@ internal fun StartupPlatformAccountsContent(
     Column(modifier.fillMaxWidth().testTag("startupPlatformAccounts")) {
         StepHeader(
             icon = Icons.Outlined.Tune,
-            title = stringResource(CoreCommonR.string.onboarding_platforms_title),
-            description = stringResource(CoreCommonR.string.onboarding_platforms_desc)
+            title = stringResource(AppR.string.onboarding_platforms_title),
+            description = stringResource(AppR.string.onboarding_platforms_desc)
         )
         Spacer(Modifier.height(18.dp))
         inlineMessage?.let {
@@ -196,7 +197,7 @@ internal fun StartupPlatformAccountsContent(
             fallbackColor = MaterialTheme.colorScheme.surfaceContainer
         )
         Spacer(Modifier.height(18.dp))
-        HintCard(body = stringResource(CoreCommonR.string.onboarding_platforms_hint))
+        HintCard(body = stringResource(AppR.string.onboarding_platforms_hint))
     }
 }
 

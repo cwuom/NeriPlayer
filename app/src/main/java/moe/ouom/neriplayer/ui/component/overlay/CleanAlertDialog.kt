@@ -61,74 +61,75 @@ internal fun CleanAlertDialog(
     BasicAlertDialog(
         onDismissRequest = onDismissRequest,
         modifier = modifier,
-        properties = properties
-    ) {
-        val entranceScale = remember { Animatable(DialogEnterScaleFrom) }
-        val entranceAlpha = remember { Animatable(0f) }
-        LaunchedEffect(Unit) {
-            launch { entranceAlpha.animateTo(1f, tween(DialogFadeMillis, easing = LinearEasing)) }
-            entranceScale.animateTo(1f, spring(DialogEnterDamping, DialogEnterStiffness))
-        }
-        val colors = MaterialTheme.colorScheme
-        Surface(
-            modifier = Modifier
-                .widthIn(min = 280.dp, max = 420.dp)
-                .graphicsLayer {
-                    scaleX = entranceScale.value
-                    scaleY = entranceScale.value
-                    alpha = entranceAlpha.value
-                },
-            shape = NeriDesign.tokens.dialogShape,
-            color = colors.surfaceContainerHigh,
-            contentColor = colors.onSurface,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp
-        ) {
-            Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 20.dp)) {
-                val centered = icon != null
-                icon?.let { iconContent ->
-                    CompositionLocalProvider(LocalContentColor provides colors.primary) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .padding(bottom = 14.dp)
-                        ) { iconContent() }
-                    }
-                }
-                title?.let { titleContent ->
-                    ProvideTextStyle(MaterialTheme.typography.titleLarge) {
-                        CompositionLocalProvider(LocalContentColor provides colors.onSurface) {
+        properties = properties,
+        content = localizedWindowContent {
+            val entranceScale = remember { Animatable(DialogEnterScaleFrom) }
+            val entranceAlpha = remember { Animatable(0f) }
+            LaunchedEffect(Unit) {
+                launch { entranceAlpha.animateTo(1f, tween(DialogFadeMillis, easing = LinearEasing)) }
+                entranceScale.animateTo(1f, spring(DialogEnterDamping, DialogEnterStiffness))
+            }
+            val colors = MaterialTheme.colorScheme
+            Surface(
+                modifier = Modifier
+                    .widthIn(min = 280.dp, max = 420.dp)
+                    .graphicsLayer {
+                        scaleX = entranceScale.value
+                        scaleY = entranceScale.value
+                        alpha = entranceAlpha.value
+                    },
+                shape = NeriDesign.tokens.dialogShape,
+                color = colors.surfaceContainerHigh,
+                contentColor = colors.onSurface,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp
+            ) {
+                Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 20.dp)) {
+                    val centered = icon != null
+                    icon?.let { iconContent ->
+                        CompositionLocalProvider(LocalContentColor provides colors.primary) {
                             Box(
                                 modifier = Modifier
-                                    .align(if (centered) Alignment.CenterHorizontally else Alignment.Start)
-                                    .padding(bottom = 10.dp)
-                            ) { titleContent() }
+                                    .align(Alignment.CenterHorizontally)
+                                    .padding(bottom = 14.dp)
+                            ) { iconContent() }
                         }
                     }
-                }
-                text?.let { textContent ->
-                    ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
-                        CompositionLocalProvider(LocalContentColor provides colors.onSurfaceVariant) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .padding(bottom = 22.dp)
-                                    .align(if (centered) Alignment.CenterHorizontally else Alignment.Start)
-                            ) { textContent() }
+                    title?.let { titleContent ->
+                        ProvideTextStyle(MaterialTheme.typography.titleLarge) {
+                            CompositionLocalProvider(LocalContentColor provides colors.onSurface) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(if (centered) Alignment.CenterHorizontally else Alignment.Start)
+                                        .padding(bottom = 10.dp)
+                                ) { titleContent() }
+                            }
                         }
                     }
+                    text?.let { textContent ->
+                        ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
+                            CompositionLocalProvider(LocalContentColor provides colors.onSurfaceVariant) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f, fill = false)
+                                        .padding(bottom = 22.dp)
+                                        .align(if (centered) Alignment.CenterHorizontally else Alignment.Start)
+                                ) { textContent() }
+                            }
+                        }
+                    }
+                    if (title != null && text == null) {
+                        Box(Modifier.padding(bottom = 12.dp))
+                    }
+                    CleanDialogButtonRow(
+                        dismissButton = dismissButton,
+                        confirmButton = confirmButton,
+                        neutralButton = neutralButton
+                    )
                 }
-                if (title != null && text == null) {
-                    Box(Modifier.padding(bottom = 12.dp))
-                }
-                CleanDialogButtonRow(
-                    dismissButton = dismissButton,
-                    confirmButton = confirmButton,
-                    neutralButton = neutralButton
-                )
             }
         }
-    }
+    )
 }
 
 private val DialogButtonGap = 10.dp

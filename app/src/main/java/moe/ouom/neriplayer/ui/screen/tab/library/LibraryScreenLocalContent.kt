@@ -134,6 +134,9 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import org.burnoutcrew.reorderable.ItemPosition
+import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistNameError
+import moe.ouom.neriplayer.ui.i18n.asString
 @Composable
 internal fun LocalPlaylistList(
     playlists: List<LocalPlaylist>,
@@ -157,7 +160,7 @@ internal fun LocalPlaylistList(
     }
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var newName by rememberSaveable { mutableStateOf("") }
-    var nameError by rememberSaveable { mutableStateOf<String?>(null) }
+    var nameError by rememberSaveable { mutableStateOf<PlaylistNameError?>(null) }
     var selectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showDeleteSelectedConfirm by rememberSaveable { mutableStateOf(false) }
@@ -262,18 +265,16 @@ internal fun LocalPlaylistList(
         val trimmedInput = newName.trim().take(maxNameLength)
         val finalName = trimmedInput.ifBlank { defaultPlaylistName }.take(maxNameLength)
 
-        val favoritesName = composeResources.getString(CoreCommonR.string.favorite_my_music)
-        val localFilesName = composeResources.getString(CoreCommonR.string.local_files)
         if (FavoritesPlaylist.matches(finalName, context)) {
-            nameError = composeResources.getString(CoreCommonR.string.library_name_reserved, favoritesName)
+            nameError = PlaylistNameError.FAVORITES_RESERVED
             return false
         }
         if (LocalFilesPlaylist.matches(finalName, context)) {
-            nameError = composeResources.getString(CoreCommonR.string.library_name_reserved, localFilesName)
+            nameError = PlaylistNameError.LOCAL_FILES_RESERVED
             return false
         }
         if (playlists.any { it.name.equals(finalName, ignoreCase = true) }) {
-            nameError = composeResources.getString(CoreCommonR.string.library_name_exists)
+            nameError = PlaylistNameError.DUPLICATE
             return false
         }
 
@@ -425,7 +426,7 @@ internal fun LocalPlaylistList(
                         headlineContent = {
                             Text(
                                 pluralStringResource(
-                                    CoreCommonR.plurals.common_selected_count,
+                                    AppR.plurals.common_selected_count,
                                     selectedIds.size,
                                     selectedIds.size
                                 )
@@ -522,7 +523,7 @@ internal fun LocalPlaylistList(
                             )
                             if (nameError != null) {
                                 Text(
-                                    text = nameError.orEmpty(),
+                                    text = nameError?.message()?.asString().orEmpty(),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error
                                 )
@@ -552,11 +553,11 @@ internal fun LocalPlaylistList(
             if (showDeleteSelectedConfirm) {
                 AlertDialog(
                     onDismissRequest = { showDeleteSelectedConfirm = false },
-                    title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
+                    title = { Text(stringResource(AppR.string.dialog_confirm_delete)) },
                     text = {
                         Text(
                             pluralStringResource(
-                                CoreCommonR.plurals.library_delete_selected_confirm,
+                                AppR.plurals.library_delete_selected_confirm,
                                 selectedIds.size,
                                 selectedIds.size
                             )
@@ -619,7 +620,7 @@ internal fun LocalPlaylistList(
                         },
                         supportingContent = {
                             Text(
-                                pluralStringResource(CoreCommonR.plurals.library_song_count, system.songs.size, system.songs.size),
+                                pluralStringResource(AppR.plurals.library_song_count, system.songs.size, system.songs.size),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -731,7 +732,7 @@ internal fun LocalPlaylistList(
                         },
                         supportingContent = {
                             Text(
-                                pluralStringResource(CoreCommonR.plurals.library_song_count, pl.songs.size, pl.songs.size),
+                                pluralStringResource(AppR.plurals.library_song_count, pl.songs.size, pl.songs.size),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -913,7 +914,7 @@ internal fun LocalPlaylistList(
                         },
                         supportingContent = {
                             Text(
-                                pluralStringResource(CoreCommonR.plurals.library_song_count, system.songs.size, system.songs.size),
+                                pluralStringResource(AppR.plurals.library_song_count, system.songs.size, system.songs.size),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },

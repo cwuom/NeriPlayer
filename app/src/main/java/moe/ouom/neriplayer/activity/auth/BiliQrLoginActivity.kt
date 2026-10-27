@@ -40,7 +40,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.platform.bilibili.api.auth.BiliQrLoginClient
 import moe.ouom.neriplayer.data.model.bilibili.auth.BiliQrLoginSession
@@ -52,6 +51,7 @@ import moe.ouom.neriplayer.activity.enableNeriEdgeToEdge
 import org.json.JSONObject
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 class BiliQrLoginActivity : ComponentActivity() {
 
@@ -142,7 +142,7 @@ class BiliQrLoginActivity : ComponentActivity() {
         }
         appBar.addView(
             MaterialToolbar(this).apply {
-                title = getString(CoreCommonR.string.bili_qr_login)
+                title = getString(AppR.string.bili_qr_login)
                 setNavigationIcon(R.drawable.ic_arrow_back_24)
                 setNavigationOnClickListener { finish() }
                 setBackgroundColor(Color.TRANSPARENT)
@@ -159,14 +159,14 @@ class BiliQrLoginActivity : ComponentActivity() {
         val actionWidthPx = minOf(420.dp(), resources.displayMetrics.widthPixels - 48.dp()).coerceAtLeast(228.dp())
 
         val titleText = TextView(this).apply {
-            text = getString(CoreCommonR.string.bili_qr_login_title)
+            text = getString(AppR.string.bili_qr_login_title)
             gravity = Gravity.CENTER
             textSize = 24f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(onSurface)
         }
         val subtitleText = TextView(this).apply {
-            text = getString(CoreCommonR.string.bili_qr_login_subtitle)
+            text = getString(AppR.string.bili_qr_login_subtitle)
             gravity = Gravity.CENTER
             textSize = 14f
             setLineSpacing(2.dp().toFloat(), 1f)
@@ -216,7 +216,7 @@ class BiliQrLoginActivity : ComponentActivity() {
             setTextColor(onSurfaceVariant)
         }
         retryButton = MaterialButton(this).apply {
-            text = getString(CoreCommonR.string.bili_qr_login_retry)
+            text = getString(AppR.string.bili_qr_login_retry)
             cornerRadius = 20.dp()
             minHeight = 52.dp()
             insetTop = 0
@@ -226,7 +226,7 @@ class BiliQrLoginActivity : ComponentActivity() {
             setOnClickListener { startQrLogin() }
         }
         webFallbackButton = MaterialButton(this).apply {
-            text = getString(CoreCommonR.string.bili_qr_login_web_fallback)
+            text = getString(AppR.string.bili_qr_login_web_fallback)
             cornerRadius = 20.dp()
             minHeight = 50.dp()
             insetTop = 0
@@ -284,15 +284,15 @@ class BiliQrLoginActivity : ComponentActivity() {
         NPLogger.d(LOG_TAG, "Start QR login")
         pollJob = lifecycleScope.launch {
             setLoadingState(true)
-            setStatus(getString(CoreCommonR.string.bili_qr_login_loading))
-            hintText.text = getString(CoreCommonR.string.bili_qr_login_hint)
+            setStatus(getString(AppR.string.bili_qr_login_loading))
+            hintText.text = getString(AppR.string.bili_qr_login_hint)
             qrImage.setImageDrawable(null)
 
             val session = runCatching {
                 withContext(Dispatchers.IO) { qrClient.createSession() }
             }.getOrElse { error ->
                 setLoadingState(false)
-                setErrorStatus(getString(CoreCommonR.string.bili_qr_login_failed, error.readableMessage()))
+                setErrorStatus(getString(AppR.string.bili_qr_login_failed, error.readableMessage()))
                 NPLogger.w(LOG_TAG, "Create QR login session failed", error)
                 return@launch
             }
@@ -303,7 +303,7 @@ class BiliQrLoginActivity : ComponentActivity() {
             }
             qrImage.setImageBitmap(bitmap)
             setLoadingState(false)
-            setStatus(getString(CoreCommonR.string.bili_qr_login_waiting))
+            setStatus(getString(AppR.string.bili_qr_login_waiting))
             pollQrLogin(session)
         }
     }
@@ -315,7 +315,7 @@ class BiliQrLoginActivity : ComponentActivity() {
             val check = runCatching {
                 withContext(Dispatchers.IO) { qrClient.checkLogin(session) }
             }.getOrElse { error ->
-                setErrorStatus(getString(CoreCommonR.string.bili_qr_login_failed, error.readableMessage()))
+                setErrorStatus(getString(AppR.string.bili_qr_login_failed, error.readableMessage()))
                 NPLogger.w(LOG_TAG, "Check QR login failed", error)
                 return
             }
@@ -325,20 +325,20 @@ class BiliQrLoginActivity : ComponentActivity() {
             )
 
             when (check.code) {
-                86101 -> setStatus(getString(CoreCommonR.string.bili_qr_login_waiting))
-                86090 -> setStatus(getString(CoreCommonR.string.bili_qr_login_scanned))
+                86101 -> setStatus(getString(AppR.string.bili_qr_login_waiting))
+                86090 -> setStatus(getString(AppR.string.bili_qr_login_scanned))
                 0 -> {
                     finishWithCookies(check.cookies)
                     return
                 }
                 86038 -> {
-                    setErrorStatus(getString(CoreCommonR.string.bili_qr_login_expired))
+                    setErrorStatus(getString(AppR.string.bili_qr_login_expired))
                     return
                 }
                 else -> {
                     val message = check.message.ifBlank { "code=${check.code}" }
                     NPLogger.w(LOG_TAG, "Unexpected QR status code=${check.code} message=$message")
-                    setErrorStatus(getString(CoreCommonR.string.bili_qr_login_failed, message))
+                    setErrorStatus(getString(AppR.string.bili_qr_login_failed, message))
                     return
                 }
             }
@@ -348,7 +348,7 @@ class BiliQrLoginActivity : ComponentActivity() {
 
     private fun finishWithCookies(cookies: Map<String, String>) {
         if (!shouldAutoCompleteBiliWebLogin(cookies)) {
-            setErrorStatus(getString(CoreCommonR.string.bili_qr_login_cookie_incomplete))
+            setErrorStatus(getString(AppR.string.bili_qr_login_cookie_incomplete))
             NPLogger.w(LOG_TAG, "QR login confirmed but cookie is incomplete, keys=${cookies.keys}")
             return
         }

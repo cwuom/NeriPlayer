@@ -35,6 +35,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class AuthStorageLoginWarningTest {
@@ -221,7 +222,7 @@ class AuthStorageLoginWarningTest {
                     animateColors = false
                 ) {
                     SettingsCookieLoginSheet(
-                        title = string(CoreCommonR.string.platform_bilibili),
+                        title = string(AppR.string.platform_bilibili),
                         initialTab = initialTab,
                         inlineMsg = inlineMessage.value,
                         onInlineMsgChange = { inlineMessage.value = it },

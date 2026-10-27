@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component.backup
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
@@ -122,6 +123,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.WebDavCleartextWarning
 import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeSetting
 import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeWarning
 import moe.ouom.neriplayer.ui.sync.upgrade.rememberSyncProtocolUpgradeViewModel
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun SettingsBackupRestoreSection(
@@ -169,6 +171,7 @@ internal fun SettingsBackupRestoreSection(
 
     val content: @Composable () -> Unit = {
         val context = androidx.compose.ui.platform.LocalContext.current
+        val applicationContext = context.applicationContext
         val syncUpgradeVm = rememberSyncProtocolUpgradeViewModel()
         val syncUpgradeState by syncUpgradeVm.uiState.collectAsStateWithLifecycleCompat()
         val needsGitHubState = shouldShowCard(2) || shouldShowCard(4)
@@ -230,30 +233,30 @@ internal fun SettingsBackupRestoreSection(
         var pendingDataSaverMode by remember { mutableStateOf<Boolean?>(null) }
 
         githubVm?.let { viewModel ->
-            LaunchedEffect(viewModel, context) {
+            LaunchedEffect(viewModel, applicationContext) {
                 withContext(Dispatchers.IO) {
-                    viewModel.initialize(context)
+                    viewModel.initialize(applicationContext)
                 }
             }
         }
         webDavVm?.let { viewModel ->
-            LaunchedEffect(viewModel, context) {
+            LaunchedEffect(viewModel, applicationContext) {
                 withContext(Dispatchers.IO) {
-                    viewModel.initialize(context)
+                    viewModel.initialize(applicationContext)
                 }
             }
         }
         LaunchedEffect(
             needsPlayHistoryMode,
             needsDataSaverMode,
-            context,
+            applicationContext,
             configTransferUiState.isImporting,
             configTransferUiState.lastImportSuccess
         ) {
             if (needsPlayHistoryMode || needsDataSaverMode) {
                 val snapshot = withContext(Dispatchers.IO) {
                     loadBackupSyncPreferenceSnapshot(
-                        context = context.applicationContext,
+                        context = applicationContext,
                         needsPlayHistoryMode = needsPlayHistoryMode,
                         needsDataSaverMode = needsDataSaverMode
                     )
@@ -267,8 +270,8 @@ internal fun SettingsBackupRestoreSection(
             }
             if (!configTransferUiState.isImporting && configTransferUiState.lastImportSuccess == true) {
                 withContext(Dispatchers.IO) {
-                    githubVm?.initialize(context)
-                    webDavVm?.initialize(context)
+                    githubVm?.initialize(applicationContext)
+                    webDavVm?.initialize(applicationContext)
                 }
                 pendingDataSaverMode = null
             }
@@ -484,31 +487,31 @@ internal fun SettingsBackupRestoreSection(
             backupRestoreUiState.exportProgress?.let { progress ->
                 ProgressStatusItem(
                     title = stringResource(CoreCommonR.string.playlist_export_progress),
-                    message = progress
+                    message = progress.asString()
                 )
             }
             backupRestoreUiState.importProgress?.let { progress ->
                 ProgressStatusItem(
                     title = stringResource(CoreCommonR.string.playlist_import_progress),
-                    message = progress
+                    message = progress.asString()
                 )
             }
             configTransferUiState.exportProgress?.let { progress ->
                 ProgressStatusItem(
                     title = stringResource(CoreCommonR.string.settings_config_export_progress),
-                    message = progress
+                    message = progress.asString()
                 )
             }
             configTransferUiState.importProgress?.let { progress ->
                 ProgressStatusItem(
                     title = stringResource(CoreCommonR.string.settings_config_import_progress),
-                    message = progress
+                    message = progress.asString()
                 )
             }
             backupRestoreUiState.analysisProgress?.let { progress ->
                 ProgressStatusItem(
                     title = stringResource(CoreCommonR.string.sync_analysis_progress),
-                    message = progress
+                    message = progress.asString()
                 )
             }
 
@@ -530,7 +533,7 @@ internal fun SettingsBackupRestoreSection(
                         } else {
                             stringResource(CoreCommonR.string.settings_export_failed)
                         },
-                        message = message,
+                        message = message.asString(),
                         isSuccess = backupRestoreUiState.lastExportSuccess == true,
                         onClose = onClearExportStatus
                     )
@@ -555,7 +558,7 @@ internal fun SettingsBackupRestoreSection(
                         } else {
                             stringResource(CoreCommonR.string.settings_import_failed)
                         },
-                        message = message,
+                        message = message.asString(),
                         isSuccess = backupRestoreUiState.lastImportSuccess == true,
                         onClose = onClearImportStatus
                     )
@@ -580,7 +583,7 @@ internal fun SettingsBackupRestoreSection(
                         } else {
                             stringResource(CoreCommonR.string.settings_config_export_failed)
                         },
-                        message = message,
+                        message = message.asString(),
                         isSuccess = configTransferUiState.lastExportSuccess == true,
                         onClose = onClearConfigExportStatus
                     )
@@ -605,7 +608,7 @@ internal fun SettingsBackupRestoreSection(
                         } else {
                             stringResource(CoreCommonR.string.settings_config_import_failed)
                         },
-                        message = message,
+                        message = message.asString(),
                         isSuccess = configTransferUiState.lastImportSuccess == true,
                         onClose = onClearConfigImportStatus
                     )
@@ -986,7 +989,7 @@ internal fun SettingsBackupRestoreSection(
                     )
                     githubState.errorMessage?.let { error ->
                         SyncMessageCard(
-                            message = error,
+                            message = error.asString(),
                             isSuccess = false,
                             onClose = { githubVm?.clearMessages() }
                         )
@@ -994,7 +997,7 @@ internal fun SettingsBackupRestoreSection(
 
                     githubState.successMessage?.let { message ->
                         SyncMessageCard(
-                            message = message,
+                            message = message.asString(),
                             isSuccess = true,
                             onClose = { githubVm?.clearMessages() }
                         )
@@ -1002,7 +1005,7 @@ internal fun SettingsBackupRestoreSection(
 
                     webDavState.errorMessage?.let { error ->
                         SyncMessageCard(
-                            message = error,
+                            message = error.asString(),
                             isSuccess = false,
                             onClose = { webDavVm?.clearMessages() }
                         )
@@ -1010,7 +1013,7 @@ internal fun SettingsBackupRestoreSection(
 
                     webDavState.successMessage?.let { message ->
                         SyncMessageCard(
-                            message = message,
+                            message = message.asString(),
                             isSuccess = true,
                             onClose = { webDavVm?.clearMessages() }
                         )
@@ -1244,7 +1247,7 @@ private fun playHistoryUpdateModeSummary(
             val intervalMinutes = mode.intervalMinutes
                 ?: return stringResource(CoreCommonR.string.settings_update_immediate)
             pluralStringResource(
-                CoreCommonR.plurals.settings_update_every_minutes,
+                AppR.plurals.settings_update_every_minutes,
                 intervalMinutes,
                 intervalMinutes
             )
@@ -1264,7 +1267,7 @@ private fun playHistoryUpdateModeTitle(
             val intervalMinutes = mode.intervalMinutes
                 ?: return stringResource(CoreCommonR.string.sync_after_play)
             pluralStringResource(
-                CoreCommonR.plurals.sync_every_minutes,
+                AppR.plurals.sync_every_minutes,
                 intervalMinutes,
                 intervalMinutes
             )
@@ -1284,7 +1287,7 @@ private fun playHistoryUpdateModeDescription(
             val intervalMinutes = mode.intervalMinutes
                 ?: return stringResource(CoreCommonR.string.sync_after_play_desc)
             pluralStringResource(
-                CoreCommonR.plurals.sync_every_minutes_desc,
+                AppR.plurals.sync_every_minutes_desc,
                 intervalMinutes,
                 intervalMinutes
             )

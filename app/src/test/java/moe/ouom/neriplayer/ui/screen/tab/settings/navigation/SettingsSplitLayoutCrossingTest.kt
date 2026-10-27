@@ -4,7 +4,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
@@ -27,7 +26,6 @@ class SettingsSplitLayoutCrossingTest {
         splitLayout = initialSplit
         composeRule.setContent {
             navigation = rememberSettingsNavigationState(
-                context = LocalContext.current,
                 listState = rememberLazyListState(),
                 dynamicColor = false,
                 mobileDataFollowDefaultAudioQuality = false,

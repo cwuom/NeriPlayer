@@ -128,6 +128,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -549,7 +550,7 @@ fun BiliPlaylistDetailScreen(
                     title = {
                         Text(
                             pluralStringResource(
-                                CoreCommonR.plurals.common_selected_count,
+                                AppR.plurals.common_selected_count,
                                 selectedIds.size,
                                 selectedIds.size
                             )
@@ -638,7 +639,7 @@ fun BiliPlaylistDetailScreen(
                                     displayName = displayHeader.title,
                                     coverUrl = displayHeaderCoverUrl,
                                     subtitle = pluralStringResource(
-                                        CoreCommonR.plurals.bili_content_count,
+                                        AppR.plurals.bili_content_count,
                                         displayHeader.count,
                                         displayHeader.count
                                     ),
@@ -715,7 +716,7 @@ fun BiliPlaylistDetailScreen(
                                         ) {
                                             CircularProgressIndicator()
                                             Spacer(modifier = Modifier.width(12.dp))
-                                            Text(stringResource(CoreCommonR.string.bili_loading_favorites))
+                                            Text(stringResource(AppR.string.bili_loading_favorites))
                                         }
                                     }
                                 }
@@ -775,7 +776,7 @@ fun BiliPlaylistDetailScreen(
                                                     } catch (e: CancellationException) {
                                                         throw e
                                                     } catch (e: Exception) {
-                                                        NPLogger.e("BiliPlaylistDetail", composeResources.getString(CoreCommonR.string.bili_get_parts_failed), e)
+                                                        NPLogger.e("BiliPlaylistDetail", composeResources.getString(AppR.string.bili_get_parts_failed), e)
                                                     }
                                                 }
                                             },
@@ -998,7 +999,7 @@ fun BiliPlaylistDetailScreen(
                     title = {
                         Text(
                             pluralStringResource(
-                                CoreCommonR.plurals.common_selected_count,
+                                AppR.plurals.common_selected_count,
                                 selectedParts.size,
                                 selectedParts.size
                             )
@@ -1035,7 +1036,7 @@ fun BiliPlaylistDetailScreen(
                                         },
                                         enabled = selectedParts.isNotEmpty()
                                     ) {
-                                        Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(CoreCommonR.string.explore_export_to_playlist))
+                                        Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(AppR.string.explore_export_to_playlist))
                                     }
                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)

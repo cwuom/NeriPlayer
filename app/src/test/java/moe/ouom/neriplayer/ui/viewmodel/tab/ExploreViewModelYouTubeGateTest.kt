@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
@@ -39,16 +40,16 @@ class ExploreViewModelYouTubeGateTest {
             searchItems = listOf(ExploreSearchResult.Song(result)),
             searchHasMore = true,
             searchLoadingMore = true,
-            searchLoadMoreError = "temporary error",
+            searchLoadMoreError = UiText.Literal("temporary error"),
             searchPage = 3,
             searchKeyword = "song",
             searchDisplayQuery = "song"
         )
 
-        val blocked = state.withNeteaseAuthRequired("login required")
+        val blocked = state.withNeteaseAuthRequired(UiText.Literal("login required"))
 
         assertFalse(blocked.searching)
-        assertEquals("login required", blocked.searchError)
+        assertEquals(UiText.Literal("login required"), blocked.searchError)
         assertTrue(blocked.searchResults.isEmpty())
         assertTrue(blocked.searchItems.isEmpty())
         assertFalse(blocked.searchHasMore)
@@ -65,9 +66,9 @@ class ExploreViewModelYouTubeGateTest {
             selectedSearchSource = SearchSource.BILIBILI,
             searching = true,
             searchResults = listOf(result),
-            searchError = "existing error",
+            searchError = UiText.Literal("existing error"),
             ytMusicPlaylistsLoading = true,
-            ytMusicPlaylistsError = "YouTube error"
+            ytMusicPlaylistsError = UiText.Literal("YouTube error")
         )
 
         val disabled = state.withYouTubeDisabled()
@@ -75,7 +76,7 @@ class ExploreViewModelYouTubeGateTest {
         assertEquals(SearchSource.BILIBILI, disabled.selectedSearchSource)
         assertTrue(disabled.searching)
         assertEquals(listOf(result), disabled.searchResults)
-        assertEquals("existing error", disabled.searchError)
+        assertEquals(UiText.Literal("existing error"), disabled.searchError)
         assertFalse(disabled.ytMusicPlaylistsLoading)
         assertNull(disabled.ytMusicPlaylistsError)
     }
@@ -86,7 +87,7 @@ class ExploreViewModelYouTubeGateTest {
             selectedSearchSource = SearchSource.YOUTUBE_MUSIC,
             searching = true,
             searchResults = listOf(result),
-            searchError = "YouTube error"
+            searchError = UiText.Literal("YouTube error")
         )
 
         val disabled = state.withYouTubeDisabled()

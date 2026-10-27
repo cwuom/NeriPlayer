@@ -18,7 +18,6 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.cache.archive.BiliArchiveContentCache
 import moe.ouom.neriplayer.data.model.bilibili.cache.archive.CachedBiliArchiveVideo
 import moe.ouom.neriplayer.data.model.bilibili.cache.favorite.BiliFavoriteFolderContentCache
@@ -48,6 +47,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.mock
+import moe.ouom.neriplayer.data.model.playlist.PlaylistLoadFailure
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BiliPlaylistDetailFailureTest {
@@ -87,7 +87,7 @@ class BiliPlaylistDetailFailureTest {
         val failed = awaitStopped(vm)
         assertNotNull(failed.error)
         assertTrue(failed.videos.isEmpty())
-        assertFalse(failed.error.orEmpty().contains("<html>"))
+        assertEquals(PlaylistLoadFailure.Http(412), failed.error)
         val count = contentRequests().size
 
         vm.refresh()
@@ -253,7 +253,7 @@ class BiliPlaylistDetailFailureTest {
         val state = awaitStopped(vm)
         awaitJobs(vm)
 
-        assertEquals(application.getString(CoreCommonR.string.playlist_error_offline_no_cache), state.error)
+        assertEquals(PlaylistLoadFailure.Offline, state.error)
         assertTrue(state.videos.isEmpty())
         assertFalse(state.hasMore)
         assertTrue(requests.isEmpty())

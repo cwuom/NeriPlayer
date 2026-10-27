@@ -82,6 +82,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -209,6 +210,7 @@ import moe.ouom.neriplayer.ui.screen.playback.resolveListenTogetherProgressSeekE
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
 import kotlin.time.Duration.Companion.milliseconds
 import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
+import moe.ouom.neriplayer.R as AppR
 
 private const val LyricsPageTransitionDurationMs = 300
 private const val CoverSourceBadgeRevealBufferMs = 120
@@ -703,7 +705,7 @@ fun NowPlayingScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var detailSong by remember { mutableStateOf<SongItem?>(null) }
     var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var pendingSyncConfirmLabel by remember { mutableStateOf("") }
+    var pendingSyncConfirmLabel by remember { mutableIntStateOf(CoreCommonR.string.favorite_add) }
 
     val screenScope = rememberCoroutineScope()
     val toggleImmersiveMode: () -> Unit = {
@@ -727,7 +729,9 @@ fun NowPlayingScreen(
                 saveCoverToPictures(
                     context = context,
                     imageUrl = actualCoverUrl,
-                    suggestedName = "${song.displayArtist()} - ${song.displayName()} 封面"
+                    suggestedName = composeResources.getString(
+                        AppR.string.media_cover_file_name, song.displayArtist(), song.displayName()
+                    )
                 ).onSuccess { fileName ->
                     snackbarHostState.showNeriSnackbar(
                         composeResources.getString(CoreCommonR.string.cover_download_success, fileName)
@@ -1025,7 +1029,7 @@ fun NowPlayingScreen(
 
     fun launchWithLocalSyncWarning(
         song: SongItem?,
-        actionLabel: String,
+        actionLabel: Int,
         warnForLocalSync: Boolean = true,
         action: () -> Unit
     ) {
@@ -1458,7 +1462,7 @@ fun NowPlayingScreen(
                                     val willFav = nextFavoriteStateAfterTap(isFavorite)
                                     launchWithLocalSyncWarning(
                                         song = song,
-                                        actionLabel = composeResources.getString(CoreCommonR.string.favorite_add),
+                                        actionLabel = CoreCommonR.string.favorite_add,
                                         warnForLocalSync = shouldConfirmFavoriteSync(song, willFav, context)
                                     ) {
                                         favOverride = willFav
@@ -1923,7 +1927,7 @@ fun NowPlayingScreen(
                                                 .clickable {
                                                     launchWithLocalSyncWarning(
                                                         song = currentSong,
-                                                        actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to),
+                                                        actionLabel = CoreCommonR.string.playlist_add_to,
                                                         warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(pl, context) ||
                                                             shouldConfirmFavoriteSync(currentSong, adding = true, context = context)
                                                     ) {
@@ -1938,7 +1942,7 @@ fun NowPlayingScreen(
                                             Spacer(modifier = Modifier.weight(1f))
                                             Text(
                                                 pluralStringResource(
-                                                    CoreCommonR.plurals.nowplaying_song_count_format,
+                                                    AppR.plurals.nowplaying_song_count_format,
                                                     pl.songs.size,
                                                     pl.songs.size
                                                 ),
@@ -1967,15 +1971,13 @@ fun NowPlayingScreen(
 
                         pendingSyncConfirmAction?.let { action ->
                             LocalSongSyncConfirmDialog(
-                                actionLabel = pendingSyncConfirmLabel,
+                                actionLabel = stringResource(pendingSyncConfirmLabel),
                                 onConfirm = {
                                     pendingSyncConfirmAction = null
-                                    pendingSyncConfirmLabel = ""
                                     action()
                                 },
                                 onDismiss = {
                                     pendingSyncConfirmAction = null
-                                    pendingSyncConfirmLabel = ""
                                 }
                             )
                         }

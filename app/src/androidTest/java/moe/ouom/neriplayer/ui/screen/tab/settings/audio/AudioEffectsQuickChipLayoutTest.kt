@@ -28,7 +28,6 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSound
@@ -41,6 +40,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class AudioEffectsQuickChipLayoutTest {
@@ -128,18 +128,18 @@ class AudioEffectsQuickChipLayoutTest {
                 editor = editor
             )
         }
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.audio_effects_filter_peak))
+        composeRule.onNodeWithText(context.getString(AppR.string.audio_effects_filter_peak))
             .performScrollTo().performClick()
         settle()
 
         val labels = listOf(
-            CoreCommonR.string.audio_effects_filter_peak,
-            CoreCommonR.string.audio_effects_filter_low_shelf,
-            CoreCommonR.string.audio_effects_filter_high_shelf,
-            CoreCommonR.string.audio_effects_filter_low_pass,
-            CoreCommonR.string.audio_effects_filter_high_pass,
-            CoreCommonR.string.audio_effects_filter_notch,
-            CoreCommonR.string.audio_effects_filter_band_pass
+            AppR.string.audio_effects_filter_peak,
+            AppR.string.audio_effects_filter_low_shelf,
+            AppR.string.audio_effects_filter_high_shelf,
+            AppR.string.audio_effects_filter_low_pass,
+            AppR.string.audio_effects_filter_high_pass,
+            AppR.string.audio_effects_filter_notch,
+            AppR.string.audio_effects_filter_band_pass
         )
         assertWrappedRows(
             "parametric types",

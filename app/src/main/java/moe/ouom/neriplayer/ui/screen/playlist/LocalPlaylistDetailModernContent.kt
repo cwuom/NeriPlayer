@@ -163,6 +163,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 
 @Composable
@@ -241,7 +242,7 @@ internal fun LocalPlaylistDetailModernContent(
                 snackbarHostState.currentSnackbarData?.dismiss()
                 val action = snackbarHostState.showSnackbar(
                     message = composeResources.getString(
-                        CoreCommonR.string.playlist_insert_success,
+                        AppR.string.playlist_insert_success,
                         preview.startPosition
                     ),
                     actionLabel = composeResources.getString(CoreCommonR.string.playlist_batch_export_undo),
@@ -252,7 +253,7 @@ internal fun LocalPlaylistDetailModernContent(
                 scrollJob.cancel()
                 if (insertInProgress || blockSync || currentContentScope.playlistId != playlistId) {
                     snackbarHostState.showNeriSnackbar(
-                        composeResources.getString(CoreCommonR.string.playlist_insert_undo_stale)
+                        composeResources.getString(AppR.string.playlist_insert_undo_stale)
                     )
                     return@feedback
                 }
@@ -269,9 +270,9 @@ internal fun LocalPlaylistDetailModernContent(
                     insertInProgress = false
                 }
                 val undoMessage = when {
-                    undo.isFailure -> CoreCommonR.string.playlist_insert_undo_failed
-                    undo.getOrNull() != true -> CoreCommonR.string.playlist_insert_undo_stale
-                    else -> CoreCommonR.string.playlist_insert_undone
+                    undo.isFailure -> AppR.string.playlist_insert_undo_failed
+                    undo.getOrNull() != true -> AppR.string.playlist_insert_undo_stale
+                    else -> AppR.string.playlist_insert_undone
                 }
                 snackbarHostState.showNeriSnackbar(composeResources.getString(undoMessage))
             }
@@ -548,7 +549,7 @@ internal fun LocalPlaylistDetailModernContent(
                             title = {
                                 Text(
                                     pluralStringResource(
-                                        CoreCommonR.plurals.common_selected_count,
+                                        AppR.plurals.common_selected_count,
                                         selectedKeysState.value.size,
                                         selectedKeysState.value.size
                                     ),
@@ -1318,7 +1319,7 @@ internal fun LocalPlaylistDetailModernContent(
                                     )
                                 } else {
                                     pluralStringResource(
-                                        CoreCommonR.plurals.local_playlist_delete_songs_confirm,
+                                        AppR.plurals.local_playlist_delete_songs_confirm,
                                         count,
                                         count
                                     )
@@ -1340,7 +1341,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                 val message = when {
                                                     result.physicalCleanupPending -> {
                                                         context.resources.getQuantityString(
-                                                            CoreCommonR.plurals.local_files_delete_downloaded_cleanup_pending,
+                                                            AppR.plurals.local_files_delete_downloaded_cleanup_pending,
                                                             result.deletedCount + result.notDeletedCount,
                                                             result.deletedCount + result.notDeletedCount
                                                         )
@@ -1348,7 +1349,7 @@ internal fun LocalPlaylistDetailModernContent(
 
                                                     result.deletedCount > 0 && result.notDeletedCount == 0 -> {
                                                         context.resources.getQuantityString(
-                                                            CoreCommonR.plurals.local_files_delete_downloaded_success,
+                                                            AppR.plurals.local_files_delete_downloaded_success,
                                                             result.deletedCount,
                                                             result.deletedCount
                                                         )
@@ -1450,7 +1451,7 @@ internal fun LocalPlaylistDetailModernContent(
                             )
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
+                                actionLabel = CoreCommonR.string.playlist_add_to
                             ) {
                                 scope.launchLocalPlaylistMutation(
                                     operation = "createPlaylistFromLocalPlaylist",
@@ -1475,7 +1476,7 @@ internal fun LocalPlaylistDetailModernContent(
                             )
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to),
+                                actionLabel = CoreCommonR.string.playlist_add_to,
                                 warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(target, context) ||
                                     shouldConfirmFavoriteSync(songs, context)
                             ) {
@@ -1515,7 +1516,7 @@ internal fun LocalPlaylistDetailModernContent(
                             val songs = tabSongs
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
+                                actionLabel = CoreCommonR.string.playlist_add_to
                             ) {
                                 scope.launchLocalPlaylistMutation(
                                     operation = "createPlaylistFromLocalPlaylistAll",
@@ -1537,7 +1538,7 @@ internal fun LocalPlaylistDetailModernContent(
                             val songs = tabSongs
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to),
+                                actionLabel = CoreCommonR.string.playlist_add_to,
                                 warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(target, context) ||
                                     shouldConfirmFavoriteSync(songs, context)
                             ) {
@@ -1587,13 +1588,13 @@ internal fun LocalPlaylistDetailModernContent(
                             Text(
                                 "${
                                     pluralStringResource(
-                                        CoreCommonR.plurals.local_playlist_sync_netease_partial_confirm_unsupported,
+                                        AppR.plurals.local_playlist_sync_netease_partial_confirm_unsupported,
                                         pending.unsupportedCount,
                                         pending.unsupportedCount
                                     )
                                 } ${
                                     pluralStringResource(
-                                        CoreCommonR.plurals.local_playlist_sync_netease_partial_confirm_target,
+                                        AppR.plurals.local_playlist_sync_netease_partial_confirm_target,
                                         supportedCount,
                                         supportedCount,
                                         pending.target.name
@@ -1663,15 +1664,13 @@ internal fun LocalPlaylistDetailModernContent(
 
                 pendingSyncConfirmAction?.let { action ->
                     LocalSongSyncConfirmDialog(
-                        actionLabel = pendingSyncConfirmLabel,
+                        actionLabel = stringResource(pendingSyncConfirmLabel),
                         onConfirm = {
                             pendingSyncConfirmAction = null
-                            pendingSyncConfirmLabel = ""
                             action()
                         },
                         onDismiss = {
                             pendingSyncConfirmAction = null
-                            pendingSyncConfirmLabel = ""
                         }
                     )
                 }
@@ -1692,7 +1691,7 @@ internal fun LocalPlaylistDetailModernContent(
                                 showInsertDialog = false
                                 scope.launch {
                                     snackbarHostState.showNeriSnackbar(
-                                        composeResources.getString(CoreCommonR.string.playlist_insert_stale)
+                                        composeResources.getString(AppR.string.playlist_insert_stale)
                                     )
                                 }
                             } else {
@@ -1706,8 +1705,8 @@ internal fun LocalPlaylistDetailModernContent(
                                     onResult = { result ->
                                         insertInProgress = false
                                         val message = when {
-                                            result.isFailure -> CoreCommonR.string.playlist_insert_failed
-                                            result.getOrNull() != true -> CoreCommonR.string.playlist_insert_stale
+                                            result.isFailure -> AppR.string.playlist_insert_failed
+                                            result.getOrNull() != true -> AppR.string.playlist_insert_stale
                                             else -> null
                                         }
                                         if (message != null) {

@@ -45,7 +45,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.model.stats.TrackStat
@@ -79,6 +78,7 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackStatsMetricGlassTest {
@@ -366,7 +366,7 @@ class PlaybackStatsMetricGlassTest {
     private fun fixtureImage(): ImageBitmap = composeRule.onNodeWithTag(RootTag).captureToImage()
 
     private fun periodLabel(period: PlaybackStatsPeriod): String = ApplicationProvider.getApplicationContext<Context>()
-        .getString(if (period == PlaybackStatsPeriod.MONTH) CoreCommonR.string.stats_period_month else CoreCommonR.string.stats_period_year)
+        .getString(if (period == PlaybackStatsPeriod.MONTH) AppR.string.stats_period_month else AppR.string.stats_period_year)
 
     private fun colorDistance(first: Color, second: Color): Float =
         max(max(abs(first.red - second.red), abs(first.green - second.green)), abs(first.blue - second.blue))

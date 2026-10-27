@@ -50,6 +50,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class SongEncyclopediaArtistLayoutTest {
@@ -148,7 +149,7 @@ class SongEncyclopediaArtistLayoutTest {
             generateSequence(follow) { it.parent }.any { it.id == navigation.id }
         )
 
-        val metaText = context.getString(CoreCommonR.string.encyclopedia_artist_bio_note, artist.albumSize, artist.musicSize)
+        val metaText = context.getString(AppR.string.encyclopedia_artist_bio_note, artist.albumSize, artist.musicSize)
         val meta = composeRule.onNodeWithText(metaText, useUnmergedTree = true).fetchSemanticsNode()
         assertEquals("姓名与数量应保持紧凑的2dp间距", 2f * pixelsPerDp, meta.boundsInRoot.top - name.boundsInRoot.bottom, 1f)
         assertEquals(

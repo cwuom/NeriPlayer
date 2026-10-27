@@ -55,6 +55,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.media.displayArtist
@@ -65,11 +67,12 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatDuration
 import java.io.File
+import moe.ouom.neriplayer.R as AppR
 @Composable
 internal fun NeteaseRemotePlaylistPickerDialog(
     playlists: List<NeteaseRemotePlaylist>,
     loading: Boolean,
-    errorMessage: String?,
+    errorMessage: UiText?,
     onPlaylistClick: (NeteaseRemotePlaylist) -> Unit,
     onDismissRequest: () -> Unit
 ) {
@@ -97,7 +100,7 @@ internal fun NeteaseRemotePlaylistPickerDialog(
                 }
                 errorMessage?.let { message ->
                     Text(
-                        text = message,
+                        text = message.asString(),
                         color = MaterialTheme.colorScheme.error
                     )
                 }
@@ -132,7 +135,7 @@ internal fun NeteaseRemotePlaylistPickerDialog(
                                     )
                                     Text(
                                         text = pluralStringResource(
-                                            CoreCommonR.plurals.local_playlist_sync_netease_track_count,
+                                            AppR.plurals.local_playlist_sync_netease_track_count,
                                             playlist.trackCount,
                                             playlist.trackCount
                                         ),

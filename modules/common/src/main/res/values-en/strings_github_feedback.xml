@@ -1,0 +1,8 @@
+<resources>
+    <plurals name="github_rate_limit_message">
+        <item quantity="one">GitHub rate limit reached. Sync progress is saved. Retry in about %1$d second. %2$s</item>
+        <item quantity="other">GitHub rate limit reached. Sync progress is saved. Retry in about %1$d seconds. %2$s</item>
+    </plurals>
+    <string name="github_rate_limit_continue">The next attempt will continue from the saved progress</string>
+    <string name="github_rate_limit_paused">Automatic retries are paused; try syncing again later</string>
+</resources>

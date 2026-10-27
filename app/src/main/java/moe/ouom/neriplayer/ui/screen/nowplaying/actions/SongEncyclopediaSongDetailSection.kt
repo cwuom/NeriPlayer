@@ -30,8 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.encyclopedia.SongEncyclopedia
+import moe.ouom.neriplayer.R as AppR
 
 private const val SONG_DETAIL_COLLAPSED_COUNT = 4
 
@@ -48,7 +48,7 @@ internal fun SongEncyclopediaSongDetailSection(data: SongEncyclopedia) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val visible = if (expanded) rows else rows.take(SONG_DETAIL_COLLAPSED_COUNT)
     SongEncyclopediaSectionCard(
-        titleRes = CoreCommonR.string.encyclopedia_section_song_detail,
+        titleRes = AppR.string.encyclopedia_section_song_detail,
         icon = Icons.Outlined.LibraryMusic
     ) {
         visible.forEach { (labelRes, value) -> SongEncyclopediaRow(labelRes, value) }
@@ -64,23 +64,23 @@ private fun buildSongDetailRows(data: SongEncyclopedia): List<Pair<Int, String>>
     val musicInfo = data.musicInfo
     if (musicInfo != null) {
         musicInfo.genres.takeIf { it.isNotEmpty() }?.let { genres ->
-            rows += CoreCommonR.string.encyclopedia_label_genres to genres.joinToString("、")
+            rows += AppR.string.encyclopedia_label_genres to genres.joinToString("、")
         }
         musicInfo.language?.takeIf { it.isNotBlank() }?.let { language ->
-            rows += CoreCommonR.string.encyclopedia_label_language to language
+            rows += AppR.string.encyclopedia_label_language to language
         }
         musicInfo.bpm?.takeIf { it > 0 }?.let { bpm ->
-            rows += CoreCommonR.string.encyclopedia_label_bpm to bpm.toString()
+            rows += AppR.string.encyclopedia_label_bpm to bpm.toString()
         }
     }
     data.basicInfo.album?.takeIf { it.isNotBlank() }?.let { album ->
-        rows += CoreCommonR.string.encyclopedia_label_album to album
+        rows += AppR.string.encyclopedia_label_album to album
     }
     data.publishTimeMs?.let { ms ->
-        rows += CoreCommonR.string.encyclopedia_label_publish_date to formatEncyclopediaDate(ms)
+        rows += AppR.string.encyclopedia_label_publish_date to formatEncyclopediaDate(ms)
     }
     data.albumCompany?.takeIf { it.isNotBlank() }?.let { company ->
-        rows += CoreCommonR.string.encyclopedia_label_company to company
+        rows += AppR.string.encyclopedia_label_company to company
     }
     return rows
 }

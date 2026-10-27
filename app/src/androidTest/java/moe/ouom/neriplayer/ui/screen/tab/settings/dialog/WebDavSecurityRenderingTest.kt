@@ -19,6 +19,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class WebDavSecurityRenderingTest {
@@ -70,20 +71,20 @@ class WebDavSecurityRenderingTest {
             }
         }
         val prefix = "webdav-${style.storageValue}-${if (dark) "dark" else "light"}"
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_warning)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_warning)).assertIsDisplayed()
         capture("$prefix-form")
         composeRule.onNodeWithText(string(CoreCommonR.string.webdav_validate_and_save)).performClick()
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_confirm_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_confirm_title)).assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(0, submissions) }
         capture("$prefix-confirmation")
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_cancel)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_cancel)).performClick()
         composeRule.runOnIdle { assertEquals(0, submissions) }
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_confirm_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_confirm_title)).assertDoesNotExist()
         capture("$prefix-cancelled")
 
         composeRule.onNodeWithText(string(CoreCommonR.string.webdav_validate_and_save)).performClick()
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_confirm)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_confirm)).performClick()
         composeRule.runOnIdle { assertEquals(1, submissions) }
     }
 

@@ -44,6 +44,7 @@ import moe.ouom.neriplayer.core.download.presentation.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.player.download.network.currentDownloadParallelism
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.R as AppR
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,7 +84,7 @@ fun BatchDownloadManagerSheet(
         )
 
         pendingTaskCount > 0 -> pluralStringResource(
-            CoreCommonR.plurals.download_tasks_count,
+            AppR.plurals.download_tasks_count,
             pendingTaskCount,
             pendingTaskCount
         )
@@ -93,7 +94,7 @@ fun BatchDownloadManagerSheet(
         )
 
         else -> pluralStringResource(
-            CoreCommonR.plurals.download_failed_songs_count,
+            AppR.plurals.download_failed_songs_count,
             failedTaskCount,
             failedTaskCount
         )

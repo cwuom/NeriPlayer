@@ -45,6 +45,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class StartupOnboardingLayoutTest {
@@ -153,8 +154,8 @@ class StartupOnboardingLayoutTest {
     @Test
     fun shortLandscape_largeFontKeepsRealPermissionActionsReachable() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val mediaTitle = context.getString(CoreCommonR.string.onboarding_permission_media_title)
-        val allowLabel = context.getString(CoreCommonR.string.onboarding_permission_allow)
+        val mediaTitle = context.getString(AppR.string.onboarding_permission_media_title)
+        val allowLabel = context.getString(AppR.string.onboarding_permission_allow)
         var mediaRequested = false
 
         setRealStepLayout(fontScale = 2f) {
@@ -176,7 +177,7 @@ class StartupOnboardingLayoutTest {
     @Test
     fun narrowLandscape_realPermissionActionsRemainReachableWithLargeFont() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val allowLabel = context.getString(CoreCommonR.string.onboarding_permission_allow)
+        val allowLabel = context.getString(AppR.string.onboarding_permission_allow)
         var mediaRequested = false
 
         setRealStepLayout(fontScale = 1.5f, width = 540.dp, height = 300.dp) {
@@ -250,11 +251,11 @@ class StartupOnboardingLayoutTest {
                         StartupOnboardingLayout(
                             header = {
                                 Text(
-                                    stringResource(CoreCommonR.string.onboarding_title),
+                                    stringResource(AppR.string.onboarding_title),
                                     style = MaterialTheme.typography.headlineSmall
                                 )
                                 Text(
-                                    stringResource(CoreCommonR.string.onboarding_subtitle),
+                                    stringResource(AppR.string.onboarding_subtitle),
                                     style = MaterialTheme.typography.bodyLarge
                                 )
                             },

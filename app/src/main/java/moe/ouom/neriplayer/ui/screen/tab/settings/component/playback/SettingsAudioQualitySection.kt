@@ -59,6 +59,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.R as AppR
 
 private const val NETEASE_LOSSLESS_QUALITY = "lossless"
 private const val NETEASE_HIRES_QUALITY = "hires"
@@ -472,7 +473,7 @@ private fun AudioQualityNoticeDialog(
 ) {
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(CoreCommonR.string.dialog_hint)) },
+        title = { Text(stringResource(AppR.string.dialog_hint)) },
         text = {
             Text(
                 stringResource(

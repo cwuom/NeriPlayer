@@ -19,7 +19,6 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.testutil.FittedTestViewport
@@ -32,6 +31,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class SongEncyclopediaArtistBriefTest {
@@ -77,7 +77,7 @@ class SongEncyclopediaArtistBriefTest {
 
         composeRule.runOnIdle { width.value = 160 }
         assertTrue(textLayout().hasVisualOverflow)
-        action(CoreCommonR.string.encyclopedia_action_expand).assertIsDisplayed()
+        action(AppR.string.encyclopedia_action_expand).assertIsDisplayed()
 
         composeRule.runOnIdle { width.value = 440 }
         assertCompleteBriefHasNoAction()
@@ -91,7 +91,7 @@ class SongEncyclopediaArtistBriefTest {
 
         composeRule.runOnIdle { fontScale.value = 2.2f }
         assertTrue(textLayout().hasVisualOverflow)
-        action(CoreCommonR.string.encyclopedia_action_expand).performScrollTo().assertIsDisplayed()
+        action(AppR.string.encyclopedia_action_expand).performScrollTo().assertIsDisplayed()
 
         composeRule.runOnIdle { fontScale.value = 1f }
         assertCompleteBriefHasNoAction()
@@ -103,7 +103,7 @@ class SongEncyclopediaArtistBriefTest {
         width.value = 160
         render(UiStyle.Clean, dark = false)
         assertTrue(textLayout().hasVisualOverflow)
-        action(CoreCommonR.string.encyclopedia_action_expand).performScrollTo().performClick()
+        action(AppR.string.encyclopedia_action_expand).performScrollTo().performClick()
 
         composeRule.runOnIdle { width.value = 440 }
         assertCompleteBriefHasNoAction()
@@ -111,7 +111,7 @@ class SongEncyclopediaArtistBriefTest {
         composeRule.runOnIdle { width.value = 160 }
         assertFalse(textLayout().hasVisualOverflow)
         assertTrue(textLayout().lineCount > 4)
-        action(CoreCommonR.string.encyclopedia_action_collapse).performScrollTo().performClick()
+        action(AppR.string.encyclopedia_action_collapse).performScrollTo().performClick()
         assertTrue(textLayout().hasVisualOverflow)
     }
 
@@ -119,12 +119,12 @@ class SongEncyclopediaArtistBriefTest {
     fun expandedBriefKeepsCollapseActionWhenWidthChangesAndStillExceedsFourLines() {
         brief.value = LONG_BRIEF
         render(UiStyle.Clean, dark = true)
-        action(CoreCommonR.string.encyclopedia_action_expand).performScrollTo().performClick()
+        action(AppR.string.encyclopedia_action_expand).performScrollTo().performClick()
 
         composeRule.runOnIdle { width.value = 240 }
         assertFalse(textLayout().hasVisualOverflow)
         assertTrue(textLayout().lineCount > 4)
-        action(CoreCommonR.string.encyclopedia_action_collapse).performScrollTo().performClick()
+        action(AppR.string.encyclopedia_action_collapse).performScrollTo().performClick()
         assertEquals(4, textLayout().lineCount)
         assertTrue(textLayout().hasVisualOverflow)
     }
@@ -133,7 +133,7 @@ class SongEncyclopediaArtistBriefTest {
     fun replacingExpandedBriefWithCompleteTextRemovesTheAction() {
         brief.value = LONG_BRIEF
         render(UiStyle.Material, dark = false)
-        action(CoreCommonR.string.encyclopedia_action_expand).performScrollTo().performClick()
+        action(AppR.string.encyclopedia_action_expand).performScrollTo().performClick()
 
         composeRule.runOnIdle { brief.value = SHORT_BRIEF }
         assertCompleteBriefHasNoAction()
@@ -150,20 +150,20 @@ class SongEncyclopediaArtistBriefTest {
         render(style, dark)
         assertTrue(textLayout().hasVisualOverflow)
         assertEquals(4, textLayout().lineCount)
-        action(CoreCommonR.string.encyclopedia_action_expand).performScrollTo().performClick()
+        action(AppR.string.encyclopedia_action_expand).performScrollTo().performClick()
         assertFalse(textLayout().hasVisualOverflow)
         assertEquals(6, textLayout().lineCount)
-        action(CoreCommonR.string.encyclopedia_action_collapse).performScrollTo().performClick()
+        action(AppR.string.encyclopedia_action_collapse).performScrollTo().performClick()
         assertTrue(textLayout().hasVisualOverflow)
         assertEquals(4, textLayout().lineCount)
-        action(CoreCommonR.string.encyclopedia_action_expand).assertExists()
+        action(AppR.string.encyclopedia_action_expand).assertExists()
     }
 
     private fun assertCompleteBriefHasNoAction() {
         assertFalse(textLayout().hasVisualOverflow)
         assertTrue(textLayout().lineCount <= 4)
-        action(CoreCommonR.string.encyclopedia_action_expand).assertDoesNotExist()
-        action(CoreCommonR.string.encyclopedia_action_collapse).assertDoesNotExist()
+        action(AppR.string.encyclopedia_action_expand).assertDoesNotExist()
+        action(AppR.string.encyclopedia_action_collapse).assertDoesNotExist()
     }
 
     private fun render(style: UiStyle, dark: Boolean) {
@@ -179,7 +179,7 @@ class SongEncyclopediaArtistBriefTest {
                 FittedTestViewport(width.value.dp, 640.dp, fontScale = fontScale.value) {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                         SongEncyclopediaSectionCard(
-                            titleRes = CoreCommonR.string.encyclopedia_section_artist,
+                            titleRes = AppR.string.encyclopedia_section_artist,
                             icon = Icons.Outlined.Person
                         ) {
                             SongEncyclopediaArtistBrief(

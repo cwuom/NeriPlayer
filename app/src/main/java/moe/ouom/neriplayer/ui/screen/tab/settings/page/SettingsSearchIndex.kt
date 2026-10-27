@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.page
 
-import android.content.Context
+import android.content.res.Resources
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSections
 import moe.ouom.neriplayer.ksp.annotations.SettingUiType
 import moe.ouom.neriplayer.common.search.SearchTextMatcher
 import moe.ouom.neriplayer.ui.settings.unavailableSettingKeys
+import moe.ouom.neriplayer.R as AppR
 
 internal data class SettingsSearchEntry(
     val id: String,
@@ -26,10 +27,10 @@ internal data class SettingsSearchScrollAnchor(
     val scrollOffset: Dp = 0.dp
 )
 
-internal fun buildSettingsSearchEntries(context: Context): List<SettingsSearchEntry> {
+internal fun buildSettingsSearchEntries(resources: Resources): List<SettingsSearchEntry> {
     val pageEntries = SettingsPage.entries.map { page ->
-        val title = context.safeString(page.titleRes)
-        val description = context.safeString(page.descriptionRes)
+        val title = resources.safeString(page.titleRes)
+        val description = resources.safeString(page.descriptionRes)
         SettingsSearchEntry(
             id = "page:${page.name}",
             page = page,
@@ -49,9 +50,9 @@ internal fun buildSettingsSearchEntries(context: Context): List<SettingsSearchEn
         }
         .mapNotNull { setting ->
             val page = setting.settingsPage() ?: return@mapNotNull null
-            val title = context.safeString(setting.titleRes)
-            val description = context.safeString(setting.descriptionRes)
-            val pageTitle = context.safeString(page.titleRes)
+            val title = resources.safeString(setting.titleRes)
+            val description = resources.safeString(setting.descriptionRes)
+            val pageTitle = resources.safeString(page.titleRes)
             SettingsSearchEntry(
                 id = "setting:${setting.keyName}",
                 page = page,
@@ -65,7 +66,7 @@ internal fun buildSettingsSearchEntries(context: Context): List<SettingsSearchEn
             )
         }
 
-    return pageEntries + settingEntries + manualSettingsSearchEntries(context)
+    return pageEntries + settingEntries + manualSettingsSearchEntries(resources)
 }
 
 internal fun searchSettingsEntries(
@@ -414,7 +415,7 @@ private fun SettingsPage.searchAliases(): List<String> {
     return PageSearchAliases[this].orEmpty()
 }
 
-internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchEntry> {
+internal fun manualSettingsSearchEntries(resources: Resources): List<SettingsSearchEntry> {
     fun entry(
         page: SettingsPage,
         titleRes: Int,
@@ -424,8 +425,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         targetId: String = "manual:$id",
         order: Int = page.ordinal * 100 + 80
     ): SettingsSearchEntry {
-        val title = context.safeString(titleRes)
-        val description = context.safeString(descriptionRes)
+        val title = resources.safeString(titleRes)
+        val description = resources.safeString(descriptionRes)
         return SettingsSearchEntry(
             id = "manual:$id",
             page = page,
@@ -807,45 +808,45 @@ private fun audioEffectsSearchEntries(entry: ManualSearchEntryFactory): List<Set
         entry(page, titleRes, descriptionRes, id, aliases, target, page.ordinal * 100 + offset)
     return listOf(
         audio(
-            CoreCommonR.string.audio_effects_eq_title, CoreCommonR.string.audio_effects_eq_desc, "audio_effects_eq",
+            AppR.string.audio_effects_eq_title, AppR.string.audio_effects_eq_desc, "audio_effects_eq",
             listOf("equalizer", "eq", "10 band", "junhengqi", "均衡", "频段"), 10
         ),
         audio(
-            CoreCommonR.string.audio_effects_presets_title, CoreCommonR.string.audio_effects_presets_desc,
+            AppR.string.audio_effects_presets_title, AppR.string.audio_effects_presets_desc,
             "audio_effects_presets", listOf("preset", "rock", "pop", "jazz", "yuzhi", "风格", "摇滚", "流行"), 12
         ),
         audio(
-            CoreCommonR.string.audio_effects_peq_title, CoreCommonR.string.audio_effects_peq_desc, "audio_effects_peq",
+            AppR.string.audio_effects_peq_title, AppR.string.audio_effects_peq_desc, "audio_effects_peq",
             listOf("autoeq", "parametric", "peq", "headphone", "erji", "jiaozheng", "耳机", "校正"), 14
         ),
         audio(
-            CoreCommonR.string.audio_effects_tone_title, CoreCommonR.string.audio_effects_tone_desc, "audio_effects_tone",
+            AppR.string.audio_effects_tone_title, AppR.string.audio_effects_tone_desc, "audio_effects_tone",
             listOf("bass", "treble", "virtual bass", "diyin", "gaoyin", "低音", "高音", "重低音"), 16
         ),
         audio(
-            CoreCommonR.string.audio_effects_space_title, CoreCommonR.string.audio_effects_space_desc,
+            AppR.string.audio_effects_space_title, AppR.string.audio_effects_space_desc,
             "audio_effects_space", listOf("reverb", "surround", "3d", "crossfeed", "width", "hunxiang", "环绕", "混响"), 18
         ),
         audio(
-            CoreCommonR.string.audio_effects_dynamics_title, CoreCommonR.string.audio_effects_dynamics_desc,
+            AppR.string.audio_effects_dynamics_title, AppR.string.audio_effects_dynamics_desc,
             "audio_effects_dynamics", listOf("compressor", "limiter", "loudness", "yasuo", "压缩", "破音", "响度"), 20
         ),
         audio(
-            CoreCommonR.string.audio_effects_speaker_title, CoreCommonR.string.audio_effects_speaker_desc,
+            AppR.string.audio_effects_speaker_title, AppR.string.audio_effects_speaker_desc,
             "audio_effects_speaker", listOf("speaker", "waifang", "yangshengqi", "外放", "扬声器", "喇叭"), 22
         ),
         audio(
-            CoreCommonR.string.audio_effects_speed_title, CoreCommonR.string.audio_effects_speed_desc,
+            AppR.string.audio_effects_speed_title, AppR.string.audio_effects_speed_desc,
             "audio_effects_speed", listOf("speed", "pitch", "nightcore", "beisu", "yindiao", "倍速", "变调"), 24
         ),
         audio(
-            CoreCommonR.string.audio_effects_power_mode, CoreCommonR.string.audio_effects_power_note,
+            AppR.string.audio_effects_power_mode, AppR.string.audio_effects_power_note,
             "audio_effects_power", listOf("battery", "power", "gonghao", "shengdian", "功耗", "省电"), 26
         )
     )
 }
 
-private fun Context.safeString(resId: Int): String {
+private fun Resources.safeString(resId: Int): String {
     if (resId == 0) return ""
     return runCatching { getString(resId) }.getOrDefault("")
 }

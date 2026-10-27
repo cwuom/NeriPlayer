@@ -63,6 +63,7 @@ import moe.ouom.neriplayer.network.security.hostMatchesAnyDomain
 import moe.ouom.neriplayer.network.security.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import moe.ouom.neriplayer.activity.enableNeriEdgeToEdge
+import moe.ouom.neriplayer.R as AppR
 
 /**
  * 用内置 WebView 登录哔哩哔哩
@@ -138,7 +139,7 @@ class BiliWebLoginActivity : ComponentActivity() {
             )
         }
         toolbar = MaterialToolbar(this).apply {
-            title = getString(CoreCommonR.string.bili_web_login)
+            title = getString(AppR.string.bili_web_login)
             setNavigationIcon(R.drawable.ic_arrow_back_24)
             setNavigationOnClickListener { finish() }
             inflateMenu(R.menu.menu_netease_web_login)

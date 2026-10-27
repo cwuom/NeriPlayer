@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.sync.runtime
 
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetMergeResult
 import moe.ouom.neriplayer.data.model.sync.SyncResult
+import moe.ouom.neriplayer.data.model.sync.SyncResultMessage
 import moe.ouom.neriplayer.data.model.sync.SyncUploadResolution
 
 internal object SyncSessionResultPolicy {
@@ -13,9 +14,9 @@ internal object SyncSessionResultPolicy {
         initialUploadMessage: String
     ): SyncResult = when {
         !resolution.uploadPerformed && !resolution.remoteChangedDuringSync && !firstSync ->
-            SyncResult(success = true, message = noChangeMessage)
+            SyncResult(success = true, message = noChangeMessage, messageKind = SyncResultMessage.NO_CHANGE)
         initialRemoteMissing && resolution.uploadPerformed && !resolution.remoteChangedDuringSync ->
-            SyncResult(success = true, message = initialUploadMessage)
+            SyncResult(success = true, message = initialUploadMessage, messageKind = SyncResultMessage.INITIAL_UPLOADED)
         else -> resolution.merged.syncResult
     }
 }

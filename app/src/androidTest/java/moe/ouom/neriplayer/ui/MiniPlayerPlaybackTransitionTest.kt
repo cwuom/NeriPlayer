@@ -13,7 +13,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -37,6 +36,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import kotlin.math.PI
 import kotlin.math.sin
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class MiniPlayerPlaybackTransitionTest {
@@ -102,7 +102,7 @@ class MiniPlayerPlaybackTransitionTest {
             settingsRepository.setDisclaimerAccepted(true)
             settingsRepository.setStartupOnboardingCompleted(true)
         }
-        val mainTabLabel = context.getString(CoreCommonR.string.nav_explore)
+        val mainTabLabel = context.getString(AppR.string.nav_explore)
         val warningTitle = context.getString(R.string.debug_build_warning_title)
         composeRule.waitUntil(timeoutMillis = STARTUP_SCREEN_TIMEOUT_MS) {
             composeRule.onAllNodesWithContentDescription(mainTabLabel)

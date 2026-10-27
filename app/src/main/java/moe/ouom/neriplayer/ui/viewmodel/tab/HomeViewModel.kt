@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * Created: 2025/8/10
  */
 
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.viewmodel.feedbackText
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasEffectiveAuth
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
 import android.app.Application
@@ -58,7 +60,6 @@ import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.platform.youtube.auth.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.platform.netease.neteaseRadarCacheContext
-import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.IOException
 import kotlin.time.Duration.Companion.milliseconds
@@ -187,7 +188,7 @@ internal class HomeSectionLoadCoordinator(
 data class HomeSectionState<T>(
     val items: List<T> = emptyList(),
     val loading: Boolean = false,
-    val error: String? = null
+    val error: UiText? = null
 )
 
 /** 首页 B 站版权音乐榜模块状态（榜单类型、期数与曲目始终同源） */
@@ -196,7 +197,7 @@ data class HomeBiliMusicRankState(
     val period: BiliMusicRankPeriod? = null,
     val songs: List<BiliMusicRankSong> = emptyList(),
     val loading: Boolean = false,
-    val error: String? = null
+    val error: UiText? = null
 )
 
 data class HomeNeteaseSongSectionState(
@@ -255,7 +256,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var offlineMode = false
     private var biliMusicHomeEnabled = false
 
-    private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
 
     private fun createHomeUiState(hasLogin: Boolean, loading: Boolean): HomeUiState {
         return HomeUiState(
@@ -638,7 +638,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 },
                 onFailure = { error ->
-                    val message = buildHomeErrorMessage(error, localizedAppContext())
+                    val message = buildHomeErrorText(error)
                     _uiState.update { state ->
                         if (state.biliMusicRank.type != type) {
                             state
@@ -696,7 +696,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 },
                 onFailure = { error ->
-                    val message = buildHomeErrorMessage(error, localizedAppContext())
+                    val message = buildHomeErrorText(error)
                     _uiState.update { state ->
                         state.copy(
                             biliMusicHot = state.biliMusicHot.copy(loading = false, error = message)
@@ -990,7 +990,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             return@launch
                         }
                         NPLogger.e(TAG, "refreshYtMusicHome failed", result.throwable)
-                        val error = buildHomeErrorMessage(result.throwable, localizedAppContext())
+                        val error = buildHomeErrorText(result.throwable)
                         _uiState.update { state ->
                             state.copy(
                                 ytMusicPlaylists = state.ytMusicPlaylists.copy(
@@ -1078,7 +1078,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 NPLogger.e(TAG, "$name failed: source=$source", result.throwable)
                 HomeNeteaseSongSectionState(
                     source = source,
-                    section = HomeSectionState(error = buildHomeErrorMessage(result.throwable, localizedAppContext()))
+                    section = HomeSectionState(error = buildHomeErrorText(result.throwable))
                 )
             }
         }
@@ -1126,7 +1126,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 NPLogger.e(TAG, "refreshRecommend failed: source=$source", result.throwable)
                 HomeNeteasePlaylistSectionState(
                     source = source,
-                    section = HomeSectionState(error = buildHomeErrorMessage(result.throwable, localizedAppContext()))
+                    section = HomeSectionState(error = buildHomeErrorText(result.throwable))
                 )
             }
         }
@@ -1327,16 +1327,19 @@ internal suspend fun <T> fetchWithRetry(
     return RetryLoadResult.Failure(lastError ?: IllegalStateException("Unknown error"))
 }
 
-internal fun buildHomeErrorMessage(error: Throwable, context: Context): String {
+internal fun buildHomeErrorMessage(error: Throwable, context: Context): String =
+    buildHomeErrorText(error).resolve(context.resources)
+
+internal fun buildHomeErrorText(error: Throwable): UiText {
     return when {
-        error is IOException -> context.getString(
+        error is IOException -> feedbackText(
             CoreCommonR.string.home_error_network,
             error.messageOrTypeName()
         )
         error is ApiCodeException && error.code == 50000005 ->
-            context.getString(CoreCommonR.string.home_login_required)
-        error is ApiCodeException -> context.getString(CoreCommonR.string.error_api_code, error.code)
-        else -> context.getString(
+            feedbackText(CoreCommonR.string.home_login_required)
+        error is ApiCodeException -> feedbackText(CoreCommonR.string.error_api_code, error.code)
+        else -> feedbackText(
             CoreCommonR.string.home_error_unknown,
             error.messageOrTypeName()
         )

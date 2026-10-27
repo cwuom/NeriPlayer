@@ -44,6 +44,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -52,7 +54,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -68,14 +69,15 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun SettingsBiliAuthDialogs(
     showSheet: Boolean,
     initialTab: Int,
     onDismissSheet: () -> Unit,
-    inlineMsg: String?,
-    onInlineMsgChange: (String?) -> Unit,
+    inlineMsg: UiText?,
+    onInlineMsgChange: (UiText?) -> Unit,
     vm: BiliAuthViewModel,
     showSavedCookieDialog: Boolean = false,
     onDismissSavedCookieDialog: () -> Unit = {},
@@ -84,7 +86,6 @@ internal fun SettingsBiliAuthDialogs(
     onBrowserLogin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val composeResources = LocalResources.current
 
     if (showSavedCookieDialog) {
         SavedCookieActionDialog(
@@ -117,7 +118,7 @@ internal fun SettingsBiliAuthDialogs(
                     val json = result.data?.getStringExtra(BiliQrLoginActivity.RESULT_COOKIE) ?: "{}"
                     vm.importCookiesFromMap(vm.parseJsonToMap(json))
                 } else {
-                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.settings_cookie_cancelled))
+                    onInlineMsgChange(UiText.Resource(CoreCommonR.string.settings_cookie_cancelled))
                 }
             }
             val defaultBrowserLogin: () -> Unit = {
@@ -129,10 +130,10 @@ internal fun SettingsBiliAuthDialogs(
         }
 
         SettingsCookieLoginSheet(
-            title = stringResource(CoreCommonR.string.platform_bilibili),
+            title = stringResource(AppR.string.platform_bilibili),
             initialTab = initialTab,
-            inlineMsg = inlineMsg,
-            onInlineMsgChange = onInlineMsgChange,
+            inlineMsg = inlineMsg?.asString(),
+            onInlineMsgChange = { onInlineMsgChange(null) },
             onDismiss = onDismissSheet,
             browserTabLabel = stringResource(CoreCommonR.string.login_qr),
             browserButtonLabel = stringResource(CoreCommonR.string.login_start_bili_qr),
@@ -147,7 +148,7 @@ internal fun SettingsBiliAuthDialogs(
             onBrowserLogin = launchBrowserLogin,
             onSaveCookie = { rawCookie ->
                 if (rawCookie.isBlank()) {
-                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.auth_cookie_empty))
+                    onInlineMsgChange(UiText.Resource(CoreCommonR.string.auth_cookie_empty))
                 } else {
                     vm.importCookiesFromRaw(rawCookie)
                 }
@@ -165,8 +166,8 @@ internal fun SettingsYouTubeAuthDialogs(
     showSheet: Boolean,
     initialTab: Int,
     onDismissSheet: () -> Unit,
-    inlineMsg: String?,
-    onInlineMsgChange: (String?) -> Unit,
+    inlineMsg: UiText?,
+    onInlineMsgChange: (UiText?) -> Unit,
     vm: YouTubeAuthViewModel,
     showSavedCookieDialog: Boolean = false,
     onDismissSavedCookieDialog: () -> Unit = {},
@@ -175,7 +176,6 @@ internal fun SettingsYouTubeAuthDialogs(
     onBrowserLogin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val composeResources = LocalResources.current
 
     if (showSavedCookieDialog) {
         SavedCookieActionDialog(
@@ -208,7 +208,7 @@ internal fun SettingsYouTubeAuthDialogs(
                     val json = result.data?.getStringExtra(YouTubeWebLoginActivity.RESULT_AUTH_JSON) ?: "{}"
                     vm.importAuthFromJson(json)
                 } else {
-                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.settings_cookie_cancelled))
+                    onInlineMsgChange(UiText.Resource(CoreCommonR.string.settings_cookie_cancelled))
                 }
             }
             val defaultBrowserLogin: () -> Unit = {
@@ -222,8 +222,8 @@ internal fun SettingsYouTubeAuthDialogs(
         SettingsCookieLoginSheet(
             title = stringResource(CoreCommonR.string.common_youtube),
             initialTab = initialTab,
-            inlineMsg = inlineMsg,
-            onInlineMsgChange = onInlineMsgChange,
+            inlineMsg = inlineMsg?.asString(),
+            onInlineMsgChange = { onInlineMsgChange(null) },
             onDismiss = onDismissSheet,
             browserTabLabel = stringResource(CoreCommonR.string.login_browser),
             browserButtonLabel = stringResource(CoreCommonR.string.login_start_browser),
@@ -243,7 +243,7 @@ internal fun SettingsYouTubeAuthDialogs(
             onBrowserLogin = launchBrowserLogin,
             onSaveCookie = { rawCookie ->
                 if (rawCookie.isBlank()) {
-                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.auth_cookie_empty))
+                    onInlineMsgChange(UiText.Resource(CoreCommonR.string.auth_cookie_empty))
                 } else {
                     vm.importCookiesFromRaw(rawCookie)
                 }

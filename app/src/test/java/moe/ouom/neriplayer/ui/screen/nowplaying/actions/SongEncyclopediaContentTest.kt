@@ -14,7 +14,6 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.comments.CommentPage
@@ -42,6 +41,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class SongEncyclopediaContentTest {
@@ -66,9 +66,9 @@ class SongEncyclopediaContentTest {
     fun `netease preview opens the actual resolved comment source`() {
         render(song = neteaseSong(186016L))
 
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.encyclopedia_section_comments))
+        composeRule.onNodeWithText(context.getString(AppR.string.encyclopedia_section_comments))
             .assertExists()
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.encyclopedia_comment_show_all))
+        composeRule.onNodeWithText(context.getString(AppR.string.encyclopedia_comment_show_all))
             .performScrollTo().performClick()
 
         assertEquals(CommentPlatform.NETEASE, openedComments?.platform)
@@ -123,14 +123,14 @@ class SongEncyclopediaContentTest {
     }
 
     private fun expandSongDetail() {
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.encyclopedia_action_expand))
+        composeRule.onNodeWithText(context.getString(AppR.string.encyclopedia_action_expand))
             .performScrollTo().performClick()
     }
 
     private fun assertNoCommentPreview() {
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.encyclopedia_section_comments))
+        composeRule.onNodeWithText(context.getString(AppR.string.encyclopedia_section_comments))
             .assertDoesNotExist()
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.encyclopedia_comment_show_all))
+        composeRule.onNodeWithText(context.getString(AppR.string.encyclopedia_comment_show_all))
             .assertDoesNotExist()
     }
 

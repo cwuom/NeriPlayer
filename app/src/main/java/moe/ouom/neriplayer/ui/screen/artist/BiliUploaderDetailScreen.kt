@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.artist
  * Created: 2026/8/3
  */
 
+import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
@@ -336,7 +337,7 @@ internal fun BiliUploaderContent(
                 if (ui.error != null && !ui.loading) {
                     item {
                         Text(
-                            text = ui.error,
+                            text = ui.error.asString(),
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(vertical = 8.dp)
@@ -350,7 +351,7 @@ internal fun BiliUploaderContent(
                 }
 
                 if (ui.error != null && ui.videos.isEmpty() && ui.collections.isEmpty() && ui.series.isEmpty()) {
-                    item { ErrorBlock(error = ui.error, onRetry = onRetry) }
+                    item { ErrorBlock(error = ui.error.asString(), onRetry = onRetry) }
                     return@LazyColumn
                 }
 

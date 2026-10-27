@@ -130,6 +130,7 @@ import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.ReorderableLazyListState
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
+import moe.ouom.neriplayer.R as AppR
 
 private const val QueueSheetMaxHeightFraction = 0.9f
 internal val NowPlayingQueueReorderAutoScrollMaxPerFrame = 2.dp
@@ -867,7 +868,7 @@ internal fun NowPlayingQueueSelectionToolbar(
             )
             Text(
                 text = pluralStringResource(
-                    CoreCommonR.plurals.common_selected_count,
+                    AppR.plurals.common_selected_count,
                     selectedCount,
                     selectedCount
                 ),
@@ -1166,7 +1167,7 @@ internal fun NowPlayingQueueSheet(
                             )
                             Text(
                                 text = pluralStringResource(
-                                    CoreCommonR.plurals.nowplaying_queue_count_format,
+                                    AppR.plurals.nowplaying_queue_count_format,
                                     displayedQueue.size,
                                     displayedQueue.size
                                 ),

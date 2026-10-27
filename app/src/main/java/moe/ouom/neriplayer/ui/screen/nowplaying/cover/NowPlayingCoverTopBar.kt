@@ -34,6 +34,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsBoundsTransform
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingFavoriteIconColor
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedTransitionElement
+import moe.ouom.neriplayer.R as AppR
 
 internal data class NowPlayingFavoritePresentation(
     val icon: ImageVector,
@@ -269,7 +270,7 @@ private fun NowPlayingCommentButton(
         ) {
             Icon(
                 Icons.AutoMirrored.Outlined.Comment,
-                contentDescription = stringResource(CoreCommonR.string.comment_entry),
+                contentDescription = stringResource(AppR.string.comment_entry),
                 modifier = Modifier.size(iconSize)
             )
         }

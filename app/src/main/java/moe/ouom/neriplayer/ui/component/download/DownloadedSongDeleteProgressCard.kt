@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
 import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun DownloadedSongDeleteProgressCard(
@@ -102,7 +103,7 @@ internal fun DownloadedSongDeleteProgressCard(
                 val songCount = progress?.requestedSongCount ?: requestedSongCount
                 Text(
                     text = pluralStringResource(
-                        CoreCommonR.plurals.download_delete_in_progress_message,
+                        AppR.plurals.download_delete_in_progress_message,
                         songCount,
                         songCount
                     ),

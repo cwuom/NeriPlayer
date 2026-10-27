@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.core.net.toUri
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.util.platform.tryStartActivity
+import moe.ouom.neriplayer.R as AppR
 
 internal class SettingsAboutVersionTapOwner(
     private val tapCount: MutableIntState,
@@ -23,7 +24,7 @@ internal class SettingsAboutVersionTapOwner(
 ) {
     fun onVersionClick() {
         if (devModeEnabled) {
-            onMessage(CoreCommonR.string.debug_mode_enabled)
+            onMessage(AppR.string.debug_mode_enabled)
             return
         }
         val nextCount = tapCount.intValue + 1
@@ -33,7 +34,7 @@ internal class SettingsAboutVersionTapOwner(
         }
         tapCount.intValue = 0
         onEnableDevMode()
-        onMessage(CoreCommonR.string.debug_mode_opened)
+        onMessage(AppR.string.debug_mode_opened)
     }
 }
 

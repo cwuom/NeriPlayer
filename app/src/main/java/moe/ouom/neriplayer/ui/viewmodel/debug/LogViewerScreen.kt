@@ -68,6 +68,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import moe.ouom.neriplayer.R as AppR
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,11 +95,11 @@ fun LogViewerScreen(
                             File(decodedFilePath).inputStream().copyTo(outputStream)
                         }
                         withContext(Dispatchers.Main) {
-                            snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.log_exported))
+                            snackbarHostState.showNeriSnackbar(composeResources.getString(AppR.string.log_exported))
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
-                            snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.log_export_failed, e.message))
+                            snackbarHostState.showNeriSnackbar(composeResources.getString(AppR.string.log_export_failed, e.message))
                         }
                     }
                 }
@@ -116,7 +117,7 @@ fun LogViewerScreen(
             } catch (e: FileNotFoundException) {
                 withContext(Dispatchers.Main) {
                     logContent = emptyList()
-                    snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.log_cannot_read))
+                    snackbarHostState.showNeriSnackbar(composeResources.getString(AppR.string.log_cannot_read))
                 }
             }
         }
@@ -156,19 +157,19 @@ fun LogViewerScreen(
                                 is ClipboardCopyResult.Copied -> if (result.wasTruncated) {
                                     CoreCommonR.string.toast_copy_truncated
                                 } else {
-                                    CoreCommonR.string.log_copied
+                                    AppR.string.log_copied
                                 }
                                 ClipboardCopyResult.TransactionTooLarge -> CoreCommonR.string.toast_copy_failed
                             }
                             snackbarHostState.showNeriSnackbar(composeResources.getString(messageRes))
                         }
                     }) {
-                        Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(CoreCommonR.string.debug_copy_all))
+                        Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(AppR.string.debug_copy_all))
                     }
                     IconButton(onClick = {
                         exportLogLauncher.launch(File(decodedFilePath).name)
                     }) {
-                        Icon(Icons.Outlined.Share, contentDescription = stringResource(CoreCommonR.string.log_export))
+                        Icon(Icons.Outlined.Share, contentDescription = stringResource(AppR.string.log_export))
                     }
                 }
             )
