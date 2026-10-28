@@ -203,6 +203,21 @@ internal class NowPlayingSeekActionOwner(
     }
 }
 
+@Composable
+internal fun rememberNowPlayingProgressInfoSegments(
+    audioInfo: PlaybackAudioInfo?,
+    showQualitySwitch: Boolean,
+    showAudioCodec: Boolean,
+    showAudioSpec: Boolean,
+    playbackSpeed: Float
+): List<NowPlayingProgressInfoSegment> = remember(
+    audioInfo, showQualitySwitch, showAudioCodec, showAudioSpec, playbackSpeed
+) {
+    buildNowPlayingProgressInfoSegments(
+        audioInfo, showQualitySwitch, showAudioCodec, showAudioSpec, playbackSpeed
+    )
+}
+
 internal fun buildNowPlayingProgressInfoSegments(
     audioInfo: PlaybackAudioInfo?,
     showQualitySwitch: Boolean,

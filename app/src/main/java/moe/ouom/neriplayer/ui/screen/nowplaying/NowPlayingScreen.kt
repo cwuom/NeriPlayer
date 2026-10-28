@@ -1089,21 +1089,13 @@ fun NowPlayingScreen(
         amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
         preferredLyricSource = loadedPreferredLyricSource,
     )
-    val progressInfoSegments = remember(
-        currentPlaybackAudioInfo,
-        showProgressQualitySwitch,
-        showProgressAudioCodec,
-        showProgressAudioSpec,
-        playbackSoundState.speed
-    ) {
-        buildNowPlayingProgressInfoSegments(
-            audioInfo = currentPlaybackAudioInfo,
-            showQualitySwitch = showProgressQualitySwitch,
-            showAudioCodec = showProgressAudioCodec,
-            showAudioSpec = showProgressAudioSpec,
-            playbackSpeed = playbackSoundState.speed
-        )
-    }
+    val progressInfoSegments = rememberNowPlayingProgressInfoSegments(
+        audioInfo = currentPlaybackAudioInfo,
+        showQualitySwitch = showProgressQualitySwitch,
+        showAudioCodec = showProgressAudioCodec,
+        showAudioSpec = showProgressAudioSpec,
+        playbackSpeed = playbackSoundState.speed
+    )
 
     lyricShareInitialLine?.let { initialLine ->
         val song = currentSong
