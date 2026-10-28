@@ -145,7 +145,10 @@ internal fun <S> rememberHostPredictiveBackTransition(
                 targetState,
                 restoreCancelledBack = restoreCancelledBack,
                 cancelMinimumDurationMillis = cancelMinimumDurationMillis,
-                previewSettleEasing = previewSettleEasing.takeIf { previewAnimationActive }
+                previewRetargetEasing = currentPreviewEasing,
+                previewSettleEasing = previewSettleEasing.takeIf {
+                    previewAnimationActive && targetState == currentBackTarget
+                }
             )
             if (gesture == null && previewAnimationSegment === settlingSegment &&
                 cancelledGesture === settlingCancellation
@@ -168,6 +171,7 @@ private suspend fun <S> settleHostTransition(
     targetState: S,
     restoreCancelledBack: Boolean,
     cancelMinimumDurationMillis: Int,
+    previewRetargetEasing: Easing,
     previewSettleEasing: Easing?
 ) {
     // 普通反向要更新共享元素的目标，只有取消预测返回才拖回原来的片段
@@ -178,12 +182,16 @@ private suspend fun <S> settleHostTransition(
             targetState, transition.totalDurationNanos, cancelMinimumDurationMillis
         )
     } else if (transitionState.currentState != targetState || transitionState.targetState != targetState) {
-        // 只缓动已预览片段的剩余进度，普通导航和反向仍使用各自的动画规格
-        val settleSpec = if (previewSettleEasing != null && transitionState.targetState == targetState) {
+        // 预览收尾中再次返回也要减速，重定向会从零开始新的时间线
+        val settleSpec = if (previewSettleEasing != null) {
+            val continuingPreview = transitionState.targetState == targetState
+            val remainingFraction = if (continuingPreview) {
+                1f - transitionState.fraction
+            } else 1f
             tween<Float>(
-                durationMillis = ((1f - transitionState.fraction) *
+                durationMillis = (remainingFraction *
                     transition.totalDurationNanos / 1_000_000L).roundToInt().coerceAtLeast(0),
-                easing = previewSettleEasing
+                easing = if (continuingPreview) previewSettleEasing else previewRetargetEasing
             )
         } else null
         transitionState.animateTo(targetState, animationSpec = settleSpec)
