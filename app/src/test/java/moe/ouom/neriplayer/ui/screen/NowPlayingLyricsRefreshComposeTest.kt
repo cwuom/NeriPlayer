@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -45,6 +46,32 @@ class NowPlayingLyricsRefreshComposeTest {
     private val stages = ControlledStages()
 
     @Test
+    fun `opening an empty queue with default sources has no caption tracks`() {
+        composeRule.setContent {
+            val owner = rememberNowPlayingLyricsLoadOwner(
+                request = NowPlayingLyricsLoadRequest(
+                    application, null, null, false, LyricSourcePreference.Automatic, null
+                ),
+                versions = versions
+            )
+            Column {
+                val original = when {
+                    !owner.secondaryResolved -> "Loading lyrics"
+                    owner.state.lyrics.isEmpty() -> "No lyrics"
+                    else -> "Unexpected lyrics"
+                }
+                Text(original)
+                Text(if (owner.state.translatedLyrics.isEmpty()) "Translation: none" else "Unexpected translation")
+            }
+        }
+
+        composeRule.waitUntil(5_000L) {
+            composeRule.onAllNodesWithText("No lyrics").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertCaption("No lyrics", "none")
+    }
+
+    @Test
     fun `turning off cc removes the rendered original and translation`() {
         render()
         assertCaption("CC original", "CC translation")
@@ -55,6 +82,21 @@ class NowPlayingLyricsRefreshComposeTest {
         }
 
         assertCaption("No lyrics", "none")
+        composeRule.onNodeWithText("CC original").assertDoesNotExist()
+        composeRule.onNodeWithText("Translation: CC translation").assertDoesNotExist()
+    }
+
+    @Test
+    fun `clearing the lyric cache reloads both caption tracks for the current song`() {
+        render()
+        assertCaption("CC original", "CC translation")
+
+        composeRule.runOnIdle {
+            stages.background = { lyrics("Refreshed original", "Refreshed translation") }
+            stages.cacheGeneration = 1L
+        }
+
+        assertCaption("Refreshed original", "Refreshed translation")
         composeRule.onNodeWithText("CC original").assertDoesNotExist()
         composeRule.onNodeWithText("Translation: CC translation").assertDoesNotExist()
     }
@@ -167,6 +209,7 @@ class NowPlayingLyricsRefreshComposeTest {
 
     private class ControlledStages : NowPlayingLyricsStages {
         override val snapshotCache = NowPlayingLyricsSnapshotCache()
+        override var cacheGeneration by mutableStateOf(0L)
         var fast: suspend (NowPlayingLyricsLoadRequest) -> LoadedLyricsState = { emptyLyrics() }
         var background: suspend (NowPlayingLyricsLoadRequest) -> LoadedLyricsState = {
             lyrics("CC original", "CC translation")
