@@ -1134,9 +1134,9 @@ object PlayerLyricsProvider {
         biliClient: BiliClient,
         biliSubtitleOptions: BiliSubtitleLyricsOptions
     ): List<LyricEntry> {
-        return withContext(Dispatchers.IO) {
-            val isBiliSong = isBiliSubtitleSource(song, biliSourceTag)
-            if (isBiliSong) markBiliCcOriginal(song, fromCc = false)
+        val isBiliSong = isBiliSubtitleSource(song, biliSourceTag)
+        var biliCcLyricsLoaded = false
+        val lyrics = withContext(Dispatchers.IO) {
             parseConfirmedUserLyricEntries(song, song.matchedLyric)?.let { return@withContext it }
             tryGetPreferredLyricSourceResult(
                 song = song,
@@ -1246,7 +1246,6 @@ object PlayerLyricsProvider {
                 )
             }
 
-            var biliCcLyricsLoaded = false
             val platformLyrics = when {
                 isBiliSong ->
                     if (biliSubtitleOptions.enabled) {
@@ -1268,7 +1267,6 @@ object PlayerLyricsProvider {
                 else -> getNeteaseLyrics(song.id, neteaseClient, neteaseLyricsCache)
             }
 
-            if (biliCcLyricsLoaded) markBiliCcOriginal(song, fromCc = true)
             if (biliCcLyricsLoaded ||
                 !preferWordTimedLyrics ||
                 platformLyrics.hasWordTimedEntries() ||
@@ -1284,6 +1282,9 @@ object PlayerLyricsProvider {
                 ).ifEmpty { platformLyrics }
             }
         }
+        // 新原文确认后才切换来源, 并发读取仍使用已经发布的原文来源
+        if (isBiliSong) markBiliCcOriginal(song, fromCc = biliCcLyricsLoaded)
+        return lyrics
     }
 
     /**
@@ -1295,8 +1296,6 @@ object PlayerLyricsProvider {
         options: BiliSubtitleLyricsOptions = BiliSubtitleLyricsOptions()
     ): BiliSubtitleLyrics {
         if (!options.enabled) return BiliSubtitleLyrics()
-        // 原文加载期间先置位, 并发读取翻译行时也能判定来源
-        markBiliCcOriginal(song, fromCc = true)
         val cacheKeyBase = biliSubtitleLyricsCacheKey(song, cid = null)
         val cacheKey = cacheKeyBase?.let {
             "$it|${options.preferredLanguage}|${options.aiSubtitleAllowed}"
@@ -1318,9 +1317,6 @@ object PlayerLyricsProvider {
         } catch (error: Exception) {
             NPLogger.d("NERI-PlayerManager", "Bilibili CC 字幕歌词读取失败: ${error.message}")
             BiliSubtitleLyrics()
-        }
-        if (loaded.lyrics.isEmpty()) {
-            markBiliCcOriginal(song, fromCc = false)
         }
         val resolvedCid = loaded.cid
         if (resolvedCid != null) {
