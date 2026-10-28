@@ -1,6 +1,12 @@
 package moe.ouom.neriplayer.platform.bilibili.lyrics
 
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.intrinsics.startCoroutineUninterceptedOrReturn
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.bilibili.subtitle.BiliSubtitleCue
 import moe.ouom.neriplayer.data.model.bilibili.subtitle.BiliSubtitleTrack
@@ -214,6 +220,54 @@ class BiliSubtitleLyricsLoaderTest {
         assertEquals(listOf("你好"), lyrics.lyrics.map { it.text })
         assertTrue(lyrics.translatedLyrics.isEmpty())
         assertFalse(lyrics.translationComplete)
+    }
+
+    @Test
+    fun `clearing tracks rejects an older metadata lookup from the cache`() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val oldTracks = listOf(track("zh-CN", ZH_URL))
+        val freshTracks = listOf(track("en-US", EN_URL))
+        var metadataRequests = 0
+        val client = Mockito.mock(BiliClient::class.java, Answer { invocation ->
+            when (invocation.method.name) {
+                "hasLoginSession" -> true
+                "getPlayerSubtitlePayload" -> {
+                    metadataRequests++
+                    if (metadataRequests == 1) {
+                        // 挂起第一份旧元数据, 确保清理发生在响应返回之前
+                        @Suppress("UNCHECKED_CAST")
+                        val continuation = invocation.rawArguments.last() as Continuation<JSONObject>
+                        val lookup: suspend () -> JSONObject = {
+                            entered.complete(Unit)
+                            release.await()
+                            subtitleTracksPayload(oldTracks)
+                        }
+                        lookup.startCoroutineUninterceptedOrReturn(continuation)
+                    } else {
+                        subtitleTracksPayload(freshTracks)
+                    }
+                }
+                else -> Answers.RETURNS_DEFAULTS.answer(invocation)
+            }
+        })
+        val oldLookup = async { BiliSubtitleLyricsLoader.loadTracks(biliSong(), client) }
+        try {
+            withTimeout(5_000L) { entered.await() }
+            BiliSubtitleLyricsLoader.clearCachedTracks()
+            release.complete(Unit)
+            val oldResult = withTimeout(5_000L) { oldLookup.await() }
+            assertEquals(listOf("zh-CN" to ZH_URL), oldResult.tracks.map { it.lan to it.url })
+
+            val currentResult = BiliSubtitleLyricsLoader.loadTracks(biliSong(), client)
+
+            assertEquals(listOf("en-US" to EN_URL), currentResult.tracks.map { it.lan to it.url })
+            assertEquals(2, metadataRequests)
+        } finally {
+            release.complete(Unit)
+            withTimeout(5_000L) { oldLookup.cancelAndJoin() }
+            BiliSubtitleLyricsLoader.clearCachedTracks()
+        }
     }
 
     private fun fakeClient(

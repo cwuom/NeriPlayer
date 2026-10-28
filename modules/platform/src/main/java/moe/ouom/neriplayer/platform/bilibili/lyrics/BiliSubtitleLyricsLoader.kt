@@ -49,9 +49,14 @@ object BiliSubtitleLyricsLoader {
 
     // 同一分 P 的字幕轨道在一次播放期间很少变化，缓存起来避免播放页与歌词加载重复请求
     private val trackCache = androidx.collection.LruCache<String, CachedTracks>(16)
+    private val trackCacheLock = Any()
+    private var trackCacheGeneration = 0L
 
     fun clearCachedTracks() {
-        trackCache.evictAll()
+        synchronized(trackCacheLock) {
+            trackCacheGeneration++
+            trackCache.evictAll()
+        }
     }
 
     suspend fun load(
@@ -161,12 +166,19 @@ object BiliSubtitleLyricsLoader {
     ): List<BiliSubtitleTrack> {
         val key = "$avid:$cid"
         val now = System.currentTimeMillis()
-        trackCache.get(key)
-            ?.takeIf { now - it.fetchedAtMs < TRACK_CACHE_TTL_MS }
-            ?.let { return it.tracks }
+        val cacheGeneration = synchronized(trackCacheLock) {
+            trackCache.get(key)
+                ?.takeIf { now - it.fetchedAtMs < TRACK_CACHE_TTL_MS }
+                ?.let { return it.tracks }
+            trackCacheGeneration
+        }
         val tracks = parseBiliSubtitleTracks(client.getPlayerSubtitlePayload(avid, cid))
         if (tracks.isNotEmpty()) {
-            trackCache.put(key, CachedTracks(tracks, now))
+            synchronized(trackCacheLock) {
+                if (trackCacheGeneration == cacheGeneration) {
+                    trackCache.put(key, CachedTracks(tracks, now))
+                }
+            }
         }
         return tracks
     }
