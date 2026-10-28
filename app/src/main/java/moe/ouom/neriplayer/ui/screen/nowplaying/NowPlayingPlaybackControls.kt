@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -277,7 +278,7 @@ private fun NowPlayingProgressInfoRow(
     val lineHeight = with(LocalDensity.current) { MaterialTheme.typography.labelSmall.lineHeight.toDp() }
     Box(
         // 固定槽高让信息加载和字体回退不再改变封面的可用高度
-        modifier = modifier.height(lineHeight),
+        modifier = modifier.height(lineHeight).testTag("nowPlayingProgressInfoRow"),
         contentAlignment = Alignment.Center
     ) {
         Row(
