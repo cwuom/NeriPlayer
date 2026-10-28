@@ -75,6 +75,10 @@ object StartupAudioFocusController {
             )
         }
         if (enabled && !allowMixedPlayback && !transportActive) {
+            if (!canPreemptAudioFocus(context)) {
+                release("preempt_unavailable:$reason")
+                return
+            }
             request(
                 context = context,
                 reason = reason,
@@ -117,6 +121,17 @@ object StartupAudioFocusController {
             )
         }
         return true
+    }
+
+    private fun canPreemptAudioFocus(context: Context): Boolean {
+        return try {
+            val manager = context.applicationContext
+                .getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
+            !manager.isMusicActive && manager.activePlaybackConfigurations.isEmpty()
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "Skipping preempt audio focus because playback state is unavailable", error)
+            false
+        }
     }
 
     private fun request(
