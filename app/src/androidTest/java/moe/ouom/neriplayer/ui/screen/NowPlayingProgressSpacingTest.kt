@@ -75,7 +75,7 @@ class NowPlayingProgressSpacingTest {
 
         assertTabletInformationFits()
         assertEquals(pixels(12.dp), bounds("progressRow").top - bounds("identity").bottom, 1f)
-        assertEquals(pixels(13.dp), bounds("controls").top - informationBounds().bottom, 1f)
+        assertEquals(pixels(13.dp), bounds("controls").top - informationRowBounds().bottom, 1f)
         assertTrue(bounds("controls").bottom < bounds("toolbar").top - pixels(24.dp))
         assertTrue(bounds("cover").height >= pixels(350.dp) - 1f)
     }
@@ -86,7 +86,7 @@ class NowPlayingProgressSpacingTest {
 
         assertTabletInformationFits()
         assertEquals(pixels(12.dp), bounds("progressRow").top - bounds("identity").bottom, 1f)
-        assertTrue(bounds("controls").top > informationBounds().bottom + pixels(24.dp))
+        assertTrue(bounds("controls").top > informationTextBounds().bottom + pixels(24.dp))
         assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
         assertTrue(bounds("cover").height >= pixels(350.dp) - 1f)
     }
@@ -97,7 +97,7 @@ class NowPlayingProgressSpacingTest {
 
         assertTabletInformationFits()
         assertTrue(bounds("progressRow").top > bounds("identity").bottom + pixels(24.dp))
-        assertEquals(pixels(13.dp), bounds("controls").top - informationBounds().bottom, 1f)
+        assertEquals(pixels(13.dp), bounds("controls").top - informationRowBounds().bottom, 1f)
         assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
         assertTrue(bounds("cover").height >= pixels(350.dp) - 1f)
     }
@@ -108,7 +108,7 @@ class NowPlayingProgressSpacingTest {
 
         assertTabletInformationFits()
         assertEquals(bounds("identity").bottom, bounds("progressRow").top, 1f)
-        assertEquals(pixels(5.dp), bounds("controls").top - informationBounds().bottom, 1f)
+        assertEquals(pixels(5.dp), bounds("controls").top - informationRowBounds().bottom, 1f)
         assertTrue(bounds("nowPlayingLyricPane").height >= pixels(240.dp))
         val cover = bounds("cover")
         val playerPane = bounds("nowPlayingPlayerPane")
@@ -127,7 +127,7 @@ class NowPlayingProgressSpacingTest {
         )
 
         assertTabletInformationFits()
-        assertEquals(pixels(13.dp), bounds("controls").top - informationBounds().bottom, 1f)
+        assertEquals(pixels(13.dp), bounds("controls").top - informationRowBounds().bottom, 1f)
         assertTrue(bounds("cover").height >= pixels(320.dp))
         assertTrue(bounds("nowPlayingLyricPane").height >= pixels(700.dp))
     }
@@ -139,7 +139,7 @@ class NowPlayingProgressSpacingTest {
 
         assertTabletInformationFits()
         assertTrue(bounds("progressRow").top >= bounds("identity").bottom)
-        assertTrue(bounds("controls").top > informationBounds().bottom + pixels(24.dp))
+        assertTrue(bounds("controls").top > informationTextBounds().bottom + pixels(24.dp))
         assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
     }
 
@@ -150,7 +150,7 @@ class NowPlayingProgressSpacingTest {
 
         assertTabletInformationFits()
         assertTrue(bounds("progressRow").top > bounds("identity").bottom + pixels(24.dp))
-        assertEquals(pixels(13.dp), bounds("controls").top - informationBounds().bottom, 1f)
+        assertEquals(pixels(13.dp), bounds("controls").top - informationRowBounds().bottom, 1f)
         assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
     }
 
@@ -173,8 +173,8 @@ class NowPlayingProgressSpacingTest {
         renderLayout(800.dp, 1280.dp, NowPlayingControlPlacement.LOWER)
 
         composeRule.onNodeWithText("FLAC").assertIsDisplayed()
-        assertEquals(pixels(-6.dp), informationBounds().top - bounds("progressRow").bottom, 1f)
-        assertEquals(pixels(16.dp), bounds("controls").top - informationBounds().bottom, 1f)
+        assertEquals(pixels(-6.dp), informationRowBounds().top - bounds("progressRow").bottom, 1f)
+        assertEquals(pixels(16.dp), bounds("controls").top - informationRowBounds().bottom, 1f)
         assertTrue(bounds("cover").width <= pixels(336.dp) + 1f)
         assertTrue(bounds("nowPlayingTabletPortraitLyrics").height >= pixels(400.dp))
     }
@@ -381,15 +381,25 @@ class NowPlayingProgressSpacingTest {
         composeRule.onNodeWithText("FLAC").assertIsDisplayed()
         composeRule.onNodeWithText("96 kHz | 24 bit").assertIsDisplayed()
         val frame = bounds("viewport")
-        listOf(bounds("progressRow"), informationBounds(), bounds("controls")).forEach { child ->
+        listOf(bounds("progressRow"), informationRowBounds(), informationTextBounds(), bounds("controls")).forEach { child ->
             assertTrue(child.left >= frame.left - 1f && child.right <= frame.right + 1f)
             assertTrue(child.top >= frame.top - 1f && child.bottom <= frame.bottom + 1f)
         }
-        assertEquals(pixels(-1.dp), informationBounds().top - bounds("progressRow").bottom, 1f)
+        assertEquals(pixels(-1.dp), informationRowBounds().top - bounds("progressRow").bottom, 1f)
+        assertTrue(informationTextBounds().bottom < bounds("controls").top)
     }
 
-    private fun informationBounds(): Rect =
-        composeRule.onNodeWithText("FLAC", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+    private fun informationRowBounds(): Rect = bounds("nowPlayingProgressInfoRow")
+
+    private fun informationTextBounds(): Rect {
+        val codec = composeRule.onNodeWithText("FLAC", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val specification = composeRule.onNodeWithText("96 kHz | 24 bit", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        return Rect(
+            minOf(codec.left, specification.left), minOf(codec.top, specification.top),
+            maxOf(codec.right, specification.right), maxOf(codec.bottom, specification.bottom)
+        )
+    }
 
     private fun bounds(tag: String): Rect =
         composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
