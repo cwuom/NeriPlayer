@@ -1135,6 +1135,7 @@ object PlayerLyricsProvider {
         biliSubtitleOptions: BiliSubtitleLyricsOptions
     ): List<LyricEntry> {
         val isBiliSong = isBiliSubtitleSource(song, biliSourceTag)
+        val cacheGeneration = currentLyricsCacheGeneration()
         var biliCcLyricsLoaded = false
         val lyrics = withContext(Dispatchers.IO) {
             parseConfirmedUserLyricEntries(song, song.matchedLyric)?.let { return@withContext it }
@@ -1283,7 +1284,14 @@ object PlayerLyricsProvider {
             }
         }
         // 新原文确认后才切换来源, 并发读取仍使用已经发布的原文来源
-        if (isBiliSong) markBiliCcOriginal(song, fromCc = biliCcLyricsLoaded)
+        if (isBiliSong) {
+            withLyricsCacheWriteLock {
+                // 清缓存之前发起的请求不能覆盖之后已经发布的来源
+                if (lyricsCacheGeneration.get() == cacheGeneration) {
+                    markBiliCcOriginal(song, fromCc = biliCcLyricsLoaded)
+                }
+            }
+        }
         return lyrics
     }
 
@@ -1296,6 +1304,7 @@ object PlayerLyricsProvider {
         options: BiliSubtitleLyricsOptions = BiliSubtitleLyricsOptions()
     ): BiliSubtitleLyrics {
         if (!options.enabled) return BiliSubtitleLyrics()
+        val cacheGeneration = currentLyricsCacheGeneration()
         val cacheKeyBase = biliSubtitleLyricsCacheKey(song, cid = null)
         val cacheKey = cacheKeyBase?.let {
             "$it|${options.preferredLanguage}|${options.aiSubtitleAllowed}"
@@ -1318,18 +1327,21 @@ object PlayerLyricsProvider {
             NPLogger.d("NERI-PlayerManager", "Bilibili CC 字幕歌词读取失败: ${error.message}")
             BiliSubtitleLyrics()
         }
-        val resolvedCid = loaded.cid
-        if (resolvedCid != null) {
-            biliSongLookupKey(song)?.let { key -> biliResolvedCidCache.put(key, resolvedCid) }
-        }
-        // 首选轨道失败时结果是后备轨道, 不做缓存, 下次仍然重试首选轨道
-        if (loaded.preferredTrackMatched &&
-            loaded.translationComplete &&
-            (loaded.lyrics.isNotEmpty() || loaded.translatedLyrics.isNotEmpty())
-        ) {
-            val resolvedKey = biliSubtitleLyricsCacheKey(song, cid = loaded.cid)
-                ?.let { "$it|${options.preferredLanguage}|${options.aiSubtitleAllowed}" }
-            resolvedKey?.let { key -> biliSubtitleLyricsCache.put(key, loaded) }
+        withLyricsCacheWriteLock {
+            if (lyricsCacheGeneration.get() != cacheGeneration) return@withLyricsCacheWriteLock
+            val resolvedCid = loaded.cid
+            if (resolvedCid != null) {
+                biliSongLookupKey(song)?.let { key -> biliResolvedCidCache.put(key, resolvedCid) }
+            }
+            // 首选轨道失败时结果是后备轨道, 不做缓存, 下次仍然重试首选轨道
+            if (loaded.preferredTrackMatched &&
+                loaded.translationComplete &&
+                (loaded.lyrics.isNotEmpty() || loaded.translatedLyrics.isNotEmpty())
+            ) {
+                val resolvedKey = biliSubtitleLyricsCacheKey(song, cid = loaded.cid)
+                    ?.let { "$it|${options.preferredLanguage}|${options.aiSubtitleAllowed}" }
+                resolvedKey?.let { key -> biliSubtitleLyricsCache.put(key, loaded) }
+            }
         }
         return loaded
     }

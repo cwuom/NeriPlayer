@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.metadata
 import android.app.Application
 import android.util.LruCache
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.intrinsics.startCoroutineUninterceptedOrReturn
 import kotlinx.coroutines.CompletableDeferred
@@ -37,6 +38,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.Answers
 import org.mockito.Mockito
+import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
 
 class BiliSubtitleLyricsSourceConcurrencyTest {
@@ -124,6 +126,56 @@ class BiliSubtitleLyricsSourceConcurrencyTest {
         }
     }
 
+    @Test
+    fun `cache clearing rejects an older cc load after a sidecar source is published`() = runBlocking {
+        val gate = SubtitleLookupGate()
+        val fixture = Fixture(subtitleGate = gate)
+        fixture.withDownloads {
+            val oldOriginal = async { fixture.original(LyricSourcePreference.Automatic) }
+            try {
+                withTimeout(5_000L) { gate.entered.await() }
+                PlayerLyricsProvider.clearLyricsCaches()
+                fixture.downloadedOriginal = "[00:01.00]downloaded original"
+                assertEquals(
+                    listOf("downloaded original"),
+                    fixture.original(LyricSourcePreference.Automatic).map { it.text }
+                )
+                assertFalse(fixture.isCcOriginal())
+
+                gate.release.complete(Unit)
+                assertEquals(listOf("你好"), withTimeout(5_000L) { oldOriginal.await() }.map { it.text })
+                val sourceAfterOldLoad = fixture.isCcOriginal()
+                fixture.subtitleOriginal = "fresh CC original"
+                val currentSubtitles = fixture.subtitles()
+
+                assertEquals(
+                    false to listOf("fresh CC original"),
+                    sourceAfterOldLoad to currentSubtitles.map { it.text }
+                )
+            } finally {
+                gate.release.complete(Unit)
+                withTimeout(5_000L) { oldOriginal.cancelAndJoin() }
+            }
+        }
+    }
+
+    private class SubtitleLookupGate {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+
+        fun answer(invocation: InvocationOnMock, payload: JSONObject): Any? {
+            // Mockito 隐藏 suspend 参数, 该方法的 continuation 固定返回字幕 JSON
+            @Suppress("UNCHECKED_CAST")
+            val continuation = invocation.rawArguments.last() as Continuation<JSONObject>
+            val lookup: suspend () -> JSONObject = {
+                entered.complete(Unit)
+                release.await()
+                payload
+            }
+            return lookup.startCoroutineUninterceptedOrReturn(continuation)
+        }
+    }
+
     private class PreferredLookupGate {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
@@ -144,9 +196,14 @@ class BiliSubtitleLyricsSourceConcurrencyTest {
         })
     }
 
-    private class Fixture(private val gate: PreferredLookupGate = PreferredLookupGate()) {
+    private class Fixture(
+        private val gate: PreferredLookupGate = PreferredLookupGate(),
+        private val subtitleGate: SubtitleLookupGate? = null
+    ) {
         var downloadedOriginal: String? = null
         var originalReadFailure: IOException? = null
+        var subtitleOriginal = "你好"
+        private val subtitleGateUsed = AtomicBoolean()
         private val application = Mockito.mock(Application::class.java)
         private val downloads = Mockito.mock(PlayerDownloadAccess::class.java, Answer { invocation ->
             if (invocation.method.name != "getLyricContent") {
@@ -183,8 +240,12 @@ class BiliSubtitleLyricsSourceConcurrencyTest {
                     ]}"""
                 )
                 "getSubtitlePayload" -> {
-                    val text = if (invocation.getArgument<String>(0).endsWith("/zh.json")) "你好" else "hello"
-                    JSONObject("""{"body":[{"from":1.0,"to":4.0,"content":"$text"}]}""")
+                    val isPrimary = invocation.getArgument<String>(0).endsWith("/zh.json")
+                    val text = if (isPrimary) subtitleOriginal else "hello"
+                    val payload = JSONObject("""{"body":[{"from":1.0,"to":4.0,"content":"$text"}]}""")
+                    if (isPrimary && subtitleGate != null && subtitleGateUsed.compareAndSet(false, true)) {
+                        subtitleGate.answer(invocation, payload)
+                    } else payload
                 }
                 else -> Answers.RETURNS_DEFAULTS.answer(invocation)
             }
@@ -212,6 +273,11 @@ class BiliSubtitleLyricsSourceConcurrencyTest {
         )
 
         fun isCcOriginal(): Boolean = PlayerLyricsProvider.isBiliCcOriginal(song)
+
+        suspend fun subtitles(): List<LyricEntry> = PlayerLyricsProvider.loadBiliSubtitleLyrics(
+            song = song,
+            biliClient = biliClient
+        ).lyrics
 
         suspend fun withDownloads(block: suspend () -> Unit) {
             val registry = PlayerDependencies::class.java.getDeclaredField("registry")
