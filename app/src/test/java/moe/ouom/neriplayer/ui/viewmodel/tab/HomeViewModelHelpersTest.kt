@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
 import android.content.Context
+import android.content.res.Resources
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -13,8 +14,11 @@ import org.mockito.Mockito.mock
 
 class HomeViewModelHelpersTest {
 
-    private val context: Context = mock(Context::class.java) { invocation ->
+    private val resources: Resources = mock(Resources::class.java) { invocation ->
         if (invocation.method.name == "getString") invocation.arguments.joinToString("|") else null
+    }
+    private val context: Context = mock(Context::class.java) { invocation ->
+        if (invocation.method.name == "getResources") resources else null
     }
 
     @Test

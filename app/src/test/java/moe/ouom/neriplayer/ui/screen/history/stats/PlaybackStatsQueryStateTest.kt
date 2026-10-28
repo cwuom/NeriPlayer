@@ -12,6 +12,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import java.time.Instant
+import java.util.Calendar
+import java.util.SimpleTimeZone
 import java.util.TimeZone
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -28,6 +30,7 @@ import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsSort
 import moe.ouom.neriplayer.data.stats.PlaybackStatsSummary
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -210,7 +213,21 @@ class PlaybackStatsQueryStateTest {
 
     @Test
     fun `a zone change rereads data when the query timestamp and current midnight stay equal`() = runTest {
-        val clock = TestClock(this, firstDay, "Africa/Casablanca")
+        // 固定时区规则，避免同一天午夜相等的前提依赖宿主时区数据库
+        val hourMillis = 3_600_000
+        val initialZone = SimpleTimeZone(hourMillis, "Test/Fixed")
+        val changedZone = SimpleTimeZone(
+            0, "Test/Seasonal",
+            Calendar.MARCH, 1, 0, 0,
+            Calendar.NOVEMBER, 1, 0, 0,
+            hourMillis
+        )
+        val clock = TestClock(this, firstDay).apply { zone = initialZone }
+        val yearStart = Instant.parse("2026-01-01T12:00:00Z").toEpochMilli()
+        assertNotEquals(
+            statsQueryDay(yearStart, initialZone).key.startMillis,
+            statsQueryDay(yearStart, changedZone).key.startMillis
+        )
         val query = PlaybackStatsQuery(PlaybackStatsPeriod.YEAR, nowMillis = firstDay)
         val repository = mock(PlaybackStatsRepository::class.java)
         `when`(repository.revisionFlow).thenReturn(MutableStateFlow(1L))
@@ -223,13 +240,15 @@ class PlaybackStatsQueryStateTest {
             fixture.start()
             fixture.pump()
             val original = fixture.query
-            val midnight = statsQueryDay(firstDay, clock.timeZone()).key.startMillis
+            val day = statsQueryDay(firstDay, clock.timeZone()).key
             fixture.request = StatsPageRequest(offset = 100)
             fixture.pump()
             verify(repository, times(2)).readPage(query, null, 100, false)
 
-            clock.zone = TimeZone.getTimeZone("Europe/London")
-            assertEquals(midnight, statsQueryDay(firstDay, clock.timeZone()).key.startMillis)
+            clock.zone = changedZone
+            val changedDay = statsQueryDay(firstDay, clock.timeZone()).key
+            assertEquals(day.startMillis, changedDay.startMillis)
+            assertEquals(day.endMillis, changedDay.endMillis)
             fixture.timeChanges.emit(Unit)
             fixture.pump()
 

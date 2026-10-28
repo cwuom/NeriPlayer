@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.util.rememberLocalArtistDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
+import moe.ouom.neriplayer.R as AppR
 
 internal fun localArtistGridMinCellSize(windowWidth: Dp): Dp =
     if (windowWidth >= 720.dp) 156.dp else 120.dp
@@ -196,7 +197,7 @@ internal fun LocalArtistGridCard(
             )
             Text(
                 text = pluralStringResource(
-                    CoreCommonR.plurals.artist_song_count,
+                    AppR.plurals.artist_song_count,
                     artist.songs.size,
                     artist.songs.size
                 ),

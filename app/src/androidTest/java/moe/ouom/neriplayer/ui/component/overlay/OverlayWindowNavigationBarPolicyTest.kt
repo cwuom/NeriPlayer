@@ -316,16 +316,14 @@ class OverlayWindowNavigationBarPolicyTest {
         window.applyNeriSystemBarTransparency()
         WindowInsetsControllerCompat(window, window.decorView).apply {
             show(WindowInsetsCompat.Type.statusBars())
-            systemBarsBehavior = if (hidden) WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            else WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
             if (hidden) hide(WindowInsetsCompat.Type.navigationBars())
             else show(WindowInsetsCompat.Type.navigationBars())
         }
     }
 
     private fun awaitNavigationPolicy(window: Window, hidden: Boolean, stage: String) {
-        val expectedBehavior = if (hidden) WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        else WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+        val expectedBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
         instrumentation.runOnMainSync {
             Log.i("OverlayWindowNavigation", "$stage awaiting hidden=$hidden behavior=$expectedBehavior: ${navigationPolicySnapshot(window)}")
         }

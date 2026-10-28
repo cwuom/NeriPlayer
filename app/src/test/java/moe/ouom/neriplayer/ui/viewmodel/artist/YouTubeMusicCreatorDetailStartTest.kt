@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.app.Application
 import androidx.lifecycle.viewModelScope
 import java.util.concurrent.ConcurrentHashMap
@@ -120,13 +121,13 @@ class YouTubeMusicCreatorDetailStartTest {
         failures["UC_a"] = IllegalStateException("offline")
         viewModel.start(creatorA, forceRefresh = true)
         assertEquals(
-            YouTubeMusicCreatorDetailUiState(loading = false, error = "Load failed: offline", detail = detail(creatorA)),
+            YouTubeMusicCreatorDetailUiState(loading = false, error = UiText.Resource(CoreCommonR.string.youtube_creator_load_failed, listOf("offline")), detail = detail(creatorA)),
             viewModel.awaitLoaded()
         )
 
         failures["UC_a"] = IllegalStateException()
         viewModel.retry()
-        assertEquals("Load failed: IllegalStateException", viewModel.awaitLoaded().error)
+        assertEquals(UiText.Resource(CoreCommonR.string.youtube_creator_load_failed, listOf("IllegalStateException")), viewModel.awaitLoaded().error)
     }
 
     private fun TestScope.viewModel(): YouTubeMusicCreatorDetailViewModel {

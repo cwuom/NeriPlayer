@@ -1,0 +1,8 @@
+<resources>
+    <string name="feedback_history_not_ready">Play history could not be initialized. Try again later.</string>
+    <string name="feedback_stats_not_ready">Playback statistics could not be initialized. Try again later.</string>
+    <string name="feedback_backup_input_unavailable">Cannot open the backup file</string>
+    <string name="feedback_backup_no_playlists">The backup file contains no playlist data</string>
+    <string name="feedback_value">%1$s: %2$s</string>
+    <string name="feedback_lines">%1$s\n%2$s</string>
+</resources>

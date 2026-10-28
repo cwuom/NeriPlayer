@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.res.Resources
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.MutableState
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistNameError
+import moe.ouom.neriplayer.ui.i18n.UiText
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.FocusRequester
@@ -100,7 +102,7 @@ internal class LocalPlaylistDetailModernContentScope(
         List<SongItem>,
         Result<List<LocalPlaylistSongDeleteResult>>
     ) -> Unit,
-    private val launchWithLocalSyncWarningAction: (List<SongItem>, String, Boolean, () -> Unit) -> Unit,
+    private val launchWithLocalSyncWarningAction: (List<SongItem>, Int, Boolean, () -> Unit) -> Unit,
     val openNeteaseSyncPreview: () -> Unit,
     private val playPlaylistAction: (Boolean) -> Unit,
     val copyText: (String) -> Unit,
@@ -109,7 +111,7 @@ internal class LocalPlaylistDetailModernContentScope(
     private val showNeteaseRemotePlaylistPickerState: LocalPlaylistDetailMutableValue<Boolean>,
     private val neteaseRemotePlaylistsState: LocalPlaylistDetailMutableValue<List<NeteaseRemotePlaylist>>,
     private val neteaseRemotePlaylistsLoadingState: LocalPlaylistDetailMutableValue<Boolean>,
-    private val neteaseRemotePlaylistsErrorState: LocalPlaylistDetailMutableValue<String?>,
+    private val neteaseRemotePlaylistsErrorState: LocalPlaylistDetailMutableValue<UiText?>,
     private val pendingNeteaseRemoteSyncConfirmState: LocalPlaylistDetailMutableValue<PendingNeteaseRemotePlaylistSync?>,
     private val showDeletePlaylistConfirmState: LocalPlaylistDetailMutableValue<Boolean>,
     private val showDeleteMultiConfirmState: LocalPlaylistDetailMutableValue<Boolean>,
@@ -117,7 +119,7 @@ internal class LocalPlaylistDetailModernContentScope(
     private val showExportAllSheetState: LocalPlaylistDetailMutableValue<Boolean>,
     private val detailSongState: LocalPlaylistDetailMutableValue<SongItem?>,
     private val pendingSyncConfirmActionState: LocalPlaylistDetailMutableValue<(() -> Unit)?>,
-    private val pendingSyncConfirmLabelState: LocalPlaylistDetailMutableValue<String>,
+    private val pendingSyncConfirmLabelState: LocalPlaylistDetailMutableValue<Int>,
     private val showSearchState: LocalPlaylistDetailMutableValue<Boolean>,
     private val searchQueryState: LocalPlaylistDetailMutableValue<String>,
     private val headerSearchFocusedState: LocalPlaylistDetailMutableValue<Boolean>,
@@ -127,7 +129,7 @@ internal class LocalPlaylistDetailModernContentScope(
     private val selectionModeState: LocalPlaylistDetailMutableValue<Boolean>,
     private val showRenameState: LocalPlaylistDetailMutableValue<Boolean>,
     private val renameTextState: LocalPlaylistDetailMutableValue<TextFieldValue>,
-    private val renameErrorState: LocalPlaylistDetailMutableValue<String?>,
+    private val renameErrorState: LocalPlaylistDetailMutableValue<PlaylistNameError?>,
     private val selectedLocalFilesTabIndexState: LocalPlaylistDetailMutableValue<Int>,
     private val pendingOrderIdentitiesState: LocalPlaylistDetailMutableValue<List<SongIdentity>?>,
     private val blockSyncState: LocalPlaylistDetailMutableValue<Boolean>
@@ -187,7 +189,7 @@ internal class LocalPlaylistDetailModernContentScope(
 
     fun launchWithLocalSyncWarning(
         songs: List<SongItem>,
-        actionLabel: String,
+        actionLabel: Int,
         warnForLocalSync: Boolean = true,
         action: () -> Unit
     ) {

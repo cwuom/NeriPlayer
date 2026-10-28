@@ -10,6 +10,7 @@ import androidx.annotation.StringRes
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.locale.LanguageManager
 
 internal class SyncFailureNotification(
     private val context: Context,
@@ -25,6 +26,7 @@ internal class SyncFailureNotification(
     }
 
     private fun deliver(message: String) {
+        val context = LanguageManager.applyLanguage(this.context.applicationContext)
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         val channel = NotificationChannel(channelId, context.getString(channelName), NotificationManager.IMPORTANCE_DEFAULT)
         channel.description = context.getString(channelDescription)

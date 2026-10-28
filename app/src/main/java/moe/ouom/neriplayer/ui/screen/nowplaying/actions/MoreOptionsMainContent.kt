@@ -66,6 +66,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -114,6 +115,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 import moe.ouom.neriplayer.ui.feedback.startActivityOrShowUnavailable
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun MoreOptionsMainContent(
@@ -183,7 +185,7 @@ internal fun MoreOptionsMainContent(
                     onClick = onOpenBiliVideoSkip
                 )
                 MoreOptionsItem(
-                    title = stringResource(CoreCommonR.string.bili_cc_subtitle_manage),
+                    title = stringResource(AppR.string.bili_cc_subtitle_manage),
                     icon = Icons.Outlined.Subtitles,
                     hue = MoreHuePink,
                     onClick = onOpenBiliCcSubtitle
@@ -197,7 +199,7 @@ internal fun MoreOptionsMainContent(
             )
             PlaybackStatsAction(originalSong)
             MoreOptionsItem(
-                title = stringResource(CoreCommonR.string.encyclopedia_title),
+                title = stringResource(AppR.string.encyclopedia_title),
                 icon = Icons.AutoMirrored.Outlined.MenuBook,
                 hue = MoreHueViolet,
                 onClick = onOpenEncyclopedia
@@ -543,40 +545,39 @@ private fun PlaybackStatsAction(song: SongItem) {
     val resolvedTrackStat = trackStat ?: return
     var showDialog by remember { mutableStateOf(false) }
     MoreOptionsItem(
-        title = stringResource(CoreCommonR.string.stats_title),
+        title = stringResource(AppR.string.stats_title),
         icon = Icons.Outlined.BarChart,
         hue = MoreHueOrange,
         onClick = { showDialog = true }
     )
     if (!showDialog) return
 
-    val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()) }
-    val firstPlayedText = remember(resolvedTrackStat.firstPlayedAt) {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.ROOT
+    val dateFormat = remember(locale) { SimpleDateFormat("yyyy/MM/dd HH:mm", locale) }
+    val firstPlayedText = remember(resolvedTrackStat.firstPlayedAt, dateFormat) {
         dateFormat.format(Date(resolvedTrackStat.firstPlayedAt))
     }
-    val totalListenText = remember(resolvedTrackStat.totalListenMs) {
-        val totalSeconds = resolvedTrackStat.totalListenMs / 1000
-        val hours = totalSeconds / 3600
-        val minutes = (totalSeconds % 3600) / 60
-        when {
-            hours > 0 -> "${hours}h ${minutes}m"
-            minutes > 0 -> "${minutes}m"
-            else -> "${totalSeconds}s"
-        }
+    val totalSeconds = resolvedTrackStat.totalListenMs / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val totalListenText = when {
+        hours > 0 -> stringResource(AppR.string.encyclopedia_total_listen_hours, hours, minutes)
+        minutes > 0 -> stringResource(AppR.string.encyclopedia_total_listen_minutes, minutes)
+        else -> stringResource(AppR.string.encyclopedia_total_listen_seconds, totalSeconds)
     }
     AlertDialog(
         onDismissRequest = { showDialog = false },
         icon = { Icon(Icons.Outlined.BarChart, null) },
-        title = { Text(stringResource(CoreCommonR.string.stats_title)) },
+        title = { Text(stringResource(AppR.string.stats_title)) },
         shape = neriRoundedShape(28.dp),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatsCard(CoreCommonR.string.stats_song_first_played, firstPlayedText)
-                StatsCard(CoreCommonR.string.stats_song_total_listen, totalListenText)
+                StatsCard(AppR.string.stats_song_first_played, firstPlayedText)
+                StatsCard(AppR.string.stats_song_total_listen, totalListenText)
                 StatsCard(
-                    labelRes = CoreCommonR.string.stats_song_play_count_label,
+                    labelRes = AppR.string.stats_song_play_count_label,
                     value = pluralStringResource(
-                        CoreCommonR.plurals.stats_play_count_value,
+                        AppR.plurals.stats_play_count_value,
                         resolvedTrackStat.playCount,
                         resolvedTrackStat.playCount
                     )

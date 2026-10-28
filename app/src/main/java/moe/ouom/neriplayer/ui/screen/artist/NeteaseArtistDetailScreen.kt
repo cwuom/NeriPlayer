@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.app.Application
 import androidx.compose.foundation.background
@@ -88,6 +89,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.R as AppR
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -305,7 +307,7 @@ private fun LazyListScope.artistWorks(
     if (ui.error != null && !ui.loading && (ui.songs.isNotEmpty() || ui.albums.isNotEmpty())) {
         item {
             Text(
-                text = ui.error,
+                text = ui.error.asString(),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(vertical = 8.dp)
@@ -322,7 +324,7 @@ private fun LazyListScope.artistWorks(
 
     if (ui.error != null && ui.songs.isEmpty() && ui.albums.isEmpty()) {
         item {
-            ErrorBlock(error = ui.error, onRetry = onRetry)
+            ErrorBlock(error = ui.error.asString(), onRetry = onRetry)
         }
         return
     }
@@ -652,7 +654,7 @@ private fun ArtistReleaseCounts(header: NeteaseArtistHeader?) {
         label = {
             Text(
                 pluralStringResource(
-                    CoreCommonR.plurals.artist_song_count,
+                    AppR.plurals.artist_song_count,
                     header?.musicSize ?: 0,
                     header?.musicSize ?: 0
                 )
@@ -664,7 +666,7 @@ private fun ArtistReleaseCounts(header: NeteaseArtistHeader?) {
         label = {
             Text(
                 pluralStringResource(
-                    CoreCommonR.plurals.artist_album_count,
+                    AppR.plurals.artist_album_count,
                     header?.albumSize ?: 0,
                     header?.albumSize ?: 0
                 )

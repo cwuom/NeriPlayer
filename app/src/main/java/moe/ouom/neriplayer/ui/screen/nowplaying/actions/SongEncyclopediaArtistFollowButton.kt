@@ -46,6 +46,9 @@ import moe.ouom.neriplayer.ui.haptic.HapticButton
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.screen.artist.containsCreator
 import moe.ouom.neriplayer.ui.screen.artist.toggleCreatorFollow
+import moe.ouom.neriplayer.ui.screen.artist.creatorFollowFailureText
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 import java.io.IOException
 
 /**
@@ -85,7 +88,7 @@ internal fun SongEncyclopediaArtistFollowButton(
 
     val scope = rememberCoroutineScope()
     var updating by remember(artist.artistId) { mutableStateOf(false) }
-    var error by remember(artist.artistId) { mutableStateOf<String?>(null) }
+    var error by remember(artist.artistId) { mutableStateOf<UiText?>(null) }
 
     Column(modifier = modifier) {
         HapticButton(
@@ -101,7 +104,7 @@ internal fun SongEncyclopediaArtistFollowButton(
                     } catch (cancellation: CancellationException) {
                         throw cancellation
                     } catch (failure: Exception) {
-                        error = failure.message ?: failure.javaClass.simpleName
+                        error = creatorFollowFailureText(failure)
                     } finally {
                         updating = false
                     }
@@ -153,7 +156,7 @@ internal fun SongEncyclopediaArtistFollowButton(
         error?.let { message ->
             Spacer(Modifier.height(6.dp))
             Text(
-                text = stringResource(CoreCommonR.string.artist_follow_failed, message),
+                text = stringResource(CoreCommonR.string.artist_follow_failed, message.asString()),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )

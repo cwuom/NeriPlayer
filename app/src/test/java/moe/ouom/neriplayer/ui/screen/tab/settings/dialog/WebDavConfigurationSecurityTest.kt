@@ -21,6 +21,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
@@ -56,11 +57,11 @@ class WebDavConfigurationSecurityTest {
         draft.serverUrl.value = "https://dav.example.invalid"
         showDialog(UiStyle.Material)
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_warning)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_warning)).assertDoesNotExist()
         submit()
 
         assertEquals(listOf("https://dav.example.invalid"), submissions)
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_confirm_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_confirm_title)).assertDoesNotExist()
     }
 
     @Test
@@ -70,11 +71,11 @@ class WebDavConfigurationSecurityTest {
         val field = composeRule.onNode(hasSetTextAction() and hasText("https://dav.example.invalid"))
 
         field.performTextReplacement("  HTTP://dav.example.invalid  ")
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_warning)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_warning)).assertIsDisplayed()
 
         composeRule.onNode(hasSetTextAction() and hasText("  HTTP://dav.example.invalid  "))
             .performTextReplacement("https://dav.example.invalid")
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_warning)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_warning)).assertDoesNotExist()
         assertEquals(emptyList<String>(), submissions)
     }
 
@@ -82,14 +83,14 @@ class WebDavConfigurationSecurityTest {
     fun `changing the configuration discards an outstanding confirmation`() {
         showDialog(UiStyle.Clean)
         submit()
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_confirm_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_confirm_title)).assertIsDisplayed()
 
         composeRule.runOnIdle { draft.serverUrl.value = "http://another.example.invalid" }
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_confirm_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_confirm_title)).assertDoesNotExist()
         assertEquals(emptyList<String>(), submissions)
         submit()
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_confirm)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_confirm)).performClick()
         assertEquals(listOf("http://another.example.invalid"), submissions)
     }
 
@@ -107,29 +108,29 @@ class WebDavConfigurationSecurityTest {
                 WebDavCleartextWarning(serverUrl = draft.serverUrl.value)
             }
         }
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_warning)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_warning)).assertIsDisplayed()
 
         composeRule.runOnIdle { draft.serverUrl.value = "https://dav.example.invalid" }
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_warning)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_warning)).assertDoesNotExist()
     }
 
     private fun verifyHttpConfirmation(style: UiStyle, dark: Boolean) {
         showDialog(style, dark)
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_warning)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_warning)).assertIsDisplayed()
         submit()
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_confirm_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_confirm_title)).assertIsDisplayed()
         assertEquals(emptyList<String>(), submissions)
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_cancel)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_cancel)).performClick()
         assertEquals(emptyList<String>(), submissions)
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_confirm_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_confirm_title)).assertDoesNotExist()
 
         submit()
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_confirm)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_confirm)).performClick()
 
         assertEquals(listOf("http://dav.example.invalid"), submissions)
-        composeRule.onNodeWithText(string(CoreCommonR.string.webdav_cleartext_confirm_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.webdav_cleartext_confirm_title)).assertDoesNotExist()
     }
 
     private fun showDialog(style: UiStyle, dark: Boolean = false) {

@@ -20,7 +20,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.model.stats.TrackStat
@@ -35,6 +34,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
@@ -84,15 +84,15 @@ class PlaybackStatsContentTest {
 
         composeRule.onNodeWithTag("statsSingleColumn").assertExists()
         composeRule.onNodeWithTag("statsChart").assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_top_tracks)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.stats_top_tracks)).assertExists()
         assertEquals(2, composeRule.onAllNodesWithText("1h 1m").fetchSemanticsNodes().size)
         assertEquals(2, composeRule.onAllNodesWithText("45s").fetchSemanticsNodes().size)
         composeRule.onNodeWithTag("statsOverview").assertExists()
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_period_day)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.stats_period_day)).performClick()
         composeRule.onNodeWithTag("statsTrack_track-1").performClick()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_previous_page)).assertIsNotEnabled()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_next_page)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.stats_previous_page)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(AppR.string.stats_next_page)).performClick()
         dark = true
         composeRule.onNodeWithTag("statsTrack_track-4").assertExists()
 
@@ -124,21 +124,21 @@ class PlaybackStatsContentTest {
             }
         }
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_empty)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.stats_empty)).assertExists()
 
         current = state(emptyList(), summary = PlaybackStatsSummary(hasAnyStats = true, usesLegacyBreakdown = true))
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_period_missing_breakdown)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_period_compat_notice)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.stats_period_missing_breakdown)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.stats_period_compat_notice)).assertDoesNotExist()
 
         current = state(emptyList(), summary = PlaybackStatsSummary(hasAnyStats = true))
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_period_empty)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.stats_period_empty)).assertExists()
 
         current = current.copy(loading = true)
         composeRule.onNodeWithTag("statsLoading").assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_period_empty)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.stats_period_empty)).assertDoesNotExist()
 
         current = current.copy(loading = false, failed = true)
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_period_empty)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.stats_period_empty)).assertDoesNotExist()
         composeRule.onNodeWithTag("statsRetry").performClick()
 
         assertEquals(listOf(StatsPageRequest(offset = 100, retry = 3)), pageRequests)
@@ -179,9 +179,9 @@ class PlaybackStatsContentTest {
         composeRule.onNodeWithTag("statsMetricPlays").assertExists()
         composeRule.onNodeWithText("2m").assertExists()
         composeRule.onNodeWithTag("statsChart").assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_sort_first_played)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_period_compat_notice)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_previous_page)).performClick()
+        composeRule.onNodeWithText(string(AppR.string.stats_sort_first_played)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.stats_period_compat_notice)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.stats_previous_page)).performClick()
         assertEquals(
             listOf(StatsPageRequest(previousCursor, before = true, offset = 50)),
             pageRequests
@@ -191,8 +191,8 @@ class PlaybackStatsContentTest {
         composeRule.onNodeWithTag("statsChart").assertDoesNotExist()
 
         current = state(emptyList(), summary = PlaybackStatsSummary(hasAnyStats = true))
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_period_empty)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_sort_first_played)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.stats_period_empty)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.stats_sort_first_played)).assertExists()
     }
 
     @Test
@@ -220,7 +220,7 @@ class PlaybackStatsContentTest {
         composeRule.onNodeWithTag("statsTabletColumns").assertDoesNotExist()
         composeRule.onNodeWithTag("statsMetricTracks").assertExists()
         composeRule.onNodeWithTag("statsChart").assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_period_year)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.stats_period_year)).assertExists()
     }
 
     @Test
@@ -239,16 +239,16 @@ class PlaybackStatsContentTest {
         composeRule.onNodeWithText("Track 9").performClick()
         assertEquals(1, rowClicks)
         composeRule.onNodeWithText("2h 0m").assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_total_plays)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_previous_page)).assertIsNotEnabled()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_next_page)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(AppR.string.stats_total_plays)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.stats_previous_page)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(AppR.string.stats_next_page)).assertIsNotEnabled()
 
         current = current.copy(loading = false, failed = true)
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_previous_page)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(AppR.string.stats_previous_page)).assertIsNotEnabled()
 
         current = current.copy(failed = false)
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_previous_page)).assertIsEnabled()
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_next_page)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(AppR.string.stats_previous_page)).assertIsEnabled()
+        composeRule.onNodeWithText(string(AppR.string.stats_next_page)).assertIsNotEnabled()
     }
 
     @Test

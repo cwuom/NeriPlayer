@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.platform.youtube.api.auth.fromJson
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasEffectiveAuth
 import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import android.app.Application
+import moe.ouom.neriplayer.ui.i18n.UiText
 import java.io.IOException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -54,7 +55,7 @@ data class YouTubeAuthUiState(
 )
 
 sealed interface YouTubeAuthEvent {
-    data class ShowSnack(val message: String) : YouTubeAuthEvent
+    data class ShowSnack(val message: UiText) : YouTubeAuthEvent
     data object LoginSuccess : YouTubeAuthEvent
 }
 
@@ -109,7 +110,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 repo.clear()
             } catch (_: IOException) {
-                emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_storage_clear_failed))
+                emitSnack(UiText.Resource(CoreCommonR.string.auth_storage_clear_failed))
                 return@launch
             }
             clearWebViewLoginState(
@@ -118,7 +119,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             )
             _events.send(
                 YouTubeAuthEvent.ShowSnack(
-                    getApplication<Application>().getString(CoreCommonR.string.auth_cookie_cleared)
+                    UiText.Resource(CoreCommonR.string.auth_cookie_cleared)
                 )
             )
         }
@@ -130,7 +131,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     fun importCookiesFromRaw(raw: String) {
         if (raw.isBlank()) {
-            emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_cookie_empty))
+            emitSnack(UiText.Resource(CoreCommonR.string.auth_cookie_empty))
             return
         }
 
@@ -139,7 +140,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             savedAt = System.currentTimeMillis()
         )
         if (parsedBundle == null) {
-            emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_cookie_invalid))
+            emitSnack(UiText.Resource(CoreCommonR.string.auth_cookie_invalid))
             return
         }
 
@@ -155,7 +156,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             if (health.state == YouTubeAuthState.Missing) {
                 _events.send(
                     YouTubeAuthEvent.ShowSnack(
-                        getApplication<Application>().getString(CoreCommonR.string.settings_youtube_auth_missing)
+                        UiText.Resource(CoreCommonR.string.settings_youtube_auth_missing)
                     )
                 )
                 return@launch
@@ -164,7 +165,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 repo.saveAuth(normalized)
             } catch (_: IOException) {
-                emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_storage_save_failed))
+                emitSnack(UiText.Resource(CoreCommonR.string.auth_storage_save_failed))
                 return@launch
             }
             _uiState.value = YouTubeAuthUiState(
@@ -175,7 +176,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun emitSnack(message: String) {
+    private fun emitSnack(message: UiText) {
         viewModelScope.launch {
             _events.send(YouTubeAuthEvent.ShowSnack(message))
         }

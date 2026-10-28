@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.edit
 
+import moe.ouom.neriplayer.ui.i18n.asString
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
@@ -63,6 +64,7 @@ import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 import moe.ouom.neriplayer.ui.viewmodel.ManualSearchState
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.R as AppR
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -158,7 +160,7 @@ private fun EditSongSearchAvailabilityMessage(searchEnabled: Boolean) {
 }
 
 internal fun musicPlatformLabelResource(platform: MusicPlatform): Int = when (platform) {
-    MusicPlatform.CLOUD_MUSIC -> CoreCommonR.string.platform_netease_short
+    MusicPlatform.CLOUD_MUSIC -> AppR.string.platform_netease_short
     MusicPlatform.QQ_MUSIC -> CoreCommonR.string.settings_qq_music
 }
 
@@ -228,7 +230,7 @@ private fun EditSongSearchResults(
                 }
             }
             else -> Text(
-                text = state.error ?: stringResource(CoreCommonR.string.nowplaying_no_search_result),
+                text = state.error?.asString() ?: stringResource(CoreCommonR.string.nowplaying_no_search_result),
                 color = if (state.error != null) MaterialTheme.colorScheme.error else LocalContentColor.current
             )
         }

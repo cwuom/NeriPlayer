@@ -36,14 +36,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import moe.ouom.neriplayer.ui.component.overlay.LocalizedDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentImage
 import moe.ouom.neriplayer.ui.component.overlay.ApplyOverlayWindowNavigationBarPolicy
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.R as AppR
 
 /** 预览大图请求的像素边长。 */
 private const val CommentImagePreviewRequestSizePx = 1440
@@ -169,7 +169,7 @@ internal fun CommentImagePreviewDialog(
                             )
                         },
                         contentDescription = stringResource(
-                            CoreCommonR.string.comment_image_content_description
+                            AppR.string.comment_image_content_description
                         ),
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
@@ -204,7 +204,7 @@ internal fun CommentImagePreviewDialog(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = stringResource(CoreCommonR.string.comment_image_preview_close),
+                    contentDescription = stringResource(AppR.string.comment_image_preview_close),
                     tint = Color.White
                 )
             }

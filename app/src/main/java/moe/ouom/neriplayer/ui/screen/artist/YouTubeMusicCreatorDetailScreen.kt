@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.app.Application
 import android.content.Context
@@ -305,7 +306,7 @@ internal fun YouTubeMusicCreatorDetailContent(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = uiState.error.orEmpty(),
+                            text = uiState.error?.asString().orEmpty(),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -358,14 +359,14 @@ internal fun YouTubeMusicCreatorDetailContent(
                                 )
                             }
                         }
-                        if (!uiState.error.isNullOrBlank()) {
+                        if (uiState.error != null) {
                             item(key = "creator-error") {
                                 Row(
                                     modifier = Modifier.padding(vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = uiState.error,
+                                        text = uiState.error.asString(),
                                         modifier = Modifier.weight(1f),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.error
@@ -402,7 +403,7 @@ internal fun YouTubeMusicCreatorDetailContent(
                                     playbackQueueError = uiState.playbackQueueError.takeIf {
                                         uiState.playbackQueueErrorSectionKey ==
                                             youtubeMusicCreatorSectionKey(section)
-                                    },
+                                    }?.asString(),
                                     onSongClick = onSongClick,
                                     onSectionSongClick = onSectionSongClick,
                                     onPlaylistClick = onPlaylistClick,

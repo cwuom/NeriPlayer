@@ -98,7 +98,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -117,6 +116,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchConfidence
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
@@ -164,7 +165,7 @@ internal class NowPlayingLyricsEditorOwner(
     val resultsBySourceState = mutableStateOf<Map<EditableLyricMatchSource, List<RankedEditableLyricMatch>>>(emptyMap())
     val searchedSourcesState = mutableStateOf<Set<EditableLyricMatchSource>>(emptySet())
     val isMatchingState = mutableStateOf(false)
-    val matchErrorState = mutableStateOf<String?>(null)
+    val matchErrorState = mutableStateOf<UiText?>(null)
     val canEdit: Boolean get() = !isSavingState.value
 
     private var cachedQuery = ""
@@ -304,8 +305,8 @@ internal class NowPlayingLyricsEditorOwner(
         query: String,
         sources: Set<EditableLyricMatchSource>,
         preferWordTimed: Boolean,
-        noSourceMessage: String,
-        errorMessage: (Throwable) -> String
+        noSourceMessage: UiText,
+        errorMessage: (Throwable) -> UiText
     ) {
         val trimmedQuery = query.trim()
         if (disposed || isSavingState.value || trimmedQuery.isBlank() || isMatchingState.value) return
@@ -402,7 +403,6 @@ fun LyricsEditorSheet(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val resources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
     val focusManager = LocalFocusManager.current
@@ -468,11 +468,11 @@ fun LyricsEditorSheet(
             query = query,
             sources = sources,
             preferWordTimed = preferWordTimedLyrics,
-            noSourceMessage = resources.getString(CoreCommonR.string.lyrics_match_no_source_selected),
+            noSourceMessage = UiText.Resource(CoreCommonR.string.lyrics_match_no_source_selected),
             errorMessage = { error ->
-                resources.getString(
+                UiText.Resource(
                     CoreCommonR.string.lyrics_match_error,
-                    editableLyricMatchFailureDescription(error)
+                    listOf(editableLyricMatchFailureDescription(error))
                 )
             }
         )
@@ -501,7 +501,7 @@ fun LyricsEditorSheet(
             onQueryChange = owner::changeQuery,
             results = visibleLyricMatchResults,
             isLoading = isLyricMatching,
-            errorMessage = lyricMatchError,
+            errorMessage = lyricMatchError?.asString(),
             hasSearched = hasSearchedSelectedLyricSources,
             selectedSources = selectedLyricMatchSources,
             onSourceToggle = owner::toggleSource,

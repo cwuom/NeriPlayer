@@ -68,6 +68,7 @@ import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.lyrics.parser.hasWordTimedEntries
 import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.lyrics.parser.alignSubtitleLyrics
 import moe.ouom.neriplayer.lyrics.parser.parseEmbeddedPhoneticLyrics
 import moe.ouom.neriplayer.lyrics.parser.resolveStoredLyricText
 import moe.ouom.neriplayer.data.model.SongItem
@@ -1304,12 +1305,14 @@ object PlayerLyricsProvider {
             biliSubtitleLyricsCache.get(key)?.let { return it }
         }
         val loaded = try {
-            BiliSubtitleLyricsLoader.load(
+            val subtitles = BiliSubtitleLyricsLoader.load(
                 song = song,
                 client = biliClient,
                 preferredLanguage = options.preferredLanguage,
                 aiSubtitleAllowed = options.aiSubtitleAllowed
             )
+            val (lyrics, translatedLyrics) = alignSubtitleLyrics(subtitles.lyrics, subtitles.translatedLyrics)
+            subtitles.copy(lyrics = lyrics, translatedLyrics = translatedLyrics)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {

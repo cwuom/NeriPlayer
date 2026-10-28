@@ -37,7 +37,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.platform.bilibili.api.client.BiliPagedItems
 import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
 import moe.ouom.neriplayer.platform.bilibili.cache.archive.BiliArchiveCacheRepository
@@ -58,7 +57,9 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.collections.mergeDistinctBy
-import moe.ouom.neriplayer.ui.component.playlist.playlistLoadErrorMessage
+import moe.ouom.neriplayer.ui.component.playlist.playlistLoadFailure
+import moe.ouom.neriplayer.data.model.playlist.PlaylistLoadFailure
+import moe.ouom.neriplayer.R as AppR
 
 private const val TAG = "NERI-BiliPlaylistVM"
 private const val BILI_RESOURCE_TYPE_VIDEO = 2
@@ -69,7 +70,7 @@ private const val BILI_ARCHIVE_PAGE_SIZE = 12
 /** Bilibili 收藏夹详情页 UI 状态 */
 data class BiliPlaylistDetailUiState(
     val loading: Boolean = true,
-    val error: String? = null,
+    val error: PlaylistLoadFailure? = null,
     val header: BiliPlaylist? = null,
     val videos: List<BiliVideoItem> = emptyList(),
     val hasMore: Boolean = false,
@@ -330,7 +331,7 @@ class BiliPlaylistDetailViewModel internal constructor(
     private fun isCurrentLoad(playlist: BiliPlaylist, generation: Long): Boolean =
         generation == loadGeneration && _uiState.value.header?.sameIdentityAs(playlist) == true
 
-    private fun blockContent(playlist: BiliPlaylist, generation: Long, message: String) {
+    private fun blockContent(playlist: BiliPlaylist, generation: Long, message: PlaylistLoadFailure) {
         if (!isCurrentLoad(playlist, generation)) return
         cancelLoads()
         _uiState.update { it.copy(loading = false, loadingMore = false, error = message) }
@@ -392,7 +393,7 @@ class BiliPlaylistDetailViewModel internal constructor(
                     "load more archives failed: mediaId=${header.mediaId}, kind=${header.kind}, page=$nextPage",
                     error
                 )
-                blockContent(header, generation, playlistLoadErrorMessage(getApplication(), error))
+                blockContent(header, generation, playlistLoadFailure(error))
             }
         }
     }
@@ -404,8 +405,8 @@ class BiliPlaylistDetailViewModel internal constructor(
      * @return 包含所有分P信息的 VideoBasicInfo 对象
      */
     suspend fun getVideoInfo(bvid: String): VideoBasicInfo {
-        check(_uiState.value.error == null) { getApplication<Application>().getString(CoreCommonR.string.playlist_error_title) }
-        check(!currentOfflineMode) { getApplication<Application>().getString(CoreCommonR.string.playlist_error_network) }
+        check(_uiState.value.error == null) { getApplication<Application>().getString(AppR.string.playlist_error_title) }
+        check(!currentOfflineMode) { getApplication<Application>().getString(AppR.string.playlist_error_network) }
         val generation = loadGeneration
         val info = withContext(Dispatchers.IO) {
             NPLogger.d(TAG, "getVideoInfo start: bvid=$bvid")
@@ -450,7 +451,7 @@ class BiliPlaylistDetailViewModel internal constructor(
                     if (offlineContent == null) {
                         blockContent(
                             header, generation,
-                            getApplication<Application>().getString(CoreCommonR.string.playlist_error_offline_no_cache)
+                            PlaylistLoadFailure.Offline
                         )
                     } else {
                         _uiState.update { current ->
@@ -520,7 +521,7 @@ class BiliPlaylistDetailViewModel internal constructor(
                     error = if (content.complete) {
                         null
                     } else {
-                        getApplication<Application>().getString(CoreCommonR.string.bili_favorites_incomplete)
+                        PlaylistLoadFailure.Incomplete
                     },
                     header = header.copy(count = content.totalCount),
                     videos = content.videos,
@@ -530,7 +531,7 @@ class BiliPlaylistDetailViewModel internal constructor(
                 if (!content.complete) {
                     blockContent(
                         header, generation,
-                        getApplication<Application>().getString(CoreCommonR.string.bili_favorites_incomplete)
+                        PlaylistLoadFailure.Incomplete
                     )
                     return@launch
                 }
@@ -555,7 +556,7 @@ class BiliPlaylistDetailViewModel internal constructor(
                     "loadContent failed: mediaId=${header.mediaId}",
                     e
                 )
-                blockContent(header, generation, playlistLoadErrorMessage(getApplication(), e))
+                blockContent(header, generation, playlistLoadFailure(e))
             }
         }
     }

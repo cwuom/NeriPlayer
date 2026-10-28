@@ -155,6 +155,10 @@ import org.burnoutcrew.reorderable.ItemPosition
 import moe.ouom.neriplayer.ui.screen.playlist.reorder.rememberLocalPlaylistReorderCoverPlaylist
 import moe.ouom.neriplayer.ui.screen.playlist.reorder.rememberLocalPlaylistReorderState
 import kotlin.random.Random
+import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistNameError
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 
 internal enum class LocalFilesSongTab {
     MANUALLY_ADDED,
@@ -207,7 +211,7 @@ internal fun playlistNameFieldValue(text: String, maxLength: Int): TextFieldValu
 internal class PlaylistRenameUiState(
     val visible: MutableState<Boolean>,
     val text: MutableState<TextFieldValue>,
-    val error: MutableState<String?>
+    val error: MutableState<PlaylistNameError?>
 )
 
 @Composable
@@ -216,7 +220,7 @@ internal fun rememberPlaylistRenameUiState(name: String, maxLength: Int): Playli
     val text = rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(playlistNameFieldValue(name, maxLength))
     }
-    val error = rememberSaveable { mutableStateOf<String?>(null) }
+    val error = rememberSaveable { mutableStateOf<PlaylistNameError?>(null) }
     return remember(visible, text, error) { PlaylistRenameUiState(visible, text, error) }
 }
 
@@ -502,7 +506,7 @@ fun LocalPlaylistDetailScreen(
                 mutableStateOf<List<NeteaseRemotePlaylist>>(emptyList())
             }
             var neteaseRemotePlaylistsLoading by remember { mutableStateOf(false) }
-            var neteaseRemotePlaylistsError by remember { mutableStateOf<String?>(null) }
+            var neteaseRemotePlaylistsError by remember { mutableStateOf<UiText?>(null) }
             var neteaseRemotePlaylistsLoadJob by remember { mutableStateOf<Job?>(null) }
             var neteaseRemotePlaylistsRequestGeneration by remember { mutableIntStateOf(0) }
             var pendingNeteaseRemoteSyncSongs by remember { mutableStateOf<List<SongItem>>(emptyList()) }
@@ -518,7 +522,7 @@ fun LocalPlaylistDetailScreen(
             var showExportAllSheet by remember { mutableStateOf(false) }
             var detailSong by remember { mutableStateOf<SongItem?>(null) }
             var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-            var pendingSyncConfirmLabel by remember { mutableStateOf("") }
+            var pendingSyncConfirmLabel by remember { mutableIntStateOf(CoreCommonR.string.playlist_add_to) }
 
             val searchUiState = rememberPlaylistSearchUiState()
             var showSearch by searchUiState.visible
@@ -588,12 +592,12 @@ fun LocalPlaylistDetailScreen(
                     val message = when {
                         result.importedCount > 0 && result.failedCount > 0 -> {
                             val failedSummary = resources.getQuantityString(
-                                CoreCommonR.plurals.local_playlist_import_audio_failed_summary,
+                                AppR.plurals.local_playlist_import_audio_failed_summary,
                                 result.failedCount,
                                 result.failedCount
                             )
                             resources.getQuantityString(
-                                CoreCommonR.plurals.local_playlist_import_audio_partial,
+                                AppR.plurals.local_playlist_import_audio_partial,
                                 result.importedCount,
                                 result.importedCount,
                                 failedSummary
@@ -601,7 +605,7 @@ fun LocalPlaylistDetailScreen(
                         }
                         result.importedCount > 0 -> {
                             resources.getQuantityString(
-                                CoreCommonR.plurals.local_playlist_import_audio_success,
+                                AppR.plurals.local_playlist_import_audio_success,
                                 result.importedCount,
                                 result.importedCount
                             )
@@ -611,7 +615,7 @@ fun LocalPlaylistDetailScreen(
                         }
                         else -> {
                             resources.getQuantityString(
-                                CoreCommonR.plurals.local_playlist_import_audio_failed,
+                                AppR.plurals.local_playlist_import_audio_failed,
                                 result.failedCount,
                                 result.failedCount
                             )
@@ -653,7 +657,7 @@ fun LocalPlaylistDetailScreen(
                 scope.launch {
                     val message = if (result.importedCount > 0) {
                         context.resources.getQuantityString(
-                            CoreCommonR.plurals.local_playlist_add_scanned_success,
+                            AppR.plurals.local_playlist_add_scanned_success,
                             result.importedCount,
                             result.importedCount
                         )
@@ -676,7 +680,7 @@ fun LocalPlaylistDetailScreen(
                     if (result.failedCount > 0) {
                         snackbarHostState.showNeriSnackbar(
                             context.resources.getQuantityString(
-                                CoreCommonR.plurals.download_scan_failed,
+                                AppR.plurals.download_scan_failed,
                                 result.failedCount,
                                 result.failedCount
                             )
@@ -728,7 +732,7 @@ fun LocalPlaylistDetailScreen(
                 if (!persistGranted) {
                     scope.launch {
                         snackbarHostState.showNeriSnackbar(
-                            "目录持久授权失败，导入的歌曲在应用重启后可能无法访问"
+                            composeResources.getString(AppR.string.media_folder_persist_permission_failed)
                         )
                     }
                 }
@@ -852,7 +856,7 @@ fun LocalPlaylistDetailScreen(
 
             fun launchWithLocalSyncWarning(
                 songs: List<SongItem>,
-                actionLabel: String,
+                actionLabel: Int,
                 warnForLocalSync: Boolean = true,
                 action: () -> Unit
             ) {
@@ -917,7 +921,7 @@ fun LocalPlaylistDetailScreen(
                     }
                 val unsupportedMessage = if (unsupportedCount > 0) {
                     context.resources.getQuantityString(
-                        CoreCommonR.plurals.local_playlist_sync_netease_unsupported,
+                        AppR.plurals.local_playlist_sync_netease_unsupported,
                         unsupportedCount,
                         unsupportedCount
                     )
@@ -1002,25 +1006,19 @@ fun LocalPlaylistDetailScreen(
                 )
             }
 
-            fun validateRename(input: String): String? {
+            fun validateRename(input: String): PlaylistNameError? {
                 val name = normalizedRenameName(input)
                 if (isSameRenameName(input)) return null
-                if (name.isEmpty()) return composeResources.getString(CoreCommonR.string.playlist_name_empty)
-                if (SystemLocalPlaylists.matchesReservedName(name, context)) {
-                    val reservedName = SystemLocalPlaylists.resolve(
-                        playlistId = 0L,
-                        playlistName = name,
-                        context = context
-                    )?.currentName ?: name
-                    return composeResources.getString(CoreCommonR.string.library_name_reserved, reservedName)
-                }
+                if (name.isEmpty()) return PlaylistNameError.EMPTY
+                if (FavoritesPlaylist.matches(name, context)) return PlaylistNameError.FAVORITES_RESERVED
+                if (LocalFilesPlaylist.matches(name, context)) return PlaylistNameError.LOCAL_FILES_RESERVED
                 if (allPlaylists.any {
                         it.id != playlist.id && it.name.equals(
                             name,
                             ignoreCase = true
                         )
                     }) {
-                    return composeResources.getString(CoreCommonR.string.library_name_exists)
+                    return PlaylistNameError.DUPLICATE
                 }
                 return null
             }
@@ -1063,7 +1061,7 @@ fun LocalPlaylistDetailScreen(
                             )
                             renameError?.let { error ->
                                 Text(
-                                    text = error,
+                                    text = error.message().asString(),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error
                                 )
@@ -1191,10 +1189,11 @@ fun LocalPlaylistDetailScreen(
                 if (!isListArtworkIdle) return@LaunchedEffect
                 CoverArtColorCache.preload(context, headerCover, offlineMode)
             }
+            val searchContext = rememberPlaylistSearchContext()
             val displayedSongs = rememberPlaylistSearchResults(
                 query = searchQuery,
                 items = tabSongs,
-                tokens = { song -> song.playlistSearchValues(context) },
+                tokens = { song -> song.playlistSearchValues(searchContext) },
                 buildIndex = shouldBuildPlaylistSearchIndex(
                     searchVisible = showSearch,
                     query = searchQuery
@@ -1397,14 +1396,14 @@ fun LocalPlaylistDetailScreen(
                         result.onSuccess { playlists ->
                             neteaseRemotePlaylists = playlists
                             if (playlists.isEmpty()) {
-                                neteaseRemotePlaylistsError = composeResources.getString(
+                                neteaseRemotePlaylistsError = UiText.Resource(
                                     CoreCommonR.string.local_playlist_sync_netease_no_playlists
                                 )
                             }
                         }.onFailure { error ->
                             neteaseRemotePlaylistsError = error.message
-                                ?.takeIf(String::isNotBlank)
-                                ?: composeResources.getString(
+                                ?.takeIf(String::isNotBlank)?.let(UiText::Literal)
+                                ?: UiText.Resource(
                                     CoreCommonR.string.local_playlist_sync_netease_load_failed
                                 )
                         }
@@ -1467,7 +1466,7 @@ fun LocalPlaylistDetailScreen(
                             }
                             launchWithLocalSyncWarning(
                                 songs = selectedSongs,
-                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
+                                actionLabel = CoreCommonR.string.playlist_add_to
                             ) {
                                 vm.createPlaylistWithScannedSongs(
                                     name = name,
@@ -1482,7 +1481,7 @@ fun LocalPlaylistDetailScreen(
                             }
                             launchWithLocalSyncWarning(
                                 songs = selectedSongs,
-                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to),
+                                actionLabel = CoreCommonR.string.playlist_add_to,
                                 warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(target, context) ||
                                     shouldConfirmFavoriteSync(selectedSongs, context)
                             ) {
@@ -1505,15 +1504,13 @@ fun LocalPlaylistDetailScreen(
                 }
                 pendingSyncConfirmAction?.let { action ->
                     LocalSongSyncConfirmDialog(
-                        actionLabel = pendingSyncConfirmLabel,
+                        actionLabel = stringResource(pendingSyncConfirmLabel),
                         onConfirm = {
                             pendingSyncConfirmAction = null
-                            pendingSyncConfirmLabel = ""
                             action()
                         },
                         onDismiss = {
                             pendingSyncConfirmAction = null
-                            pendingSyncConfirmLabel = ""
                         }
                     )
                 }

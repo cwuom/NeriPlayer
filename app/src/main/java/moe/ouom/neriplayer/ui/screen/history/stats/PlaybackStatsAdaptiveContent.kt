@@ -36,13 +36,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.R as AppR
 
 private val StatsTabletContentMaxWidth = 1200.dp
 private val StatsTabletColumnsMinWidth = 720.dp
@@ -202,7 +202,7 @@ private fun StatsRefreshStatus(state: StatsPageState, request: StatsPageRequest,
         HapticTextButton(
             onClick = retryStatsPageAction(request, retry),
             modifier = Modifier.testTag("statsRetry")
-        ) { Text(stringResource(CoreCommonR.string.stats_load_failed)) }
+        ) { Text(stringResource(AppR.string.stats_load_failed)) }
     }
 }
 
@@ -215,9 +215,9 @@ private fun StatsEmptyResult(state: StatsPageState) {
     Box(Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 320.dp).padding(24.dp), contentAlignment = Alignment.Center) {
         if (!state.loading && !state.failed) {
             StatsEmptyContent(stringResource(when {
-                !state.summary.hasAnyStats -> CoreCommonR.string.stats_empty
-                state.summary.usesLegacyBreakdown -> CoreCommonR.string.stats_period_missing_breakdown
-                else -> CoreCommonR.string.stats_period_empty
+                !state.summary.hasAnyStats -> AppR.string.stats_empty
+                state.summary.usesLegacyBreakdown -> AppR.string.stats_period_missing_breakdown
+                else -> AppR.string.stats_period_empty
             }))
         }
     }
@@ -227,7 +227,7 @@ private fun StatsEmptyResult(state: StatsPageState) {
 private fun StatsCompatibilityNotice(state: StatsPageState) {
     if (state.summary.usesLegacyBreakdown && state.page.tracks.isNotEmpty()) {
         Text(
-            stringResource(CoreCommonR.string.stats_period_compat_notice),
+            stringResource(AppR.string.stats_period_compat_notice),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)

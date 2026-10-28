@@ -23,7 +23,7 @@
 </p>
 
 <p>
-  <img src="icon/neriplayer.svg" width="260" alt="NeriPlayer logo" />
+  <img src="icon/readme-banner.svg" width="100%" alt="NeriPlayer — Modern Music Player" />
 </p>
 
 <p>
@@ -225,6 +225,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   OnePlus 的高密度屏幕（系统 `densityDpi >= 500`）会自动叠加 `0.95x` UI 修正，
   普通密度机型不触发修正，用户手动设置值仍会作为额外乘数参与计算。
   “进阶高级模糊”和“连贯反馈”默认关闭；关闭连贯反馈时，歌单等详情页使用抽屉式展开；
+  “预测性返回预览”默认关闭，所有系统均可手动开启；
   进阶高级模糊仅在 Android 13+ 且父级高级模糊开启时可用；
   它会增强屏幕级顶部 Tab、底部 Tab 和设置结构卡片的实时玻璃材质，
   并提供 `12-64 dp` 的模糊度调节，不改变文字、图标、布局与点击区域。
@@ -1177,8 +1178,14 @@ NeriPlayer 使用 **GPL-3.0** 开源许可证发布。
 
 <p align="center">
   <img src="https://moe-counter.lxchapu.com/:neriplayer?theme=moebooru" alt="访问计数 (Moe Counter)">
-  <br/>
-  <a href="https://starchart.cc/cwuom/NeriPlayer">
-    <img src="https://starchart.cc/cwuom/NeriPlayer.svg" alt="Star 历史趋势图">
-  </a>
 </p>
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=cwuom%2Fneriplayer&type=timeline&legend=bottom-right">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cwuom/neriplayer&type=timeline&theme=dark&legend=bottom-right" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cwuom/neriplayer&type=timeline&legend=bottom-right" />
+    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cwuom/neriplayer&type=timeline&legend=bottom-right" />
+  </picture>
+</a>

@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.audio
 
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_SPEED
 import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
@@ -17,6 +16,7 @@ import moe.ouom.neriplayer.data.model.playback.effects.updateProfileFor
 import moe.ouom.neriplayer.data.model.playback.effects.withSectionDefaults
 import moe.ouom.neriplayer.data.model.playback.effects.withSectionEnabled
 import kotlin.math.abs
+import moe.ouom.neriplayer.R as AppR
 
 /**
  * 音效页按分区切换。音效分区用“原声”预设即可还原，高级分区自带“全部恢复默认”；
@@ -27,22 +27,22 @@ internal enum class AudioEffectsSection(
     val switchTitleRes: Int?,
     val soundSection: AudioEffectsSoundSection?
 ) {
-    PRESETS(CoreCommonR.string.audio_effects_tab_presets, null, null),
+    PRESETS(AppR.string.audio_effects_tab_presets, null, null),
     EQUALIZER(
-        CoreCommonR.string.audio_effects_tab_equalizer,
-        CoreCommonR.string.audio_effects_section_switch_equalizer,
+        AppR.string.audio_effects_tab_equalizer,
+        AppR.string.audio_effects_section_switch_equalizer,
         AudioEffectsSoundSection.EQUALIZER
     ),
-    TONE(CoreCommonR.string.audio_effects_tab_tone, CoreCommonR.string.audio_effects_section_switch_tone, AudioEffectsSoundSection.TONE),
-    SPACE(CoreCommonR.string.audio_effects_tab_space, CoreCommonR.string.audio_effects_section_switch_space, AudioEffectsSoundSection.SPACE),
+    TONE(AppR.string.audio_effects_tab_tone, AppR.string.audio_effects_section_switch_tone, AudioEffectsSoundSection.TONE),
+    SPACE(AppR.string.audio_effects_tab_space, AppR.string.audio_effects_section_switch_space, AudioEffectsSoundSection.SPACE),
     DYNAMICS(
-        CoreCommonR.string.audio_effects_tab_dynamics,
-        CoreCommonR.string.audio_effects_section_switch_dynamics,
+        AppR.string.audio_effects_tab_dynamics,
+        AppR.string.audio_effects_section_switch_dynamics,
         AudioEffectsSoundSection.DYNAMICS
     ),
-    SPEAKER(CoreCommonR.string.audio_effects_tab_speaker, CoreCommonR.string.audio_effects_speaker_enabled, null),
-    SPEED(CoreCommonR.string.audio_effects_tab_speed, CoreCommonR.string.audio_effects_section_switch_speed, null),
-    ADVANCED(CoreCommonR.string.audio_effects_tab_advanced, null, null);
+    SPEAKER(AppR.string.audio_effects_tab_speaker, AppR.string.audio_effects_speaker_enabled, null),
+    SPEED(AppR.string.audio_effects_tab_speed, AppR.string.audio_effects_section_switch_speed, null),
+    ADVANCED(AppR.string.audio_effects_tab_advanced, null, null);
 
     val switchable: Boolean get() = switchTitleRes != null
     val resettable: Boolean get() = switchable

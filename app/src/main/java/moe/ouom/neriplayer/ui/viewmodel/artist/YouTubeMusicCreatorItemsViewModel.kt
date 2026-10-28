@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.viewmodel.feedbackText
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,13 +27,13 @@ private const val TAG = "NERI-YTCreatorItems"
 data class YouTubeMusicCreatorItemsUiState(
     val loading: Boolean = true,
     val loadingMore: Boolean = false,
-    val error: String? = null,
-    val loadMoreError: String? = null,
+    val error: UiText? = null,
+    val loadMoreError: UiText? = null,
     val title: String = "",
     val items: List<YouTubeMusicCreatorItem> = emptyList(),
     val continuation: String? = null,
     val playbackQueueLoading: Boolean = false,
-    val playbackQueueError: String? = null
+    val playbackQueueError: UiText? = null
 )
 
 class YouTubeMusicCreatorItemsViewModel(application: Application) : AndroidViewModel(application) {
@@ -194,8 +196,8 @@ class YouTubeMusicCreatorItemsViewModel(application: Application) : AndroidViewM
         }
     }
 
-    private fun creatorItemsError(sectionTitle: String, error: Exception): String {
-        return getApplication<Application>().getString(
+    private fun creatorItemsError(sectionTitle: String, error: Exception): UiText {
+        return feedbackText(
             CoreCommonR.string.youtube_creator_items_load_failed,
             sectionTitle,
             error.message ?: error.javaClass.simpleName

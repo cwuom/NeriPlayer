@@ -47,6 +47,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
@@ -100,7 +101,7 @@ class SettingsBackupTransferDialogsFlowTest {
 
         composeRule.runOnIdle { config.importConfig(uri) }
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_import_password_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(AppR.string.settings_config_import_password_title)).assertIsDisplayed()
         composeRule.onNodeWithText(string(CoreCommonR.string.action_cancel)).performClick()
         composeRule.runOnIdle {
             assertFalse(config.uiState.value.isImporting)
@@ -108,7 +109,7 @@ class SettingsBackupTransferDialogsFlowTest {
             assertNull(config.uiState.value.lastImportSuccess)
             assertEquals(emptyList<String>(), documentNames)
         }
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_import_password_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.settings_config_import_password_title)).assertDoesNotExist()
     }
 
     @Test
@@ -154,7 +155,7 @@ class SettingsBackupTransferDialogsFlowTest {
             assertTrue(documentNames.single().matches(Regex("neriplayer_config_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}\\.json")))
             assertFalse(config.uiState.value.showExportOptions)
         }
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_export_options_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.settings_config_export_options_title)).assertDoesNotExist()
     }
 
     private fun render(style: UiStyle) {
@@ -190,7 +191,7 @@ class SettingsBackupTransferDialogsFlowTest {
     private fun installManager(manager: ConfigFileManager) {
         for ((name, value) in listOf(
             "configFileManager" to manager,
-            "strings" to ConfigTransferViewModel.ConfigTransferStrings.from(context)
+            "strings" to ConfigTransferViewModel.ConfigTransferStrings.create()
         )) {
             ConfigTransferViewModel::class.java.getDeclaredField(name).apply {
                 isAccessible = true

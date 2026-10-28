@@ -151,8 +151,16 @@ data class AppConfigImportResult(
     val restoredAuthCount: Int,
     val restoredSyncCount: Int,
     val warnings: List<String> = emptyList(),
-    val requiresActivityRecreate: Boolean = false
+    val requiresActivityRecreate: Boolean = false,
+    val warningCodes: Map<Int, AppConfigImportWarning> = emptyMap()
 )
+
+enum class AppConfigImportWarning {
+    INVALID_SETTING_VALUES,
+    BACKGROUND_IMAGE,
+    DOWNLOAD_DIRECTORY,
+    NETEASE_COOKIE
+}
 
 const val CONFIG_KIND = "moe.ouom.neriplayer.config"
 const val CONFIG_FORMAT_VERSION = 1

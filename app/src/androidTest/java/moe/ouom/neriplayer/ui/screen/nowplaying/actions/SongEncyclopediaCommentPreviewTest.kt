@@ -21,7 +21,6 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.CompletableDeferred
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.data.model.comments.CommentPage
 import moe.ouom.neriplayer.data.model.comments.CommentPlatform
@@ -42,6 +41,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CopyOnWriteArrayList
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class SongEncyclopediaCommentPreviewTest {
@@ -72,11 +72,11 @@ class SongEncyclopediaCommentPreviewTest {
     fun previewKeepsCommentsAndShowAllWithoutDisplayingTheTotalCount() {
         render(PreviewRepository(listOf(comment("1"), comment("2"))))
 
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.encyclopedia_section_comments)).assertExists()
+        composeRule.onNodeWithText(context.getString(AppR.string.encyclopedia_section_comments)).assertExists()
         composeRule.onNodeWithText("preview-comment-1", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithText("preview-comment-2", useUnmergedTree = true).assertExists()
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.encyclopedia_comment_show_all)).assertExists()
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_total_format, "2"))
+        composeRule.onNodeWithText(context.getString(AppR.string.encyclopedia_comment_show_all)).assertExists()
+        composeRule.onNodeWithText(context.getString(AppR.string.comment_total_format, "2"))
             .assertDoesNotExist()
     }
 
@@ -84,9 +84,9 @@ class SongEncyclopediaCommentPreviewTest {
     fun previewOmitsReplyAndThreadActions() {
         render(PreviewRepository(listOf(comment("1", replyCount = 6L), comment("2"))))
 
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_reply_count_format, "6"))
+        composeRule.onNodeWithText(context.getString(AppR.string.comment_reply_count_format, "6"))
             .assertDoesNotExist()
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_reply)).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(AppR.string.comment_reply)).assertDoesNotExist()
     }
 
     @Test
@@ -95,8 +95,8 @@ class SongEncyclopediaCommentPreviewTest {
 
         composeRule.onNodeWithText("preview-comment-1", useUnmergedTree = true)
             .performTouchInput { longClick() }
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_copy)).assertExists()
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_reply)).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(AppR.string.comment_copy)).assertExists()
+        composeRule.onNodeWithText(context.getString(AppR.string.comment_reply)).assertDoesNotExist()
     }
 
     @Test
@@ -105,7 +105,7 @@ class SongEncyclopediaCommentPreviewTest {
         val repository = PreviewRepository(listOf(comment("1")), likeCompletion = completion)
         render(repository)
 
-        val like = composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.comment_like))
+        val like = composeRule.onNodeWithContentDescription(context.getString(AppR.string.comment_like))
         like.assertIsEnabled().performClick()
         composeRule.waitUntil { viewModel.uiState.value.likingIds == setOf("1") }
         like.assertIsNotEnabled()
@@ -115,7 +115,7 @@ class SongEncyclopediaCommentPreviewTest {
         composeRule.waitUntil {
             viewModel.uiState.value.comments.single().isLiked && viewModel.uiState.value.likingIds.isEmpty()
         }
-        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.comment_unlike))
+        composeRule.onNodeWithContentDescription(context.getString(AppR.string.comment_unlike))
             .assertIsEnabled()
         composeRule.onNodeWithText("4").assertExists()
     }
@@ -125,7 +125,7 @@ class SongEncyclopediaCommentPreviewTest {
         val repository = PreviewRepository(listOf(comment("1")))
         render(repository, offlineMode = true)
 
-        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.comment_like))
+        composeRule.onNodeWithContentDescription(context.getString(AppR.string.comment_like))
             .assertIsNotEnabled()
         assertTrue(repository.likes.isEmpty())
     }
@@ -138,11 +138,11 @@ class SongEncyclopediaCommentPreviewTest {
         )
         render(repository)
 
-        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.comment_like))
+        composeRule.onNodeWithContentDescription(context.getString(AppR.string.comment_like))
             .assertIsEnabled().performClick()
         composeRule.waitUntil { viewModel.uiState.value.likeError == CommentError.PERMISSION }
-        val message = context.getString(CoreCommonR.string.comment_like_login_required)
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_error_code_format, message, 301))
+        val message = context.getString(AppR.string.comment_like_login_required)
+        composeRule.onNodeWithText(context.getString(AppR.string.comment_error_code_format, message, 301))
             .assertExists()
         composeRule.onNodeWithText("3").assertExists()
     }

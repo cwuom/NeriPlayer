@@ -28,12 +28,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistSongArtwork
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 internal fun PlaylistInsertPreviewCard(
@@ -62,13 +62,13 @@ internal fun PlaylistInsertPreviewCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = stringResource(CoreCommonR.string.playlist_insert_preview_title),
+                text = stringResource(AppR.string.playlist_insert_preview_title),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = stringResource(
-                    CoreCommonR.string.playlist_insert_preview_range,
+                    AppR.string.playlist_insert_preview_range,
                     preview.startPosition,
                     endIndex
                 ),
@@ -84,8 +84,8 @@ internal fun PlaylistInsertPreviewCard(
                 item(key = "before-label") {
                     PlaylistInsertContextLabel(
                         stringResource(
-                            if (startIndex == 0) CoreCommonR.string.playlist_insert_at_start
-                            else CoreCommonR.string.playlist_insert_section_before
+                            if (startIndex == 0) AppR.string.playlist_insert_at_start
+                            else AppR.string.playlist_insert_section_before
                         )
                     )
                 }
@@ -93,7 +93,7 @@ internal fun PlaylistInsertPreviewCard(
                     item(key = "omitted-before") {
                         PlaylistInsertContextLabel(
                             pluralStringResource(
-                                CoreCommonR.plurals.playlist_insert_omitted_before,
+                                AppR.plurals.playlist_insert_omitted_before,
                                 beforeStartIndex,
                                 beforeStartIndex
                             )
@@ -112,7 +112,7 @@ internal fun PlaylistInsertPreviewCard(
                 item(key = "selected-label") {
                     PlaylistInsertContextLabel(
                         pluralStringResource(
-                            CoreCommonR.plurals.playlist_insert_section_selected,
+                            AppR.plurals.playlist_insert_section_selected,
                             preview.movedKeys.size,
                             preview.movedKeys.size
                         ),
@@ -127,8 +127,8 @@ internal fun PlaylistInsertPreviewCard(
                 item(key = "after-label") {
                     PlaylistInsertContextLabel(
                         stringResource(
-                            if (endIndex == preview.orderedKeys.size) CoreCommonR.string.playlist_insert_at_end
-                            else CoreCommonR.string.playlist_insert_section_after
+                            if (endIndex == preview.orderedKeys.size) AppR.string.playlist_insert_at_end
+                            else AppR.string.playlist_insert_section_after
                         )
                     )
                 }
@@ -145,7 +145,7 @@ internal fun PlaylistInsertPreviewCard(
                     item(key = "omitted-after") {
                         PlaylistInsertContextLabel(
                             pluralStringResource(
-                                CoreCommonR.plurals.playlist_insert_omitted_after,
+                                AppR.plurals.playlist_insert_omitted_after,
                                 preview.orderedKeys.size - afterEndIndex,
                                 preview.orderedKeys.size - afterEndIndex
                             )

@@ -1,9 +1,13 @@
 package moe.ouom.neriplayer.ui.screen.history
 
 import android.content.Context
+import android.content.res.Configuration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalResources
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -77,22 +81,28 @@ internal fun rememberRecentSearchResults(
 ): RecentSongsSnapshot {
     if (!searchVisible && query.isBlank()) return snapshot
 
-    val preparedIndex by produceState<RecentSearchIndex?>(null, snapshot, context) {
+    val resources = LocalResources.current
+    val configuration = Configuration(LocalConfiguration.current)
+    val resourceConfiguration = Configuration(resources.configuration)
+    val searchContext = remember(context, resources, configuration, resourceConfiguration) {
+        context.createConfigurationContext(resourceConfiguration)
+    }
+    val preparedIndex by produceState<RecentSearchIndex?>(null, snapshot, searchContext) {
         value = withContext(Dispatchers.Default) {
             val coroutineContext = currentCoroutineContext()
             RecentSearchIndex(
                 source = snapshot,
-                context = context,
+                context = searchContext,
                 index = SearchTextMatcher.index(snapshot.rows) { row ->
                     coroutineContext.ensureActive()
-                    recentSongSearchTokens(row.song, context)
+                    recentSongSearchTokens(row.song, searchContext)
                 }
             )
         }
     }
     if (query.isBlank()) return snapshot
 
-    val activeIndex = preparedIndex?.takeIf { it.source === snapshot && it.context === context }
+    val activeIndex = preparedIndex?.takeIf { it.source === snapshot && it.context === searchContext }
     val displayed by produceState<RecentSearchResult?>(null, activeIndex, query) {
         value = if (activeIndex == null) {
             null

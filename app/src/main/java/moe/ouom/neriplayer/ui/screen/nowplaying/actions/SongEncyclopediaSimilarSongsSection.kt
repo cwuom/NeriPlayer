@@ -47,10 +47,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaSimilarSong
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.ui.Alignment
+import moe.ouom.neriplayer.R as AppR
 private const val SIMILAR_SONG_EXPAND_THRESHOLD = 5
 /**
  * 模块七 喜欢这首歌的人也爱听。
@@ -67,11 +67,11 @@ internal fun SongEncyclopediaSimilarSongsSection(
     var expanded by rememberSaveable { mutableStateOf(false) }
     val visible = if (expanded) similarSongs else similarSongs.take(SIMILAR_SONG_EXPAND_THRESHOLD)
     SongEncyclopediaSectionCard(
-        titleRes = CoreCommonR.string.encyclopedia_section_similar_songs,
+        titleRes = AppR.string.encyclopedia_section_similar_songs,
         icon = Icons.Outlined.MusicNote
     ) {
         if (similarSongs.isEmpty()) {
-            SongEncyclopediaEmptyHint(CoreCommonR.string.encyclopedia_empty)
+            SongEncyclopediaEmptyHint(AppR.string.encyclopedia_empty)
         } else {
             visible.forEachIndexed { index, song ->
                 SongEncyclopediaSimilarSongRow(
@@ -89,7 +89,7 @@ internal fun SongEncyclopediaSimilarSongsSection(
                     )
                     SongEncyclopediaSectionAction(
                         icon = Icons.Outlined.PlayArrow,
-                        text = stringResource(CoreCommonR.string.encyclopedia_action_play_all),
+                        text = stringResource(AppR.string.encyclopedia_action_play_all),
                         onClick = onPlayAll
                     )
                 }
@@ -97,7 +97,7 @@ internal fun SongEncyclopediaSimilarSongsSection(
                 SongEncyclopediaActionSpacer()
                 SongEncyclopediaSectionAction(
                     icon = Icons.Outlined.PlayArrow,
-                    text = stringResource(CoreCommonR.string.encyclopedia_action_play_all),
+                    text = stringResource(AppR.string.encyclopedia_action_play_all),
                     onClick = onPlayAll
                 )
             }
@@ -118,7 +118,7 @@ private fun SongEncyclopediaSimilarSongRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = stringResource(CoreCommonR.string.encyclopedia_similar_index, index),
+            text = stringResource(AppR.string.encyclopedia_similar_index, index),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(28.dp)

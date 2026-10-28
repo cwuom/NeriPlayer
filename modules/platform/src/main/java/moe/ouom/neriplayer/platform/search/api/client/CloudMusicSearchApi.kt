@@ -135,7 +135,7 @@ class CloudMusicSearchApi(
             .build()
 
         return client.newCall(request).awaitResponse { response ->
-            if (!response.isSuccessful) throw IOException("请求失败: ${response.code} for url: $url")
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
             val body = response.body
 
             if (asBytes) {

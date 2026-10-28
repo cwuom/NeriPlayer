@@ -1,20 +1,12 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
-import android.app.Activity
-import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
 import android.graphics.Paint
-import android.graphics.Rect as AndroidRect
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
-import android.view.PixelCopy
 import android.view.View
-import android.view.ViewTreeObserver
-import android.view.Window
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -55,15 +47,16 @@ import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.platform.graphics.HardwareRendererCompat
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.captureCommittedFrame
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
@@ -85,14 +78,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.util.UUID
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
-import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
@@ -326,82 +314,8 @@ class LocalPlaylistReorderBlurSamplingTest {
     }
 
     private fun snapshot(): Bitmap {
-        val snapshotStartedAt = System.nanoTime()
         val bounds = composeRule.onRoot(useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        val boundsInWindow = AndroidRect(
-            bounds.left.roundToInt(), bounds.top.roundToInt(),
-            bounds.right.roundToInt(), bounds.bottom.roundToInt()
-        )
-        val frameCommitted = AtomicBoolean(false)
-        val frameRegisteredAt = AtomicLong()
-        var registeredObserver: ViewTreeObserver? = null
-        var frameCallback: Runnable? = null
-        val wasDrawingEnabled = HardwareRendererCompat.isDrawingEnabled()
-        try {
-            if (!wasDrawingEnabled) HardwareRendererCompat.setDrawingEnabled(true)
-            val window = composeRule.runOnUiThread {
-                check(hostView.isAttachedToWindow) { "snapshot host is detached" }
-                check(hostView.isHardwareAccelerated) { "snapshot requires hardware rendering" }
-                val window = activityWindow()
-                val location = IntArray(2)
-                hostView.getLocationInWindow(location)
-                boundsInWindow.offset(location[0], location[1])
-                val observer = hostView.viewTreeObserver
-                val callback = Runnable {
-                    val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - frameRegisteredAt.get())
-                    frameCommitted.set(true)
-                    Log.i(LogTag, "snapshot commit elapsedMs=$elapsedMs")
-                }
-                registeredObserver = observer
-                frameCallback = callback
-                observer.registerFrameCommitCallback(callback)
-                frameRegisteredAt.set(System.nanoTime())
-                hostView.invalidate()
-                window
-            }
-            Log.i(LogTag, "snapshot register elapsedMs=${TimeUnit.NANOSECONDS.toMillis(frameRegisteredAt.get() - snapshotStartedAt)}")
-            // 同步注册后再计提交预算，冻结的测试时钟不能因截图而继续推进
-            while (!frameCommitted.get()) {
-                if (System.nanoTime() - frameRegisteredAt.get() > TimeUnit.MILLISECONDS.toNanos(FrameCommitTimeoutMs)) {
-                    throw AssertionError("snapshot frame did not commit within $FrameCommitTimeoutMs ms")
-                }
-                Thread.sleep(FramePollIntervalMs)
-            }
-            val bitmap = Bitmap.createBitmap(boundsInWindow.width(), boundsInWindow.height(), Bitmap.Config.ARGB_8888)
-            val copyFinished = CountDownLatch(1)
-            var copyResult = PixelCopy.ERROR_UNKNOWN
-            val copyStartedAt = System.nanoTime()
-            PixelCopy.request(window, boundsInWindow, bitmap, { result ->
-                copyResult = result
-                val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - copyStartedAt)
-                copyFinished.countDown()
-                Log.i(LogTag, "snapshot copy elapsedMs=$elapsedMs")
-            }, Handler(Looper.getMainLooper()))
-            assertTrue("snapshot PixelCopy did not complete within $PixelCopyTimeoutMs ms", copyFinished.await(PixelCopyTimeoutMs, TimeUnit.MILLISECONDS))
-            assertEquals("snapshot PixelCopy failed", PixelCopy.SUCCESS, copyResult)
-            return bitmap
-        } finally {
-            try {
-                composeRule.runOnUiThread {
-                    val observer = registeredObserver
-                    val callback = frameCallback
-                    if (observer != null && observer.isAlive && callback != null) {
-                        observer.unregisterFrameCommitCallback(callback)
-                    }
-                }
-            } finally {
-                if (!wasDrawingEnabled) HardwareRendererCompat.setDrawingEnabled(false)
-            }
-        }
-    }
-
-    private fun activityWindow(): Window {
-        var hostContext = hostView.context
-        while (hostContext is ContextWrapper) {
-            if (hostContext is Activity) return hostContext.window
-            hostContext = hostContext.baseContext
-        }
-        error("snapshot host does not have an Activity window")
+        return composeRule.captureCommittedFrame(hostView, bounds)
     }
 
     private fun saveScreenshot(image: Bitmap, name: String) {
@@ -477,7 +391,7 @@ class LocalPlaylistReorderBlurSamplingTest {
     private fun songRow(song: SongItem): SemanticsNodeInteraction = composeRule.onNode(hasClickAction().and(hasAnyDescendant(hasText(song.name))), useUnmergedTree = true)
     private fun miniPlayer(song: SongItem): SemanticsNodeInteraction = songRow(song)
     private fun songHandle(song: SongItem): SemanticsNodeInteraction = composeRule.onNode(hasContentDescription(context.getString(CoreCommonR.string.common_drag_handle)).and(hasAnyAncestor(hasClickAction().and(hasAnyDescendant(hasText(song.name))))), useUnmergedTree = true)
-    private fun bottomTabs(): SemanticsNodeInteraction = composeRule.onNode(SemanticsMatcher.keyIsDefined(SelectableGroup).and(hasAnyDescendant(hasContentDescription(context.getString(CoreCommonR.string.nav_home)))), useUnmergedTree = true)
+    private fun bottomTabs(): SemanticsNodeInteraction = composeRule.onNode(SemanticsMatcher.keyIsDefined(SelectableGroup).and(hasAnyDescendant(hasContentDescription(context.getString(AppR.string.nav_home)))), useUnmergedTree = true)
     private fun playlistList(): SemanticsNodeInteraction = composeRule.onNode(hasScrollToIndexAction().and(SemanticsMatcher.keyIsDefined(VerticalScrollAxisRange)))
     private fun scrollPosition(): Float = playlistList().fetchSemanticsNode().config[VerticalScrollAxisRange].value()
     private fun currentOrder(): List<Long> = repository.playlists.value.single { it.id == ownedPlaylistId }.songs.map { it.id }
@@ -495,10 +409,6 @@ class LocalPlaylistReorderBlurSamplingTest {
         const val FixedHeaderCount = 2
         const val UiTimeoutMs = 15_000L
         const val RepositoryTimeoutMs = 10_000L
-        // CI 软件渲染已实测超过两秒，等待当前帧完成后仍使用原有像素和交互断言
-        const val FrameCommitTimeoutMs = 5_000L
-        const val PixelCopyTimeoutMs = 1_000L
-        const val FramePollIntervalMs = 10L
         const val CheckerFirstColor = 0xFFF014A0.toInt()
         const val CheckerSecondColor = 0xFFF0D000.toInt()
     }

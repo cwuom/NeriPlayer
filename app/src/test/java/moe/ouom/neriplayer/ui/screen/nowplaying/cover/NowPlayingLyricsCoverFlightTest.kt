@@ -37,6 +37,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -66,7 +67,10 @@ class NowPlayingLyricsCoverFlightTest {
     private fun setHost(initialLyrics: Boolean = false) {
         selected = initialLyrics
         composeRule.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+            CompositionLocalProvider(
+                LocalPredictiveBackPreviewEnabled provides true,
+                LocalDensity provides Density(1f)
+            ) {
                 transition = rememberHostPredictiveBackTransition(
                     targetState = selected,
                     backEnabled = selected,

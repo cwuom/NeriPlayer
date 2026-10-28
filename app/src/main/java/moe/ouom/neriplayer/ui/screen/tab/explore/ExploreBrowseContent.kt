@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.screen.tab.home.PlaylistCard
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
+import moe.ouom.neriplayer.R as AppR
 
 internal data class NeteaseBrowseState(
     val selectedTag: String,
@@ -301,7 +302,7 @@ internal fun YouTubeMusicExploreContent(
                 Alignment.Center
             ) {
                 Text(
-                    stringResource(CoreCommonR.string.explore_tag_youtube_music),
+                    stringResource(AppR.string.explore_tag_youtube_music),
                     style = MaterialTheme.typography.bodyLarge
                 )
             }

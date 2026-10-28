@@ -11,6 +11,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -44,6 +45,7 @@ import moe.ouom.neriplayer.testing.TestComposeActivity
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.component.common.PREDICTIVE_DISMISS_CANCEL_DURATION_MS
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -242,44 +244,46 @@ class MoreOptionsSheetPredictiveBackTest {
         saving: Boolean = false
     ) {
         composeRule.setContent {
-            NeriTheme(
-                followSystemDark = false,
-                forceDark = dark,
-                dynamicColor = false,
-                seedColorHex = "6750A4",
-                uiStyle = style,
-                animateColors = false
-            ) {
-                Box(Modifier.fillMaxSize().background(Color(0xFF1E74D9)).testTag(HostTag))
-                if (visible) {
-                    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                    val scope = rememberCoroutineScope()
-                    val owner = remember(sheetState, scope) {
-                        MoreOptionsSheetOwner(scope, sheetState::hide, sheetState::expand) {
-                            dismissals++
-                            visible = false
-                        }.apply {
-                            open(startPage)
-                            setEditSaving(saving)
+            CompositionLocalProvider(LocalPredictiveBackPreviewEnabled provides true) {
+                NeriTheme(
+                    followSystemDark = false,
+                    forceDark = dark,
+                    dynamicColor = false,
+                    seedColorHex = "6750A4",
+                    uiStyle = style,
+                    animateColors = false
+                ) {
+                    Box(Modifier.fillMaxSize().background(Color(0xFF1E74D9)).testTag(HostTag))
+                    if (visible) {
+                        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                        val scope = rememberCoroutineScope()
+                        val owner = remember(sheetState, scope) {
+                            MoreOptionsSheetOwner(scope, sheetState::hide, sheetState::expand) {
+                                dismissals++
+                                visible = false
+                            }.apply {
+                                open(startPage)
+                                setEditSaving(saving)
+                            }
                         }
-                    }
-                    SideEffect { sheetOwner = owner }
-                    MoreOptionsSheetSurface(owner, sheetState, remember { SnackbarHostState() }) {
-                        val view = LocalView.current
-                        val dispatcher = requireNotNull(view.findViewTreeNavigationEventDispatcherOwner())
-                            .navigationEventDispatcher
-                        val color = MaterialTheme.colorScheme.surface
-                        SideEffect {
-                            surfaceColor = color.toArgb()
-                        }
-                        DisposableEffect(dispatcher) {
-                            dispatcher.addInput(gestureInput)
-                            onDispose { dispatcher.removeInput(gestureInput) }
-                        }
-                        val bodyHeight = if (tall) LocalWindowInfo.current.containerDpSize.height * 0.75f else 160.dp
-                        MoreOptionsAnimatedPage(owner) { page ->
-                            Box(Modifier.fillMaxWidth().height(bodyHeight).testTag(BodyTag)) {
-                                Box(Modifier.fillMaxSize().testTag("$PageTag${page.name}"))
+                        SideEffect { sheetOwner = owner }
+                        MoreOptionsSheetSurface(owner, sheetState, remember { SnackbarHostState() }) {
+                            val view = LocalView.current
+                            val dispatcher = requireNotNull(view.findViewTreeNavigationEventDispatcherOwner())
+                                .navigationEventDispatcher
+                            val color = MaterialTheme.colorScheme.surface
+                            SideEffect {
+                                surfaceColor = color.toArgb()
+                            }
+                            DisposableEffect(dispatcher) {
+                                dispatcher.addInput(gestureInput)
+                                onDispose { dispatcher.removeInput(gestureInput) }
+                            }
+                            val bodyHeight = if (tall) LocalWindowInfo.current.containerDpSize.height * 0.75f else 160.dp
+                            MoreOptionsAnimatedPage(owner) { page ->
+                                Box(Modifier.fillMaxWidth().height(bodyHeight).testTag(BodyTag)) {
+                                    Box(Modifier.fillMaxSize().testTag("$PageTag${page.name}"))
+                                }
                             }
                         }
                     }

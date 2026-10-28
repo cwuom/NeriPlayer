@@ -38,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.model.stats.TrackStat
@@ -58,6 +57,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import kotlin.math.abs
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackStatsPhoneRefreshRenderingTest {
@@ -88,9 +88,9 @@ class PlaybackStatsPhoneRefreshRenderingTest {
             capture("before")
 
             listOf(
-                PlaybackStatsPeriod.DAY to CoreCommonR.string.stats_period_day,
-                PlaybackStatsPeriod.MONTH to CoreCommonR.string.stats_period_month,
-                PlaybackStatsPeriod.YEAR to CoreCommonR.string.stats_period_year
+                PlaybackStatsPeriod.DAY to AppR.string.stats_period_day,
+                PlaybackStatsPeriod.MONTH to AppR.string.stats_period_month,
+                PlaybackStatsPeriod.YEAR to AppR.string.stats_period_year
             ).forEach { (period, label) ->
                 composeRule.onNodeWithText(string(label)).performClick().assertIsSelected()
                 composeRule.runOnIdle { assertEquals(period, selectedPeriod.value) }
@@ -241,7 +241,7 @@ class PlaybackStatsPhoneRefreshRenderingTest {
 
     private fun assertOldPlaybackBlocked() {
         tracks.forEach { stat -> row(stat).assertIsNotEnabled().performTouchInput { click() } }
-        composeRule.onNodeWithText(string(CoreCommonR.string.stats_next_page)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(AppR.string.stats_next_page)).assertIsNotEnabled()
         composeRule.runOnIdle {
             assertTrue("保留的旧结果不能触发播放", playedSongs.isEmpty())
             assertEquals(-1, playedIndex)

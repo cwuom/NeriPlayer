@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import android.content.res.Resources
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.TextSnippet
 import androidx.compose.material.icons.outlined.DeleteForever
@@ -79,6 +80,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.core.download.naming.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
 import moe.ouom.neriplayer.core.download.naming.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.core.download.naming.renderManagedDownloadBaseName
@@ -109,12 +111,12 @@ private val DOWNLOAD_FILE_NAME_PLACEHOLDERS = listOf(
     "%hash%"
 )
 
-internal fun buildDownloadFileNameTemplatePreview(template: String?): String {
+internal fun buildDownloadFileNameTemplatePreview(template: String?, resources: Resources): String {
     return renderManagedDownloadBaseName(
-        title = "晴天",
-        artist = "周杰伦",
-        album = "叶惠美",
-        source = "网易云",
+        title = resources.getString(AppR.string.settings_download_file_name_sample_title),
+        artist = resources.getString(AppR.string.settings_download_file_name_sample_artist),
+        album = resources.getString(AppR.string.settings_download_file_name_sample_album),
+        source = resources.getString(AppR.string.platform_netease_short),
         songId = "123456",
         audioId = "456789",
         subAudioId = "789012",
@@ -222,7 +224,7 @@ internal fun SettingsStorageCacheSection(
         pendingDownloadFileNameTemplate = TextFieldValue(currentSavedTemplate)
         showDownloadFileNameDialog.value = false
     }
-    val samplePreview = buildDownloadFileNameTemplatePreview(effectiveTemplate)
+    val samplePreview = buildDownloadFileNameTemplatePreview(effectiveTemplate, composeResources)
     val canApplyDownloadFileNameTemplate = effectiveTemplate != currentSavedTemplate
     fun shouldShowCard(index: Int): Boolean = cardIndex == null || cardIndex == index
 

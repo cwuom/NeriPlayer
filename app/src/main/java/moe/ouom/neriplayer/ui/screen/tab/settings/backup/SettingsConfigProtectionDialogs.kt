@@ -32,6 +32,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
+import moe.ouom.neriplayer.R as AppR
 
 private const val MAX_CONFIG_EXPORT_PASSWORD_CHARACTERS = 1024
 
@@ -54,25 +55,25 @@ internal fun SettingsConfigExportOptionsDialog(
 
     MiuixSettingsDialog(
         onDismissRequest = dismiss,
-        title = { Text(stringResource(CoreCommonR.string.settings_config_export_options_title)) },
+        title = { Text(stringResource(AppR.string.settings_config_export_options_title)) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = stringResource(CoreCommonR.string.settings_config_export_options_description),
+                    text = stringResource(AppR.string.settings_config_export_options_description),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 ConfigProtectionOption(
-                    title = stringResource(CoreCommonR.string.settings_config_include_login_state),
-                    description = stringResource(CoreCommonR.string.settings_config_include_login_state_description),
+                    title = stringResource(AppR.string.settings_config_include_login_state),
+                    description = stringResource(AppR.string.settings_config_include_login_state_description),
                     checked = includeLoginState,
                     onCheckedChange = { includeLoginState = it }
                 )
                 ConfigProtectionOption(
-                    title = stringResource(CoreCommonR.string.settings_config_encrypt_file),
-                    description = stringResource(CoreCommonR.string.settings_config_encrypt_file_description),
+                    title = stringResource(AppR.string.settings_config_encrypt_file),
+                    description = stringResource(AppR.string.settings_config_encrypt_file_description),
                     checked = encryptFile,
                     onCheckedChange = {
                         encryptFile = it
@@ -87,7 +88,7 @@ internal fun SettingsConfigExportOptionsDialog(
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Text(
-                            text = stringResource(CoreCommonR.string.settings_config_plaintext_login_warning),
+                            text = stringResource(AppR.string.settings_config_plaintext_login_warning),
                             modifier = Modifier.padding(12.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold
@@ -98,10 +99,10 @@ internal fun SettingsConfigExportOptionsDialog(
                     ConfigPasswordField(
                         value = password,
                         onValueChange = { password = it },
-                        label = stringResource(CoreCommonR.string.settings_config_password)
+                        label = stringResource(AppR.string.settings_config_password)
                     )
                     Text(
-                        text = stringResource(CoreCommonR.string.settings_config_password_requirements),
+                        text = stringResource(AppR.string.settings_config_password_requirements),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (password.isNotEmpty() && !passwordValid) {
                             MaterialTheme.colorScheme.error
@@ -112,11 +113,11 @@ internal fun SettingsConfigExportOptionsDialog(
                     ConfigPasswordField(
                         value = confirmation,
                         onValueChange = { confirmation = it },
-                        label = stringResource(CoreCommonR.string.settings_config_confirm_password)
+                        label = stringResource(AppR.string.settings_config_confirm_password)
                     )
                     if (confirmation.isNotEmpty() && !passwordsMatch) {
                         Text(
-                            text = stringResource(CoreCommonR.string.settings_config_password_mismatch),
+                            text = stringResource(AppR.string.settings_config_password_mismatch),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -159,24 +160,24 @@ internal fun SettingsConfigImportPasswordDialog(
 
     MiuixSettingsDialog(
         onDismissRequest = dismiss,
-        title = { Text(stringResource(CoreCommonR.string.settings_config_import_password_title)) },
+        title = { Text(stringResource(AppR.string.settings_config_import_password_title)) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = stringResource(CoreCommonR.string.settings_config_import_password_description),
+                    text = stringResource(AppR.string.settings_config_import_password_description),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 ConfigPasswordField(
                     value = password,
                     onValueChange = { password = it },
-                    label = stringResource(CoreCommonR.string.settings_config_password)
+                    label = stringResource(AppR.string.settings_config_password)
                 )
                 if (isPasswordInvalid) {
                     Text(
-                        text = stringResource(CoreCommonR.string.settings_config_password_invalid),
+                        text = stringResource(AppR.string.settings_config_password_invalid),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error
                     )

@@ -43,10 +43,11 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.R as AppR
 
 internal enum class SettingsAccountPlatform(val key: String, val iconRes: Int, val titleRes: Int) {
-    Netease("netease", CoreCommonR.drawable.ic_netease_cloud_music, CoreCommonR.string.platform_netease),
-    Bilibili("bilibili", CoreCommonR.drawable.ic_bilibili, CoreCommonR.string.platform_bilibili),
+    Netease("netease", CoreCommonR.drawable.ic_netease_cloud_music, AppR.string.platform_netease),
+    Bilibili("bilibili", CoreCommonR.drawable.ic_bilibili, AppR.string.platform_bilibili),
     YouTube("youtube", CoreCommonR.drawable.ic_youtube, CoreCommonR.string.common_youtube),
     QqMusic("qq", R.drawable.ic_qq_music, CoreCommonR.string.settings_qq_music)
 }

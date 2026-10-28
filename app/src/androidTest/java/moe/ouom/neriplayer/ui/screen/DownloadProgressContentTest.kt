@@ -28,6 +28,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class DownloadProgressContentTest {
@@ -50,7 +51,7 @@ class DownloadProgressContentTest {
             attemptId = 1L
         )
         val replacement = request.copy(operationId = "${request.operationId}-replacement", attemptId = 2L)
-        val pendingText = context.resources.getQuantityString(CoreCommonR.plurals.download_tasks_count, 1, 1)
+        val pendingText = context.resources.getQuantityString(AppR.plurals.download_tasks_count, 1, 1)
         val emptyText = context.getString(CoreCommonR.string.download_no_tasks)
         fun awaitText(text: String) {
             composeRule.waitUntil(timeoutMillis = 5_000) {

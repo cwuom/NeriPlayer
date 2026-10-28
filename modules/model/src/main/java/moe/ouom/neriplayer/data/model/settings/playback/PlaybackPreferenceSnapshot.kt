@@ -75,7 +75,7 @@ data class PlaybackPreferenceSnapshot(
     val usbExclusiveVolumeRiskThresholdDbfs: Int =
         DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
     val allowMixedPlayback: Boolean = false,
-    val preemptAudioFocus: Boolean = false,
+    val preemptAudioFocus: Boolean = true,
     val cloudMusicLyricDefaultOffsetMs: Long = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
     val qqMusicLyricDefaultOffsetMs: Long = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
     val kugouLyricDefaultOffsetMs: Long = DEFAULT_KUGOU_LYRIC_OFFSET_MS,

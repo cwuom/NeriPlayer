@@ -66,6 +66,23 @@ def sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def apk_metadata(path, build_uuid):
+    with zipfile.ZipFile(path) as archive:
+        dex_files = [name for name in archive.namelist() if re.fullmatch(r"classes(?:[0-9]+)?\.dex", name)]
+        if not any(build_uuid.encode("ascii") + b"\x00" in archive.read(name) for name in dex_files):
+            raise ValueError(f"APK {path.name} does not contain the requested Build UUID")
+        abis = sorted({match.group(1) for name in archive.namelist()
+                       if (match := re.fullmatch(r"lib/([^/]+)/[^/]+\.so", name))})
+    if not abis or not set(abis).issubset(RELEASE_ABIS):
+        raise ValueError(f"APK {path.name} has missing or unknown native ABIs: {abis}")
+    filename_abi = next((abi for abi in RELEASE_ABIS if path.name.endswith(f"-{abi}.apk")), None)
+    if filename_abi and abis != [filename_abi]:
+        raise ValueError(f"APK {path.name} filename ABI {filename_abi} does not match native ABIs {abis}")
+    abi = abis[0] if len(abis) == 1 else "universal"
+    return {"name": path.name, "abi": abi, "abis": abis,
+            "size": path.stat().st_size, "sha256": sha256(path)}
+
+
 def stage(arguments):
     build_uuid, timestamp = required_identity()
     config = build_config_identity(arguments.build_config)
@@ -81,22 +98,7 @@ def stage(arguments):
     names = [path.name for path in apk_files]
     if len(set(names)) != len(names) or any(not re.fullmatch(r"[A-Za-z0-9._+-]+\.apk", name) for name in names):
         raise ValueError("Release APK filenames must be unique and safe for SHA256SUMS.txt")
-    artifacts = []
-    for path in apk_files:
-        with zipfile.ZipFile(path) as archive:
-            dex_files = [name for name in archive.namelist() if re.fullmatch(r"classes(?:[0-9]+)?\.dex", name)]
-            if not any(build_uuid.encode("ascii") + b"\x00" in archive.read(name) for name in dex_files):
-                raise ValueError(f"APK {path.name} does not contain the requested Build UUID")
-            abis = sorted({match.group(1) for name in archive.namelist()
-                           if (match := re.fullmatch(r"lib/([^/]+)/[^/]+\.so", name))})
-        if not abis or not set(abis).issubset(RELEASE_ABIS):
-            raise ValueError(f"APK {path.name} has missing or unknown native ABIs: {abis}")
-        filename_abi = next((abi for abi in RELEASE_ABIS if path.name.endswith(f"-{abi}.apk")), None)
-        if filename_abi and abis != [filename_abi]:
-            raise ValueError(f"APK {path.name} filename ABI {filename_abi} does not match native ABIs {abis}")
-        abi = abis[0] if len(abis) == 1 else "universal"
-        artifacts.append({"name": path.name, "abi": abi, "abis": abis,
-                          "size": path.stat().st_size, "sha256": sha256(path)})
+    artifacts = [apk_metadata(path, build_uuid) for path in apk_files]
     if arguments.expected_abis:
         expected = set(arguments.expected_abis.split(","))
         actual = {artifact["abi"] for artifact in artifacts}
@@ -140,6 +142,70 @@ def stage(arguments):
     print(f"Verified {len(apk_files)} APK(s) for Build UUID {build_uuid}")
 
 
+def summary(arguments):
+    metadata = json.loads(arguments.metadata_file.read_text(encoding="utf-8"))
+    if not isinstance(metadata, dict):
+        raise ValueError("Build metadata must be an object")
+    build_uuid = metadata.get("build_uuid")
+    if not isinstance(build_uuid, str) or not UUID_PATTERN.fullmatch(build_uuid):
+        raise ValueError("Build metadata must contain a complete UUID")
+    if build_uuid != arguments.expected_build_uuid:
+        raise ValueError("Build metadata UUID does not match the expected build")
+    target_sha = metadata.get("target_sha")
+    if not isinstance(target_sha, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", target_sha):
+        raise ValueError("Build metadata must contain a complete target SHA")
+    if target_sha != arguments.expected_sha:
+        raise ValueError("Build metadata target SHA does not match the expected commit")
+    version = metadata.get("build_version")
+    if not isinstance(version, str) or not re.fullmatch(r"[A-Za-z0-9._+-]+", version):
+        raise ValueError("Build metadata has an invalid build version")
+    workflow_run = metadata.get("workflow_run")
+    if not isinstance(workflow_run, str) or (workflow_run and not re.fullmatch(
+        r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/[0-9]+/attempts/[0-9]+", workflow_run,
+    )):
+        raise ValueError("Build metadata has an invalid workflow run URL")
+    artifacts = metadata.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        raise ValueError("Build metadata must contain APK artifacts")
+    names = []
+    for artifact in artifacts:
+        name = artifact.get("name") if isinstance(artifact, dict) else None
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9._+-]+\.apk", name) or name in names:
+            raise ValueError("Build metadata has invalid or duplicate APK filenames")
+        names.append(name)
+    destination = arguments.metadata_file.parent
+    if {path.name for path in destination.glob("*.apk")} != set(names):
+        raise ValueError("Build metadata does not list the actual APK files")
+    checksums = {}
+    for line in (destination / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines():
+        match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9._+-]+)", line)
+        if not match or match[2] in checksums:
+            raise ValueError("Release checksum manifest has invalid or duplicate entries")
+        checksums[match[2]] = match[1]
+    if set(checksums) != {arguments.metadata_file.name, "build-metadata.txt", *names}:
+        raise ValueError("Release checksum manifest does not bind all metadata and APK files")
+    for name, digest in checksums.items():
+        if sha256(destination / name) != digest:
+            raise ValueError(f"Release checksum mismatch: {name}")
+    for artifact in artifacts:
+        if apk_metadata(destination / artifact["name"], build_uuid) != artifact:
+            raise ValueError(f"APK metadata does not match the actual package: {artifact['name']}")
+    status = "Candidate (not published)" if arguments.status == "candidate" else "Published"
+    lines = ["", "## APK build identity", "", f"- Status: {status}", f"- Build UUID: `{build_uuid}`",
+             f"- Build version: `{version}`", f"- Target commit: `{target_sha}`"]
+    if workflow_run:
+        lines.append(f"- Build workflow run: {workflow_run}")
+    lines.extend(["", "| APK | ABI | SHA-256 |", "| --- | --- | --- |"])
+    for artifact in artifacts:
+        lines.append(f"| `{artifact['name']}` | {', '.join(artifact['abis'])} | `{artifact['sha256']}` |")
+    content = "\n".join(lines) + "\n"
+    output = arguments.summary_file or os.environ.get("GITHUB_STEP_SUMMARY")
+    if output:
+        with Path(output).open("a", encoding="utf-8") as stream:
+            stream.write(content)
+    print(content, end="")
+
+
 def notes(arguments):
     metadata = json.loads(arguments.metadata_file.read_text(encoding="utf-8"))
     if not UUID_PATTERN.fullmatch(metadata["build_uuid"]):
@@ -169,6 +235,13 @@ def main():
     stage_parser.add_argument("--build-config", type=Path, default=Path(RELEASE_BUILD_CONFIG))
     stage_parser.add_argument("--expected-abis")
     stage_parser.set_defaults(handler=stage)
+    summary_parser = commands.add_parser("summary")
+    summary_parser.add_argument("--metadata-file", type=Path, required=True)
+    summary_parser.add_argument("--expected-sha", required=True)
+    summary_parser.add_argument("--expected-build-uuid", required=True)
+    summary_parser.add_argument("--status", choices=("candidate", "published"), required=True)
+    summary_parser.add_argument("--summary-file", type=Path)
+    summary_parser.set_defaults(handler=summary)
     notes_parser = commands.add_parser("notes")
     notes_parser.add_argument("--notes-file", type=Path, required=True)
     notes_parser.add_argument("--metadata-file", type=Path, default=Path("release-assets/build-metadata.json"))

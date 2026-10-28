@@ -65,6 +65,30 @@ class ReleaseArtifactsTest(unittest.TestCase):
             "--build-config", str(self.build_config), *arguments, environment=environment,
         )
 
+    def summary(self, *arguments, environment=None):
+        target_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.root, text=True).strip()
+        return self.run_script(
+            "summary", "--metadata-file", "release-assets/build-metadata.json",
+            "--expected-sha", target_sha, "--expected-build-uuid", BUILD_UUID,
+            "--status", "candidate", *arguments, environment=environment,
+        )
+
+    def rewrite_staged_metadata(self, change):
+        destination = self.root / "release-assets"
+        metadata_file = destination / "build-metadata.json"
+        metadata = json.loads(metadata_file.read_text())
+        change(metadata)
+        metadata_file.write_text(json.dumps(metadata) + "\n")
+        self.refresh_checksums()
+
+    def refresh_checksums(self):
+        destination = self.root / "release-assets"
+        checksums = "".join(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+            for path in sorted(destination.iterdir()) if path.name != "SHA256SUMS.txt"
+        )
+        (destination / "SHA256SUMS.txt").write_text(checksums)
+
     def test_prepare_produces_shared_values_for_gradle_and_workflow(self):
         output = self.root / "outputs"
         result = self.run_script("prepare", "--github-output", str(output))
@@ -192,6 +216,121 @@ class ReleaseArtifactsTest(unittest.TestCase):
         self.assertIn("/attempts/2", content)
         self.assertIn("Unsigned test", content)
         self.assertIn("sha256sum -c SHA256SUMS.txt", content)
+
+    def test_summary_appends_the_verified_candidate_identity(self):
+        result = self.stage()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        metadata_file = self.root / "release-assets/build-metadata.json"
+        original = metadata_file.read_bytes()
+        metadata = json.loads(original)
+        summary = self.root / "summary.md"
+        summary.write_text("Existing summary\n")
+
+        result = self.summary("--summary-file", str(summary))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        content = summary.read_text()
+        self.assertTrue(content.startswith("Existing summary\n"))
+        for expected in (BUILD_UUID, metadata["target_sha"], metadata["build_version"],
+                         metadata["workflow_run"], self.apk.name, "arm64-v8a", metadata["artifacts"][0]["sha256"]):
+            self.assertIn(expected, content)
+        self.assertIn("Candidate", content)
+        self.assertNotIn("Published", content)
+        self.assertEqual(metadata_file.read_bytes(), original)
+
+    def test_summary_uses_github_step_summary_for_the_published_identity(self):
+        self.assertEqual(self.stage().returncode, 0)
+        summary = self.root / "summary.md"
+
+        result = self.summary("--status", "published", environment={
+            **self.environment, "GITHUB_STEP_SUMMARY": str(summary),
+        })
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Published", summary.read_text())
+        self.assertIn(BUILD_UUID, summary.read_text())
+
+    def test_summary_rejects_another_commit_or_build_without_appending(self):
+        self.assertEqual(self.stage().returncode, 0)
+        summary = self.root / "summary.md"
+        summary.write_text("Existing summary\n")
+        for option, value in [("--expected-sha", "1" * 40),
+                              ("--expected-build-uuid", "11111111-1111-4111-8111-111111111111")]:
+            with self.subTest(option=option):
+                result = self.summary(option, value, "--summary-file", str(summary))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(summary.read_text(), "Existing summary\n")
+
+    def test_summary_rejects_corrupt_apk_checksums_without_creating_output(self):
+        self.assertEqual(self.stage().returncode, 0)
+        with (self.root / "release-assets" / self.apk.name).open("ab") as stream:
+            stream.write(b"changed after staging")
+        summary = self.root / "summary.md"
+
+        result = self.summary("--summary-file", str(summary))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("checksum", result.stderr)
+        self.assertFalse(summary.exists())
+
+    def test_summary_rechecks_apk_uuid_even_with_consistent_checksums(self):
+        self.assertEqual(self.stage().returncode, 0)
+        self.apk = self.root / "release-assets" / self.apk.name
+        self.write_apk("11111111-1111-4111-8111-111111111111")
+        self.rewrite_staged_metadata(lambda metadata: metadata["artifacts"][0].update(
+            size=self.apk.stat().st_size, sha256=hashlib.sha256(self.apk.read_bytes()).hexdigest(),
+        ))
+        summary = self.root / "summary.md"
+
+        result = self.summary("--summary-file", str(summary))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("UUID", result.stderr)
+        self.assertFalse(summary.exists())
+
+    def test_summary_rejects_metadata_that_misstates_the_actual_apk_abi(self):
+        self.assertEqual(self.stage().returncode, 0)
+        self.rewrite_staged_metadata(lambda metadata: metadata["artifacts"][0].update(
+            abi="x86_64", abis=["x86_64"],
+        ))
+        summary = self.root / "summary.md"
+
+        result = self.summary("--summary-file", str(summary))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("metadata", result.stderr)
+        self.assertFalse(summary.exists())
+
+    def test_summary_rejects_invalid_metadata_even_with_consistent_checksums(self):
+        self.assertEqual(self.stage().returncode, 0)
+        metadata_file = self.root / "release-assets/build-metadata.json"
+        original = metadata_file.read_text()
+        summary = self.root / "summary.md"
+        for field, value in [("build_uuid", "unknown"), ("target_sha", "unknown"),
+                             ("build_version", "misleading\n# Published"), ("artifacts", []),
+                             ("workflow_run", "https://example.invalid/run")]:
+            with self.subTest(field=field):
+                metadata_file.write_text(original)
+                self.rewrite_staged_metadata(lambda metadata: metadata.update({field: value}))
+                result = self.summary("--summary-file", str(summary))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(summary.exists())
+
+    def test_summary_requires_checksums_to_bind_the_metadata_and_all_apks(self):
+        self.assertEqual(self.stage().returncode, 0)
+        checksums = self.root / "release-assets/SHA256SUMS.txt"
+        original = checksums.read_text()
+        summary = self.root / "summary.md"
+        for contents in [
+            "\n".join(line for line in original.splitlines() if not line.endswith("build-metadata.json")) + "\n",
+            original + f"{'0' * 64}  ../outside.apk\n",
+            original + original.splitlines()[0] + "\n",
+        ]:
+            with self.subTest(contents=contents):
+                checksums.write_text(contents)
+                result = self.summary("--summary-file", str(summary))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(summary.exists())
 
 
 if __name__ == "__main__":

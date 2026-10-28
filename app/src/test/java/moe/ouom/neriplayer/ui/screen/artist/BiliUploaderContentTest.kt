@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.app.Application
 import android.content.Context
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -140,11 +141,11 @@ class BiliUploaderContentTest {
         composeRule.onNodeWithText(string(CoreCommonR.string.playlist_loading_content)).assertExists()
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.bili_uploader_mid, 0L)).assertExists()
 
-        ui = BiliUploaderDetailUiState(loading = false, error = "Uploader offline")
+        ui = BiliUploaderDetailUiState(loading = false, error = UiText.Literal("Uploader offline"))
         composeRule.onNodeWithText(string(CoreCommonR.string.action_retry)).performClick()
         assertEquals(listOf("retry"), events)
 
-        ui = BiliUploaderDetailUiState(loading = false, error = "Partial failure", header = header, videos = videos.take(1))
+        ui = BiliUploaderDetailUiState(loading = false, error = UiText.Literal("Partial failure"), header = header, videos = videos.take(1))
         composeRule.onNodeWithText("Partial failure").assertExists()
         composeRule.onNodeWithText("First video").assertExists()
     }

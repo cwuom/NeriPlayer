@@ -82,6 +82,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class NowPlayingQueueBulkRemovalTest {
@@ -115,7 +116,7 @@ class NowPlayingQueueBulkRemovalTest {
                 composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.action_select_all))
                     .performClick()
                 composeRule.onNodeWithText(context.resources.getQuantityString(
-                    CoreCommonR.plurals.common_selected_count, 500, 500
+                    AppR.plurals.common_selected_count, 500, 500
                 )).assertIsDisplayed()
                 val revisionBeforeRemoval = PlayerManager.currentQueueDisplayRevisionFlow.value
                 composeRule.runOnIdle { service.updates.reset(); heartbeat.start() }

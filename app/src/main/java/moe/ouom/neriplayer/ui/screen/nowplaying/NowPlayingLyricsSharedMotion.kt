@@ -19,6 +19,18 @@ import androidx.compose.ui.unit.IntSize
 
 private const val PredictiveLyricsDurationMillis = 300
 
+internal enum class NowPlayingLyricsSharedTransitionElement(
+    val key: String
+) {
+    BACK("btn_back"),
+    COVER("cover_image"),
+    ARTIST("song_artist"),
+    PROGRESS("progress_bar"),
+    PREVIOUS("player_previous"),
+    PLAY("play_button"),
+    NEXT("player_next")
+}
+
 private val OrdinaryLyricsEnterTransition = fadeIn()
 private val OrdinaryLyricsExitTransition = fadeOut()
 private val OrdinaryLyricsSizeTransform = SizeTransform()

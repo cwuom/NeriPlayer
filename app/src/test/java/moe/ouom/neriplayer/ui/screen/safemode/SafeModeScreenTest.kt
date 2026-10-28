@@ -27,6 +27,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class, qualifiers = "w411dp-h2000dp")
@@ -46,13 +47,13 @@ class SafeModeScreenTest {
             }
         }
 
-        button(CoreCommonR.string.safe_mode_export_config).performClick()
+        button(AppR.string.safe_mode_export_config).performClick()
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_export_options_title)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_include_login_state)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_encrypt_file)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.settings_config_export_options_title)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.settings_config_include_login_state)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.settings_config_encrypt_file)).assertExists()
         button(CoreCommonR.string.action_cancel).performClick()
-        composeRule.onNodeWithText(string(CoreCommonR.string.settings_config_export_options_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.settings_config_export_options_title)).assertDoesNotExist()
     }
 
     @Test
@@ -64,23 +65,23 @@ class SafeModeScreenTest {
         }
 
         composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithText(string(CoreCommonR.string.safe_mode_log_empty))
+            composeRule.onAllNodesWithText(string(AppR.string.safe_mode_log_empty))
                 .fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText(string(CoreCommonR.string.safe_mode_title)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.safe_mode_data_export_title)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.safe_mode_title)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.safe_mode_data_export_title)).assertExists()
 
-        button(CoreCommonR.string.safe_mode_reset_login).performClick()
-        composeRule.onNodeWithText(string(CoreCommonR.string.safe_mode_reset_login_confirm_message)).assertExists()
+        button(AppR.string.safe_mode_reset_login).performClick()
+        composeRule.onNodeWithText(string(AppR.string.safe_mode_reset_login_confirm_message)).assertExists()
         button(CoreCommonR.string.action_cancel).performClick()
-        composeRule.onNodeWithText(string(CoreCommonR.string.safe_mode_reset_login_confirm_message)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.safe_mode_reset_login_confirm_message)).assertDoesNotExist()
 
-        button(CoreCommonR.string.safe_mode_reset_settings).performClick()
-        composeRule.onNodeWithText(string(CoreCommonR.string.safe_mode_reset_settings_confirm_message)).assertExists()
+        button(AppR.string.safe_mode_reset_settings).performClick()
+        composeRule.onNodeWithText(string(AppR.string.safe_mode_reset_settings_confirm_message)).assertExists()
         button(CoreCommonR.string.action_cancel).performClick()
-        composeRule.onNodeWithText(string(CoreCommonR.string.safe_mode_reset_settings_confirm_message)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.safe_mode_reset_settings_confirm_message)).assertDoesNotExist()
 
-        button(CoreCommonR.string.safe_mode_restore_normal).performClick()
+        button(AppR.string.safe_mode_restore_normal).performClick()
         assertEquals(listOf("restore"), events)
     }
 
@@ -105,19 +106,19 @@ class SafeModeScreenTest {
             }
         }
 
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.safe_mode_log_file, file.name)).assertExists()
+        composeRule.onNodeWithText(context.getString(AppR.string.safe_mode_log_file, file.name)).assertExists()
         composeRule.onNodeWithText("java.lang.IllegalStateException: boom").assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.startup_crash_report_truncated)).assertDoesNotExist()
-        button(CoreCommonR.string.safe_mode_copy_log).performClick()
-        button(CoreCommonR.string.safe_mode_export_log).performClick()
+        composeRule.onNodeWithText(string(AppR.string.startup_crash_report_truncated)).assertDoesNotExist()
+        button(AppR.string.safe_mode_copy_log).performClick()
+        button(AppR.string.safe_mode_export_log).performClick()
 
         report = report?.copy(previewContent = " ", previewTruncated = true)
-        composeRule.onNodeWithText(string(CoreCommonR.string.startup_crash_report_truncated)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.log_cannot_read)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.startup_crash_report_truncated)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.log_cannot_read)).assertExists()
 
         report = null
-        composeRule.onNodeWithText(string(CoreCommonR.string.safe_mode_log_empty)).assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.safe_mode_copy_log)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.safe_mode_log_empty)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.safe_mode_copy_log)).assertDoesNotExist()
         assertEquals(listOf("copy", "export"), events)
     }
 
@@ -135,14 +136,14 @@ class SafeModeScreenTest {
             }
         }
 
-        button(CoreCommonR.string.safe_mode_reset_login).performClick()
-        button(CoreCommonR.string.safe_mode_reset_settings).performClick()
-        button(CoreCommonR.string.safe_mode_restore_normal).assertIsEnabled().performClick()
+        button(AppR.string.safe_mode_reset_login).performClick()
+        button(AppR.string.safe_mode_reset_settings).performClick()
+        button(AppR.string.safe_mode_restore_normal).assertIsEnabled().performClick()
 
         busy = true
-        button(CoreCommonR.string.safe_mode_reset_login).assertIsNotEnabled()
-        button(CoreCommonR.string.safe_mode_reset_settings).assertIsNotEnabled()
-        button(CoreCommonR.string.safe_mode_restore_normal).assertIsNotEnabled()
+        button(AppR.string.safe_mode_reset_login).assertIsNotEnabled()
+        button(AppR.string.safe_mode_reset_settings).assertIsNotEnabled()
+        button(AppR.string.safe_mode_restore_normal).assertIsNotEnabled()
         assertEquals(listOf("login", "settings", "restore"), events)
     }
 

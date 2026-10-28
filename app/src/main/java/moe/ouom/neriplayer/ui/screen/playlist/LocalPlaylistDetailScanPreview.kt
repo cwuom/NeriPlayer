@@ -91,6 +91,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticOutlinedButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.common.search.SearchTextMatcher
+import moe.ouom.neriplayer.R as AppR
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun LocalScanPreviewScreen(
@@ -122,17 +123,16 @@ internal fun LocalScanPreviewScreen(
     isBusy: Boolean = false
 ) {
     val context = LocalContext.current
-    val appContext = remember(context) { context.applicationContext }
     val previewItems by produceState(
         initialValue = emptyList(),
         songs,
         metadataPendingKeys,
-        appContext
+        context
     ) {
         value = withContext(Dispatchers.Default) {
             songs.map {
                 it.toLocalScanPreviewItem(
-                    context = appContext,
+                    context = context,
                     metadataPending = it.stableKey() in metadataPendingKeys
                 )
             }
@@ -323,7 +323,7 @@ internal fun LocalScanPreviewScreen(
                     }
                     Text(
                         text = pluralStringResource(
-                            CoreCommonR.plurals.common_selected_count,
+                            AppR.plurals.common_selected_count,
                             selectedKeys.size,
                             selectedKeys.size
                         ),
@@ -384,17 +384,17 @@ internal fun LocalScanPreviewScreen(
                             Text(
                                 text = when (scanProgress.phase) {
                                     LocalAudioScanPhase.PREPARING -> pluralStringResource(
-                                        CoreCommonR.plurals.local_playlist_scan_progress_preparing,
+                                        AppR.plurals.local_playlist_scan_progress_preparing,
                                         phaseElapsedSeconds,
                                         phaseElapsedSeconds
                                     )
                                     LocalAudioScanPhase.READING_DOWNLOAD_INDEX -> pluralStringResource(
-                                        CoreCommonR.plurals.local_playlist_scan_progress_download_index,
+                                        AppR.plurals.local_playlist_scan_progress_download_index,
                                         phaseElapsedSeconds,
                                         phaseElapsedSeconds
                                     )
                                     LocalAudioScanPhase.QUERYING_MEDIA_STORE -> pluralStringResource(
-                                        CoreCommonR.plurals.local_playlist_scan_progress_media_store,
+                                        AppR.plurals.local_playlist_scan_progress_media_store,
                                         phaseElapsedSeconds,
                                         phaseElapsedSeconds
                                     )
@@ -415,7 +415,7 @@ internal fun LocalScanPreviewScreen(
                                         scanProgress.total
                                     )
                                     LocalAudioScanPhase.COMPLETED -> pluralStringResource(
-                                        CoreCommonR.plurals.local_playlist_scan_progress_completed,
+                                        AppR.plurals.local_playlist_scan_progress_completed,
                                         scanProgress.discoveredSongs,
                                         scanProgress.discoveredSongs
                                     )

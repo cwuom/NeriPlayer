@@ -45,6 +45,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class, qualifiers = "w400dp-h900dp-mdpi")
@@ -131,7 +132,7 @@ class NowPlayingEditorOverlaysComposeTest {
         forEachAppearance {
             for (platform in MusicPlatform.entries) {
                 val label = context.getString(if (platform == MusicPlatform.CLOUD_MUSIC) {
-                    CoreCommonR.string.platform_netease_short
+                    AppR.string.platform_netease_short
                 } else CoreCommonR.string.settings_qq_music)
                 composeRule.onNodeWithText(label).performClick().assertIsSelected()
                 composeRule.runOnIdle {

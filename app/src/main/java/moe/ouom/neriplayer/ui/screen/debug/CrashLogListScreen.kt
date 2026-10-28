@@ -30,7 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import java.io.File
-import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 fun CrashLogListScreen(
@@ -39,11 +39,11 @@ fun CrashLogListScreen(
 ) {
     val context = LocalContext.current
     TextLogFileListScreen(
-        titleRes = CoreCommonR.string.crash_log_title,
-        clearConfirmRes = CoreCommonR.string.crash_log_clear_confirm,
-        clearedCountRes = CoreCommonR.plurals.crash_log_cleared,
-        emptyTitleRes = CoreCommonR.string.crash_log_no_file,
-        emptyHintRes = CoreCommonR.string.crash_log_hint,
+        titleRes = AppR.string.crash_log_title,
+        clearConfirmRes = AppR.string.crash_log_clear_confirm,
+        clearedCountRes = AppR.plurals.crash_log_cleared,
+        emptyTitleRes = AppR.string.crash_log_no_file,
+        emptyHintRes = AppR.string.crash_log_hint,
         resolveDirectory = { crashLogDirectory(context) },
         onBack = onBack,
         onLogFileClick = onLogFileClick,

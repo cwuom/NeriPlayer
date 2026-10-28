@@ -37,6 +37,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -115,11 +116,11 @@ class StartupOnboardingExtrasComposeTest {
             )
         }
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_permission_notification_desc))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_permission_notification_desc))
             .assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_permission_granted), useUnmergedTree = true)
+        composeRule.onNodeWithText(string(AppR.string.onboarding_permission_granted), useUnmergedTree = true)
             .assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_permission_allow))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_permission_allow))
             .assertIsEnabled()
             .performClick()
 
@@ -138,11 +139,11 @@ class StartupOnboardingExtrasComposeTest {
             )
         }
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_permission_notification_legacy_desc))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_permission_notification_legacy_desc))
             .assertExists()
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_permission_granted))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_permission_granted))
             .assertIsNotEnabled()
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_permission_allow))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_permission_allow))
             .assertIsEnabled()
     }
 
@@ -156,18 +157,18 @@ class StartupOnboardingExtrasComposeTest {
                 onSetFallbackEnabled = { changes += it }
             )
         }
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_playback_sources_partial_status))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_playback_sources_partial_status))
             .assertDoesNotExist()
         composeRule.onNode(isToggleable()).assertIsOff()
         toggleSwitch()
 
         clickDialogButton(string(CoreCommonR.string.action_cancel))
         assertEquals(emptyList<Boolean>(), changes)
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_playback_sources_confirm_title))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_playback_sources_confirm_title))
             .assertDoesNotExist()
 
         toggleSwitch()
-        clickDialogButton(string(CoreCommonR.string.onboarding_playback_sources_confirm_enable))
+        clickDialogButton(string(AppR.string.onboarding_playback_sources_confirm_enable))
 
         assertEquals(listOf(true), changes)
     }
@@ -183,11 +184,11 @@ class StartupOnboardingExtrasComposeTest {
             )
         }
 
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_playback_sources_partial_status))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_playback_sources_partial_status))
             .assertExists()
         composeRule.onNode(isToggleable()).assertIsOff()
         toggleSwitch()
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_playback_sources_confirm_title))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_playback_sources_confirm_title))
             .assertExists()
         assertEquals(emptyList<Boolean>(), changes)
     }
@@ -207,7 +208,7 @@ class StartupOnboardingExtrasComposeTest {
         toggleSwitch()
 
         assertEquals(listOf(false), changes)
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_playback_sources_confirm_title))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_playback_sources_confirm_title))
             .assertDoesNotExist()
     }
 
@@ -224,7 +225,7 @@ class StartupOnboardingExtrasComposeTest {
             )
         }
 
-        val previewLyric = string(CoreCommonR.string.onboarding_controls_preview_lyric_2)
+        val previewLyric = string(AppR.string.onboarding_controls_preview_lyric_2)
         assertTrue(topOf(PROGRESS_ELAPSED) < topOf(previewLyric))
 
         clickText(string(CoreCommonR.string.settings_playback_control_size_large))
@@ -267,7 +268,7 @@ class StartupOnboardingExtrasComposeTest {
                 onPreferencesChange = { changes += it }
             )
         }
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_lyrics_size_value, 60))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_lyrics_size_value, 60))
             .assertExists()
 
         clickText(string(CoreCommonR.string.settings_playback_control_size_large))
@@ -284,7 +285,7 @@ class StartupOnboardingExtrasComposeTest {
         )
         assertEquals(1, scales.size)
         assertEquals(1.2f, scales.single(), 0.001f)
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_lyrics_size_value, 120))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_lyrics_size_value, 120))
             .assertExists()
     }
 
@@ -300,7 +301,7 @@ class StartupOnboardingExtrasComposeTest {
                 onPreferencesChange = { changes += it }
             )
         }
-        val warningTitle = string(CoreCommonR.string.onboarding_lyrics_control_size_warning_title)
+        val warningTitle = string(AppR.string.onboarding_lyrics_control_size_warning_title)
 
         clickText(string(CoreCommonR.string.settings_playback_control_size_medium))
         composeRule.onNodeWithText(warningTitle).assertDoesNotExist()
@@ -311,7 +312,7 @@ class StartupOnboardingExtrasComposeTest {
         assertEquals(emptyList<PlaybackControlLayoutPreferences>(), changes)
 
         clickText(string(CoreCommonR.string.settings_playback_control_size_small))
-        clickDialogButton(string(CoreCommonR.string.onboarding_lyrics_control_size_warning_confirm))
+        clickDialogButton(string(AppR.string.onboarding_lyrics_control_size_warning_confirm))
         clickText(string(CoreCommonR.string.settings_playback_control_size_medium))
 
         assertEquals(
@@ -324,7 +325,7 @@ class StartupOnboardingExtrasComposeTest {
 
         setLyricScaleSlider(to = 0.7f)
         assertEquals(0.7f, scales.single(), 0.001f)
-        composeRule.onNodeWithText(string(CoreCommonR.string.onboarding_lyrics_size_value, 70))
+        composeRule.onNodeWithText(string(AppR.string.onboarding_lyrics_size_value, 70))
             .assertExists()
     }
 

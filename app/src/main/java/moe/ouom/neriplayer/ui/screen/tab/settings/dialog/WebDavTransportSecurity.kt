@@ -8,12 +8,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsInlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import moe.ouom.neriplayer.R as AppR
 
 internal fun isWebDavCleartextUrl(serverUrl: String): Boolean =
     serverUrl.trim().toHttpUrlOrNull()?.scheme == "http"
@@ -22,7 +22,7 @@ internal fun isWebDavCleartextUrl(serverUrl: String): Boolean =
 internal fun WebDavCleartextWarning(serverUrl: String, modifier: Modifier = Modifier) {
     if (!isWebDavCleartextUrl(serverUrl)) return
     MiuixSettingsInlineMessage(
-        message = stringResource(CoreCommonR.string.webdav_cleartext_warning),
+        message = stringResource(AppR.string.webdav_cleartext_warning),
         isSuccess = false,
         modifier = modifier
     )
@@ -39,16 +39,16 @@ internal fun WebDavCleartextConfirmation(onDismiss: () -> Unit, onConfirm: () ->
                 tint = MaterialTheme.colorScheme.error
             )
         },
-        title = { Text(stringResource(CoreCommonR.string.webdav_cleartext_confirm_title)) },
-        text = { Text(stringResource(CoreCommonR.string.webdav_cleartext_confirm_message)) },
+        title = { Text(stringResource(AppR.string.webdav_cleartext_confirm_title)) },
+        text = { Text(stringResource(AppR.string.webdav_cleartext_confirm_message)) },
         confirmButton = {
             MiuixSettingsButton(onClick = onConfirm) {
-                Text(stringResource(CoreCommonR.string.webdav_cleartext_confirm))
+                Text(stringResource(AppR.string.webdav_cleartext_confirm))
             }
         },
         dismissButton = {
             MiuixSettingsTextButton(onClick = onDismiss) {
-                Text(stringResource(CoreCommonR.string.webdav_cleartext_cancel))
+                Text(stringResource(AppR.string.webdav_cleartext_cancel))
             }
         }
     )

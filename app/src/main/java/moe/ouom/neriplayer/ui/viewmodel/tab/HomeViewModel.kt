@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * Created: 2025/8/10
  */
 
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.viewmodel.feedbackText
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasEffectiveAuth
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
 import android.app.Application
@@ -58,7 +60,6 @@ import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.platform.youtube.auth.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.platform.netease.neteaseRadarCacheContext
-import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.IOException
 import kotlin.time.Duration.Companion.milliseconds
@@ -187,7 +188,7 @@ internal class HomeSectionLoadCoordinator(
 data class HomeSectionState<T>(
     val items: List<T> = emptyList(),
     val loading: Boolean = false,
-    val error: String? = null
+    val error: UiText? = null
 )
 
 /** 首页 B 站版权音乐榜模块状态（榜单类型、期数与曲目始终同源） */
@@ -196,7 +197,7 @@ data class HomeBiliMusicRankState(
     val period: BiliMusicRankPeriod? = null,
     val songs: List<BiliMusicRankSong> = emptyList(),
     val loading: Boolean = false,
-    val error: String? = null
+    val error: UiText? = null
 )
 
 data class HomeNeteaseSongSectionState(
@@ -218,6 +219,7 @@ data class HomeUiState(
     val ytMusicHomeShelves: HomeSectionState<YouTubeMusicHomeShelf> = HomeSectionState(),
     val biliMusicRank: HomeBiliMusicRankState = HomeBiliMusicRankState(),
     val biliMusicHot: HomeSectionState<BiliMusicHotVideo> = HomeSectionState(),
+    val biliMusicHomeEnabled: Boolean = false,
     val hasLogin: Boolean = false,
     val internationalizationEnabled: Boolean = false
 )
@@ -255,7 +257,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var offlineMode = false
     private var biliMusicHomeEnabled = false
 
-    private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
 
     private fun createHomeUiState(hasLogin: Boolean, loading: Boolean): HomeUiState {
         return HomeUiState(
@@ -363,17 +364,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         lastYouTubeAuthFingerprint = buildYouTubeAuthFingerprint(youtubeAuthRepo.getAuthOnce())
 
         viewModelScope.launch {
-            AppContainer.settingsRepo.homeCardBilibiliFlow.collect { enabled ->
+            combine(
+                AppContainer.settingsRepo.homeCardBilibiliFlow,
+                AppContainer.settingsRepo.internationalizationEnabledFlow
+            ) { savedEnabled, internationalEnabled ->
+                savedEnabled && !internationalEnabled
+            }.collect { enabled ->
                 if (biliMusicHomeEnabled == enabled) return@collect
                 biliMusicHomeEnabled = enabled
                 if (enabled) {
+                    _uiState.update { state -> state.copy(biliMusicHomeEnabled = true) }
                     if (homeRecommendationsBootstrapped) loadBiliMusicHome()
                 } else {
                     cancelBiliMusicJobs()
                     _uiState.update { state ->
                         state.copy(
-                            biliMusicRank = state.biliMusicRank.copy(loading = false, error = null),
-                            biliMusicHot = state.biliMusicHot.copy(loading = false, error = null)
+                            biliMusicHomeEnabled = false,
+                            biliMusicRank = HomeBiliMusicRankState(type = state.biliMusicRank.type),
+                            biliMusicHot = HomeSectionState()
                         )
                     }
                 }
@@ -486,7 +494,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 homeRecommendationsBootstrapped = true
                 refreshNeteaseHome()
             }
-            // 国际版首页不触发网易云推荐，B 站音乐模块独立加载
+            // 非国际化首页按保存的开关独立加载 B 站音乐模块
             loadBiliMusicHome(force = false)
         }
     }
@@ -544,13 +552,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         loadBiliMusicHot(force = force)
     }
 
-    /**
-     * 首页刷新入口使用的合并加载：某个模块已经在加载时不再强制重启它。
-     *
-     * 国际化启动时，设置收集器会走 [refreshYtMusicHome]，而独立的 250ms 引导仍会走
-     * [refreshNeteaseHome]，两条路径都会触达这里；若无条件 `force = true`，后一条会取消并
-     * 重启前一条刚发起的榜单 / 热门请求，重复拉取列表并可能重复逐条补全官方 MV。
-     */
+    /** 首页刷新复用正在加载的分区，避免重复请求和补全官方 MV */
     private fun loadBiliMusicHomeCoalesced() {
         if (biliMusicRankJob?.isActive != true) {
             loadBiliMusicRank(force = true)
@@ -638,7 +640,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 },
                 onFailure = { error ->
-                    val message = buildHomeErrorMessage(error, localizedAppContext())
+                    val message = buildHomeErrorText(error)
                     _uiState.update { state ->
                         if (state.biliMusicRank.type != type) {
                             state
@@ -696,7 +698,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 },
                 onFailure = { error ->
-                    val message = buildHomeErrorMessage(error, localizedAppContext())
+                    val message = buildHomeErrorText(error)
                     _uiState.update { state ->
                         state.copy(
                             biliMusicHot = state.biliMusicHot.copy(loading = false, error = message)
@@ -990,7 +992,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             return@launch
                         }
                         NPLogger.e(TAG, "refreshYtMusicHome failed", result.throwable)
-                        val error = buildHomeErrorMessage(result.throwable, localizedAppContext())
+                        val error = buildHomeErrorText(result.throwable)
                         _uiState.update { state ->
                             state.copy(
                                 ytMusicPlaylists = state.ytMusicPlaylists.copy(
@@ -1078,7 +1080,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 NPLogger.e(TAG, "$name failed: source=$source", result.throwable)
                 HomeNeteaseSongSectionState(
                     source = source,
-                    section = HomeSectionState(error = buildHomeErrorMessage(result.throwable, localizedAppContext()))
+                    section = HomeSectionState(error = buildHomeErrorText(result.throwable))
                 )
             }
         }
@@ -1126,7 +1128,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 NPLogger.e(TAG, "refreshRecommend failed: source=$source", result.throwable)
                 HomeNeteasePlaylistSectionState(
                     source = source,
-                    section = HomeSectionState(error = buildHomeErrorMessage(result.throwable, localizedAppContext()))
+                    section = HomeSectionState(error = buildHomeErrorText(result.throwable))
                 )
             }
         }
@@ -1327,16 +1329,19 @@ internal suspend fun <T> fetchWithRetry(
     return RetryLoadResult.Failure(lastError ?: IllegalStateException("Unknown error"))
 }
 
-internal fun buildHomeErrorMessage(error: Throwable, context: Context): String {
+internal fun buildHomeErrorMessage(error: Throwable, context: Context): String =
+    buildHomeErrorText(error).resolve(context.resources)
+
+internal fun buildHomeErrorText(error: Throwable): UiText {
     return when {
-        error is IOException -> context.getString(
+        error is IOException -> feedbackText(
             CoreCommonR.string.home_error_network,
             error.messageOrTypeName()
         )
         error is ApiCodeException && error.code == 50000005 ->
-            context.getString(CoreCommonR.string.home_login_required)
-        error is ApiCodeException -> context.getString(CoreCommonR.string.error_api_code, error.code)
-        else -> context.getString(
+            feedbackText(CoreCommonR.string.home_login_required)
+        error is ApiCodeException -> feedbackText(CoreCommonR.string.error_api_code, error.code)
+        else -> feedbackText(
             CoreCommonR.string.home_error_unknown,
             error.messageOrTypeName()
         )

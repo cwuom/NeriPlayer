@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.R as AppR
 
 internal fun trafficRiskNetworkLabelResource(networkType: TrafficNetworkType): Int = when (networkType) {
     TrafficNetworkType.ROAMING -> CoreCommonR.string.traffic_risk_network_roaming
@@ -52,7 +53,7 @@ private fun trafficRiskDownloadMessage(
         },
         batchMessage = { count, network ->
             resources.getQuantityString(
-                CoreCommonR.plurals.traffic_risk_download_batch_message, count, network, count
+                AppR.plurals.traffic_risk_download_batch_message, count, network, count
             )
         }
     )
@@ -102,7 +103,7 @@ internal fun MobileDataDownloadInterruptionDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     pluralStringResource(
-                        CoreCommonR.plurals.mobile_data_download_interruption_message,
+                        AppR.plurals.mobile_data_download_interruption_message,
                         request.taskCount,
                         networkLabel,
                         request.taskCount

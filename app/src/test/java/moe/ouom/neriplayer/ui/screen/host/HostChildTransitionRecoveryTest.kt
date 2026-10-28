@@ -18,6 +18,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
@@ -28,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -67,39 +69,41 @@ class HostChildTransitionRecoveryTest {
 
     private fun setHost() {
         composeRule.setContent {
-            hostTransition = rememberHostPredictiveBackTransition(
-                targetState = selected,
-                backEnabled = selected != null,
-                backTargetState = null,
-                onBack = { seeked ->
-                    seekedBacks += seeked
-                    selected = null
-                },
-                label = "shared_scope_host"
-            )
-            hostTransition.AnimatedContent(
-                transitionSpec = {
-                    fadeIn(tween(PAGE_FADE_MS, easing = LinearEasing)) togetherWith
-                        (fadeOut(tween(PAGE_FADE_MS, easing = LinearEasing)) +
-                            ExitTransition.KeepUntilTransitionsFinished)
-                }
-            ) { contentState ->
-                val scope = rememberChildScope(
-                    hostTransition = hostTransition,
-                    contentState = contentState,
-                    label = "shared_scope_$contentState"
+            CompositionLocalProvider(LocalPredictiveBackPreviewEnabled provides true) {
+                hostTransition = rememberHostPredictiveBackTransition(
+                    targetState = selected,
+                    backEnabled = selected != null,
+                    backTargetState = null,
+                    onBack = { seeked ->
+                        seekedBacks += seeked
+                        selected = null
+                    },
+                    label = "shared_scope_host"
                 )
-                visibilityValues[contentState] = scope.transition.animateFloat(
-                    transitionSpec = { tween(SHARED_ANIMATION_MS, easing = LinearEasing) },
-                    label = "shared_visibility_$contentState"
-                ) { state -> if (state == EnterExitState.Visible) 1f else 0f }
-                DisposableEffect(scope) {
-                    liveScopes[contentState] = scope
-                    onDispose {
-                        if (liveScopes[contentState] === scope) liveScopes.remove(contentState)
+                hostTransition.AnimatedContent(
+                    transitionSpec = {
+                        fadeIn(tween(PAGE_FADE_MS, easing = LinearEasing)) togetherWith
+                            (fadeOut(tween(PAGE_FADE_MS, easing = LinearEasing)) +
+                                ExitTransition.KeepUntilTransitionsFinished)
                     }
+                ) { contentState ->
+                    val scope = rememberChildScope(
+                        hostTransition = hostTransition,
+                        contentState = contentState,
+                        label = "shared_scope_$contentState"
+                    )
+                    visibilityValues[contentState] = scope.transition.animateFloat(
+                        transitionSpec = { tween(SHARED_ANIMATION_MS, easing = LinearEasing) },
+                        label = "shared_visibility_$contentState"
+                    ) { state -> if (state == EnterExitState.Visible) 1f else 0f }
+                    DisposableEffect(scope) {
+                        liveScopes[contentState] = scope
+                        onDispose {
+                            if (liveScopes[contentState] === scope) liveScopes.remove(contentState)
+                        }
+                    }
+                    Box(Modifier.size(20.dp))
                 }
-                Box(Modifier.size(20.dp))
             }
         }
         composeRule.waitForIdle()

@@ -35,6 +35,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.transfer.TransferArgumentException
+import moe.ouom.neriplayer.data.model.transfer.TransferFailureKind
+import moe.ouom.neriplayer.data.model.transfer.TransferIOException
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
@@ -106,14 +109,14 @@ class BackupManager internal constructor(
     suspend fun exportPlaylists(uri: Uri): Result<String> = withContext(Dispatchers.IO) {
         try {
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
-            playlistRepo.requireInitialized()
+            requirePlaylistInitialized(playlistRepo)
             val historyRepo = PlayHistoryRepository.getInstance(context)
             if (!historyRepo.awaitInitialized()) {
-                throw IOException("Play history initialization failed")
+                throw TransferIOException(TransferFailureKind.PLAY_HISTORY_NOT_READY, "Play history initialization failed")
             }
             val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
             if (!playbackStatsRepo.awaitInitialized()) {
-                throw IOException("Playback stats initialization failed")
+                throw TransferIOException(TransferFailureKind.PLAYBACK_STATS_NOT_READY, "Playback stats initialization failed")
             }
             val playlists = playlistRepo.playlists.value
 
@@ -150,7 +153,7 @@ class BackupManager internal constructor(
                     writer.name("exportDate").value(dateFormat.format(Date()))
                     writer.endObject()
                 }
-            } ?: throw IOException(context.getString(CoreCommonR.string.error_cannot_open_output))
+            } ?: throw TransferIOException(TransferFailureKind.OUTPUT_UNAVAILABLE, "Cannot open output stream")
 
             val fileName = "${BACKUP_FILE_PREFIX}_${dateFormat.format(Date())}$BACKUP_FILE_EXTENSION"
             NPLogger.d(TAG, context.getString(CoreCommonR.string.backup_export_success_file, fileName))
@@ -173,19 +176,20 @@ class BackupManager internal constructor(
                 val backupPlaylists = backupData.playlists.orEmpty()
 
                 if (backupPlaylists.isEmpty()) {
-                    return@withContext Result.failure(IllegalArgumentException("No playlist data in backup file"))  // Localized
+                    return@withContext Result.failure(TransferArgumentException(
+                        TransferFailureKind.NO_PLAYLIST_DATA, "No playlist data in backup file"))
                 }
 
                 SyncCoordinator.withExclusive {
                     val playlistRepo = LocalPlaylistRepository.getInstance(context)
-                    playlistRepo.requireInitialized()
+                    requirePlaylistInitialized(playlistRepo)
                     val historyRepo = PlayHistoryRepository.getInstance(context)
                     if (!historyRepo.awaitInitialized()) {
-                        throw IOException("Play history initialization failed")
+                        throw TransferIOException(TransferFailureKind.PLAY_HISTORY_NOT_READY, "Play history initialization failed")
                     }
                     val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
                     if (!playbackStatsRepo.awaitInitialized()) {
-                        throw IOException("Playback stats initialization failed")
+                        throw TransferIOException(TransferFailureKind.PLAYBACK_STATS_NOT_READY, "Playback stats initialization failed")
                     }
                     val currentPlaylists = playlistRepo.playlists.value.toMutableList()
                     val playlistLookup = buildPlaylistLookup(currentPlaylists)
@@ -325,6 +329,15 @@ class BackupManager internal constructor(
         }
     }
 
+    private suspend fun requirePlaylistInitialized(repository: LocalPlaylistRepository) {
+        try {
+            repository.requireInitialized()
+        } catch (error: IOException) {
+            throw TransferIOException(TransferFailureKind.LOCAL_PLAYLIST_NOT_READY,
+                "Local playlist initialization failed", error)
+        }
+    }
+
     private fun buildPlaylistLookup(playlists: List<LocalPlaylist>): PlaylistLookup {
         val lookup = PlaylistLookup()
         playlists.forEachIndexed { index, playlist ->
@@ -429,7 +442,8 @@ class BackupManager internal constructor(
     )
 
     private suspend fun readBackup(uri: Uri): BackupJsonContent {
-        val input = context.contentResolver.openInputStream(uri) ?: throw IOException("Cannot open backup input")
+        val input = context.contentResolver.openInputStream(uri) ?: throw TransferIOException(
+            TransferFailureKind.BACKUP_INPUT_UNAVAILABLE, "Cannot open backup input")
         var content: BackupJsonContent? = null
         try {
             return input.reader(Charsets.UTF_8).use { backupReader().read(it).also { parsed -> content = parsed } }
@@ -440,7 +454,8 @@ class BackupManager internal constructor(
     }
 
     private suspend fun readBackupMetadata(uri: Uri): BackupData {
-        val input = context.contentResolver.openInputStream(uri) ?: throw IOException("Cannot open backup input")
+        val input = context.contentResolver.openInputStream(uri) ?: throw TransferIOException(
+            TransferFailureKind.BACKUP_INPUT_UNAVAILABLE, "Cannot open backup input")
         return input.reader(Charsets.UTF_8).use { backupReader().readMetadata(it) }
     }
     
@@ -453,7 +468,7 @@ class BackupManager internal constructor(
             val backupPlaylists = backupData.playlists.orEmpty()
 
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
-            playlistRepo.requireInitialized()
+            requirePlaylistInitialized(playlistRepo)
             val currentPlaylists = playlistRepo.playlists.value
             val playlistLookup = buildPlaylistLookup(currentPlaylists)
 

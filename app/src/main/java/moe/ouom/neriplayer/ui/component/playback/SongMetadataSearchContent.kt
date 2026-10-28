@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.component.playback
 
+import moe.ouom.neriplayer.ui.i18n.asString
+
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import android.os.SystemClock
@@ -78,6 +80,7 @@ import moe.ouom.neriplayer.ui.viewmodel.ManualSearchState
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 private const val PlaybackStartupSearchWaitTimeoutMs = 2_000L
 private const val PlaybackStartupSettleDelayMs = 260L
@@ -333,7 +336,7 @@ private fun MetadataSearchResults(
             }
             else -> {
                 Text(
-                    text = state.error ?: stringResource(CoreCommonR.string.nowplaying_no_search_result),
+                    text = state.error?.asString() ?: stringResource(CoreCommonR.string.nowplaying_no_search_result),
                     modifier = Modifier.align(Alignment.Center),
                     color = if (state.error != null) {
                         MaterialTheme.colorScheme.error
@@ -401,7 +404,7 @@ private suspend fun awaitPlaybackStartupSettle(
 @Composable
 private fun musicPlatformLabel(platform: MusicPlatform): String {
     return when (platform) {
-        MusicPlatform.CLOUD_MUSIC -> stringResource(CoreCommonR.string.platform_netease_short)
+        MusicPlatform.CLOUD_MUSIC -> stringResource(AppR.string.platform_netease_short)
         MusicPlatform.QQ_MUSIC -> stringResource(CoreCommonR.string.settings_qq_music)
     }
 }

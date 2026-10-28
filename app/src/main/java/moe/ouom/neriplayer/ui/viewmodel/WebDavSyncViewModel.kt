@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.i18n.UiText
 import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
@@ -88,7 +89,7 @@ class WebDavSyncViewModel : ViewModel() {
         val normalizedBasePath = basePath.trim()
         if (normalizedServerUrl.isBlank() || normalizedUsername.isBlank() || password.isBlank()) {
             _uiState.value = _uiState.value.copy(
-                errorMessage = appContext.getString(CoreCommonR.string.webdav_required_fields)
+                errorMessage = feedbackText(CoreCommonR.string.webdav_required_fields)
             )
             return
         }
@@ -114,15 +115,14 @@ class WebDavSyncViewModel : ViewModel() {
                     serverUrl = normalizedServerUrl,
                     basePath = normalizedBasePath,
                     username = normalizedUsername,
-                    successMessage = appContext.getString(CoreCommonR.string.webdav_validate_success)
+                    successMessage = feedbackText(CoreCommonR.string.webdav_validate_success)
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isValidating = false,
-                    errorMessage = appContext.getString(
+                    errorMessage = feedbackText(
                         CoreCommonR.string.webdav_validate_failed,
-                        result.exceptionOrNull()?.message
-                            ?: appContext.getString(CoreCommonR.string.webdav_sync_failed_message)
+                        syncFailureText(result.exceptionOrNull(), CoreCommonR.string.webdav_sync_failed_message)
                     )
                 )
             }
@@ -168,14 +168,14 @@ class WebDavSyncViewModel : ViewModel() {
                             isSyncing = false,
                             syncResult = syncResult,
                             lastSyncTime = lastSyncTime,
-                            successMessage = syncResult.message
+                            successMessage = syncResultText(syncResult, webDav = true)
                         )
                     }
                     if (_uiState.value.autoSyncEnabled) {
                         WebDavSyncWorker.schedulePeriodicSync(appContext)
                     }
                 } else {
-                    _uiState.value = _uiState.value.copy(isSyncing = false, errorMessage = syncResult.message)
+                    _uiState.value = _uiState.value.copy(isSyncing = false, errorMessage = syncResultText(syncResult, webDav = true))
                 }
             } else {
                 val error = result.exceptionOrNull()
@@ -188,21 +188,21 @@ class WebDavSyncViewModel : ViewModel() {
                 if (error is WebDavSyncInProgressException) {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        successMessage = error.message
+                        successMessage = feedbackText(CoreCommonR.string.webdav_sync_in_progress)
                     )
                     return@launch
                 }
                 if (error is WebDavAuthException) {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = appContext.getString(CoreCommonR.string.webdav_auth_failed)
+                        errorMessage = feedbackText(CoreCommonR.string.webdav_auth_failed)
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = appContext.getString(
+                        errorMessage = feedbackText(
                             CoreCommonR.string.webdav_sync_failed,
-                            error?.message ?: appContext.getString(CoreCommonR.string.webdav_sync_failed_message)
+                            syncFailureText(error, CoreCommonR.string.webdav_sync_failed_message)
                         )
                     )
                 }
@@ -255,6 +255,6 @@ data class WebDavSyncUiState(
     val username: String = "",
     val lastSyncTime: Long = 0L,
     val syncResult: SyncResult? = null,
-    val successMessage: String? = null,
-    val errorMessage: String? = null
+    val successMessage: UiText? = null,
+    val errorMessage: UiText? = null
 )

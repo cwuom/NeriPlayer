@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -31,6 +32,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.navigationevent.NavigationEvent
 import androidx.navigationevent.NavigationEventInput
 import androidx.navigationevent.findViewTreeNavigationEventDispatcherOwner
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -144,25 +146,27 @@ class MoreOptionsSheetPredictiveBackRenderTest {
 
     private fun setSurface(tall: Boolean, withAspectMarker: Boolean = false) {
         composeRule.setContent {
-            MaterialTheme(colorScheme = lightColorScheme(surface = Color.Red)) {
-                val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                val scope = rememberCoroutineScope()
-                val owner = remember(sheetState, scope) {
-                    MoreOptionsSheetOwner(scope, sheetState::hide, sheetState::expand) { dismissals++ }
-                }
-                MoreOptionsSheetSurface(owner, sheetState, remember { SnackbarHostState() }) {
-                    hostView = LocalView.current
-                    val dispatcher = requireNotNull(hostView.findViewTreeNavigationEventDispatcherOwner())
-                        .navigationEventDispatcher
-                    DisposableEffect(dispatcher) {
-                        dispatcher.addInput(gestureInput)
-                        onDispose { dispatcher.removeInput(gestureInput) }
+            CompositionLocalProvider(LocalPredictiveBackPreviewEnabled provides true) {
+                MaterialTheme(colorScheme = lightColorScheme(surface = Color.Red)) {
+                    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                    val scope = rememberCoroutineScope()
+                    val owner = remember(sheetState, scope) {
+                        MoreOptionsSheetOwner(scope, sheetState::hide, sheetState::expand) { dismissals++ }
                     }
-                    val bodyHeight = if (tall) LocalWindowInfo.current.containerDpSize.height * 0.75f else 160.dp
-                    Box(Modifier.fillMaxWidth().height(bodyHeight).background(Color.Red)) {
-                        if (withAspectMarker) {
-                            ComposeCanvas(Modifier.padding(start = 48.dp, top = 32.dp).size(64.dp)) {
-                                drawCircle(Color.Blue)
+                    MoreOptionsSheetSurface(owner, sheetState, remember { SnackbarHostState() }) {
+                        hostView = LocalView.current
+                        val dispatcher = requireNotNull(hostView.findViewTreeNavigationEventDispatcherOwner())
+                            .navigationEventDispatcher
+                        DisposableEffect(dispatcher) {
+                            dispatcher.addInput(gestureInput)
+                            onDispose { dispatcher.removeInput(gestureInput) }
+                        }
+                        val bodyHeight = if (tall) LocalWindowInfo.current.containerDpSize.height * 0.75f else 160.dp
+                        Box(Modifier.fillMaxWidth().height(bodyHeight).background(Color.Red)) {
+                            if (withAspectMarker) {
+                                ComposeCanvas(Modifier.padding(start = 48.dp, top = 32.dp).size(64.dp)) {
+                                    drawCircle(Color.Blue)
+                                }
                             }
                         }
                     }

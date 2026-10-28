@@ -9,7 +9,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.queue.identity.QueueSongIdentity
 import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueEditOwner
@@ -30,6 +29,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class SongEncyclopediaPlaybackTest {
@@ -75,7 +75,7 @@ class SongEncyclopediaPlaybackTest {
     fun `explicit play all still selects the whole similar song list`() {
         render()
 
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.encyclopedia_action_play_all))
+        composeRule.onNodeWithText(context.getString(AppR.string.encyclopedia_action_play_all))
             .performScrollTo().performClick()
 
         composeRule.runOnIdle {

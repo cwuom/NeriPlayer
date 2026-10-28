@@ -44,7 +44,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentQuote
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.data.model.comments.SongComment
@@ -53,6 +52,7 @@ import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.cleanTintedAccent
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.R as AppR
 
 /** 楼中楼头像尺寸: 固定 24dp, 严格小于一级评论头像 (40dp); 预览与展开列表共用同一尺寸 */
 private val ReplyAvatarSize = 24.dp
@@ -89,8 +89,8 @@ internal fun CommentActionBox(
     val reply = { onReply(CommentReplyTarget(comment.id, rootId, comment.username)) }
     Box(modifier.clip(shape).combinedClickable(
         onClick = { expanded = true },
-        onClickLabel = stringResource(CoreCommonR.string.comment_actions),
-        onLongClickLabel = stringResource(CoreCommonR.string.comment_actions),
+        onClickLabel = stringResource(AppR.string.comment_actions),
+        onLongClickLabel = stringResource(AppR.string.comment_actions),
         onLongClick = { expanded = true }
     )) {
         content()
@@ -100,7 +100,7 @@ internal fun CommentActionBox(
             shape = if (NeriDesign.isClean) NeriDesign.tokens.menuShape else MaterialTheme.shapes.large
         ) {
             DropdownMenuItem(
-                text = { Text(stringResource(CoreCommonR.string.comment_copy)) },
+                text = { Text(stringResource(AppR.string.comment_copy)) },
                 onClick = {
                     expanded = false
                     scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("comment", comment.content))) }
@@ -108,7 +108,7 @@ internal fun CommentActionBox(
             )
             if (showReplyAction) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(CoreCommonR.string.comment_reply)) },
+                    text = { Text(stringResource(AppR.string.comment_reply)) },
                     enabled = replyEnabled,
                     onClick = { expanded = false; reply() }
                 )
@@ -134,13 +134,13 @@ internal fun CommentQuotes(quotes: List<CommentQuote>) {
             quotes.forEach { quote ->
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        stringResource(CoreCommonR.string.comment_reply_to, quote.username.ifBlank { stringResource(CoreCommonR.string.comment_anonymous_user) }),
+                        stringResource(AppR.string.comment_reply_to, quote.username.ifBlank { stringResource(AppR.string.comment_anonymous_user) }),
                         style = MaterialTheme.typography.labelMedium,
                         color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurfaceVariant
                             else MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        quote.content ?: stringResource(CoreCommonR.string.comment_deleted),
+                        quote.content ?: stringResource(AppR.string.comment_deleted),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -225,7 +225,7 @@ internal fun CommentReplyItem(
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        comment.username.ifBlank { stringResource(CoreCommonR.string.comment_anonymous_user) },
+                        comment.username.ifBlank { stringResource(AppR.string.comment_anonymous_user) },
                         style = MaterialTheme.typography.labelLarge,
                         color = if (NeriDesign.isClean) MaterialTheme.colorScheme.onSurface
                             else MaterialTheme.colorScheme.primary

@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.SleepTimerMode
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.R as AppR
 
 @Composable
 fun SleepTimerDialog(
@@ -128,7 +129,7 @@ fun SleepTimerDialog(
 
                 Text(
                             text = pluralStringResource(
-                                CoreCommonR.plurals.sleep_timer_minutes,
+                                AppR.plurals.sleep_timer_minutes,
                                 sliderValue.toInt(),
                                 sliderValue.toInt()
                             ),

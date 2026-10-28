@@ -35,6 +35,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.R as AppR
 
 private val SpeedQuickValues = listOf(0.5f, 0.75f, 0.85f, 0.95f, 1f, 1.05f, 1.1f, 1.25f, 1.5f, 2f)
 private val PitchQuickSemitones = listOf(-3f, -1f, 0f, 1f, 3f)
@@ -46,11 +47,11 @@ internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, editor: Aud
     val speaker = settings.speaker
     val active = LocalAudioEffectsSectionEnabled.current
     AudioEffectsCardIntro(
-        title = stringResource(CoreCommonR.string.audio_effects_speaker_title),
-        description = stringResource(CoreCommonR.string.audio_effects_speaker_desc)
+        title = stringResource(AppR.string.audio_effects_speaker_title),
+        description = stringResource(AppR.string.audio_effects_speaker_desc)
     )
     val sizes = SpeakerSize.entries
-    AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_speaker_size))
+    AudioEffectsNote(stringResource(AppR.string.audio_effects_speaker_size))
     MiuixSettingsSegmentedTabs(
         labels = sizes.map { stringResource(it.labelRes()) },
         selectedIndex = sizes.indexOf(SpeakerSize.fromStorageValue(speaker.size)),
@@ -58,8 +59,8 @@ internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, editor: Aud
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
     )
     AudioEffectsSliderRow(
-        title = stringResource(CoreCommonR.string.audio_effects_speaker_bass),
-        description = stringResource(CoreCommonR.string.audio_effects_speaker_bass_desc),
+        title = stringResource(AppR.string.audio_effects_speaker_bass),
+        description = stringResource(AppR.string.audio_effects_speaker_bass_desc),
         value = speaker.bassHarmonics,
         valueRange = 0f..1f,
         step = 0.05f,
@@ -68,8 +69,8 @@ internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, editor: Aud
         onValueChange = { value -> editor.speaker { it.copy(bassHarmonics = value) } }
     )
     AudioEffectsSliderRow(
-        title = stringResource(CoreCommonR.string.audio_effects_speaker_loudness),
-        description = stringResource(CoreCommonR.string.audio_effects_speaker_loudness_desc),
+        title = stringResource(AppR.string.audio_effects_speaker_loudness),
+        description = stringResource(AppR.string.audio_effects_speaker_loudness_desc),
         value = speaker.loudness,
         valueRange = 0f..1f,
         step = 0.05f,
@@ -78,7 +79,7 @@ internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, editor: Aud
         onValueChange = { value -> editor.speaker { it.copy(loudness = value) } }
     )
     AudioEffectsSliderRow(
-        title = stringResource(CoreCommonR.string.audio_effects_speaker_clarity),
+        title = stringResource(AppR.string.audio_effects_speaker_clarity),
         value = speaker.clarity,
         valueRange = 0f..1f,
         step = 0.05f,
@@ -87,7 +88,7 @@ internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, editor: Aud
         onValueChange = { value -> editor.speaker { it.copy(clarity = value) } }
     )
     AudioEffectsSliderRow(
-        title = stringResource(CoreCommonR.string.audio_effects_speaker_expand),
+        title = stringResource(AppR.string.audio_effects_speaker_expand),
         value = speaker.stereoExpand,
         valueRange = 0f..1f,
         step = 0.05f,
@@ -95,10 +96,10 @@ internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, editor: Aud
         input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.speaker { it.copy(stereoExpand = value) } }
     )
-    val auto = stringResource(CoreCommonR.string.audio_effects_auto)
+    val auto = stringResource(AppR.string.audio_effects_auto)
     AudioEffectsSliderRow(
-        title = stringResource(CoreCommonR.string.audio_effects_speaker_protection),
-        description = stringResource(CoreCommonR.string.audio_effects_speaker_protection_desc),
+        title = stringResource(AppR.string.audio_effects_speaker_protection),
+        description = stringResource(AppR.string.audio_effects_speaker_protection_desc),
         value = if (speaker.protectionHz >= 40f) speaker.protectionHz else 0f,
         valueRange = 0f..400f,
         step = 10f,
@@ -131,12 +132,12 @@ internal fun AudioEffectsSpeedCard(
         }
     }
     AudioEffectsCardIntro(
-        title = stringResource(CoreCommonR.string.audio_effects_speed_title),
-        description = stringResource(CoreCommonR.string.audio_effects_speed_desc)
+        title = stringResource(AppR.string.audio_effects_speed_title),
+        description = stringResource(AppR.string.audio_effects_speed_desc)
     )
-    if (usbExclusive) AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_speed_usb_note))
+    if (usbExclusive) AudioEffectsNote(stringResource(AppR.string.audio_effects_speed_usb_note))
     AudioEffectsSliderRow(
-        title = stringResource(CoreCommonR.string.audio_effects_speed),
+        title = stringResource(AppR.string.audio_effects_speed),
         value = shownSpeed,
         valueRange = MIN_SPEED_SLIDER..MAX_SPEED_SLIDER,
         step = 0.05f,
@@ -155,12 +156,12 @@ internal fun AudioEffectsSpeedCard(
     val semitones = pitchToSemitoneOffset(shownPitch)
     val resources = LocalResources.current
     AudioEffectsSliderRow(
-        title = stringResource(CoreCommonR.string.audio_effects_pitch),
+        title = stringResource(AppR.string.audio_effects_pitch),
         value = semitones,
         valueRange = -12f..12f,
         step = 0.5f,
         enabled = !linked,
-        formatValue = { resources.getString(CoreCommonR.string.audio_effects_pitch_semitones, formatSemitones(it)) },
+        formatValue = { resources.getString(AppR.string.audio_effects_pitch_semitones, formatSemitones(it)) },
         input = AudioEffectsInputs.Semitones,
         commitOnRelease = true,
         onValueChange = { value -> PlayerManager.setPlaybackPitch(semitoneOffsetToPitch(value)) }
@@ -175,8 +176,8 @@ internal fun AudioEffectsSpeedCard(
         )
     }
     AudioEffectsSwitchRow(
-        title = stringResource(CoreCommonR.string.audio_effects_speed_pitch_linked),
-        description = stringResource(CoreCommonR.string.audio_effects_speed_pitch_linked_desc),
+        title = stringResource(AppR.string.audio_effects_speed_pitch_linked),
+        description = stringResource(AppR.string.audio_effects_speed_pitch_linked_desc),
         checked = linked,
         onCheckedChange = { enabled ->
             editor.settings { it.copy(speedPitchLinked = enabled) }
@@ -184,7 +185,7 @@ internal fun AudioEffectsSpeedCard(
             PlayerManager.setPlaybackPitch(pitch)
         }
     )
-    if (linked) AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_speed_pitch_linked_note))
+    if (linked) AudioEffectsNote(stringResource(AppR.string.audio_effects_speed_pitch_linked_note))
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -220,10 +221,10 @@ internal fun AudioEffectsAdvancedCard(settings: AudioEffectsSettings, route: Aud
     val modes = AudioEffectsPowerMode.entries
     val mode = AudioEffectsPowerMode.fromStorageValue(settings.powerMode)
     AudioEffectsCardIntro(
-        title = stringResource(CoreCommonR.string.audio_effects_advanced_title),
-        description = stringResource(CoreCommonR.string.audio_effects_power_note)
+        title = stringResource(AppR.string.audio_effects_advanced_title),
+        description = stringResource(AppR.string.audio_effects_power_note)
     )
-    AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_power_mode))
+    AudioEffectsNote(stringResource(AppR.string.audio_effects_power_mode))
     MiuixSettingsSegmentedTabs(
         labels = modes.map { stringResource(it.labelRes()) },
         selectedIndex = modes.indexOf(mode),
@@ -232,14 +233,14 @@ internal fun AudioEffectsAdvancedCard(settings: AudioEffectsSettings, route: Aud
     )
     AudioEffectsNote(stringResource(mode.descriptionRes()))
     AudioEffectsSwitchRow(
-        title = stringResource(CoreCommonR.string.audio_effects_per_output),
-        description = stringResource(CoreCommonR.string.audio_effects_per_output_desc),
+        title = stringResource(AppR.string.audio_effects_per_output),
+        description = stringResource(AppR.string.audio_effects_per_output_desc),
         checked = settings.perOutputEnabled,
         onCheckedChange = { enabled -> editor.settings { it.withPerOutput(enabled, route) } }
     )
     AudioEffectsSwitchRow(
-        title = stringResource(CoreCommonR.string.audio_effects_usb_apply),
-        description = stringResource(CoreCommonR.string.audio_effects_usb_apply_desc),
+        title = stringResource(AppR.string.audio_effects_usb_apply),
+        description = stringResource(AppR.string.audio_effects_usb_apply_desc),
         checked = settings.applyInUsbExclusive,
         onCheckedChange = { enabled -> editor.settings { it.copy(applyInUsbExclusive = enabled) } }
     )
@@ -250,14 +251,14 @@ internal fun AudioEffectsAdvancedCard(settings: AudioEffectsSettings, route: Aud
         horizontalArrangement = Arrangement.End
     ) {
         MiuixSettingsOutlinedButton(onClick = { confirmReset = true }) {
-            Text(stringResource(CoreCommonR.string.audio_effects_reset_all))
+            Text(stringResource(AppR.string.audio_effects_reset_all))
         }
     }
     if (confirmReset) {
         MiuixSettingsDialog(
             onDismissRequest = { confirmReset = false },
-            title = { Text(stringResource(CoreCommonR.string.audio_effects_reset_all)) },
-            text = { Text(stringResource(CoreCommonR.string.audio_effects_reset_all_confirm)) },
+            title = { Text(stringResource(AppR.string.audio_effects_reset_all)) },
+            text = { Text(stringResource(AppR.string.audio_effects_reset_all_confirm)) },
             confirmButton = {
                 MiuixSettingsTextButton(onClick = {
                     editor.profile { AudioEffectsProfile() }

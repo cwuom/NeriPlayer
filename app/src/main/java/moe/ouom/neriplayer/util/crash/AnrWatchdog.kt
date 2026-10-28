@@ -9,7 +9,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import androidx.core.content.edit
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -20,6 +19,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.min
+import moe.ouom.neriplayer.R as AppR
 
 internal object AnrWatchdog {
     private const val TAG = "AnrWatchdog"
@@ -49,7 +49,7 @@ internal object AnrWatchdog {
         if (!BuildConfig.DEBUG) {
             ExceptionHandler.handleException(
                 source = TAG,
-                throwable = IllegalStateException(context.getString(CoreCommonR.string.debug_anr_test_unavailable))
+                throwable = IllegalStateException(context.getString(AppR.string.debug_anr_test_unavailable))
             )
             return
         }

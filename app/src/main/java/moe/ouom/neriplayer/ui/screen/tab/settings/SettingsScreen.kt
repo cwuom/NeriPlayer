@@ -44,6 +44,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import moe.ouom.neriplayer.ui.i18n.UiText
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.NonRestartableComposable
@@ -224,7 +225,7 @@ internal fun SettingsScreen(
     var showClearWebDavConfigDialog by remember { mutableStateOf(false) }
     // ------------------------------------
 
-    var inlineMsg by remember { mutableStateOf<String?>(null) }
+    var inlineMsg by remember { mutableStateOf<UiText?>(null) }
     val accountAuth = rememberSettingsAccountAuthController { inlineMsg = it }
 
     val backupTransfer =
@@ -237,7 +238,7 @@ internal fun SettingsScreen(
     val downloadDirectorySettings = rememberDownloadDirectorySettingsController(
         downloadDirectoryUri = otherState.storage.downloadDirectoryUri,
         onDownloadDirectoryUriChange = storageActions.onDownloadDirectoryUriChange,
-        onInlineMessageChange = { inlineMsg = it },
+        onInlineMessageChange = { inlineMsg = it?.let(UiText::Literal) },
         onShowMessage = ::showSettingsMessage
     )
 
@@ -274,11 +275,11 @@ internal fun SettingsScreen(
     val effectiveDefaultStartDestination = homeStartPresentation.destination
     val defaultStartDestinationLabel = homeStartPresentation.destinationLabel
     val navigation = rememberSettingsNavigationState(
-        context = context,
         listState = listState,
         dynamicColor = appearanceState.theme.dynamicColorEnabled,
         mobileDataFollowDefaultAudioQuality = playbackState.defaultAudioQuality.mobileDataFollowDefaultAudioQuality,
-        backgroundImageUri = appearanceState.visualBackground.backgroundImageUri
+        backgroundImageUri = appearanceState.visualBackground.backgroundImageUri,
+        internationalEnabled = otherState.internationalizationEnabled
     )
     val isSettingsSplitLayout = navigation.splitLayout
     val activeSettingsPage = navigation.activePage
@@ -1174,7 +1175,7 @@ internal fun SettingsScreen(
                                 SettingsAboutPageContent(
                                     devModeEnabled = appearanceState.theme.devModeEnabled,
                                     onDevModeChange = appearanceActions.onDevModeChange,
-                                    onInlineMessageChange = { inlineMsg = it },
+                                    onInlineMessageChange = { inlineMsg = UiText.Literal(it) },
                                     onShowMessage = ::showSettingsMessage
                                 )
                             }

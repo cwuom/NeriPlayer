@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetMergeResult
 import moe.ouom.neriplayer.data.sync.merge.dataset.SyncDatasetMerger
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackDatasetStore
 import moe.ouom.neriplayer.data.model.sync.SyncResult
+import moe.ouom.neriplayer.data.model.sync.SyncResultMessage
 import moe.ouom.neriplayer.data.model.sync.SyncUploadResolution
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.data.sync.merge.engine.SyncDataMerger
@@ -57,7 +58,8 @@ class SyncSession(
             resolution.merged.dataset.use {
                 val committer = SyncSessionCommitter(local, nowMs)
                 if (!committer.commit(backend, resolution, firstSync, mutationVersion, observedAt)) {
-                    return Result.success(SyncResult(success = false, message = deferredMessage))
+                    return Result.success(SyncResult(success = false, message = deferredMessage,
+                        messageKind = SyncResultMessage.LOCAL_CHANGES_PENDING))
                 }
                 return Result.success(SyncSessionResultPolicy.result(
                     resolution, firstSync, initialRemoteMissing, noChangeMessage, initialUploadMessage
@@ -96,7 +98,8 @@ class SyncSession(
     private fun <TVersion> uploadFailure(backend: SyncBackend<TVersion>, error: Throwable?): Result<SyncResult> {
         if (error is LocalSyncMutationConflictException) {
             backend.scheduleFollowUp()
-            return Result.success(SyncResult(success = false, message = deferredMessage))
+            return Result.success(SyncResult(success = false, message = deferredMessage,
+                messageKind = SyncResultMessage.LOCAL_CHANGES_PENDING))
         }
         return failure(backend, error)
     }

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.auth
 
 import androidx.compose.runtime.Composable
+import moe.ouom.neriplayer.ui.i18n.UiText
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.State
@@ -43,7 +44,7 @@ internal class SettingsAccountAuthController(
     val biliVm: BiliAuthViewModel,
     val youtubeVm: YouTubeAuthViewModel,
     val dialogs: SettingsAuthDialogState,
-    private val onInlineMessageChange: State<(String?) -> Unit>
+    private val onInlineMessageChange: State<(UiText?) -> Unit>
 ) {
     val actions = SettingsAccountAuthActions(this)
 
@@ -209,7 +210,7 @@ private class SettingsAuthEventEffects(
 
 @Composable
 internal fun rememberSettingsAccountAuthController(
-    onInlineMessageChange: (String?) -> Unit
+    onInlineMessageChange: (UiText?) -> Unit
 ): SettingsAccountAuthController {
     val neteaseVm: NeteaseAuthViewModel = viewModel()
     val biliVm: BiliAuthViewModel = viewModel()
@@ -234,8 +235,8 @@ internal fun rememberSettingsAccountAuthController(
 @Composable
 internal fun SettingsAccountAuthDialogs(
     controller: SettingsAccountAuthController,
-    inlineMessage: String?,
-    onInlineMessageChange: (String?) -> Unit
+    inlineMessage: UiText?,
+    onInlineMessageChange: (UiText?) -> Unit
 ) {
     SettingsNeteaseAccountAuthDialogs(controller, inlineMessage, onInlineMessageChange)
     SettingsBiliAccountAuthDialogs(controller, inlineMessage, onInlineMessageChange)
@@ -246,8 +247,8 @@ internal fun SettingsAccountAuthDialogs(
 @Composable
 private fun SettingsNeteaseAccountAuthDialogs(
     controller: SettingsAccountAuthController,
-    inlineMessage: String?,
-    onInlineMessageChange: (String?) -> Unit
+    inlineMessage: UiText?,
+    onInlineMessageChange: (UiText?) -> Unit
 ) {
     val dialogs = controller.dialogs
     SettingsNeteaseAuthDialogs(
@@ -271,8 +272,8 @@ private fun SettingsNeteaseAccountAuthDialogs(
 @Composable
 private fun SettingsBiliAccountAuthDialogs(
     controller: SettingsAccountAuthController,
-    inlineMessage: String?,
-    onInlineMessageChange: (String?) -> Unit
+    inlineMessage: UiText?,
+    onInlineMessageChange: (UiText?) -> Unit
 ) {
     val dialogs = controller.dialogs
     SettingsBiliAuthDialogs(
@@ -293,8 +294,8 @@ private fun SettingsBiliAccountAuthDialogs(
 @Composable
 private fun SettingsYouTubeAccountAuthDialogs(
     controller: SettingsAccountAuthController,
-    inlineMessage: String?,
-    onInlineMessageChange: (String?) -> Unit
+    inlineMessage: UiText?,
+    onInlineMessageChange: (UiText?) -> Unit
 ) {
     val dialogs = controller.dialogs
     SettingsYouTubeAuthDialogs(

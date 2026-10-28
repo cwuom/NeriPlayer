@@ -21,9 +21,18 @@ import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.locale.LanguageManager
 
 internal fun androidCarMediaLibrary(context: Context): CarMediaLibrary {
-    if (!PlayerDependencies.isInitialized()) return CarMediaLibrary(CarLibrarySnapshot())
+    val localizedContext = LanguageManager.applyLanguage(context)
+    val labels = CarLibraryLabels(
+        root = localizedContext.getString(CoreCommonR.string.app_name),
+        queue = localizedContext.getString(CoreCommonR.string.playlist_queue),
+        playlists = localizedContext.getString(CoreCommonR.string.library_favorite_tab_playlists),
+        history = localizedContext.getString(CoreCommonR.string.recent_title),
+        offline = localizedContext.getString(CoreCommonR.string.local_files),
+    )
+    if (!PlayerDependencies.isInitialized()) return CarMediaLibrary(CarLibrarySnapshot(), labels)
     val playlists = PlayerManager.playlistsFlow.value
     val offline = LocalFilesPlaylist.firstOrNull(playlists, context)?.songs.orEmpty() +
         PlayerDependencies.downloads.downloadedSongs()
@@ -32,21 +41,16 @@ internal fun androidCarMediaLibrary(context: Context): CarMediaLibrary {
         playlists = playlists,
         history = PlayerDependencies.repositories.playHistoryRepo.historyFlow.value.map { it.toSongItem() },
         offlineSongs = offline.distinctBy { it.stableKey() },
-    ), CarLibraryLabels(
-        root = context.getString(CoreCommonR.string.app_name),
-        queue = context.getString(CoreCommonR.string.playlist_queue),
-        playlists = context.getString(CoreCommonR.string.library_favorite_tab_playlists),
-        history = context.getString(CoreCommonR.string.recent_title),
-        offline = context.getString(CoreCommonR.string.local_files),
-    ))
+    ), labels)
 }
 
 internal fun CarLibraryItem.toAndroidMediaItem(context: Context): MediaBrowser.MediaItem {
+    val localizedContext = LanguageManager.applyLanguage(context)
     val builder = MediaDescription.Builder()
         .setMediaId(mediaId)
         .setTitle(title.take(CAR_MEDIA_TEXT_LIMIT))
         .setSubtitle(subtitle?.take(CAR_MEDIA_TEXT_LIMIT))
-        .setDescription((song?.displayAlbum(context) ?: description)?.take(CAR_MEDIA_TEXT_LIMIT))
+        .setDescription((song?.displayAlbum(localizedContext) ?: description)?.take(CAR_MEDIA_TEXT_LIMIT))
         .setExtras(Bundle().apply {
             putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1)
             putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 1)

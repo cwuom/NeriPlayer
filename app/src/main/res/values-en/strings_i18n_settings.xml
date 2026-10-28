@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_config_import_warning_item">- %1$s</string>
+    <string name="settings_download_file_name_sample_title">Sunny Day</string>
+    <string name="settings_download_file_name_sample_artist">Jay Chou</string>
+    <string name="settings_download_file_name_sample_album">Ye Hui Mei</string>
+    <string name="debug_usb_exclusive_native">Native</string>
+    <string name="debug_usb_exclusive_available">Available</string>
+    <string name="debug_usb_exclusive_opened">Opened</string>
+    <string name="debug_usb_exclusive_streaming">Streaming</string>
+    <string name="debug_usb_exclusive_paused">Paused</string>
+    <string name="debug_usb_exclusive_transitioning">Transitioning</string>
+    <string name="debug_usb_exclusive_source">Source</string>
+    <string name="debug_usb_exclusive_device">Device</string>
+    <string name="debug_usb_exclusive_requested_path">Requested path</string>
+    <string name="debug_usb_exclusive_effective_path">Effective path</string>
+    <string name="debug_usb_exclusive_fallback_reason">Fallback reason</string>
+    <string name="debug_usb_exclusive_input_format">Input format</string>
+    <string name="debug_usb_exclusive_output_format">Output format</string>
+    <string name="debug_usb_exclusive_buffer">Buffer</string>
+    <string name="debug_usb_exclusive_completed_frames">Completed frames</string>
+    <string name="debug_usb_exclusive_queued_frames">Queued frames</string>
+    <string name="debug_usb_exclusive_pcm_bytes">PCM bytes</string>
+    <string name="debug_usb_exclusive_pcm_free">PCM free</string>
+    <string name="debug_usb_exclusive_backpressure">Backpressure</string>
+    <string name="debug_usb_exclusive_service">Service</string>
+    <string name="debug_usb_exclusive_runtime">Runtime</string>
+    <string name="debug_usb_exclusive_error">Error</string>
+    <string name="debug_usb_exclusive_id">ID</string>
+    <string name="debug_usb_exclusive_usb">USB</string>
+    <string name="debug_usb_exclusive_address">Address</string>
+    <string name="debug_usb_exclusive_rates">Rates</string>
+    <string name="debug_usb_exclusive_channels">Channels</string>
+    <string name="debug_usb_exclusive_encodings">Encodings</string>
+    <string name="debug_usb_exclusive_name">Name</string>
+    <string name="debug_usb_exclusive_manufacturer">Manufacturer</string>
+    <string name="debug_usb_exclusive_class">Class</string>
+    <string name="debug_usb_exclusive_audio">Audio</string>
+    <string name="debug_usb_exclusive_permission">Permission</string>
+    <string name="debug_usb_exclusive_interfaces">Interfaces</string>
+    <string name="debug_usb_exclusive_yes">yes</string>
+    <string name="debug_usb_exclusive_no">no</string>
+    <string name="debug_usb_exclusive_none">none</string>
+</resources>

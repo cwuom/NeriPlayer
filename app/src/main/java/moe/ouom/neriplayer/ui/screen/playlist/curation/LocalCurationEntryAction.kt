@@ -19,8 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.R as AppR
 
 /** 顶栏入口；后台会话进行中时叠加进度环，提示用户可以回来查看 */
 @Composable
@@ -35,7 +35,7 @@ internal fun LocalCurationEntryAction(
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = Icons.Outlined.AutoAwesome,
-                contentDescription = stringResource(CoreCommonR.string.local_curation_title)
+                contentDescription = stringResource(AppR.string.local_curation_title)
             )
             AnimatedVisibility(
                 visible = running,

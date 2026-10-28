@@ -57,6 +57,7 @@ import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import kotlin.math.ceil
+import moe.ouom.neriplayer.R as AppR
 
 private const val HomeContinueHorizontalPaddingDp = 8f
 private const val HomeContinueCardSpacingDp = 12f
@@ -389,7 +390,7 @@ private fun ContinueCardDetails(displayName: String, trackCount: Int) {
             style = MaterialTheme.typography.titleSmall
         )
         Text(
-            text = pluralStringResource(CoreCommonR.plurals.home_song_count_format, trackCount, trackCount),
+            text = pluralStringResource(AppR.plurals.home_song_count_format, trackCount, trackCount),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1

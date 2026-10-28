@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.defaultEditableLyricsMatc
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.editableLyricMatchFailureDescription
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.mergeEditableLyricMatchResults
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.stringResId
+import moe.ouom.neriplayer.ui.i18n.UiText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,6 +27,19 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NowPlayingLyricsEditorOwnerTest {
+    @Test
+    fun `match validation retains a resource reference and preserves the edited draft`() = runTest {
+        val owner = owner { emptyList() }
+        owner.replaceSelectedText("unsaved draft")
+        val message = UiText.Resource(moe.ouom.neriplayer.common.R.string.lyrics_match_no_source_selected)
+
+        owner.runMatch("name", emptySet(), true, message) { UiText.Literal("failed") }
+
+        assertEquals(message, owner.matchErrorState.value)
+        assertEquals("unsaved draft", owner.lyricsTextState.value)
+        owner.dispose()
+    }
+
     private val song = SongItem(
         id = 7L,
         name = "Title",
@@ -81,12 +95,12 @@ class NowPlayingLyricsEditorOwnerTest {
             if (request.keyword == "old") firstResult.await() else listOf(match("new"))
         }
         val sources = setOf(EditableLyricMatchSource.KUGOU)
-        owner.runMatch("old", sources, true, "source required") { "failed" }
+        owner.runMatch("old", sources, true, UiText.Literal("source required")) { UiText.Literal("failed") }
         runCurrent()
         assertTrue(owner.isMatchingState.value)
         owner.changeQuery("new")
         assertFalse(owner.isMatchingState.value)
-        owner.runMatch("new", sources, false, "source required") { "failed" }
+        owner.runMatch("new", sources, false, UiText.Literal("source required")) { UiText.Literal("failed") }
         advanceUntilIdle()
         assertEquals(listOf("old", "new"), requests.map { it.keyword })
         assertEquals(false, requests.last().preferWordTimed)
@@ -102,14 +116,14 @@ class NowPlayingLyricsEditorOwnerTest {
         var matches = listOf(match("first"))
         val owner = owner { matches }
         val source = EditableLyricMatchSource.KUGOU
-        owner.runMatch("name", emptySet(), true, "source required") { "failed" }
-        assertEquals("source required", owner.matchErrorState.value)
-        owner.runMatch("name", setOf(source), true, "source required") { "failed" }
+        owner.runMatch("name", emptySet(), true, UiText.Literal("source required")) { UiText.Literal("failed") }
+        assertEquals(UiText.Literal("source required"), owner.matchErrorState.value)
+        owner.runMatch("name", setOf(source), true, UiText.Literal("source required")) { UiText.Literal("failed") }
         advanceUntilIdle()
         assertEquals(listOf(match("first")), owner.resultsBySourceState.value[source])
 
         matches = emptyList()
-        owner.runMatch("name", setOf(source), true, "source required") { "failed" }
+        owner.runMatch("name", setOf(source), true, UiText.Literal("source required")) { UiText.Literal("failed") }
         advanceUntilIdle()
         assertEquals(listOf(match("first")), owner.resultsBySourceState.value[source])
         owner.changeQuery("different")
@@ -170,19 +184,19 @@ class NowPlayingLyricsEditorOwnerTest {
     fun `match failure unlocks search and disposal cancels pending result`() = runTest {
         val failingOwner = owner { throw IllegalStateException("network") }
         val sources = setOf(EditableLyricMatchSource.KUGOU)
-        failingOwner.runMatch("  ", sources, true, "source required") { "failed" }
+        failingOwner.runMatch("  ", sources, true, UiText.Literal("source required")) { UiText.Literal("failed") }
         assertFalse(failingOwner.isMatchingState.value)
-        failingOwner.runMatch("name", sources, true, "source required") { "failed: ${it.message}" }
+        failingOwner.runMatch("name", sources, true, UiText.Literal("source required")) { UiText.Literal("failed: ${it.message}") }
         advanceUntilIdle()
-        assertEquals("failed: network", failingOwner.matchErrorState.value)
+        assertEquals(UiText.Literal("failed: network"), failingOwner.matchErrorState.value)
         assertFalse(failingOwner.isMatchingState.value)
         failingOwner.dispose()
 
         val pending = CompletableDeferred<List<RankedEditableLyricMatch>>()
         val closingOwner = owner { pending.await() }
-        closingOwner.runMatch("name", sources, true, "source required") { "failed" }
+        closingOwner.runMatch("name", sources, true, UiText.Literal("source required")) { UiText.Literal("failed") }
         runCurrent()
-        closingOwner.runMatch("duplicate", sources, true, "source required") { "failed" }
+        closingOwner.runMatch("duplicate", sources, true, UiText.Literal("source required")) { UiText.Literal("failed") }
         closingOwner.dispose()
         pending.complete(listOf(match("late")))
         advanceUntilIdle()

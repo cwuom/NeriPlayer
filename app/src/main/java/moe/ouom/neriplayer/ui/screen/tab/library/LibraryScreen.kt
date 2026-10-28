@@ -97,6 +97,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
+import moe.ouom.neriplayer.R as AppR
 
 enum class LibraryTab(val labelResId: Int) {
     LOCAL(CoreCommonR.string.library_tab_local),
@@ -371,7 +372,7 @@ fun LibraryScreen(
                 HapticIconButton(onClick = onOpenStats) {
                     Icon(
                         Icons.Filled.BarChart,
-                        contentDescription = stringResource(CoreCommonR.string.stats_title)
+                        contentDescription = stringResource(AppR.string.stats_title)
                     )
                 }
                 HapticIconButton(onClick = onOpenRecent) {

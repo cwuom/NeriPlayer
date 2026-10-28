@@ -20,9 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import androidx.compose.ui.Alignment
+import moe.ouom.neriplayer.R as AppR
 
 /**
  * 百科各模块底部统一的操作按钮。
@@ -73,8 +73,8 @@ internal fun SongEncyclopediaExpandAction(
     SongEncyclopediaSectionAction(
         icon = if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
         text = stringResource(
-            if (expanded) CoreCommonR.string.encyclopedia_action_collapse
-            else CoreCommonR.string.encyclopedia_action_expand
+            if (expanded) AppR.string.encyclopedia_action_collapse
+            else AppR.string.encyclopedia_action_expand
         ),
         onClick = onToggle,
         modifier = modifier
@@ -89,7 +89,7 @@ internal fun SongEncyclopediaRetryAction(
 ) {
     SongEncyclopediaSectionAction(
         icon = Icons.Outlined.Refresh,
-        text = stringResource(CoreCommonR.string.encyclopedia_retry),
+        text = stringResource(AppR.string.encyclopedia_retry),
         onClick = onRetry,
         modifier = modifier
     )

@@ -24,6 +24,8 @@ import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.io.IOException
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.R as AppR
 
 class CreatorFollowButtonTest {
     @Test
@@ -97,7 +99,7 @@ class CreatorFollowButtonTest {
     @Test
     fun `youtube error still resolves a header from the local summary`() {
         val detail = resolveYouTubeMusicCreatorDetail(
-            uiState = YouTubeMusicCreatorDetailUiState(loading = false, error = "Offline"),
+            uiState = YouTubeMusicCreatorDetailUiState(loading = false, error = UiText.Literal("Offline")),
             creator = creator()
         )!!
 
@@ -159,6 +161,10 @@ class CreatorFollowButtonTest {
         val error = runCatching { toggleCreatorFollow(repository, favorite()) }.exceptionOrNull()
 
         assertTrue(error is IOException)
+        assertEquals(
+            UiText.Resource(AppR.string.media_follow_load_failed),
+            creatorFollowFailureText(error as Exception)
+        )
         verify(repository, never()).isFavorite(42L, FAVORITE_SOURCE_BILI_ARTIST)
         verify(repository, never()).removeFavorite(42L, FAVORITE_SOURCE_BILI_ARTIST)
     }
@@ -172,6 +178,10 @@ class CreatorFollowButtonTest {
         val error = runCatching { toggleCreatorFollow(repository, favorite()) }.exceptionOrNull()
 
         assertTrue(error is IOException)
+        assertEquals(
+            UiText.Resource(AppR.string.media_follow_save_failed),
+            creatorFollowFailureText(error as Exception)
+        )
         verify(repository).removeFavorite(42L, FAVORITE_SOURCE_BILI_ARTIST)
     }
 

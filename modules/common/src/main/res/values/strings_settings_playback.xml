@@ -22,11 +22,11 @@
     <string name="settings_advanced_blur_quality">模糊质量</string>
     <string name="settings_advanced_blur_quality_desc">低、超低与默认的模糊范围一致；可按流畅度与细节表现选择</string>
     <string name="settings_advanced_blur_quality_ultra_low">超低</string>
-    <string name="settings_advanced_blur_quality_ultra_low_desc">优先保证流畅度，适合渲染压力较大的设备</string>
+    <string name="settings_advanced_blur_quality_ultra_low_desc">适合天玑处理器，优先保证流畅度</string>
     <string name="settings_advanced_blur_quality_low">低</string>
-    <string name="settings_advanced_blur_quality_low_desc">兼顾流畅度与细节表现，适合大多数设备</string>
+    <string name="settings_advanced_blur_quality_low_desc">适合天玑处理器，兼顾流畅度与细节表现</string>
     <string name="settings_advanced_blur_quality_default">默认</string>
-    <string name="settings_advanced_blur_quality_default_desc">保持当前完整的模糊效果</string>
+    <string name="settings_advanced_blur_quality_default_desc">高通处理器优先推荐，保持完整的模糊效果</string>
     <string name="settings_advanced_blur_quality_high">高</string>
     <string name="settings_advanced_blur_quality_high_desc">需开启进阶高级模糊；为探索标签和主题切换按钮增加模糊</string>
     <string name="settings_enhanced_advanced_blur_background_hint">配合“个性化”设置里的背景图，进阶高级模糊效果会更好。</string>

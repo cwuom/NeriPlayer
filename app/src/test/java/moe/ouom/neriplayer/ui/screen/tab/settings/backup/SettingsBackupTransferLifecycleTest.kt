@@ -174,7 +174,7 @@ class SettingsBackupTransferLifecycleTest {
                 ioDispatcher = dispatcher
             )
             setField("configFileManager", manager)
-            setField("strings", ConfigTransferViewModel.ConfigTransferStrings.from(context))
+            setField("strings", ConfigTransferViewModel.ConfigTransferStrings.create())
             store.put(defaultKey(ConfigTransferViewModel::class.java), viewModel)
             store.put(defaultKey(BackupRestoreViewModel::class.java), BackupRestoreViewModel())
         }

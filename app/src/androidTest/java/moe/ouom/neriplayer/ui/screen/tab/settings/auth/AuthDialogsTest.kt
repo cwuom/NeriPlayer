@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.auth
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.app.Application
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
@@ -50,7 +51,7 @@ class AuthDialogsTest {
                         showSheet = true,
                         initialTab = 0,
                         onDismissSheet = { },
-                        inlineMsg = context.getString(CoreCommonR.string.settings_netease_login_success),
+                        inlineMsg = UiText.Resource(CoreCommonR.string.settings_netease_login_success),
                         onInlineMsgChange = { },
                         showConfirmDialog = false,
                         confirmPhoneMasked = null,
@@ -243,7 +244,7 @@ class AuthDialogsTest {
                         showSheet = true,
                         initialTab = 0,
                         onDismissSheet = { },
-                        inlineMsg = context.getString(CoreCommonR.string.settings_youtube_login_success),
+                        inlineMsg = UiText.Resource(CoreCommonR.string.settings_youtube_login_success),
                         onInlineMsgChange = { },
                         vm = vm,
                         onBrowserLogin = { }
@@ -348,7 +349,7 @@ class AuthDialogsTest {
                         showSheet = true,
                         initialTab = 0,
                         onDismissSheet = { },
-                        inlineMsg = context.getString(CoreCommonR.string.settings_bili_login_success),
+                        inlineMsg = UiText.Resource(CoreCommonR.string.settings_bili_login_success),
                         onInlineMsgChange = { },
                         vm = vm,
                         onBrowserLogin = { }

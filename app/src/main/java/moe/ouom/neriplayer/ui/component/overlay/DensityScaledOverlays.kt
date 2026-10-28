@@ -31,6 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -101,24 +103,26 @@ internal fun DensityScaledAlertDialog(
         )
         return
     }
+    val localizedDismissButton = dismissButton?.let { localizedWindowContent(it) }
+    val localizedNeutralButton = neutralButton?.let { localizedWindowContent(it) }
     MaterialAlertDialog(
         onDismissRequest = onDismissRequest,
-        confirmButton = {
+        confirmButton = localizedWindowContent {
             ApplyOverlayWindowNavigationBarPolicy()
             confirmButton()
         },
         modifier = Modifier.scaleOverlaySurfaceWidth(surfaceScale).then(modifier),
-        dismissButton = if (neutralButton != null) {
+        dismissButton = if (localizedNeutralButton != null) {
             {
-                dismissButton?.invoke()
-                neutralButton()
+                localizedDismissButton?.invoke()
+                localizedNeutralButton()
             }
         } else {
-            dismissButton
+            localizedDismissButton
         },
-        icon = icon,
-        title = title,
-        text = text,
+        icon = icon?.let { localizedWindowContent(it) },
+        title = title?.let { localizedWindowContent(it) },
+        text = text?.let { localizedWindowContent(it) },
         shape = shape,
         containerColor = containerColor,
         iconContentColor = iconContentColor,
@@ -152,6 +156,8 @@ internal fun DensityScaledModalBottomSheet(
     properties: ModalBottomSheetProperties = ModalBottomSheetProperties(),
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val scope = rememberCoroutineScope()
     val dragHandleInteractionSource = remember { MutableInteractionSource() }
 
@@ -178,35 +184,40 @@ internal fun DensityScaledModalBottomSheet(
             contentWindowInsets = contentWindowInsets,
             properties = properties,
             content = {
-                ApplyOverlayWindowNavigationBarPolicy()
-                SheetNavigationEventForwarding(backBridge)
-                if (dragHandle != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(
-                                interactionSource = dragHandleInteractionSource,
-                                indication = null
-                            ) {
-                                scope.launch {
-                                    when (sheetState.currentValue) {
-                                        SheetValue.Expanded -> {
-                                            sheetState.hide()
-                                            if (!sheetState.isVisible) {
-                                                onDismissRequest()
+                CompositionLocalProvider(
+                    LocalContext provides context,
+                    LocalConfiguration provides configuration
+                ) {
+                    ApplyOverlayWindowNavigationBarPolicy()
+                    SheetNavigationEventForwarding(backBridge)
+                    if (dragHandle != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(
+                                    interactionSource = dragHandleInteractionSource,
+                                    indication = null
+                                ) {
+                                    scope.launch {
+                                        when (sheetState.currentValue) {
+                                            SheetValue.Expanded -> {
+                                                sheetState.hide()
+                                                if (!sheetState.isVisible) {
+                                                    onDismissRequest()
+                                                }
                                             }
+                                            SheetValue.PartiallyExpanded -> sheetState.expand()
+                                            SheetValue.Hidden -> sheetState.show()
                                         }
-                                        SheetValue.PartiallyExpanded -> sheetState.expand()
-                                        SheetValue.Hidden -> sheetState.show()
                                     }
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        dragHandle()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            dragHandle()
+                        }
                     }
+                    content()
                 }
-                content()
             }
         )
     }

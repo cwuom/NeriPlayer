@@ -8,6 +8,7 @@ import android.net.Uri
 import java.io.ByteArrayInputStream
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.config.TypedPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.config.AppConfigImportWarning
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackPitch
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
@@ -45,6 +46,17 @@ class ConfigSettingsSanitizerImportTest {
             .getString(CoreCommonR.string.config_import_warning_background_image)
     }
     private val sanitizer = ConfigSettingsSanitizer(context)
+
+    @Test
+    fun `sanitizer retains legacy warning text and records the application warning position`() {
+        val warnings = ConfigImportWarnings(context).apply { add("external warning") }
+        sanitizer.sanitize(
+            TypedPreferenceSnapshot(booleans = mapOf("unknown_setting" to true)),
+            warnings
+        )
+        assertEquals(listOf("external warning", INVALID_VALUES_WARNING), warnings)
+        assertEquals(mapOf(1 to AppConfigImportWarning.INVALID_SETTING_VALUES), warnings.codes)
+    }
 
     @Test
     fun `legacy two times density imports use each tablet limit and fixed phone and car limits`() {

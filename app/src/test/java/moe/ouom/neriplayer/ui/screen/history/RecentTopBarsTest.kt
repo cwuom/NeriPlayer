@@ -24,6 +24,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
@@ -149,5 +150,5 @@ class RecentTopBarsTest {
     }
 
     private fun selectedCount(count: Int): String =
-        context.resources.getQuantityString(CoreCommonR.plurals.common_selected_count, count, count)
+        context.resources.getQuantityString(AppR.plurals.common_selected_count, count, count)
 }

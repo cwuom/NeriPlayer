@@ -32,6 +32,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class, qualifiers = "w411dp-h2000dp")
@@ -68,7 +69,7 @@ class SafeModeConfigExportTest {
     fun `cancelled file picker discards the previous choice before a default recovery export`() {
         render()
         openOptions()
-        button(CoreCommonR.string.settings_config_include_login_state).performClick()
+        button(AppR.string.settings_config_include_login_state).performClick()
         button(CoreCommonR.string.settings_backup_action_export).performClick()
         completePicker(null)
 
@@ -91,7 +92,7 @@ class SafeModeConfigExportTest {
         button(CoreCommonR.string.settings_backup_action_export).performClick()
 
         composeRule.runOnIdle { assertEquals(1, messages.size) }
-        button(CoreCommonR.string.safe_mode_export_config).assertIsEnabled()
+        button(AppR.string.safe_mode_export_config).assertIsEnabled()
         failLaunch = false
         openOptions()
         button(CoreCommonR.string.settings_backup_action_export).performClick()
@@ -116,7 +117,7 @@ class SafeModeConfigExportTest {
     }
 
     private fun openOptions() {
-        button(CoreCommonR.string.safe_mode_export_config).performClick()
+        button(AppR.string.safe_mode_export_config).performClick()
     }
 
     private fun completePicker(uri: Uri?) {

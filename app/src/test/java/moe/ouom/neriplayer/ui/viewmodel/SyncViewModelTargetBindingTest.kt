@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
+import moe.ouom.neriplayer.ui.i18n.UiText
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -63,7 +64,7 @@ class SyncViewModelTargetBindingTest {
                     }
                     fixture.performTargetWithFinished(mockContext(), first, {
                         assertFalse(fixture.isSyncing())
-                        if (result.getOrNull()?.success == true) assertEquals("completed", fixture.successMessage())
+                        if (result.getOrNull()?.success == true) assertEquals(UiText.Literal("completed"), fixture.successMessage())
                         else assertNull(fixture.successMessage())
                         notifications++
                     }, { error("ordinary outcome requested an upgrade") })
@@ -210,7 +211,7 @@ class SyncViewModelTargetBindingTest {
                 complete.complete(Unit)
                 testScheduler.runCurrent()
                 assertFalse(fixture.isSyncing())
-                assertEquals("completed", fixture.successMessage())
+                assertEquals(UiText.Literal("completed"), fixture.successMessage())
             }
         }
     }
@@ -250,7 +251,7 @@ class SyncViewModelTargetBindingTest {
                 newComplete.complete(Unit)
                 testScheduler.runCurrent()
                 assertFalse(fixture.isSyncing())
-                assertEquals("fresh", fixture.successMessage())
+                assertEquals(UiText.Literal("fresh"), fixture.successMessage())
                 assertEquals(0, staleNotifications)
             }
         }
@@ -301,12 +302,12 @@ class SyncViewModelTargetBindingTest {
                 testScheduler.runCurrent()
                 assertFalse(fixture.isSyncing())
                 assertNull(fixture.successMessage())
-                assertEquals("not completed", fixture.errorMessage())
+                assertEquals(UiText.Literal("not completed"), fixture.errorMessage())
                 fixture.performTarget(context, first) { error("incomplete sync requested upgrade") }
                 testScheduler.runCurrent()
                 assertFalse(fixture.isSyncing())
                 assertNull(fixture.successMessage())
-                assertEquals("not completed", fixture.errorMessage())
+                assertEquals(UiText.Literal("not completed"), fixture.errorMessage())
             }
         }
     }
@@ -343,8 +344,8 @@ class SyncViewModelTargetBindingTest {
         val performTarget: (Context, String, (SyncProtocolUpgradeChallenge) -> Unit) -> Unit,
         val clear: (Context) -> Unit,
         val isSyncing: () -> Boolean,
-        val successMessage: () -> String?,
-        val errorMessage: () -> String?,
+        val successMessage: () -> UiText?,
+        val errorMessage: () -> UiText?,
         val performTargetWithFinished: (Context, String, () -> Unit, (SyncProtocolUpgradeChallenge) -> Unit) -> Unit
     )
 }

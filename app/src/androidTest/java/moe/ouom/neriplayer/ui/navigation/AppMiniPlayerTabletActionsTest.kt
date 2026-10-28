@@ -35,6 +35,9 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso
+import androidx.test.espresso.action.ViewActions.pressBack
+import androidx.test.espresso.matcher.RootMatchers.isDialog as isDialogRoot
+import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -52,6 +55,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class AppMiniPlayerTabletActionsTest {
@@ -191,7 +195,7 @@ class AppMiniPlayerTabletActionsTest {
             Panel.Queue -> {
                 val count = PlayerManager.currentQueueDisplaySnapshot().items.size
                 val countLabel = composeRule.activity.resources.getQuantityString(
-                    CoreCommonR.plurals.nowplaying_queue_count_format, count, count
+                    AppR.plurals.nowplaying_queue_count_format, count, count
                 )
                 composeRule.onNode(hasText(countLabel) and hasAnyAncestor(isDialog())).assertIsDisplayed()
             }
@@ -209,7 +213,7 @@ class AppMiniPlayerTabletActionsTest {
     }
 
     private fun dismissPanelWithBack() {
-        Espresso.pressBack()
+        Espresso.onView(isRoot()).inRoot(isDialogRoot()).perform(pressBack())
         waitForNoPanel()
         composeRule.onNodeWithTag(PlayerTag).assertIsDisplayed()
     }

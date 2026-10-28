@@ -34,6 +34,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.IntentCompat
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.locale.LanguageManager
+import moe.ouom.neriplayer.feature.player.R as PlaybackR
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
@@ -100,6 +102,9 @@ internal interface PlaybackServicePresentationPort {
 internal class AndroidPlaybackServicePresentationPort(
     private val context: Context,
 ) : PlaybackServicePresentationPort {
+    private val localizedContext: Context
+        get() = LanguageManager.applyLanguage(context)
+
     private val audioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_MEDIA)
         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
@@ -134,19 +139,23 @@ internal class AndroidPlaybackServicePresentationPort(
     }
 
     override fun ensureNotificationChannel() {
-        val channel = NotificationChannel(
-            AudioPlayerService.CHANNEL_ID,
-            "NeriPlayer Playback",
-            NotificationManager.IMPORTANCE_LOW,
-        )
-        NotificationManagerCompat.from(context).createNotificationChannel(channel)
+        val manager = NotificationManagerCompat.from(context)
+        val channelName = localizedContext.getString(PlaybackR.string.notification_channel_playback)
+        val channel = manager.getNotificationChannel(AudioPlayerService.CHANNEL_ID)
+            ?: NotificationChannel(
+                AudioPlayerService.CHANNEL_ID,
+                channelName,
+                NotificationManager.IMPORTANCE_LOW,
+            )
+        channel.name = channelName
+        manager.createNotificationChannel(channel)
     }
 
     override fun buildBootstrapNotification(): Notification {
         val builder = Notification.Builder(context, AudioPlayerService.CHANNEL_ID)
             .setSmallIcon(CoreCommonR.drawable.ic_notification_small)
-            .setContentTitle(context.getString(CoreCommonR.string.app_name))
-            .setContentText(context.getString(CoreCommonR.string.player_notification_preparing))
+            .setContentTitle(localizedContext.getString(CoreCommonR.string.app_name))
+            .setContentText(localizedContext.getString(CoreCommonR.string.player_notification_preparing))
             .setContentIntent(mainActivityPendingIntent())
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
@@ -162,7 +171,7 @@ internal class AndroidPlaybackServicePresentationPort(
     override fun buildMinimalForegroundNotification(): Notification =
         NotificationCompat.Builder(context, AudioPlayerService.CHANNEL_ID)
             .setSmallIcon(CoreCommonR.drawable.ic_notification_small)
-            .setContentTitle(context.getString(CoreCommonR.string.app_name))
+            .setContentTitle(localizedContext.getString(CoreCommonR.string.app_name))
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
@@ -207,15 +216,15 @@ internal class AndroidPlaybackServicePresentationPort(
     override fun elapsedRealtime(): Long = SystemClock.elapsedRealtime()
 
     override fun localizedString(resId: Int, arg: String?): String =
-        if (arg == null) context.getString(resId) else context.getString(resId, arg)
+        if (arg == null) localizedContext.getString(resId) else localizedContext.getString(resId, arg)
 
     override fun widgetLabels(): ServiceWidgetLabels = ServiceWidgetLabels(
-        appName = context.getString(CoreCommonR.string.app_name),
-        idleSubtitle = context.getString(CoreCommonR.string.widget_playback_idle_subtitle),
-        buffering = context.getString(CoreCommonR.string.widget_playback_buffering),
-        playing = context.getString(CoreCommonR.string.widget_playback_playing),
-        paused = context.getString(CoreCommonR.string.widget_playback_paused),
-        ready = context.getString(CoreCommonR.string.widget_playback_ready),
+        appName = localizedContext.getString(CoreCommonR.string.app_name),
+        idleSubtitle = localizedContext.getString(CoreCommonR.string.widget_playback_idle_subtitle),
+        buffering = localizedContext.getString(CoreCommonR.string.widget_playback_buffering),
+        playing = localizedContext.getString(CoreCommonR.string.widget_playback_playing),
+        paused = localizedContext.getString(CoreCommonR.string.widget_playback_paused),
+        ready = localizedContext.getString(CoreCommonR.string.widget_playback_ready),
     )
 
     private fun releaseSession(session: MediaSession) {
@@ -226,6 +235,7 @@ internal class AndroidPlaybackServicePresentationPort(
     private fun requireSession(): MediaSession = checkNotNull(mediaSession)
 
     override fun buildNotification(inputs: PlaybackServiceNotificationRenderInputs): Notification {
+        ensureNotificationChannel()
         val contentIntent = mainActivityPendingIntent()
         val builder = mediaNotificationBuilder(contentIntent)
         addMediaNotificationActions(builder, inputs, contentIntent)
@@ -273,14 +283,14 @@ internal class AndroidPlaybackServicePresentationPort(
     ) {
         builder.addAction(mediaNotificationAction(
             CoreCommonR.drawable.round_skip_previous_24,
-            context.getString(CoreCommonR.string.player_previous),
+            localizedContext.getString(CoreCommonR.string.player_previous),
             servicePendingIntent(AudioPlayerService.ACTION_PREV, 1),
         ))
         builder.addAction(playbackControlNotificationAction(inputs))
         builder.addAction(favoriteNotificationAction(inputs, contentIntent))
         builder.addAction(mediaNotificationAction(
             CoreCommonR.drawable.round_skip_next_24,
-            context.getString(CoreCommonR.string.player_next),
+            localizedContext.getString(CoreCommonR.string.player_next),
             servicePendingIntent(AudioPlayerService.ACTION_NEXT, 4),
         ))
         builder.addAction(floatingLyricsNotificationAction(inputs.floatingLyricsEnabled))
@@ -293,7 +303,7 @@ internal class AndroidPlaybackServicePresentationPort(
             servicePendingIntent(AudioPlayerService.ACTION_PAUSE, 3),
             servicePendingIntent(AudioPlayerService.ACTION_RESTORE_VOLUME, 8),
         )
-        return mediaNotificationAction(choice.iconRes, context.getString(choice.titleRes), intents[choice.intentIndex])
+        return mediaNotificationAction(choice.iconRes, localizedContext.getString(choice.titleRes), intents[choice.intentIndex])
     }
 
     private fun favoriteNotificationAction(
@@ -304,7 +314,7 @@ internal class AndroidPlaybackServicePresentationPort(
         else servicePendingIntent(AudioPlayerService.ACTION_TOGGLE_FAV, 6)
         return mediaNotificationAction(
             favoriteActionIcon(inputs.favorite),
-            context.getString(favoriteActionTitle(inputs.favorite)),
+            localizedContext.getString(favoriteActionTitle(inputs.favorite)),
             intent,
         )
     }
@@ -312,7 +322,7 @@ internal class AndroidPlaybackServicePresentationPort(
     private fun floatingLyricsNotificationAction(enabled: Boolean): Notification.Action =
         mediaNotificationAction(
             floatingLyricsActionIcon(enabled),
-            context.getString(floatingLyricsActionTitle(enabled)),
+            localizedContext.getString(floatingLyricsActionTitle(enabled)),
             servicePendingIntent(AudioPlayerService.ACTION_TOGGLE_FLOATING_LYRICS, 7),
         )
 

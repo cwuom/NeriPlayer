@@ -50,8 +50,8 @@ import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicTrack
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicUiDependencies
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway
-import moe.ouom.neriplayer.ui.component.playlist.playlistLoadErrorMessage
-import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.component.playlist.playlistLoadFailure
+import moe.ouom.neriplayer.data.model.playlist.PlaylistLoadFailure
 
 private const val YOUTUBE_MUSIC_PLAYLIST_SIGNATURE_TRACK_LIMIT = 100
 internal const val YOUTUBE_MUSIC_PLAYLIST_CACHE_FRESHNESS_MS = 6L * 60L * 60L * 1000L
@@ -67,7 +67,7 @@ internal fun isYouTubeMusicPlaylistCacheFresh(
 
 data class YouTubeMusicPlaylistDetailUiState(
     val loading: Boolean = true,
-    val error: String? = null,
+    val error: PlaylistLoadFailure? = null,
     val tracksUnavailable: Boolean = false,
     val playlist: YouTubeMusicPlaylist? = null,
     val tracks: List<SongItem> = emptyList(),
@@ -196,7 +196,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                 } else {
                     _uiState.value = _uiState.value.copy(
                         loading = false,
-                        error = getApplication<Application>().getString(CoreCommonR.string.playlist_error_offline_no_cache)
+                        error = PlaylistLoadFailure.Offline
                     )
                 }
             }
@@ -206,7 +206,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
         if (gateway == null) {
             _uiState.value = _uiState.value.copy(
                 loading = false,
-                error = "YouTube Music gateway unavailable"
+                error = PlaylistLoadFailure.Unknown
             )
             return
         }
@@ -229,7 +229,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                         }
                     }.getOrElse { error ->
                         if (error is CancellationException) throw error
-                        publishCachedPlaylist(cached, playlist, error = playlistLoadErrorMessage(getApplication(), error))
+                        publishCachedPlaylist(cached, playlist, error = playlistLoadFailure(error))
                         return@launch
                     }
                     if (!preview.hasUsableTracks() ||
@@ -320,19 +320,19 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                     playlistCacheRepo.read(playlist.browseId)
                 }
                 if (cached != null) {
-                    publishCachedPlaylist(cached, playlist, error = playlistLoadErrorMessage(getApplication(), error))
+                    publishCachedPlaylist(cached, playlist, error = playlistLoadFailure(error))
                     return@launch
                 }
                 if (previewPublished) {
                     _uiState.value = _uiState.value.copy(
                         loading = false,
-                        error = playlistLoadErrorMessage(getApplication(), error)
+                        error = playlistLoadFailure(error)
                     )
                     return@launch
                 }
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = playlistLoadErrorMessage(getApplication(), error)
+                    error = playlistLoadFailure(error)
                 )
             }
         }
@@ -342,7 +342,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
         cached: CachedYouTubeMusicPlaylistDetail,
         fallback: YouTubeMusicPlaylist,
         loading: Boolean = false,
-        error: String? = null,
+        error: PlaylistLoadFailure? = null,
         allowPrefetch: Boolean = true
     ) {
         val localPlaylists = localPlaylistsSnapshot()

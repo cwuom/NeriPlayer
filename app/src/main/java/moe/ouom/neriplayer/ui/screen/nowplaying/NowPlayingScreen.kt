@@ -82,6 +82,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -131,16 +132,9 @@ import moe.ouom.neriplayer.data.identity.playbackVisualKeyAliases
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
-import moe.ouom.neriplayer.lyrics.offset.resolveEffectiveLyricOffsetMs
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
@@ -202,6 +196,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverOwne
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverRequestUrl
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldShowNowPlayingEmbeddedLyrics
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.rememberNowPlayingLyricsLoadOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.rememberNowPlayingLyricOffset
 import moe.ouom.neriplayer.ui.component.lyrics.LocalAdvancedLyricsPreparationCache
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadRequest
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsRefreshVersions
@@ -210,6 +205,7 @@ import moe.ouom.neriplayer.ui.screen.playback.resolveListenTogetherProgressSeekE
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
 import kotlin.time.Duration.Companion.milliseconds
 import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
+import moe.ouom.neriplayer.R as AppR
 
 private const val LyricsPageTransitionDurationMs = 300
 private const val CoverSourceBadgeRevealBufferMs = 120
@@ -227,18 +223,6 @@ internal enum class NowPlayingWideLyricsMode {
     NO_LYRICS,
     ADVANCED,
     SYNCED
-}
-
-internal enum class NowPlayingLyricsSharedTransitionElement(
-    val key: String
-) {
-    BACK("btn_back"),
-    COVER("cover_image"),
-    ARTIST("song_artist"),
-    PROGRESS("progress_bar"),
-    PREVIOUS("player_previous"),
-    PLAY("play_button"),
-    NEXT("player_next")
 }
 
 internal fun resolveNowPlayingWideLyricsMode(
@@ -580,24 +564,6 @@ fun NowPlayingScreen(
     val showProgressAudioSpec by settingsRepo
         .nowPlayingProgressShowAudioSpecFlow
         .collectAsStateWithLifecycle(initialValue = true)
-    val cloudMusicLyricDefaultOffsetMs by settingsRepo
-        .cloudMusicLyricDefaultOffsetMsFlow
-        .collectAsStateWithLifecycle(initialValue = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS)
-    val qqMusicLyricDefaultOffsetMs by settingsRepo
-        .qqMusicLyricDefaultOffsetMsFlow
-        .collectAsStateWithLifecycle(initialValue = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS)
-    val kugouLyricDefaultOffsetMs by settingsRepo
-        .kugouLyricDefaultOffsetMsFlow
-        .collectAsStateWithLifecycle(initialValue = DEFAULT_KUGOU_LYRIC_OFFSET_MS)
-    val lrclibLyricDefaultOffsetMs by settingsRepo
-        .lrclibLyricDefaultOffsetMsFlow
-        .collectAsStateWithLifecycle(initialValue = DEFAULT_LRCLIB_LYRIC_OFFSET_MS)
-    val amllTtmlLyricDefaultOffsetMs by settingsRepo
-        .amllTtmlLyricDefaultOffsetMsFlow
-        .collectAsStateWithLifecycle(initialValue = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS)
-    val biliCcSubtitleLyricDefaultOffsetMs by settingsRepo
-        .biliCcSubtitleLyricDefaultOffsetMsFlow
-        .collectAsStateWithLifecycle(initialValue = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS)
     val lyricTranslationUsePhonetic by settingsRepo
         .lyricTranslationUsePhoneticFlow
         .collectAsStateWithLifecycle(initialValue = false)
@@ -719,7 +685,7 @@ fun NowPlayingScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var detailSong by remember { mutableStateOf<SongItem?>(null) }
     var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var pendingSyncConfirmLabel by remember { mutableStateOf("") }
+    var pendingSyncConfirmLabel by remember { mutableIntStateOf(CoreCommonR.string.favorite_add) }
 
     val screenScope = rememberCoroutineScope()
     val toggleImmersiveMode: () -> Unit = {
@@ -743,7 +709,9 @@ fun NowPlayingScreen(
                 saveCoverToPictures(
                     context = context,
                     imageUrl = actualCoverUrl,
-                    suggestedName = "${song.displayArtist()} - ${song.displayName()} 封面"
+                    suggestedName = composeResources.getString(
+                        AppR.string.media_cover_file_name, song.displayArtist(), song.displayName()
+                    )
                 ).onSuccess { fileName ->
                     snackbarHostState.showNeriSnackbar(
                         composeResources.getString(CoreCommonR.string.cover_download_success, fileName)
@@ -1041,7 +1009,7 @@ fun NowPlayingScreen(
 
     fun launchWithLocalSyncWarning(
         song: SongItem?,
-        actionLabel: String,
+        actionLabel: Int,
         warnForLocalSync: Boolean = true,
         action: () -> Unit
     ) {
@@ -1091,17 +1059,11 @@ fun NowPlayingScreen(
     val lowPowerLyricsRendering = remember(context, effectiveShowLyricsScreen) { context.isSystemPowerSaveMode() }
 
     // 歌词偏移 (平台 + 用户自定义)
-    val totalOffset = resolveEffectiveLyricOffsetMs(
-        lyricSource = currentSong?.matchedLyricSource,
-        cloudMusicDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
-        qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
-        userLyricOffsetMs = currentSong?.userLyricOffsetMs ?: 0L,
-        kugouDefaultOffsetMs = kugouLyricDefaultOffsetMs,
-        lrclibDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
-        amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
-        preferredLyricSource = loadedPreferredLyricSource,
-        biliCcSubtitleDefaultOffsetMs = biliCcSubtitleLyricDefaultOffsetMs,
-        isBiliCcSubtitleLyrics = PlayerManager.isBiliCcSubtitleLyricsActive(currentSong),
+    val totalOffset = rememberNowPlayingLyricOffset(
+        repository = settingsRepo,
+        song = currentSong,
+        preferredSource = loadedPreferredLyricSource,
+        isBiliCcSubtitleLyrics = PlayerManager.isBiliCcSubtitleLyricsActive(currentSong)
     )
     val progressInfoSegments = remember(
         currentPlaybackAudioInfo,
@@ -1155,9 +1117,14 @@ fun NowPlayingScreen(
             // 歌词页和宽屏歌词共用一个可拖动的转场，返回手势按进度淡回播放页
             val lyricsTransition = rememberHostPredictiveBackTransition(
                 targetState = effectiveShowLyricsScreen,
-                backEnabled = effectiveShowLyricsScreen,
+                backEnabled = shouldUseStandaloneNowPlayingLyricsPage(
+                    effectiveShowLyricsScreen, useWideLandscapeLayout
+                ),
                 backTargetState = false,
-                onBack = { onShowLyricsScreenChange(false) },
+                onBack = {
+                    // 横屏已将歌词放在双栏中，在途歌词手势也应直接退出播放页
+                    if (useWideLandscapeLayout) onNavigateUp() else onShowLyricsScreenChange(false)
+                },
                 label = "lyrics_transition",
                 previewEasing = FastOutLinearInEasing,
                 cancelMinimumDurationMillis = LyricsBackCancelMinimumDurationMs,
@@ -1471,7 +1438,7 @@ fun NowPlayingScreen(
                                     val willFav = nextFavoriteStateAfterTap(isFavorite)
                                     launchWithLocalSyncWarning(
                                         song = song,
-                                        actionLabel = composeResources.getString(CoreCommonR.string.favorite_add),
+                                        actionLabel = CoreCommonR.string.favorite_add,
                                         warnForLocalSync = shouldConfirmFavoriteSync(song, willFav, context)
                                     ) {
                                         favOverride = willFav
@@ -1936,7 +1903,7 @@ fun NowPlayingScreen(
                                                 .clickable {
                                                     launchWithLocalSyncWarning(
                                                         song = currentSong,
-                                                        actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to),
+                                                        actionLabel = CoreCommonR.string.playlist_add_to,
                                                         warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(pl, context) ||
                                                             shouldConfirmFavoriteSync(currentSong, adding = true, context = context)
                                                     ) {
@@ -1951,7 +1918,7 @@ fun NowPlayingScreen(
                                             Spacer(modifier = Modifier.weight(1f))
                                             Text(
                                                 pluralStringResource(
-                                                    CoreCommonR.plurals.nowplaying_song_count_format,
+                                                    AppR.plurals.nowplaying_song_count_format,
                                                     pl.songs.size,
                                                     pl.songs.size
                                                 ),
@@ -1980,15 +1947,13 @@ fun NowPlayingScreen(
 
                         pendingSyncConfirmAction?.let { action ->
                             LocalSongSyncConfirmDialog(
-                                actionLabel = pendingSyncConfirmLabel,
+                                actionLabel = stringResource(pendingSyncConfirmLabel),
                                 onConfirm = {
                                     pendingSyncConfirmAction = null
-                                    pendingSyncConfirmLabel = ""
                                     action()
                                 },
                                 onDismiss = {
                                     pendingSyncConfirmAction = null
-                                    pendingSyncConfirmLabel = ""
                                 }
                             )
                         }

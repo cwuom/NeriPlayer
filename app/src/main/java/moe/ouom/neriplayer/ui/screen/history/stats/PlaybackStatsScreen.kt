@@ -36,12 +36,13 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
+import moe.ouom.neriplayer.R as AppR
 
 internal enum class StatsSortMode(@param:StringRes val labelRes: Int) {
-    PLAY_COUNT(CoreCommonR.string.stats_sort_play_count),
-    LISTEN_TIME(CoreCommonR.string.stats_sort_listen_time),
-    RECENT(CoreCommonR.string.stats_sort_recent),
-    FIRST_PLAYED(CoreCommonR.string.stats_sort_first_played)
+    PLAY_COUNT(AppR.string.stats_sort_play_count),
+    LISTEN_TIME(AppR.string.stats_sort_listen_time),
+    RECENT(AppR.string.stats_sort_recent),
+    FIRST_PLAYED(AppR.string.stats_sort_first_played)
 }
 
 @Composable
@@ -65,8 +66,8 @@ fun PlaybackStatsScreen(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text(stringResource(CoreCommonR.string.stats_clear_title)) },
-            text = { Text(stringResource(CoreCommonR.string.stats_clear_message)) },
+            title = { Text(stringResource(AppR.string.stats_clear_title)) },
+            text = { Text(stringResource(AppR.string.stats_clear_message)) },
             confirmButton = {
                 HapticTextButton(onClick = {
                     AppContainer.playbackStatsRepo.clearAll()
@@ -124,7 +125,7 @@ internal fun PlaybackStatsTopBar(
 ) {
     var showSortMenu by remember { mutableStateOf(false) }
     TopAppBar(
-        title = { Text(stringResource(CoreCommonR.string.stats_title)) },
+        title = { Text(stringResource(AppR.string.stats_title)) },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent
         ),
@@ -159,7 +160,7 @@ internal fun PlaybackStatsTopBar(
             HapticIconButton(onClick = onClearRequest) {
                 Icon(
                     Icons.Filled.ClearAll,
-                    contentDescription = stringResource(CoreCommonR.string.stats_clear_title)
+                    contentDescription = stringResource(AppR.string.stats_clear_title)
                 )
             }
         }

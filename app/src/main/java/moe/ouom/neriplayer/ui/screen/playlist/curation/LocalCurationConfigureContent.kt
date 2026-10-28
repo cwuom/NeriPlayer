@@ -34,7 +34,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.media.curation.EmbeddedCoverSizePreset
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
@@ -42,6 +41,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTa
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import kotlin.math.roundToInt
+import moe.ouom.neriplayer.R as AppR
 
 private val lyricModes = listOf(
     LocalCurationLyricMode.SKIP,
@@ -85,12 +85,12 @@ internal fun LocalCurationConfigureContent(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             CurationModeSection(
-                title = stringResource(CoreCommonR.string.local_curation_section_lyrics),
+                title = stringResource(AppR.string.local_curation_section_lyrics),
                 labels = listOf(
-                    stringResource(CoreCommonR.string.local_curation_mode_skip),
-                    stringResource(CoreCommonR.string.local_curation_mode_fill),
-                    stringResource(CoreCommonR.string.local_curation_mode_rematch),
-                    stringResource(CoreCommonR.string.local_curation_mode_reembed)
+                    stringResource(AppR.string.local_curation_mode_skip),
+                    stringResource(AppR.string.local_curation_mode_fill),
+                    stringResource(AppR.string.local_curation_mode_rematch),
+                    stringResource(AppR.string.local_curation_mode_reembed)
                 ),
                 selectedIndex = lyricModes.indexOf(options.lyricMode),
                 onSelected = { onOptionsChange(options.copy(lyricMode = lyricModes[it])) },
@@ -98,11 +98,11 @@ internal fun LocalCurationConfigureContent(
             )
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 CurationModeSection(
-                    title = stringResource(CoreCommonR.string.local_curation_section_cover),
+                    title = stringResource(AppR.string.local_curation_section_cover),
                     labels = listOf(
-                        stringResource(CoreCommonR.string.local_curation_mode_skip),
-                        stringResource(CoreCommonR.string.local_curation_mode_fill),
-                        stringResource(CoreCommonR.string.local_curation_mode_replace)
+                        stringResource(AppR.string.local_curation_mode_skip),
+                        stringResource(AppR.string.local_curation_mode_fill),
+                        stringResource(AppR.string.local_curation_mode_replace)
                     ),
                     selectedIndex = coverModes.indexOf(options.coverMode),
                     onSelected = { onOptionsChange(options.copy(coverMode = coverModes[it])) },
@@ -120,7 +120,7 @@ internal fun LocalCurationConfigureContent(
                 }
             }
             ParallelismSection(options = options, onOptionsChange = onOptionsChange)
-            CurationHintCard(text = stringResource(CoreCommonR.string.local_curation_background_hint))
+            CurationHintCard(text = stringResource(AppR.string.local_curation_background_hint))
         }
         MiuixSettingsButton(
             onClick = onStart,
@@ -129,10 +129,10 @@ internal fun LocalCurationConfigureContent(
         ) {
             Text(
                 text = if (songCount > 0) {
-                    stringResource(CoreCommonR.string.local_curation_start) + " · " +
-                        pluralStringResource(CoreCommonR.plurals.local_curation_song_count, songCount, songCount)
+                    stringResource(AppR.string.local_curation_start) + " · " +
+                        pluralStringResource(AppR.plurals.local_curation_song_count, songCount, songCount)
                 } else {
-                    stringResource(CoreCommonR.string.local_curation_no_local_songs)
+                    stringResource(AppR.string.local_curation_no_local_songs)
                 }
             )
         }
@@ -180,22 +180,22 @@ private fun CoverOptions(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = stringResource(CoreCommonR.string.local_curation_cover_size),
+            text = stringResource(AppR.string.local_curation_cover_size),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(top = 4.dp)
         )
         MiuixSettingsSegmentedTabs(
             labels = listOf(
-                stringResource(CoreCommonR.string.local_curation_cover_size_compact),
-                stringResource(CoreCommonR.string.local_curation_cover_size_standard),
-                stringResource(CoreCommonR.string.local_curation_cover_size_original)
+                stringResource(AppR.string.local_curation_cover_size_compact),
+                stringResource(AppR.string.local_curation_cover_size_standard),
+                stringResource(AppR.string.local_curation_cover_size_original)
             ),
             selectedIndex = coverSizes.indexOf(options.coverSize).coerceAtLeast(0),
             onSelectedIndexChange = { onOptionsChange(options.copy(coverSize = coverSizes[it])) }
         )
         Text(
-            text = stringResource(CoreCommonR.string.local_curation_cover_size_hint),
+            text = stringResource(AppR.string.local_curation_cover_size_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp)
@@ -206,14 +206,14 @@ private fun CoverOptions(
         ) {
             Column {
                 CurationSwitchRow(
-                    title = stringResource(CoreCommonR.string.local_curation_use_folder_cover),
-                    description = stringResource(CoreCommonR.string.local_curation_use_folder_cover_desc),
+                    title = stringResource(AppR.string.local_curation_use_folder_cover),
+                    description = stringResource(AppR.string.local_curation_use_folder_cover_desc),
                     checked = options.useFolderCover,
                     onCheckedChange = { onOptionsChange(options.copy(useFolderCover = it)) }
                 )
                 CurationSwitchRow(
-                    title = stringResource(CoreCommonR.string.local_curation_use_online_cover),
-                    description = stringResource(CoreCommonR.string.local_curation_use_online_cover_desc),
+                    title = stringResource(AppR.string.local_curation_use_online_cover),
+                    description = stringResource(AppR.string.local_curation_use_online_cover_desc),
                     checked = options.useOnlineCover,
                     onCheckedChange = { onOptionsChange(options.copy(useOnlineCover = it)) }
                 )
@@ -229,7 +229,7 @@ private fun ParallelismSection(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = stringResource(CoreCommonR.string.local_curation_section_performance),
+            text = stringResource(AppR.string.local_curation_section_performance),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary
         )
@@ -240,19 +240,19 @@ private fun ParallelismSection(
         ) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 ParallelismSlider(
-                    label = stringResource(CoreCommonR.string.local_curation_search_parallelism, options.searchParallelism),
+                    label = stringResource(AppR.string.local_curation_search_parallelism, options.searchParallelism),
                     value = options.searchParallelism,
                     onValueChange = { onOptionsChange(options.copy(searchParallelism = it)) }
                 )
                 ParallelismSlider(
-                    label = stringResource(CoreCommonR.string.local_curation_write_parallelism, options.writeParallelism),
+                    label = stringResource(AppR.string.local_curation_write_parallelism, options.writeParallelism),
                     value = options.writeParallelism,
                     onValueChange = { onOptionsChange(options.copy(writeParallelism = it)) }
                 )
             }
         }
         Text(
-            text = stringResource(CoreCommonR.string.local_curation_parallelism_hint),
+            text = stringResource(AppR.string.local_curation_parallelism_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp)
@@ -333,14 +333,14 @@ internal fun CurationHintCard(text: String) {
 }
 
 private fun lyricModeDescription(mode: LocalCurationLyricMode): Int = when (mode) {
-    LocalCurationLyricMode.SKIP -> CoreCommonR.string.local_curation_lyric_skip_desc
-    LocalCurationLyricMode.FILL_MISSING -> CoreCommonR.string.local_curation_lyric_fill_desc
-    LocalCurationLyricMode.REMATCH_ALL -> CoreCommonR.string.local_curation_lyric_rematch_desc
-    LocalCurationLyricMode.REEMBED_CURRENT -> CoreCommonR.string.local_curation_lyric_reembed_desc
+    LocalCurationLyricMode.SKIP -> AppR.string.local_curation_lyric_skip_desc
+    LocalCurationLyricMode.FILL_MISSING -> AppR.string.local_curation_lyric_fill_desc
+    LocalCurationLyricMode.REMATCH_ALL -> AppR.string.local_curation_lyric_rematch_desc
+    LocalCurationLyricMode.REEMBED_CURRENT -> AppR.string.local_curation_lyric_reembed_desc
 }
 
 private fun coverModeDescription(mode: LocalCurationCoverMode): Int = when (mode) {
-    LocalCurationCoverMode.SKIP -> CoreCommonR.string.local_curation_cover_skip_desc
-    LocalCurationCoverMode.FILL_MISSING -> CoreCommonR.string.local_curation_cover_fill_desc
-    LocalCurationCoverMode.REPLACE_ALL -> CoreCommonR.string.local_curation_cover_replace_desc
+    LocalCurationCoverMode.SKIP -> AppR.string.local_curation_cover_skip_desc
+    LocalCurationCoverMode.FILL_MISSING -> AppR.string.local_curation_cover_fill_desc
+    LocalCurationCoverMode.REPLACE_ALL -> AppR.string.local_curation_cover_replace_desc
 }

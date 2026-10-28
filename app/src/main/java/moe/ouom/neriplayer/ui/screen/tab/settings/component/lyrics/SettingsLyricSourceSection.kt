@@ -158,4 +158,3 @@ private fun lyricSourcePreferenceDescription(source: LyricSourcePreference): Int
     LyricSourcePreference.LrcLib -> CoreCommonR.string.settings_lyric_source_lrclib_desc
     LyricSourcePreference.AmllTtml -> CoreCommonR.string.settings_lyric_source_amll_ttml_desc
 }
-

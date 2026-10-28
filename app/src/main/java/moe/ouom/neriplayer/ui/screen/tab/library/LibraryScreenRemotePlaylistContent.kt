@@ -96,6 +96,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.R as AppR
 @Composable
 internal fun LibraryMainTabs(
     tabs: List<LibraryTab>,
@@ -262,7 +263,7 @@ internal fun YouTubeMusicPlaylistList(
                             .takeIf { it > 0 }
                             ?.let { count ->
                                 pluralStringResource(
-                                    CoreCommonR.plurals.library_song_count,
+                                    AppR.plurals.library_song_count,
                                     count,
                                     count
                                 )
@@ -539,7 +540,7 @@ internal fun BiliPlaylistList(
                 ListItem(
                     headlineContent = { Text(pl.title) },
                     supportingContent = {
-                        val countText = pluralStringResource(CoreCommonR.plurals.library_video_count, pl.count, pl.count)
+                        val countText = pluralStringResource(AppR.plurals.library_video_count, pl.count, pl.count)
                         Text(
                             listOf(kindLabel, pl.subtitle, countText)
                                 .filter { it.isNotBlank() }

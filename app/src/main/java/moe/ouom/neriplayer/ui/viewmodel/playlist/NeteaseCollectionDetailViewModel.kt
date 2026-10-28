@@ -62,7 +62,8 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.isNeteaseRadarPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.parseNeteasePlaylistDetailSummaryOrNull
 import moe.ouom.neriplayer.ui.viewmodel.tab.toPlaylistSummary
 import moe.ouom.neriplayer.common.logging.NPLogger
-import moe.ouom.neriplayer.ui.component.playlist.playlistLoadErrorMessage
+import moe.ouom.neriplayer.ui.component.playlist.playlistLoadFailure
+import moe.ouom.neriplayer.data.model.playlist.PlaylistLoadFailure
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -496,7 +497,7 @@ class NeteaseCollectionDetailViewModel internal constructor(
             } else {
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = getApplication<Application>().getString(CoreCommonR.string.playlist_error_offline_no_cache)
+                    error = PlaylistLoadFailure.Offline
                 )
             }
             return
@@ -614,13 +615,13 @@ class NeteaseCollectionDetailViewModel internal constructor(
             if (fallback != null) {
                 if (!isCurrentPlaylistLoad(playlist, loadGeneration, radarCacheContext)) return
                 NPLogger.w(TAG_PD, "NetEase playlist detail failed, fallback to cache: playlistId=${playlist.id}", e)
-                publishCachedPlaylist(fallback, playlist, error = playlistLoadErrorMessage(getApplication(), e))
+                publishCachedPlaylist(fallback, playlist, error = playlistLoadFailure(e))
                 return
             }
             NPLogger.e(TAG_PD, "Network/Server error", e)
             _uiState.value = _uiState.value.copy(
                 loading = false,
-                error = playlistLoadErrorMessage(getApplication(), e)
+                error = playlistLoadFailure(e)
             )
         } catch (e: Exception) {
             if (!isCurrentPlaylistLoad(playlist, loadGeneration, radarCacheContext)) return
@@ -628,13 +629,13 @@ class NeteaseCollectionDetailViewModel internal constructor(
             if (fallback != null) {
                 if (!isCurrentPlaylistLoad(playlist, loadGeneration, radarCacheContext)) return
                 NPLogger.w(TAG_PD, "NetEase playlist detail parse failed, fallback to cache: playlistId=${playlist.id}", e)
-                publishCachedPlaylist(fallback, playlist, error = playlistLoadErrorMessage(getApplication(), e))
+                publishCachedPlaylist(fallback, playlist, error = playlistLoadFailure(e))
                 return
             }
             NPLogger.e(TAG_PD, "Unexpected error", e)
             _uiState.value = _uiState.value.copy(
                 loading = false,
-                error = playlistLoadErrorMessage(getApplication(), e)
+                error = playlistLoadFailure(e)
             )
         }
     }
@@ -747,7 +748,7 @@ class NeteaseCollectionDetailViewModel internal constructor(
         cached: CachedNeteasePlaylistDetail,
         fallback: PlaylistSummary,
         loading: Boolean = false,
-        error: String? = null
+        error: PlaylistLoadFailure? = null
     ) {
         visibleRadarCacheContext = cached.radarCacheContext.takeIf {
             isNeteaseRadarPlaylist(cached.playlistId)
@@ -892,7 +893,7 @@ class NeteaseCollectionDetailViewModel internal constructor(
         if (offlineMode) {
             _uiState.value = _uiState.value.copy(
                 loading = false,
-                error = getApplication<Application>().getString(CoreCommonR.string.playlist_error_offline_no_cache)
+                error = PlaylistLoadFailure.Offline
             )
             return
         }
@@ -926,14 +927,14 @@ class NeteaseCollectionDetailViewModel internal constructor(
                 NPLogger.e(TAG_PD, "Network/Server error", e)
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "Network or server error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
+                    error = playlistLoadFailure(e)
                 )
             } catch (e: Exception) {
                 if (!isCurrentCollectionLoad(albumId, loadGeneration)) return@launch
                 NPLogger.e(TAG_PD, "Unexpected error", e)
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "Parse/unknown error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
+                    error = playlistLoadFailure(e)
                 )
             }
         }

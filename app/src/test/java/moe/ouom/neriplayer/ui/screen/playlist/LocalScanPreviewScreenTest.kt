@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
 
 import android.app.Application
 import android.content.Context
+import android.content.res.Configuration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.getValue
@@ -18,6 +19,10 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.locale.LanguageManager
+import moe.ouom.neriplayer.activity.LocalizedAppContent
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import java.util.Locale
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.local.LocalAudioScanPhase
@@ -27,6 +32,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
@@ -36,6 +42,46 @@ class LocalScanPreviewScreenTest {
     val composeRule = createComposeRule()
 
     private val context = ApplicationProvider.getApplicationContext<Context>()
+
+    @Test
+    fun `scan preview updates its built-in album label without replacing songs or selection`() {
+        val language = mutableStateOf(LanguageManager.Language.CHINESE)
+        val songs = listOf(song(1L, "Track").copy(
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            localFilePath = "/tmp/sample.mp3"
+        ))
+        val selected = songs.map { it.stableKey() }.toSet()
+        composeRule.setContent {
+            LocalizedAppContent(language.value) {
+                MaterialTheme {
+                    LocalScanPreviewScreen(
+                        isScanning = false,
+                        songs = songs,
+                        query = "",
+                        onQueryChange = {},
+                        selectedKeys = selected,
+                        onSelectedKeysChange = {},
+                        snackbarHostState = remember { SnackbarHostState() },
+                        onBack = {},
+                        onImport = {}
+                    )
+                }
+            }
+        }
+        fun expectAlbum(tag: String) {
+            val resources = context.createConfigurationContext(
+                Configuration(context.resources.configuration).apply { setLocale(Locale.forLanguageTag(tag)) }
+            ).resources
+            val subtitle = "${resources.getString(CoreCommonR.string.local_files)} · sample.mp3"
+            composeRule.waitUntil(5_000) {
+                composeRule.onAllNodesWithText(subtitle).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(resources.getString(CoreCommonR.string.download_scan_add_selected, 1)).assertIsEnabled()
+        }
+        expectAlbum("zh")
+        composeRule.runOnIdle { language.value = LanguageManager.Language.ENGLISH }
+        expectAlbum("en")
+    }
 
     @Test
     fun `scan preview selects listed songs and offers only the available filters`() {
@@ -124,7 +170,7 @@ class LocalScanPreviewScreenTest {
         composeRule.onNodeWithText(string(CoreCommonR.string.download_scanning)).assertExists()
         composeRule.onNodeWithText(
             context.resources.getQuantityString(
-                CoreCommonR.plurals.local_playlist_scan_progress_completed,
+                AppR.plurals.local_playlist_scan_progress_completed,
                 3,
                 3
             )

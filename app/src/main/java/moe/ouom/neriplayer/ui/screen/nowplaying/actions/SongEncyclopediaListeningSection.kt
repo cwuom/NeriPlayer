@@ -37,10 +37,10 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.data.model.stats.TrackStat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import moe.ouom.neriplayer.R as AppR
 
 /**
  * 模块二 听歌记录。
@@ -70,8 +71,9 @@ internal fun SongEncyclopediaListeningSection(song: SongItem) {
     // 本机没有任何收听记录时整段隐藏，不显示「暂无」，也不用空态误导用户。
     if (stat.playCount <= 0 && stat.totalListenMs <= 0L) return
 
-    val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()) }
-    val firstPlayedText = remember(stat.firstPlayedAt) {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.ROOT
+    val dateFormat = remember(locale) { SimpleDateFormat("yyyy/MM/dd HH:mm", locale) }
+    val firstPlayedText = remember(stat.firstPlayedAt, dateFormat) {
         dateFormat.format(Date(stat.firstPlayedAt))
     }
     val totalSeconds = stat.totalListenMs / 1000
@@ -79,38 +81,38 @@ internal fun SongEncyclopediaListeningSection(song: SongItem) {
     val totalMinutes = (totalSeconds % 3600) / 60
     val totalListenText = when {
         totalHours > 0 -> stringResource(
-            CoreCommonR.string.encyclopedia_total_listen_hours,
+            AppR.string.encyclopedia_total_listen_hours,
             totalHours,
             totalMinutes
         )
         totalMinutes > 0 -> stringResource(
-            CoreCommonR.string.encyclopedia_total_listen_minutes,
+            AppR.string.encyclopedia_total_listen_minutes,
             totalMinutes
         )
         else -> stringResource(
-            CoreCommonR.string.encyclopedia_total_listen_seconds,
+            AppR.string.encyclopedia_total_listen_seconds,
             totalSeconds
         )
     }
     SongEncyclopediaSectionCard(
-        titleRes = CoreCommonR.string.encyclopedia_section_listen_history,
+        titleRes = AppR.string.encyclopedia_section_listen_history,
         icon = Icons.Outlined.Headphones
     ) {
         SongEncyclopediaRow(
-            CoreCommonR.string.encyclopedia_label_first_listened,
+            AppR.string.encyclopedia_label_first_listened,
             firstPlayedText
         )
         SongEncyclopediaRow(
-            CoreCommonR.string.encyclopedia_label_total_listen_time,
+            AppR.string.encyclopedia_label_total_listen_time,
             totalListenText
         )
         SongEncyclopediaRow(
-            CoreCommonR.string.encyclopedia_label_play_count_times,
-            stringResource(CoreCommonR.string.encyclopedia_play_count_value, stat.playCount)
+            AppR.string.encyclopedia_label_play_count_times,
+            stringResource(AppR.string.encyclopedia_play_count_value, stat.playCount)
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = stringResource(CoreCommonR.string.encyclopedia_history_source_note),
+            text = stringResource(AppR.string.encyclopedia_history_source_note),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier

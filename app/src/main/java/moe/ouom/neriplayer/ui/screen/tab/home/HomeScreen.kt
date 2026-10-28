@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.ui.i18n.UiText
+import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.screen.playlist.FavoriteSongLookup
@@ -343,6 +345,7 @@ fun HomeScreen(
         hasUsage = usageEntries.isNotEmpty()
     )
     val isInternational = ui.internationalizationEnabled
+    val showBiliMusic = showBilibiliCard && ui.biliMusicHomeEnabled
     val showNeteaseTrending = showTrendingCard
     val showNeteaseRadar = showRadarCard
     val showOnlineFeeds = !offlineMode
@@ -412,13 +415,13 @@ fun HomeScreen(
         }
     }
 
-    val hasVisibleBiliMusicSections = showBilibiliCard && showOnlineFeeds && (
+    val hasVisibleBiliMusicSections = showBiliMusic && showOnlineFeeds && (
             ui.biliMusicRank.songs.isNotEmpty() ||
                     ui.biliMusicRank.loading ||
-                    !ui.biliMusicRank.error.isNullOrBlank() ||
+                    ui.biliMusicRank.error != null ||
                     ui.biliMusicHot.items.isNotEmpty() ||
                     ui.biliMusicHot.loading ||
-                    !ui.biliMusicHot.error.isNullOrBlank()
+                    ui.biliMusicHot.error != null
             )
 
     val hasVisibleSections =
@@ -508,11 +511,9 @@ fun HomeScreen(
                     nextGridItemIndex += 1
                     return key
                 }
-                // Bilibili 音乐模块：版权音乐榜（热门榜/原创榜）与音乐分区热门视频
-                // 网易云模式：排在「私人雷达 / 雷达歌单」之后、「热力飙升 / 我的推荐」之前；
-                // 国际化模式：排在「猜你喜欢 / 每日发现」之后、「更多推荐」之前。
+                // Bilibili 音乐模块只在非国际化模式展示，排在私人雷达之后
                 val addBiliMusicSections: LazyGridScope.() -> Unit = biliSections@ {
-                    if (!showBilibiliCard) return@biliSections
+                    if (!showBiliMusic) return@biliSections
                     addBiliMusicRankSection(
                         registerKey = ::registerGridItemKey,
                         state = ui.biliMusicRank,
@@ -607,10 +608,6 @@ fun HomeScreen(
                                 )
                             }
 
-                            // Bilibili 音乐模块：国际化模式下排在「猜你喜欢 / 每日发现」之后、
-                            // 「更多推荐」之前，与网易云模式的相对位置保持一致。
-                            addBiliMusicSections()
-
                             if (showRecommendedCard) {
                                 item(
                                     key = registerGridItemKey(HomeScrollKeyYtMoreHeader),
@@ -657,7 +654,7 @@ fun HomeScreen(
                                             key = registerGridItemKey(HomeScrollKeyYtMoreError),
                                             span = { GridItemSpan(maxLineSpan) }
                                         ) {
-                                            SectionErrorState(detail = ui.ytMusicPlaylists.error ?: "")
+                                            SectionErrorState(detail = ui.ytMusicPlaylists.error?.asString().orEmpty())
                                         }
                                     }
                                 }
@@ -751,7 +748,7 @@ fun HomeScreen(
                                             key = registerGridItemKey(HomeScrollKeyYtShelvesError),
                                             span = { GridItemSpan(maxLineSpan) }
                                         ) {
-                                            SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
+                                            SectionErrorState(detail = ui.ytMusicHomeShelves.error?.asString().orEmpty())
                                         }
                                     }
                                 }
@@ -772,7 +769,7 @@ fun HomeScreen(
                                             key = registerGridItemKey(HomeScrollKeyYtEmptyFeedError),
                                             span = { GridItemSpan(maxLineSpan) }
                                         ) {
-                                            SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
+                                            SectionErrorState(detail = ui.ytMusicHomeShelves.error?.asString().orEmpty())
                                         }
                                     }
                                 }
@@ -924,7 +921,7 @@ fun HomeScreen(
 private fun <T> LazyGridScope.sectionContent(
     section: HomeSectionState<T>,
     loadingText: String,
-    errorDetail: String?,
+    errorDetail: UiText?,
     keyPrefix: String,
     registerKey: (String) -> String,
     content: LazyGridScope.() -> Unit
@@ -940,12 +937,12 @@ private fun <T> LazyGridScope.sectionContent(
             }
         }
 
-        !errorDetail.isNullOrBlank() -> {
+        errorDetail != null -> {
             item(
                 key = registerKey("$keyPrefix:error"),
                 span = { GridItemSpan(maxLineSpan) }
             ) {
-                SectionErrorState(errorDetail)
+                SectionErrorState(errorDetail.asString())
             }
         }
     }
@@ -1040,12 +1037,12 @@ private fun LazyGridScope.addNeteasePlaylistSection(
                 SectionLoadingState(loadingText)
             }
         }
-        !sectionState.section.error.isNullOrBlank() -> {
+        sectionState.section.error != null -> {
             item(
                 key = registerKey("$sectionKey:error"),
                 span = { GridItemSpan(maxLineSpan) }
             ) {
-                SectionErrorState(detail = sectionState.section.error.orEmpty())
+                SectionErrorState(detail = sectionState.section.error.asString())
             }
         }
     }

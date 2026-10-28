@@ -34,6 +34,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class PlaylistSelectionMoreMenuTest {
@@ -61,7 +62,7 @@ class PlaylistSelectionMoreMenuTest {
                 )
             }
         }
-        val insertText = context.getString(CoreCommonR.string.playlist_insert_action)
+        val insertText = context.getString(AppR.string.playlist_insert_action)
         composeRule.onNodeWithText(insertText).assertDoesNotExist()
         composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.action_select_all))
             .assertIsDisplayed()
@@ -101,7 +102,7 @@ class PlaylistSelectionMoreMenuTest {
             .assertIsNotEnabled()
         composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.cd_more_actions))
             .performClick()
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.playlist_insert_action))
+        composeRule.onNodeWithText(context.getString(AppR.string.playlist_insert_action))
             .assertIsNotEnabled()
     }
 

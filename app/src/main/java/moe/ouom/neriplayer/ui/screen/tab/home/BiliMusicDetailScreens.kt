@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.home
 
+import moe.ouom.neriplayer.ui.i18n.asString
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
@@ -268,8 +269,8 @@ internal fun BiliMusicRankDetailScreen(
 
                     state.loading -> BiliMusicDetailHint(text = stringResource(CoreCommonR.string.home_loading))
 
-                    !state.error.isNullOrBlank() -> BiliMusicDetailError(
-                        detail = state.error.orEmpty(),
+                    state.error != null -> BiliMusicDetailError(
+                        detail = state.error.asString(),
                         onRetry = { vm.loadBiliMusicRank(force = true) }
                     )
 
@@ -409,8 +410,8 @@ internal fun BiliMusicHotDetailScreen(
 
                 state.loading -> BiliMusicDetailHint(text = stringResource(CoreCommonR.string.home_loading))
 
-                !state.error.isNullOrBlank() -> BiliMusicDetailError(
-                    detail = state.error.orEmpty(),
+                state.error != null -> BiliMusicDetailError(
+                    detail = state.error.asString(),
                     onRetry = { vm.loadBiliMusicHot(force = true) }
                 )
 

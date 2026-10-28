@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.subtitle.BILI_SUBTITLE_LANGUAGE_AUTO
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
@@ -119,17 +120,17 @@ internal fun SettingsBiliCcSubtitleGroup(
             )
         },
         headlineContent = {
-            Text(stringResource(CoreCommonR.string.settings_bili_cc_subtitle_group))
+            Text(stringResource(AppR.string.settings_bili_cc_subtitle_group))
         },
         supportingContent = {
             Text(
                 if (enabled) {
                     stringResource(
-                        CoreCommonR.string.settings_bili_cc_subtitle_group_enabled,
+                        AppR.string.settings_bili_cc_subtitle_group_enabled,
                         trackLabel
                     )
                 } else {
-                    stringResource(CoreCommonR.string.settings_bili_cc_subtitle_group_disabled)
+                    stringResource(AppR.string.settings_bili_cc_subtitle_group_disabled)
                 }
             )
         },
@@ -168,7 +169,7 @@ internal fun SettingsBiliCcSubtitleGroup(
                 setting = AutoSettingsSchema.lyricSource.biliCcSubtitleLanguage,
                 enabled = enabled,
                 supportingContent = {
-                    Text(stringResource(CoreCommonR.string.bili_cc_subtitle_current, trackLabel))
+                    Text(stringResource(AppR.string.bili_cc_subtitle_current, trackLabel))
                 },
                 trailingContent = {
                     Icon(
@@ -189,6 +190,7 @@ internal fun SettingsBiliCcSubtitleGroup(
                 trailingContent = {
                     MiuixSettingsSwitch(
                         checked = aiOnlyEnabled,
+                        enabled = enabled,
                         onCheckedChange = { value ->
                             scope.launch { repository.setBiliCcSubtitleAiOnlyEnabled(value) }
                         }
@@ -208,7 +210,7 @@ internal fun SettingsBiliCcSubtitleGroup(
         MiuixSettingsDialog(
             onDismissRequest = { showTrackDialog = false },
             title = {
-                Text(stringResource(CoreCommonR.string.bili_cc_subtitle_language_dialog_title))
+                Text(stringResource(AppR.string.bili_cc_subtitle_language_dialog_title))
             },
             text = {
                 Column {
@@ -247,16 +249,23 @@ private val BILI_CC_SUBTITLE_LANGUAGE_OPTIONS = listOf(
     "ko"
 )
 
-private fun biliCcSubtitleLanguageLabelRes(language: String): Int? = when {
-    language.isBlank() -> CoreCommonR.string.bili_cc_subtitle_auto
-    language.startsWith("ai-", ignoreCase = true) -> CoreCommonR.string.bili_cc_subtitle_lang_zh_ai
-    language.startsWith("zh", ignoreCase = true) &&
-        (language.contains("Hant", ignoreCase = true) ||
-            language.contains("TW", ignoreCase = true)) ->
-        CoreCommonR.string.bili_cc_subtitle_lang_zh_hant
-    language.startsWith("zh", ignoreCase = true) -> CoreCommonR.string.bili_cc_subtitle_lang_zh_hans
-    language.startsWith("en", ignoreCase = true) -> CoreCommonR.string.bili_cc_subtitle_lang_en
-    language.startsWith("ja", ignoreCase = true) -> CoreCommonR.string.bili_cc_subtitle_lang_ja
-    language.startsWith("ko", ignoreCase = true) -> CoreCommonR.string.bili_cc_subtitle_lang_ko
-    else -> null
+private fun biliCcSubtitleLanguageLabelRes(language: String): Int? {
+    val isAiGenerated = language.startsWith("ai-", ignoreCase = true)
+    val baseLanguage = if (isAiGenerated) language.substring(3) else language
+    return when {
+        baseLanguage.isBlank() -> AppR.string.bili_cc_subtitle_auto
+        isAiGenerated && baseLanguage.startsWith("zh", ignoreCase = true) ->
+            AppR.string.bili_cc_subtitle_lang_zh_ai
+        baseLanguage.startsWith("zh", ignoreCase = true) &&
+            (baseLanguage.contains("Hant", ignoreCase = true) ||
+                baseLanguage.contains("TW", ignoreCase = true) ||
+                baseLanguage.contains("HK", ignoreCase = true) ||
+                baseLanguage.contains("MO", ignoreCase = true)) ->
+            AppR.string.bili_cc_subtitle_lang_zh_hant
+        baseLanguage.startsWith("zh", ignoreCase = true) -> AppR.string.bili_cc_subtitle_lang_zh_hans
+        baseLanguage.startsWith("en", ignoreCase = true) -> AppR.string.bili_cc_subtitle_lang_en
+        baseLanguage.startsWith("ja", ignoreCase = true) -> AppR.string.bili_cc_subtitle_lang_ja
+        baseLanguage.startsWith("ko", ignoreCase = true) -> AppR.string.bili_cc_subtitle_lang_ko
+        else -> null
+    }
 }

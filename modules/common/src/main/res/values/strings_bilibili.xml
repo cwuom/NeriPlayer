@@ -1,48 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Bilibili Playlists -->
-    <string name="bili_web_login">哔哩哔哩网页登录</string>
-    <string name="bili_qr_login">哔哩哔哩扫码登录</string>
-    <string name="bili_qr_login_title">扫码连接你的哔哩哔哩账号</string>
-    <string name="bili_qr_login_subtitle">用哔哩哔哩客户端扫码并确认后，请立刻返回 NeriPlayer。</string>
-    <string name="bili_qr_login_loading">正在生成二维码…</string>
-    <string name="bili_qr_login_waiting">请使用哔哩哔哩客户端扫码登录</string>
-    <string name="bili_qr_login_scanned">已扫码，请在手机上确认登录</string>
-    <string name="bili_qr_login_expired">二维码已过期，请刷新</string>
-    <string name="bili_qr_login_failed">哔哩哔哩扫码登录失败：%1$s</string>
-    <string name="bili_qr_login_retry">刷新二维码</string>
-    <string name="bili_qr_login_web_fallback">网页登录兜底</string>
-    <string name="bili_qr_login_cookie_incomplete">登录已确认，但没有拿到完整 Cookie，请重试</string>
-    <string name="bili_qr_login_hint">二维码由哔哩哔哩接口生成，确认后会在本页监听状态并保存 Cookie。</string>
-    <string name="bili_loading_favorites">正在加载收藏夹内容…</string>
-    <string name="bili_load_failed">加载失败: %s</string>
-    <string name="bili_favorites_incomplete">部分收藏内容未能加载（可能触发了哔哩哔哩风控），请稍后刷新</string>
-    <string name="bili_get_parts_failed">获取分 P 失败</string>
     <string name="settings_bili_cc_subtitle_lyrics">B 站 CC 字幕歌词</string>
     <string name="settings_bili_cc_subtitle_lyrics_desc">用视频自带的 CC 字幕作为歌词来源；需要登录 B 站账号</string>
     <string name="settings_bili_cc_subtitle_language">CC 字幕轨道</string>
     <string name="settings_bili_cc_subtitle_language_desc">当前选择；可以进入播放页的更多选项随时调整</string>
-    <string name="bili_cc_subtitle_manage">CC 字幕</string>
-    <string name="bili_cc_subtitle_auto">自动（中文优先）</string>
-    <string name="bili_cc_subtitle_auto_desc">按视频提供的字幕自动选择</string>
-    <string name="bili_cc_subtitle_ai_badge">AI 字幕</string>
-    <string name="bili_cc_subtitle_current">当前：%1$s</string>
-    <string name="bili_cc_subtitle_empty">该视频没有可用的 CC 字幕</string>
-    <string name="bili_cc_subtitle_login_required">登录 B 站账号后才能读取 CC 字幕</string>
-    <string name="bili_cc_subtitle_load_failed">字幕轨道读取失败</string>
     <string name="settings_bili_cc_subtitle_ai_only">AI 字幕后备</string>
     <string name="settings_bili_cc_subtitle_ai_only_desc">视频没有人工字幕时，自动使用自动生成的字幕；关闭后只使用人工字幕</string>
-    <string name="bili_cc_subtitle_language_dialog_title">选择默认 CC 字幕轨道</string>
-    <string name="bili_cc_subtitle_lang_zh_hans">中文（简体）</string>
-    <string name="bili_cc_subtitle_lang_zh_hant">中文（繁体）</string>
-    <string name="bili_cc_subtitle_lang_zh_ai">中文（自动生成）</string>
-    <string name="bili_cc_subtitle_lang_en">英文</string>
-    <string name="bili_cc_subtitle_lang_ja">日文</string>
-    <string name="bili_cc_subtitle_lang_ko">韩文</string>
-    <string name="settings_bili_cc_subtitle_group">B 站 CC 字幕</string>
-    <string name="settings_bili_cc_subtitle_group_enabled">已启用 · %1$s</string>
-    <string name="settings_bili_cc_subtitle_group_disabled">已关闭</string>
-    <string name="bili_cc_subtitle_off">关闭 CC 字幕</string>
-    <string name="bili_cc_subtitle_off_desc">不使用视频字幕作为歌词</string>
-    <string name="bili_cc_subtitle_ai_fallback">AI 字幕后备</string>
 </resources>

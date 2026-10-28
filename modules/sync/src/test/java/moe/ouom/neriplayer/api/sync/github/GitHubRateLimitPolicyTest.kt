@@ -8,7 +8,6 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GitHubRateLimitPolicyTest {
@@ -30,7 +29,8 @@ class GitHubRateLimitPolicyTest {
         val combined = parse(429, Headers.headersOf("Retry-After", "120", "X-RateLimit-Remaining", "0", "X-RateLimit-Reset", "2500"))!!
         assertEquals(2_500_000L, combined.retryAtMillis)
         assertFalse(combined.automaticRetryAllowed)
-        assertTrue(combined.message!!.contains("请稍后重试"))
+        assertEquals(429, combined.statusCode)
+        assertEquals("GitHub rate limit: retryAt=2500000, automaticRetry=false, observedAt=$now", combined.message)
     }
 
     @Test
@@ -62,7 +62,12 @@ class GitHubRateLimitPolicyTest {
             GitHubRateLimitPolicy.fromResponse(it, "", Long.MAX_VALUE - 500L)!!
         }
         assertEquals(Long.MAX_VALUE, edge.retryAtMillis)
-        assertTrue(edge.message!!.contains("秒"))
+        assertFalse(edge.automaticRetryAllowed)
+        assertEquals(429, edge.statusCode)
+        assertEquals(
+            "GitHub rate limit: retryAt=${Long.MAX_VALUE}, automaticRetry=false, observedAt=${Long.MAX_VALUE - 500L}",
+            edge.message
+        )
     }
 
     private fun parse(code: Int, headers: Headers = Headers.headersOf(), body: String = ""): GitHubRateLimitException? =

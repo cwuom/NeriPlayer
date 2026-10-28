@@ -61,6 +61,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
 class ArtistResponsiveLayoutTest {
@@ -149,8 +150,8 @@ class ArtistResponsiveLayoutTest {
 
     private fun checkStats(style: UiStyle) {
         render(style, fontScale = 2f) { ArtistContent(artistFixture()) }
-        val songs = quantity(CoreCommonR.plurals.artist_song_count, 99999)
-        val albums = quantity(CoreCommonR.plurals.artist_album_count, 9999)
+        val songs = quantity(AppR.plurals.artist_song_count, 99999)
+        val albums = quantity(AppR.plurals.artist_album_count, 9999)
         val songChip = composeRule.onNode(hasText(songs) and hasClickAction())
         val albumChip = composeRule.onNode(hasText(albums) and hasClickAction())
         val first = bounds(songChip)

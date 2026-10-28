@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -117,7 +118,7 @@ internal fun BiliCcSubtitleContent(
             }
             Spacer(Modifier.width(4.dp))
             Text(
-                text = stringResource(CoreCommonR.string.bili_cc_subtitle_manage),
+                text = stringResource(AppR.string.bili_cc_subtitle_manage),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f)
             )
@@ -134,7 +135,7 @@ internal fun BiliCcSubtitleContent(
             }
 
             BiliCcSubtitleState.Failed -> ListItem(
-                headlineContent = { Text(stringResource(CoreCommonR.string.bili_cc_subtitle_load_failed)) },
+                headlineContent = { Text(stringResource(AppR.string.bili_cc_subtitle_load_failed)) },
                 trailingContent = {
                     IconButton(onClick = { retryToken++ }) {
                         Icon(
@@ -188,8 +189,8 @@ private fun BiliCcSubtitleReadyContent(
     onToggleAiOnly: () -> Unit
 ) {
     ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.bili_cc_subtitle_off)) },
-        supportingContent = { Text(stringResource(CoreCommonR.string.bili_cc_subtitle_off_desc)) },
+        headlineContent = { Text(stringResource(AppR.string.bili_cc_subtitle_off)) },
+        supportingContent = { Text(stringResource(AppR.string.bili_cc_subtitle_off_desc)) },
         trailingContent = {
             RadioButton(selected = !lyricsEnabled, onClick = onDisable)
         },
@@ -199,7 +200,7 @@ private fun BiliCcSubtitleReadyContent(
     if (state.loginRequired) {
         ListItem(
             headlineContent = {
-                Text(stringResource(CoreCommonR.string.bili_cc_subtitle_login_required))
+                Text(stringResource(AppR.string.bili_cc_subtitle_login_required))
             },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
@@ -207,8 +208,8 @@ private fun BiliCcSubtitleReadyContent(
     }
 
     ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.bili_cc_subtitle_auto)) },
-        supportingContent = { Text(stringResource(CoreCommonR.string.bili_cc_subtitle_auto_desc)) },
+        headlineContent = { Text(stringResource(AppR.string.bili_cc_subtitle_auto)) },
+        supportingContent = { Text(stringResource(AppR.string.bili_cc_subtitle_auto_desc)) },
         trailingContent = {
             RadioButton(
                 selected = lyricsEnabled && selectedLanguage == BILI_SUBTITLE_LANGUAGE_AUTO,
@@ -225,7 +226,7 @@ private fun BiliCcSubtitleReadyContent(
                 supportingContent = {
                     Text(
                         if (track.isAiGenerated) {
-                            stringResource(CoreCommonR.string.bili_cc_subtitle_ai_badge)
+                            stringResource(AppR.string.bili_cc_subtitle_ai_badge)
                         } else {
                             track.lan
                         }
@@ -243,7 +244,7 @@ private fun BiliCcSubtitleReadyContent(
         }
     } else {
         ListItem(
-            headlineContent = { Text(stringResource(CoreCommonR.string.bili_cc_subtitle_empty)) },
+            headlineContent = { Text(stringResource(AppR.string.bili_cc_subtitle_empty)) },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
     }
@@ -251,7 +252,7 @@ private fun BiliCcSubtitleReadyContent(
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
     ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.bili_cc_subtitle_ai_fallback)) },
+        headlineContent = { Text(stringResource(AppR.string.bili_cc_subtitle_ai_fallback)) },
         supportingContent = {
             Text(stringResource(CoreCommonR.string.settings_bili_cc_subtitle_ai_only_desc))
         },

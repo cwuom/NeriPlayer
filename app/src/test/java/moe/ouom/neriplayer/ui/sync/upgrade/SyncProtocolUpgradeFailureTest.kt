@@ -38,6 +38,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.R as AppR
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SyncProtocolUpgradeFailureTest {
@@ -68,10 +69,10 @@ class SyncProtocolUpgradeFailureTest {
             GitHubApiException(500, sensitive) to SyncProtocolUpgradeError(CoreCommonR.string.sync_request_failed, 500),
             GitHubContentConflictException(409, sensitive) to SyncProtocolUpgradeError(CoreCommonR.string.sync_remote_changed, 409),
             TokenExpiredException(sensitive) to SyncProtocolUpgradeError(CoreCommonR.string.github_token_expired_message, 401),
-            UnknownHostException(sensitive) to SyncProtocolUpgradeError(CoreCommonR.string.comment_error_network),
-            ConnectException(sensitive) to SyncProtocolUpgradeError(CoreCommonR.string.comment_error_network),
-            SocketTimeoutException(sensitive) to SyncProtocolUpgradeError(CoreCommonR.string.comment_error_network),
-            SSLHandshakeException(sensitive) to SyncProtocolUpgradeError(CoreCommonR.string.comment_error_network)
+            UnknownHostException(sensitive) to SyncProtocolUpgradeError(AppR.string.comment_error_network),
+            ConnectException(sensitive) to SyncProtocolUpgradeError(AppR.string.comment_error_network),
+            SocketTimeoutException(sensitive) to SyncProtocolUpgradeError(AppR.string.comment_error_network),
+            SSLHandshakeException(sensitive) to SyncProtocolUpgradeError(AppR.string.comment_error_network)
         )
         for ((error, expected) in cases) {
             val logs = mutableListOf<String>()

@@ -91,6 +91,7 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.R as AppR
 
 private const val INITIAL_DOWNLOAD_PROGRESS_PROBE_ATTEMPTS = 3
 private const val INITIAL_DOWNLOAD_PROGRESS_PROBE_DELAY_MS = 250L
@@ -672,13 +673,13 @@ fun DownloadProgressScreen(
                             )
 
                             displayedPendingTaskCount > 0 -> pluralStringResource(
-                                CoreCommonR.plurals.download_tasks_count,
+                                AppR.plurals.download_tasks_count,
                                 displayedPendingTaskCount,
                                 displayedPendingTaskCount
                             )
 
                             failedTaskCount > 0 -> pluralStringResource(
-                                CoreCommonR.plurals.download_failed_songs_count,
+                                AppR.plurals.download_failed_songs_count,
                                 failedTaskCount,
                                 failedTaskCount
                             )
@@ -1187,7 +1188,7 @@ private fun PendingDownloadSummaryCard(count: Int) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = pluralStringResource(CoreCommonR.plurals.download_tasks_count, count, count),
+                text = pluralStringResource(AppR.plurals.download_tasks_count, count, count),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium
             )
@@ -1225,7 +1226,7 @@ private fun FailedDownloadSummaryCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = pluralStringResource(
-                        CoreCommonR.plurals.download_failed_songs_count,
+                        AppR.plurals.download_failed_songs_count,
                         count,
                         count
                     ),
@@ -1266,7 +1267,7 @@ private fun ExplicitResumeSummaryCard(count: Int) {
         ) {
             Text(
                 text = pluralStringResource(
-                    CoreCommonR.plurals.download_explicit_resume_count,
+                    AppR.plurals.download_explicit_resume_count,
                     count,
                     count
                 ),

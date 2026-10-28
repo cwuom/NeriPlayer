@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.dialog
 
+import moe.ouom.neriplayer.ui.i18n.asString
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -167,14 +168,14 @@ internal fun WebDavConfigurationDialog(
             ) {
                 webDavState.errorMessage?.let { error ->
                     MiuixSettingsInlineMessage(
-                        message = error,
+                        message = error.asString(),
                         isSuccess = false,
                         onClose = onClearMessages
                     )
                 }
                 webDavState.successMessage?.let { message ->
                     MiuixSettingsInlineMessage(
-                        message = message,
+                        message = message.asString(),
                         isSuccess = true,
                         onClose = onClearMessages
                     )
