@@ -96,6 +96,30 @@ internal interface NowPlayingLyricsStages {
     ): LoadedLyricsState
 }
 
+private class NowPlayingLyricsRefreshState {
+    private var lastPreferenceRevision: Long? = null
+    private var lastSongKey: String? = null
+    private var pendingReplacement = false
+
+    fun beginRequest(songKey: String?, preferenceRevision: Long?): Boolean {
+        if (songKey != lastSongKey) pendingReplacement = false
+        if (preferenceRevision != null &&
+            lastPreferenceRevision != null &&
+            lastPreferenceRevision != preferenceRevision
+        ) {
+            // 偏好变更后必须等新结果发布, 请求被取消不能恢复旧歌词
+            pendingReplacement = true
+        }
+        lastSongKey = songKey
+        lastPreferenceRevision = preferenceRevision ?: lastPreferenceRevision
+        return pendingReplacement
+    }
+
+    fun published() {
+        pendingReplacement = false
+    }
+}
+
 internal class NowPlayingLyricsLoadOwner(
     initialState: LoadedLyricsState,
     private val scope: CoroutineScope,
@@ -111,9 +135,7 @@ internal class NowPlayingLyricsLoadOwner(
     private var requestJob: Job? = null
     private var disposed = false
     private var snapshotKey: NowPlayingLyricsSnapshotKey? = null
-    private var lastPreferenceRevision: Long? = null
-    private var lastRequestSongKey: String? = null
-    private var pendingForceReplace = false
+    private val refreshState = NowPlayingLyricsRefreshState()
 
     /**
      * 载入歌词。
@@ -130,20 +152,7 @@ internal class NowPlayingLyricsLoadOwner(
         requestGeneration++
         val generation = requestGeneration
         requestJob?.cancel()
-        val songKey = request.song?.stableKey()
-        if (songKey != lastRequestSongKey) {
-            // 换歌后旧的强制替换不再适用
-            pendingForceReplace = false
-            lastRequestSongKey = songKey
-        }
-        if (preferenceRevision != null &&
-            lastPreferenceRevision != null &&
-            lastPreferenceRevision != preferenceRevision
-        ) {
-            // 保留到结果真正发布, 期间被新的 reload 取消也不会丢失
-            pendingForceReplace = true
-        }
-        lastPreferenceRevision = preferenceRevision ?: lastPreferenceRevision
+        val forceReplace = refreshState.beginRequest(request.song?.stableKey(), preferenceRevision)
         val cacheGeneration = stages.cacheGeneration
         snapshotKey = key?.copy(cacheGeneration = cacheGeneration)
         val currentRequest = refreshInvalidatedInitialCache(request, key, cacheGeneration)
@@ -151,11 +160,11 @@ internal class NowPlayingLyricsLoadOwner(
         if (cached != null) {
             state = cached.state
             secondaryResolved = cached.secondaryResolved
-            pendingForceReplace = false
+            refreshState.published()
             requestJob = null
             return
         }
-        requestJob = scope.launch { load(generation, currentRequest, pendingForceReplace) }
+        requestJob = scope.launch { load(generation, currentRequest, forceReplace) }
     }
 
     private fun refreshInvalidatedInitialCache(
@@ -200,7 +209,7 @@ internal class NowPlayingLyricsLoadOwner(
             shouldReplaceLyricsAfterRefresh(song != null, hasLyrics)
         ) {
             state = resolved
-            if (forceReplace) pendingForceReplace = false
+            if (forceReplace) refreshState.published()
         }
         rememberSnapshot(if (resolved == state) state else resolved, stage)
         logPublishedLyrics(song, stage, hasLyrics)
