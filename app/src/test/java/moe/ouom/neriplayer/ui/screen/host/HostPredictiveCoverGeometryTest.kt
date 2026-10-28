@@ -346,6 +346,61 @@ class HostPredictiveCoverGeometryTest {
     }
 
     @Test
+    fun `ordinary return during repeated preview reversals still decelerates before landing`() {
+        setHost()
+        startGesture()
+        seek(0.2f)
+        composeRule.runOnIdle { dispatcher.onBackPressed() }
+        advanceUntil("先进入预测返回松手后的实际收尾") {
+            requireNotNull(flight.bounds).width in 180f..240f
+        }
+        composeRule.runOnIdle { selected = true }
+        advanceUntil("收尾中的普通反向必须开始返回歌词页") {
+            transition.targetState && requireNotNull(flight.bounds).width in 120f..170f
+        }
+        assertTrue("反向尚未结束，应复现仍在使用预览规格的窗口", previewAnimationActive)
+        val before = snapshot()
+        composeRule.runOnIdle { selected = false }
+        assertRect(before.bounds, requireNotNull(flight.bounds), 1f)
+        val frames = listOf(before) + advanceUntil("再度普通返回应立即接管当前封面") {
+            !transition.targetState && flight.shouldDraw
+        }
+        dumpTransitionTree(transition, "repeated_preview_ordinary_return")
+        val samples = listOf(snapshot()) + advanceUntil("连续反向后仍应完整抵达封面端点") {
+            assertMeasuredArtworkMatchesFlight()
+            atRest(false)
+        }
+        assertContinuous(frames + samples.drop(1),
+            speedPerMillis = 3f * rectDistance(Header, Cover) / DurationMillis)
+        val minimumWidth = samples.minOf { it.bounds.width }
+        val travel = Cover.width - minimumWidth
+        assertTrue("再度普通返回必须产生有效移动: $samples", travel > 16f)
+        val steps = samples.zipWithNext().filter { (previous, current) ->
+            current.bounds.width > previous.bounds.width + 0.01f
+        }
+        fun meanSpeed(from: Float, until: Float): Double = steps.filter { (previous, current) ->
+            (previous.bounds.width - minimumWidth) / travel in from..until &&
+                (current.bounds.width - minimumWidth) / travel in from..until &&
+                current.bounds.width < Cover.width
+        }.map { (previous, current) ->
+            (current.bounds.width - previous.bounds.width).toDouble() /
+                (current.clockMillis - previous.clockMillis)
+        }.also { assertTrue("区间必须包含完整向外运动帧: $samples", it.isNotEmpty()) }.average()
+
+        val middleSpeed = meanSpeed(0.2f, 0.6f)
+        val endingSpeed = meanSpeed(0.85f, 0.98f)
+        println("RepeatedPreviewOrdinaryReturn middleSpeed=$middleSpeed endingSpeed=$endingSpeed " +
+            "frames=$samples")
+        assertTrue("预览收尾中的普通返回也应明显减速，不能沿用匀速空间时间线 " +
+            "middle=$middleSpeed end=$endingSpeed frames=$samples",
+            endingSpeed < middleSpeed * 0.6)
+        assertRect(Cover, requireNotNull(flight.bounds))
+        assertFalse(flight.hidesEndpoints)
+        assertEquals(listOf(true), backs)
+        assertEquals(listOf(true, false), previewNotifications.map { it.active })
+    }
+
+    @Test
     fun `preview started during ordinary cover to lyrics animation keeps its visible source through cancellation`() {
         setHost(initialLyrics = false)
         val ordinaryReferenceStart = beginOrdinaryLyricsAnimation()
