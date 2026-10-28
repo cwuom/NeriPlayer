@@ -53,7 +53,8 @@ internal fun <S> rememberHostPredictiveBackTransition(
     previewEasing: Easing = LinearEasing,
     cancelMinimumDurationMillis: Int = 0,
     onPreviewAnimationActiveChanged: (Boolean) -> Unit = {},
-    primePreviewAtZero: Boolean = false
+    primePreviewAtZero: Boolean = false,
+    previewSettleEasing: Easing? = null
 ): Transition<S> {
     val transitionState = remember { SeekableTransitionState(targetState) }
     val transition = rememberTransition(transitionState, label = label)
@@ -143,7 +144,8 @@ internal fun <S> rememberHostPredictiveBackTransition(
                 transition,
                 targetState,
                 restoreCancelledBack = restoreCancelledBack,
-                cancelMinimumDurationMillis = cancelMinimumDurationMillis
+                cancelMinimumDurationMillis = cancelMinimumDurationMillis,
+                previewSettleEasing = previewSettleEasing.takeIf { previewAnimationActive }
             )
             if (gesture == null && previewAnimationSegment === settlingSegment &&
                 cancelledGesture === settlingCancellation
@@ -165,7 +167,8 @@ private suspend fun <S> settleHostTransition(
     transition: Transition<S>,
     targetState: S,
     restoreCancelledBack: Boolean,
-    cancelMinimumDurationMillis: Int
+    cancelMinimumDurationMillis: Int,
+    previewSettleEasing: Easing?
 ) {
     // 普通反向要更新共享元素的目标，只有取消预测返回才拖回原来的片段
     if (restoreCancelledBack && transitionState.currentState == targetState &&
@@ -175,7 +178,15 @@ private suspend fun <S> settleHostTransition(
             targetState, transition.totalDurationNanos, cancelMinimumDurationMillis
         )
     } else if (transitionState.currentState != targetState || transitionState.targetState != targetState) {
-        transitionState.animateTo(targetState)
+        // 只缓动已预览片段的剩余进度，普通导航和反向仍使用各自的动画规格
+        val settleSpec = if (previewSettleEasing != null && transitionState.targetState == targetState) {
+            tween<Float>(
+                durationMillis = ((1f - transitionState.fraction) *
+                    transition.totalDurationNanos / 1_000_000L).roundToInt().coerceAtLeast(0),
+                easing = previewSettleEasing
+            )
+        } else null
+        transitionState.animateTo(targetState, animationSpec = settleSpec)
     }
 }
 

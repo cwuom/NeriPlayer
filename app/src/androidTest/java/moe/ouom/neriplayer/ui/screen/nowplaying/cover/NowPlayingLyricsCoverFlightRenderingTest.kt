@@ -1,7 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.cover
 
 import android.util.Log
+import androidx.activity.BackEventCompat
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.Transition
@@ -22,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,10 +55,13 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsBackPreviewEasing
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -67,6 +75,9 @@ class NowPlayingLyricsCoverFlightRenderingTest {
 
     private var lyricsVisible by mutableStateOf(false)
     private var immersive by mutableStateOf(false)
+    private var previewEnabled by mutableStateOf(false)
+    private var previewActive by mutableStateOf(false)
+    private lateinit var backDispatcher: OnBackPressedDispatcher
     private lateinit var transition: Transition<Boolean>
     private lateinit var flight: NowPlayingLyricsCoverFlight
     private var hostBoundsInRoot: Rect? = null
@@ -84,16 +95,25 @@ class NowPlayingLyricsCoverFlightRenderingTest {
         // 测试时钟每帧 16ms，只检查转场逻辑和像素，不代表真实 120Hz 覆盖
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
-            FittedTestViewport(ViewportWidthDp.dp, ViewportHeightDp.dp) {
-                transition = rememberHostPredictiveBackTransition(
-                    targetState = lyricsVisible,
-                    backEnabled = lyricsVisible,
-                    backTargetState = false,
-                    onBack = { lyricsVisible = false },
-                    label = "cover_flight_rendering"
-                )
-                flight = rememberNowPlayingLyricsCoverFlight(transition)
-                FlightFixture()
+            backDispatcher = checkNotNull(LocalOnBackPressedDispatcherOwner.current).onBackPressedDispatcher
+            CompositionLocalProvider(LocalPredictiveBackPreviewEnabled provides previewEnabled) {
+                FittedTestViewport(ViewportWidthDp.dp, ViewportHeightDp.dp) {
+                    transition = rememberHostPredictiveBackTransition(
+                        targetState = lyricsVisible,
+                        backEnabled = lyricsVisible,
+                        backTargetState = false,
+                        onBack = { lyricsVisible = false },
+                        label = "cover_flight_rendering",
+                        previewEasing = NowPlayingLyricsBackPreviewEasing,
+                        previewSettleEasing = EaseOut,
+                        onPreviewAnimationActiveChanged = { previewActive = it },
+                        primePreviewAtZero = true
+                    )
+                    flight = rememberNowPlayingLyricsCoverFlight(
+                        transition, predictiveBackPreviewActive = previewActive
+                    )
+                    FlightFixture()
+                }
             }
         }
         advance(1_024L)
@@ -109,6 +129,61 @@ class NowPlayingLyricsCoverFlightRenderingTest {
     fun reversingToCoverKeepsIntermediateFramesAndFinishesAtTheCoverEndpoint() {
         diagnosticName = "reverse-to-cover"
         assertInterruptedReturn(lyricsAtRest = false)
+    }
+
+    @Test
+    fun predictiveEdgeBackDeceleratesTheRenderedCoverBeforeCommittingToCover() {
+        diagnosticName = "edge-back-deceleration"
+        for (immersiveMode in listOf(false, true)) {
+            val caseName = "edge-back immersive=$immersiveMode"
+            composeRule.runOnIdle {
+                previewEnabled = true
+                immersive = immersiveMode
+                lyricsVisible = true
+            }
+            advance(1_024L)
+            composeRule.runOnIdle {
+                backDispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
+            }
+            val samples = listOf(0.50f, 0.65f, 0.80f, 0.95f).map { progress ->
+                composeRule.runOnIdle {
+                    backDispatcher.dispatchOnBackProgressed(
+                        BackEventCompat(0f, 0f, progress, BackEventCompat.EDGE_LEFT)
+                    )
+                }
+                advance(80L)
+                val frame = captureFrame(caseName, "preview=$progress")
+                composeRule.runOnIdle {
+                    assertTrue("$caseName: 预览不能提前提交导航", lyricsVisible && previewActive)
+                }
+                assertTrue("$caseName: 预览必须拖动飞行层 $frame",
+                    frame.currentState && !frame.targetState && frame.drawsFlight)
+                val pixels = checkNotNull(frame.pixelBounds) { "$caseName: 预览封面像素缺失 $frame" }
+                val slot = checkNotNull(frame.slotBounds) { "$caseName: 预览 slot 布局缺失 $frame" }
+                assertTrue("$caseName: 预览像素与 slot 不一致 $frame",
+                    boundsError(pixels, slot) <= GeometryToleranceDp)
+                pixels
+            }
+            val middleStep = boundsError(samples[0], samples[1])
+            val finalStep = boundsError(samples[2], samples[3])
+            assertTrue("$caseName: 中段必须产生有效位移 middle=$middleStep",
+                middleStep > GeometryToleranceDp)
+            assertTrue("$caseName: 等进度尾段应减速 middle=$middleStep final=$finalStep",
+                finalStep < middleStep * 0.5f)
+            Log.i(LogTag, "case=$caseName middleStepDp=$middleStep finalStepDp=$finalStep")
+
+            composeRule.runOnIdle { backDispatcher.onBackPressed() }
+            advance(1_024L)
+            val final = captureFrame(caseName, "committed")
+            composeRule.runOnIdle {
+                assertFalse("$caseName: 提交后应回到封面", lyricsVisible || previewActive)
+            }
+            assertTrue("$caseName: 提交后 Host 未停在封面状态 $final",
+                !final.currentState && !final.targetState && !final.isRunning)
+            val pixels = checkNotNull(final.pixelBounds) { "$caseName: 提交后封面像素缺失 $final" }
+            assertTrue("$caseName: 提交后封面端点错误 $final",
+                boundsError(pixels, expectedEndpoint(lyrics = false, immersiveMode = immersiveMode)) <= GeometryToleranceDp)
+        }
     }
 
     @After
