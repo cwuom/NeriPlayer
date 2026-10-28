@@ -840,17 +840,16 @@ class AudioPlayerService : Service() {
             NPLogger.w("NERI-APS", "onCreate ignored because safe mode is active")
             return
         }
-        startPlaybackService()
+        isServiceInstanceActive = true
+        activeServiceInstance = this
+        ensurePlaybackNotificationChannel()
     }
 
     private fun startPlaybackService() {
-        isServiceInstanceActive = true
-        activeServiceInstance = this
-        NPLogger.d("NERI-APS", "onCreate begin ${buildStateSummary()}")
-        ensurePlaybackNotificationChannel()
-
-        presentationOwner.initializeSession(mediaSessionCallback)
-        screenInteractiveMonitor.start()
+        if (presentationOwner.sessionOrNull() == null) {
+            presentationOwner.initializeSession(mediaSessionCallback)
+            screenInteractiveMonitor.start()
+        }
         initializePlayerRuntime()
     }
 
@@ -1214,13 +1213,8 @@ class AudioPlayerService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         val startSource = intent?.getStringExtra(EXTRA_START_SOURCE) ?: "unspecified"
-        NPLogger.d(
-            "NERI-APS",
-            "onStartCommand action=$action source=$startSource flags=$flags startId=$startId ${buildStateSummary()}"
-        )
         if (PlayerDependencies.presentation.shouldEnterSafeMode(this)) {
-            // 安全模式下 onCreate 已早退且 mediaSession 未初始化;此处短路,先满足 FGS 契约再退出,
-            // 避免走前台分支读取未初始化的 mediaSession 崩溃
+            // 安全模式只发布最小通知，满足前台启动契约后退出
             NPLogger.w(
                 "NERI-APS",
                 "onStartCommand short-circuited because safe mode is active source=$startSource"
@@ -1231,13 +1225,14 @@ class AudioPlayerService : Service() {
             return START_NOT_STICKY
         }
         allowServiceRestart = true
-        hasReceivedStartCommand = true
         latestStartId = startId
 
+        // 先发布前台通知，避免会话和播放器初始化占用系统的服务启动期限
         if (!isForegroundStarted && action != ACTION_STOP) {
             if (!startForegroundImmediately(
                     buildBootstrapNotification(),
-                    "on_start_command:$action:$startSource"
+                    "on_start_command:$action:$startSource",
+                    verbose = false,
                 )) {
                 return handleForegroundPromotionFailure(
                     reason = "on_start_command:$action:$startSource",
@@ -1246,7 +1241,12 @@ class AudioPlayerService : Service() {
             }
         }
         keepPlayerRuntimeAfterServiceStop = false
-        if (!playerRuntimeReady) initializePlayerRuntime()
+        NPLogger.d(
+            "NERI-APS",
+            "onStartCommand action=$action source=$startSource flags=$flags startId=$startId ${buildStateSummary()}"
+        )
+        if (!playerRuntimeReady) startPlaybackService()
+        hasReceivedStartCommand = true
         if (!playerRuntimeReady) {
             pendingStartCommands.addLast(
                 PendingStartCommand(
@@ -1442,7 +1442,7 @@ class AudioPlayerService : Service() {
         floatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled(),
     )
 
-    private fun buildBootstrapNotification(): Notification = presentationOwner.buildBootstrapNotification()
+    private fun buildBootstrapNotification(): Notification = presentationPort.buildBootstrapNotification()
 
     private fun buildMinimalForegroundNotification(): Notification =
         presentationPort.buildMinimalForegroundNotification()
@@ -1605,7 +1605,8 @@ class AudioPlayerService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? {
-        if (!presentationOwnerDelegate.isInitialized()) return null
+        if (intent?.action != ACTION_BIND_CAR || PlayerDependencies.presentation.shouldEnterSafeMode(this)) return null
+        startPlaybackService()
         return carPlaybackBinding.bind(intent)?.also {
             if (!hasReceivedStartCommand) keepPlayerRuntimeAfterServiceStop = true
         }

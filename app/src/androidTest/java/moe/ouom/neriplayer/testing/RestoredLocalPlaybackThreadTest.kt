@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.testing
 
 import android.app.Application
+import android.app.Notification
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -11,6 +13,8 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.StrictMode
 import android.os.SystemClock
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -231,6 +235,238 @@ class RestoredLocalPlaybackThreadTest {
                 instrumentation.runOnMainSync {
                     connection?.let(context::unbindService)
                     connection = null
+                    if (ownsService) context.stopService(Intent(context, AudioPlayerService::class.java))
+                }
+            }
+            if (ownsService) cleanup { awaitServiceState("清理本次服务") { activeService() == null } }
+            cleanup { instrumentation.runOnMainSync { PlayerManager.release() } }
+            cleanup { runBlocking { savedQueue.restore(context) } }
+            cleanup { check(!directory.exists() || directory.deleteRecursively()) }
+            cleanup { instrumentation.runOnMainSync { PlayerManager.initializePreloaded(app, preferences) } }
+            if (failure != null) failures.forEach(failure::addSuppressed)
+            else if (failures.isNotEmpty()) {
+                val first = failures.first()
+                failures.drop(1).forEach(first::addSuppressed)
+                throw first
+            }
+        }
+    }
+
+    @Test
+    fun pausedLocalQueueSurvivesIdleServiceShutdownAndForegroundReturn() {
+        assumeTrue("仅在 API 28 及以上模拟器运行", Build.VERSION.SDK_INT >= 28 &&
+            Build.HARDWARE in setOf("ranchu", "goldfish"))
+        assumeFalse("已有服务时不干预其生命周期", AudioPlayerService.isInstanceActiveForDiagnostics())
+        assumeFalse("已有播放时不干预播放器", PlayerManager.isPlayingFlow.value ||
+            PlayerManager.playWhenReadyFlow.value || PlayerManager.playbackControlPlayingFlow.value)
+        assumeFalse("安全模式不创建播放服务", PlayerDependencies.presentation.shouldEnterSafeMode(context))
+        val app = context.applicationContext as Application
+        val preferences = readPlaybackPreferenceSnapshotSync(app)
+        val savedQueue = runBlocking { SavedPlaybackQueue.read(context) }
+        val directory = File(context.cacheDir, "idle-return-service-${UUID.randomUUID()}")
+        var ownsService = false
+        var failure: Throwable? = null
+        try {
+            check(directory.mkdirs())
+            val audio = File(directory, "paused.wav")
+            writeWav(audio)
+            val song = SongItem(
+                id = -System.nanoTime(), name = "Idle return fixture", artist = "Offline fixture",
+                album = "Test", albumId = 0L, durationMs = 10_000L, coverUrl = null,
+                mediaUri = Uri.fromFile(audio).toString(), localFilePath = audio.absolutePath,
+                localFileName = audio.name, channelId = "local", audioId = audio.name
+            )
+            fun assertPausedQueue() {
+                assertTrue(PlayerManager.isPlayerInitialized())
+                assertEquals(listOf(song), PlayerManager.currentQueueFlow.value)
+                assertEquals(song, PlayerManager.currentSongFlow.value)
+                assertEquals(PositionMs, PlayerManager.playbackPositionFlow.value)
+                assertFalse(PlayerManager.isPlayingFlow.value)
+                assertFalse(PlayerManager.playWhenReadyFlow.value)
+                assertFalse(PlayerManager.playbackControlPlayingFlow.value)
+            }
+            fun startPausedService(): AudioPlayerService {
+                // app_bootstrap 会合并最近的启动请求，等待窗口避免跳过真正的服务重建
+                SystemClock.sleep(1_600L)
+                instrumentation.runOnMainSync {
+                    ownsService = AudioPlayerService.startSyncService(app, "app_bootstrap")
+                    assertTrue("应用上下文必须能够启动前台服务", ownsService)
+                }
+                var service: AudioPlayerService? = null
+                awaitServiceState("返回前台必须完成真实前台提升和运行时初始化") {
+                    service = activeService()
+                    service?.let {
+                        it.booleanField("hasReceivedStartCommand") &&
+                            it.booleanField("isForegroundStarted") &&
+                            it.booleanField("playerRuntimeReady") &&
+                            AudioPlayerService.isForegroundActiveForDiagnostics()
+                    } == true
+                }
+                val notifications = checkNotNull(app.getSystemService(NotificationManager::class.java))
+                if (notifications.areNotificationsEnabled()) {
+                    awaitServiceState("前台播放服务必须发布系统前台通知") {
+                        notifications.activeNotifications.any {
+                            it.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0
+                        }
+                    }
+                }
+                instrumentation.runOnMainSync { assertPausedQueue() }
+                return checkNotNull(service)
+            }
+            instrumentation.runOnMainSync {
+                PlayerManager.release()
+                PlayerManager.initializePreloaded(app, preferences.copy(
+                    keepLastPlaybackProgress = true, maxCacheSizeBytes = 0L, usbExclusivePlayback = false
+                ), restored(song).copy(shouldResumePlayback = false))
+                assertPausedQueue()
+            }
+            ActivityScenario.launch(TestComposeActivity::class.java).use { scenario ->
+                var service = startPausedService()
+                repeat(2) {
+                    scenario.moveToState(Lifecycle.State.CREATED)
+                    val stoppedService = service
+                    instrumentation.runOnMainSync {
+                        assertPausedQueue()
+                        val eligible = AudioPlayerService::class.java
+                            .getDeclaredMethod("isEligibleForIdleShutdown").apply { isAccessible = true }
+                            .invoke(stoppedService) as Boolean
+                        assertTrue("暂停服务必须符合实际闲置回收条件", eligible)
+                        val startId = stoppedService.field("latestStartId") as Int
+                        assertTrue(startId > 0)
+                        // 直接触发实际闲置回收入口，避免设备测试等待数分钟
+                        AudioPlayerService::class.java
+                            .getDeclaredMethod("stopIdlePlaybackService", Int::class.javaPrimitiveType)
+                            .apply { isAccessible = true }.invoke(stoppedService, startId)
+                    }
+                    awaitServiceState("后台闲置回收必须真正销毁服务") {
+                        activeService() == null && !AudioPlayerService.isInstanceActiveForDiagnostics() &&
+                            !AudioPlayerService.isForegroundActiveForDiagnostics()
+                    }
+                    ownsService = false
+                    instrumentation.runOnMainSync {
+                        assertTrue(stoppedService.booleanField("keepPlayerRuntimeAfterServiceStop"))
+                        assertFalse(stoppedService.booleanField("playerRuntimeReady"))
+                        assertPausedQueue()
+                    }
+                    scenario.moveToState(Lifecycle.State.RESUMED)
+                    service = startPausedService()
+                    assertTrue("返回前台必须创建新的服务实例", service !== stoppedService)
+                }
+            }
+        } catch (error: Throwable) {
+            failure = error
+            throw error
+        } finally {
+            val failures = mutableListOf<Throwable>()
+            fun cleanup(action: () -> Unit) {
+                runCatching(action).exceptionOrNull()?.let(failures::add)
+            }
+            cleanup {
+                instrumentation.runOnMainSync {
+                    if (ownsService) context.stopService(Intent(context, AudioPlayerService::class.java))
+                }
+            }
+            if (ownsService) cleanup { awaitServiceState("清理本次服务") { activeService() == null } }
+            cleanup { instrumentation.runOnMainSync { PlayerManager.release() } }
+            cleanup { runBlocking { savedQueue.restore(context) } }
+            cleanup { check(!directory.exists() || directory.deleteRecursively()) }
+            cleanup { instrumentation.runOnMainSync { PlayerManager.initializePreloaded(app, preferences) } }
+            if (failure != null) failures.forEach(failure::addSuppressed)
+            else if (failures.isNotEmpty()) {
+                val first = failures.first()
+                failures.drop(1).forEach(first::addSuppressed)
+                throw first
+            }
+        }
+    }
+
+    @Test
+    fun warmEmptyPlayerAcceptsInitialPlayCommandBeforeEmptyCollectorsCanStopService() {
+        assumeTrue("仅在 API 28 及以上模拟器运行", Build.VERSION.SDK_INT >= 28 &&
+            Build.HARDWARE in setOf("ranchu", "goldfish"))
+        assumeFalse("已有服务时不干预其生命周期", AudioPlayerService.isInstanceActiveForDiagnostics())
+        assumeFalse("已有播放时不干预播放器", PlayerManager.isPlayingFlow.value ||
+            PlayerManager.playWhenReadyFlow.value || PlayerManager.playbackControlPlayingFlow.value)
+        assumeFalse("安全模式不创建播放服务", PlayerDependencies.presentation.shouldEnterSafeMode(context))
+        val app = context.applicationContext as Application
+        val preferences = readPlaybackPreferenceSnapshotSync(app)
+        val savedQueue = runBlocking { SavedPlaybackQueue.read(context) }
+        val directory = File(context.cacheDir, "warm-empty-play-${UUID.randomUUID()}")
+        var ownsService = false
+        var failure: Throwable? = null
+        try {
+            check(directory.mkdirs())
+            val audio = File(directory, "first-play.wav")
+            writeWav(audio)
+            val song = SongItem(
+                id = -System.nanoTime(), name = "Warm empty play fixture", artist = "Offline fixture",
+                album = "Test", albumId = 0L, durationMs = 10_000L, coverUrl = null,
+                mediaUri = Uri.fromFile(audio).toString(), localFilePath = audio.absolutePath,
+                localFileName = audio.name, channelId = "local", audioId = audio.name
+            )
+            instrumentation.runOnMainSync {
+                PlayerManager.release()
+                PlayerManager.initializePreloaded(app, preferences.copy(
+                    keepLastPlaybackProgress = false, maxCacheSizeBytes = 0L, usbExclusivePlayback = false
+                ), RestoredPlayerStateSnapshot(
+                    playlist = emptyList(), currentIndex = -1, currentMediaUrl = null,
+                    repeatMode = 0, shuffleEnabled = false, shuffleRestorePlaylist = null,
+                    shuffleRestoreIndex = -1, resumePositionMs = 0L, shouldResumePlayback = false,
+                    originalPlaylistSize = 0, persistedIndex = -1
+                ))
+                assertTrue(PlayerManager.isPlayerInitialized())
+                assertFalse(PlayerManager.hasItems())
+                assertNull(PlayerManager.currentSongFlow.value)
+                assertNull(activeService())
+            }
+            ActivityScenario.launch(TestComposeActivity::class.java).use { scenario ->
+                assertEquals(Lifecycle.State.RESUMED, scenario.state)
+                instrumentation.runOnMainSync {
+                    val intent = Intent(app, AudioPlayerService::class.java)
+                        .setAction(AudioPlayerService.ACTION_PLAY)
+                        .putParcelableArrayListExtra("playlist", arrayListOf(song))
+                        .putExtra("index", 0)
+                        .putExtra(AudioPlayerService.EXTRA_START_SOURCE, "warm_empty_play_test")
+                    assertNotNull(ContextCompat.startForegroundService(app, intent))
+                    ownsService = true
+                }
+                var service: AudioPlayerService? = null
+                awaitServiceState("空队列初始化观察者不能抢在首个播放命令前停止服务") {
+                    service = activeService()
+                    service?.let {
+                        it.booleanField("hasReceivedStartCommand") &&
+                            it.booleanField("isForegroundStarted") &&
+                            it.booleanField("playerRuntimeReady") &&
+                            AudioPlayerService.isForegroundActiveForDiagnostics() &&
+                            PlayerManager.currentSongFlow.value?.id == song.id &&
+                            PlayerManager.isPlayingFlow.value && PlayerManager.playbackPositionFlow.value > 0L
+                    } == true
+                }
+                instrumentation.runOnMainSync {
+                    assertEquals(listOf(song.id), PlayerManager.currentQueueFlow.value.map { it.id })
+                    PlayerManager.pause()
+                }
+                awaitServiceState("本地播放暂停后必须保留首个命令建立的队列") {
+                    activeService() === service && !PlayerManager.isPlayingFlow.value &&
+                        !PlayerManager.playWhenReadyFlow.value && !PlayerManager.playbackControlPlayingFlow.value
+                }
+                instrumentation.runOnMainSync {
+                    assertEquals(listOf(song.id), PlayerManager.currentQueueFlow.value.map { it.id })
+                    assertEquals(song.id, PlayerManager.currentSongFlow.value?.id)
+                    assertTrue(checkNotNull(service).booleanField("playerRuntimeReady"))
+                    assertTrue(AudioPlayerService.isForegroundActiveForDiagnostics())
+                }
+            }
+        } catch (error: Throwable) {
+            failure = error
+            throw error
+        } finally {
+            val failures = mutableListOf<Throwable>()
+            fun cleanup(action: () -> Unit) {
+                runCatching(action).exceptionOrNull()?.let(failures::add)
+            }
+            cleanup {
+                instrumentation.runOnMainSync {
                     if (ownsService) context.stopService(Intent(context, AudioPlayerService::class.java))
                 }
             }
