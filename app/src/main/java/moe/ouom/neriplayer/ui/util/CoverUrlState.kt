@@ -133,8 +133,9 @@ private fun String?.normalizedCoverReference(): String? = this?.trim()?.takeIf(S
 
 internal fun shouldProbeFastLocalCoverCandidate(
     isLocalSong: Boolean,
-    immediateCover: String?
-): Boolean = isLocalSong || immediateCover.isNullOrBlank()
+    immediateCover: String?,
+    hasDownloadedCover: Boolean = false
+): Boolean = isLocalSong || hasDownloadedCover || immediateCover.isNullOrBlank()
 
 internal fun shouldAllowRemoteCoverFallback(
     isLocalSong: Boolean,
@@ -248,8 +249,11 @@ internal fun rememberSongDisplayCoverUrl(
 ): String? {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
-    val songDisplayKey = remember(song) {
-        song?.coverDisplayCacheKey()
+    val localCoverReference = remember(song, downloadPresenceVersion, localAssetGeneration) {
+        song?.let(AudioDownloadManager::peekLocalCoverUri)
+    }
+    val songDisplayKey = remember(song, localCoverReference) {
+        song?.coverDisplayCacheKey(localCoverReference)
     }
     val songVisualAliases = remember(song) {
         song?.playbackVisualKeyAliases().orEmpty()
@@ -257,14 +261,15 @@ internal fun rememberSongDisplayCoverUrl(
     val songStateKey = remember(song) {
         song?.coverDisplayStateKey()
     }
-    val songKey = remember(song) {
-        song?.coverResolutionKey()
+    val songKey = remember(song, localCoverReference) {
+        song?.coverResolutionKey(localCoverReference)
     }
-    val localReferenceRevisionKey = remember(song) {
+    val localReferenceRevisionKey = remember(song, localCoverReference) {
         listOf(
             song?.mediaUri.orEmpty(),
             song?.localFilePath.orEmpty(),
-            song?.localFileName.orEmpty()
+            song?.localFileName.orEmpty(),
+            localCoverReference.orEmpty()
         ).joinToString("|")
     }
     val allowRemoteCoverFallback = song?.allowsRemoteCoverFallback() ?: true
@@ -388,14 +393,16 @@ internal fun rememberSongDisplayCoverUrl(
             if (
                 shouldProbeFastLocalCoverCandidate(
                     isLocalSong = song.isLocalSong(),
-                    immediateCover = immediateCover
+                    immediateCover = immediateCover,
+                    hasDownloadedCover = !localCoverReference.isNullOrBlank()
                 )
             ) {
                 resolveCachedSongDisplayCoverUrl(
                     context = appContext,
                     song = song,
                     probeGeneration = probeGeneration,
-                    allowRemoteCoverFallback = allowRemoteCoverFallback
+                    allowRemoteCoverFallback = allowRemoteCoverFallback,
+                    localCoverReference = localCoverReference
                 )
             } else {
                 memoryCover
@@ -506,12 +513,16 @@ private fun resolveCachedSongDisplayCoverUrl(
     context: android.content.Context,
     song: SongItem,
     probeGeneration: Int = 0,
-    allowRemoteCoverFallback: Boolean = true
+    allowRemoteCoverFallback: Boolean = true,
+    localCoverReference: String? = null
 ): String? {
+    val effectiveLocalCoverReference = localCoverReference
+        ?: AudioDownloadManager.peekLocalCoverUri(song)
     val cacheKey = fastCoverProbeCacheKey(
         song = song,
         probeGeneration = probeGeneration,
-        allowRemoteCoverFallback = allowRemoteCoverFallback
+        allowRemoteCoverFallback = allowRemoteCoverFallback,
+        localCoverReference = effectiveLocalCoverReference
     )
     val now = SystemClock.elapsedRealtime()
     synchronized(fastCoverProbeCache) {
@@ -535,7 +546,8 @@ private fun resolveCachedSongDisplayCoverUrl(
     val resolved = resolveCachedSongDisplayCoverUrlUncached(
         context = context,
         song = song,
-        allowRemoteCoverFallback = allowRemoteCoverFallback
+        allowRemoteCoverFallback = allowRemoteCoverFallback,
+        localCoverReference = effectiveLocalCoverReference
     )
     synchronized(fastCoverProbeCache) {
         fastCoverProbeCache[cacheKey] = FastCoverProbeCacheEntry(
@@ -549,7 +561,8 @@ private fun resolveCachedSongDisplayCoverUrl(
 private fun resolveCachedSongDisplayCoverUrlUncached(
     context: android.content.Context,
     song: SongItem,
-    allowRemoteCoverFallback: Boolean = true
+    allowRemoteCoverFallback: Boolean = true,
+    localCoverReference: String? = null
 ): String? {
     fun usable(reference: String?): String? {
         return reference
@@ -562,7 +575,7 @@ private fun resolveCachedSongDisplayCoverUrlUncached(
     }
 
     usable(song.customCoverUrl)?.let { return it }
-    usable(AudioDownloadManager.peekLocalCoverUri(song))?.let { return it }
+    usable(localCoverReference)?.let { return it }
     if (song.isLocalSong()) {
         // sidecars are authoritative for local files and do not depend on MediaStore grants
         val nearbyCover = try {
@@ -591,15 +604,17 @@ private fun resolveCachedSongDisplayCoverUrlUncached(
 internal fun fastCoverProbeCacheKey(
     song: SongItem,
     probeGeneration: Int,
-    allowRemoteCoverFallback: Boolean
+    allowRemoteCoverFallback: Boolean,
+    localCoverReference: String? = null
 ): String {
     val referenceRevision = listOf(
         song.mediaUri.orEmpty(),
         song.localFilePath.orEmpty(),
         song.localFileName.orEmpty()
     ).joinToString("|").hashCode()
-    return "${song.coverResolutionKey()}|${localFileProbeState(song.localFilePath)}" +
+    return "${song.coverResolutionKey(localCoverReference)}|${localFileProbeState(song.localFilePath)}" +
         "|reference=$referenceRevision" +
+        "|downloadedCover=${localCoverReference.orEmpty()}" +
         "|generation=$probeGeneration|allowRemote=$allowRemoteCoverFallback"
 }
 
@@ -999,23 +1014,25 @@ internal fun rememberResolvedCover(key: String?, coverUrl: String?) {
     }
 }
 
-private fun SongItem.coverResolutionKey(): String {
+private fun SongItem.coverResolutionKey(localCoverReference: String? = null): String {
     return listOf(
         playbackVisualKey(),
         customCoverUrl.orEmpty(),
         coverUrl.orEmpty(),
         originalCoverUrl.orEmpty(),
-        localFileName.orEmpty()
+        localFileName.orEmpty(),
+        localCoverReference.orEmpty()
     ).joinToString("|")
 }
 
-internal fun SongItem.coverDisplayCacheKey(): String {
+internal fun SongItem.coverDisplayCacheKey(localCoverReference: String? = null): String {
     return listOf(
         "song",
         playbackVisualKey(),
         customCoverUrl.orEmpty(),
         coverUrl.orEmpty(),
-        originalCoverUrl.orEmpty()
+        originalCoverUrl.orEmpty(),
+        localCoverReference.orEmpty()
     ).joinToString(":")
 }
 
@@ -1065,6 +1082,7 @@ private fun Long.mixCoverSignature(song: SongItem): Long = this
     .mixSignature(song.originalCoverUrl)
     .mixSignature(song.localFilePath)
     .mixSignature(song.mediaUri)
+    .mixSignatureWhenPresent(AudioDownloadManager.peekLocalCoverUri(song))
     .mixSignature(song.channelId)
     .mixSignature(song.audioId)
     .mixSignature(song.subAudioId)
@@ -1073,3 +1091,6 @@ private fun Long.mixCoverSignature(song: SongItem): Long = this
 private fun Long.mixSignature(value: Long): Long = 31L * this + value
 
 private fun Long.mixSignature(value: String?): Long = mixSignature(value.orEmpty().hashCode().toLong())
+
+private fun Long.mixSignatureWhenPresent(value: String?): Long =
+    if (value.isNullOrBlank()) this else mixSignature(value)
