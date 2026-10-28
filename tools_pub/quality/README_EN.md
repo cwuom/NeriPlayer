@@ -51,7 +51,7 @@ Independent CRAP tasks retain the same threshold and corresponding source scope.
 `:sync:verifyCrap` combines coverage from sync and its models in `:model`.
 `:local:verifySyncIntegrationCrap` separately runs JVM tests for Android sync adapters
 and checks the local library's entire `data/sync` directory; it does not replace
-the full local-library gate. See the [root README](../../README_EN.md#module-layout)
+the full local-library gate. See the [implementation notes](../../docs/implementation_EN.md#module-layout)
 for module responsibilities.
 
 ## CRAP

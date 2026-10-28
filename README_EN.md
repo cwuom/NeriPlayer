@@ -130,9 +130,9 @@ Architecture, startup flow, and test guardrails live in
 
 ### 🗂️ Library and local management
 
-- **Category browsing**: local, favorites, NetEase, YouTube Music, and Bilibili entries; platforms can be disabled entirely.
+- **Category browsing**: local, favorites, NetEase, YouTube Music, and Bilibili entries; YouTube can be disabled entirely, while Bilibili music can be turned off for the home sections only.
 - **Home discovery**: recently used playlists, charts, new songs, daily picks, Private FM, curated playlists, and radar playlists; a refresh updates every section.
-- **Search and link recognition**: per-platform search with paging, plus pasting a share text with title or short link to resolve NetEase, Bilibili, and YouTube content.
+- **Search and link recognition**: per-platform search with paging on NetEase and Bilibili, plus pasting a share text with title or short link to resolve NetEase, Bilibili, and YouTube content.
 - **Import and batch artwork**: share import and folder scanning, plus one-tap batch matching and embedding of lyrics and artwork.
 - **Local artists and playlists**: aggregation by display artist, with sorting, block insertion, and undo.
 - **Song encyclopedia**: genres, language, BPM, credits, comment previews, similar songs, and related playlists.

@@ -35,7 +35,7 @@
 ./gradlew :listentogether:verifyCrap :listentogether:verifyDomainDependencies :listentogether:lintDebug
 ```
 
-独立 CRAP 任务保留相同阈值和对应源码范围。`:sync:verifyCrap` 合并同步库与 `:model` 中同步模型的覆盖率；`:local:verifySyncIntegrationCrap` 单独运行同步 Android 适配的 JVM 测试，检查本地库整个 `data/sync` 目录，不替代本地库全量门禁。模块职责见 [根目录 README](../../README.md#模块结构)。
+独立 CRAP 任务保留相同阈值和对应源码范围。`:sync:verifyCrap` 合并同步库与 `:model` 中同步模型的覆盖率；`:local:verifySyncIntegrationCrap` 单独运行同步 Android 适配的 JVM 测试，检查本地库整个 `data/sync` 目录，不替代本地库全量门禁。模块职责见 [实现概览](../../docs/implementation.md#模块结构)。
 
 ## CRAP
 
