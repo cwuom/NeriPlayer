@@ -449,7 +449,8 @@ private val LONG_SETTING_NORMALIZERS: Map<String, (Long) -> Long> = buildMap {
         SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS,
         SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS,
         SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS,
-        SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS
+        SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS,
+        SettingsKeys.BILI_CC_SUBTITLE_LYRIC_DEFAULT_OFFSET_MS
     ).forEach { key -> put(key.name) { normalizeLyricDefaultOffsetMs(it) } }
     listOf(
         SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS,

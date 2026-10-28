@@ -33,6 +33,25 @@ class LyriconPreferencesTest {
         assertEquals(-1L, negative.offsetFor(song(Long.MAX_VALUE), null))
     }
 
+    @Test
+    fun `bili cc offset applies only when the caller marks the source`() {
+        val preferences = LyriconPreferences(
+            enabled = true,
+            cloudMusicOffsetMs = 1_000L,
+            biliCcSubtitleOffsetMs = 250L
+        )
+        val biliSong = SongItem(
+            id = 1, name = "song", artist = "artist", album = "Bilibili|1|BV1",
+            albumId = 0, durationMs = 10_000, coverUrl = null
+        )
+
+        assertEquals(1_000L, preferences.offsetFor(biliSong, null))
+        assertEquals(
+            250L,
+            preferences.offsetFor(biliSong, null, isBiliCcSubtitleLyrics = true)
+        )
+    }
+
     private fun song(offset: Long) = SongItem(
         id = 1, name = "song", artist = "artist", album = "album", albumId = 0,
         durationMs = 10_000, coverUrl = null, userLyricOffsetMs = offset,

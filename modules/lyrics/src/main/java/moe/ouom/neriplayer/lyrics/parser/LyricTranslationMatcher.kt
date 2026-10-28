@@ -8,6 +8,7 @@ import kotlin.math.min
 
 private const val TranslationAlignmentToleranceMs = 450L
 private const val TranslationClosestMatchToleranceMs = 2_000L
+private const val SubtitleTranslationMinOverlapRatio = 0.5
 
 /**
  * 按时间戳把翻译行配对到原文行
@@ -337,4 +338,70 @@ private fun calculateStartDistanceToLineMs(
 
 private fun normalizeExclusiveEndTime(startMs: Long, endMs: Long): Long {
     return if (endMs > startMs) endMs else startMs + 1L
+}
+
+/** 将字幕轨道的显示区间对齐为歌词行, 兼容不同语种的分句 */
+fun alignSubtitleLyrics(
+    lyrics: List<LyricEntry>,
+    translations: List<LyricEntry>
+): Pair<List<LyricEntry>, List<LyricEntry>> {
+    val displayLyrics = subtitleDisplayEntries(lyrics)
+    val displayTranslations = subtitleDisplayEntries(translations).filterNot {
+        isLyricCreditMetadataLine(it.text) || isUntranslatedPlaceholderText(it.text)
+    }
+    return displayLyrics to alignSubtitleTranslations(displayLyrics, displayTranslations)
+}
+
+private fun subtitleDisplayEntries(entries: List<LyricEntry>): List<LyricEntry> {
+    val displayEntries = ArrayList<LyricEntry>(entries.size)
+    var groupEndIndex = 0
+    for (index in entries.indices) {
+        val line = entries[index]
+        if (index == groupEndIndex) {
+            groupEndIndex = index + 1
+            while (entries.getOrNull(groupEndIndex)?.startTimeMs == line.startTimeMs) {
+                groupEndIndex++
+            }
+        }
+        // 后一条字幕会接替前一条, 原文和译文都使用实际显示的区间
+        displayEntries += line.copy(
+            endTimeMs = minOf(
+                line.endTimeMs,
+                entries.getOrNull(groupEndIndex)?.startTimeMs ?: line.endTimeMs
+            )
+        )
+    }
+    return displayEntries
+}
+
+private fun alignSubtitleTranslations(
+    lyrics: List<LyricEntry>,
+    translations: List<LyricEntry>
+): List<LyricEntry> {
+    val alignedTranslations = ArrayList<LyricEntry>(lyrics.size)
+    val activeTranslations = ArrayList<LyricEntry>()
+    var translationIndex = 0
+    for (line in lyrics) {
+        while (translationIndex < translations.size &&
+            translations[translationIndex].startTimeMs < line.endTimeMs
+        ) {
+            activeTranslations += translations[translationIndex++]
+        }
+        activeTranslations.removeAll { it.endTimeMs <= line.startTimeMs }
+        val text = activeTranslations.asSequence().filter { translation ->
+            val overlapMs = minOf(line.endTimeMs, translation.endTimeMs) -
+                maxOf(line.startTimeMs, translation.startTimeMs)
+            val shorterDurationMs = minOf(
+                line.endTimeMs - line.startTimeMs,
+                translation.endTimeMs - translation.startTimeMs
+            )
+            // 短暂的边界重叠不代表同一句, 至少覆盖较短字幕的一半才配对
+            overlapMs > 0L &&
+                overlapMs >= shorterDurationMs * SubtitleTranslationMinOverlapRatio
+        }.joinToString("\n") { it.text }
+        if (text.isNotEmpty()) {
+            alignedTranslations += LyricEntry(text, line.startTimeMs, line.endTimeMs)
+        }
+    }
+    return alignedTranslations
 }

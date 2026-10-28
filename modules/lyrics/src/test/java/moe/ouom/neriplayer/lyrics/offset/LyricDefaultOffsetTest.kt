@@ -162,6 +162,31 @@ class LyricDefaultOffsetTest {
     }
 
     @Test
+    fun resolveEffectiveLyricOffsetMs_prefersBiliCcOffsetForSubtitleLyrics() {
+        val offset = resolveEffectiveLyricOffsetMs(
+            lyricSource = null,
+            cloudMusicDefaultOffsetMs = 1_000L,
+            qqMusicDefaultOffsetMs = 500L,
+            userLyricOffsetMs = 150L,
+            biliCcSubtitleDefaultOffsetMs = 300L,
+            isBiliCcSubtitleLyrics = true
+        )
+
+        assertEquals(450L, offset)
+        assertEquals(
+            1_000L,
+            resolveEffectiveLyricOffsetMs(
+                lyricSource = null,
+                cloudMusicDefaultOffsetMs = 1_000L,
+                qqMusicDefaultOffsetMs = 500L,
+                userLyricOffsetMs = 0L,
+                biliCcSubtitleDefaultOffsetMs = 300L,
+                isBiliCcSubtitleLyrics = false
+            )
+        )
+    }
+
+    @Test
     fun rebaseLyricUserOffsetMs_saturatesOverflow() {
         assertEquals(
             Long.MAX_VALUE,

@@ -586,6 +586,55 @@ class NowPlayingLyricsLoadOwnerTest {
         assertEquals("visible", owner.state.rawLyrics)
     }
 
+    @Test
+    fun `preference revision change replaces lyrics even when the new result is empty`() = runTest {
+        val empty = lyricState(null)
+        val stages = object : NowPlayingLyricsStages {
+            override suspend fun readFast(request: NowPlayingLyricsLoadRequest) =
+                NowPlayingFastLyricsResult(empty, null, null, false, false)
+
+            override suspend fun readBackground(
+                request: NowPlayingLyricsLoadRequest,
+                fast: NowPlayingFastLyricsResult
+            ) = empty
+        }
+        val owner = NowPlayingLyricsLoadOwner(lyricState("cc subtitle line"), this, stages)
+        owner.reload(request(song), preferenceRevision = 1L)
+        runCurrent()
+        assertEquals("cc subtitle line", owner.state.rawLyrics)
+
+        // 设置变化后的空结果必须覆盖旧歌词, 否则关闭 CC 字幕会留下缓存内容
+        owner.reload(request(song), preferenceRevision = 2L)
+        runCurrent()
+        assertTrue(owner.state.lyrics.isEmpty())
+    }
+
+    @Test
+    fun `forced replacement survives a reload that cancels the pending load`() = runTest {
+        val background = CompletableDeferred<LoadedLyricsState>()
+        val stages = object : NowPlayingLyricsStages {
+            override suspend fun readFast(request: NowPlayingLyricsLoadRequest) = fastState("")
+
+            override suspend fun readBackground(
+                request: NowPlayingLyricsLoadRequest,
+                fast: NowPlayingFastLyricsResult
+            ) = background.await()
+        }
+        val owner = NowPlayingLyricsLoadOwner(lyricState("cc subtitle line"), this, stages)
+        owner.reload(request(song), preferenceRevision = 1L)
+        runCurrent()
+        assertEquals("cc subtitle line", owner.state.rawLyrics)
+
+        // 第一次取消后再次 reload, 期间没有结果发布, 强制替换不能丢失
+        owner.reload(request(song), preferenceRevision = 2L)
+        runCurrent()
+        owner.reload(request(song), preferenceRevision = 2L)
+        runCurrent()
+        background.complete(lyricState(null))
+        runCurrent()
+        assertTrue(owner.state.lyrics.isEmpty())
+    }
+
     private fun request(song: SongItem) = NowPlayingLyricsLoadRequest(
         context, song, null, true, LyricSourcePreference.Automatic, null
     )

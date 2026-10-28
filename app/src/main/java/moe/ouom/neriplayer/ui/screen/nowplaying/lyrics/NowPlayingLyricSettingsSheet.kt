@@ -41,8 +41,16 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.lyrics.offset.LYRIC_DEFAULT_OFFSET_STEP_MS
 import moe.ouom.neriplayer.lyrics.offset.MAX_LYRIC_DEFAULT_OFFSET_MS
+import moe.ouom.neriplayer.lyrics.offset.resolveEffectiveLyricOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.lyrics.offset.MIN_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.lyrics.MIN_LYRIC_FONT_SCALE
@@ -57,6 +65,39 @@ import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import kotlin.math.roundToInt
 
 private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
+
+@Composable
+internal fun rememberNowPlayingLyricOffset(
+    repository: SettingsRepository,
+    song: SongItem?,
+    preferredSource: LyricSourcePreference?,
+    isBiliCcSubtitleLyrics: Boolean
+): Long {
+    val cloudMusicOffset by repository.cloudMusicLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS)
+    val qqMusicOffset by repository.qqMusicLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS)
+    val kugouOffset by repository.kugouLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_KUGOU_LYRIC_OFFSET_MS)
+    val lrclibOffset by repository.lrclibLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_LRCLIB_LYRIC_OFFSET_MS)
+    val amllOffset by repository.amllTtmlLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS)
+    val biliOffset by repository.biliCcSubtitleLyricDefaultOffsetMsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS)
+    return resolveEffectiveLyricOffsetMs(
+        lyricSource = song?.matchedLyricSource,
+        cloudMusicDefaultOffsetMs = cloudMusicOffset,
+        qqMusicDefaultOffsetMs = qqMusicOffset,
+        userLyricOffsetMs = song?.userLyricOffsetMs ?: 0L,
+        kugouDefaultOffsetMs = kugouOffset,
+        lrclibDefaultOffsetMs = lrclibOffset,
+        amllTtmlDefaultOffsetMs = amllOffset,
+        preferredLyricSource = preferredSource,
+        biliCcSubtitleDefaultOffsetMs = biliOffset,
+        isBiliCcSubtitleLyrics = isBiliCcSubtitleLyrics
+    )
+}
 
 internal data class LyricOffsetSliderRange(val min: Long, val max: Long, val steps: Int)
 

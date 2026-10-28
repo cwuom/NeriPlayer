@@ -17,4 +17,25 @@
     <string name="bili_loading_favorites">正在加载收藏夹内容…</string>
     <string name="bili_favorites_incomplete">部分收藏内容未能加载（可能触发了哔哩哔哩风控），请稍后刷新</string>
     <string name="bili_get_parts_failed">获取分 P 失败</string>
+    <string name="bili_cc_subtitle_manage">CC 字幕</string>
+    <string name="bili_cc_subtitle_auto">自动（中文优先）</string>
+    <string name="bili_cc_subtitle_auto_desc">按视频提供的字幕自动选择</string>
+    <string name="bili_cc_subtitle_ai_badge">AI 字幕</string>
+    <string name="bili_cc_subtitle_current">当前：%1$s</string>
+    <string name="bili_cc_subtitle_empty">该视频没有可用的 CC 字幕</string>
+    <string name="bili_cc_subtitle_login_required">登录 B 站账号后才能读取 CC 字幕</string>
+    <string name="bili_cc_subtitle_load_failed">字幕轨道读取失败</string>
+    <string name="bili_cc_subtitle_language_dialog_title">选择默认 CC 字幕轨道</string>
+    <string name="bili_cc_subtitle_lang_zh_hans">中文（简体）</string>
+    <string name="bili_cc_subtitle_lang_zh_hant">中文（繁体）</string>
+    <string name="bili_cc_subtitle_lang_zh_ai">中文（自动生成）</string>
+    <string name="bili_cc_subtitle_lang_en">英文</string>
+    <string name="bili_cc_subtitle_lang_ja">日文</string>
+    <string name="bili_cc_subtitle_lang_ko">韩文</string>
+    <string name="settings_bili_cc_subtitle_group">B 站 CC 字幕</string>
+    <string name="settings_bili_cc_subtitle_group_enabled">已启用 · %1$s</string>
+    <string name="settings_bili_cc_subtitle_group_disabled">已关闭</string>
+    <string name="bili_cc_subtitle_off">关闭 CC 字幕</string>
+    <string name="bili_cc_subtitle_off_desc">不使用视频字幕作为歌词</string>
+    <string name="bili_cc_subtitle_ai_fallback">AI 字幕后备</string>
 </resources>

@@ -159,6 +159,9 @@
     <string name="debug_bili_section_video">Video</string>
     <string name="debug_bili_section_stream">Streams</string>
     <string name="debug_bili_section_favorites">Favorites</string>
+    <string name="debug_bili_section_subtitles">Subtitles</string>
+    <string name="debug_bili_subtitle_tracks">CC subtitle tracks · part %s</string>
+    <string name="debug_bili_subtitle_cues">CC subtitle content · part %s</string>
     <string name="debug_probe_autocopy">Results are copied to the clipboard</string>
     <string name="debug_probe_idle">Idle</string>
     <string name="debug_search_section_platforms">Platforms</string>
