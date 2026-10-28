@@ -7,6 +7,7 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionDefaults
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -18,6 +19,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.IntSize
 
 private const val PredictiveLyricsDurationMillis = 300
+
+internal val NowPlayingLyricsBackPreviewEasing = FastOutSlowInEasing
 
 internal enum class NowPlayingLyricsSharedTransitionElement(
     val key: String

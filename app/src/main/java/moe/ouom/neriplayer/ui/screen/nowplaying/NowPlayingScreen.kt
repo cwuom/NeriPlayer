@@ -35,8 +35,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -1150,7 +1150,8 @@ fun NowPlayingScreen(
                     if (useWideLandscapeLayout) onNavigateUp() else onShowLyricsScreenChange(false)
                 },
                 label = "lyrics_transition",
-                previewEasing = FastOutLinearInEasing,
+                previewEasing = NowPlayingLyricsBackPreviewEasing,
+                previewSettleEasing = EaseOut,
                 cancelMinimumDurationMillis = LyricsBackCancelMinimumDurationMs,
                 onPreviewAnimationActiveChanged = { lyricsPredictiveBackPreviewActive = it },
                 primePreviewAtZero = true
