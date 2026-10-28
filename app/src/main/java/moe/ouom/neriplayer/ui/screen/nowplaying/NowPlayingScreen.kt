@@ -1089,13 +1089,23 @@ fun NowPlayingScreen(
         amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
         preferredLyricSource = loadedPreferredLyricSource,
     )
-    val progressInfoSegments = rememberNowPlayingProgressInfoSegments(
-        audioInfo = currentPlaybackAudioInfo,
-        showQualitySwitch = showProgressQualitySwitch,
-        showAudioCodec = showProgressAudioCodec,
-        showAudioSpec = showProgressAudioSpec,
-        playbackSpeed = playbackSoundState.speed
-    )
+    val progressInfoPresentation = remember(
+        currentPlaybackAudioInfo,
+        showProgressQualitySwitch,
+        showProgressAudioCodec,
+        showProgressAudioSpec,
+        playbackSoundState.speed,
+        phoneLandscape
+    ) {
+        buildNowPlayingProgressInfoPresentation(
+            audioInfo = currentPlaybackAudioInfo,
+            showQualitySwitch = showProgressQualitySwitch,
+            showAudioCodec = showProgressAudioCodec,
+            showAudioSpec = showProgressAudioSpec,
+            playbackSpeed = playbackSoundState.speed,
+            phoneLandscape = phoneLandscape
+        )
+    }
 
     lyricShareInitialLine?.let { initialLine ->
         val song = currentSong
@@ -1424,19 +1434,12 @@ fun NowPlayingScreen(
                                     isPlaying = isPlaying,
                                     isPlaybackWaiting = isPlaybackWaiting,
                                     playbackSpeed = playbackSoundState.speed,
-                                    progressInfoSegments = nowPlayingVisibleProgressInfoSegments(progressInfoSegments, phoneLandscape),
+                                    progressInfoPresentation = progressInfoPresentation,
                                     seekEnabled = playbackProgressSeekEnabled,
                                     activeContentColor = targetNowPlayingActiveIconColor,
                                     useWideLandscapeLayout = useWideLandscapeLayout,
                                     onPreviewPositionChange = { previewPositionOverrideMs = it },
                                     tabletLandscape = useWideLandscapeLayout && !phoneLandscape,
-                                    reserveInfoRowHeight = shouldReserveNowPlayingProgressInfoSpace(
-                                        showProgressQualitySwitch,
-                                        showProgressAudioCodec,
-                                        showProgressAudioSpec,
-                                        playbackSoundState.speed,
-                                        phoneLandscape
-                                    ),
                                     progressRowModifier = Modifier
                                         .sharedBounds(
                                             rememberSharedContentState(

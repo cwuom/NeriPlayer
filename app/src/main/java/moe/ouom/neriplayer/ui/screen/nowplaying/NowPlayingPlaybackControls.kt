@@ -71,6 +71,11 @@ internal data class NowPlayingProgressInfoSegment(
     val highlighted: Boolean = false
 )
 
+internal data class NowPlayingProgressInfoPresentation(
+    val segments: List<NowPlayingProgressInfoSegment>,
+    val reserveRowHeight: Boolean
+)
+
 internal fun nowPlayingVisibleProgressInfoSegments(
     segments: List<NowPlayingProgressInfoSegment>,
     phoneLandscape: Boolean
@@ -203,18 +208,22 @@ internal class NowPlayingSeekActionOwner(
     }
 }
 
-@Composable
-internal fun rememberNowPlayingProgressInfoSegments(
+internal fun buildNowPlayingProgressInfoPresentation(
     audioInfo: PlaybackAudioInfo?,
     showQualitySwitch: Boolean,
     showAudioCodec: Boolean,
     showAudioSpec: Boolean,
-    playbackSpeed: Float
-): List<NowPlayingProgressInfoSegment> = remember(
-    audioInfo, showQualitySwitch, showAudioCodec, showAudioSpec, playbackSpeed
-) {
-    buildNowPlayingProgressInfoSegments(
+    playbackSpeed: Float,
+    phoneLandscape: Boolean
+): NowPlayingProgressInfoPresentation {
+    val segments = buildNowPlayingProgressInfoSegments(
         audioInfo, showQualitySwitch, showAudioCodec, showAudioSpec, playbackSpeed
+    )
+    return NowPlayingProgressInfoPresentation(
+        segments = nowPlayingVisibleProgressInfoSegments(segments, phoneLandscape),
+        reserveRowHeight = shouldReserveNowPlayingProgressInfoSpace(
+            showQualitySwitch, showAudioCodec, showAudioSpec, playbackSpeed, phoneLandscape
+        )
     )
 }
 
@@ -404,14 +413,13 @@ internal fun NowPlayingProgressSection(
     isPlaying: Boolean,
     isPlaybackWaiting: Boolean,
     playbackSpeed: Float,
-    progressInfoSegments: List<NowPlayingProgressInfoSegment>,
+    progressInfoPresentation: NowPlayingProgressInfoPresentation,
     seekEnabled: Boolean,
     activeContentColor: Color,
     useWideLandscapeLayout: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
     modifier: Modifier = Modifier,
     tabletLandscape: Boolean = false,
-    reserveInfoRowHeight: Boolean = false,
     progressRowModifier: Modifier = Modifier
 ) {
     val owner = remember(songKey) {
@@ -450,9 +458,9 @@ internal fun NowPlayingProgressSection(
             lyricSeekHaptic = lyricSeekHaptic,
             modifier = Modifier.fillMaxWidth().then(progressRowModifier)
         )
-        if (reserveInfoRowHeight || progressInfoSegments.isNotEmpty()) {
+        if (progressInfoPresentation.reserveRowHeight || progressInfoPresentation.segments.isNotEmpty()) {
             NowPlayingProgressInfoRow(
-                segments = progressInfoSegments,
+                segments = progressInfoPresentation.segments,
                 highlightedContentColor = activeContentColor,
                 modifier = Modifier
                     .fillMaxWidth()

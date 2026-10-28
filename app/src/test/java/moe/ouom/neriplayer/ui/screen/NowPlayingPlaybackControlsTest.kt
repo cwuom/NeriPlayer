@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressInfoSegment
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingSeekActionOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.buildNowPlayingProgressInfoPresentation
 import moe.ouom.neriplayer.ui.screen.nowplaying.buildNowPlayingProgressInfoSegments
 import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingPhoneLandscape
 import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingProgressFraction
@@ -19,6 +20,33 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NowPlayingPlaybackControlsTest {
+    @Test
+    fun `progress presentation keeps its row while next track metadata is loading`() {
+        val info = PlaybackAudioInfo(
+            source = PlaybackAudioSource.NETEASE,
+            qualityLabel = "Hi-Res",
+            codecLabel = "FLAC",
+            sampleRateHz = 96000,
+            bitDepth = 24
+        )
+        val loaded = buildNowPlayingProgressInfoPresentation(info, true, true, true, 1f, false)
+        val loading = buildNowPlayingProgressInfoPresentation(null, true, true, true, 1f, false)
+        assertEquals(listOf("Hi-Res", "FLAC", "96 kHz | 24 bit"), loaded.segments.map { it.label })
+        assertTrue(loaded.reserveRowHeight)
+        assertTrue(loading.segments.isEmpty())
+        assertTrue(loading.reserveRowHeight)
+
+        val disabled = buildNowPlayingProgressInfoPresentation(info, false, false, false, 1f, false)
+        assertTrue(disabled.segments.isEmpty())
+        assertFalse(disabled.reserveRowHeight)
+        val speedOnly = buildNowPlayingProgressInfoPresentation(null, false, false, false, 1.25f, false)
+        assertTrue(speedOnly.segments.isEmpty())
+        assertTrue(speedOnly.reserveRowHeight)
+        val phoneLandscape = buildNowPlayingProgressInfoPresentation(info, true, true, true, 1.25f, true)
+        assertTrue(phoneLandscape.segments.isEmpty())
+        assertFalse(phoneLandscape.reserveRowHeight)
+    }
+
     @Test
     fun `information space follows display settings rather than transient audio data`() {
         listOf(

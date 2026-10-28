@@ -35,6 +35,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressInfoSegment
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressInfoPresentation
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressSection
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingTabletPortraitLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingWideLayout
@@ -296,15 +297,17 @@ class NowPlayingProgressSpacingTest {
                                 isPlaying = false,
                                 isPlaybackWaiting = false,
                                 playbackSpeed = 1f,
-                                progressInfoSegments = nowPlayingVisibleProgressInfoSegments(information, phoneLandscape),
+                                progressInfoPresentation = NowPlayingProgressInfoPresentation(
+                                    segments = nowPlayingVisibleProgressInfoSegments(information, phoneLandscape),
+                                    reserveRowHeight = shouldReserveNowPlayingProgressInfoSpace(
+                                        informationEnabled, false, false, 1f, phoneLandscape
+                                    )
+                                ),
                                 seekEnabled = false,
                                 activeContentColor = Color.Blue,
                                 useWideLandscapeLayout = landscape,
                                 onPreviewPositionChange = {},
                                 tabletLandscape = landscape && !phoneLandscape,
-                                reserveInfoRowHeight = shouldReserveNowPlayingProgressInfoSpace(
-                                    informationEnabled, false, false, 1f, phoneLandscape
-                                ),
                                 modifier = Modifier.fillMaxWidth().testTag("progressSection"),
                                 progressRowModifier = Modifier.testTag("progressRow")
                             )
