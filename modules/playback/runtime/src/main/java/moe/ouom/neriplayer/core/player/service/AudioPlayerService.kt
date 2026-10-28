@@ -859,7 +859,11 @@ class AudioPlayerService : Service() {
             return
         }
         if (playerInitializationJob?.isActive == true) return
-        playerInitializationJob = serviceScope.launch {
+        // 预读失败时清理本次启动，避免留下前台通知和排队命令
+        playerInitializationJob = serviceScope.launch(CoroutineExceptionHandler { _, error ->
+            NPLogger.e("NERI-APS", "Player runtime initialization threw", error)
+            handleForegroundPromotionFailure("player_initialize_exception")
+        }) {
             awaitConcurrentPlayerInitialization()
             if (PlayerManager.initialized) {
                 finishPlayerRuntimeSetup()
@@ -880,11 +884,7 @@ class AudioPlayerService : Service() {
                 restoredStateSnapshot = restoredStateSnapshot,
             )
             awaitConcurrentPlayerInitialization()
-            if (!PlayerManager.initialized) {
-                NPLogger.e("NERI-APS", "Player runtime initialization failed")
-                handleForegroundPromotionFailure("player_initialize")
-                return@launch
-            }
+            check(PlayerManager.initialized) { "Player runtime initialization failed" }
             finishPlayerRuntimeSetup()
         }
     }

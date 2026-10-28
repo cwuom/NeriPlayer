@@ -3,12 +3,15 @@ package moe.ouom.neriplayer.core.player.service
 import android.app.Application
 import android.app.Service
 import android.content.Intent
+import android.content.SharedPreferences
 import android.media.session.MediaSession
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -23,9 +26,12 @@ import moe.ouom.neriplayer.core.player.service.car.CarPlaybackBinder
 import moe.ouom.neriplayer.core.player.service.lifecycle.ScreenInteractiveMonitor
 import moe.ouom.neriplayer.core.player.service.presentation.AndroidPlaybackServicePresentationPort
 import moe.ouom.neriplayer.core.player.testing.FakeListenTogetherAccess
+import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
+import moe.ouom.neriplayer.data.settings.SettingsRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -33,6 +39,7 @@ import org.junit.runner.RunWith
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.spy
+import org.mockito.Mockito.`when`
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -41,7 +48,7 @@ import org.robolectric.annotation.Config
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], application = Application::class)
+@Config(sdk = [28], application = PlaybackPreferenceFailureApplication::class)
 class AudioPlayerServiceStartupTest {
     @Test
     fun `creation defers the session artwork and player runtime until a command or binding`() = withFixture {
@@ -135,7 +142,91 @@ class AudioPlayerServiceStartupTest {
         assertFalse(AudioPlayerService.isForegroundActiveForDiagnostics())
     }
 
-    private fun withFixture(block: StartupFixture.() -> Unit) = runTest {
+    @Test
+    fun `preference initialization failure stops an unbound service and clears pending playback`() = withFixture {
+        failPreferencesWith(IllegalStateException("Playback preferences unavailable"))
+        create()
+        start(1)
+        var pendingActionExecuted = false
+        queuePlayerAction { pendingActionExecuted = true }
+        assertEquals(1, queuedCount("pendingStartCommands"))
+        assertTrue(shadow.isLastForegroundNotificationAttached)
+
+        awaitInitialization()
+
+        assertTrue(shadow.isStoppedBySelf)
+        assertFalse(shadow.isLastForegroundNotificationAttached)
+        assertFalse(serviceFlag("allowServiceRestart"))
+        assertFalse(serviceFlag("hasReceivedStartCommand"))
+        assertFalse(AudioPlayerService.isInstanceActiveForDiagnostics())
+        assertFalse(AudioPlayerService.isForegroundActiveForDiagnostics())
+        assertEquals(0, queuedCount("pendingStartCommands"))
+        assertEquals(0, queuedCount("pendingPlayerActions"))
+        assertFalse(pendingActionExecuted)
+        assertFalse(PlayerManager.initialized)
+    }
+
+    @Test
+    fun `preference initialization failure keeps a bound session available for a fresh playback start`() = withFixture {
+        failPreferencesWith(IllegalStateException("Playback preferences unavailable"))
+        create()
+        val binding = bind()
+        val token = requireNotNull(binding.sessionToken)
+        start(1)
+        var pendingActionExecuted = false
+        queuePlayerAction { pendingActionExecuted = true }
+
+        val failedInitialization = awaitInitialization()
+
+        assertTrue(shadow.isStoppedBySelf)
+        assertFalse(shadow.isLastForegroundNotificationAttached)
+        assertFalse(serviceFlag("allowServiceRestart"))
+        assertFalse(serviceFlag("hasReceivedStartCommand"))
+        assertTrue(AudioPlayerService.isInstanceActiveForDiagnostics())
+        assertFalse(binding.runtimeReady.value)
+        assertEquals(token, session()?.sessionToken)
+        assertEquals(token, binding.sessionToken)
+        assertEquals(0, queuedCount("pendingStartCommands"))
+        assertEquals(0, queuedCount("pendingPlayerActions"))
+        assertFalse(pendingActionExecuted)
+
+        failPreferencesWith(null)
+        start(2)
+
+        val retryInitialization = requireNotNull(initializationJob())
+        assertNotSame(failedInitialization, retryInitialization)
+        assertTrue(retryInitialization.isActive)
+        assertTrue(shadow.isLastForegroundNotificationAttached)
+        assertTrue(serviceFlag("allowServiceRestart"))
+        assertTrue(serviceFlag("hasReceivedStartCommand"))
+        assertEquals(token, binding.sessionToken)
+        assertFalse(binding.runtimeReady.value)
+        assertEquals(1, queuedCount("pendingStartCommands"))
+    }
+
+    @Test
+    fun `cancelled preference initialization does not run foreground failure cleanup`() = withFixture {
+        failPreferencesWith(CancellationException("Playback initialization cancelled"))
+        create()
+        start(1)
+        var pendingActionExecuted = false
+        queuePlayerAction { pendingActionExecuted = true }
+
+        val cancelledInitialization = awaitInitialization()
+
+        assertTrue(cancelledInitialization.isCancelled)
+        assertFalse(shadow.isStoppedBySelf)
+        assertTrue(shadow.isLastForegroundNotificationAttached)
+        assertTrue(serviceFlag("allowServiceRestart"))
+        assertTrue(serviceFlag("hasReceivedStartCommand"))
+        assertTrue(AudioPlayerService.isForegroundActiveForDiagnostics())
+        assertEquals(1, queuedCount("pendingStartCommands"))
+        assertEquals(1, queuedCount("pendingPlayerActions"))
+        assertFalse(pendingActionExecuted)
+        assertFalse(PlayerManager.initialized)
+    }
+
+    private fun withFixture(block: suspend StartupFixture.() -> Unit) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             StartupFixture().use { it.block() }
@@ -158,6 +249,7 @@ class AudioPlayerServiceStartupTest {
         }
         private val previousApplication = applicationField.get(null)
         private val previousInitialized = PlayerManager.initialized
+        private val previousInitializationInProgress = PlayerManager.initializationInProgress
         private val companionFields = listOf("isServiceInstanceActive", "isServiceForegroundActive", "activeServiceInstance")
             .associateWith { serviceField(it).get(null) }
         private val controller: org.robolectric.android.controller.ServiceController<AudioPlayerService>
@@ -169,7 +261,10 @@ class AudioPlayerServiceStartupTest {
             shadowOf(application).grantPermissions("${application.packageName}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
             val presentation = mock(PlayerPresentationHost::class.java)
             doAnswer { safeMode }.`when`(presentation).shouldEnterSafeMode(application)
+            val settings = mock(SettingsRepository::class.java)
+            `when`(settings.bluetoothMetadataModeFlow).thenReturn(MutableStateFlow(BluetoothMetadataMode.SongAndLyrics))
             val repositories = mock(PlayerRepositoryDependencies::class.java)
+            `when`(repositories.settingsRepo).thenReturn(settings)
             environmentField.set(registry, null)
             PlayerDependencies.install(PlayerEnvironment(
                 application, repositories, mock(PlayerDownloadAccess::class.java), FakeListenTogetherAccess(),
@@ -177,6 +272,7 @@ class AudioPlayerServiceStartupTest {
             ))
             PlayerManager.application = application
             PlayerManager.initialized = false
+            PlayerManager.initializationInProgress = false
             controller = Robolectric.buildService(AudioPlayerService::class.java)
             service = controller.get()
             doAnswer { safeMode }.`when`(presentation).shouldEnterSafeMode(service)
@@ -193,6 +289,25 @@ class AudioPlayerServiceStartupTest {
         fun carIntent() = Intent(service, AudioPlayerService::class.java).setAction(AudioPlayerService.ACTION_BIND_CAR)
 
         fun bind() = requireNotNull(service.onBind(carIntent()) as? CarPlaybackBinder)
+
+        fun failPreferencesWith(error: RuntimeException?) {
+            (application as PlaybackPreferenceFailureApplication).preferenceFailure = error
+        }
+
+        fun initializationJob() = serviceField("playerInitializationJob").get(service) as Job?
+
+        suspend fun awaitInitialization(): Job {
+            val job = requireNotNull(initializationJob())
+            job.join()
+            return job
+        }
+
+        fun queuePlayerAction(action: () -> Unit) {
+            val queue = serviceField("pendingPlayerActions").get(service)
+            queue.javaClass.getMethod("addLast", Any::class.java).invoke(queue, action)
+        }
+
+        fun queuedCount(name: String) = (serviceField(name).get(service) as Collection<*>).size
 
         fun session(): MediaSession? {
             val port = serviceField("presentationPortDelegate").get(service) as Lazy<*>
@@ -227,8 +342,10 @@ class AudioPlayerServiceStartupTest {
             if (shadow.isLastForegroundNotificationAttached) service.stopForeground(Service.STOP_FOREGROUND_REMOVE)
             companionFields.forEach { (name, value) -> serviceField(name).set(null, value) }
             PlayerManager.initialized = previousInitialized
+            PlayerManager.initializationInProgress = previousInitializationInProgress
             applicationField.set(null, previousApplication)
             environmentField.set(registry, previousEnvironment)
+            failPreferencesWith(null)
         }
     }
 
@@ -236,5 +353,15 @@ class AudioPlayerServiceStartupTest {
         fun serviceField(name: String) = AudioPlayerService::class.java.getDeclaredField(name).apply {
             isAccessible = true
         }
+    }
+}
+
+class PlaybackPreferenceFailureApplication : Application() {
+    @Volatile
+    var preferenceFailure: RuntimeException? = null
+
+    override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences {
+        if (name == "playback_snapshot_cache") preferenceFailure?.let { throw it }
+        return super.getSharedPreferences(name, mode)
     }
 }
