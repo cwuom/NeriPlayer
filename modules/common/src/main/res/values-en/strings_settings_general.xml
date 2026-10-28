@@ -259,7 +259,7 @@
     <string name="settings_allow_mixed_playback">Allow Mixed Playback</string>
     <string name="settings_allow_mixed_playback_desc">Do not take audio focus so other apps can play</string>
     <string name="settings_preempt_audio_focus">Preempt Audio Focus</string>
-    <string name="settings_preempt_audio_focus_desc">Take audio focus when the main screen opens and playback is idle, making headset controls more likely to target NeriPlayer</string>
+    <string name="settings_preempt_audio_focus_desc">Take audio focus when the main screen opens and playback is idle, only if no other audio is playing, making headset controls more likely to target NeriPlayer</string>
     <string name="settings_lyrics_cover_lyric_font_size">Cover lyric font</string>
     <string name="settings_lyrics_cover_translation_font_size">Cover translation font</string>
     <string name="settings_lyrics_page_lyric_font_size">Lyrics page font</string>

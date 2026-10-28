@@ -43,6 +43,7 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.ThumbDown as ThumbDownOutlined
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
@@ -136,6 +137,7 @@ internal fun MoreOptionsMainContent(
     onOpenLyricBehavior: () -> Unit,
     onOpenFontSize: () -> Unit,
     onOpenBiliVideoSkip: () -> Unit,
+    onOpenBiliCcSubtitle: () -> Unit,
     onOpenListenTogether: () -> Unit,
     onOpenEncyclopedia: () -> Unit,
     onShowSongDetails: () -> Unit,
@@ -186,6 +188,12 @@ internal fun MoreOptionsMainContent(
                     icon = Icons.Outlined.SkipNext,
                     hue = MoreHuePink,
                     onClick = onOpenBiliVideoSkip
+                )
+                MoreOptionsItem(
+                    title = stringResource(AppR.string.bili_cc_subtitle_manage),
+                    icon = Icons.Outlined.Subtitles,
+                    hue = MoreHuePink,
+                    onClick = onOpenBiliCcSubtitle
                 )
             }
             ShareSongAction(

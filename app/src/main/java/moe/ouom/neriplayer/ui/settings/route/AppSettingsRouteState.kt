@@ -46,7 +46,8 @@ internal data class AppLyricOffsetsSettingsState(
     val qqMusicLyricDefaultOffsetMs: Long,
     val kugouLyricDefaultOffsetMs: Long,
     val lrclibLyricDefaultOffsetMs: Long,
-    val amllTtmlLyricDefaultOffsetMs: Long
+    val amllTtmlLyricDefaultOffsetMs: Long,
+    val biliCcSubtitleLyricDefaultOffsetMs: Long
 )
 
 internal data class AppNowPlayingVisualSettingsState(
@@ -200,15 +201,35 @@ private fun lyricPresentationSettingsFlow(repo: SettingsRepository): Flow<AppLyr
         AppLyricPresentationSettingsState(v0, v1, v2, v3)
     }
 
+private data class LyricOffsetValues(
+    val cloudMusic: Long,
+    val qqMusic: Long,
+    val kugou: Long,
+    val lrclib: Long,
+    val amllTtml: Long
+)
+
 private fun lyricOffsetsSettingsFlow(repo: SettingsRepository): Flow<AppLyricOffsetsSettingsState> =
     combine(
-        repo.cloudMusicLyricDefaultOffsetMsFlow,
-        repo.qqMusicLyricDefaultOffsetMsFlow,
-        repo.kugouLyricDefaultOffsetMsFlow,
-        repo.lrclibLyricDefaultOffsetMsFlow,
-        repo.amllTtmlLyricDefaultOffsetMsFlow
-    ) { v0, v1, v2, v3, v4 ->
-        AppLyricOffsetsSettingsState(v0, v1, v2, v3, v4)
+        combine(
+            repo.cloudMusicLyricDefaultOffsetMsFlow,
+            repo.qqMusicLyricDefaultOffsetMsFlow,
+            repo.kugouLyricDefaultOffsetMsFlow,
+            repo.lrclibLyricDefaultOffsetMsFlow,
+            repo.amllTtmlLyricDefaultOffsetMsFlow
+        ) { v0, v1, v2, v3, v4 ->
+            LyricOffsetValues(v0, v1, v2, v3, v4)
+        },
+        repo.biliCcSubtitleLyricDefaultOffsetMsFlow
+    ) { offsets, biliCcSubtitle ->
+        AppLyricOffsetsSettingsState(
+            cloudMusicLyricDefaultOffsetMs = offsets.cloudMusic,
+            qqMusicLyricDefaultOffsetMs = offsets.qqMusic,
+            kugouLyricDefaultOffsetMs = offsets.kugou,
+            lrclibLyricDefaultOffsetMs = offsets.lrclib,
+            amllTtmlLyricDefaultOffsetMs = offsets.amllTtml,
+            biliCcSubtitleLyricDefaultOffsetMs = biliCcSubtitle
+        )
     }
 
 private fun nowPlayingVisualSettingsFlow(repo: SettingsRepository): Flow<AppNowPlayingVisualSettingsState> =
@@ -383,7 +404,9 @@ internal fun initialAppSettingsRouteState(
             qqMusicLyricDefaultOffsetMs = startupPlaybackPreferences.qqMusicLyricDefaultOffsetMs,
             kugouLyricDefaultOffsetMs = startupPlaybackPreferences.kugouLyricDefaultOffsetMs,
             lrclibLyricDefaultOffsetMs = startupPlaybackPreferences.lrclibLyricDefaultOffsetMs,
-            amllTtmlLyricDefaultOffsetMs = startupPlaybackPreferences.amllTtmlLyricDefaultOffsetMs
+            amllTtmlLyricDefaultOffsetMs = startupPlaybackPreferences.amllTtmlLyricDefaultOffsetMs,
+            biliCcSubtitleLyricDefaultOffsetMs =
+                startupPlaybackPreferences.biliCcSubtitleLyricDefaultOffsetMs
         )
     ),
     playback = AppPlaybackSettingsState(

@@ -95,6 +95,11 @@
     <string name="nowplaying_queue_jump_input_label">歌曲序号</string>
     <string name="nowplaying_queue_jump_input_supporting">输入 1 到 %d 之间的序号</string>
     <string name="nowplaying_queue_remove">移除</string>
+    <string name="nowplaying_queue_remove_confirm_title">从播放列表移除</string>
+    <plurals name="nowplaying_queue_remove_confirm_message">
+        <item quantity="one">确定要从播放列表移除所选的 %d 首歌曲吗？</item>
+        <item quantity="other">确定要从播放列表移除所选的 %d 首歌曲吗？</item>
+    </plurals>
 
     <!-- Playback Effects -->
     <string name="player_playback_invalid_url">播放地址无效，请重新登录或切换音质后重试</string>
@@ -109,15 +114,15 @@
     <string name="mini_player_volume">音量</string>
     <string name="mini_player_progress">播放进度</string>
     <!-- Heartbeat Mode -->
-    <string name="heartbeat_mode_enabled">Heartbeat mode on</string>
-    <string name="heartbeat_mode_enabled_local">Heartbeat mode on (local suggestions)</string>
-    <string name="heartbeat_mode_enabled_local_hint">Heartbeat mode on (local suggestions). Log in to use cloud suggestions</string>
-    <string name="heartbeat_official_unavailable_hint">Heartbeat mode is using local suggestions; cloud suggestions are temporarily unavailable</string>
-    <string name="heartbeat_mode_disabled">Heartbeat mode off</string>
-    <string name="heartbeat_room_auto_disabled">Joined Listen Together; heartbeat mode turned off</string>
-    <string name="heartbeat_room_cannot_enable">Heartbeat mode is unavailable in a Listen Together room</string>
-    <string name="heartbeat_candidates_insufficient">Not enough heartbeat candidates; reverted to the previous mode</string>
-    <string name="heartbeat_mode_content_description">Heartbeat mode</string>
-    <string name="heartbeat_dislike_action">Don\'t like this song</string>
-    <string name="heartbeat_dislike_marked">Marked as disliked</string>
+    <string name="heartbeat_mode_enabled">心动模式已开启</string>
+    <string name="heartbeat_mode_enabled_local">心动模式已开启（本地推荐）</string>
+    <string name="heartbeat_mode_enabled_local_hint">心动模式已开启（本地推荐），登录后可使用云端推荐</string>
+    <string name="heartbeat_official_unavailable_hint">心动模式正在使用本地推荐，云端推荐暂时不可用</string>
+    <string name="heartbeat_mode_disabled">心动模式已关闭</string>
+    <string name="heartbeat_room_auto_disabled">已加入一起听，心动模式已关闭</string>
+    <string name="heartbeat_room_cannot_enable">一起听房间中无法开启心动模式</string>
+    <string name="heartbeat_candidates_insufficient">心动模式候选歌曲不足，已回退到原有模式</string>
+    <string name="heartbeat_mode_content_description">心动模式</string>
+    <string name="heartbeat_dislike_action">不喜欢这首歌</string>
+    <string name="heartbeat_dislike_marked">已标记不喜欢</string>
 </resources>

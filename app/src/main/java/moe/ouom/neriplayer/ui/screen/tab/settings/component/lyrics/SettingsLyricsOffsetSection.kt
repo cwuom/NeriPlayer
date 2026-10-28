@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFF
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.lyrics.offset.LYRIC_DEFAULT_OFFSET_STEP_MS
 import moe.ouom.neriplayer.lyrics.offset.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.lyrics.offset.MIN_LYRIC_DEFAULT_OFFSET_MS
@@ -98,6 +99,8 @@ internal fun SettingsLyricsSection(
     onLrclibLyricDefaultOffsetMsChange: (Long) -> Unit,
     amllTtmlLyricDefaultOffsetMs: Long,
     onAmllTtmlLyricDefaultOffsetMsChange: (Long) -> Unit,
+    biliCcSubtitleLyricDefaultOffsetMs: Long,
+    onBiliCcSubtitleLyricDefaultOffsetMsChange: (Long) -> Unit,
     onResetAllLyricDefaultOffsets: () -> Unit,
     cardIndex: Int? = null,
     highlightTargetId: String? = null,
@@ -270,6 +273,18 @@ internal fun SettingsLyricsSection(
                     offsetMs = amllTtmlLyricDefaultOffsetMs,
                     defaultOffsetMs = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
                     onOffsetChange = onAmllTtmlLyricDefaultOffsetMsChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+                Spacer(Modifier.height(4.dp))
+                LyricsOffsetSliderListItem(
+                    targetId = "setting:bili_cc_subtitle_lyric_default_offset_ms",
+                    title = stringResource(CoreCommonR.string.settings_lyrics_offset_bili_cc_subtitle),
+                    description = stringResource(CoreCommonR.string.settings_lyrics_offset_bili_cc_subtitle_desc),
+                    offsetMs = biliCcSubtitleLyricDefaultOffsetMs,
+                    defaultOffsetMs = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS,
+                    onOffsetChange = onBiliCcSubtitleLyricDefaultOffsetMsChange,
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished

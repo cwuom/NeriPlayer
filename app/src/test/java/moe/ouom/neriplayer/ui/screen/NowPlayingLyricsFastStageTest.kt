@@ -190,6 +190,91 @@ class NowPlayingLyricsFastStageTest {
         assertEquals("indexed", background.lyrics.single().text)
     }
 
+    @Test
+    fun `local and downloaded originals clear the previous subtitle origin`() = runTest {
+        for (managed in listOf(false, true)) {
+            var subtitleOrigin = true
+            val sources = object : FakeNowPlayingLyricsSources() {
+                override fun hasManagedDownload(song: SongItem) = managed
+                override fun inspectLocal(context: Context, song: SongItem, includeEmbedded: Boolean) =
+                    LocalLyricsScanMetadata("[00:01.00]sidecar", null, null)
+                override fun fastDownloaded(context: Context, song: SongItem) =
+                    ManagedDownloadStorage.DownloadedLyricsBundle("[00:01.00]sidecar", null, null)
+                override fun clearBiliCcSubtitleLyricsOrigin(song: SongItem) {
+                    assertEquals(localSong, song)
+                    subtitleOrigin = false
+                }
+            }
+            val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+            val fast = stages.readFast(request(localSong))
+
+            assertEquals("sidecar", fast.state.lyrics.single().text)
+            assertFalse(subtitleOrigin)
+        }
+    }
+
+    @Test
+    fun `blank or translation only sidecars preserve the previous subtitle origin`() = runTest {
+        for (managed in listOf(false, true)) {
+            for (original in listOf(null, "", " \n")) {
+                var subtitleOrigin = true
+                val sources = object : FakeNowPlayingLyricsSources() {
+                    override fun hasManagedDownload(song: SongItem) = managed
+                    override fun inspectLocal(context: Context, song: SongItem, includeEmbedded: Boolean) =
+                        LocalLyricsScanMetadata(original, "[00:01.00]translation", null)
+                    override fun fastDownloaded(context: Context, song: SongItem) =
+                        ManagedDownloadStorage.DownloadedLyricsBundle(original, "[00:01.00]translation", null)
+                    override fun clearBiliCcSubtitleLyricsOrigin(song: SongItem) {
+                        subtitleOrigin = false
+                    }
+                }
+                val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+                val fast = stages.readFast(request(localSong))
+
+                assertEquals("translation", fast.state.translatedLyrics.single().text)
+                assertTrue(subtitleOrigin)
+            }
+        }
+    }
+
+    @Test
+    fun `preferred cache keeps priority while a sidecar invalidates subtitle origin`() = runTest {
+        var subtitleOrigin = true
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override fun inspectLocal(context: Context, song: SongItem, includeEmbedded: Boolean) =
+                LocalLyricsScanMetadata("[00:01.00]sidecar", null, null)
+            override fun clearBiliCcSubtitleLyricsOrigin(song: SongItem) {
+                subtitleOrigin = false
+            }
+        }
+        val preferred = PreferredLyricSourceResult(
+            lyrics = listOf(LyricEntry("preferred", 1000, 2000)),
+            source = LyricSourcePreference.Kugou
+        )
+        val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        val fast = stages.readFast(request(localSong).copy(cachedPreferredLyrics = preferred))
+
+        assertEquals("preferred", fast.state.lyrics.single().text)
+        assertEquals(LyricSourcePreference.Kugou, fast.state.preferredSource)
+        assertFalse(subtitleOrigin)
+    }
+
+    @Test
+    fun `empty song keeps fast lyrics empty without changing subtitle origin`() = runTest {
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override fun clearBiliCcSubtitleLyricsOrigin(song: SongItem) {
+                error("there is no song whose origin could change")
+            }
+        }
+        val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        val fast = stages.readFast(request(localSong).copy(song = null))
+
+        assertTrue(fast.state.lyrics.isEmpty())
+        assertTrue(fast.state.translatedLyrics.isEmpty())
+        assertFalse(fast.isManagedLocalDownload)
+        assertFalse(fast.canReadManagedDownloadLyrics)
+    }
+
     private fun request(song: SongItem) = NowPlayingLyricsLoadRequest(
         context, song, null, true, LyricSourcePreference.Automatic, null
     )

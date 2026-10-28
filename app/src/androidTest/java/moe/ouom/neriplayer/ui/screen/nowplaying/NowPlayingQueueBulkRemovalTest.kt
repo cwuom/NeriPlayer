@@ -123,6 +123,13 @@ class NowPlayingQueueBulkRemovalTest {
                 val startedAt = SystemClock.uptimeMillis()
                 composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.nowplaying_queue_remove))
                     .performClick()
+                // 批量移除现在需要二次确认：先断言弹窗出现，再点确认
+                composeRule.onNodeWithText(
+                    context.getString(CoreCommonR.string.nowplaying_queue_remove_confirm_title)
+                ).assertIsDisplayed()
+                composeRule.onNodeWithText(
+                    context.getString(CoreCommonR.string.nowplaying_queue_remove)
+                ).performClick()
                 composeRule.waitUntil(UiTimeoutMs) {
                     service.updates.latestQueue?.isEmpty() == true && service.controller.queue?.isEmpty() == true
                 }

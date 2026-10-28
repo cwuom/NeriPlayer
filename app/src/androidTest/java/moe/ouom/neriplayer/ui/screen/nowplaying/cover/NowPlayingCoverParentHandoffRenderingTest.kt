@@ -80,10 +80,10 @@ class NowPlayingCoverParentHandoffRenderingTest {
     private val artwork: ImageBitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
         .apply { eraseColor(android.graphics.Color.RED) }.asImageBitmap()
     private val parentFlight = SharedCoverFlightState()
-    private val source = NowPlayingCoverSource(
+    private var source by mutableStateOf(NowPlayingCoverSource(
         "content://parent-handoff/decoded-red", "parent-handoff-song", emptyList(),
         "parent-handoff-cache", "decoded red fixture"
-    )
+    ))
     private var lyricsVisible by mutableStateOf(false)
     private lateinit var transition: Transition<Boolean>
     private lateinit var flight: NowPlayingLyricsCoverFlight
@@ -132,6 +132,30 @@ class NowPlayingCoverParentHandoffRenderingTest {
         val before = captureFrame("before-parent")
         assertFalse("控制例应停在大封面", before.drawsFlight)
         assertRect(LargeCoverDp, requirePixels(before), "控制例的大封面位置必须正确")
+        assertHandoffAtSameClock(before)
+    }
+
+    @Test
+    fun trackChangesKeepFixedBoundsWhenParentTakesOwnershipAtTheSameClock() {
+        caseName = "track-change-fixed-cover-handoff"
+        var before = captureFrame("before-track-change")
+        assertRect(LargeCoverDp, requirePixels(before), "切歌前必须显示完整大封面")
+        for (songKey in listOf("next", "last")) {
+            composeRule.runOnIdle {
+                val next = source.copy(songKey = "parent-handoff-$songKey", cacheKey = "cache-$songKey")
+                val request = requireNotNull(owner.requestFor(
+                    NowPlayingCoverRequestInput(next.coverUrl, next.songKey, next.cacheKey)
+                ))
+                owner.presentation(request, next.songKey, next.songKeyAliases)
+                owner.publishDecodedFrame(request, request.frame.copy(decodedBitmap = artwork))
+                source = next
+            }
+            advance(96L)
+            before = captureFrame("$songKey-before-parent")
+            assertFalse("前置必须仍在封面页", before.current || before.target)
+            assertFalse("前置必须由真实封面端点绘制", before.drawsFlight)
+            assertRect(LargeCoverDp, requirePixels(before), "连续切歌期间封面尺寸和位置必须固定")
+        }
         assertHandoffAtSameClock(before)
     }
 

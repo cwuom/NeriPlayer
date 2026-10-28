@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.lyrics.output
 
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
@@ -17,8 +18,13 @@ data class LyriconPreferences(
     val kugouOffsetMs: Long = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
     val lrcLibOffsetMs: Long = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
     val amllTtmlOffsetMs: Long = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
+    val biliCcSubtitleOffsetMs: Long = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS,
 ) {
-    internal fun offsetFor(song: SongItem, resolvedSource: LyricSourcePreference?): Long {
+    internal fun offsetFor(
+        song: SongItem,
+        resolvedSource: LyricSourcePreference?,
+        isBiliCcSubtitleLyrics: Boolean = false
+    ): Long {
         return resolveEffectiveLyricOffsetMs(
             lyricSource = song.matchedLyricSource,
             cloudMusicDefaultOffsetMs = cloudMusicOffsetMs,
@@ -28,6 +34,8 @@ data class LyriconPreferences(
             lrclibDefaultOffsetMs = lrcLibOffsetMs,
             amllTtmlDefaultOffsetMs = amllTtmlOffsetMs,
             preferredLyricSource = resolvedSource,
+            biliCcSubtitleDefaultOffsetMs = biliCcSubtitleOffsetMs,
+            isBiliCcSubtitleLyrics = isBiliCcSubtitleLyrics,
         )
     }
 }

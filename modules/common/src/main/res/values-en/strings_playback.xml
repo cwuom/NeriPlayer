@@ -95,6 +95,11 @@
     <string name="nowplaying_queue_jump_input_label">Song Number</string>
     <string name="nowplaying_queue_jump_input_supporting">Enter a number from 1 to %d</string>
     <string name="nowplaying_queue_remove">Remove</string>
+    <string name="nowplaying_queue_remove_confirm_title">Remove from queue</string>
+    <plurals name="nowplaying_queue_remove_confirm_message">
+        <item quantity="one">Remove %d selected song from the playback queue?</item>
+        <item quantity="other">Remove the %d selected songs from the playback queue?</item>
+    </plurals>
 
     <!-- Playback Effects -->
     <string name="player_playback_invalid_url">Playback URL is invalid. Please sign in again or switch audio quality and retry.</string>

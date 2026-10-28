@@ -139,6 +139,18 @@ internal fun SongItem.toBiliResolutionSongOrNull(): SongItem? {
     )
 }
 
+fun SongItem.biliAvidOrNull(): Long? {
+    val isBiliSong = channelId.equals("bilibili", ignoreCase = true) ||
+        album.startsWith(SongSourceTags.BILIBILI, ignoreCase = true)
+    if (!isBiliSong) return null
+
+    return audioId
+        ?.trim()
+        ?.toLongOrNull()
+        ?.takeIf { it > 0L }
+        ?: id.takeIf { it > 0L }
+}
+
 fun SongItem.biliCidOrNull(): Long? {
     val isBiliSong = channelId.equals("bilibili", ignoreCase = true) ||
         album.startsWith(SongSourceTags.BILIBILI, ignoreCase = true)

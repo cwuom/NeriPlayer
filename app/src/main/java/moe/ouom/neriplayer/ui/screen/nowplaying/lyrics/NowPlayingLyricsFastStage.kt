@@ -72,8 +72,24 @@ internal class NowPlayingLyricsLoadStages(
         val canReadDownloaded = canReadDownloadedLyrics(song, managed)
         val downloaded = readFastDownloaded(request, canReadDownloaded)
         val local = readFastLocal(request, managed)
+        clearBiliCcOriginForSidecar(song, local, downloaded)
         val state = resolveFastState(request, managed, local, downloaded)
         return NowPlayingFastLyricsResult(state, local, downloaded, managed, canReadDownloaded)
+    }
+
+    private fun clearBiliCcOriginForSidecar(
+        song: SongItem?,
+        local: LocalLyricsScanMetadata?,
+        downloaded: ManagedDownloadStorage.DownloadedLyricsBundle?
+    ) {
+        if (song == null) return
+        // 只有原文侧载接管时才清除 CC 来源, 单独的翻译不会改变原文来源
+        for (original in listOf(downloaded?.lyric, local?.lyric)) {
+            if (!original.isNullOrBlank()) {
+                sources.clearBiliCcSubtitleLyricsOrigin(song)
+                return
+            }
+        }
     }
 
     private fun isManagedLocalLyricSong(song: SongItem?): Boolean =

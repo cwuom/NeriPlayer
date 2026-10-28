@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -38,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,10 +72,25 @@ internal data class NowPlayingProgressInfoSegment(
     val highlighted: Boolean = false
 )
 
+internal data class NowPlayingProgressInfoPresentation(
+    val segments: List<NowPlayingProgressInfoSegment>,
+    val reserveRowHeight: Boolean
+)
+
 internal fun nowPlayingVisibleProgressInfoSegments(
     segments: List<NowPlayingProgressInfoSegment>,
     phoneLandscape: Boolean
 ): List<NowPlayingProgressInfoSegment> = if (phoneLandscape) emptyList() else segments
+
+internal fun shouldReserveNowPlayingProgressInfoSpace(
+    showQualitySwitch: Boolean,
+    showAudioCodec: Boolean,
+    showAudioSpec: Boolean,
+    playbackSpeed: Float,
+    phoneLandscape: Boolean
+): Boolean = !phoneLandscape && (
+    showQualitySwitch || showAudioCodec || showAudioSpec || shouldShowPlaybackSpeedBadge(playbackSpeed)
+)
 
 internal class NowPlayingProgressOwner(initialPositionMs: Long) {
     private var seekActions: NowPlayingSeekActionOwner? = null
@@ -191,6 +209,25 @@ internal class NowPlayingSeekActionOwner(
     }
 }
 
+internal fun buildNowPlayingProgressInfoPresentation(
+    audioInfo: PlaybackAudioInfo?,
+    showQualitySwitch: Boolean,
+    showAudioCodec: Boolean,
+    showAudioSpec: Boolean,
+    playbackSpeed: Float,
+    phoneLandscape: Boolean
+): NowPlayingProgressInfoPresentation {
+    val segments = buildNowPlayingProgressInfoSegments(
+        audioInfo, showQualitySwitch, showAudioCodec, showAudioSpec, playbackSpeed
+    )
+    return NowPlayingProgressInfoPresentation(
+        segments = nowPlayingVisibleProgressInfoSegments(segments, phoneLandscape),
+        reserveRowHeight = shouldReserveNowPlayingProgressInfoSpace(
+            showQualitySwitch, showAudioCodec, showAudioSpec, playbackSpeed, phoneLandscape
+        )
+    )
+}
+
 internal fun buildNowPlayingProgressInfoSegments(
     audioInfo: PlaybackAudioInfo?,
     showQualitySwitch: Boolean,
@@ -238,12 +275,15 @@ private fun NowPlayingProgressInfoRow(
     highlightedContentColor: Color,
     modifier: Modifier = Modifier
 ) {
+    val lineHeight = with(LocalDensity.current) { MaterialTheme.typography.labelSmall.lineHeight.toDp() }
     Box(
-        modifier = modifier,
+        // 固定槽高让信息加载和字体回退不再改变封面的可用高度
+        modifier = modifier.height(lineHeight).testTag("nowPlayingProgressInfoRow"),
         contentAlignment = Alignment.Center
     ) {
         Row(
             modifier = Modifier
+                .wrapContentHeight(unbounded = true)
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 2.dp, vertical = 0.dp),
             horizontalArrangement = Arrangement.Center,
@@ -374,7 +414,7 @@ internal fun NowPlayingProgressSection(
     isPlaying: Boolean,
     isPlaybackWaiting: Boolean,
     playbackSpeed: Float,
-    progressInfoSegments: List<NowPlayingProgressInfoSegment>,
+    progressInfoPresentation: NowPlayingProgressInfoPresentation,
     seekEnabled: Boolean,
     activeContentColor: Color,
     useWideLandscapeLayout: Boolean,
@@ -419,9 +459,9 @@ internal fun NowPlayingProgressSection(
             lyricSeekHaptic = lyricSeekHaptic,
             modifier = Modifier.fillMaxWidth().then(progressRowModifier)
         )
-        if (progressInfoSegments.isNotEmpty()) {
+        if (progressInfoPresentation.reserveRowHeight || progressInfoPresentation.segments.isNotEmpty()) {
             NowPlayingProgressInfoRow(
-                segments = progressInfoSegments,
+                segments = progressInfoPresentation.segments,
                 highlightedContentColor = activeContentColor,
                 modifier = Modifier
                     .fillMaxWidth()

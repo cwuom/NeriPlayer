@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.lyrics.offset
 
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
@@ -25,7 +26,9 @@ internal fun resolveLyricDefaultOffsetMs(
     kugouDefaultOffsetMs: Long = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
     lrclibDefaultOffsetMs: Long = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
     amllTtmlDefaultOffsetMs: Long = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
-    preferredLyricSource: LyricSourcePreference? = null
+    preferredLyricSource: LyricSourcePreference? = null,
+    biliCcSubtitleDefaultOffsetMs: Long = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS,
+    isBiliCcSubtitleLyrics: Boolean = false
 ): Long {
     return when (preferredLyricSource) {
         LyricSourcePreference.Kugou -> kugouDefaultOffsetMs
@@ -33,10 +36,10 @@ internal fun resolveLyricDefaultOffsetMs(
         LyricSourcePreference.AmllTtml -> amllTtmlDefaultOffsetMs
         LyricSourcePreference.QqMusic -> qqMusicDefaultOffsetMs
         LyricSourcePreference.CloudMusic -> cloudMusicDefaultOffsetMs
-        else -> if (lyricSource == MusicPlatform.QQ_MUSIC) {
-            qqMusicDefaultOffsetMs
-        } else {
-            cloudMusicDefaultOffsetMs
+        else -> when {
+            isBiliCcSubtitleLyrics -> biliCcSubtitleDefaultOffsetMs
+            lyricSource == MusicPlatform.QQ_MUSIC -> qqMusicDefaultOffsetMs
+            else -> cloudMusicDefaultOffsetMs
         }
     }
 }
@@ -49,7 +52,9 @@ fun resolveEffectiveLyricOffsetMs(
     kugouDefaultOffsetMs: Long = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
     lrclibDefaultOffsetMs: Long = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
     amllTtmlDefaultOffsetMs: Long = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
-    preferredLyricSource: LyricSourcePreference? = null
+    preferredLyricSource: LyricSourcePreference? = null,
+    biliCcSubtitleDefaultOffsetMs: Long = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS,
+    isBiliCcSubtitleLyrics: Boolean = false
 ): Long {
     return saturatingAddLyricOffsetMs(
         value = resolveLyricDefaultOffsetMs(
@@ -59,7 +64,9 @@ fun resolveEffectiveLyricOffsetMs(
             kugouDefaultOffsetMs = kugouDefaultOffsetMs,
             lrclibDefaultOffsetMs = lrclibDefaultOffsetMs,
             amllTtmlDefaultOffsetMs = amllTtmlDefaultOffsetMs,
-            preferredLyricSource = preferredLyricSource
+            preferredLyricSource = preferredLyricSource,
+            biliCcSubtitleDefaultOffsetMs = biliCcSubtitleDefaultOffsetMs,
+            isBiliCcSubtitleLyrics = isBiliCcSubtitleLyrics
         ),
         delta = userLyricOffsetMs
     )

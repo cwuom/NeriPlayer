@@ -6,7 +6,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.Easing
-import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Transition
 import androidx.compose.animation.core.animateFloat
@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsBoundsTrans
 import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsEnterTransition
 import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsExitTransition
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedMotion
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsBackPreviewEasing
 import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingLyricsSizeTransform
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingLyricsCoverFlight
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingLyricsCoverFlightLayer
@@ -102,9 +103,10 @@ class HostPredictiveCoverGeometryTest {
                         label = "predictive_cover_geometry",
                         previewEasing = Easing { raw ->
                             consumedRawProgress = raw
-                            FastOutLinearInEasing.transform(raw)
+                            NowPlayingLyricsBackPreviewEasing.transform(raw)
                         },
                         cancelMinimumDurationMillis = MinimumCancelMillis,
+                        previewSettleEasing = EaseOut,
                         onPreviewAnimationActiveChanged = { active ->
                             previewNotifications += PreviewNotification(observer, active)
                             previewAnimationActive = active
@@ -184,14 +186,60 @@ class HostPredictiveCoverGeometryTest {
     }
 
     @Test
-    fun `early raw progress keeps actual cover size and position behind the finger`() {
+    fun `edge preview visibly decelerates before the finger is released`() {
+        setHost()
+        startGesture()
+        val frames = listOf(0.5f, 0.65f, 0.8f, 0.95f).map { raw ->
+            seek(raw)
+            assertMeasuredArtworkMatchesFlight()
+            snapshot()
+        }
+        val middleTravel = rectDistance(frames[0].bounds, frames[1].bounds)
+        val endingTravel = rectDistance(frames[2].bounds, frames[3].bounds)
+        println("EdgePreviewGeometry middle=$middleTravel end=$endingTravel frames=$frames")
+        assertTrue("边缘返回在松手前就应减速 middle=$middleTravel end=$endingTravel frames=$frames",
+            endingTravel < middleTravel * 0.5f)
+        assertTrue("整段预览仍由手势控制", selected && backs.isEmpty())
+        seek(0.8f)
+        assertRect(frames[2].bounds, requireNotNull(flight.bounds), 1f)
+        composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
+        advanceUntil("非线性预览取消后恢复歌词页") { atRest(true) }
+        assertTrue(backs.isEmpty())
+    }
+
+    @Test
+    fun `releasing after a large edge preview completes without a jump`() =
+        assertHighProgressCommit(0.8f)
+
+    @Test
+    fun `releasing near the end of an edge preview completes without a jump`() =
+        assertHighProgressCommit(0.95f)
+
+    private fun assertHighProgressCommit(raw: Float) {
+        setHost()
+        startGesture()
+        seek(raw)
+        val before = snapshot()
+        assertMeasuredArtworkMatchesFlight()
+        composeRule.runOnIdle { dispatcher.onBackPressed() }
+        assertRect(before.bounds, requireNotNull(flight.bounds), 1f)
+        val frames = listOf(before) + advanceUntil("大进度松手后连续抵达封面 raw=$raw") { atRest(false) }
+        assertSmooth(frames, growing = true, speedPerMillis = 2f * rectDistance(Header, Cover) / DurationMillis)
+        assertMeasuredArtworkMatchesFlight()
+        assertRect(Cover, requireNotNull(flight.bounds))
+        assertEquals(listOf(true), backs)
+        assertEquals(listOf(true, false), previewNotifications.map { it.active })
+    }
+
+    @Test
+    fun `edge preview begins gradually and follows the nonlinear cover path`() {
         setHost()
         startGesture()
         seek(0.2f)
-        assertRect(Rect(76.296f, 43.113f, 157.230f, 124.048f), requireNotNull(flight.bounds), 1f)
+        assertRect(Rect(72.499f, 54.503f, 170.789f, 152.793f), requireNotNull(flight.bounds), 1f)
         assertMeasuredArtworkMatchesFlight()
         seek(0.35f)
-        assertRect(Rect(70.055f, 61.835f, 179.518f, 171.298f), requireNotNull(flight.bounds), 1f)
+        assertRect(Rect(52f, 116f, 244f, 308f), requireNotNull(flight.bounds), 1f)
         assertMeasuredArtworkMatchesFlight()
         assertTrue(backs.isEmpty())
         composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
@@ -208,10 +256,10 @@ class HostPredictiveCoverGeometryTest {
         seek(0.35f)
         val returning = requireNotNull(flight.bounds)
         assertTrue("回拖必须减小可见封面: $outward -> $returning", returning.width < outward.width)
-        assertRect(Rect(70.055f, 61.835f, 179.518f, 171.298f), returning, 1f)
+        assertRect(Rect(52f, 116f, 244f, 308f), returning, 1f)
         seek(0.2f)
         val before = snapshot()
-        assertRect(Rect(76.296f, 43.113f, 157.230f, 124.048f), before.bounds, 1f)
+        assertRect(Rect(72.499f, 54.503f, 170.789f, 152.793f), before.bounds, 1f)
 
         composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
         assertRect(before.bounds, requireNotNull(flight.bounds), 1f)
@@ -234,7 +282,7 @@ class HostPredictiveCoverGeometryTest {
         composeRule.runOnIdle { previewObserver = "settling" }
         advanceFrame()
         val before = snapshot()
-        assertRect(Rect(70.055f, 61.835f, 179.518f, 171.298f), before.bounds, 1f)
+        assertRect(Rect(52f, 116f, 244f, 308f), before.bounds, 1f)
         composeRule.runOnIdle { dispatcher.onBackPressed() }
         assertRect(before.bounds, requireNotNull(flight.bounds), 1f)
         val frames = listOf(before) + advanceUntil("提交必须沿当前空间片段抵达封面") {
@@ -247,6 +295,109 @@ class HostPredictiveCoverGeometryTest {
         assertFalse(flight.hidesEndpoints)
         assertEquals(listOf(PreviewNotification("initial", true), PreviewNotification("settling", false)),
             previewNotifications)
+    }
+
+    @Test
+    fun `committed preview slows down as the cover reaches its destination`() {
+        setHost()
+        startGesture()
+        seek(0.35f)
+        val before = snapshot()
+        composeRule.runOnIdle { dispatcher.onBackPressed() }
+        val frames = listOf(before) + advanceUntil("提交必须减速抵达封面") { atRest(false) }
+        val travel = Cover.width - before.bounds.width
+        val steps = frames.zipWithNext().filter { (previous, current) ->
+            current.bounds.width > previous.bounds.width + 0.01f
+        }
+        fun meanSpeed(from: Float, until: Float): Double = steps.filter { (previous, _) ->
+            (previous.bounds.width - before.bounds.width) / travel in from..until
+        }.map { (previous, current) ->
+            (current.bounds.width - previous.bounds.width).toDouble() /
+                (current.clockMillis - previous.clockMillis)
+        }.also { assertTrue("区间必须包含实际运动帧: $frames", it.isNotEmpty()) }.average()
+
+        val middleSpeed = meanSpeed(0.2f, 0.6f)
+        val endingSpeed = meanSpeed(0.85f, 0.98f)
+        assertTrue("封面落位前必须明显减速 middle=$middleSpeed end=$endingSpeed frames=$frames",
+            endingSpeed < middleSpeed * 0.6)
+        assertRect(Cover, requireNotNull(flight.bounds))
+        assertEquals(listOf(true), backs)
+    }
+
+    @Test
+    fun `ordinary reversal interrupts the eased completion without snapping the cover`() {
+        setHost()
+        startGesture()
+        seek(0.2f)
+        composeRule.runOnIdle { dispatcher.onBackPressed() }
+        advanceUntil("先进入松手后的真实中间尺寸") {
+            requireNotNull(flight.bounds).width in 180f..280f
+        }
+        val before = snapshot()
+        composeRule.runOnIdle { selected = true }
+        assertRect(before.bounds, requireNotNull(flight.bounds), 1f)
+        val frames = listOf(before) + advanceUntil("收尾中反向必须恢复歌词端点") { atRest(true) }
+        assertTrue("反向必须及时更新目标: $frames", frames[2].target)
+        assertContinuous(frames, speedPerMillis = 3f * rectDistance(Header, Cover) / DurationMillis)
+        assertTrue("反向不能瞬切回歌词封面: $frames",
+            frames.any { it.bounds.width > Header.width + 1f && it.bounds.width < before.bounds.width - 1f })
+        assertEquals(listOf(true), backs)
+        assertEquals(listOf(true, false), previewNotifications.map { it.active })
+    }
+
+    @Test
+    fun `ordinary return during repeated preview reversals still decelerates before landing`() {
+        setHost()
+        startGesture()
+        seek(0.2f)
+        composeRule.runOnIdle { dispatcher.onBackPressed() }
+        advanceUntil("先进入预测返回松手后的实际收尾") {
+            requireNotNull(flight.bounds).width in 180f..240f
+        }
+        composeRule.runOnIdle { selected = true }
+        advanceUntil("收尾中的普通反向必须开始返回歌词页") {
+            transition.targetState && requireNotNull(flight.bounds).width in 120f..170f
+        }
+        assertTrue("反向尚未结束，应复现仍在使用预览规格的窗口", previewAnimationActive)
+        val before = snapshot()
+        composeRule.runOnIdle { selected = false }
+        assertRect(before.bounds, requireNotNull(flight.bounds), 1f)
+        val frames = listOf(before) + advanceUntil("再度普通返回应立即接管当前封面") {
+            !transition.targetState && flight.shouldDraw
+        }
+        dumpTransitionTree(transition, "repeated_preview_ordinary_return")
+        val samples = listOf(snapshot()) + advanceUntil("连续反向后仍应完整抵达封面端点") {
+            assertMeasuredArtworkMatchesFlight()
+            atRest(false)
+        }
+        assertContinuous(frames + samples.drop(1),
+            speedPerMillis = 3f * rectDistance(Header, Cover) / DurationMillis)
+        val minimumWidth = samples.minOf { it.bounds.width }
+        val travel = Cover.width - minimumWidth
+        assertTrue("再度普通返回必须产生有效移动: $samples", travel > 16f)
+        val steps = samples.zipWithNext().filter { (previous, current) ->
+            current.bounds.width > previous.bounds.width + 0.01f
+        }
+        fun meanSpeed(from: Float, until: Float): Double = steps.filter { (previous, current) ->
+            (previous.bounds.width - minimumWidth) / travel in from..until &&
+                (current.bounds.width - minimumWidth) / travel in from..until &&
+                current.bounds.width < Cover.width
+        }.map { (previous, current) ->
+            (current.bounds.width - previous.bounds.width).toDouble() /
+                (current.clockMillis - previous.clockMillis)
+        }.also { assertTrue("区间必须包含完整向外运动帧: $samples", it.isNotEmpty()) }.average()
+
+        val middleSpeed = meanSpeed(0.2f, 0.6f)
+        val endingSpeed = meanSpeed(0.85f, 0.98f)
+        println("RepeatedPreviewOrdinaryReturn middleSpeed=$middleSpeed endingSpeed=$endingSpeed " +
+            "frames=$samples")
+        assertTrue("预览收尾中的普通返回也应明显减速，不能沿用匀速空间时间线 " +
+            "middle=$middleSpeed end=$endingSpeed frames=$samples",
+            endingSpeed < middleSpeed * 0.6)
+        assertRect(Cover, requireNotNull(flight.bounds))
+        assertFalse(flight.hidesEndpoints)
+        assertEquals(listOf(true), backs)
+        assertEquals(listOf(true, false), previewNotifications.map { it.active })
     }
 
     @Test
@@ -295,7 +446,7 @@ class HostPredictiveCoverGeometryTest {
         composeRule.runOnIdle { dispatcher.dispatchOnBackProgressed(event(0.2f)) }
         advanceFrame()
         seek(0.35f)
-        assertRect(Rect(70.055f, 61.835f, 179.518f, 171.298f), requireNotNull(flight.bounds), 1f)
+        assertRect(Rect(52f, 116f, 244f, 308f), requireNotNull(flight.bounds), 1f)
         assertMeasuredArtworkMatchesFlight()
         composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
         advanceUntil("连续输入后取消必须恢复歌词页") { atRest(true) }
@@ -319,6 +470,23 @@ class HostPredictiveCoverGeometryTest {
     }
 
     @Test
+    fun `committing before the first preview is ready still animates to the cover`() {
+        setHost()
+        startGesture()
+        composeRule.runOnIdle { dispatcher.dispatchOnBackProgressed(event(0.35f)) }
+        advanceFrame()
+        val before = snapshot()
+        composeRule.runOnIdle { dispatcher.onBackPressed() }
+        assertRect(before.bounds, requireNotNull(flight.bounds), 1f)
+        val frames = listOf(before) + advanceUntil("预备阶段提交仍需连续抵达封面") { atRest(false) }
+        assertSmooth(frames, growing = true, speedPerMillis = 2f * rectDistance(Header, Cover) / DurationMillis)
+        assertTrue("快速松手不能直接瞬切到封面: $frames",
+            frames.any { it.bounds.width > before.bounds.width + 1f && it.bounds.width < Cover.width - 1f })
+        assertEquals(listOf(true), backs)
+        assertEquals(listOf(true, false), previewNotifications.map { it.active })
+    }
+
+    @Test
     fun `a new preview taking over cancellation keeps the same active animation lifecycle`() {
         setHost()
         startGesture()
@@ -328,7 +496,7 @@ class HostPredictiveCoverGeometryTest {
         assertTrue("前一段取消尚未稳定", previewAnimationActive)
         startGesture()
         seek(0.2f)
-        assertRect(Rect(76.296f, 43.113f, 157.230f, 124.048f), requireNotNull(flight.bounds), 1f)
+        assertRect(Rect(72.499f, 54.503f, 170.789f, 152.793f), requireNotNull(flight.bounds), 1f)
         assertEquals("旧收尾不能关闭新手势的预览规格", listOf(true), previewNotifications.map { it.active })
         composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
         advanceUntil("重入取消必须由当前片段完成收尾") { atRest(true) }
@@ -357,7 +525,7 @@ class HostPredictiveCoverGeometryTest {
         advanceUntil("先确认真实 Host 已接收 raw=$raw") {
             transition.currentState && !transition.targetState &&
                 consumedRawProgress == raw && flight.shouldDraw &&
-                abs(appliedProgress.value - FastOutLinearInEasing.transform(raw)) < 0.0001f
+                abs(appliedProgress.value - NowPlayingLyricsBackPreviewEasing.transform(raw)) < 0.0001f
         }
         repeat(2) { advanceFrame() }
         println("predictive cover raw=$raw consumed=$consumedRawProgress " +

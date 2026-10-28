@@ -77,6 +77,7 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.network.proxy.DynamicProxySelector
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -123,6 +124,7 @@ class BiliClient(
             "https://api.bilibili.com/x/polymer/web-space/seasons_series_list"
         private const val SERIES_ARCHIVES_URL = "https://api.bilibili.com/x/series/archives"
         private const val PAGELIST_URL = "https://api.bilibili.com/x/player/pagelist"
+        private const val PLAYER_WBI_V2_URL = "https://api.bilibili.com/x/player/wbi/v2"
         private const val MUSIC_RANK_PERIOD_URL =
             "https://api.bilibili.com/x/copyright-music-publicity/toplist/all_period"
         private const val MUSIC_RANK_SONGS_URL =
@@ -192,6 +194,9 @@ class BiliClient(
 
         /** WebTicket HMAC key */
         private const val WEB_TICKET_KEY = "XgwSnGZ1p"
+
+        /** CC 字幕文件体积不稳定，单独限制整次调用的耗时 */
+        private const val SUBTITLE_CALL_TIMEOUT_MS = 10_000L
     }
 
     private val http: OkHttpClient = client ?: OkHttpClient.Builder()
@@ -203,6 +208,12 @@ class BiliClient(
 
     private val cookieSession = BiliCookieSession(cookieRepo, http)
     private val comments = BiliCommentApi(cookieRepo, cookieSession, http)
+    // 字幕 CDN 直接返回文件内容, 关闭重定向避免 Cookie 被带到其他主机
+    private val subtitleHttp: OkHttpClient = http.newBuilder()
+        .callTimeout(SUBTITLE_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
 
     private data class FavFolderListResult(
         val count: Int,
@@ -1677,6 +1688,81 @@ class BiliClient(
         }
         return videos
     }
+
+    // CC 字幕 //
+
+    /** 是否带有 B 站登录态，CC 字幕列表只有登录后才下发。 */
+    fun hasLoginSession(): Boolean =
+        !cookieRepo.getCookiesOnce()["SESSDATA"].isNullOrBlank()
+
+    /**
+     * 读取视频分 P 的 CC 字幕轨道。
+     *
+     * 字幕列表依赖登录态，未登录时官方接口返回空数组。
+     */
+    suspend fun getPlayerSubtitlePayload(aid: Long, cid: Long): JSONObject {
+        require(aid > 0L) { "aid must be positive" }
+        require(cid > 0L) { "cid must be positive" }
+        return withContext(Dispatchers.IO) {
+            val response = getJsonWbi(
+                PLAYER_WBI_V2_URL,
+                mapOf("aid" to aid.toString(), "cid" to cid.toString())
+            )
+            response.requireSuccessfulData("player/v2").optJSONObject("subtitle") ?: JSONObject()
+        }
+    }
+
+    private fun normalizeBiliSubtitleUrl(rawUrl: String?): String {
+        val trimmed = rawUrl?.trim().orEmpty()
+        if (trimmed.isEmpty()) return ""
+        return when {
+            trimmed.startsWith("//") -> "https:$trimmed"
+            trimmed.startsWith("http://", ignoreCase = true) ->
+                "https://${trimmed.substring(7)}"
+            trimmed.startsWith("https://", ignoreCase = true) -> trimmed
+            else -> "https://$trimmed"
+        }
+    }
+
+    /**
+     * 下载 CC 字幕文件并返回原始 JSON，调用方可以自行决定解析方式。
+     */
+    suspend fun getSubtitlePayload(url: String, referer: String? = null): JSONObject {
+        val normalized = normalizeBiliSubtitleUrl(url)
+        if (normalized.isEmpty()) return JSONObject()
+        val httpUrl = normalized.toHttpUrlOrNull()
+            ?: throw IllegalArgumentException("invalid subtitle url: $normalized")
+        // 字幕地址来自服务端响应，只允许 B 站的 CDN 域名，避免登录 Cookie 被带到第三方主机
+        require(isTrustedSubtitleHost(httpUrl.host)) {
+            "untrusted subtitle host: ${httpUrl.host}"
+        }
+        return withContext(Dispatchers.IO) {
+            JSONObject(executeSubtitleGetAsText(httpUrl, referer))
+        }
+    }
+
+    private fun isTrustedSubtitleHost(host: String): Boolean {
+        val normalized = host.lowercase()
+        return normalized == "hdslb.com" || normalized.endsWith(".hdslb.com") ||
+            normalized == "bilibili.com" || normalized.endsWith(".bilibili.com")
+    }
+
+    private suspend fun executeSubtitleGetAsText(url: HttpUrl, referer: String?): String {
+        val cookieHeader = getEffectiveCookies()
+            .toCookieHeader()
+            .takeIf { isTrustedSubtitleHost(url.host) }
+        val req = Request.Builder()
+            .url(url)
+            .header("User-Agent", DEFAULT_WEB_UA)
+            .header("Referer", referer?.takeIf { it.isNotBlank() } ?: REFERER)
+            .header("Origin", "https://www.bilibili.com")
+            .apply { headerCookieIfPresent(cookieHeader) }
+            .get()
+            .build()
+        return subtitleHttp.newCall(req).executeOrThrow().use { it.body.string() }
+    }
+
+    // 评论 //
 
     suspend fun getVideoComments(
         aid: Long,
