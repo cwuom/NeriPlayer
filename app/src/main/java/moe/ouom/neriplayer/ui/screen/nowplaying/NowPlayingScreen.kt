@@ -1065,19 +1065,21 @@ fun NowPlayingScreen(
         preferredSource = loadedPreferredLyricSource,
         isBiliCcSubtitleLyrics = PlayerManager.isBiliCcSubtitleLyricsActive(currentSong)
     )
-    val progressInfoSegments = remember(
+    val progressInfoPresentation = remember(
         currentPlaybackAudioInfo,
         showProgressQualitySwitch,
         showProgressAudioCodec,
         showProgressAudioSpec,
-        playbackSoundState.speed
+        playbackSoundState.speed,
+        phoneLandscape
     ) {
-        buildNowPlayingProgressInfoSegments(
+        buildNowPlayingProgressInfoPresentation(
             audioInfo = currentPlaybackAudioInfo,
             showQualitySwitch = showProgressQualitySwitch,
             showAudioCodec = showProgressAudioCodec,
             showAudioSpec = showProgressAudioSpec,
-            playbackSpeed = playbackSoundState.speed
+            playbackSpeed = playbackSoundState.speed,
+            phoneLandscape = phoneLandscape
         )
     }
 
@@ -1409,7 +1411,7 @@ fun NowPlayingScreen(
                                     isPlaying = isPlaying,
                                     isPlaybackWaiting = isPlaybackWaiting,
                                     playbackSpeed = playbackSoundState.speed,
-                                    progressInfoSegments = nowPlayingVisibleProgressInfoSegments(progressInfoSegments, phoneLandscape),
+                                    progressInfoPresentation = progressInfoPresentation,
                                     seekEnabled = playbackProgressSeekEnabled,
                                     activeContentColor = targetNowPlayingActiveIconColor,
                                     useWideLandscapeLayout = useWideLandscapeLayout,

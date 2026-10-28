@@ -12,8 +12,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
@@ -31,12 +35,15 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressInfoSegment
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressInfoPresentation
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressSection
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingTabletPortraitLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingWideLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingAdaptiveCoverSize
 import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingPhoneLandscape
 import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingVisibleProgressInfoSegments
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldReserveNowPlayingProgressInfoSpace
+import moe.ouom.neriplayer.ui.theme.CleanTypography
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -50,6 +57,12 @@ class NowPlayingProgressSpacingTest {
     val composeRule = createComposeRule()
 
     private var viewportWidth = 0f
+    private var songKey by mutableStateOf("spacing-fixture")
+    private var informationEnabled by mutableStateOf(true)
+    private var information by mutableStateOf(listOf(
+        NowPlayingProgressInfoSegment("FLAC"),
+        NowPlayingProgressInfoSegment("96 kHz | 24 bit")
+    ))
 
     @Before
     fun assumeDeviceUnlocked() {
@@ -61,7 +74,7 @@ class NowPlayingProgressSpacingTest {
         renderLayout(1280.dp, 800.dp, NowPlayingControlPlacement.LOWER)
 
         assertTabletInformationFits()
-        assertEquals(pixels(4.dp), bounds("progressRow").top - bounds("identity").bottom, 1f)
+        assertEquals(pixels(12.dp), bounds("progressRow").top - bounds("identity").bottom, 1f)
         assertEquals(pixels(13.dp), bounds("controls").top - informationBounds().bottom, 1f)
         assertTrue(bounds("controls").bottom < bounds("toolbar").top - pixels(24.dp))
         assertTrue(bounds("cover").height >= pixels(350.dp) - 1f)
@@ -72,9 +85,9 @@ class NowPlayingProgressSpacingTest {
         renderLayout(1280.dp, 800.dp, NowPlayingControlPlacement.BOTTOM)
 
         assertTabletInformationFits()
-        assertEquals(pixels(4.dp), bounds("progressRow").top - bounds("identity").bottom, 1f)
+        assertEquals(pixels(12.dp), bounds("progressRow").top - bounds("identity").bottom, 1f)
         assertTrue(bounds("controls").top > informationBounds().bottom + pixels(24.dp))
-        assertEquals(pixels(16.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
+        assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
         assertTrue(bounds("cover").height >= pixels(350.dp) - 1f)
     }
 
@@ -85,7 +98,7 @@ class NowPlayingProgressSpacingTest {
         assertTabletInformationFits()
         assertTrue(bounds("progressRow").top > bounds("identity").bottom + pixels(24.dp))
         assertEquals(pixels(13.dp), bounds("controls").top - informationBounds().bottom, 1f)
-        assertEquals(pixels(16.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
+        assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
         assertTrue(bounds("cover").height >= pixels(350.dp) - 1f)
     }
 
@@ -120,6 +133,28 @@ class NowPlayingProgressSpacingTest {
     }
 
     @Test
+    fun tablet1280x800_largeTextKeepsBottomControlsSeparateFromInformation() {
+        renderLayout(1280.dp, 800.dp, NowPlayingControlPlacement.BOTTOM,
+            fontScale = 1.5f, largeControls = true)
+
+        assertTabletInformationFits()
+        assertTrue(bounds("progressRow").top >= bounds("identity").bottom)
+        assertTrue(bounds("controls").top > informationBounds().bottom + pixels(24.dp))
+        assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
+    }
+
+    @Test
+    fun tablet1280x800_largeTextKeepsBottomProgressClearOfTheTrackIdentity() {
+        renderLayout(1280.dp, 800.dp, NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS,
+            fontScale = 1.5f, largeControls = true)
+
+        assertTabletInformationFits()
+        assertTrue(bounds("progressRow").top > bounds("identity").bottom + pixels(24.dp))
+        assertEquals(pixels(13.dp), bounds("controls").top - informationBounds().bottom, 1f)
+        assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
+    }
+
+    @Test
     fun phone840x360_retainsTheFooterAndHidesAudioInformation() {
         renderLayout(
             840.dp, 360.dp, NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS,
@@ -144,23 +179,109 @@ class NowPlayingProgressSpacingTest {
         assertTrue(bounds("nowPlayingTabletPortraitLyrics").height >= pixels(400.dp))
     }
 
+    @Test
+    fun tabletLowerCoverKeepsItsBoundsWhileNextTrackInformationLoads() =
+        assertTrackSwitchKeepsCoverBounds(1280.dp, 800.dp, NowPlayingControlPlacement.LOWER)
+
+    @Test
+    fun tabletBottomControlsCoverKeepsItsBoundsWhileNextTrackInformationLoads() =
+        assertTrackSwitchKeepsCoverBounds(1280.dp, 800.dp, NowPlayingControlPlacement.BOTTOM)
+
+    @Test
+    fun tabletBottomProgressCoverKeepsItsBoundsWhileNextTrackInformationLoads() =
+        assertTrackSwitchKeepsCoverBounds(1280.dp, 800.dp, NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS)
+
+    @Test
+    fun tabletLargeTextCoverKeepsItsBoundsWhileNextTrackInformationLoads() =
+        assertTrackSwitchKeepsCoverBounds(1280.dp, 800.dp, NowPlayingControlPlacement.LOWER, fontScale = 1.5f)
+
+    @Test
+    fun cleanTabletChineseInformationKeepsCoverSizeDuringTrackSwitch() {
+        information = listOf(NowPlayingProgressInfoSegment("极高", highlighted = true),
+            NowPlayingProgressInfoSegment("MP3"), NowPlayingProgressInfoSegment("320 kbps"))
+        assertTrackSwitchKeepsCoverBounds(1280.dp, 800.dp, NowPlayingControlPlacement.LOWER,
+            fontScale = 1.5f, cleanTheme = true)
+    }
+
+    @Test
+    fun shortTabletCoverKeepsItsBoundsWhileNextTrackInformationLoads() =
+        assertTrackSwitchKeepsCoverBounds(1280.dp, 480.dp, NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS)
+
+    @Test
+    fun tabletPortraitCoverKeepsItsBoundsWhileNextTrackInformationLoads() =
+        assertTrackSwitchKeepsCoverBounds(800.dp, 1280.dp, NowPlayingControlPlacement.LOWER)
+
+    @Test
+    fun phoneLandscapeCoverKeepsItsBoundsWhileNextTrackInformationLoads() =
+        assertTrackSwitchKeepsCoverBounds(840.dp, 360.dp, NowPlayingControlPlacement.LOWER,
+            smallestScreenWidthDp = 360)
+
+    @Test
+    fun disabledAudioInformationDoesNotLeaveAnEmptyRow() {
+        information = emptyList()
+        informationEnabled = false
+        renderLayout(1280.dp, 800.dp, NowPlayingControlPlacement.LOWER)
+        assertEquals(bounds("progressRow").height, bounds("progressSection").height, 1f)
+        composeRule.runOnIdle { informationEnabled = true }
+        composeRule.waitForIdle()
+        assertTrue(bounds("progressSection").height > bounds("progressRow").height)
+        composeRule.runOnIdle { informationEnabled = false }
+        composeRule.waitForIdle()
+        assertEquals(bounds("progressRow").height, bounds("progressSection").height, 1f)
+    }
+
+    private fun assertTrackSwitchKeepsCoverBounds(
+        width: Dp,
+        height: Dp,
+        placement: NowPlayingControlPlacement,
+        smallestScreenWidthDp: Int = 800,
+        fontScale: Float = 1f,
+        cleanTheme: Boolean = false
+    ) {
+        renderLayout(width, height, placement, smallestScreenWidthDp, fontScale, cleanTheme = cleanTheme)
+        val settledCover = bounds("cover")
+        val settledProgress = bounds("progressSection")
+        repeat(2) { index ->
+            composeRule.runOnIdle {
+                songKey = "next-track-$index"
+                information = emptyList()
+            }
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText("FLAC").assertDoesNotExist()
+            composeRule.onNodeWithText("极高").assertDoesNotExist()
+            assertCoverBounds(settledCover)
+            assertEquals("加载信息时进度区不能塌陷", settledProgress.height, bounds("progressSection").height, 1f)
+
+            composeRule.runOnIdle {
+                information = listOf(NowPlayingProgressInfoSegment("MP3"), NowPlayingProgressInfoSegment("320 kbps"))
+            }
+            composeRule.waitForIdle()
+            assertCoverBounds(settledCover)
+            assertEquals(settledProgress.height, bounds("progressSection").height, 1f)
+        }
+    }
+
+    private fun assertCoverBounds(expected: Rect) {
+        val actual = bounds("cover")
+        assertEquals("切歌时封面宽度不能变化", expected.width, actual.width, 1f)
+        assertEquals("切歌时封面高度不能变化", expected.height, actual.height, 1f)
+        assertEquals("切歌时封面位置不能变化", expected.top, actual.top, 1f)
+    }
+
     private fun renderLayout(
         width: Dp,
         height: Dp,
         placement: NowPlayingControlPlacement,
         smallestScreenWidthDp: Int = 800,
         fontScale: Float = 1f,
-        largeControls: Boolean = false
+        largeControls: Boolean = false,
+        cleanTheme: Boolean = false
     ) {
         viewportWidth = width.value
         val landscape = width > height
         val phoneLandscape = isNowPlayingPhoneLandscape(landscape, smallestScreenWidthDp)
-        val segments = nowPlayingVisibleProgressInfoSegments(
-            listOf(NowPlayingProgressInfoSegment("FLAC"), NowPlayingProgressInfoSegment("96 kHz | 24 bit")),
-            phoneLandscape
-        )
         composeRule.setContent {
-            MaterialTheme {
+            MaterialTheme(typography = if (cleanTheme) CleanTypography else Typography()) {
                 BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     val hostDensity = LocalDensity.current
                     val viewportScale = minOf(maxWidth.value / width.value, maxHeight.value / height.value)
@@ -169,14 +290,19 @@ class NowPlayingProgressSpacingTest {
                     ) {
                         val progress: @Composable () -> Unit = {
                             NowPlayingProgressSection(
-                                songKey = "spacing-fixture",
+                                songKey = songKey,
                                 durationMs = 60_000L,
                                 lyrics = emptyList(),
                                 lyricOffsetMs = 0L,
                                 isPlaying = false,
                                 isPlaybackWaiting = false,
                                 playbackSpeed = 1f,
-                                progressInfoSegments = segments,
+                                progressInfoPresentation = NowPlayingProgressInfoPresentation(
+                                    segments = nowPlayingVisibleProgressInfoSegments(information, phoneLandscape),
+                                    reserveRowHeight = shouldReserveNowPlayingProgressInfoSpace(
+                                        informationEnabled, false, false, 1f, phoneLandscape
+                                    )
+                                ),
                                 seekEnabled = false,
                                 activeContentColor = Color.Blue,
                                 useWideLandscapeLayout = landscape,
@@ -193,8 +319,12 @@ class NowPlayingProgressSpacingTest {
                         }
                         val identity: @Composable () -> Unit = {
                             Column(Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("identity")) {
-                                Text("歌曲名称", style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                                Text("演唱者", style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                                Text("歌曲名称", style = if (landscape && !phoneLandscape) {
+                                    MaterialTheme.typography.headlineSmall
+                                } else MaterialTheme.typography.titleMedium, maxLines = 1)
+                                Text("演唱者", style = if (landscape && !phoneLandscape) {
+                                    MaterialTheme.typography.bodyLarge
+                                } else MaterialTheme.typography.bodyMedium, maxLines = 1)
                             }
                         }
                         Box(Modifier.requiredSize(width, height).testTag("viewport")) {
