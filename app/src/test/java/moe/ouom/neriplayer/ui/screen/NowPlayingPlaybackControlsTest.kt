@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.buildNowPlayingProgressInfoSegme
 import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingPhoneLandscape
 import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingProgressFraction
 import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingVisibleProgressInfoSegments
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldReserveNowPlayingProgressInfoSpace
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -18,6 +19,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NowPlayingPlaybackControlsTest {
+    @Test
+    fun `information space follows display settings rather than transient audio data`() {
+        listOf(
+            Triple(true, false, false),
+            Triple(false, true, false),
+            Triple(false, false, true)
+        ).forEach { (quality, codec, spec) ->
+            assertTrue(shouldReserveNowPlayingProgressInfoSpace(quality, codec, spec, 1f, false))
+            assertFalse(shouldReserveNowPlayingProgressInfoSpace(quality, codec, spec, 1f, true))
+        }
+        assertFalse(shouldReserveNowPlayingProgressInfoSpace(false, false, false, 1f, false))
+        assertTrue(shouldReserveNowPlayingProgressInfoSpace(false, false, false, 1.25f, false))
+        assertFalse(shouldReserveNowPlayingProgressInfoSpace(false, false, false, 1.004f, false))
+        assertFalse(shouldReserveNowPlayingProgressInfoSpace(true, true, true, 1.25f, true))
+    }
+
     @Test
     fun `only phone landscape hides audio badges and rotating back restores the original information`() {
         val segments = listOf(

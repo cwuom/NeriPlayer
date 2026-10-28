@@ -1438,6 +1438,13 @@ fun NowPlayingScreen(
                                     useWideLandscapeLayout = useWideLandscapeLayout,
                                     onPreviewPositionChange = { previewPositionOverrideMs = it },
                                     tabletLandscape = useWideLandscapeLayout && !phoneLandscape,
+                                    reserveInfoRowHeight = shouldReserveNowPlayingProgressInfoSpace(
+                                        showProgressQualitySwitch,
+                                        showProgressAudioCodec,
+                                        showProgressAudioSpec,
+                                        playbackSoundState.speed,
+                                        phoneLandscape
+                                    ),
                                     progressRowModifier = Modifier
                                         .sharedBounds(
                                             rememberSharedContentState(
