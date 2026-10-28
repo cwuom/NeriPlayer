@@ -27,6 +27,7 @@ import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -463,7 +464,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                         put("lan", track.lan)
                         put("lan_doc", track.lanDoc)
                         put("ai_generated", track.isAiGenerated)
-                        put("host", android.net.Uri.parse(track.url).host)
+                        put("host", track.url.toUri().host)
                         put("subtitle_url", track.url)
                     })
                 }
@@ -494,7 +495,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                         put("lan", track.lan)
                         put("lan_doc", track.lanDoc)
                         put("ai_generated", track.isAiGenerated)
-                        put("host", android.net.Uri.parse(track.url).host)
+                        put("host", track.url.toUri().host)
                     }
                     try {
                         val cues = BiliSubtitleLyricsLoader.loadCuesFor(track.url, referer, client)
