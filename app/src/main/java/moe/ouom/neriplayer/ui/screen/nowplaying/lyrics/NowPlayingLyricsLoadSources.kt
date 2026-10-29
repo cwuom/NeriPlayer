@@ -30,6 +30,8 @@ internal interface NowPlayingLyricsSources {
     suspend fun onlineOriginal(song: SongItem): List<LyricEntry>
     suspend fun onlineTranslated(song: SongItem): List<LyricEntry>
     suspend fun onlineRomanized(song: SongItem): List<LyricEntry>
+
+    fun clearBiliCcSubtitleLyricsOrigin(song: SongItem) = Unit
 }
 
 internal object PlatformNowPlayingLyricsSources : NowPlayingLyricsSources {
@@ -85,4 +87,8 @@ internal object PlatformNowPlayingLyricsSources : NowPlayingLyricsSources {
 
     override suspend fun onlineRomanized(song: SongItem): List<LyricEntry> =
         PlayerManager.getRomanizedLyrics(song)
+
+    override fun clearBiliCcSubtitleLyricsOrigin(song: SongItem) {
+        PlayerManager.clearBiliCcSubtitleLyricsOrigin(song)
+    }
 }

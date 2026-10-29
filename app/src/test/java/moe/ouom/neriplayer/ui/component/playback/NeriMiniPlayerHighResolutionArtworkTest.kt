@@ -121,9 +121,12 @@ class NeriMiniPlayerHighResolutionArtworkTest {
 
     private fun awaitArtwork(cover: CoverFixture): ImageBitmap {
         composeRule.waitUntil(timeoutMillis = 10_000L) {
-            val bitmap = RetainedPlaybackCoverBitmapCache.getExact(cover.ownerKey, cover.url)?.bitmap
-            bitmap != null && flight.miniCoverBitmap === bitmap &&
-                resolveNowPlayingOverlayArtwork(cover.ownerKey, flight) === bitmap
+            // drain Coil callbacks and layout before inspecting the shared artwork
+            composeRule.runOnIdle {
+                val bitmap = RetainedPlaybackCoverBitmapCache.getExact(cover.ownerKey, cover.url)?.bitmap
+                bitmap != null && flight.miniCoverBitmap === bitmap &&
+                    resolveNowPlayingOverlayArtwork(cover.ownerKey, flight) === bitmap
+            }
         }
         return composeRule.runOnIdle {
             checkNotNull(RetainedPlaybackCoverBitmapCache.getExact(cover.ownerKey, cover.url)).bitmap

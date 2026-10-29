@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapsh
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
@@ -138,6 +139,7 @@ private const val PLAYBACK_QQ_MUSIC_LYRIC_OFFSET_KEY = "qq_music_lyric_default_o
 private const val PLAYBACK_KUGOU_LYRIC_OFFSET_KEY = "kugou_lyric_default_offset_ms"
 private const val PLAYBACK_LRCLIB_LYRIC_OFFSET_KEY = "lrclib_lyric_default_offset_ms"
 private const val PLAYBACK_AMLL_TTML_LYRIC_OFFSET_KEY = "amll_ttml_lyric_default_offset_ms"
+private const val PLAYBACK_BILI_CC_SUBTITLE_LYRIC_OFFSET_KEY = "bili_cc_subtitle_lyric_default_offset_ms"
 private const val PLAYBACK_LYRICON_ENABLED_KEY = "lyricon_enabled"
 private const val PLAYBACK_AMLL_LYRICS_ENABLED_KEY = "amll_lyrics_enabled"
 private const val PLAYBACK_PREFER_WORD_TIMED_LYRICS_KEY = "prefer_word_timed_lyrics"
@@ -336,6 +338,10 @@ fun persistPlaybackPreferenceSnapshot(
                     PLAYBACK_AMLL_TTML_LYRIC_OFFSET_KEY,
                     normalizedSnapshot.amllTtmlLyricDefaultOffsetMs
                 )
+                .putLong(
+                    PLAYBACK_BILI_CC_SUBTITLE_LYRIC_OFFSET_KEY,
+                    normalizedSnapshot.biliCcSubtitleLyricDefaultOffsetMs
+                )
                 .putBoolean(PLAYBACK_LYRICON_ENABLED_KEY, normalizedSnapshot.lyriconEnabled)
                 .putBoolean(
                     PLAYBACK_AMLL_LYRICS_ENABLED_KEY,
@@ -448,6 +454,11 @@ fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnapshot {
             valueOr(SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS, DEFAULT_LRCLIB_LYRIC_OFFSET_MS),
         amllTtmlLyricDefaultOffsetMs =
             valueOr(SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS, DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS),
+        biliCcSubtitleLyricDefaultOffsetMs =
+            valueOr(
+                SettingsKeys.BILI_CC_SUBTITLE_LYRIC_DEFAULT_OFFSET_MS,
+                DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
+            ),
         lyriconEnabled = valueOr(SettingsKeys.LYRICON_ENABLED, false),
         amllLyricsEnabled = valueOr(SettingsKeys.AMLL_LYRICS_ENABLED, true),
         preferWordTimedLyrics = valueOr(SettingsKeys.PREFER_WORD_TIMED_LYRICS, true),
@@ -590,6 +601,10 @@ private fun SharedPreferences.toCachedPlaybackPreferenceSnapshot(): PlaybackPref
             PLAYBACK_AMLL_TTML_LYRIC_OFFSET_KEY,
             DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
         ),
+        biliCcSubtitleLyricDefaultOffsetMs = prefs.getLong(
+            PLAYBACK_BILI_CC_SUBTITLE_LYRIC_OFFSET_KEY,
+            DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
+        ),
         lyriconEnabled = prefs.getBoolean(PLAYBACK_LYRICON_ENABLED_KEY, false),
         amllLyricsEnabled = prefs.getBoolean(PLAYBACK_AMLL_LYRICS_ENABLED_KEY, true),
         preferWordTimedLyrics = prefs.getBoolean(PLAYBACK_PREFER_WORD_TIMED_LYRICS_KEY, true),
@@ -669,6 +684,9 @@ fun PlaybackPreferenceSnapshot.sanitized(): PlaybackPreferenceSnapshot {
         kugouLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(kugouLyricDefaultOffsetMs),
         lrclibLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(lrclibLyricDefaultOffsetMs),
         amllTtmlLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(amllTtmlLyricDefaultOffsetMs),
+        biliCcSubtitleLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(
+            biliCcSubtitleLyricDefaultOffsetMs
+        ),
         defaultLyricSource = LyricSourcePreferencePolicy.normalize(defaultLyricSource),
         maxCacheSizeBytes = CacheSizePolicy.normalizeCacheSizeBytes(maxCacheSizeBytes)
     )

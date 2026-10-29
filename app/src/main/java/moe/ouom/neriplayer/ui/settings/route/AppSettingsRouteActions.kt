@@ -178,6 +178,10 @@ internal class AppLyricSettingsActions(
             scope.launch { repo.setAmllTtmlLyricDefaultOffsetMs(offsetMs) }
         }
 
+    val onBiliCcSubtitleLyricDefaultOffsetMsChange: (Long) -> Unit = { offsetMs ->
+            scope.launch { repo.setBiliCcSubtitleLyricDefaultOffsetMs(offsetMs) }
+        }
+
     val onResetAllLyricDefaultOffsets: () -> Unit = {
             scope.launch {
                 lyricOffsetOwner.resetCloudAndQqOffsets(

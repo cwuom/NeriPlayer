@@ -16,12 +16,20 @@ class LyriconPlaybackOutput internal constructor(
     private val stableKey: (SongItem) -> String,
     private val sameIdentity: (SongItem, SongItem?) -> Boolean,
     private val sink: LyriconOutputSink,
+    private val isBiliCcSubtitleLyrics: (SongItem) -> Boolean = { false },
 ) {
     constructor(
         loader: LyriconLyricsLoader,
         stableKey: (SongItem) -> String,
         sameIdentity: (SongItem, SongItem?) -> Boolean,
-    ) : this(loader, stableKey, sameIdentity, LyriconManagerOutputSink())
+        isBiliCcSubtitleLyrics: (SongItem) -> Boolean = { false },
+    ) : this(
+        loader,
+        stableKey,
+        sameIdentity,
+        LyriconManagerOutputSink(),
+        isBiliCcSubtitleLyrics
+    )
 
     private val coordinator = LyriconUpdateCoordinator()
     @Volatile
@@ -74,7 +82,7 @@ class LyriconPlaybackOutput internal constructor(
         if (!sameIdentity(requestedSong, song)) return
         preferredSourceSongKey = stableKey(song)
         preferredSource = source
-        sink.updateSong(song, lyrics, translatedLyrics, lyricOffsetOverrideMs ?: preferences.offsetFor(song, source))
+        sink.updateSong(song, lyrics, translatedLyrics, lyricOffsetOverrideMs ?: preferences.offsetFor(song, source, isBiliCcSubtitleLyrics(song)))
     }
 
     private fun publishPendingSong(song: SongItem?, preferences: LyriconPreferences, lyricOffsetOverrideMs: Long?) {
@@ -87,7 +95,7 @@ class LyriconPlaybackOutput internal constructor(
                 sink.setLyricOffset(0L)
                 sink.setPosition(0L)
             }
-            else -> sink.updateSong(song, null, null, lyricOffsetOverrideMs ?: preferences.offsetFor(song, null))
+            else -> sink.updateSong(song, null, null, lyricOffsetOverrideMs ?: preferences.offsetFor(song, null, isBiliCcSubtitleLyrics(song)))
         }
     }
 
@@ -95,7 +103,7 @@ class LyriconPlaybackOutput internal constructor(
         this.preferences = preferences
         if (!preferences.enabled) return
         val source = preferredSource.takeIf { song != null && preferredSourceSongKey == stableKey(song) }
-        sink.setLyricOffset(song?.let { preferences.offsetFor(it, source) } ?: 0L)
+        sink.setLyricOffset(song?.let { preferences.offsetFor(it, source, isBiliCcSubtitleLyrics(it)) } ?: 0L)
         sink.setPosition(if (song == null) 0L else positionMs)
     }
 

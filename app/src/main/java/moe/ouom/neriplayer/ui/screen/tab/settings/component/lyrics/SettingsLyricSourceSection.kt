@@ -105,6 +105,13 @@ internal fun SettingsLyricSourceSection(
         onClick = { showSourceDialog = true }
     )
 
+    SettingsBiliCcSubtitleGroup(
+        repository = repository,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+
     if (!showSourceDialog) return
 
     MiuixSettingsDialog(

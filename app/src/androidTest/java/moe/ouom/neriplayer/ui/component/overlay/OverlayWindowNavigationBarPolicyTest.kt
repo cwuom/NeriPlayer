@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.os.Build
 import android.util.Log
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.Window
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.InputMethodManager
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -73,6 +75,7 @@ class OverlayWindowNavigationBarPolicyTest {
     private val draft = mutableStateOf("")
     private val dialogWindow = AtomicReference<Window?>(null)
     private val dialogView = AtomicReference<View?>(null)
+    private val navigationAnimations = mutableMapOf<Window, NavigationBarAnimationTracker>()
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
     @Before
@@ -83,15 +86,20 @@ class OverlayWindowNavigationBarPolicyTest {
     @After
     fun closeOwnedWindowAndKeyboard() {
         instrumentation.runOnMainSync {
-            dialogWindow.get()?.let { window ->
-                WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.ime())
-            }
-            visibleOverlay.value = null
-            val window = composeRule.activity.window
-            WindowInsetsControllerCompat(window, window.decorView).apply {
-                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
-                hide(WindowInsetsCompat.Type.ime())
-                show(WindowInsetsCompat.Type.systemBars())
+            try {
+                dialogWindow.get()?.let { window ->
+                    WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.ime())
+                }
+                visibleOverlay.value = null
+                val window = composeRule.activity.window
+                WindowInsetsControllerCompat(window, window.decorView).apply {
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+                    hide(WindowInsetsCompat.Type.ime())
+                    show(WindowInsetsCompat.Type.systemBars())
+                }
+            } finally {
+                navigationAnimations.values.forEach(NavigationBarAnimationTracker::dispose)
+                navigationAnimations.clear()
             }
         }
     }
@@ -144,18 +152,20 @@ class OverlayWindowNavigationBarPolicyTest {
             render(Overlay.Alert, hidden)
             val window = awaitDialogWindow()
             awaitNavigationPolicy(window, hidden = false, stage = "alert-initial")
-            composeRule.runOnIdle {
-                hidden.value = true
-                applyHostPolicy(hidden = true)
+            repeat(5) {
+                composeRule.runOnIdle {
+                    hidden.value = true
+                    applyHostPolicy(hidden = true)
+                }
+                awaitNavigationPolicy(window, hidden = true, stage = "alert-policy-true")
+                assertSame(window, dialogWindow.get())
+                composeRule.runOnIdle {
+                    hidden.value = false
+                    applyHostPolicy(hidden = false)
+                }
+                awaitNavigationPolicy(window, hidden = false, stage = "alert-policy-false")
+                assertSame(window, dialogWindow.get())
             }
-            awaitNavigationPolicy(window, hidden = true, stage = "alert-policy-true")
-            assertSame(window, dialogWindow.get())
-            composeRule.runOnIdle {
-                hidden.value = false
-                applyHostPolicy(hidden = false)
-            }
-            awaitNavigationPolicy(window, hidden = false, stage = "alert-policy-false")
-            assertSame(window, dialogWindow.get())
             closeOverlay(hostHidden = false)
         }
 
@@ -225,6 +235,7 @@ class OverlayWindowNavigationBarPolicyTest {
 
     private fun render(overlay: Overlay, hidden: MutableState<Boolean>? = null, editable: Boolean = false) {
         composeRule.activityRule.scenario.onActivity {
+            observeNavigationAnimations(it.window)
             WindowCompat.setDecorFitsSystemWindows(it.window, false)
             applyHostPolicy(hidden?.value == true)
         }
@@ -291,9 +302,11 @@ class OverlayWindowNavigationBarPolicyTest {
             while (ancestor != null && ancestor !is DialogWindowProvider) ancestor = ancestor.parent as? View
             val window = checkNotNull((ancestor as? DialogWindowProvider)?.window)
             assertNotSame("应检查弹窗自己的 Window", composeRule.activity.window, window)
+            observeNavigationAnimations(window)
             dialogWindow.set(window)
             dialogView.set(view)
             onDispose {
+                navigationAnimations.remove(window)?.dispose()
                 dialogWindow.compareAndSet(window, null)
                 dialogView.compareAndSet(view, null)
             }
@@ -323,13 +336,15 @@ class OverlayWindowNavigationBarPolicyTest {
     }
 
     private fun awaitNavigationPolicy(window: Window, hidden: Boolean, stage: String) {
+        composeRule.waitForIdle()
         val expectedBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
         instrumentation.runOnMainSync {
             Log.i("OverlayWindowNavigation", "$stage awaiting hidden=$hidden behavior=$expectedBehavior: ${navigationPolicySnapshot(window)}")
         }
         try {
             awaitWindowInsets(window, "$stage: 当前真实 Window 的导航栏应 ${if (hidden) "隐藏" else "可见"}且窗口策略完成更新") {
-                it.isVisible(WindowInsetsCompat.Type.navigationBars()) == !hidden &&
+                checkNotNull(navigationAnimations[window]).isIdle &&
+                    it.isVisible(WindowInsetsCompat.Type.navigationBars()) == !hidden &&
                     it.isVisible(WindowInsetsCompat.Type.statusBars()) &&
                     WindowInsetsControllerCompat(window, window.decorView).systemBarsBehavior == expectedBehavior &&
                     (!hidden || it.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom == 0)
@@ -377,7 +392,73 @@ class OverlayWindowNavigationBarPolicyTest {
             "statusVisible=${insets?.isVisible(WindowInsetsCompat.Type.statusBars())} " +
             "navigationBottom=${insets?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom} " +
             "imeVisible=${insets?.isVisible(WindowInsetsCompat.Type.ime())} " +
+            "navigationAnimations=${navigationAnimations[window]?.pendingCount} " +
             "behavior=${WindowInsetsControllerCompat(window, decorView).systemBarsBehavior}"
+    }
+
+    private fun observeNavigationAnimations(window: Window) {
+        navigationAnimations.getOrPut(window) { NavigationBarAnimationTracker(window.decorView) }
+    }
+
+    private class NavigationBarAnimationTracker(private val decorView: View) :
+        WindowInsetsAnimationCompat.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE),
+        ViewTreeObserver.OnDrawListener {
+        private val prepared = mutableSetOf<WindowInsetsAnimationCompat>()
+        private val running = mutableSetOf<WindowInsetsAnimationCompat>()
+        private val observer = decorView.viewTreeObserver
+        val pendingCount: Int get() = prepared.size + running.size
+        val isIdle: Boolean get() = pendingCount == 0
+
+        init {
+            // 只观察窗口根节点，继续向 Compose 子节点分发原有 Insets 和动画事件
+            ViewCompat.setWindowInsetsAnimationCallback(decorView, this)
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) observer.addOnDrawListener(this)
+        }
+
+        override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+            if (animation.typeMask and WindowInsetsCompat.Type.navigationBars() != 0) prepared.add(animation)
+        }
+
+        override fun onStart(
+            animation: WindowInsetsAnimationCompat,
+            bounds: WindowInsetsAnimationCompat.BoundsCompat
+        ): WindowInsetsAnimationCompat.BoundsCompat {
+            markRunning(animation)
+            return bounds
+        }
+
+        override fun onProgress(
+            insets: WindowInsetsCompat,
+            runningAnimations: MutableList<WindowInsetsAnimationCompat>
+        ): WindowInsetsCompat {
+            runningAnimations.forEach(::markRunning)
+            return insets
+        }
+
+        override fun onEnd(animation: WindowInsetsAnimationCompat) {
+            prepared.remove(animation)
+            running.remove(animation)
+        }
+
+        override fun onDraw() {
+            // Android 11 启动前取消时没有 onEnd，绘制时仍未启动的准备事件已失效
+            prepared.clear()
+        }
+
+        private fun markRunning(animation: WindowInsetsAnimationCompat) {
+            prepared.remove(animation)
+            if (animation.typeMask and WindowInsetsCompat.Type.navigationBars() != 0) running.add(animation)
+        }
+
+        fun dispose() {
+            ViewCompat.setWindowInsetsAnimationCallback(decorView, null)
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                val liveObserver = if (observer.isAlive) observer else decorView.viewTreeObserver
+                if (liveObserver.isAlive) liveObserver.removeOnDrawListener(this)
+            }
+            prepared.clear()
+            running.clear()
+        }
     }
 
     private fun awaitWindowInsets(window: Window, description: String, matches: (WindowInsetsCompat) -> Boolean) {

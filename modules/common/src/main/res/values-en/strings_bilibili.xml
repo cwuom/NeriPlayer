@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_bili_cc_subtitle_lyrics">Bilibili CC subtitle lyrics</string>
+    <string name="settings_bili_cc_subtitle_lyrics_desc">Use CC subtitles shipped with the video as the lyric source; requires a Bilibili login</string>
+    <string name="settings_bili_cc_subtitle_language">CC subtitle track</string>
+    <string name="settings_bili_cc_subtitle_language_desc">Current choice; change it anytime from the More options menu</string>
+    <string name="settings_bili_cc_subtitle_ai_only">AI subtitle fallback</string>
+    <string name="settings_bili_cc_subtitle_ai_only_desc">Use auto-generated subtitles when the video has no uploaded subtitles; turning this off restricts lyrics to uploaded subtitles</string>
+</resources>

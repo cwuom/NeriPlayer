@@ -100,8 +100,9 @@ internal fun LocalPlaylistSongArtwork(
         allowEmbeddedCoverFallback = allowEmbeddedCoverFallback
     )
     val context = LocalContext.current
-    val artworkIdentityKey = remember(song, downloadPresenceVersion) {
-        "${song.stableKey()}|generation=$downloadPresenceVersion"
+    val artworkIdentityKey = remember(song, downloadPresenceVersion, requestedCoverUrl) {
+        "${song.stableKey()}|generation=$downloadPresenceVersion" +
+            "|cover=${requestedCoverUrl.orEmpty()}"
     }
     var displayedCoverUrl by remember(artworkIdentityKey) {
         mutableStateOf(

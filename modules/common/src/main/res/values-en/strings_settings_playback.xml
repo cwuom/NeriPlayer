@@ -22,11 +22,11 @@
     <string name="settings_advanced_blur_quality">Blur quality</string>
     <string name="settings_advanced_blur_quality_desc">Ultra low, Low, and Default keep the same blur coverage; choose based on smoothness and detail</string>
     <string name="settings_advanced_blur_quality_ultra_low">Ultra low</string>
-    <string name="settings_advanced_blur_quality_ultra_low_desc">Prioritizes smoothness for devices under heavier rendering load</string>
+    <string name="settings_advanced_blur_quality_ultra_low_desc">Suited to MediaTek Dimensity processors; prioritizes smoothness</string>
     <string name="settings_advanced_blur_quality_low">Low</string>
-    <string name="settings_advanced_blur_quality_low_desc">Balances smoothness and detail for most devices</string>
+    <string name="settings_advanced_blur_quality_low_desc">Suited to MediaTek Dimensity processors; balances smoothness and detail</string>
     <string name="settings_advanced_blur_quality_default">Default</string>
-    <string name="settings_advanced_blur_quality_default_desc">Keeps the current full blur appearance</string>
+    <string name="settings_advanced_blur_quality_default_desc">Preferred for Qualcomm processors; keeps the full blur appearance</string>
     <string name="settings_advanced_blur_quality_high">High</string>
     <string name="settings_advanced_blur_quality_high_desc">Requires Enhanced Advanced Blur; adds blur to Explore tags and the theme toggle</string>
     <string name="settings_enhanced_advanced_blur_background_hint">For a better effect, use Enhanced Advanced Blur with a background image from Personalization.</string>
@@ -148,6 +148,8 @@
     <string name="settings_lyrics_offset_lrclib_desc">Default offset applied when loading LRCLIB lyrics</string>
     <string name="settings_lyrics_offset_amll_ttml">AMLL TTML default lyric offset</string>
     <string name="settings_lyrics_offset_amll_ttml_desc">Default offset applied when loading AMLL TTML lyrics</string>
+    <string name="settings_lyrics_offset_bili_cc_subtitle">Bilibili CC subtitle default lyric offset</string>
+    <string name="settings_lyrics_offset_bili_cc_subtitle_desc">Default offset applied when loading Bilibili CC subtitle lyrics</string>
     <string name="settings_lyrics_offset_reset">Reset</string>
     <string name="settings_lyrics_offset_reset_all">Reset all</string>
     <string name="settings_lyrics_offset_value">Current offset: %1$s ms</string>

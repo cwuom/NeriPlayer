@@ -3,7 +3,6 @@
 )
 
 package moe.ouom.neriplayer.core.player.lifecycle
-
 import moe.ouom.neriplayer.core.player.runtime.stats.PlaybackStatsTracker
 
 import moe.ouom.neriplayer.core.player.session.AppQueueSongIdentity
@@ -1123,6 +1122,7 @@ private fun PlayerManager.createCachedPlaybackDataSourceFactory(
 
 private fun PlayerManager.observePlaybackSettings() {
     attachLiveLyricSurfaces()
+    observeBiliSubtitleLyricsSettings()
     ioScope.launch {
         settingsRepo.audioQualityFlow.collect { q ->
             val previousQuality = preferredQuality
@@ -1992,7 +1992,7 @@ private fun PlayerManager.finishPlaybackRelease() {
  * 这些缓存都没有 TTL, 只靠设置变化时主动失效来维持一致, 否则改完设置后
  * 当前歌曲会继续沿用旧来源的歌词, 表现为"设置没生效"。
  */
-private fun PlayerManager.evictLyricCachesForSourcePreferenceChange() {
+internal fun PlayerManager.evictLyricCachesForSourcePreferenceChange() {
     PlayerLyricsProvider.clearLyricsCaches(neteaseLyricsCache, ytMusicLyricsCache)
     _lyricsPreferenceRevisionFlow.update { it + 1L }
     syncExternalBluetoothLyrics(_currentSongFlow.value)

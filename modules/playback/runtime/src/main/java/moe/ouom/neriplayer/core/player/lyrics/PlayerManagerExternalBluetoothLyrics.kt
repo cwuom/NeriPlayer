@@ -177,6 +177,8 @@ private fun PlayerManager.externalLyricOffsetMs(song: SongItem): Long = resolveE
     lrclibDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
     amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
     preferredLyricSource = externalBluetoothPreferredLyricSource,
+    biliCcSubtitleDefaultOffsetMs = biliCcSubtitleLyricDefaultOffsetMs,
+    isBiliCcSubtitleLyrics = isBiliCcSubtitleLyricsActive(song),
 )
 
 /** 当前歌曲外部歌词的下一行距离；歌词不属于当前歌曲时返回 null */

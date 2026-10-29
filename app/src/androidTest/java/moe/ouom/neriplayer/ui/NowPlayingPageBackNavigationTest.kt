@@ -249,6 +249,14 @@ class NowPlayingPageBackNavigationTest {
         assertPhoneLyricsBack(UiStyle.Clean)
 
     @Test
+    fun materialPhoneLyricsSystemBackWithoutPreviewReturnsToCoverBeforeClosing() =
+        assertPhoneLyricsBack(UiStyle.Material, previewEnabled = false)
+
+    @Test
+    fun cleanPhoneLyricsSystemBackWithoutPreviewReturnsToCoverBeforeClosing() =
+        assertPhoneLyricsBack(UiStyle.Clean, previewEnabled = false)
+
+    @Test
     fun materialPhoneLyricsPredictiveCancelRestoresBothImmersiveModes() =
         assertPhoneLyricsPredictiveCancel(UiStyle.Material)
 
@@ -283,9 +291,30 @@ class NowPlayingPageBackNavigationTest {
         }
     }
 
-    private fun assertPhoneLyricsBack(style: UiStyle) {
-        render(style, tablet = false, retainedLyricsPage = true)
+    private fun assertPhoneLyricsBack(style: UiStyle, previewEnabled: Boolean = true) {
+        render(style, tablet = false, retainedLyricsPage = true, previewEnabled = previewEnabled)
         composeRule.onNodeWithTag("lyricsScreen", useUnmergedTree = true).assertIsDisplayed()
+
+        if (!previewEnabled) {
+            val dispatcher = composeRule.activity.onBackPressedDispatcher
+            composeRule.runOnIdle { dispatcher.dispatchOnBackStarted(backEvent(0f)) }
+            composeRule.runOnIdle { dispatcher.dispatchOnBackProgressed(backEvent(0.7f)) }
+            advance(80L)
+            composeRule.runOnIdle {
+                assertTrue("关闭预览后拖动不能提交歌词导航: $style", lyricsPage)
+                assertTrue(visible)
+                assertEquals(0, closeRequests)
+            }
+            composeRule.onNodeWithTag("nowPlayingBackButton", useUnmergedTree = true).assertDoesNotExist()
+            composeRule.runOnIdle { dispatcher.dispatchOnBackCancelled() }
+            advance(80L)
+            composeRule.runOnIdle {
+                assertTrue("关闭预览后取消不能提交歌词导航: $style", lyricsPage)
+                assertTrue(visible)
+                assertEquals(0, closeRequests)
+            }
+            composeRule.onNodeWithTag("lyricsScreen", useUnmergedTree = true).assertIsDisplayed()
+        }
 
         val backStarted = composeRule.mainClock.currentTime
         pressSystemBack()

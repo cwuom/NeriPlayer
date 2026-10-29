@@ -129,9 +129,9 @@ class NowPlayingAdaptiveLayoutTest {
         assertEquals(frame.height, lyrics.height, 1f)
         assertControlsFit(frame)
         assertTrue(bounds("controls").bottom < bounds("toolbar").top - logicalPixels(24.dp))
-        assertTrue(bounds("cover").top >= bounds("topBar").bottom + logicalPixels(28.dp) - 1f)
-        assertTrue(bounds("identity").top >= bounds("cover").bottom + logicalPixels(16.dp) - 1f)
-        assertTrue(bounds("cover").width >= logicalPixels(350.dp) - 1f)
+        assertTrue(bounds("cover").top >= bounds("topBar").bottom + logicalPixels(8.dp) - 1f)
+        assertTrue(bounds("identity").top >= bounds("cover").bottom + logicalPixels(8.dp) - 1f)
+        assertTrue("封面应更突出: ${bounds("cover")}", bounds("cover").width >= logicalPixels(378.dp) - 1f)
         assertSquareCover()
     }
 
@@ -156,7 +156,7 @@ class NowPlayingAdaptiveLayoutTest {
 
         assertControlsFit(bounds("viewport"))
         assertTrue(bounds("controls").top > bounds("progress").bottom + logicalPixels(24.dp))
-        assertEquals(logicalPixels(16.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
+        assertEquals(logicalPixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
     }
 
     @Test
@@ -166,6 +166,8 @@ class NowPlayingAdaptiveLayoutTest {
         assertControlsFit(bounds("viewport"))
         assertTrue(bounds("progress").top > bounds("identity").bottom + logicalPixels(24.dp))
         assertEquals(logicalPixels(12.dp), bounds("controls").top - bounds("progress").bottom, 1f)
+        assertTrue("进度区应为底部控件保留空间: ${bounds("progress")}",
+            bounds("progress").top - bounds("viewport").top <= logicalPixels(564.dp))
     }
 
     @Test
@@ -282,14 +284,14 @@ class NowPlayingAdaptiveLayoutTest {
     fun compactTabletCoverLeavesBalancedSpaceInsideThePlayerPane() {
         renderLayout(1000.dp, 500.dp, NowPlayingControlPlacement.LOWER)
 
-        assertTabletCoverInsets()
+        assertTabletCoverInsets(0.72f)
     }
 
     @Test
     fun expandedTabletCoverLeavesBalancedSpaceInsideThePlayerPane() {
         renderLayout(1280.dp, 900.dp, NowPlayingControlPlacement.LOWER)
 
-        assertTabletCoverInsets()
+        assertTabletCoverInsets(0.78f)
     }
 
     @Test
@@ -465,7 +467,7 @@ class NowPlayingAdaptiveLayoutTest {
         assertEquals(cover.width, cover.height, 1f)
     }
 
-    private fun assertTabletCoverInsets() {
+    private fun assertTabletCoverInsets(maximumWidthFraction: Float) {
         assertControlsFit(bounds("viewport"))
         assertSquareCover()
         val player = bounds("nowPlayingPlayerPane")
@@ -474,8 +476,8 @@ class NowPlayingAdaptiveLayoutTest {
         val rightInset = player.right - cover.right
         assertEquals("封面应在实际左栏内居中", leftInset, rightInset, 1f)
         assertTrue(
-            "平板横屏封面最多占左栏的72%，保留两侧留白: cover=$cover player=$player",
-            cover.width <= player.width * 0.72f + 1f
+            "平板横屏封面应保留两侧留白: cover=$cover player=$player",
+            cover.width <= player.width * maximumWidthFraction + 1f
         )
         assertTrue(cover.top >= bounds("topBar").bottom + logicalPixels(8.dp) - 1f)
         assertTrue(cover.bottom <= bounds("toolbar").top - logicalPixels(8.dp) + 1f)

@@ -35,8 +35,10 @@ private val NowPlayingCompactPlayerPaneMaxWidth = 340.dp
 private val NowPlayingPhoneLandscapeMinimumContentHeight = 240.dp
 private val NowPlayingTabletPortraitFixedContentReserve = 480.dp
 private val NowPlayingTabletPortraitCoverMaxSize = 336.dp
+private val NowPlayingExpandedCoverIdentitySpacing = 20.dp
 private const val NOW_PLAYING_EXPANDED_CONTROLS_SPACER_WEIGHT = 0.12f
 private const val NOW_PLAYING_TABLET_LANDSCAPE_COVER_WIDTH_FRACTION = 0.72f
+private const val NOW_PLAYING_EXPANDED_TABLET_COVER_WIDTH_FRACTION = 0.78f
 
 internal fun isNowPlayingPhoneLandscape(
     isLandscape: Boolean,
@@ -112,8 +114,8 @@ internal fun resolveNowPlayingWideLayoutSpec(
         },
         paneSpacing = if (compactHeight) 16.dp else 40.dp,
         sectionSpacing = if (compactHeight) 4.dp else 16.dp,
-        coverVerticalPadding = if (compactHeight) 8.dp else 12.dp,
-        progressVerticalOffset = controlAreaOffset * 2,
+        coverVerticalPadding = 8.dp,
+        progressVerticalOffset = if (compactHeight) controlAreaOffset * 2 else (-24).dp,
         controlAreaVerticalOffset = controlAreaOffset
     )
 }
@@ -124,7 +126,7 @@ private fun nowPlayingWideContentHeight(availableHeight: Dp, phoneLandscape: Boo
 private fun nowPlayingWideControlAreaOffset(phoneLandscape: Boolean, compactHeight: Boolean): Dp = when {
     phoneLandscape -> 0.dp
     compactHeight -> (-4).dp
-    else -> (-12).dp
+    else -> (-20).dp
 }
 
 internal enum class NowPlayingWideControlSlot { PROGRESS, CONTROLS }
@@ -164,6 +166,7 @@ internal fun resolveNowPlayingWideControlOffsets(
 ): NowPlayingWideControlOffsets {
     // 宽松横屏把信息和其下控件一起抬高，短横屏顶部没有同样的留白
     val leadingOffset = if (spec.compactHeight) 0.dp else spec.controlAreaVerticalOffset
+    val controlsAdjustment = if (spec.compactHeight) 0.dp else 8.dp
     return NowPlayingWideControlOffsets(
         identity = leadingOffset,
         progress = if (NowPlayingWideControlSlot.PROGRESS in placement.trailing) {
@@ -171,11 +174,11 @@ internal fun resolveNowPlayingWideControlOffsets(
         } else {
             spec.progressVerticalOffset - spec.controlAreaVerticalOffset + leadingOffset
         },
-        controls = if (NowPlayingWideControlSlot.CONTROLS in placement.trailing) {
+        controls = (if (NowPlayingWideControlSlot.CONTROLS in placement.trailing) {
             spec.controlAreaVerticalOffset
         } else {
             leadingOffset
-        },
+        }) + controlsAdjustment,
         toolbar = spec.controlAreaVerticalOffset
     )
 }
@@ -364,12 +367,11 @@ private fun NowPlayingExpandedLandscape(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             topBar()
-            Spacer(Modifier.height(spec.sectionSpacing))
             cover(
-                Modifier.width(spec.playerPaneWidth * NOW_PLAYING_TABLET_LANDSCAPE_COVER_WIDTH_FRACTION)
+                Modifier.width(spec.playerPaneWidth * NOW_PLAYING_EXPANDED_TABLET_COVER_WIDTH_FRACTION)
                     .weight(1f).padding(vertical = spec.coverVerticalPadding)
             )
-            Spacer(Modifier.height(spec.sectionSpacing))
+            Spacer(Modifier.height(NowPlayingExpandedCoverIdentitySpacing))
             identity(false)
             Spacer(Modifier.height(spec.sectionSpacing))
             NowPlayingWideControlSection(placement.leading, progress, controls)

@@ -36,7 +36,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -132,15 +131,9 @@ import moe.ouom.neriplayer.data.identity.playbackVisualKeyAliases
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
-import moe.ouom.neriplayer.lyrics.offset.resolveEffectiveLyricOffsetMs
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
@@ -202,6 +195,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverOwne
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverRequestUrl
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldShowNowPlayingEmbeddedLyrics
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.rememberNowPlayingLyricsLoadOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.rememberNowPlayingLyricOffset
 import moe.ouom.neriplayer.ui.component.lyrics.LocalAdvancedLyricsPreparationCache
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadRequest
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsRefreshVersions
@@ -570,21 +564,6 @@ fun NowPlayingScreen(
     val showProgressAudioSpec by settingsRepo
         .nowPlayingProgressShowAudioSpecFlow
         .collectAsStateWithLifecycle(initialValue = true)
-    val cloudMusicLyricDefaultOffsetMs by settingsRepo
-        .cloudMusicLyricDefaultOffsetMsFlow
-        .collectAsStateWithLifecycle(initialValue = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS)
-    val qqMusicLyricDefaultOffsetMs by settingsRepo
-        .qqMusicLyricDefaultOffsetMsFlow
-        .collectAsStateWithLifecycle(initialValue = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS)
-    val kugouLyricDefaultOffsetMs by settingsRepo
-        .kugouLyricDefaultOffsetMsFlow
-        .collectAsStateWithLifecycle(initialValue = DEFAULT_KUGOU_LYRIC_OFFSET_MS)
-    val lrclibLyricDefaultOffsetMs by settingsRepo
-        .lrclibLyricDefaultOffsetMsFlow
-        .collectAsStateWithLifecycle(initialValue = DEFAULT_LRCLIB_LYRIC_OFFSET_MS)
-    val amllTtmlLyricDefaultOffsetMs by settingsRepo
-        .amllTtmlLyricDefaultOffsetMsFlow
-        .collectAsStateWithLifecycle(initialValue = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS)
     val lyricTranslationUsePhonetic by settingsRepo
         .lyricTranslationUsePhoneticFlow
         .collectAsStateWithLifecycle(initialValue = false)
@@ -1080,29 +1059,27 @@ fun NowPlayingScreen(
     val lowPowerLyricsRendering = remember(context, effectiveShowLyricsScreen) { context.isSystemPowerSaveMode() }
 
     // 歌词偏移 (平台 + 用户自定义)
-    val totalOffset = resolveEffectiveLyricOffsetMs(
-        lyricSource = currentSong?.matchedLyricSource,
-        cloudMusicDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
-        qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
-        userLyricOffsetMs = currentSong?.userLyricOffsetMs ?: 0L,
-        kugouDefaultOffsetMs = kugouLyricDefaultOffsetMs,
-        lrclibDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
-        amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
-        preferredLyricSource = loadedPreferredLyricSource,
+    val totalOffset = rememberNowPlayingLyricOffset(
+        repository = settingsRepo,
+        song = currentSong,
+        preferredSource = loadedPreferredLyricSource,
+        isBiliCcSubtitleLyrics = PlayerManager.isBiliCcSubtitleLyricsActive(currentSong)
     )
-    val progressInfoSegments = remember(
+    val progressInfoPresentation = remember(
         currentPlaybackAudioInfo,
         showProgressQualitySwitch,
         showProgressAudioCodec,
         showProgressAudioSpec,
-        playbackSoundState.speed
+        playbackSoundState.speed,
+        phoneLandscape
     ) {
-        buildNowPlayingProgressInfoSegments(
+        buildNowPlayingProgressInfoPresentation(
             audioInfo = currentPlaybackAudioInfo,
             showQualitySwitch = showProgressQualitySwitch,
             showAudioCodec = showProgressAudioCodec,
             showAudioSpec = showProgressAudioSpec,
-            playbackSpeed = playbackSoundState.speed
+            playbackSpeed = playbackSoundState.speed,
+            phoneLandscape = phoneLandscape
         )
     }
 
@@ -1151,7 +1128,6 @@ fun NowPlayingScreen(
                     if (useWideLandscapeLayout) onNavigateUp() else onShowLyricsScreenChange(false)
                 },
                 label = "lyrics_transition",
-                previewEasing = FastOutLinearInEasing,
                 cancelMinimumDurationMillis = LyricsBackCancelMinimumDurationMs,
                 onPreviewAnimationActiveChanged = { lyricsPredictiveBackPreviewActive = it },
                 primePreviewAtZero = true
@@ -1435,7 +1411,7 @@ fun NowPlayingScreen(
                                     isPlaying = isPlaying,
                                     isPlaybackWaiting = isPlaybackWaiting,
                                     playbackSpeed = playbackSoundState.speed,
-                                    progressInfoSegments = nowPlayingVisibleProgressInfoSegments(progressInfoSegments, phoneLandscape),
+                                    progressInfoPresentation = progressInfoPresentation,
                                     seekEnabled = playbackProgressSeekEnabled,
                                     activeContentColor = targetNowPlayingActiveIconColor,
                                     useWideLandscapeLayout = useWideLandscapeLayout,

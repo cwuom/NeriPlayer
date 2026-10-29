@@ -48,11 +48,11 @@ class NowPlayingAdaptiveLayoutTest {
     }
 
     @Test
-    fun `expanded identity and controls move together while short landscape preserves its top gap`() {
+    fun `expanded player balances section gaps while short landscape preserves its top gap`() {
         listOf(800.dp, 480.dp).forEach { height ->
             val spec = resolveNowPlayingWideLayoutSpec(1280.dp, height)
-            val previousProgressOffset = if (spec.compactHeight) (-4).dp else (-12).dp
-            val leadingOffset = if (spec.compactHeight) 0.dp else (-12).dp
+            val progressOffsetFromIdentity = (-4).dp
+            val leadingOffset = if (spec.compactHeight) 0.dp else (-20).dp
             NowPlayingControlPlacement.entries.forEach { placement ->
                 val sections = resolveNowPlayingWideControlPlacement(
                     placement.placesControlsAtBottom, placement.placesProgressAtBottom, spec.compactHeight
@@ -60,21 +60,27 @@ class NowPlayingAdaptiveLayoutTest {
                 val offsets = resolveNowPlayingWideControlOffsets(spec, sections)
                 if (placement == NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS) {
                     assertEquals(spec.progressVerticalOffset, offsets.progress)
-                    assertEquals(spec.controlAreaVerticalOffset, offsets.controls)
-                    assertEquals(-previousProgressOffset, offsets.controls - offsets.progress)
+                    assertEquals(if (spec.compactHeight) (-4).dp else (-12).dp, offsets.controls)
+                    assertEquals(if (spec.compactHeight) 4.dp else 12.dp, offsets.controls - offsets.progress)
                 } else {
-                    assertEquals(previousProgressOffset + leadingOffset, offsets.progress)
+                    assertEquals(progressOffsetFromIdentity + leadingOffset, offsets.progress)
                     assertEquals(
-                        if (spec.compactHeight) 0.dp else 4.dp,
+                        if (spec.compactHeight) 0.dp else 12.dp,
                         spec.sectionSpacing + offsets.progress - offsets.identity
                     )
                     assertEquals(
-                        if (placement == NowPlayingControlPlacement.BOTTOM) spec.controlAreaVerticalOffset else leadingOffset,
+                        if (!spec.compactHeight) (-12).dp
+                        else if (placement == NowPlayingControlPlacement.BOTTOM) spec.controlAreaVerticalOffset
+                        else leadingOffset,
                         offsets.controls
                     )
                 }
                 assertEquals(leadingOffset, offsets.identity)
-                assertEquals(4.dp, spec.sectionSpacing + offsets.identity)
+                if (spec.compactHeight) {
+                    assertEquals(4.dp, spec.sectionSpacing + offsets.identity)
+                } else {
+                    assertEquals(8.dp, spec.coverVerticalPadding + 20.dp + offsets.identity)
+                }
                 assertEquals(spec.controlAreaVerticalOffset, offsets.toolbar)
             }
         }
@@ -96,12 +102,12 @@ class NowPlayingAdaptiveLayoutTest {
         assertEquals((-24).dp, tablet.progressVerticalOffset)
         assertEquals((-8).dp, shortTablet.progressVerticalOffset)
         assertEquals(0.dp, phone.progressVerticalOffset)
-        assertEquals((-12).dp, tablet.controlAreaVerticalOffset)
+        assertEquals((-20).dp, tablet.controlAreaVerticalOffset)
         assertEquals((-4).dp, shortTablet.controlAreaVerticalOffset)
         assertEquals(0.dp, phone.controlAreaVerticalOffset)
         listOf(tablet, shortTablet).forEach { spec ->
             assertTrue(spec.controlAreaVerticalOffset - spec.progressVerticalOffset <= spec.sectionSpacing)
-            assertTrue(-spec.controlAreaVerticalOffset <= spec.sectionSpacing)
+            assertTrue(-spec.controlAreaVerticalOffset <= spec.sectionSpacing + spec.coverVerticalPadding)
         }
     }
 
@@ -272,6 +278,6 @@ class NowPlayingAdaptiveLayoutTest {
     @Test
     fun `cover leaves vertical breathing room without consuming control space`() {
         assertEquals(8.dp, resolveNowPlayingWideLayoutSpec(840.dp, 360.dp, phoneLandscape = true).coverVerticalPadding)
-        assertEquals(12.dp, resolveNowPlayingWideLayoutSpec(1280.dp, 800.dp).coverVerticalPadding)
+        assertEquals(8.dp, resolveNowPlayingWideLayoutSpec(1280.dp, 800.dp).coverVerticalPadding)
     }
 }

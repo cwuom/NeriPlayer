@@ -4,6 +4,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalConfiguration
@@ -22,13 +24,18 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import coil.Coil
 import coil.decode.DataSource
 import coil.intercept.Interceptor
@@ -37,6 +44,8 @@ import coil.request.Disposable
 import coil.request.ImageResult
 import coil.request.SuccessResult
 import coil.size.Size
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.InetAddress
@@ -61,9 +70,12 @@ import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.testing.TestComposeActivity
 import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingScreen
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingCoverCacheKey
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingCoverRequest
@@ -246,7 +258,220 @@ class NowPlayingLyricsFirstFrameRenderingTest {
         }
     }
 
-    private fun render(songKey: String, coverUrl: String) {
+    @Test
+    fun materialLyricsActionReturnDeceleratesTheActualCoverPixels() =
+        assertOrdinaryReturnDecelerates(UiStyle.Material)
+
+    @Test
+    fun cleanLyricsActionReturnDeceleratesTheActualCoverPixels() =
+        assertOrdinaryReturnDecelerates(UiStyle.Clean)
+
+    private fun assertOrdinaryReturnDecelerates(style: UiStyle) {
+        val context = composeRule.activity.applicationContext
+        val savedCleanMotion = NeriMotionStyle.clean
+        val savedPreferences = runBlocking { context.dataStore.data.first() }
+        val directory = File(context.cacheDir, "lyrics-return-${System.nanoTime()}")
+        check(directory.mkdirs())
+        val audio = File(directory, "fixture.wav")
+        val cover = File(directory, "cover.png")
+        val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.MAGENTA)
+        }
+        val record = InstrumentationRegistry.getArguments().getString("recordLyricsReturn") == "true"
+        try {
+            val captures = File(
+                checkNotNull(context.getExternalFilesDir(null)), "lyrics-return-${style.name.lowercase()}"
+            ).also { check(it.isDirectory || it.mkdirs()) }
+            runBlocking {
+                SettingsRepository(context).apply {
+                    setNowPlayingImmersiveMode(false)
+                    setNowPlayingDynamicBackgroundEnabled(false)
+                    setNowPlayingCoverBlurBackgroundEnabled(false)
+                    setNowPlayingAudioReactiveEnabled(false)
+                }
+            }
+            writeSilentWave(audio)
+            cover.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            val coverUrl = Uri.fromFile(cover).toString()
+            val fixture = SongItem(
+                id = -System.nanoTime(),
+                name = "Return timing fixture",
+                customName = "Return timing fixture",
+                artist = "Fixture artist",
+                customArtist = "Fixture artist",
+                album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+                albumId = 0L,
+                durationMs = 30_000L,
+                coverUrl = coverUrl,
+                customCoverUrl = coverUrl,
+                matchedLyric = "[00:00.00]Return timing lyric",
+                lyricSyncEdited = true,
+                mediaUri = Uri.fromFile(audio).toString(),
+                localFilePath = audio.absolutePath
+            )
+            composeRule.runOnUiThread {
+                PlayerManager.release()
+                PlayerManager.initialize(composeRule.activity.application)
+                PlayerManager.playPlaylist(listOf(fixture), startIndex = 0)
+            }
+            composeRule.waitUntil(10_000L) { PlayerManager.currentSongFlow.value?.id == fixture.id }
+            composeRule.runOnUiThread {
+                PlayerManager.pause()
+                lyricsVisible = true
+                NeriMotionStyle.clean = style == UiStyle.Clean
+            }
+            val actualSong = checkNotNull(PlayerManager.currentSongFlow.value)
+            val songKey = actualSong.playbackVisualKey()
+            assertEquals(coverUrl, actualSong.customCoverUrl)
+            val cacheKey = buildNowPlayingCoverCacheKey(
+                coverUrl,
+                GlobalDownloadManager.downloadPresenceVersion.value,
+                LocalAssetInvalidationBus.rootGenerationFlow.value,
+                LocalAssetInvalidationBus.currentSongRevision(actualSong.stableKey())
+            )
+            val frame = checkNotNull(buildNowPlayingCoverRequest(coverUrl, songKey, cacheKey)).frame
+            RetainedPlaybackCoverBitmapCache.put(songKey, coverUrl, frame.cacheKey, bitmap.asImageBitmap())
+            render(songKey, coverUrl, style = style, offlineMode = true, previewEnabled = false)
+            composeRule.waitForIdle()
+            composeRule.mainClock.autoAdvance = false
+            composeRule.mainClock.advanceTimeBy(1_024L)
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("lyricsScreen").assertIsDisplayed()
+            val frames = mutableListOf(
+                composeRule.mainClock.currentTime to artworkBounds(captures.resolve("frame-00.png"))
+            )
+
+            composeRule.onNodeWithTag("nowPlayingLyricsAction").assertIsDisplayed().performClick()
+            repeat(48) { index ->
+                composeRule.mainClock.advanceTimeBy(16L)
+                composeRule.waitForIdle()
+                frames += composeRule.mainClock.currentTime to
+                    artworkBounds(captures.resolve("frame-${(index + 1).toString().padStart(2, '0')}.png"))
+            }
+            val widths = frames.map { (_, bounds) -> bounds.width }
+            val evidence = "$style return pixel samples=${frames.map { (time, bounds) ->
+                time - frames.first().first to bounds.width
+            }}"
+            Log.i(Tag, evidence)
+            captures.resolve("widths.txt").writeText(evidence)
+            assertTrue("必须确实从歌词小封面展开回播放页: $evidence", widths.last() > widths.first() * 2)
+            assertTrue("封面展开不能倒退或抖动: $evidence", widths.zipWithNext().all { (a, b) -> b >= a - 2 })
+            // 按实际行程取完整步，避开启动等待和最后一步被端点截短造成的假减速
+            val middleSpeed = averageSpeedInTravelWindow(frames, 0.20f, 0.60f)
+            val tailSpeed = averageSpeedInTravelWindow(frames, 0.85f, 0.98f)
+            val speeds = "middle20-60=$middleSpeed px/ms tail85-98=$tailSpeed px/ms"
+            Log.i(Tag, speeds)
+            captures.resolve("widths.txt").appendText("\n$speeds")
+            assertTrue("实际行程尾段应明显减速: $speeds $evidence", middleSpeed > tailSpeed * 2f)
+
+            composeRule.mainClock.advanceTimeBy(1_024L)
+            composeRule.waitForIdle()
+            val settled = artworkBounds(captures.resolve("cover-page.png"))
+            assertTrue("采样结束应已落到最终大封面", settled.width in widths.last() - 2..widths.last() + 2)
+            assertTrue("最终封面应保持正方形", settled.height in settled.width - 2..settled.width + 2)
+            composeRule.onNodeWithTag("lyricsScreen").assertDoesNotExist()
+            composeRule.onNodeWithText(fixture.name).assertIsDisplayed()
+            composeRule.onNodeWithText(fixture.artist).assertIsDisplayed()
+            if (record) {
+                Log.i(Tag, "realTimeReplayStart style=$style")
+                recordOrdinaryReturns()
+                Log.i(Tag, "realTimeReplayEnd style=$style")
+            }
+        } finally {
+            composeRule.mainClock.autoAdvance = true
+            try {
+                composeRule.runOnIdle { mounted = false }
+                composeRule.waitForIdle()
+            } finally {
+                try {
+                    composeRule.runOnUiThread { PlayerManager.release() }
+                } finally {
+                    try {
+                        runBlocking {
+                            context.dataStore.updateData { savedPreferences }
+                            assertEquals(savedPreferences, context.dataStore.data.first())
+                        }
+                    } finally {
+                        NeriMotionStyle.clean = savedCleanMotion
+                        check(directory.deleteRecursively())
+                    }
+                }
+            }
+        }
+    }
+
+    private fun averageSpeedInTravelWindow(
+        frames: List<Pair<Long, IntRect>>,
+        startFraction: Float,
+        endFraction: Float
+    ): Float {
+        val initialWidth = frames.first().second.width
+        val finalWidth = frames.last().second.width
+        val travel = (finalWidth - initialWidth).toFloat()
+        val steps = frames.zipWithNext().filter { (start, end) ->
+            val from = (start.second.width - initialWidth) / travel
+            val to = (end.second.width - initialWidth) / travel
+            from in startFraction..endFraction && to in startFraction..endFraction &&
+                end.second.width < finalWidth
+        }
+        assertTrue("行程窗口 $startFraction..$endFraction 必须包含至少两个完整采样步", steps.size >= 2)
+        val displacement = steps.sumOf { (start, end) -> end.second.width - start.second.width }
+        val elapsed = steps.sumOf { (start, end) -> end.first - start.first }
+        assertTrue("行程窗口必须包含实际位移和经过时间", displacement > 0 && elapsed > 0L)
+        return displacement.toFloat() / elapsed
+    }
+
+    private fun artworkBounds(captureFile: File? = null): IntRect {
+        val image = composeRule.onNodeWithTag(ViewportTag).captureToImage()
+        captureFile?.outputStream()?.use { check(image.asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        val pixels = image.toPixelMap()
+        var left = pixels.width
+        var top = pixels.height
+        var right = -1
+        var bottom = -1
+        for (y in 0 until pixels.height) {
+            for (x in 0 until pixels.width) {
+                val color = pixels[x, y]
+                if (color.red > 0.9f && color.blue > 0.9f && color.green < 0.1f) {
+                    left = minOf(left, x)
+                    top = minOf(top, y)
+                    right = maxOf(right, x)
+                    bottom = maxOf(bottom, y)
+                }
+            }
+        }
+        assertTrue("每次像素采样都必须有实际绘制的封面", right >= left && bottom >= top)
+        return IntRect(left, top, right + 1, bottom + 1)
+    }
+
+    private fun recordOrdinaryReturns() {
+        composeRule.mainClock.autoAdvance = false
+        repeat(3) {
+            composeRule.onNodeWithTag("nowPlayingLyricsAction").performClick()
+            replayPageTransition()
+            composeRule.onNodeWithTag("nowPlayingLyricsAction").performClick()
+            replayPageTransition()
+        }
+    }
+
+    private fun replayPageTransition() {
+        // 按测试时钟逐帧回放，避免自动快进让录屏跳过中间帧
+        val started = SystemClock.uptimeMillis()
+        repeat(ReplayFramesPerPage) { frame ->
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.waitForIdle()
+            val remaining = started + (frame + 1) * ReplayFrameMillis - SystemClock.uptimeMillis()
+            if (remaining > 0L) SystemClock.sleep(remaining)
+        }
+    }
+
+    private fun render(
+        songKey: String,
+        coverUrl: String,
+        style: UiStyle = UiStyle.Material,
+        offlineMode: Boolean = false,
+        previewEnabled: Boolean? = null
+    ) {
         composeRule.setContent {
             if (mounted) {
                 val configuration = LocalConfiguration.current
@@ -258,7 +483,11 @@ class NowPlayingLyricsFirstFrameRenderingTest {
                         orientation = Configuration.ORIENTATION_PORTRAIT
                     }
                 }
-                CompositionLocalProvider(LocalConfiguration provides portrait) {
+                CompositionLocalProvider(
+                    LocalConfiguration provides portrait,
+                    LocalPredictiveBackPreviewEnabled provides
+                        (previewEnabled ?: LocalPredictiveBackPreviewEnabled.current)
+                ) {
                     FittedTestViewport(360.dp, 800.dp) {
                         val density = LocalDensity.current
                         val actualWindow = LocalWindowInfo.current
@@ -275,7 +504,7 @@ class NowPlayingLyricsFirstFrameRenderingTest {
                                 forceDark = true,
                                 dynamicColor = false,
                                 seedColorHex = "336699",
-                                uiStyle = UiStyle.Material
+                                uiStyle = style
                             ) {
                                 Box(Modifier.fillMaxSize().background(Color.Black).testTag(ViewportTag)) {
                                     NowPlayingScreen(
@@ -289,7 +518,7 @@ class NowPlayingLyricsFirstFrameRenderingTest {
                                         onLyricFontScaleChange = { _, _ -> },
                                         advancedLyricsEnabled = false,
                                         showCoverSourceBadge = false,
-                                        offlineMode = false,
+                                        offlineMode = offlineMode,
                                         resolvedCoverUrl = coverUrl,
                                         visualCoverUrl = coverUrl,
                                         playbackSongKey = songKey,
@@ -397,6 +626,8 @@ class NowPlayingLyricsFirstFrameRenderingTest {
     }
 
     private companion object {
+        const val ReplayFramesPerPage = 64
+        const val ReplayFrameMillis = 16L
         const val Tag = "LyricsFirstFrameTest"
         const val ViewportTag = "lyrics-first-frame-viewport"
     }
