@@ -65,6 +65,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import kotlin.math.abs
 import kotlin.math.E
+import kotlin.math.roundToLong
 import kotlin.math.sqrt
 
 @RunWith(AndroidJUnit4::class)
@@ -599,7 +600,7 @@ class HostPredictiveCoverGeometryTest {
         spring<Rect>(stiffness = Spring.StiffnessMediumLow,
             visibilityThreshold = Rect.VisibilityThreshold),
         Rect.VectorConverter, Header, Cover
-    ).getValueFromNanos((transition.totalDurationNanos * raw).toLong())
+    ).getValueFromNanos((raw.toDouble() * transition.totalDurationNanos).roundToLong())
 
     private fun assertMeasuredArtworkMatchesFlight() {
         assertRect(requireNotNull(flight.bounds), root.localBoundingBoxOf(artwork, clipBounds = false), 1f)

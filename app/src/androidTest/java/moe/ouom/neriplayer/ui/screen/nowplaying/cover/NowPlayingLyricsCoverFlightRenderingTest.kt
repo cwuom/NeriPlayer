@@ -54,6 +54,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import kotlin.math.E
 import kotlin.math.abs
+import kotlin.math.roundToLong
 import kotlin.math.sqrt
 import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
@@ -268,9 +269,10 @@ class NowPlayingLyricsCoverFlightRenderingTest {
                 advance(80L)
                 val frame = captureFrame(caseName, "preview=$rawProgress")
                 val expected = composeRule.runOnIdle {
-                    val playTime = (transition.totalDurationNanos * rawProgress).toLong()
+                    // 与 SeekableTransitionState 使用同样的取整，避免 spring 落入相邻毫秒
+                    val playTime = (rawProgress.toDouble() * transition.totalDurationNanos).roundToLong()
                     reference.getValueFromNanos(playTime).also { bounds ->
-                        assertTrue("$caseName: raw=$rawProgress 必须沿原版 spring 取样 expected=$bounds actual=${flight.bounds}",
+                        assertTrue("$caseName: raw=$rawProgress time=$playTime/${transition.totalDurationNanos} 必须沿原版 spring 取样 expected=$bounds actual=${flight.bounds}",
                             boundsError(bounds, requireNotNull(flight.bounds)) <= 1f)
                         assertTrue("$caseName: 取样不能提前提交返回", lyricsVisible && previewActive)
                     }
