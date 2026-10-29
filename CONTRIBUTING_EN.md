@@ -28,8 +28,11 @@ implementation**. Keep documentation aligned with the source code and runtime be
 When maintaining docs, split them by audience:
 
 - [README_EN.md](README_EN.md)
-  - For users and new contributors: project scope, feature boundaries,
+  - For users and new contributors: project scope, key features, feature boundaries,
     installation/builds, sync, and privacy.
+- [docs/implementation_EN.md](docs/implementation_EN.md)
+  - Build versions, the 14 owned libraries, entry points and navigation, playback and
+    caching, data sources, and download/backup paths.
 - [CONTRIBUTING_EN.md](CONTRIBUTING_EN.md)
   - For developers: module boundaries, extension paths, tests, and PR expectations.
 - [docs/kotlin-helpers_EN.md](docs/kotlin-helpers_EN.md)
@@ -203,7 +206,7 @@ Security reminders:
 
 #### Root modules
 
-The root [README_EN.md](README_EN.md#module-layout) is the entry point for the complete module map. `gradle/owned-modules.txt` registers all 14 owned libraries once for builds, lint, and structural checks. Coverage includes libraries with Kotlin/Java production sources; `:native` uses independent host tests and four-ABI compilation. Top-level names express business domains, with remote sources consolidated in `:platform`. Playback and downloads retain separate rule and runtime build boundaries.
+The [implementation notes](docs/implementation_EN.md#module-layout) are the entry point for the complete module map. `gradle/owned-modules.txt` registers all 14 owned libraries once for builds, lint, and structural checks. Coverage includes libraries with Kotlin/Java production sources; `:native` uses independent host tests and four-ABI compilation. Top-level names express business domains, with remote sources consolidated in `:platform`. Playback and downloads retain separate rule and runtime build boundaries.
 
 - Infrastructure: `:common`, `:network`, `:model`, `:database`. Models have no project implementation dependencies; the database owns historical Room schemas and complete upgrade paths.
 - Native: `:native` owns the CMake build boundary, crash handling, USB protocols and PCM calculations, exclusive transport, and third-party libusb. App consumes its AAR; Kotlin playback sessions and the JNI bridge remain in `:playback:runtime`.
