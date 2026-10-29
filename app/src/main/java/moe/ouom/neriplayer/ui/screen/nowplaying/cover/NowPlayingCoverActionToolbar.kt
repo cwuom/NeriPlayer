@@ -172,8 +172,7 @@ internal fun NowPlayingCoverActionToolbar(
     status: NowPlayingCoverToolbarStatus,
     actions: NowPlayingCoverToolbarActions,
     sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
-    lanEntry: @Composable () -> Unit = {}
+    animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     Column(
         modifier = Modifier
@@ -190,7 +189,7 @@ internal fun NowPlayingCoverActionToolbar(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         NowPlayingCoverToolbarDock(spec, status, actions, sharedTransitionScope, animatedVisibilityScope)
-        lanEntry()
+        moe.ouom.neriplayer.ui.component.playback.lan.ActiveLanRoomMenu()
     }
 }
 

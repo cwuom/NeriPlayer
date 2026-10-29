@@ -15,6 +15,7 @@ internal data class LanAudioFormat(
 
 /** Source is authoritative room metadata; quality comes from the selected host candidate. */
 internal fun lanAudioSource(channelId: String): PlaybackAudioSource = when (channelId) {
+    "local" -> PlaybackAudioSource.LOCAL
     "netease" -> PlaybackAudioSource.NETEASE
     "bilibili" -> PlaybackAudioSource.BILIBILI
     "youtubeMusic" -> PlaybackAudioSource.YOUTUBE_MUSIC

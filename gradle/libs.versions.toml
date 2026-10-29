@@ -1,4 +1,5 @@
 [versions]
+nanoHttpd = "2.3.1"
 javaWebSocket = "1.6.0"
 zipline = "1.28.0"
 zstd = "1.5.7-20"
@@ -62,6 +63,7 @@ focusApi = "1.4"
 hiddenApiBypass = "6.1"
 
 [libraries]
+nanohttpd = { module = "org.nanohttpd:nanohttpd", version.ref = "nanoHttpd" }
 java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "javaWebSocket" }
 zipline = { module = "app.cash.zipline:zipline", version.ref = "zipline" }
 zstd-jni = { module = "com.github.luben:zstd-jni", version.ref = "zstd" }

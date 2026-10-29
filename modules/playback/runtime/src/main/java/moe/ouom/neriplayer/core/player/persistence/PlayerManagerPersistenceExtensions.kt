@@ -648,6 +648,9 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(
     song: SongItem,
     skipPreferredSource: Boolean = false
 ): List<LyricEntry> {
+    moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore.forSong(song)?.let { shared ->
+        return shared.translations.map { moe.ouom.neriplayer.core.player.lan.restoreLanLyricLine(it) }
+    }
     return PlayerLyricsProvider.getTranslatedLyrics(
         song = song,
         application = application,
@@ -672,6 +675,9 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(
 }
 
 internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem): List<LyricEntry> {
+    moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore.forSong(song)?.let { shared ->
+        return shared.romanized.map { moe.ouom.neriplayer.core.player.lan.restoreLanLyricLine(it) }
+    }
     return PlayerLyricsProvider.getRomanizedLyrics(
         song = song,
         application = application,
@@ -688,6 +694,9 @@ internal suspend fun PlayerManager.getLyricsImpl(
     song: SongItem,
     skipPreferredSource: Boolean = false
 ): List<LyricEntry> {
+    moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore.forSong(song)?.let { shared ->
+        return shared.lyrics.map { moe.ouom.neriplayer.core.player.lan.restoreLanLyricLine(it) }
+    }
     return PlayerLyricsProvider.getLyrics(
         song = song,
         application = application,
@@ -737,6 +746,7 @@ internal fun PlayerManager.playFromQueueImpl(
     if (currentPlaylist.isEmpty()) return
     if (index !in currentPlaylist.indices) return
     val targetSong = currentPlaylist[index]
+    if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.playlist(currentPlaylist, index, commandSource)) return
     NPLogger.d(
         "NERI-PlayerManager",
         "playFromQueue(): index=$index, source=$commandSource, currentIndex=$currentIndex, queueSize=${currentPlaylist.size}, target=${targetSong.name}/${targetSong.id}, stack=[${debugStackHint()}]"

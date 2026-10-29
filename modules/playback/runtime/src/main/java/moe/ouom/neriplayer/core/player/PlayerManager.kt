@@ -1274,6 +1274,7 @@ object PlayerManager {
     }
 
     internal fun shouldBlockLocalSongSwitch(song: SongItem, commandSource: PlaybackCommandSource): Boolean {
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.active) return false
         if (commandSource != PlaybackCommandSource.LOCAL) return false
         if (!isListenTogetherActive()) return false
         if (!isLocalSong(song)) return false

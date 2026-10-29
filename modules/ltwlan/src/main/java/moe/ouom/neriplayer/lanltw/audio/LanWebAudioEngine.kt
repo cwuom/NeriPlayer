@@ -119,7 +119,7 @@ class LanWebAudioEngine(
     suspend fun load(key: String, file: File, position: Double, expectedDurationMs: Long = 0): Boolean {
         initialize()
         if (mediaKey == key) return true
-        check(file.length() in 1..40L * 1024 * 1024) { "MEMORY_LIMIT" }
+        check(file.length() in 1..moe.ouom.neriplayer.data.model.lan.LanLocalMedia.MAX_BYTES) { "MEMORY_LIMIT" }
         val token = UUID.randomUUID().toString(); media = token to file
         val result = invoke("load", buildJsonObject { put("key", key); put("url", "https://$ORIGIN/media/$token"); put("position", position); put("expectedDurationMs", expectedDurationMs) })
         mediaKey = result.jsonObject["key"]?.jsonPrimitive?.content

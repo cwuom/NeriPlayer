@@ -1607,8 +1607,7 @@ fun NowPlayingScreen(
                                     ),
                                     actions = coverToolbarActions,
                                     sharedTransitionScope = this@SharedTransitionLayout,
-                                    animatedVisibilityScope = this@AnimatedContent,
-                                    lanEntry = { moe.ouom.neriplayer.ui.component.playback.lan.LanRoomEntry() }
+                                    animatedVisibilityScope = this@AnimatedContent
                                 )
                             }
                             val embeddedLyricsVisible = shouldShowNowPlayingEmbeddedLyrics(

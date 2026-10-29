@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 @Serializable data class LanSource(val url: String)
 @Serializable data class LanRoomEvent(val type: String, val audioSourceToPlay: LanSource? = null,
     val clients: List<LanMember> = emptyList(), val room: LanRoom? = null, val track: ListenTogetherTrack? = null,
-    val trackTimeSeconds: Double? = null, val loadGeneration: Long? = null, val revision: Long? = null, val sourceUrls: List<String> = emptyList())
+    val trackTimeSeconds: Double? = null, val loadGeneration: Long? = null, val revision: Long? = null, val sourceUrls: List<String> = emptyList(), val localMedia: LanLocalMedia? = null)
 
 /** LAN extension envelope. Credentials never appear in LanRoom/UI state. */
 @Serializable data class LanMessage(
@@ -28,6 +28,9 @@ import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
     val source: LanSource? = null,
     val sourceUrls: List<String> = emptyList(),
     val contentDigest: String? = null,
+    val localMedia: LanLocalMedia? = null,
+    val mediaPort: Int? = null,
+    val mediaToken: String? = null,
     val scheduledAction: LanAction? = null,
     val serverTimeToExecute: Double? = null,
     val revision: Long? = null,
@@ -49,5 +52,6 @@ data class LanSessionState(
     val phase: String = "IDLE", val room: LanRoom? = null, val selfId: String? = null,
     val hosting: Boolean = false, val address: String = "", val port: Int = 0,
     val synced: Boolean = false, val rttMs: Double = 0.0, val nudgeMs: Int = 0,
-    val error: String? = null, val preparing: Boolean = false
+    val error: String? = null, val preparing: Boolean = false,
+    val receivedBytes: Long = 0, val totalBytes: Long = 0
 ) { val active: Boolean get() = phase != "IDLE" }

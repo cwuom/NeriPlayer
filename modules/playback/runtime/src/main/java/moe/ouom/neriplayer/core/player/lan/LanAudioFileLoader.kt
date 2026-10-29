@@ -43,7 +43,7 @@ internal class LanAudioFileLoader {
         } catch (error: Throwable) { file.delete(); throw error }
         finally { source.close() }
     }
-    private fun validate(file: File, sampleRate: Int, expectedDurationMs: Long): LanAudioFormat {
+    fun validate(file: File, sampleRate: Int, expectedDurationMs: Long): LanAudioFormat {
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(file.absolutePath)
@@ -56,8 +56,7 @@ internal class LanAudioFileLoader {
             check(moe.ouom.neriplayer.lanltw.core.LanAudioDuration.matches(expectedDurationMs, durationUs / 1000)) { "AUDIO_DURATION" }
             // Browser decodes to the running AudioContext sample rate. Bound before allocating.
             check(sampleRate in 8000..192000) { "MEMORY_LIMIT" }
-            val pcmBytes = durationUs / 1_000_000.0 * sampleRate * channels * 4
-            check(durationUs > 0 && pcmBytes <= 192L * 1024 * 1024) { "MEMORY_LIMIT" }
+            check(moe.ouom.neriplayer.data.model.lan.lanPcmFits(durationUs, sampleRate, channels)) { "MEMORY_LIMIT" }
             return LanAudioFormat(format.getString(MediaFormat.KEY_MIME),
                 format.optionalInt(MediaFormat.KEY_BIT_RATE)?.div(1000)
                     ?: moe.ouom.neriplayer.data.model.playback.estimateBitrateKbps(file.length(), durationUs / 1000),
@@ -69,5 +68,5 @@ internal class LanAudioFileLoader {
     private fun MediaFormat.optionalInt(key: String): Int? =
         if (containsKey(key)) getInteger(key).takeIf { it > 0 } else null
     fun clear(file: File?) { file?.delete() }
-    companion object { private const val MAX_ENCODED = 40L * 1024 * 1024 }
+    companion object { private const val MAX_ENCODED = moe.ouom.neriplayer.data.model.lan.LanLocalMedia.MAX_BYTES }
 }

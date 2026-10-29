@@ -31,7 +31,7 @@ internal object LanPlaybackBinding {
         return true
     }
     fun track(song: SongItem?): ListenTogetherTrack? = song?.let {
-        with(PlayerListenTogetherSongMapper) { it.toListenTogetherTrackOrNull(includeLocal = false) }
+        LanLocalIdentity.track(it) ?: with(PlayerListenTogetherSongMapper) { it.toListenTogetherTrackOrNull(includeLocal = false) }
     }?.copy(streamUrl = null, streamUrls = emptyList(), mediaUri = null)
     fun route(intent: String, source: PlaybackCommandSource, song: SongItem? = PlayerManager.currentSongFlow.value, position: Double = PlayerManager.playbackPositionFlow.value / 1000.0): Boolean {
         if (source != PlaybackCommandSource.LOCAL) return false
@@ -64,5 +64,5 @@ internal object LanPlaybackBinding {
         }
         return true
     }
-    fun clear() { externalAudio = false; interruptAudio = null; command = null; stopped = null; isHost = { false }; offeredQueue = null }
+    fun clear() { LanLocalIdentity.clear(); LanSharedPresentationStore.clear(); externalAudio = false; interruptAudio = null; command = null; stopped = null; isHost = { false }; offeredQueue = null }
 }

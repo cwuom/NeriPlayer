@@ -10,6 +10,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.java.websocket)
+    api(libs.nanohttpd)
     implementation(libs.androidx.webkit)
     implementation(libs.zipline)
     compileOnly(libs.androidx.annotation)

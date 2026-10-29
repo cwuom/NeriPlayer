@@ -135,6 +135,7 @@ internal fun MoreOptionsMainContent(
     onOpenBiliVideoSkip: () -> Unit,
     onOpenBiliCcSubtitle: () -> Unit,
     onOpenListenTogether: () -> Unit,
+    onOpenLanListenTogether: () -> Unit,
     onOpenEncyclopedia: () -> Unit,
     onShowSongDetails: () -> Unit,
     onShowQualitySwitch: () -> Unit,
@@ -209,6 +210,12 @@ internal fun MoreOptionsMainContent(
                 icon = Icons.Outlined.Headphones,
                 hue = MoreHueIndigo,
                 onClick = onOpenListenTogether
+            )
+            MoreOptionsItem(
+                title = stringResource(CoreCommonR.string.lan_title),
+                icon = Icons.Outlined.Headphones,
+                hue = MoreHueIndigo,
+                onClick = onOpenLanListenTogether
             )
         }
     }

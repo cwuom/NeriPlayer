@@ -2,7 +2,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
 const bundle=await readFile('../../modules/ltwlan/src/main/assets/lan-audio/core.js','utf8');
-let perf=1000,latency=.024,pendingDecode=null;const messages=[],starts=[],stops=[];
+let perf=1000,latency=.024,pendingDecode=null,decodedLength=120*48000,encodedLength=40;const messages=[],starts=[],stops=[];
 class AudioNode {
  constructor(){this.gain={value:1};this.frequency={value:0};this.Q={value:0};this.buffer=null;this.onended=null;}
  connect(){} disconnect(){} start(at,offset){if(at!==undefined)starts.push({at,offset,node:this});} stop(at){stops.push({at,node:this});}
@@ -12,10 +12,10 @@ class AudioContext {
  get currentTime(){return perf/1000} get outputLatency(){return latency}
  createBufferSource(){return new AudioNode()} createGain(){return new AudioNode()} createBiquadFilter(){return new AudioNode()} createOscillator(){return new AudioNode()}
  async resume(){this.state='running'} async close(){this.state='closed'}
- async decodeAudioData(){if(pendingDecode)await pendingDecode;return {duration:120,length:120*48000,numberOfChannels:2,sampleRate:48000}}
+ async decodeAudioData(){if(pendingDecode)await pendingDecode;return {duration:120,length:decodedLength,numberOfChannels:2,sampleRate:48000}}
 }
 const context=vm.createContext({performance:{now:()=>perf},AudioContext,navigator:{userAgent:'Android test',maxTouchPoints:0},console:{log(){},warn(){},error(){}},setInterval:()=>1,clearInterval(){},setTimeout:()=>1,
- fetch:async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(40)}),LanAudioHost:{nowMs:()=>perf+40000,post:s=>messages.push(JSON.parse(s))}});
+ fetch:async()=>({ok:true,arrayBuffer:async()=>({byteLength:encodedLength})}),LanAudioHost:{nowMs:()=>perf+40000,post:s=>messages.push(JSON.parse(s))}});
 context.window=context;vm.runInContext(bundle,context);let id=0,checks=0;
 async function command(op,data={}){const n=++id;await context.NeriBeatSyncAudio.dispatch({id:n,op,data});const reply=messages.find(m=>m.event==='reply'&&m.id===n);assert.ok(reply,op);if(reply.error)throw Error(reply.error);return reply.result;}
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
@@ -44,6 +44,10 @@ for(let group=0;group<16;group++){
  const result=await command('ntp',{receivedAt:t0+36,message:{t0:t0+25,t1:t0+80,t2:t0+81,probeGroupId:group,probeGroupIndex:1}});
  near(result.offset,50);near(result.rtt,10);assert.equal(result.synced,group===15);
 }checks++;
+encodedLength=200*1024*1024;decodedLength=512*1024*1024/8;
+await command('load',{key:'exact-limits',url:'https://local/test'});checks++;
+encodedLength++;await assert.rejects(command('load',{key:'encoded-too-large',url:'https://local/test'}),/MEMORY_LIMIT/);checks++;
+encodedLength=40;decodedLength++;await assert.rejects(command('load',{key:'decoded-too-large',url:'https://local/test'}),/MEMORY_LIMIT/);checks++;
 await command('dispose');checks++;
 await writeFile('results/web-audio-original-code.json',JSON.stringify({checks,status:'passed',scope:'Unmodified extracted functions with simulated Web Audio. No acoustic accuracy claim.'},null,2));
 console.log(`Web Audio original-code checks: ${checks} passed`);

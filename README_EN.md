@@ -447,3 +447,5 @@ the commit history.
 Create room and Join room are available on Now Playing and Settings → Listen Together. Use the same Wi-Fi; members use the full audio candidates shared by the host for this session. The host controls member permissions and system media volumes. Manual timing nudge is available; local-file matching and USB exclusive output are not supported yet. This mode is separate from the cloud Worker service. See [module documentation](modules/ltwlan/README.md).
 
 When the host has not granted permission, member play/pause, previous/next and seek controls are disabled and grey; mini-player skip gestures are disabled too. The three host permissions persist locally across room creation and app restarts. Joining another host does not overwrite those preferences.
+
+The Now Playing More menu places LAN listen together next to the cloud listen-together entry. Its subpage provides create, join and room management; Settings retains direct create/join buttons.

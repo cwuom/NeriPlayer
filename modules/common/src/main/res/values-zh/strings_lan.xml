@@ -27,7 +27,7 @@
     <string name="lan_syncing">正在对时…</string>
     <string name="lan_reconnecting">连接中断，正在重连…</string>
     <string name="lan_host_badge">主控</string>
-    <string name="lan_limits">主控分享完整音源链接，仅用于当前房间；副设备无需自行解析。首次播放需下载并解码，暂不支持分段流及 USB 独占输出。</string>
+    <string name="lan_limits">主控分享在线音源或本地歌曲，仅用于当前房间。本地文件完整接收后同步播放；音频上限 200 MiB，解码内存上限 512 MiB，暂不支持分段流及 USB 独占输出。</string>
     <string name="lan_error_network">连接不可用，请检查同一网络和主控状态</string>
     <string name="lan_error_source">此歌曲暂不支持或无法在本机装载；请检查账号和音源</string>
     <string name="lan_error_denied">主控尚未允许这项操作</string>
@@ -41,12 +41,20 @@
     <string name="lan_error_invalid">操作无效或双方协议版本不一致</string>
     <string name="lan_create">创建房间</string>
     <string name="lan_join_room">加入房间</string>
-    <string name="lan_manage">房间管理</string>
-    <string name="lan_preparing">正在下载并解码音源，全部就绪后同步播放…</string>
+    <string name="lan_manage">一起听管理</string>
+    <string name="lan_preparing">正在接收并解码音源，全部就绪后同步播放…</string>
     <string name="lan_error_memory">音源超过同步播放的内存预算，请选择较短的歌曲</string>
     <string name="lan_error_audio_format">当前音源无法完整解码，暂不支持此格式或分段流</string>
     <string name="lan_error_audio_engine">音频引擎已中断，会话已暂停，请重新加入</string>
     <string name="lan_error_load_timeout">音源准备超时，未开始播放。请重试或选择其他歌曲</string>
     <string name="lan_error_full_audio">主控未取得完整音源，无法同步播放试听片段</string>
     <string name="lan_error_duration">音源时长与房间歌曲不一致，已停止装载，避免播放试听片段</string>
+    <string name="lan_error_local">无法读取本地歌曲或附属信息，请检查文件权限和可用空间。</string>
+    <string name="lan_error_transfer">本地文件传输失败，请检查与主控的连接后重试。</string>
+    <string name="lan_device_volume">设备音量</string>
+    <string name="lan_back_room">返回房间</string>
+    <string name="lan_permission_next_short">切歌</string>
+    <string name="lan_permission_play_short">播放</string>
+    <string name="lan_permission_seek_short">进度</string>
+    <string name="lan_host_preparing">正在准备音源，等待设备就绪…</string>
 </resources>

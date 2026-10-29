@@ -47,11 +47,11 @@ async function initialize(){
 async function load(d:any){
  const generation=++loadGeneration;stopNode();state.audioSources=[];buffer=null;state.selectedAudioUrl=d.key;state.currentTime=d.position||0;
  const response=await fetch(d.url,{cache:'no-store',credentials:'omit'});if(!response.ok)throw Error('SOURCE');
- const bytes=await response.arrayBuffer();if(bytes.byteLength>40*1024*1024)throw Error('MEMORY_LIMIT');
+ const bytes=await response.arrayBuffer();if(bytes.byteLength>200*1024*1024)throw Error('MEMORY_LIMIT');
  if(generation!==loadGeneration)throw Error('STALE');
  const decoded=await audioContextManager.decodeAudioData(bytes);
  if(generation!==loadGeneration||closed)throw Error('STALE');
- if(decoded.numberOfChannels>2||decoded.length*decoded.numberOfChannels*4>192*1024*1024)throw Error('MEMORY_LIMIT');
+ if(decoded.numberOfChannels>2||decoded.length*decoded.numberOfChannels*4>512*1024*1024)throw Error('MEMORY_LIMIT');
  if(d.expectedDurationMs>0&&Math.abs(decoded.duration*1000-d.expectedDurationMs)>Math.max(1000,d.expectedDurationMs*.01))throw Error('AUDIO_DURATION');
  buffer=decoded;state.duration=decoded.duration;state.audioSources=[{source:{url:d.key},status:'loaded',buffer:decoded}];
  diagnostic('decoded',{key:d.key,duration:decoded.duration,sampleRate:decoded.sampleRate,channels:decoded.numberOfChannels});return {key:d.key,durationSeconds:decoded.duration};

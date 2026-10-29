@@ -816,11 +816,11 @@ var NeriBeatSyncAudio = (() => {
     const response = await fetch(d.url, { cache: "no-store", credentials: "omit" });
     if (!response.ok) throw Error("SOURCE");
     const bytes = await response.arrayBuffer();
-    if (bytes.byteLength > 40 * 1024 * 1024) throw Error("MEMORY_LIMIT");
+    if (bytes.byteLength > 200 * 1024 * 1024) throw Error("MEMORY_LIMIT");
     if (generation !== loadGeneration) throw Error("STALE");
     const decoded = await audioContextManager.decodeAudioData(bytes);
     if (generation !== loadGeneration || closed) throw Error("STALE");
-    if (decoded.numberOfChannels > 2 || decoded.length * decoded.numberOfChannels * 4 > 192 * 1024 * 1024) throw Error("MEMORY_LIMIT");
+    if (decoded.numberOfChannels > 2 || decoded.length * decoded.numberOfChannels * 4 > 512 * 1024 * 1024) throw Error("MEMORY_LIMIT");
     if (d.expectedDurationMs > 0 && Math.abs(decoded.duration * 1e3 - d.expectedDurationMs) > Math.max(1e3, d.expectedDurationMs * 0.01)) throw Error("AUDIO_DURATION");
     buffer = decoded;
     state.duration = decoded.duration;

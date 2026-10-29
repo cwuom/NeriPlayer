@@ -182,6 +182,19 @@ internal class NowPlayingLyricsLoadOwner(
         request: NowPlayingLyricsLoadRequest,
         forceReplace: Boolean
     ) {
+        moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore.forSong(request.song)?.let { shared ->
+            fun lines(values: List<moe.ouom.neriplayer.data.model.lan.LanSharedLyricLine>) = values.map { line ->
+                moe.ouom.neriplayer.data.model.lyrics.LyricEntry(line.text, line.startTimeMs, line.endTimeMs,
+                    line.words?.map { moe.ouom.neriplayer.data.model.lyrics.WordTiming(it.startTimeMs, it.endTimeMs, it.charCount) }, line.translation)
+            }
+            val original = lines(shared.lyrics)
+            val translated = lines(shared.translations)
+            val romanized = lines(shared.romanized)
+            publish(generation, request.song, LoadedLyricsState(null, null, null, original, translated,
+                romanized, original, translated, romanized), "background", true)
+            markSecondaryResolved(generation)
+            return
+        }
         NPLogger.d("NowPlayingLyrics", "歌词加载开始: key=${request.song?.stableKey().orEmpty()}")
         val fast = stages.readFast(request)
         if (!isCurrent(generation)) return

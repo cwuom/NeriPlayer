@@ -21,7 +21,7 @@ object LanRoomPolicy {
         return when (intent) { "NEXT" -> permissions.next; "SEEK" -> permissions.seek; else -> permissions.playPause }
     }
     fun validIdentity(track: ListenTogetherTrack): Boolean =
-        track.channelId in setOf("netease", "bilibili", "youtubeMusic") &&
+        track.channelId in setOf("netease", "bilibili", "youtubeMusic", "local") &&
             track.stableKey == listenTogetherTrackKey(track.channelId, track.audioId, track.subAudioId, track.playlistContextId)
     fun validMetadata(track: ListenTogetherTrack): Boolean =
         track.stableKey.length in 1..512 && track.audioId.length in 1..256 && track.name.length <= 512 && track.durationMs >= 0

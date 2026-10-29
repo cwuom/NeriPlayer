@@ -6,6 +6,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotSelected
+import moe.ouom.neriplayer.data.model.lan.LanPermissions
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.common.R
@@ -21,6 +24,20 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class LanRoomEntryTest {
     @get:Rule val compose = createComposeRule()
+    @Test fun compactPermissionsToggleIndependently() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val permissions = mutableStateOf(LanPermissions())
+        compose.setContent { MaterialTheme { LanPermissionsRow(permissions.value) { permissions.value = it } } }
+        val next = compose.onNodeWithText(app.getString(R.string.lan_permission_next_short))
+        val play = compose.onNodeWithText(app.getString(R.string.lan_permission_play_short))
+        val seek = compose.onNodeWithText(app.getString(R.string.lan_permission_seek_short))
+        next.performClick().assertIsSelected()
+        play.assertIsNotSelected()
+        seek.performClick().assertIsSelected()
+        play.performClick().assertIsSelected()
+        next.performClick().assertIsNotSelected()
+        compose.runOnIdle { assertEquals(LanPermissions(false, true, true), permissions.value) }
+    }
     @Test fun createAndJoinAreVisibleAndActiveRoomUsesManage() {
         val app = ApplicationProvider.getApplicationContext<Application>()
         val active = mutableStateOf(false)
