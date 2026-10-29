@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsBiliTargetOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsPage
 import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsSheetOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.isNeteaseArtistNavigationSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNeteaseExclusiveFeatureAvailable
 import moe.ouom.neriplayer.ui.screen.nowplaying.isCompactMoreOptionsEditSheet
 import moe.ouom.neriplayer.ui.screen.nowplaying.isYouTubeMusicArtistNavigationSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveMoreOptionsSong
@@ -243,5 +244,22 @@ class NowPlayingSecondaryActionsTest {
         assertEquals(refreshed, resolveMoreOptionsSong(refreshed, song))
         assertEquals(song, resolveMoreOptionsSong(song.copy(id = 10L), song))
         assertEquals(song, resolveMoreOptionsSong(null, song))
+    }
+
+    @Test
+    fun `netease exclusive entries stay available for netease songs even when played from bilibili`() {
+        val song = SongItem(
+            id = 9L, name = "demo", artist = "artist", album = "album", albumId = 1L,
+            durationMs = 1000L, coverUrl = null
+        )
+        // 还不知道来源时按网易云处理，避免入口闪烁
+        assertTrue(isNeteaseExclusiveFeatureAvailable(null))
+        assertTrue(isNeteaseExclusiveFeatureAvailable(song))
+        assertTrue(isNeteaseExclusiveFeatureAvailable(song.copy(channelId = "netease")))
+        // 网易云歌曲因版权回落到 B 站音源播放时，歌曲对象仍是网易云的，三个入口照常显示
+        assertTrue(isNeteaseExclusiveFeatureAvailable(song.copy(mediaUri = "https://bilibili.example/a.m4a")))
+        assertFalse(isNeteaseExclusiveFeatureAvailable(song.copy(channelId = "bilibili")))
+        assertFalse(isNeteaseExclusiveFeatureAvailable(song.copy(album = "Bilibili|123")))
+        assertFalse(isNeteaseExclusiveFeatureAvailable(song.copy(channelId = "youtubeMusic")))
     }
 }

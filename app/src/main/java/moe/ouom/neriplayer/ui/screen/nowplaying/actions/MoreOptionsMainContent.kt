@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ThumbDown as ThumbDownFilled
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.ThumbDown as ThumbDownOutlined
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -89,6 +91,7 @@ import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProg
 import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellable
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatScorer
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -103,6 +106,7 @@ import moe.ouom.neriplayer.ui.component.download.downloadStageLabelResource
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.screen.nowplaying.hasCachedLocalDownload
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNeteaseExclusiveFeatureAvailable
 import moe.ouom.neriplayer.ui.screen.nowplaying.shouldHideDownloadActionForSong
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.album.isNeteaseAlbumNavigationSource
@@ -142,6 +146,7 @@ internal fun MoreOptionsMainContent(
     onDismissSheet: (() -> Unit) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    val neteaseExclusiveFeatureAvailable = isNeteaseExclusiveFeatureAvailable(originalSong)
     Column(
         Modifier
             .bottomSheetScrollGuard { scrollState.value == 0 }
@@ -198,12 +203,15 @@ internal fun MoreOptionsMainContent(
                 onDismissSheet = onDismissSheet
             )
             PlaybackStatsAction(originalSong)
-            MoreOptionsItem(
-                title = stringResource(AppR.string.encyclopedia_title),
-                icon = Icons.AutoMirrored.Outlined.MenuBook,
-                hue = MoreHueViolet,
-                onClick = onOpenEncyclopedia
-            )
+            if (neteaseExclusiveFeatureAvailable) {
+                DislikeSongAction(originalSong)
+                MoreOptionsItem(
+                    title = stringResource(AppR.string.encyclopedia_title),
+                    icon = Icons.AutoMirrored.Outlined.MenuBook,
+                    hue = MoreHueViolet,
+                    onClick = onOpenEncyclopedia
+                )
+            }
             MoreOptionsItem(
                 title = stringResource(CoreCommonR.string.listen_together_title),
                 icon = Icons.Outlined.Headphones,
@@ -588,6 +596,37 @@ private fun PlaybackStatsAction(song: SongItem) {
             HapticTextButton(onClick = { showDialog = false }) {
                 Text(stringResource(CoreCommonR.string.action_close))
             }
+        }
+    )
+}
+
+/**
+ * 「不喜欢」菜单项。
+ *
+ * 数据只存在本地（网易云没有「给单曲打不喜欢」的通用接口），标记后：
+ * - 本地降级推荐：评分被压到最低（[HeartbeatScorer.NOT_LIKED_PENALTY]）；
+ * - 官方推荐：命中名单时丢弃并重新请求，不改官方顺序与权重。
+ * 菜单项点一次加入、再点一次移出，不需要单独的管理页。
+ */
+@Composable
+private fun DislikeSongAction(song: SongItem) {
+    val songKey = remember(song) { HeartbeatScorer.identityKey(song) }
+    val dislikedKeys by AppContainer.dislikedSongRepo.dislikedKeysFlow
+        .collectAsStateWithLifecycle(initialValue = emptySet())
+    val isDisliked = songKey in dislikedKeys
+    val scope = rememberCoroutineScope()
+    MoreOptionsItem(
+        title = stringResource(
+            if (isDisliked) {
+                CoreCommonR.string.heartbeat_dislike_marked
+            } else {
+                CoreCommonR.string.heartbeat_dislike_action
+            }
+        ),
+        icon = if (isDisliked) Icons.Filled.ThumbDownFilled else Icons.Outlined.ThumbDownOutlined,
+        hue = if (isDisliked) MoreHueRed else MoreHueOrange,
+        onClick = {
+            scope.launch { AppContainer.dislikedSongRepo.toggle(songKey) }
         }
     )
 }

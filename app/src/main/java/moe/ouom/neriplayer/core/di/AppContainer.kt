@@ -70,12 +70,15 @@ import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.heartbeat.DislikedSongRepository
+import moe.ouom.neriplayer.data.heartbeat.HeartbeatSkipRepository
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.platform.bilibili.cache.BiliCacheRepositories
 import moe.ouom.neriplayer.data.local.platform.bilibili.BiliVideoSkipRepositoryProvider
 import moe.ouom.neriplayer.platform.netease.NeteasePlaylistCacheRepository
 import moe.ouom.neriplayer.platform.netease.encyclopedia.NeteaseSongEncyclopediaRepository
 import moe.ouom.neriplayer.platform.netease.encyclopedia.SongEncyclopediaRepository
+import moe.ouom.neriplayer.platform.netease.playmode.NeteasePlaymodeIntelligenceRepository
 import moe.ouom.neriplayer.platform.youtube.playlist.YouTubeMusicPlaylistCacheRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
@@ -283,6 +286,14 @@ object AppContainer {
     val localPlaylistPlaybackStatsRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         LocalPlaylistPlaybackStatsRepository.getInstance(application)
     }
+    /** 心动模式「不喜欢」名单（本地 DataStore，无官方接口可同步）。 */
+    val dislikedSongRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        DislikedSongRepository(application)
+    }
+    /** 心动模式「跳过」次数（本地 DataStore，只并入重复惩罚，不做硬排除）。 */
+    val heartbeatSkipRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        HeartbeatSkipRepository(application)
+    }
     val biliFavoriteFolderCacheRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         BiliCacheRepositories.createFavoriteFolder(application)
     }
@@ -378,6 +389,11 @@ object AppContainer {
     /** 歌曲百科仓库；数据源为网易云，其它来源返回 NotSupported。 */
     val songEncyclopediaRepository: SongEncyclopediaRepository by lazy {
         NeteaseSongEncyclopediaRepository(neteaseClient)
+    }
+
+    /** 心动模式官方推荐仓库；未登录或接口不可用时由本地降级接管。 */
+    val heartbeatOfficialRepository: NeteasePlaymodeIntelligenceRepository by lazy {
+        NeteasePlaymodeIntelligenceRepository(neteaseClient)
     }
 
     private val commentCache = CommentMemoryCache()
@@ -522,6 +538,7 @@ object AppContainer {
         initialized = true
         moe.ouom.neriplayer.core.integration.download.installDownloadDependencies()
         moe.ouom.neriplayer.core.di.player.installPlayerDependencies(app)
+        moe.ouom.neriplayer.core.di.player.installHeartbeatDependencies(app)
         moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess.bind(
             downloads = moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaDownloads,
             covers = moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaCovers,
