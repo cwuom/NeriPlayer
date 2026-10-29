@@ -180,7 +180,7 @@
 
 #### 根模块
 
-自有库的入口与完整职责见根目录 [README.md](README.md#模块结构)。14 个库由 `gradle/owned-modules.txt` 统一登记，构建、lint 和结构检查读取同一份登记；覆盖率只收集包含 Kotlin/Java 生产源码的库，`:native` 使用独立的 host 测试与四 ABI 编译。一级目录表达业务领域，远程来源集中在 `:platform`；播放和下载保留规则与运行实现两个构建边界。
+自有库的入口与完整职责见根目录 [README.md](README.md#模块结构)。15 个库由 `gradle/owned-modules.txt` 统一登记，构建、lint 和结构检查读取同一份登记；覆盖率只收集包含 Kotlin/Java 生产源码的库，`:native` 使用独立的 host 测试与四 ABI 编译。一级目录表达业务领域，远程来源集中在 `:platform`；播放和下载保留规则与运行实现两个构建边界。
 
 - 基础能力：`:common`、`:network`、`:model`、`:database`。模型不依赖项目实现；历史 Room schema 和完整升级链由数据库维护。
 - Native：`:native` 维护 CMake 构建边界、崩溃处理、USB 协议与 PCM 计算、独占传输和第三方 libusb；app 消费它的 AAR，Kotlin 播放会话与 JNI 桥仍由 `:playback:runtime` 维护。
@@ -191,7 +191,7 @@
 - 本地数据：`:local` 按设置、媒体、歌单、统计、备份、流量与同步接入分包，维护业务映射、宿主接口和 WorkManager 适配。设置 schema 在此运行 KSP，页面渲染留在 app。
 - 同步：`:sync` 同时维护 GitHub/WebDAV 传输、加密凭据、设备身份、因果计数器、会话、清洗、合并与 Worker 策略。传输和计算组件仍受各自依赖白名单约束，本地仓库适配位于 `:local`；删除记录与 mutation version 原子提交。
 - 一起听：`:listentogether` 维护协议、传输、身份规则和客户端会话。协议只使用模型、序列化与标准库；业务通过宿主接口接入播放器、资源和 Android 服务。
-- 应用与工具：`:app` 维护 Android 入口、Compose 页面和依赖组装；KSP 工具、上游歌词子模块、`build-logic` 和一起听服务端不计入 14 个库。Miuix 的上游源码与文档树不参与主应用构建。
+- 应用与工具：`:app` 维护 Android 入口、Compose 页面和依赖组装；KSP 工具、上游歌词子模块、`build-logic` 和一起听服务端不计入 15 个库。Miuix 的上游源码与文档树不参与主应用构建。
 
 所有库禁止引用 app、页面或 `AppContainer`，依赖不得形成循环；`:playback:runtime` 内部可以使用自己的 `PlayerManager`。设置通过 provider 按需读取，HTTP 客户端、账号与设备令牌由宿主注入，不通过全局容器绕过接口。Room 业务映射随本地或平台仓库维护；数据库和规则组件不得反向引用运行实现。
 
@@ -822,6 +822,12 @@
 
 ---
 
+### 局域网一起听扩展
+
+`:ltwlan` 维护进程内 Java-WebSocket 房间、客户端传输、对时、发现和调度。共享契约在 `:model/data/model/lan`；播放器适配在 `:playback:runtime/core/player/lan`；app 只组装依赖、反馈和界面。此模式不改变云端 Worker 协议。模型层 `listenTogetherTrackKey` 与原云端包装函数共用身份规则。
+
+修改时运行 `:ltwlan:verifyCrap`、`:ltwlan:lintDebug`、`:app:verifyDomainDependencies` 及 LAN/播放器/设置的对应测试；同时维护自有模块登记、包归属、核心域依赖、行数清单、中英文资源与设置搜索。系统媒体音量通过 AudioManager 操作，不使用播放器增益。上游 JS 固定版本、MIT 许可与文件 hash 一起维护；JVM 测试、合成播放端口和真实声音输出是三种不同证据。
+
 ### 调试与日志 / Debugging & Logs
 
 - 开发者模式开启方式：设置页连续点击**版本号** 7 次。
@@ -1015,3 +1021,5 @@ Commit 信息建议遵循 Conventional Commits，
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)：社区行为准则
 
 如你准备提交较大的结构性改动，建议先开 Issue 对齐方向。
+
+LAN 主控权限通过 `playback.lanHostPermissions` 原子保存，宿主注入读取/写入端口，创建房间在首次 WELCOME 前完成读取。UI 订阅房间状态实时禁用成员控制，但服务端仍独立校验权限；加入/重连期间不沿用旧快照开放按钮。

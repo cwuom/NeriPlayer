@@ -828,8 +828,9 @@ The project owns 14 Android libraries, registered once in [gradle/owned-modules.
 - [`:local`](modules/local/README.md): settings, local media/playlists, history/statistics, backups, traffic, storage accounting, scans, cleanup, and Android sync host adapters.
 - [`:sync`](modules/sync/README.md): GitHub/WebDAV transport, encrypted credential state, sessions, compatible codecs, merges, concurrency protection, and Worker policies.
 - [`:listentogether`](modules/listentogether/README.md): protocol, HTTP/WebSocket transport, identity rules, sessions, reconnects, controls, and playback synchronization.
+- [`:ltwlan`](modules/ltwlan/README.md): LAN room server/client, BeatSync clock synchronization, NSD discovery, permissions and device media volume.
 
-`:app` owns Android entry points, Compose screens, and cross-domain assembly. `:ksp-annotations` / `:ksp-processor` generate settings metadata; `:accompanist-lyrics-core` / `:accompanist-lyrics-ui` are upstream lyric modules. `:hidden-api` supplies compile-only API stubs for playback runtime and is not packaged in the app. `build-logic` supplies build tooling. `np-submodule/NeriPlayer-LTW` is the Cloudflare Workers server; the vendored `np-submodule/miuix` source/docs tree is outside the app graph. These are not part of the 14 owned Android libraries.
+`:app` owns Android entry points, Compose screens, and cross-domain assembly. `:ksp-annotations` / `:ksp-processor` generate settings metadata; `:accompanist-lyrics-core` / `:accompanist-lyrics-ui` are upstream lyric modules. `:hidden-api` supplies compile-only API stubs for playback runtime and is not packaged in the app. `build-logic` supplies build tooling. `np-submodule/NeriPlayer-LTW` is the Cloudflare Workers server; the vendored `np-submodule/miuix` source/docs tree is outside the app graph. These are not part of the 15 owned Android libraries.
 
 Dependencies follow responsibilities rather than directory categories. `:model` has no project implementation dependencies, and `:common` has no business-domain dependencies. Database, storage calculations, lyric parsing, and playback/download rules must not depend on repository or Android runtime implementations. Repositories inside `:platform` consume their corresponding protocols; APIs cannot read account repositories, Room, or player state, and each platform retains its package dependency boundary. `:local` consumes the database and domain services. Clients receive account, credential-refresh, and storage capabilities through narrow injected interfaces. No library may depend on app, and the graph must remain acyclic.
 
@@ -1508,3 +1509,10 @@ Before contributing, please read [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md).
     <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cwuom/neriplayer&type=timeline&legend=bottom-right" />
   </picture>
 </a>
+
+
+## LAN listen together (initial version)
+
+Create room and Join room are available on Now Playing and Settings → Listen Together. Use the same Wi-Fi; members use the full audio candidates shared by the host for this session. The host controls member permissions and system media volumes. Manual timing nudge is available; local-file matching and USB exclusive output are not supported yet. This mode is separate from the cloud Worker service. See [module documentation](modules/ltwlan/README.md).
+
+When the host has not granted permission, member play/pause, previous/next and seek controls are disabled and grey; mini-player skip gestures are disabled too. The three host permissions persist locally across room creation and app restarts. Joining another host does not overwrite those preferences.

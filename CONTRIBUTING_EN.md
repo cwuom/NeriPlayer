@@ -203,7 +203,7 @@ Security reminders:
 
 #### Root modules
 
-The root [README_EN.md](README_EN.md#module-layout) is the entry point for the complete module map. `gradle/owned-modules.txt` registers all 14 owned libraries once for builds, lint, and structural checks. Coverage includes libraries with Kotlin/Java production sources; `:native` uses independent host tests and four-ABI compilation. Top-level names express business domains, with remote sources consolidated in `:platform`. Playback and downloads retain separate rule and runtime build boundaries.
+The root [README_EN.md](README_EN.md#module-layout) is the entry point for the complete module map. `gradle/owned-modules.txt` registers all 15 owned libraries once for builds, lint, and structural checks. Coverage includes libraries with Kotlin/Java production sources; `:native` uses independent host tests and four-ABI compilation. Top-level names express business domains, with remote sources consolidated in `:platform`. Playback and downloads retain separate rule and runtime build boundaries.
 
 - Infrastructure: `:common`, `:network`, `:model`, `:database`. Models have no project implementation dependencies; the database owns historical Room schemas and complete upgrade paths.
 - Native: `:native` owns the CMake build boundary, crash handling, USB protocols and PCM calculations, exclusive transport, and third-party libusb. App consumes its AAR; Kotlin playback sessions and the JNI bridge remain in `:playback:runtime`.
@@ -985,6 +985,12 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 ---
 
+### LAN listen together extension
+
+`:ltwlan` owns the in-process Java-WebSocket room, client transport, clock, discovery and scheduling. Shared contracts live in `:model/data/model/lan`; the player adapter is in `:playback:runtime/core/player/lan`; app only assembles dependencies, localized feedback and UI. It does not change the Worker protocol. `listenTogetherTrackKey` in `:model` is shared with the existing cloud wrapper.
+
+Use `:ltwlan:verifyCrap`, `:ltwlan:lintDebug`, `:app:verifyDomainDependencies` and focused LAN/player/settings tests. Update owned-module registration, package ownership, the core dependency domain, line-budget entries, Chinese/English strings and settings search together. System media volume is controlled through AudioManager, not player gain. Keep the fixed upstream JS resource, MIT notice and source hashes together. Never claim audio precision from JVM or synthetic-port tests.
+
 ### Debugging & Logs
 
 - Enable Developer Mode by tapping the **version number** 7 times in Settings.
@@ -1206,3 +1212,5 @@ Commit messages should follow Conventional Commits when possible, for example:
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md): community code of conduct
 
 If you plan a large structural change, open an Issue first to align direction.
+
+LAN host permissions persist atomically through `playback.lanHostPermissions`. The app injects load/save ports, and room creation awaits preferences before the first WELCOME. UI controls follow live room permissions, while the server still authorizes each command; joining/reconnecting cannot enable controls from stale snapshots.

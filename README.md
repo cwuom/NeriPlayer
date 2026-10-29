@@ -610,7 +610,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 ### 模块结构
 
-自有 Android 库按业务域组织，由 [gradle/owned-modules.txt](gradle/owned-modules.txt) 统一登记，共 14 个。一级领域使用 `modules/<领域>`，播放和下载保留规则与运行实现两个独立构建边界。远程音乐、歌词和元数据来源集中在 `:platform`，`api` 表达同库内部的请求协议职责；公共能力契约由模型和宿主接口表达。
+自有 Android 库按业务域组织，由 [gradle/owned-modules.txt](gradle/owned-modules.txt) 统一登记，共 15 个。一级领域使用 `modules/<领域>`，播放和下载保留规则与运行实现两个独立构建边界。远程音乐、歌词和元数据来源集中在 `:platform`，`api` 表达同库内部的请求协议职责；公共能力契约由模型和宿主接口表达。
 
 - [`:common`](modules/common/README.md)：共享工具、日志、文案、图标、语言能力和测试夹具。
 - [`:network`](modules/network/README.md)：通用 HTTP、Range、网络解析和 Web 登录基础能力。
@@ -626,8 +626,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - [`:local`](modules/local/README.md)：本地设置、媒体、歌单、历史与统计、备份、流量、存储统计与缓存清理，以及 Android 同步宿主适配。
 - [`:sync`](modules/sync/README.md)：GitHub/WebDAV 传输、加密凭据状态、会话、兼容编解码、合并、并发保护与 Worker 策略。
 - [`:listentogether`](modules/listentogether/README.md)：一起听协议、HTTP/WebSocket 传输、身份规则、会话、连接恢复、控制与播放同步。
+- [`:ltwlan`](modules/ltwlan/README.md)：局域网房间服务端/客户端、BeatSync 对时、NSD 发现、权限和设备媒体音量。
 
-`:app` 维护 Android 入口、Compose 页面和跨领域依赖组装。设置项生成由 `:ksp-annotations` / `:ksp-processor` 维护，上游歌词子模块为 `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`；`:hidden-api` 只为播放运行模块提供编译期接口桩，不随应用打包；`build-logic` 提供构建逻辑。`np-submodule/NeriPlayer-LTW` 是一起听 Cloudflare Workers 服务端，`np-submodule/miuix` 是未参与主应用构建的上游源码与文档树。这些不计入 14 个自有 Android 库。
+`:app` 维护 Android 入口、Compose 页面和跨领域依赖组装。设置项生成由 `:ksp-annotations` / `:ksp-processor` 维护，上游歌词子模块为 `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`；`:hidden-api` 只为播放运行模块提供编译期接口桩，不随应用打包；`build-logic` 提供构建逻辑。`np-submodule/NeriPlayer-LTW` 是一起听 Cloudflare Workers 服务端，`np-submodule/miuix` 是未参与主应用构建的上游源码与文档树。这些不计入 15 个自有 Android 库。
 
 依赖按实际职责维护，不由目录分类推导层级。`:model` 不依赖项目实现，`:common` 不依赖业务领域；数据库、存储计算、歌词解析与播放/下载规则不得反向依赖仓库或 Android 运行实现。`:platform` 内的业务仓库消费对应协议，API 不反向读取账号仓库、Room 或播放器状态，各平台仍保持包级依赖边界。`:local` 消费数据库与领域服务，客户端的账号、凭据刷新和存储能力通过窄接口注入。所有库禁止依赖 app 或形成循环。
 
@@ -1186,3 +1187,10 @@ NeriPlayer 使用 **GPL-3.0** 开源许可证发布。
     <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cwuom/neriplayer&type=timeline&legend=bottom-right" />
   </picture>
 </a>
+
+
+## 局域网一起听（首版）
+
+播放页和「设置 → 一起听」均有「创建房间」「加入房间」按钮。同一 Wi-Fi 下自动发现或手动输入主控地址；主控分享本次会话的完整音源链接，副设备直接使用。主控可授权播放/暂停、切歌和 seek，并调整系统媒体音量；成员可使用手动偏移。首版不支持跨机本地文件匹配和 USB 独占输出，与云端 Worker 房间独立。详见[模块说明](modules/ltwlan/README.md)。
+
+副设备未获主控授权时，播放/暂停、上一首/下一首及进度条显示为灰色且不可操作，迷你播放器切歌手势也会禁用。主控的三项权限保存在本机设置中，重开房间或重启应用后沿用；副设备加入别人的房间不会覆盖本机主控偏好。

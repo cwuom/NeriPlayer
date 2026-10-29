@@ -28,6 +28,7 @@ internal fun SettingsListenTogetherSection(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        moe.ouom.neriplayer.ui.screen.tab.settings.lan.LanListenTogetherSection()
         SettingsListenTogetherJoinItem(controller)
         SettingsListenTogetherServerItem(controller)
         SettingsListenTogetherNicknameItem(controller)

@@ -65,7 +65,8 @@ internal fun rememberMiniPlayerTabletActions(
     val sessionManager = remember { AppContainer.listenTogetherSessionManager }
     val session by sessionManager.sessionState.collectAsStateWithLifecycle()
     val room by sessionManager.roomState.collectAsStateWithLifecycle()
-    val seekEnabled = resolveListenTogetherProgressSeekEnabled(
+    val lanControls = moe.ouom.neriplayer.ui.component.playback.lan.rememberLanPlaybackControls()
+    val seekEnabled = lanControls.seek && resolveListenTogetherProgressSeekEnabled(
         sessionUserUuid = session.userUuid,
         fallbackRole = session.role,
         roomId = session.roomId,

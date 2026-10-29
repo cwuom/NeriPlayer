@@ -3455,5 +3455,28 @@
     ],
     "bridges": {},
     "descriptor_only": []
+  },
+  {
+    "name": "lan-beatsync-core",
+    "package": "moe.ouom.neriplayer.lanltw.core.",
+    "allowed_classes": [
+      "java.lang.*",
+      "java.io.*",
+      "java.util.*",
+      "java.util.concurrent.*",
+      "kotlin.*",
+      "kotlinx.coroutines.*",
+      "kotlinx.serialization.*",
+      "app.cash.zipline.QuickJs",
+      "moe.ouom.neriplayer.data.model.lan.*",
+      "moe.ouom.neriplayer.data.model.ltw.track.*",
+      "moe.ouom.neriplayer.lanltw.core.*",
+      "moe.ouom.neriplayer.lanltw.protocol.LanCodec",
+      "androidx.annotation.OptIn",
+      "app.cash.zipline.EngineApi",
+      "java.nio.charset.Charset"
+    ],
+    "bridges": {},
+    "descriptor_only": []
   }
 ]

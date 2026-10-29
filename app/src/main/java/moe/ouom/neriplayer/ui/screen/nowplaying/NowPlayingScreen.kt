@@ -534,7 +534,8 @@ fun NowPlayingScreen(
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
     val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsStateWithLifecycle()
     val listenTogetherRoomState by listenTogetherSessionManager.roomState.collectAsStateWithLifecycle()
-    val playbackProgressSeekEnabled = resolveListenTogetherProgressSeekEnabled(
+    val lanControls = moe.ouom.neriplayer.ui.component.playback.lan.rememberLanPlaybackControls()
+    val playbackProgressSeekEnabled = lanControls.seek && resolveListenTogetherProgressSeekEnabled(
         sessionUserUuid = listenTogetherSessionState.userUuid,
         fallbackRole = listenTogetherSessionState.role,
         roomId = listenTogetherSessionState.roomId,
@@ -1337,6 +1338,7 @@ fun NowPlayingScreen(
 
                                         HapticIconButton(
                                             onClick = { PlayerManager.previous() },
+                                            enabled = lanControls.next,
                                             modifier = Modifier
                                                 .sharedElement(
                                                     rememberSharedContentState(
@@ -1356,7 +1358,7 @@ fun NowPlayingScreen(
 
                                         HapticFilledIconButton(
                                             onClick = { PlayerManager.togglePlayPause() },
-                                            enabled = !usbPlaybackPreparing,
+                                            enabled = !usbPlaybackPreparing && lanControls.playPause,
                                             modifier = Modifier
                                                 .nowPlayingLongPress(toggleImmersiveMode)
                                                 .sharedElement(
@@ -1383,6 +1385,7 @@ fun NowPlayingScreen(
 
                                         HapticIconButton(
                                             onClick = { PlayerManager.next() },
+                                            enabled = lanControls.next,
                                             modifier = Modifier
                                                 .sharedElement(
                                                     rememberSharedContentState(
@@ -1628,7 +1631,8 @@ fun NowPlayingScreen(
                                     ),
                                     actions = coverToolbarActions,
                                     sharedTransitionScope = this@SharedTransitionLayout,
-                                    animatedVisibilityScope = this@AnimatedContent
+                                    animatedVisibilityScope = this@AnimatedContent,
+                                    lanEntry = { moe.ouom.neriplayer.ui.component.playback.lan.LanRoomEntry() }
                                 )
                             }
                             val embeddedLyricsVisible = shouldShowNowPlayingEmbeddedLyrics(

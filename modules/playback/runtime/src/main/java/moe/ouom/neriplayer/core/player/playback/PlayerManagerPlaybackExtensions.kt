@@ -2,6 +2,7 @@
 
 package moe.ouom.neriplayer.core.player.playback
 
+import moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.session.AppQueueSongIdentity
 
@@ -495,6 +496,7 @@ internal fun PlayerManager.playPlaylistImpl(
         NPLogger.w("NERI-Player", "playPlaylist called with EMPTY list")
         return
     }
+    if (LanPlaybackBinding.playlist(songs, startIndex.coerceIn(0, songs.lastIndex), commandSource)) return
     val targetSong = songs.getOrNull(startIndex.coerceIn(0, songs.lastIndex)) ?: songs.first()
     if (shouldBlockLocalRoomControl(commandSource) ||
         shouldBlockLocalSongSwitch(targetSong, commandSource)
@@ -574,6 +576,7 @@ internal fun PlayerManager.playAtIndex(
     }
 
     val song = currentPlaylist[index]
+    if (LanPlaybackBinding.playExternal(song, commandSource)) return
     var keepTransitionWakeLockUntilPlaybackProgress = false
     val resolvedResumePositionMs = resolveRememberedLongFormPlaybackStartPosition(
         song = song,
@@ -1043,6 +1046,7 @@ internal fun PlayerManager.playImpl(
 ) {
     ensureInitialized()
     if (!initialized) return
+    if (LanPlaybackBinding.route("PLAY_PAUSE", commandSource)) return
     if (commandSource == PlaybackCommandSource.LOCAL && requestListenTogetherSafetyPauseResume()) {
         return
     }
@@ -1255,6 +1259,8 @@ internal fun PlayerManager.pauseImpl(
 ) {
     ensureInitialized()
     if (!initialized) return
+    if (LanPlaybackBinding.safetyPause(commandSource)) return
+    if (LanPlaybackBinding.route("PAUSE", commandSource)) return
     val internalUsbTransition = debugReason.startsWith("usb_toggle_")
     if (!internalUsbTransition && shouldBlockLocalRoomControl(commandSource)) return
     clearRestoredPlayback()
@@ -1496,6 +1502,7 @@ private fun PlayerManager.restoreUnmutedPauseVolume() {
 }
 
 internal fun PlayerManager.togglePlayPauseImpl(allowFade: Boolean = true) {
+    if (LanPlaybackBinding.toggle()) return
     ensureInitialized()
     if (!initialized) return
     if (isAudioRouteMuteSuppressed()) {
@@ -1524,6 +1531,7 @@ internal fun PlayerManager.seekToImpl(
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
 ) {
     ensureInitialized()
+    if (LanPlaybackBinding.route("SEEK", commandSource, position = positionMs / 1000.0)) return
     if (!acceptSeekCommand(commandSource)) return
     val resolvedPositionMs = positionMs.coerceAtLeast(0L)
     playbackPositionGeneration += 1L

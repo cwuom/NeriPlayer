@@ -1,0 +1,9 @@
+node_modules/
+build/
+.gradle/
+.kotlin/
+.local/
+js/generated/
+results/*.tmp
+artifacts/
+*.log

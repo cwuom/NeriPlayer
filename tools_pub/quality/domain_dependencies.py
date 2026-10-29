@@ -111,7 +111,7 @@ def select_domains(classes, domains):
 
 
 def run_tool(command):
-    result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
+    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
     if result.returncode:
         raise ValueError(f"{Path(command[0]).name} failed: {result.stderr.strip() or result.stdout.strip()}")
     return result.stdout
@@ -197,7 +197,7 @@ def check_descriptor_types(output, selected, edges, members):
 def verify(inputs, domains, jdeps="jdeps", javap="javap"):
     selected = select_domains(compiled_classes(inputs), domains)
     include = "(?:" + "|".join(re.escape(domain["package"]) for domain in domains) + ").*"
-    output = run_tool([jdeps, "-J-Duser.language=en", "-J-Duser.country=US",
+    output = run_tool([jdeps, "-J-Duser.language=en", "-J-Duser.country=US", "-J-Dfile.encoding=UTF-8", "-J-Dsun.stdout.encoding=UTF-8", "-J-Dsun.stderr.encoding=UTF-8",
                        "-verbose:class", "-filter:none", "--multi-release", "base",
                        "-include", include, *map(str, inputs)])
     edges, errors = check_class_dependencies(output, selected)
@@ -205,7 +205,7 @@ def verify(inputs, domains, jdeps="jdeps", javap="javap"):
     members = set()
     for start in range(0, len(names), 100):
         batch = names[start:start + 100]
-        output = run_tool([javap, "-J-Duser.language=en", "-J-Duser.country=US", "-verbose", "-private", "-classpath",
+        output = run_tool([javap, "-J-Duser.language=en", "-J-Duser.country=US", "-J-Dfile.encoding=UTF-8", "-J-Dsun.stdout.encoding=UTF-8", "-J-Dsun.stderr.encoding=UTF-8", "-verbose", "-private", "-classpath",
                            os.pathsep.join(map(str, inputs)), *batch])
         checked, failures = check_bridge_members(output, {name: selected[name] for name in batch})
         errors.extend(check_descriptor_types(output, selected, edges, checked))

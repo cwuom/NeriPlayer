@@ -28,6 +28,7 @@ dependencies {
     implementation(project(":platform"))
     implementation(project(":database"))
     implementation(project(":listentogether"))
+    implementation(project(":ltwlan"))
     implementation(project(":model"))
     implementation(project(":local"))
     implementation(project(":sync"))

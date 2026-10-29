@@ -2,6 +2,8 @@
 
 package moe.ouom.neriplayer.core.player.playback
 
+import moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding
+
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.currentPositionMsOrZero
@@ -90,6 +92,7 @@ internal fun PlayerManager.handleTrackEnded() {
         "NERI-PlayerManager",
         "handleTrackEnded: currentIndex=$currentIndex, queueSize=${currentPlaylist.size}, repeatMode=$repeatModeSetting, shuffle=${player.shuffleModeEnabled}, isLastInPlaylist=$isLastInPlaylist"
     )
+    if (LanPlaybackBinding.ended()) return
     finishTrackEnd(isLastInPlaylist)
 }
 
@@ -218,6 +221,7 @@ internal fun PlayerManager.nextImpl(
 ) {
     ensureInitialized()
     if (!initialized) return
+    if (LanPlaybackBinding.step(1, commandSource, force)) return
     requestNextTrack(force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition)
 }
 
@@ -301,6 +305,7 @@ internal fun PlayerManager.previousImpl(
 ) {
     ensureInitialized()
     if (!initialized) return
+    if (LanPlaybackBinding.step(-1, commandSource)) return
     requestPreviousTrack(commandSource, bypassLoudVolumeWarning)
 }
 

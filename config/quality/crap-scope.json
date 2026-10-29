@@ -331,7 +331,8 @@
     "moe/ouom/neriplayer/data/local/storage/host/Storage*.kt",
     "moe/ouom/neriplayer/data/local/storage/mapping/Storage*.kt",
     "moe/ouom/neriplayer/data/local/storage/presentation/Storage*.kt",
-    "moe/ouom/neriplayer/data/local/storage/Storage*.kt"
+    "moe/ouom/neriplayer/data/local/storage/Storage*.kt",
+    "moe/ouom/neriplayer/lanltw/core/**/*.kt"
   ],
   "method_scopes": [
     {

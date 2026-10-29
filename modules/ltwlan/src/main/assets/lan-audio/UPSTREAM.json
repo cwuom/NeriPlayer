@@ -1,0 +1,89 @@
+{
+  "commit": "94c38ab16ec861835ce0b4bc3a7db82dabbb9b88",
+  "files": [
+    {
+      "file": "ntp.ts",
+      "upstreamPath": "apps/client/src/utils/ntp.ts",
+      "sha256": "b833010cb1e2b37eb5588d539c0e495125776fafaa07f1422d66a973e7f7c6fe"
+    },
+    {
+      "file": "constants.ts",
+      "upstreamPath": "packages/shared/constants.ts",
+      "sha256": "53871faa2138178a377b0515e53059dc8238094ea920ef905ca771f608641552"
+    },
+    {
+      "file": "ntp.test.ts",
+      "upstreamPath": "apps/client/src/utils/__tests__/ntp.test.ts",
+      "sha256": "00a84217e9e0bdf8a7e71d1f226f59260e87124e5de8fa8c25e87d893d9fa3db"
+    },
+    {
+      "file": "LICENSE",
+      "upstreamPath": "LICENSE",
+      "sha256": "dbe8db9df4090176ab0412ed96f05d79f0be9b43c177c6052f817751758f75c0"
+    },
+    {
+      "file": "config.ts",
+      "upstreamPath": "apps/server/src/config.ts",
+      "sha256": "b18255a65bda9e7cc3dff06b66040e92e5b81daa24b2d221ca9b899897e2e3b0"
+    },
+    {
+      "file": "ws.ts",
+      "upstreamPath": "apps/client/src/utils/ws.ts",
+      "sha256": "82e118e923b6ad08d0273aad14db933c3f94717158184805d191f97357f98f64"
+    },
+    {
+      "file": "global.tsx",
+      "upstreamPath": "apps/client/src/store/global.tsx",
+      "sha256": "71e07d9fafb245a19555d5a71e89fcb31eb7c6c0b79fc436035f4e5e8e67b240"
+    },
+    {
+      "file": "audioContextManager.ts",
+      "upstreamPath": "apps/client/src/lib/audioContextManager.ts",
+      "sha256": "1dfc3bdd522b58279064d7d4f73aa97e16112093eb3c139ef3abea7f97eb1df5"
+    }
+  ],
+  "repository": "https://github.com/freeman-jiang/beatsync",
+  "extracted": [
+    {
+      "name": "getAudioPlayer",
+      "sha256": "a7cd6044862170392f5ee5e83b0ba44defa9434f0f1db2bbbc6ce9833fef41a2"
+    },
+    {
+      "name": "getSocket",
+      "sha256": "f52ad6d94ed0bdc18f4437105da60b8b4ff65ba75e7fb4ee046aea52a97e463c"
+    },
+    {
+      "name": "MAX_TRUSTWORTHY_OUTPUT_LATENCY_MS",
+      "sha256": "d538b80b18edce0d1451115077c1dd6048202c44dcdfd30473c3cf0498980434"
+    },
+    {
+      "name": "getFilteredOutputLatencyMs",
+      "sha256": "85e3553bf0bdd42dc5818453ff9567ef21caae84cac9d3c4bbfc9ba50a603f49"
+    },
+    {
+      "name": "getWaitTimeSeconds",
+      "sha256": "1e8f1ebb73200f4acfd55b5c1b9fda6c94ad7a5ffeca1e73671a5200579e2271"
+    },
+    {
+      "name": "schedulePlay",
+      "sha256": "f863e5c55263658ff075e74432ce402f1e8cef7045c6cdfacc35466c23b85881"
+    },
+    {
+      "name": "schedulePause",
+      "sha256": "c9d834b59ea1c623947caa4fc2cabd458ffba684f8efeb726287378803e79040"
+    },
+    {
+      "name": "playAudio",
+      "sha256": "4e5fe76d0b1f8eac08471f923cd16753e95706007c67e94a8b9e3529613b5cbe"
+    },
+    {
+      "name": "pauseAudio",
+      "sha256": "b5a1fcbff73d06c4e400e810c6047aa6aadc24d8bf2fceb0f15609874e5b5ad4"
+    },
+    {
+      "name": "getCurrentTrackPosition",
+      "sha256": "e1b1d80b0a9031c6a5c368d4eaccd269d8a8a6a3f58784eb4b413622618fc70c"
+    }
+  ],
+  "generatedSha256": "fd452f28180a0be711ed6ecd93bd7eb63beeaa6ae7a0fa68d728ec81d38fade6"
+}

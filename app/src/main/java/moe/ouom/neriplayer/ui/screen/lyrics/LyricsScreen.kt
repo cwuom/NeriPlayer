@@ -286,6 +286,7 @@ fun LyricsScreen(
     val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
     val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow.collectAsStateWithLifecycle()
+    val lanControls = moe.ouom.neriplayer.ui.component.playback.lan.rememberLanPlaybackControls()
     val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
     val isPlaybackWaiting = resolvePlaybackWaiting(
         playbackRequested = isPlaybackControlPlaying,
@@ -938,7 +939,7 @@ fun LyricsScreen(
                 isPlaybackWaiting = isPlaybackWaiting,
                 playbackSpeed = lyricsPlaybackSoundState.speed,
                 onSeekTo = onSeekTo,
-                seekEnabled = progressSeekEnabled,
+                seekEnabled = progressSeekEnabled && lanControls.seek,
                 onPreviewPositionChange = { previewPositionOverrideMs = it },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -969,6 +970,7 @@ fun LyricsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 HapticIconButton(onClick = { PlayerManager.previous() },
+                    enabled = lanControls.next,
                     modifier = Modifier
                     .then(
                         if (sharedTransitionScope != null && animatedContentScope != null) {
@@ -994,7 +996,7 @@ fun LyricsScreen(
 
                 HapticFilledIconButton(
                     onClick = { PlayerManager.togglePlayPause() },
-                    enabled = !usbPlaybackPreparing,
+                    enabled = !usbPlaybackPreparing && lanControls.playPause,
                     modifier = Modifier
                         .then(
                             if (sharedTransitionScope != null && animatedContentScope != null) {
@@ -1025,6 +1027,7 @@ fun LyricsScreen(
                 }
 
                 HapticIconButton(onClick = { PlayerManager.next() },
+                    enabled = lanControls.next,
                     modifier = Modifier
                         .then(
                             if (sharedTransitionScope != null && animatedContentScope != null) {
