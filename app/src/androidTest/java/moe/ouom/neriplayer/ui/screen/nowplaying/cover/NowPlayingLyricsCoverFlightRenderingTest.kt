@@ -5,10 +5,12 @@ import androidx.activity.BackEventCompat
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.TargetBasedAnimation
 import androidx.compose.animation.core.Transition
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -57,7 +59,6 @@ import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
-import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsBackPreviewEasing
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -104,8 +105,6 @@ class NowPlayingLyricsCoverFlightRenderingTest {
                         backTargetState = false,
                         onBack = { lyricsVisible = false },
                         label = "cover_flight_rendering",
-                        previewEasing = NowPlayingLyricsBackPreviewEasing,
-                        previewSettleEasing = EaseOut,
                         onPreviewAnimationActiveChanged = { previewActive = it },
                         primePreviewAtZero = true
                     )
@@ -154,6 +153,7 @@ class NowPlayingLyricsCoverFlightRenderingTest {
                 lyricsVisible = true
             }
             advance(1_024L)
+            val pixelsPerDp = checkNotNull(hostBoundsInRoot).width / ViewportWidthDp
             composeRule.runOnIdle {
                 backDispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
             }
@@ -161,14 +161,16 @@ class NowPlayingLyricsCoverFlightRenderingTest {
                 backDispatcher.dispatchOnBackProgressed(BackEventCompat(0f, 0f, 0.2f, BackEventCompat.EDGE_LEFT))
             }
             advance(80L)
+            val releasedWidthDp = composeRule.runOnIdle { requireNotNull(flight.bounds).width / pixelsPerDp }
             composeRule.runOnIdle { backDispatcher.onBackPressed() }
             captureUntil(caseName, "committing-preview") {
-                !transition.targetState && requireNotNull(flight.bounds).width in
+                val widthDp = requireNotNull(flight.bounds).width / pixelsPerDp
+                !transition.targetState && widthDp > releasedWidthDp + 1f && widthDp in
                     (headerWidth + span * 0.45f)..(headerWidth + span * 0.7f)
             }
             composeRule.runOnIdle { lyricsVisible = true }
             captureUntil(caseName, "reopening-lyrics") {
-                transition.targetState && requireNotNull(flight.bounds).width in
+                transition.targetState && requireNotNull(flight.bounds).width / pixelsPerDp in
                     (headerWidth + span * 0.22f)..(headerWidth + span * 0.42f)
             }
             composeRule.runOnIdle {
@@ -226,6 +228,168 @@ class NowPlayingLyricsCoverFlightRenderingTest {
     }
 
     @Test
+    fun predictiveEdgeBackUsesTheOriginalSharedSpringAtRawFingerProgress() {
+        diagnosticName = "edge-back-original-spring"
+        for (immersiveMode in listOf(false, true)) {
+            val caseName = "original-spring immersive=$immersiveMode"
+            composeRule.runOnIdle {
+                previewEnabled = true
+                immersive = immersiveMode
+                lyricsVisible = false
+            }
+            advance(1_024L)
+            val cover = captureFrame(caseName, "cover-ready")
+            assertTrue("$caseName: 参考轨迹必须先采用当前模式的真实封面端点 $cover",
+                boundsError(checkNotNull(cover.pixelBounds), expectedEndpoint(lyrics = false, immersiveMode)) <= GeometryToleranceDp)
+            assertTrue("$caseName: 创建参考轨迹前应先稳定在封面页 $cover",
+                !cover.currentState && !cover.targetState && !cover.isRunning && !cover.drawsFlight)
+            composeRule.runOnIdle { lyricsVisible = true }
+            advance(1_024L)
+            val reference = composeRule.runOnIdle {
+                TargetBasedAnimation(
+                    animationSpec = spring<Rect>(
+                        stiffness = Spring.StiffnessMediumLow,
+                        visibilityThreshold = Rect.VisibilityThreshold
+                    ),
+                    typeConverter = Rect.VectorConverter,
+                    initialValue = flight.targetBounds(true),
+                    targetValue = flight.targetBounds(false)
+                )
+            }
+            composeRule.runOnIdle {
+                backDispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
+            }
+            for (rawProgress in listOf(0.05f, 0.1f, 0.2f, 0.35f, 0.5f, 0.65f, 0.8f, 0.95f)) {
+                composeRule.runOnIdle {
+                    backDispatcher.dispatchOnBackProgressed(
+                        BackEventCompat(0f, 0f, rawProgress, BackEventCompat.EDGE_LEFT)
+                    )
+                }
+                advance(80L)
+                val frame = captureFrame(caseName, "preview=$rawProgress")
+                val expected = composeRule.runOnIdle {
+                    val playTime = (transition.totalDurationNanos * rawProgress).toLong()
+                    reference.getValueFromNanos(playTime).also { bounds ->
+                        assertTrue("$caseName: raw=$rawProgress 必须沿原版 spring 取样 expected=$bounds actual=${flight.bounds}",
+                            boundsError(bounds, requireNotNull(flight.bounds)) <= 1f)
+                        assertTrue("$caseName: 取样不能提前提交返回", lyricsVisible && previewActive)
+                    }
+                }
+                val pixelsPerDp = checkNotNull(hostBoundsInRoot).width / ViewportWidthDp
+                val expectedDp = Rect(expected.left / pixelsPerDp, expected.top / pixelsPerDp,
+                    expected.right / pixelsPerDp, expected.bottom / pixelsPerDp)
+                val pixels = checkNotNull(frame.pixelBounds) { "$caseName: spring 预览像素缺失 $frame" }
+                val slot = checkNotNull(frame.slotBounds) { "$caseName: spring 预览 slot 缺失 $frame" }
+                assertTrue("$caseName: 真实像素必须跟随原版 spring expected=$expectedDp actual=$frame",
+                    boundsError(pixels, expectedDp) <= GeometryToleranceDp)
+                assertTrue("$caseName: spring 预览像素与 slot 不一致 $frame",
+                    boundsError(pixels, slot) <= GeometryToleranceDp)
+            }
+            composeRule.runOnIdle { backDispatcher.dispatchOnBackCancelled() }
+            advance(1_024L)
+            val final = captureFrame(caseName, "cancelled")
+            composeRule.runOnIdle {
+                assertTrue("$caseName: 取消后应保留歌词页", lyricsVisible)
+                assertFalse("$caseName: 取消后应清理预览", previewActive)
+            }
+            assertTrue("$caseName: 取消后应恢复真实歌词端点 $final",
+                boundsError(checkNotNull(final.pixelBounds), expectedEndpoint(lyrics = true, immersiveMode)) <= GeometryToleranceDp)
+        }
+    }
+
+    @Test
+    fun committingLowProgressEdgeBackDeceleratesTheRenderedCoverAlongTheSpring() {
+        diagnosticName = "edge-back-low-progress-commit"
+        fun captureUntil(caseName: String, phase: String, condition: () -> Boolean): List<FrameSample> {
+            val frames = mutableListOf<FrameSample>()
+            val deadline = composeRule.mainClock.currentTime + 1_500L
+            while (!composeRule.runOnIdle(condition) && composeRule.mainClock.currentTime < deadline) {
+                frames += captureFrames(1, caseName, phase)
+            }
+            assertTrue("$caseName: $phase 未达到目标状态 $frames", composeRule.runOnIdle(condition))
+            return frames
+        }
+        for (immersiveMode in listOf(false, true)) {
+            val caseName = "low-progress-commit immersive=$immersiveMode"
+            val expected = expectedEndpoint(lyrics = false, immersiveMode)
+            val span = expected.width - 64f * 0.6f
+            composeRule.runOnIdle {
+                previewEnabled = true
+                immersive = immersiveMode
+                lyricsVisible = true
+            }
+            advance(1_024L)
+            composeRule.runOnIdle {
+                backDispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
+            }
+            composeRule.runOnIdle {
+                backDispatcher.dispatchOnBackProgressed(BackEventCompat(0f, 0f, 0.05f, BackEventCompat.EDGE_LEFT))
+            }
+            advance(80L)
+            composeRule.runOnIdle {
+                assertTrue("$caseName: 松手前必须处于真实低进度预览", previewActive && lyricsVisible)
+            }
+            val before = captureFrame(caseName, "before-commit")
+            assertTrue("$caseName: 低进度松手前应保留大部分行程 $before",
+                checkNotNull(before.pixelBounds).width < 64f * 0.6f + span * 0.2f)
+            composeRule.runOnIdle { backDispatcher.onBackPressed() }
+            val samples = listOf(before) + captureUntil(caseName, "committing-preview") {
+                !transition.currentState && !transition.targetState && !transition.isRunning && !previewActive
+            }
+            val pixels = samples.map { frame ->
+                val artwork = checkNotNull(frame.pixelBounds) { "$caseName: 封面像素缺失 $frame" }
+                val slot = checkNotNull(frame.slotBounds) { "$caseName: 封面 slot 缺失 $frame" }
+                assertTrue("$caseName: 真实像素必须跟随同一封面布局 $frame",
+                    boundsError(artwork, slot) <= GeometryToleranceDp)
+                assertTrue("$caseName: 封面必须留在可见区域 $frame",
+                    artwork.left >= -GeometryToleranceDp && artwork.top >= -GeometryToleranceDp &&
+                        artwork.right <= ViewportWidthDp + GeometryToleranceDp &&
+                        artwork.bottom <= ViewportHeightDp + GeometryToleranceDp)
+                artwork
+            }
+            samples.indices.drop(1).forEach { index ->
+                val elapsed = samples[index].clockMillis - samples[index - 1].clockMillis
+                val budget = 3f * span * elapsed / PageFadeMillis + GeometryToleranceDp
+                assertTrue("$caseName: 提交返回不能发生超出时钟预算的跳变 $samples",
+                    boundsError(pixels[index - 1], pixels[index]) <= budget)
+                assertTrue("$caseName: spring 提交不能反向缩回歌词端点 $samples",
+                    pixels[index].width >= pixels[index - 1].width - GeometryToleranceDp)
+            }
+            assertTrue("$caseName: spring 收尾必须保留足够的真实中间帧 $samples",
+                pixels.count { it.width > pixels.first().width + GeometryToleranceDp &&
+                    it.width < pixels.last().width - GeometryToleranceDp } >= 6)
+            val initialWidth = pixels.first().width
+            val travel = pixels.last().width - initialWidth
+            assertTrue("$caseName: 低进度提交必须产生有效移动 $samples", travel > span * 0.8f)
+            val steps = samples.zipWithNext().filter { (previous, current) ->
+                checkNotNull(current.pixelBounds).width > checkNotNull(previous.pixelBounds).width + 0.01f
+            }
+            fun meanSpeed(from: Float, until: Float): Double = steps.filter { (previous, current) ->
+                (checkNotNull(previous.pixelBounds).width - initialWidth) / travel in from..until &&
+                    (checkNotNull(current.pixelBounds).width - initialWidth) / travel in from..until &&
+                    checkNotNull(current.pixelBounds).width < pixels.last().width
+            }.map { (previous, current) ->
+                (checkNotNull(current.pixelBounds).width - checkNotNull(previous.pixelBounds).width).toDouble() /
+                    (current.clockMillis - previous.clockMillis)
+            }.also { assertTrue("$caseName: 区间必须有至少两个完整向外运动步 $samples", it.size >= 2) }.average()
+
+            val middleSpeed = meanSpeed(0.2f, 0.6f)
+            val endingSpeed = meanSpeed(0.85f, 0.98f)
+            assertTrue("$caseName: spring 提交后的像素应减速 middle=$middleSpeed end=$endingSpeed",
+                endingSpeed < middleSpeed * 0.6)
+            val final = samples.last()
+            assertTrue("$caseName: 最终应抵达真实封面端点 $final",
+                boundsError(pixels.last(), expected) <= GeometryToleranceDp)
+            assertTrue("$caseName: 完成后应释放封面绘制接管 $final",
+                !final.currentState && !final.targetState && !final.isRunning && !final.drawsFlight)
+            composeRule.runOnIdle {
+                assertFalse("$caseName: 提交后应回到封面并清理预览", lyricsVisible || previewActive)
+            }
+            Log.i(LogTag, "case=$caseName middleSpeedDpMs=$middleSpeed endingSpeedDpMs=$endingSpeed")
+        }
+    }
+
+    @Test
     fun predictiveEdgeBackDeceleratesTheRenderedCoverBeforeCommittingToCover() {
         diagnosticName = "edge-back-deceleration"
         for (immersiveMode in listOf(false, true)) {
@@ -239,7 +403,7 @@ class NowPlayingLyricsCoverFlightRenderingTest {
             composeRule.runOnIdle {
                 backDispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
             }
-            val samples = listOf(0.50f, 0.65f, 0.80f, 0.95f).map { progress ->
+            val samples = listOf(0.20f, 0.35f, 0.80f, 0.95f).map { progress ->
                 composeRule.runOnIdle {
                     backDispatcher.dispatchOnBackProgressed(
                         BackEventCompat(0f, 0f, progress, BackEventCompat.EDGE_LEFT)
