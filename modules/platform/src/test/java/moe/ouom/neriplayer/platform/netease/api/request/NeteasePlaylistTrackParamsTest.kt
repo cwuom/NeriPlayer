@@ -29,4 +29,17 @@ class NeteasePlaylistTrackParamsTest {
             )
         }
     }
+
+    @Test
+    fun `verified playlist add preserves long song ids and includes the check token`() {
+        val params = buildNeteasePlaylistAddTracksParams(
+            playlistId = 88L,
+            songIds = listOf(3388734818L, 3381878429L),
+            checkToken = "test-check-token"
+        )
+
+        assertEquals("3388734818,3381878429", params["tracks"])
+        assertEquals("[3388734818,3381878429]", params["trackIds"])
+        assertEquals("test-check-token", params["checkToken"])
+    }
 }

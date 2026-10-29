@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.platform.netease.playlist
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -10,7 +15,7 @@ class NeteasePlaylistBatchAddTest {
     private val badSong = NeteasePlaylistAddOutcome.Rejected(500, "bad song")
 
     @Test
-    fun `batch add splits failed chunks and keeps syncing remaining songs`() {
+    fun `batch add splits failed chunks and keeps syncing remaining songs`() = runTest {
         val calls = mutableListOf<List<Long>>()
 
         val result = addNeteasePlaylistSongIdsInBatches(
@@ -39,7 +44,7 @@ class NeteasePlaylistBatchAddTest {
     }
 
     @Test
-    fun `batch add filters invalid and duplicate song ids before submitting`() {
+    fun `batch add filters invalid and duplicate song ids before submitting`() = runTest {
         val calls = mutableListOf<List<Long>>()
 
         val result = addNeteasePlaylistSongIdsInBatches(
@@ -57,7 +62,7 @@ class NeteasePlaylistBatchAddTest {
     }
 
     @Test
-    fun `empty and invalid batch inputs never submit a request`() {
+    fun `empty and invalid batch inputs never submit a request`() = runTest {
         for (ids in listOf(emptyList(), listOf(0L, -1L))) {
             assertEquals(
                 NeteasePlaylistBatchAddResult(emptySet(), emptySet()),
@@ -70,13 +75,15 @@ class NeteasePlaylistBatchAddTest {
     fun `nonpositive batch sizes reject the request before submitting`() {
         for (size in listOf(0, -1)) {
             assertThrows(IllegalArgumentException::class.java) {
-                addNeteasePlaylistSongIdsInBatches(listOf(1L), size, noPause) { error("invalid batch size must not submit") }
+                runTest {
+                    addNeteasePlaylistSongIdsInBatches(listOf(1L), size, noPause) { error("invalid batch size must not submit") }
+                }
             }
         }
     }
 
     @Test
-    fun `request exceptions back off and retry the same batch without splitting`() {
+    fun `request exceptions back off and retry the same batch without splitting`() = runTest {
         val calls = mutableListOf<List<Long>>()
         val pauses = mutableListOf<Long>()
         val result = addNeteasePlaylistSongIdsInBatches(listOf(1L, 2L, 3L), 2, pauses::add) { ids ->
@@ -92,7 +99,46 @@ class NeteasePlaylistBatchAddTest {
     }
 
     @Test
-    fun `whole batch rejection codes reject every song without splitting`() {
+    fun `request cancellation is propagated without retrying or submitting later batches`() {
+        val calls = mutableListOf<List<Long>>()
+        val cancellation = CancellationException("sync cancelled")
+
+        val error = assertThrows(CancellationException::class.java) {
+            runTest {
+                addNeteasePlaylistSongIdsInBatches(listOf(1L, 2L), 1, noPause) { ids ->
+                    calls += ids.toList()
+                    throw cancellation
+                }
+            }
+        }
+
+        assertEquals(cancellation, error)
+        assertEquals(listOf(listOf(1L)), calls)
+    }
+
+    @Test
+    fun `cancellation after a rejected request stops splitting and later batch requests`() = runTest {
+        val calls = mutableListOf<List<Long>>()
+        val pauses = mutableListOf<Long>()
+        val cancellation = CancellationException("sync cancelled")
+        val sync = async {
+            addNeteasePlaylistSongIdsInBatches(listOf(1L, 2L, 3L), 2, pauses::add) { ids ->
+                calls += ids.toList()
+                if (calls.size == 1) currentCoroutineContext().cancel(cancellation)
+                badSong
+            }
+        }
+
+        val error = runCatching { sync.await() }.exceptionOrNull()
+
+        assertTrue(error is CancellationException)
+        assertEquals(cancellation.message, error?.message)
+        assertEquals(listOf(listOf(1L, 2L)), calls)
+        assertEquals(emptyList<Long>(), pauses)
+    }
+
+    @Test
+    fun `whole batch rejection codes reject every song without splitting`() = runTest {
         for (code in listOf(301, 401)) {
             val calls = mutableListOf<List<Long>>()
             val rejected = NeteasePlaylistAddOutcome.Rejected(code, "login required")
@@ -109,7 +155,7 @@ class NeteasePlaylistBatchAddTest {
     }
 
     @Test
-    fun `524 isolates rejected songs without blocking the rest of a mixed batch`() {
+    fun `524 isolates rejected songs without blocking the rest of a mixed batch`() = runTest {
         val calls = mutableListOf<List<Long>>()
         val rejected = NeteasePlaylistAddOutcome.Rejected(524, "当前环境异常，已取消喜欢")
 
@@ -126,7 +172,26 @@ class NeteasePlaylistBatchAddTest {
     }
 
     @Test
-    fun `rate limited batches back off exponentially and stop the remaining batches`() {
+    fun `four rejected songs across 88 tracks do not prevent healthy songs from being submitted`() = runTest {
+        val calls = mutableListOf<List<Long>>()
+        val songIds = (1L..88L).toList()
+        val rejectedIds = setOf(1L, 26L, 51L, 76L)
+        val rejected = NeteasePlaylistAddOutcome.Rejected(524, "当前环境异常，已取消喜欢")
+
+        val result = addNeteasePlaylistSongIdsInBatches(songIds, 50, noPause) { ids ->
+            calls += ids.toList()
+            if (ids.any { it in rejectedIds }) rejected else NeteasePlaylistAddOutcome.Ok
+        }
+
+        assertEquals(songIds.toSet() - rejectedIds, result.addedIds)
+        assertEquals(rejectedIds, result.failedIds)
+        assertEquals(rejectedIds.associateWith { rejected }, result.rejections)
+        assertEquals(rejectedIds, calls.filter { it.size == 1 && it.single() in rejectedIds }.flatten().toSet())
+        assertTrue(calls.size <= songIds.size * 2 - 2)
+    }
+
+    @Test
+    fun `rate limited batches back off exponentially and stop the remaining batches`() = runTest {
         val calls = mutableListOf<List<Long>>()
         val pauses = mutableListOf<Long>()
         val rateLimited = NeteasePlaylistAddOutcome.Transient(405, "too fast")
@@ -144,40 +209,45 @@ class NeteasePlaylistBatchAddTest {
     }
 
     @Test
-    fun `splitting rejected batches stops at the total request budget`() {
+    fun `splitting rejected batches attempts every song within a linear request bound`() = runTest {
         val calls = mutableListOf<List<Long>>()
+        val songIds = (1L..200L).toList()
 
-        val result = addNeteasePlaylistSongIdsInBatches((1L..200L).toList(), 50, noPause) { ids ->
+        val result = addNeteasePlaylistSongIdsInBatches(songIds, 50, noPause) { ids ->
             calls += ids.toList()
             badSong
         }
 
-        assertEquals(4 + 30, calls.size)
-        assertEquals((1L..200L).toSet(), result.failedIds)
-        assertTrue(result.rejections.keys.containsAll(calls.filter { it.size == 1 }.flatten()))
-        assertTrue(result.rejections.size < 200)
+        assertTrue(result.addedIds.isEmpty())
+        assertEquals(songIds.toSet(), result.failedIds)
+        assertEquals(songIds.associateWith { badSong }, result.rejections)
+        assertEquals(songIds, calls.filter { it.size == 1 }.flatten())
+        assertTrue(calls.size <= songIds.size * 2 - 4)
     }
 
     @Test
-    fun `persistent 524 remains bounded and never marks unsent songs as rejected`() {
+    fun `persistent 524 attempts every song before classifying rejections within a linear bound`() = runTest {
         val calls = mutableListOf<List<Long>>()
+        val songIds = (1L..200L).toList()
         val rejected = NeteasePlaylistAddOutcome.Rejected(524, "当前环境异常，已取消喜欢")
 
-        val result = addNeteasePlaylistSongIdsInBatches((1L..200L).toList(), 50, noPause) { ids ->
+        val result = addNeteasePlaylistSongIdsInBatches(songIds, 50, noPause) { ids ->
             calls += ids.toList()
             rejected
         }
 
-        assertEquals(34, calls.size)
         assertTrue(result.addedIds.isEmpty())
-        assertEquals((1L..200L).toSet(), result.failedIds)
-        assertEquals(calls.filter { it.size == 1 }.flatten().toSet(), result.rejections.keys)
+        assertEquals(songIds.toSet(), result.failedIds)
+        assertEquals(songIds.associateWith { rejected }, result.rejections)
+        assertEquals(songIds, calls.filter { it.size == 1 }.flatten())
+        assertTrue(calls.size <= songIds.size * 2 - 4)
     }
 
     @Test
-    fun `exhausted splitting budget preserves the next healthy batch submission`() {
+    fun `a fully rejected batch preserves the next healthy batch submission`() = runTest {
         val calls = mutableListOf<List<Long>>()
         val rejected = NeteasePlaylistAddOutcome.Rejected(524, "当前环境异常，已取消喜欢")
+        val rejectedIds = (1L..50L).toList()
         val healthyIds = (51L..100L).toList()
 
         val result = addNeteasePlaylistSongIdsInBatches((1L..100L).toList(), 50, noPause) { ids ->
@@ -186,10 +256,11 @@ class NeteasePlaylistBatchAddTest {
         }
 
         assertEquals(healthyIds.toSet(), result.addedIds)
-        assertEquals((1L..50L).toSet(), result.failedIds)
+        assertEquals(rejectedIds.toSet(), result.failedIds)
+        assertEquals(rejectedIds.associateWith { rejected }, result.rejections)
         assertEquals(healthyIds, calls.last())
-        assertEquals(2 + 30, calls.size)
-        assertEquals(calls.filter { it.size == 1 }.flatten().toSet(), result.rejections.keys)
+        assertEquals(rejectedIds, calls.filter { it.size == 1 }.flatten())
+        assertTrue(calls.size <= rejectedIds.size * 2)
     }
 
     @Test
