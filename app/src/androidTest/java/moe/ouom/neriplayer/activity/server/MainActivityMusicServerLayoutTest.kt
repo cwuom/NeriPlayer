@@ -9,9 +9,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.view.View
-import android.view.ViewGroup
-import android.view.Window
-import android.view.inspector.WindowInspector
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
@@ -35,7 +32,6 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDisplayed
-import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -48,8 +44,6 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -125,10 +119,10 @@ class MainActivityMusicServerLayoutTest {
     @Test fun materialArtistNavigationRestoresArtistAndRootState() = artistNavigation(UiStyle.Material)
     @Test fun cleanDarkArtistNavigationRestoresArtistAndRootState() = artistNavigation(UiStyle.Clean, dark = true)
     @Test fun materialDarkArtistNavigationRestoresArtistAndRootState() = artistNavigation(UiStyle.Material, dark = true)
-    @Test fun cleanExploreDialogRestoresArtistAndCloses() = exploreArtistNavigation(UiStyle.Clean)
-    @Test fun materialExploreDialogRestoresArtistAndCloses() = exploreArtistNavigation(UiStyle.Material)
-    @Test fun cleanDarkExploreDialogRestoresArtistAndCloses() = exploreArtistNavigation(UiStyle.Clean, dark = true)
-    @Test fun materialDarkExploreDialogRestoresArtistAndCloses() = exploreArtistNavigation(UiStyle.Material, dark = true)
+    @Test fun cleanExploreOmitsMusicServerEntry() = exploreOmitsMusicServerEntry(UiStyle.Clean)
+    @Test fun materialExploreOmitsMusicServerEntry() = exploreOmitsMusicServerEntry(UiStyle.Material)
+    @Test fun cleanDarkExploreOmitsMusicServerEntry() = exploreOmitsMusicServerEntry(UiStyle.Clean, dark = true)
+    @Test fun materialDarkExploreOmitsMusicServerEntry() = exploreOmitsMusicServerEntry(UiStyle.Material, dark = true)
     @Test fun cleanRootSongsSupportSequentialAndShufflePlayback() = rootSongPlayback(UiStyle.Clean)
     @Test fun materialRootSongsSupportSequentialAndShufflePlayback() = rootSongPlayback(UiStyle.Material)
     @Test fun cleanRootSelectionUsesDedicatedListAndRestoresBrowser() = rootSongSelection(UiStyle.Clean)
@@ -529,83 +523,23 @@ class MainActivityMusicServerLayoutTest {
         assertAppChrome()
     }
 
-    private fun exploreArtistNavigation(style: UiStyle, dark: Boolean = false) = withRealActivity(style, "explore-artist", dark = dark) { session ->
-        fun dialogMatcher(matcher: SemanticsMatcher) = matcher and hasAnyAncestor(isDialog())
-        fun dialogText(value: String) = visibleNode(dialogMatcher(hasText(value)))
-        fun tapDialogTarget(matcher: SemanticsMatcher) {
-            val target = visibleNode(dialogMatcher(matcher)).fetchSemanticsNode()
-            node(ancestorWith(target, SemanticsActions.OnClick).id).performTouchInput { click() }
-        }
-        val repository = AppContainer.subsonicRepository
-        val artists = runBlocking { repository.catalog(session.profile.id, ServerLibraryCategory.ARTISTS).artists }
-        assertEquals(7, artists.size)
-        val artist = artists[5]
-        val albums = runBlocking { repository.artistAlbums(session.profile.id, artist.id).albums }
-        assertEquals(5, albums.size)
+    private fun exploreOmitsMusicServerEntry(style: UiStyle, dark: Boolean = false) = withRealActivity(style, "explore-entry", dark = dark) { session ->
         val explore = visibleNode(hasContentDescription(text(Destinations.Explore.labelResId)) and
             hasAnyAncestor(hasTestTag("appBottomNavigation"))).fetchSemanticsNode()
         node(ancestorWith(explore, SemanticsActions.OnClick).id).performTouchInput { click() }
-        await { visibleOrNull(hasText(text(CoreCommonR.string.server_my_music)) and !hasAnyAncestor(isDialog())) != null }
-        clickableText(text(CoreCommonR.string.server_my_music)).performTouchInput { click() }
-        await { visibleOrNull(dialogMatcher(hasText(text(CoreCommonR.string.server_tab_artists)))) != null }
-        assertDialogSystemBars(dark)
-        tapDialogTarget(hasText(text(CoreCommonR.string.server_tab_artists)))
-        await { visibleOrNull(dialogMatcher(hasSetTextAction())) != null }
-        visibleNode(dialogMatcher(hasSetTextAction())).performTextReplacement(Query)
-        visibleNode(dialogMatcher(hasSetTextAction())).performImeAction()
-        await { visibleOrNull(dialogMatcher(hasText(text(CoreCommonR.string.server_search_results, Query)))) != null }
-        val rootList = listContaining(visibleNode(dialogMatcher(hasSetTextAction())).fetchSemanticsNode())
-        val artistTag = "serverArtist:${session.profile.id}:${artist.id}"
-        rootList.performScrollToNode(hasTestTag(artistTag))
-        val rootPosition = scrollPosition(rootList)
-        assertDialogSystemBars(dark)
-        capture(session, "dialog-artists-root")
-        tapDialogTarget(hasTestTag(artistTag))
-        val artistList = composeRule.onNode(dialogMatcher(hasTestTag("serverArtistAlbums")), useUnmergedTree = true)
-        await { artistList.isDisplayed() && visibleOrNull(dialogMatcher(hasText(albums.first().name))) != null }
-        tapDialogTarget(hasContentDescription(text(CoreCommonR.string.server_search_artist_albums_hint)))
-        await { visibleOrNull(dialogMatcher(hasSetTextAction())) != null }
-        visibleNode(dialogMatcher(hasSetTextAction())).performTextReplacement(Query)
-        albums.forEach { album ->
-            artistList.performScrollToNode(hasText(album.name))
-            dialogText(album.name).assertIsDisplayed()
-        }
-        val album = albums.last()
-        val artistPosition = scrollPosition(artistList)
-        assertDialogSystemBars(dark)
-        capture(session, "dialog-artist-albums")
-        tapDialogTarget(hasText(album.name))
-        await { visibleCoverOrNull(album.name) != null }
-        val songs = runBlocking { repository.albumSongs(session.profile.id, album.id) }
-        assertTrue("dialog artist album contains real source tracks", songs.isNotEmpty())
-        listContaining(checkNotNull(visibleCoverOrNull(album.name))).performScrollToNode(hasText(songs.first().name))
-        dialogText(songs.first().name).assertIsDisplayed()
-        assertDialogSystemBars(dark)
-        capture(session, "dialog-album-detail")
-        Espresso.pressBack()
-        await { artistList.isDisplayed() && visibleOrNull(dialogMatcher(hasSetTextAction())) != null }
-        assertEquals("dialog back restores artist album-list scroll", artistPosition, scrollPosition(artistList), 2f)
-        visibleNode(dialogMatcher(hasSetTextAction())).assertTextContains(Query)
-        assertDialogSystemBars(dark)
-        capture(session, "dialog-returned-artist")
-        Espresso.pressBack()
-        await { artistList.isDisplayed() && visibleOrNull(dialogMatcher(hasSetTextAction())) == null }
-        Espresso.pressBack()
-        await { visibleOrNull(dialogMatcher(hasTestTag(artistTag))) != null }
-        val restoredRoot = listContaining(visibleNode(dialogMatcher(hasTestTag(artistTag))).fetchSemanticsNode())
-        assertEquals("dialog root restores artist-list scroll", rootPosition, scrollPosition(restoredRoot), 2f)
-        restoredRoot.performScrollToNode(hasSetTextAction())
-        visibleNode(dialogMatcher(hasSetTextAction())).assertTextContains(Query)
-        restoredRoot.performScrollToNode(hasText(text(CoreCommonR.string.server_tab_artists)))
-        node(ancestorWith(dialogText(text(CoreCommonR.string.server_tab_artists)).fetchSemanticsNode(), SemanticsActions.OnClick).id)
-            .assertIsSelected()
-        assertDialogSystemBars(dark)
-        capture(session, "dialog-returned-root")
-        tapDialogTarget(hasContentDescription(text(CoreCommonR.string.server_close)))
-        await { composeRule.onAllNodes(isDialog(), useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
-        visibleText(text(CoreCommonR.string.server_my_music)).assertIsDisplayed()
+        await { visibleOrNull(hasSetTextAction()) != null && visibleOrNull(libraryHeading()) == null }
+        composeRule.waitForIdle()
+        visibleNode(hasSetTextAction()).assertIsDisplayed()
+        assertTrue("explore must not expose the music server entry",
+            visibleOrNull(hasText(text(CoreCommonR.string.server_my_music))) == null)
         assertAppChrome()
-        capture(session, "dialog-closed")
+        capture(session, "explore-without-server-entry")
+        val library = visibleNode(hasContentDescription(text(Destinations.Library.labelResId)) and
+            hasAnyAncestor(hasTestTag("appBottomNavigation"))).fetchSemanticsNode()
+        node(ancestorWith(library, SemanticsActions.OnClick).id).performTouchInput { click() }
+        openServerTab(session)
+        visibleText(text(CoreCommonR.string.server_my_music)).assertIsDisplayed()
+        capture(session, "library-server-browser")
     }
 
     private fun downloadFromAlbumMenu() = withRealActivity(UiStyle.Clean, "download") { session ->
@@ -870,29 +804,6 @@ class MainActivityMusicServerLayoutTest {
                 "queueEmpty=${PlayerManager.currentQueueFlow.value.isEmpty()}, " +
                 "currentSongNull=${PlayerManager.currentSongFlow.value == null}", error)
         }
-    }
-
-    private fun assertDialogSystemBars(dark: Boolean) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) throw AssertionError("dialog window inspection requires Android 10 or later")
-        var appearance: Pair<Boolean, Boolean>? = null
-        instrumentation.runOnMainSync {
-            fun dialogWindow(view: View): Window? {
-                if (view is DialogWindowProvider) return view.window
-                if (view is ViewGroup) for (index in 0 until view.childCount) {
-                    val child = view.getChildAt(index) ?: continue
-                    dialogWindow(child)?.let { return it }
-                }
-                return null
-            }
-            val window = checkNotNull(WindowInspector.getGlobalWindowViews()
-                .filter { it.isAttachedToWindow && it.isShown && it.hasWindowFocus() }
-                .mapNotNull(::dialogWindow).distinct().singleOrNull()) { "expected one focused real Compose dialog window" }
-            val controller = WindowCompat.getInsetsController(window, window.decorView)
-            appearance = controller.isAppearanceLightStatusBars to controller.isAppearanceLightNavigationBars
-        }
-        val actual = checkNotNull(appearance)
-        assertEquals("dialog status-bar icon appearance must follow the app's forced theme", !dark, actual.first)
-        assertEquals("dialog navigation-bar icon appearance must follow the app's forced theme", !dark, actual.second)
     }
 
     private fun unobscuredAppContentTarget(findTarget: () -> SemanticsNodeInteraction): SemanticsNodeInteraction {
