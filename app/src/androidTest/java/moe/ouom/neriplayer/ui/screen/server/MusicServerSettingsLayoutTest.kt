@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.platform.subsonic.auth.SubsonicProfile
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.captureCommittedFrame
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountCardUiState
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountCardsContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountPlatform
@@ -52,7 +53,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.Q)
@@ -207,13 +207,11 @@ class MusicServerSettingsLayoutTest {
     }
 
     private fun cardFill(tag: String): Color {
-        val bitmap = composeRule.captureMusicServerBitmap(hostView)
+        val bitmap = composeRule.captureCommittedFrame(hostView, bounds(tag))
         try {
-            val card = bounds(tag)
-            val origin = composeRule.runOnUiThread { IntArray(2).also(hostView::getLocationOnScreen) }
-            val x = origin[0] + card.center.x.roundToInt()
-            val y = origin[1] + card.bottom.roundToInt() - sampleInsetPx.coerceAtLeast(1)
-            assertTrue("card sample is on screen", x in 0 until bitmap.width && y in 0 until bitmap.height)
+            val x = bitmap.width / 2
+            val y = bitmap.height - sampleInsetPx.coerceAtLeast(1)
+            assertTrue("card sample is inside the captured card", x in 0 until bitmap.width && y in 0 until bitmap.height)
             return Color(bitmap.getPixel(x, y))
         } finally {
             bitmap.recycle()
