@@ -47,6 +47,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.math.abs
+import kotlin.math.roundToLong
 
 @RunWith(AndroidJUnit4::class)
 class NowPlayingLyricsCoverFlightTest {
@@ -157,7 +158,7 @@ class NowPlayingLyricsCoverFlightTest {
         composeRule.runOnIdle { dispatcher.dispatchOnBackStarted(event(0f)) }
         for (fraction in listOf(0.2f, 0.65f, 0.35f)) {
             composeRule.runOnIdle { dispatcher.dispatchOnBackProgressed(event(fraction)) }
-            val expected = reference.getValueFromNanos((reference.durationNanos * fraction).toLong())
+            val expected = reference.getValueFromNanos((fraction.toDouble() * reference.durationNanos).roundToLong())
             advanceUntil("手势必须直接拖动唯一封面 $fraction") {
                 transition.currentState != transition.targetState &&
                     rectDistance(expected, flight.bounds) <= 1f

@@ -36,7 +36,8 @@ internal object UiFailureDiagnostics {
             log(label, "original", "${failure.javaClass.name}: ${failure.message}")
             runCatching { log(label, "windows", windows(automation)) }
                 .onFailure { logCaptureError(label, "windows", it) }
-            for (service in listOf("window windows", "activity top")) {
+            val targetPackage = instrumentation.targetContext.packageName
+            for (service in listOf("window displays", "window windows $targetPackage", "activity top")) {
                 runCatching { log(label, service, shell(automation, "dumpsys -t 3 $service")) }
                     .onFailure { logCaptureError(label, service, it) }
             }

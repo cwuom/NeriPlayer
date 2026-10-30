@@ -26,7 +26,9 @@
 维护文档时建议按用途拆开看：
 
 - [README.md](README.md)
-  - 面向用户和新贡献者，说明项目定位、能力边界、安装构建、同步与隐私。
+  - 面向用户和新贡献者，说明项目定位、核心特性、能力边界、安装构建、同步与隐私。
+- [docs/implementation.md](docs/implementation.md)
+  - 说明构建版本、14 个自有库的职责、入口与导航、播放与缓存、数据来源和下载备份。
 - [CONTRIBUTING.md](CONTRIBUTING.md)
   - 面向开发者，说明真实模块边界、扩展路径、测试和提交要求。
 - [docs/kotlin-helpers.md](docs/kotlin-helpers.md)
@@ -182,7 +184,7 @@
 
 #### 根模块
 
-自有库的入口与完整职责见根目录 [README.md](README.md#模块结构)。14 个库由 `gradle/owned-modules.txt` 统一登记，构建、lint 和结构检查读取同一份登记；覆盖率只收集包含 Kotlin/Java 生产源码的库，`:native` 使用独立的 host 测试与四 ABI 编译。一级目录表达业务领域，远程来源集中在 `:platform`；播放和下载保留规则与运行实现两个构建边界。
+自有库的入口与完整职责见 [docs/implementation.md](docs/implementation.md#模块结构)。14 个库由 `gradle/owned-modules.txt` 统一登记，构建、lint 和结构检查读取同一份登记；覆盖率只收集包含 Kotlin/Java 生产源码的库，`:native` 使用独立的 host 测试与四 ABI 编译。一级目录表达业务领域，远程来源集中在 `:platform`；播放和下载保留规则与运行实现两个构建边界。
 
 - 基础能力：`:common`、`:network`、`:model`、`:database`。模型不依赖项目实现；历史 Room schema 和完整升级链由数据库维护。
 - Native：`:native` 维护 CMake 构建边界、崩溃处理、USB 协议与 PCM 计算、独占传输和第三方 libusb；app 消费它的 AAR，Kotlin 播放会话与 JNI 桥仍由 `:playback:runtime` 维护。

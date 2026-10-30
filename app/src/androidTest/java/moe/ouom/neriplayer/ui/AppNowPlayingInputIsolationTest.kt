@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui
 
 import android.view.View
 import android.view.inputmethod.InputMethodManager
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -27,11 +28,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.ComposeTimeoutException
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -40,12 +44,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.SoftwareKeyboardRule
 import moe.ouom.neriplayer.testutil.performNativeClick
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer
@@ -54,21 +60,29 @@ import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayBackground
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayCover
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsSearchField
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.rules.TestRule
 
 @RunWith(AndroidJUnit4::class)
 class AppNowPlayingInputIsolationTest {
-    @get:Rule
-    val composeRule = createComposeRule()
+    private val softwareKeyboard = SoftwareKeyboardRule()
+
+    @get:Rule(order = 0)
+    val keyboardRule: TestRule = softwareKeyboard
+
+    @get:Rule(order = 1)
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     private val playerVisible = mutableStateOf(false)
     private val queue = MutableStateFlow<List<SongItem>>(emptyList())
     private val selectionMenu = RecordingSelectionMenu()
     private lateinit var hostView: View
+    private lateinit var focusManager: FocusManager
 
     @Before
     fun setUp() {
@@ -76,7 +90,11 @@ class AppNowPlayingInputIsolationTest {
         composeRule.setContent {
             MaterialTheme {
                 val currentView = LocalView.current
-                SideEffect { hostView = currentView }
+                val currentFocusManager = LocalFocusManager.current
+                SideEffect {
+                    hostView = currentView
+                    focusManager = currentFocusManager
+                }
                 Box(Modifier.fillMaxSize()
                     .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
                     .imePadding()) {
@@ -114,6 +132,17 @@ class AppNowPlayingInputIsolationTest {
                 }
             }
         }
+    }
+
+    @After
+    fun closeOwnedKeyboard() {
+        if (!::hostView.isInitialized) return
+        composeRule.runOnIdle {
+            focusManager.clearFocus(force = true)
+            WindowInsetsControllerCompat(composeRule.activity.window, hostView)
+                .hide(WindowInsetsCompat.Type.ime())
+        }
+        awaitHostInput(imeVisible = false, requireTouchMode = false)
     }
 
     @Test
@@ -173,25 +202,41 @@ class AppNowPlayingInputIsolationTest {
     }
 
     private fun focusSearchWithNativeInput() {
+        awaitHostInput(imeVisible = false, requireTouchMode = false)
         composeRule.onNode(hasSetTextAction()).performNativeClick()
         awaitHostInput(imeVisible = true)
         composeRule.onNode(hasSetTextAction()).assertIsFocused()
     }
 
-    private fun awaitHostInput(imeVisible: Boolean) = UiFailureDiagnostics.onFailure("player-input-$imeVisible") {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        composeRule.waitUntil(conditionDescription = "原生触摸模式及 IME 状态应稳定: visible=$imeVisible", timeoutMillis = 5_000) {
-            var ready = false
-            instrumentation.runOnMainSync {
-                val insets = ViewCompat.getRootWindowInsets(hostView)
-                val input = hostView.context.getSystemService(InputMethodManager::class.java)
-                ready = hostView.isInTouchMode && hostView.hasWindowFocus() && insets != null &&
-                    insets.isVisible(WindowInsetsCompat.Type.ime()) == imeVisible &&
-                    (!imeVisible || input.isActive(hostView) && input.isAcceptingText)
+    private fun awaitHostInput(imeVisible: Boolean, requireTouchMode: Boolean = true) =
+        UiFailureDiagnostics.onFailure("player-input-$imeVisible") {
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            var lastState = "not sampled"
+            try {
+                composeRule.waitUntil(conditionDescription = "原生触摸模式及 IME 状态应稳定: visible=$imeVisible", timeoutMillis = 5_000) {
+                    var ready = false
+                    instrumentation.runOnMainSync {
+                        val insets = ViewCompat.getRootWindowInsets(hostView)
+                        val input = hostView.context.getSystemService(InputMethodManager::class.java)
+                        val touchMode = hostView.isInTouchMode
+                        val windowFocus = hostView.hasWindowFocus()
+                        val visible = insets?.isVisible(WindowInsetsCompat.Type.ime())
+                        val active = input.isActive(hostView)
+                        val acceptingText = input.isAcceptingText
+                        val configuration = hostView.resources.configuration
+                        lastState = "windowFocus=$windowFocus, touchMode=$touchMode, imeVisible=$visible, " +
+                            "active=$active, acceptingText=$acceptingText, keyboard=${configuration.keyboard}, " +
+                            "hardKeyboardHidden=${configuration.hardKeyboardHidden}, " +
+                            "originalKeyboardPreference=${softwareKeyboard.originalPreference}"
+                        ready = (!requireTouchMode || touchMode) && windowFocus && visible == imeVisible &&
+                            (!imeVisible || active && acceptingText)
+                    }
+                    ready
+                }
+            } catch (failure: ComposeTimeoutException) {
+                throw AssertionError("真实输入前置未就绪: expectedImeVisible=$imeVisible, $lastState", failure)
             }
-            ready
         }
-    }
 
     private class RecordingSelectionMenu : TextContextMenuProvider {
         var shown by mutableStateOf(false)

@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.platform.netease.playlist
  * Created: 2026/8/10
  */
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.common.logging.NPLogger
 
 /** 登录失败无法通过拆分恢复，524 仍需隔离批次中的失败歌曲 */
@@ -31,9 +34,6 @@ private val NETEASE_WHOLE_BATCH_REJECTION_CODES = setOf(301, 401)
 /** 限流或网络异常时整次同步最多退避重试的次数 */
 private const val NETEASE_PLAYLIST_ADD_MAX_TRANSIENT_RETRIES = 3
 private const val NETEASE_PLAYLIST_ADD_BACKOFF_MS = 1_000L
-
-/** 拆分和重试最多额外提交的批次数, 不包含单批内部的会话重试和喜欢回退 */
-private const val NETEASE_PLAYLIST_ADD_EXTRA_REQUESTS = 30
 
 /** 单次添加请求的结果 */
 sealed interface NeteasePlaylistAddOutcome {
@@ -62,11 +62,11 @@ data class NeteasePlaylistFailedSongResolution(
 )
 
 /** [pause] 用于限流退避, 参数是需要等待的毫秒数 */
-fun addNeteasePlaylistSongIdsInBatches(
+suspend fun addNeteasePlaylistSongIdsInBatches(
     songIds: List<Long>,
     batchSize: Int,
     pause: (Long) -> Unit,
-    addBatch: (List<Long>) -> NeteasePlaylistAddOutcome
+    addBatch: suspend (List<Long>) -> NeteasePlaylistAddOutcome
 ): NeteasePlaylistBatchAddResult {
     require(batchSize > 0) { "batchSize must be positive" }
     val batches = songIds.asSequence()
@@ -78,28 +78,33 @@ fun addNeteasePlaylistSongIdsInBatches(
         addBatch = addBatch,
         pause = pause
     )
-    batches.forEach(adder::submit)
+    for (batch in batches) {
+        adder.submit(batch)
+    }
     return adder.result()
 }
 
 private class NeteasePlaylistBatchAdder(
-    private val addBatch: (List<Long>) -> NeteasePlaylistAddOutcome,
+    private val addBatch: suspend (List<Long>) -> NeteasePlaylistAddOutcome,
     private val pause: (Long) -> Unit
 ) {
     private val addedIds = LinkedHashSet<Long>()
     private val failedIds = LinkedHashSet<Long>()
     private val rejections = LinkedHashMap<Long, NeteasePlaylistAddOutcome.Rejected>()
-    private var remainingExtraRequests = NETEASE_PLAYLIST_ADD_EXTRA_REQUESTS
     private var transientRetries = 0
     private var stopped = false
 
-    fun submit(ids: List<Long>) {
+    suspend fun submit(ids: List<Long>) {
+        currentCoroutineContext().ensureActive()
         if (stopped) {
             failedIds.addAll(ids)
             return
         }
         val outcome = runCatching { addBatch(ids) }
-            .getOrElse { NeteasePlaylistAddOutcome.Transient(-1, it.message) }
+            .getOrElse {
+                if (it is CancellationException) throw it
+                NeteasePlaylistAddOutcome.Transient(-1, it.message)
+            }
         when (outcome) {
             is NeteasePlaylistAddOutcome.Rejected -> reject(ids, outcome)
             is NeteasePlaylistAddOutcome.Transient -> retryLater(ids, outcome)
@@ -109,21 +114,12 @@ private class NeteasePlaylistBatchAdder(
 
     fun result() = NeteasePlaylistBatchAddResult(addedIds, failedIds, rejections)
 
-    private fun submitExtra(ids: List<Long>) {
-        if (remainingExtraRequests <= 0) {
-            NPLogger.w("LocalPlaylistRepo", "addSongsToPlaylist extra request budget exhausted, ${ids.size} songs not sent")
-            failedIds.addAll(ids)
-            return
-        }
-        remainingExtraRequests -= 1
-        submit(ids)
-    }
-
-    private fun reject(ids: List<Long>, rejected: NeteasePlaylistAddOutcome.Rejected) {
+    private suspend fun reject(ids: List<Long>, rejected: NeteasePlaylistAddOutcome.Rejected) {
         if (ids.size > 1 && rejected.code !in NETEASE_WHOLE_BATCH_REJECTION_CODES) {
+            // 二分拆分本身有界，避免固定请求数跳过尚未尝试的歌曲
             val midpoint = ids.size / 2
-            submitExtra(ids.subList(0, midpoint))
-            submitExtra(ids.subList(midpoint, ids.size))
+            submit(ids.subList(0, midpoint))
+            submit(ids.subList(midpoint, ids.size))
             return
         }
         NPLogger.w("LocalPlaylistRepo", "NetEase rejected songs $ids: code=${rejected.code}, message=${rejected.message}")
@@ -131,7 +127,7 @@ private class NeteasePlaylistBatchAdder(
         ids.forEach { rejections[it] = rejected }
     }
 
-    private fun retryLater(ids: List<Long>, transient: NeteasePlaylistAddOutcome.Transient) {
+    private suspend fun retryLater(ids: List<Long>, transient: NeteasePlaylistAddOutcome.Transient) {
         if (transientRetries >= NETEASE_PLAYLIST_ADD_MAX_TRANSIENT_RETRIES) {
             NPLogger.w("LocalPlaylistRepo", "addSongsToPlaylist still failing after $transientRetries retries, stop syncing: $transient")
             stopped = true
@@ -140,7 +136,7 @@ private class NeteasePlaylistBatchAdder(
         }
         pause(NETEASE_PLAYLIST_ADD_BACKOFF_MS shl transientRetries)
         transientRetries += 1
-        submitExtra(ids)
+        submit(ids)
     }
 }
 

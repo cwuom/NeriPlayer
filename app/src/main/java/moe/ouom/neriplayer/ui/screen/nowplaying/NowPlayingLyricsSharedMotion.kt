@@ -7,20 +7,11 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionDefaults
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.unit.IntSize
-
-private const val PredictiveLyricsDurationMillis = 300
-
-internal val NowPlayingLyricsBackPreviewEasing = FastOutSlowInEasing
 
 internal enum class NowPlayingLyricsSharedTransitionElement(
     val key: String
@@ -48,18 +39,11 @@ internal val LocalNowPlayingLyricsExitTransition = compositionLocalOf {
     OrdinaryLyricsExitTransition
 }
 
-private val PredictiveLyricsBoundsTransform = BoundsTransform { _, _ ->
-    tween<Rect>(durationMillis = PredictiveLyricsDurationMillis, easing = LinearEasing)
-}
-private val PredictiveLyricsEnterTransition = fadeIn(
-    tween(durationMillis = PredictiveLyricsDurationMillis, easing = LinearEasing)
-)
-private val PredictiveLyricsExitTransition = fadeOut(
-    tween(durationMillis = PredictiveLyricsDurationMillis, easing = LinearEasing)
-)
-private val PredictiveLyricsSizeTransform = SizeTransform { _, _ ->
-    tween<IntSize>(durationMillis = PredictiveLyricsDurationMillis, easing = LinearEasing)
-}
+// 预览直接定位普通切页的 spring 时间线，松手后继续同一条曲线
+private val PredictiveLyricsBoundsTransform = SharedTransitionDefaults.BoundsTransform
+private val PredictiveLyricsEnterTransition = OrdinaryLyricsEnterTransition
+private val PredictiveLyricsExitTransition = OrdinaryLyricsExitTransition
+private val PredictiveLyricsSizeTransform = OrdinaryLyricsSizeTransform
 
 @Composable
 internal fun NowPlayingLyricsSharedMotion(previewActive: Boolean, content: @Composable () -> Unit) {
