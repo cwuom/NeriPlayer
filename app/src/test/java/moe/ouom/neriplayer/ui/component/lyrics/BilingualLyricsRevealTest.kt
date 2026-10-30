@@ -11,9 +11,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -21,6 +23,12 @@ import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.lyrics.WordTiming
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingLyricsPane
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingSyncedLyricActions
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingSyncedLyricPlayback
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingSyncedLyricStyle
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingSyncedLyricContent
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -99,6 +107,39 @@ class BilingualLyricsRevealTest {
         assertTrue(image.blueColumns(bottomRows).isNotEmpty())
     }
 
+    @Test
+    fun `embedded plain mode keeps flattened word timed paragraphs sequential`() {
+        val content = buildNowPlayingSyncedLyricContent(
+            listOf(wordTimedLine()), emptyList(), false, false, null, 0L
+        )
+        lateinit var hostView: View
+        composeRule.setContent {
+            hostView = LocalView.current
+            Box(Modifier.width(320.dp).background(Color.Black)) {
+                NowPlayingLyricsPane(
+                    content = content,
+                    style = NowPlayingSyncedLyricStyle(
+                        Color.Red, 24.sp, 14.sp, LyricVisualSpec(), false, 0f
+                    ),
+                    playback = NowPlayingSyncedLyricPlayback(
+                        MutableStateFlow(2_500L), null, false, 1f
+                    ),
+                    actions = NowPlayingSyncedLyricActions({}, {}),
+                    modifier = Modifier.width(320.dp)
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        val bounds = composeRule.onAllNodesWithText(bilingualLine.text, useUnmergedTree = true)
+            .fetchSemanticsNodes().first().boundsInRoot
+        val image = captureLine(hostView, bounds)
+        val (topRows, bottomRows) = image.paragraphRows()
+
+        assertTrue(image.brightRedColumns(topRows).isNotEmpty())
+        assertEquals(emptyList<Int>(), image.brightRedColumns(bottomRows))
+        assertTrue(image.redColumns(bottomRows, minRed = 0.1f).isNotEmpty())
+    }
+
     private fun wordTimedLine(): LyricEntry = bilingualLine.copy(
         words = listOf(
             WordTiming(startTimeMs = 0L, endTimeMs = 5_000L, charCount = 11),
@@ -127,7 +168,11 @@ class BilingualLyricsRevealTest {
             }
         }
         val bounds = composeRule.onNodeWithTag("bilingual-line").fetchSemanticsNode().boundsInRoot
-        return composeRule.runOnIdle {
+        return captureLine(hostView, bounds)
+    }
+
+    private fun captureLine(hostView: View, bounds: Rect): ImageBitmap =
+        composeRule.runOnIdle {
             val bitmap = Bitmap.createBitmap(hostView.width, hostView.height, Bitmap.Config.ARGB_8888)
             hostView.draw(Canvas(bitmap))
             Bitmap.createBitmap(
@@ -138,17 +183,23 @@ class BilingualLyricsRevealTest {
                 bounds.height.toInt()
             ).asImageBitmap()
         }
-    }
 
     private fun ImageBitmap.paragraphRows(): List<IntRange> = listOf(
         0 until height / 2,
         height / 2 until height
     )
 
-    private fun ImageBitmap.redColumns(rows: IntRange): List<Int> {
+    private fun ImageBitmap.redColumns(rows: IntRange, minRed: Float = 0.5f): List<Int> {
         val pixels = toPixelMap()
         return (0 until width).filter { x ->
-            rows.any { y -> pixels[x, y].let { it.red > 0.5f && it.blue < 0.3f } }
+            rows.any { y -> pixels[x, y].let { it.red > minRed && it.blue < 0.3f } }
+        }
+    }
+
+    private fun ImageBitmap.brightRedColumns(rows: IntRange): List<Int> {
+        val pixels = toPixelMap()
+        return (0 until width).filter { x ->
+            rows.any { y -> pixels[x, y].let { it.red > 0.7f && it.blue < 0.1f } }
         }
     }
 

@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.lyrics.parser.calculateLineProgress
 import moe.ouom.neriplayer.lyrics.parser.findCurrentLineIndex
 import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
 import moe.ouom.neriplayer.lyrics.parser.prepareBilingualLyricDisplay
+import moe.ouom.neriplayer.lyrics.parser.BilingualLyricDisplay
 import android.annotation.SuppressLint
 import android.graphics.Paint
 import android.graphics.Rect
@@ -615,7 +616,8 @@ fun SyncedLyricsView(
     edgeFadeHeight: Dp = resolveLyricEdgeFadeHeight(isEmbedded = false),
     showEmbeddedTranslations: Boolean = true,
     playbackSessionKey: String? = null,
-    stableEmbeddedViewport: Boolean = false
+    stableEmbeddedViewport: Boolean = false,
+    bilingualDisplayEnabled: Boolean = true
 ) {
     val translationMatchesByIndex = remember(lyrics, translatedLyrics) {
         matchTranslationsToLineIndices(
@@ -623,7 +625,7 @@ fun SyncedLyricsView(
             translations = translatedLyrics.orEmpty().filter { it.text.isNotBlank() }
         )
     }
-    val display = remember(lyrics, translationMatchesByIndex, showEmbeddedTranslations) {
+    val display = remember(lyrics, translationMatchesByIndex, showEmbeddedTranslations, bilingualDisplayEnabled) {
         val translatedLines = lyrics.mapIndexed { index, line ->
             val translation = resolveLyricTranslationText(
                 line = line,
@@ -632,7 +634,11 @@ fun SyncedLyricsView(
             )
             if (translation == line.translation) line else line.copy(translation = translation)
         }
-        prepareBilingualLyricDisplay(translatedLines)
+        if (bilingualDisplayEnabled) {
+            prepareBilingualLyricDisplay(translatedLines)
+        } else {
+            BilingualLyricDisplay(translatedLines, translatedLines.indices.toList())
+        }
     }
     val displayLyrics = display.lyrics
     val lyricScrollSessionKey = remember(playbackSessionKey, lyrics) {
@@ -915,6 +921,7 @@ fun SyncedLyricsView(
                             ) {
                                 SyncedLyricsActiveLine(
                                     line = line,
+                                    parallelParagraphReveal = bilingualDisplayEnabled,
                                     currentTimeMs = currentTimeMs,
                                     activeColor = textColor,
                                     inactiveColor = textColor.copy(alpha = 0.5f),
@@ -1264,7 +1271,8 @@ fun SyncedLyricsActiveLine(
     isPlaying: Boolean = false,
     playbackSpeed: Float = 1f,
     interpolatePlaybackPosition: Boolean = false,
-    animateProgress: Boolean = true
+    animateProgress: Boolean = true,
+    parallelParagraphReveal: Boolean = true
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val isLayoutReady by remember { derivedStateOf { layout != null } }
@@ -1310,8 +1318,8 @@ fun SyncedLyricsActiveLine(
 
     val effectiveFadeWidth = if (line.words.isNullOrEmpty()) fadeWidth else 0.dp
     val revealHorizontalPadding = resolveActiveLyricRevealHorizontalPadding()
-    val parallelParagraphs = remember(line.text, line.words.isNullOrEmpty()) {
-        if (line.words.isNullOrEmpty() && '\n' in line.text) {
+    val parallelParagraphs = remember(line.text, line.words.isNullOrEmpty(), parallelParagraphReveal) {
+        if (parallelParagraphReveal && line.words.isNullOrEmpty() && '\n' in line.text) {
             // 显式换行的歌词段共享进度，段内的软换行仍按字符顺序推进
             buildList {
                 var paragraphStart = 0

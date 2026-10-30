@@ -1614,7 +1614,7 @@ fun NowPlayingScreen(
                                 useWideLandscapeLayout, showCoverPageLyrics && !immersiveMode, coverLyricsAvailable
                             )
                             val embeddedLyricContent = buildNowPlayingSyncedLyricContent(
-                                plainLyrics, secondaryPlainLyrics, showSecondaryLyrics,
+                                lyrics, secondaryPlainLyrics, showSecondaryLyrics,
                                 usePhoneticTranslation, currentSong, totalOffset
                             )
                             val embeddedLyricStyle = NowPlayingEmbeddedLyricStyle(

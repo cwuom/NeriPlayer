@@ -153,6 +153,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricEdgeFadeHeight
 import moe.ouom.neriplayer.ui.component.lyrics.SyncedLyricsView
 import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
 import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
+import moe.ouom.neriplayer.lyrics.parser.hasWordTimedEntries
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
@@ -1453,8 +1454,10 @@ internal fun LyricsContentPane(
         return
     }
 
+    val bilingualDisplayEnabled = remember(lyrics) { !lyrics.hasWordTimedEntries() }
     SyncedLyricsView(
         lyrics = plainLyrics,
+        bilingualDisplayEnabled = bilingualDisplayEnabled,
         currentTimeMs = effectiveLyricTimeMs,
         modifier = Modifier.fillMaxSize(),
         textColor = textColor,
