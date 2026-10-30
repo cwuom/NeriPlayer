@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.data.model.lyrics.WordTiming
 import moe.ouom.neriplayer.lyrics.parser.calculateLineProgress
 import moe.ouom.neriplayer.lyrics.parser.findCurrentLineIndex
 import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
+import moe.ouom.neriplayer.lyrics.parser.prepareBilingualLyricDisplay
 import android.annotation.SuppressLint
 import android.graphics.Paint
 import android.graphics.Rect
@@ -97,6 +98,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -615,19 +617,37 @@ fun SyncedLyricsView(
     playbackSessionKey: String? = null,
     stableEmbeddedViewport: Boolean = false
 ) {
+    val translationMatchesByIndex = remember(lyrics, translatedLyrics) {
+        matchTranslationsToLineIndices(
+            lines = lyrics,
+            translations = translatedLyrics.orEmpty().filter { it.text.isNotBlank() }
+        )
+    }
+    val display = remember(lyrics, translationMatchesByIndex, showEmbeddedTranslations) {
+        val translatedLines = lyrics.mapIndexed { index, line ->
+            val translation = resolveLyricTranslationText(
+                line = line,
+                matchedTranslation = translationMatchesByIndex[index],
+                showEmbeddedTranslations = showEmbeddedTranslations
+            )
+            if (translation == line.translation) line else line.copy(translation = translation)
+        }
+        prepareBilingualLyricDisplay(translatedLines)
+    }
+    val displayLyrics = display.lyrics
     val lyricScrollSessionKey = remember(playbackSessionKey, lyrics) {
         resolveLyricScrollSessionKey(playbackSessionKey, lyrics)
     }
 
     val lineSelectionTimeMs = (currentTimeMs + lyricOffsetMs).coerceAtLeast(0L)
-    val currentIndex = remember(lyrics, lineSelectionTimeMs) {
-        findCurrentLineIndex(lyrics, lineSelectionTimeMs)
+    val currentIndex = remember(displayLyrics, lineSelectionTimeMs) {
+        findCurrentLineIndex(displayLyrics, lineSelectionTimeMs)
     }
     val listState = remember(lyricScrollSessionKey, stableEmbeddedViewport) {
         LazyListState(
             firstVisibleItemIndex = resolveInitialLyricScrollIndex(
                 currentIndex = currentIndex,
-                lyricsSize = lyrics.size,
+                lyricsSize = displayLyrics.size,
                 stabilizeViewport = stableEmbeddedViewport
             )
         )
@@ -636,22 +656,11 @@ fun SyncedLyricsView(
     var isAutoScrolling by remember(lyricScrollSessionKey) { mutableStateOf(false) }
     var lastUserInteracting by remember(lyricScrollSessionKey) { mutableStateOf(false) }
 
-    val translationMatchesByIndex = remember(lyrics, translatedLyrics) {
-        translatedLyrics
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { translations ->
-                matchTranslationsToLineIndices(
-                    lines = lyrics,
-                    translations = translations.filter { it.text.isNotBlank() }
-                )
-            }
-            .orEmpty()
-    }
     val animateItemPlacement = shouldAnimateLyricItemPlacement()
 
     val autoScrollTarget = LyricAutoScrollTarget(
         lineIndex = currentIndex,
-        lyricsSize = lyrics.size
+        lyricsSize = displayLyrics.size
     )
     val latestAutoScrollTarget by rememberUpdatedState(autoScrollTarget)
     val isUserInteracting by remember(listState) {
@@ -661,13 +670,13 @@ fun SyncedLyricsView(
     LaunchedEffect(
         lyricScrollSessionKey,
         currentIndex,
-        lyrics.size,
+        displayLyrics.size,
         isUserInteracting,
         manualClearHoldIndex
     ) {
         if (!shouldAutoScrollLyricViewport(
                 currentIndex = currentIndex,
-                lyricsSize = lyrics.size,
+                lyricsSize = displayLyrics.size,
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
                 isUserInteracting = isUserInteracting,
@@ -743,11 +752,12 @@ fun SyncedLyricsView(
                 .verticalEdgeFade(fadeHeight = edgeFadeHeight)
         ) {
             itemsIndexed(
-                items = lyrics,
+                items = displayLyrics,
                 key = { index, line ->
                     lyricScrollSessionKey to lyricListItemKey(index, line)
                 }
             ) { index, line ->
+                val sourceLine = lyrics[display.sourceIndices[index]]
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -755,8 +765,8 @@ fun SyncedLyricsView(
                         .clip(RoundedCornerShape(16.dp))
                         .combinedClickable(
                             enabled = handleLyricClick != null || handleLyricLongClick != null,
-                            onClick = { handleLyricClick?.invoke(line) },
-                            onLongClick = { handleLyricLongClick?.invoke(line) }
+                            onClick = { handleLyricClick?.invoke(sourceLine) },
+                            onLongClick = { handleLyricLongClick?.invoke(sourceLine) }
                         )
                         .then(
                             if (animateItemPlacement) {
@@ -937,11 +947,7 @@ fun SyncedLyricsView(
                         )
                     }
 
-                    val transText = resolveLyricTranslationText(
-                        line = line,
-                        matchedTranslation = translationMatchesByIndex[index],
-                        showEmbeddedTranslations = showEmbeddedTranslations
-                    )
+                    val transText = line.translation
                     transText?.takeIf { it.isNotBlank() }?.let { translation ->
                         AnimatedLyricTranslation(
                             text = translation,
@@ -1074,7 +1080,8 @@ internal fun Modifier.multilineGradientReveal(
     line: LyricEntry? = null,
     interpolatedPositionState: InterpolatedPlaybackPositionState? = null,
     lyricOffsetMs: Long = 0L,
-    horizontalContentInset: Dp = 0.dp
+    horizontalContentInset: Dp = 0.dp,
+    parallelParagraphs: List<TextRange> = emptyList()
 ): Modifier = this
     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
     .drawWithContent {
@@ -1097,7 +1104,8 @@ internal fun Modifier.multilineGradientReveal(
             layout = layout,
             revealedChars = effectiveRevealOffsetChars.coerceIn(0f, textLength.toFloat()),
             horizontalInsetPx = horizontalContentInset.toPx(),
-            fadePx = fadeWidth.toPx()
+            fadePx = fadeWidth.toPx(),
+            parallelParagraphs = parallelParagraphs
         )
     }
 
@@ -1119,12 +1127,22 @@ private fun ContentDrawScope.drawRevealedLines(
     layout: TextLayoutResult,
     revealedChars: Float,
     horizontalInsetPx: Float,
-    fadePx: Float
+    fadePx: Float,
+    parallelParagraphs: List<TextRange>
 ) {
+    var paragraphIndex = 0
+    val progress = revealedChars / layout.layoutInput.text.length
     for (lineIndex in 0 until layout.lineCount) {
         val lineStartIdx = layout.getLineStart(lineIndex) // 该行第一个字符的索引
         val lineEndIdx = layout.getLineEnd(lineIndex, true) // 该行最后一个字符的索引 (含换行符)
-        if (revealedChars >= lineEndIdx) {
+        while (paragraphIndex < parallelParagraphs.lastIndex &&
+            lineStartIdx > parallelParagraphs[paragraphIndex].end
+        ) {
+            paragraphIndex++
+        }
+        val paragraph = parallelParagraphs.getOrNull(paragraphIndex)
+        val rowRevealedChars = paragraph?.let { it.start + it.length * progress } ?: revealedChars
+        if (rowRevealedChars >= lineEndIdx) {
             // 进度超过该行最后一个字符, 直接绘制全高亮
             val lineClipBounds = layout.revealClipBounds(lineIndex, horizontalInsetPx, size.width)
             clipRect(
@@ -1135,9 +1153,9 @@ private fun ContentDrawScope.drawRevealedLines(
             ) {
                 this@drawRevealedLines.drawContent()
             }
-        } else if (revealedChars >= lineStartIdx) {
+        } else if (rowRevealedChars >= lineStartIdx) {
             // 进度落在该行内, 执行渐变裁剪; 进度未到的行不绘制高亮
-            drawPartiallyRevealedLine(layout, lineIndex, revealedChars, horizontalInsetPx, fadePx)
+            drawPartiallyRevealedLine(layout, lineIndex, rowRevealedChars, horizontalInsetPx, fadePx)
         }
     }
 }
@@ -1292,6 +1310,23 @@ fun SyncedLyricsActiveLine(
 
     val effectiveFadeWidth = if (line.words.isNullOrEmpty()) fadeWidth else 0.dp
     val revealHorizontalPadding = resolveActiveLyricRevealHorizontalPadding()
+    val parallelParagraphs = remember(line.text, line.words.isNullOrEmpty()) {
+        if (line.words.isNullOrEmpty() && '\n' in line.text) {
+            // 显式换行的歌词段共享进度，段内的软换行仍按字符顺序推进
+            buildList {
+                var paragraphStart = 0
+                line.text.forEachIndexed { index, char ->
+                    if (char == '\n') {
+                        add(TextRange(paragraphStart, index))
+                        paragraphStart = index + 1
+                    }
+                }
+                add(TextRange(paragraphStart, line.text.length))
+            }
+        } else {
+            emptyList()
+        }
+    }
 
     Box {
         // 底版文本
@@ -1329,7 +1364,8 @@ fun SyncedLyricsActiveLine(
                             null
                         },
                         lyricOffsetMs = lyricOffsetMs,
-                        horizontalContentInset = revealHorizontalPadding
+                        horizontalContentInset = revealHorizontalPadding,
+                        parallelParagraphs = parallelParagraphs
                     )
                     .padding(horizontal = revealHorizontalPadding)
             )
