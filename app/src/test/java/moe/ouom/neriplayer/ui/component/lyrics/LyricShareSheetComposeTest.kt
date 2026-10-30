@@ -12,7 +12,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -185,6 +187,24 @@ class LyricShareSheetComposeTest {
     @Config(qualifiers = "w411dp-h900dp-mdpi")
     fun `tall portrait keeps full size action icons and scrollable lyrics`() {
         assertActionsRemainUsableWithScrollableLyrics()
+    }
+
+    @Test
+    @Config(qualifiers = "w411dp-h900dp-mdpi")
+    fun `short lyrics keep the list sized to its content on a tall screen`() {
+        val shortLyrics = lyrics.take(2)
+        setSheet(sheetLyrics = shortLyrics, initialLine = shortLyrics.first())
+
+        val listBounds = composeRule.onNode(hasScrollToIndexAction())
+            .fetchSemanticsNode().boundsInRoot
+        val firstLineBounds = composeRule.onNode(hasText(shortLyrics.first().text) and hasClickAction())
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val lastLineBounds = composeRule.onNode(hasText(shortLyrics.last().text) and hasClickAction())
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+
+        assertEquals("the list should start at its first lyric", firstLineBounds.top, listBounds.top, 1f)
+        assertEquals("the list should end at its last lyric", lastLineBounds.bottom, listBounds.bottom, 1f)
+        assertActionIconsKeepTheirSize()
     }
 
     @Test
