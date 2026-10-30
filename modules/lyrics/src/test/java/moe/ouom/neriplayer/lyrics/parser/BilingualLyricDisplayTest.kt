@@ -126,6 +126,136 @@ class BilingualLyricDisplayTest {
     }
 
     @Test
+    fun `parentheses stay with the second language in either order`() {
+        val cases = listOf(
+            "I love you (我爱你)" to "I love you\n(我爱你)",
+            "你好 (Hello)" to "你好\n(Hello)",
+            "Hello( 你好 )" to "Hello\n( 你好 )"
+        )
+
+        for ((source, expected) in cases) {
+            assertEquals(source, expected, prepareBilingualLyricsForDisplay(listOf(line(source))).single().text)
+        }
+    }
+
+    @Test
+    fun `nested opening punctuation and its inner spaces stay with the second language`() {
+        val cases = listOf(
+            "Hello ([你好])" to "Hello\n([你好])",
+            "Hello （“ 你好 ”）" to "Hello\n（“ 你好 ”）",
+            "你好 （[ Hello ]）" to "你好\n（[ Hello ]）"
+        )
+
+        for ((source, expected) in cases) {
+            assertEquals(source, expected, prepareBilingualLyricsForDisplay(listOf(line(source))).single().text)
+        }
+    }
+
+    @Test
+    fun `opening unicode quotes stay with the second language`() {
+        val cases = listOf(
+            "Hello “你好”" to "Hello\n“你好”",
+            "Hello “你好" to "Hello\n“你好",
+            "你好 「Hello」" to "你好\n「Hello」"
+        )
+
+        for ((source, expected) in cases) {
+            assertEquals(source, expected, prepareBilingualLyricsForDisplay(listOf(line(source))).single().text)
+        }
+    }
+
+    @Test
+    fun `paired ascii quotes stay with their second language text`() {
+        val cases = listOf(
+            "Hello \"你好\"" to "Hello\n\"你好\"",
+            "\"Hello\" \"你好\"" to "\"Hello\"\n\"你好\"",
+            "Hello \"（ 你好 ）\"" to "Hello\n\"（ 你好 ）\""
+        )
+
+        for ((source, expected) in cases) {
+            assertEquals(source, expected, prepareBilingualLyricsForDisplay(listOf(line(source))).single().text)
+        }
+    }
+
+    @Test
+    fun `first language closing quotes and sentence punctuation stay on the first line`() {
+        val cases = listOf(
+            "\"Hello!\" 你好" to "\"Hello!\"\n你好",
+            "“Hello!” 你好" to "“Hello!”\n你好",
+            "Hello \"friend\" 你好" to "Hello \"friend\"\n你好",
+            "(Hello) 你好" to "(Hello)\n你好",
+            "Hello \" 你好" to "Hello \"\n你好",
+            "Hello?! “你好”" to "Hello?!\n“你好”"
+        )
+
+        for ((source, expected) in cases) {
+            assertEquals(source, expected, prepareBilingualLyricsForDisplay(listOf(line(source))).single().text)
+        }
+    }
+
+    @Test
+    fun `unicode low quote pairs keep their closing quote on the first line`() {
+        val cases = listOf(
+            "„Hello“ 你好" to "„Hello“\n你好",
+            "‚Hello‘ 你好" to "‚Hello‘\n你好",
+            "„Hello” 你好" to "„Hello”\n你好"
+        )
+
+        for ((source, expected) in cases) {
+            assertEquals(source, expected, prepareBilingualLyricsForDisplay(listOf(line(source))).single().text)
+        }
+    }
+
+    @Test
+    fun `reverse guillemet pairs keep their closing quote on the first line`() {
+        val cases = listOf(
+            "»Hello« 你好" to "»Hello«\n你好",
+            "›Hello‹ 你好" to "›Hello‹\n你好",
+            "«Hello« 你好" to "«Hello«\n你好"
+        )
+
+        for ((source, expected) in cases) {
+            assertEquals(source, expected, prepareBilingualLyricsForDisplay(listOf(line(source))).single().text)
+        }
+    }
+
+    @Test
+    fun `an earlier complete quote pair does not consume the next language opening quote`() {
+        val cases = listOf(
+            "„Hello“ „你好“" to "„Hello“\n„你好“",
+            "‚Hello‘ ‚你好‘" to "‚Hello‘\n‚你好‘",
+            "«Hello» «你好»" to "«Hello»\n«你好»",
+            "»Hello« »你好«" to "»Hello«\n»你好«",
+            "›Hello‹ ›你好‹" to "›Hello‹\n›你好‹"
+        )
+
+        for ((source, expected) in cases) {
+            assertEquals(source, expected, prepareBilingualLyricsForDisplay(listOf(line(source))).single().text)
+        }
+    }
+
+    @Test
+    fun `latin apostrophes do not change the following single quote pair`() {
+        val cases = listOf(
+            "I’m here ‘你好’" to "I’m here\n‘你好’",
+            "James’ ‘你好’" to "James’\n‘你好’",
+            "Rock’n’roll ‘摇滚’" to "Rock’n’roll\n‘摇滚’",
+            "‚I’m here‘ 你好" to "‚I’m here‘\n你好"
+        )
+
+        for ((source, expected) in cases) {
+            assertEquals(source, expected, prepareBilingualLyricsForDisplay(listOf(line(source))).single().text)
+        }
+    }
+
+    @Test
+    fun `timestamp grouping also keeps translated parentheses on their own line`() {
+        val displayed = prepareBilingualLyricsForDisplay(listOf(line("Hello (你好)"), line("Another voice")))
+
+        assertEquals("Hello\n(你好)\nAnother voice", displayed.single().text)
+    }
+
+    @Test
     fun `mixed line splitting preserves supplementary han characters`() {
         val displayed = prepareBilingualLyricsForDisplay(listOf(line("Hello world 𠀀𠮷")))
 

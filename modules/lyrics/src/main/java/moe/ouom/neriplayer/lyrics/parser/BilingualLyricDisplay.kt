@@ -6,6 +6,10 @@ private const val BilingualDisplayTimestampToleranceMs = 50L
 private val BilingualDisplayLetterRegex = Regex("""\p{L}""")
 private val BilingualDisplayLatinRegex = Regex("""\p{sc=Latin}""")
 private val BilingualDisplayHanRegex = Regex("""\p{sc=Han}""")
+private val BilingualDisplayOpeningPunctuationRegex = Regex("""[\p{Ps}\p{Pi}]""")
+private val BilingualDisplayFinalPunctuationRegex = Regex("""\p{Pf}""")
+private val BilingualDisplayWordApostropheRegex = Regex("""\p{sc=Latin}[‘’]\p{sc=Latin}""")
+private val BilingualDisplayQuoteFamilies = listOf("\"", "„“”", "‚‘’", "«»", "‹›")
 
 private enum class BilingualScript {
     Latin,
@@ -109,8 +113,49 @@ private fun String.splitBilingualSentence(): String {
         script = nextScript
     }
     if (boundary < 0) return this
-    return substring(0, boundary).trimEnd() + "\n" + substring(boundary)
+    val displayBoundary = openingPunctuationBoundary(boundary)
+    return substring(0, displayBoundary).trimEnd() + "\n" + substring(displayBoundary)
 }
+
+private fun String.openingPunctuationBoundary(boundary: Int): Int {
+    var displayBoundary = boundary
+    var index = boundary - 1
+    while (index >= 0) {
+        val character = this[index]
+        if (!character.isWhitespace()) {
+            if (!isOpeningPunctuation(index)) break
+            displayBoundary = index
+        }
+        index--
+    }
+    return displayBoundary
+}
+
+private fun String.isOpeningPunctuation(index: Int): Boolean {
+    val character = this[index]
+    val quoteFamily = BilingualDisplayQuoteFamilies.firstOrNull { character in it }
+        ?: return BilingualDisplayOpeningPunctuationRegex.matches(character.toString())
+    return character.canOpenQuote() &&
+        !hasOpenQuoteBefore(index, quoteFamily) &&
+        (character != '"' || substring(index + 1).any { it in quoteFamily })
+}
+
+private fun String.hasOpenQuoteBefore(index: Int, quoteFamily: String): Boolean {
+    var open = false
+    for (position in 0 until index) {
+        val character = this[position]
+        if (character !in quoteFamily || isLatinWordApostrophe(position)) continue
+        if (open || character.canOpenQuote()) open = !open
+    }
+    return open
+}
+
+private fun String.isLatinWordApostrophe(index: Int): Boolean =
+    index > 0 && index < lastIndex &&
+        BilingualDisplayWordApostropheRegex.matches(substring(index - 1, index + 2))
+
+private fun Char.canOpenQuote(): Boolean =
+    this in "«»‹›" || !BilingualDisplayFinalPunctuationRegex.matches(toString())
 
 private fun String.bilingualScript(): BilingualScript? = when {
     BilingualDisplayLatinRegex.matches(this) -> BilingualScript.Latin
