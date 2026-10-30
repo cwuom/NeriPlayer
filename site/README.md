@@ -1,6 +1,6 @@
 # NeriPlayer 官网
 
-[NeriPlayer](https://github.com/cwuom/NeriPlayer) 的官方网站：暖纸、网格与蜡笔线条的「音理线手账」，包含 Android 与桌面端展示、可交互播放器及音效演示。站点为纯静态文件，发布时无需构建，由 GitHub Pages 托管；翻译、字体与仿真素材使用本地工具预先生成。
+[NeriPlayer](https://github.com/cwuom/NeriPlayer) 官方网站采用暖纸、网格与蜡笔线条的「音理线手账」设计，包含 Android 与桌面端展示、可交互播放器及音效演示。站点为纯静态文件，翻译、字体与仿真素材均在本地预生成，发布时无需构建并由 GitHub Pages 托管。
 
 ## 本地预览
 
@@ -9,17 +9,17 @@ cd site
 node tools/serve.mjs          # http://localhost:6099 ，站点文件内容变化后自动刷新
 ```
 
-预览服务只使用 Node.js 内置模块。自动刷新依赖当前平台对递归 `fs.watch` 的支持；翻译和素材生成另需下文列出的浏览器与 Python 依赖。停止预览时在该终端按 `Ctrl+C`。
+预览服务仅使用 Node.js 内置模块，按 `Ctrl+C` 停止。文件变动自动刷新依赖当前操作系统的递归 `fs.watch` 支持；翻译与素材生成需额外配置下文列出的浏览器与 Python 依赖。
 
 ## 部署到 GitHub Pages
 
-站点放在仓库的 `site/` 目录，由根目录的 `.github/workflows/site_pages.yml` 发布：
+站点位于 `site/` 目录，由根目录的 `.github/workflows/site_pages.yml` 发布：
 
-1. 仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**（只需设置一次）。
-2. 之后每次 `master` 上有 `site/` 的改动都会自动部署；也可以在 Actions 里手动运行 **NeriPlayer Website**。
-3. 工作流只发布站点文件（`index.html`、`404.html`、`en/`、`assets/` 等），`site/tools/` 与 `site/i18n/` 不会上线。只改 `site/` 时不会触发 Android CI。
+1. 在仓库 **Settings → Pages → Build and deployment → Source** 中选择 **GitHub Actions**（首次配置即可）。
+2. `master` 分支包含 `site/` 改动时自动触发部署，也可在 Actions 页面手动运行 **NeriPlayer Website**。
+3. 工作流仅打包上线站点资源（`index.html`、`404.html`、`en/`、`assets/` 及可选的 `CNAME`），排除 `site/tools/` 与 `site/i18n/`；仅修改 `site/` 不会触发 Android CI。
 
-所有资源都使用相对路径，部署在项目页（`<user>.github.io/<repo>/`）或自定义域名下都能用；`404.html` 的样式与图形全部内联，并会自动探测项目页的首页地址。需要自定义域名时，在 `site/` 下放一个 `CNAME` 文件即可。
+站点资源均采用相对路径，兼容项目页（`<user>.github.io/<repo>/`）与自定义域名部署。`404.html` 内联了全部样式与图形，可自动探测项目页首页地址；若在 `site/` 下放置 `CNAME` 文件，发布工作流会将其一并复制到产物根目录。
 
 ## 目录
 
@@ -49,7 +49,9 @@ node tools/serve.mjs          # http://localhost:6099 ，站点文件内容变�
 
 ## 英文版
 
-主页面的中文源是 `index.html`，`en/index.html` 由脚本生成，不要手改。桌面端仿真片段则由下文的桌面快照工具独立生成。`i18n.mjs` 的 `extract` 和 `build` 均依赖 `puppeteer-core` 与本机 Chrome；可用 `PUPPETEER_FROM` 指向已安装该包的目录，用 `CHROME` 指定浏览器可执行文件：
+`index.html` 是中文源页面，`en/index.html` 由 `tools/i18n.mjs` 生成（请勿手改），桌面端仿真片段则由桌面快照工具独立生成。
+
+`i18n.mjs` 直接读取本地文件，无需启动预览服务，但 `extract` 和 `build` 均需 `puppeteer-core` 与本机 Chrome。可通过环境变量 `PUPPETEER_FROM` 指定已安装 `puppeteer-core` 的目录，通过 `CHROME` 指定浏览器可执行文件路径。
 
 ```bash
 node tools/i18n.mjs extract   # 抽取翻译单元到 i18n/en.txt：保留已有译文，新增条目留空，删除失效条目
@@ -57,52 +59,51 @@ node tools/i18n.mjs extract   # 抽取翻译单元到 i18n/en.txt：保留已有
 node tools/i18n.mjs build     # 生成 en/index.html：路径上移一级、语言链接互换、平板截图换成 -en 版本
 ```
 
-脚本里动态写入的文案用 `NP.L('中文', 'English')` 按 `<html lang>` 选择；`404.html` 在 `/en/` 路径下或浏览器语言不是中文时显示英文。改了中文文案后先跑 `extract`，再跑 `build` 和字体子集。
+| 步骤 | 作用 |
+| --- | --- |
+| `extract` | 抽取中文词条至 `i18n/en.txt`，保留已有译文、置空新增词条并清理失效条目 |
+| 编辑 `i18n/en.txt` | 在 `# ` 中文原文下一行填写英文，原样保留行内 HTML 与 `{{n}}` 图标占位符 |
+| `build` | 生成 `en/index.html`，自动上移一层相对路径、互换语言切换链接并将平板截图替换为 `-en` 版本 |
+
+脚本动态文案通过 `NP.L('中文', 'English')` 按 `<html lang>` 切换；`404.html` 在 `/en/` 路径下或非中文浏览器语言环境下显示英文。修改中文文案后，按顺序执行 `extract`、补齐译文、`build`，最后重新生成字体子集。
 
 ## 重新生成素材
 
-这些步骤都只在改动设计时才需要，生成结果已经提交在仓库里。
-以下命令均从 `site/` 运行，浏览器工具运行前先在另一终端启动预览服务。Python 依赖可装在本地虚拟环境中；字体子集需要 `fonttools`、`brotli`，PNG 图标需要 `pillow`。
+生成产物已提交至仓库，仅在修改对应设计或文案时需重新运行。以下命令均在 `site/` 目录下执行：
 
-```bash
-# 品牌图形：emblem / favicon / 图标精灵（写回 index.html 与 404.html 的 @sprite 标记之间）
-node tools/build-brand.mjs
+| 素材任务 | 命令 | 依赖与前置条件 |
+| --- | --- | --- |
+| 品牌图形（emblem / favicon / 图标精灵，写回 `index.html` 与 `404.html` 的 `@sprite` 标记之间） | `node tools/build-brand.mjs` | Node.js 内置模块 |
+| 字体子集（收集页面实际字符并生成 `.woff2`） | `node tools/collect-glyphs.mjs`<br>`python3 tools/subset-fonts.py` | `collect-glyphs.mjs` 需先在另一终端启动 `node tools/serve.mjs` 预览服务，并依赖 `puppeteer-core` 与本机 Chrome；`subset-fonts.py` 需 Python 包 `fonttools`、`brotli` 及 `tools/fonts-src/` 下的源字体 |
+| 本地 `file://` 预览兜底（将桌面仿真片段与示例音频打包为 `.js`） | `node tools/file-fallback.mjs` | Node.js 内置模块；手动修改 `assets/desktop/sim-*.html` 或 `assets/audio/startrail.mp3` 后运行 |
+| 社交分享图 | `node tools/make-images.mjs` | 需已运行的预览服务、`puppeteer-core` 与 Chrome（非默认 Windows Chrome 路径时，设置 `CHROME` 或在站点地址参数后传入浏览器路径） |
+| PNG 图标 | `python3 tools/make-icons.py ..` | Python 包 `pillow`；显式传入 Android 仓库根目录 `..` 以覆盖脚本默认路径 |
 
-# 字体子集：先收集页面上实际用到的字符，再按字符子集化为 woff2
-#   需要 puppeteer-core 与本机 Chrome；原始字体放在 tools/fonts-src/（不入库）：
-#   Fraunces、Fraunces-Italic、Caveat、Geist、GeistMono、NotoSerifSC（可变字重）、LXGWWenKai，
-#   以及手机仿真用的 Android 系统字体 Roboto-Regular.ttf、NotoSansCJK-Regular.ttc、DroidSansMono.ttf
-#   （从模拟器 adb pull /system/fonts/<文件名> 取出）
-node tools/collect-glyphs.mjs
-python3 tools/subset-fonts.py
-
-# 直接双击 index.html（file://）预览时的兜底：把桌面版仿真片段和示例曲包成 .js
-#   改了 assets/desktop/sim-*.html 或 assets/audio/startrail.mp3 之后重新跑
-node tools/file-fallback.mjs
-
-# 分享图：需要 puppeteer-core 和已运行的预览服务
-# 非默认 Windows Chrome 路径时，设置 CHROME 或在站点地址后传入 Chrome 路径
-node tools/make-images.mjs
-
-# PNG 图标：需要 pillow，显式传入 Android 仓库根目录以覆盖脚本的本机默认路径
-python3 tools/make-icons.py ..
-```
-
-改了页面文案、尤其是标题与手写批注后，记得重新跑一遍字体子集，否则新字会回退到系统字体。
+**字体子集源字体准备**：将不入库的原始字体放入 `tools/fonts-src/`，包含 `Fraunces`、`Fraunces-Italic`、`Caveat`、`Geist`、`GeistMono`、`NotoSerifSC`（可变字重）、`LXGWWenKai`，以及从 Android 模拟器通过 `adb pull /system/fonts/<文件名>` 提取的手机仿真系统字体 `Roboto-Regular.ttf`、`NotoSansCJK-Regular.ttc`、`DroidSansMono.ttf`。修改页面文案（尤其是标题与手写批注）后需重新运行字体子集，避免新增字符回退到系统默认字体。
 
 ## 桌面端仿真素材
 
-`tools/desktop-sim/site-mock.ts` 是桌面端快照的数据桩；`snapshot.mjs` 读取运行在 `http://localhost:1477/` 的桌面前端，分别导出中文和英文的 DOM、主题变量及样式。它需要另一个 `NeriPlayer-Desktop` checkout、`puppeteer-core` 和桌面前端所需依赖，目前浏览器路径固定为 Windows Chrome，其他环境执行前需要适配该路径。
+桌面端网页仿真使用共享的 Web Audio 播放链路，不在浏览器中运行 Android Native DSP 或真实桌面后端。
 
-已有双语快照时，可用以下命令重建网站片段和字体。`<snapshot-dir>` 需包含 `views-zh.json`、`views-en.json`、对应的 `meta-*.json` 和 `css-zh.json`；`<desktop-repo>` 指向桌面仓库根目录：
+导出快照前，先将 `site-mock.ts` 接入桌面工程的 `src/__site_mock.ts` 入口并启动前端，确认 `window.__SITE_QUEUE` 已就绪；快照脚本不会自动注入数据桩。
+
+| 阶段 | 工具 / 输入 | 环境与依赖 |
+| --- | --- | --- |
+| 导出双语快照 | `tools/desktop-sim/site-mock.ts`（数据桩）<br>`tools/desktop-sim/snapshot.mjs` | 需独立的 `NeriPlayer-Desktop` 仓库、运行在 `http://localhost:1477/` 的桌面前端、`puppeteer-core` 与 Chrome（脚本内固定了 Windows Chrome 路径，其他环境运行前需修改路径） |
+| 构建仿真片段与图标字体 | `tools/desktop-sim/build.mjs`<br>`<snapshot-dir>`（含 `views-zh.json`、`views-en.json`、`meta-zh.json`、`meta-en.json`、`css-zh.json`）与 `<desktop-repo>` | `puppeteer-core`、Chrome，以及安装了 `fonttools` 与 `brotli` 的可执行 `python` |
+
+备妥双语快照后，运行主构建命令即可生成桌面端 HTML 片段、提取桌面端专用字体（MiSans 与 Material Symbols，不在通用 `subset-fonts.py` 处理范围内），并自动调用 `subset-icons.py` 与 `file-fallback.mjs`：
 
 ```bash
 node tools/desktop-sim/build.mjs <snapshot-dir> <desktop-repo>
+```
+
+若仅需单独重跑图标字体子集或更新 `file://` 兜底脚本，可分别执行：
+
+```bash
 python3 tools/subset-icons.py <desktop-repo>
 node tools/file-fallback.mjs
 ```
-
-`build.mjs` 需要 `puppeteer-core`、Chrome 及可执行的 `python`（含 `fonttools`、`brotli`）。桌面端的 MiSans 与 Material Symbols 由这套工具处理，不在通用 `subset-fonts.py` 的生成范围内。网页仿真使用共享的 Web Audio 播放链路，不代表浏览器执行了 Android Native DSP 或真实桌面后端。
 
 ## 素材来源
 

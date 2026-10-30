@@ -27,33 +27,18 @@ implementation**. Keep documentation aligned with the source code and runtime be
 
 When maintaining docs, split them by audience:
 
-- [README_EN.md](README_EN.md)
-  - For users and new contributors: project scope, key features, feature boundaries,
-    installation/builds, sync, and privacy.
-- [docs/implementation_EN.md](docs/implementation_EN.md)
-  - Build versions, the 14 owned libraries, entry points and navigation, playback and
-    caching, data sources, and download/backup paths.
-- [CONTRIBUTING_EN.md](CONTRIBUTING_EN.md)
-  - For developers: module boundaries, extension paths, tests, and PR expectations.
-- [docs/kotlin-helpers_EN.md](docs/kotlin-helpers_EN.md)
-  - Usage and boundaries for request generations, units, player reads, and coroutine results.
-- [docs/music-server-api.md](docs/music-server-api.md)
-  - Current music-server HTTP endpoints, authentication, identity, and cache contracts (Chinese); see the platform README for core file responsibilities.
-- [tools_pub/quality/README_EN.md](tools_pub/quality/README_EN.md)
-  - Scope, commands, and verification limits for CRAP, source ownership, and dependency checks.
-- [modules/native/src/main/cpp/README.md](modules/native/src/main/cpp/README.md)
-  - Defines the alternative-license scope for NeriPlayer-owned native source,
-    third-party exclusions, and the explicit dual-license statement required
-    for external contributions to enter that scope.
-- [modules/native/src/main/cpp/tests/usb/config/host-gate-contract.md](modules/native/src/main/cpp/tests/usb/config/host-gate-contract.md)
-  - Defines the public native USB host gate, CI coverage, and real-device boundary.
-- [modules/native/src/main/cpp/tests/usb/corpus/README.md](modules/native/src/main/cpp/tests/usb/corpus/README.md) and
-  [modules/native/src/main/cpp/tests/usb/fixtures/README.md](modules/native/src/main/cpp/tests/usb/fixtures/README.md)
-  - Define the synthetic/auditable boundary for public USB test corpus and fixtures;
-    device-derived evidence stays in the private evidence tree.
-- [np-submodule/NeriPlayer-LTW/README.md](https://github.com/TheSmallHanCat/NeriPlayer-LTW#readme)
-  - For Listen Together server deployers: Worker API, event model, deployment,
-    and local checks.
+| Document | Purpose |
+| --- | --- |
+| [README](README_EN.md) | For users and new contributors: project scope, key features, feature boundaries, installation/builds, sync, and privacy. |
+| [Implementation notes](docs/implementation_EN.md) | Build versions, the 14 owned libraries, entry points and navigation, playback and caching, data sources, and download/backup paths. |
+| [Contribution guide](CONTRIBUTING_EN.md) | For developers: module boundaries, extension paths, tests, and PR expectations. |
+| [Kotlin helpers](docs/kotlin-helpers_EN.md) | Usage and boundaries for request generations, units, player reads, and coroutine results. |
+| [Music server API](docs/music-server-api.md) | **Preview feature; not sufficiently tested.** Current music-server HTTP endpoints, authentication, identity, and cache contracts (Chinese); see the platform README for core file responsibilities. |
+| [Quality gates](tools_pub/quality/README_EN.md) | Scope, commands, and verification limits for CRAP, source ownership, and dependency checks. |
+| [Native source licensing](modules/native/src/main/cpp/README.md) | Alternative-license scope for NeriPlayer-owned native source, third-party exclusions, and the explicit dual-license statement required for external contributions to enter that scope. |
+| [Native USB host gate](modules/native/src/main/cpp/tests/usb/config/host-gate-contract.md) | Public native USB host gate, CI coverage, and real-device boundary. |
+| [USB test corpus](modules/native/src/main/cpp/tests/usb/corpus/README.md) and [fixtures](modules/native/src/main/cpp/tests/usb/fixtures/README.md) | Public test corpus and fixtures must use synthetic or auditable sources; device-derived evidence stays in the private evidence tree. |
+| [Listen Together server](https://github.com/TheSmallHanCat/NeriPlayer-LTW#readme) | For server deployers: Worker API, event model, deployment, and local checks. |
 
 If a behavior change affects user understanding, update the README.
 If it affects extension paths, tests, or module boundaries, update CONTRIBUTING.
@@ -62,17 +47,19 @@ If it affects extension paths, tests, or module boundaries, update CONTRIBUTING.
 
 ### Development Environment
 
-- **Android Studio**: latest stable version
-- **JDK**: 17 for builds; 21 additionally for `:playback:runtime` JVM tests
-- **Kotlin**: 2.4.10, JVM target 17
-- **AGP**: 9.4.1
-- **Gradle**: 9.6.1
-- **compileSdk / targetSdk / minSdk**: 37 / 36 / 28
-- **NDK**: `27.0.12077973`
-- **CMake**: `3.22.1`, pinned by the Android build script
-- **Node.js**: 22, for Listen Together Worker checks
-- **Version name format**: `<git_short_hash>.<MMddHHmm>`
-- **Release APK filename**: `NeriPlayer-<versionName>[-abi].apk`
+| Component | Requirement |
+| --- | --- |
+| Android Studio | latest stable version |
+| JDK | 17 for builds; 21 additionally for `:playback:runtime` JVM tests |
+| Kotlin | 2.4.10, JVM target 17 |
+| AGP | 9.4.1 |
+| Gradle | 9.6.1 |
+| compileSdk / targetSdk / minSdk | 37 / 36 / 28 |
+| NDK | `27.0.12077973` |
+| CMake | `3.22.1`, pinned by the Android build script |
+| Node.js | 22, for Listen Together Worker checks |
+| Version name format | `<git_short_hash>.<MMddHHmm>` |
+| Release APK filename | `NeriPlayer-<versionName>[-abi].apk` |
 
 Additional notes:
 
@@ -199,8 +186,7 @@ Security reminders:
 
 - Never commit keystores, passwords, cookies, tokens, or other sensitive data.
 - Do not paste full authorization data in Issues or PRs.
-- Full config export files contain platform auth and sync credentials. Do not
-  attach them publicly.
+- Config exports exclude login state by default (`includeLoginState=false`). When login state is included, the export contains platform authorization and GitHub/WebDAV sync credentials; never share or attach credential-bearing exports publicly.
 
 ---
 
@@ -215,7 +201,7 @@ The [implementation notes](docs/implementation_EN.md#module-layout) are the entr
 - Playback: `:playback:logic` contains policy/runtime/audio/queue; `:playback:runtime` owns the engine, service, USB, source resolution, and integration. Nine policy leaf packages retain narrow dependencies; USB policy stays in runtime. Downloads are accessed through `PlayerDownloadAccess`.
 - Downloads: `:download:logic` owns reusable rules and storage helpers; `:download:runtime` owns Room, SAF, recovery, and services. Rules cannot depend on runtime; Worker and JobService class names remain stable.
 - Lyrics: `:lyrics` owns parsing, transforms, shared time offsets, and external lyric output. Its `lyrics/lyricon` owns SDKs and position feeds, while `lyrics/output` manages asynchronous request generations, cancellation, and offset snapshots. Playback supplies lyrics through a narrow loading port and provides snapshots; lyrics cannot depend on platform or player implementations.
-- Platforms: `:platform` owns Bilibili, NetEase, and YouTube protocols, accounts, caches, and business services, plus comments, lyric sources, metadata search, matching, and fallback. `api` describes the internal protocol responsibility and cannot read account repositories, Room, or player state. Platforms retain package dependency boundaries. YouTube JS assets and consumer R8 rules stay here; `api(:lyrics)` exports parsing capabilities.
+- Platforms: `:platform` owns Bilibili, NetEase, YouTube, and Subsonic music server (preview; not sufficiently tested) protocols, accounts, caches, and business services, plus comments, lyric sources, metadata search, matching, and fallback. `api` describes the internal protocol responsibility and cannot read account repositories, Room, or player state. Platforms retain package dependency boundaries. YouTube JS assets and consumer R8 rules stay here; `api(:lyrics)` exports parsing capabilities.
 - Local data: `:local` groups settings, media, playlists, statistics, backup, traffic, and sync adapters. It owns business mappings, host interfaces, WorkManager adapters, and settings KSP; screen rendering stays in app.
 - Sync: `:sync` combines GitHub/WebDAV transport, encrypted credentials, device identity, causal counters, sessions, sanitization, merging, and Worker policies. Transport and calculation packages retain separate dependency allowlists; local repository adapters stay in `:local`. Deletion records and mutation versions commit atomically.
 - Listen Together: `:listentogether` owns protocol, transport, identity rules, and sessions. Protocol code uses only models, serialization, and the standard library; host interfaces provide playback, resources, and Android services.
@@ -280,9 +266,8 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
     compatibility entry points. New implementations belong in responsibility-based
     subpackages such as `lyrics/`, `playback/`, `download/`, and `navigation/`.
 
-- `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/`
-  - `LibraryScreen.kt`: top-level Library categories. Local content can switch
-    between playlists and artists, and Favorites can show playlists, followed artists, and Hot playlists.
+- `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/library/`
+  - `LibraryScreen.kt`: top-level Library categories. Local content switches between playlists and artists, Favorites displays playlists, followed artists, and Hot playlists, and a self-hosted music server entry is provided (preview).
   - `LocalArtistLibraryGrid.kt`: local artist grid, empty state, and artist cards.
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/playlist/`
@@ -579,8 +564,8 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   read only when the manifest is absent. The 8/12/16 MiB safety limits apply only to
   legacy reads. V3 archives are read only for migration, and unsupported future versions must be rejected.
   Every syncing device must support V4; traditional and V3 migration require confirmation.
-- Small GitHub archives publish objects, the manifest, and cleanup through GraphQL
-  `createCommitOnBranch` with `expectedHeadOid`. Larger archives use Git Data API
+- Eligible GitHub commits within the fast-path budgets publish objects, the manifest, and cleanup through GraphQL
+  `createCommitOnBranch` with `expectedHeadOid`. Other commits use Git Data API
   blob/tree/commit calls and GraphQL `updateRefs` with `beforeOid` and `force=false`.
   Base64 in upload requests is only the transport envelope; repository bodies remain
   raw binary, and raw content reads are pinned to a fixed branch head.
@@ -1015,7 +1000,7 @@ adb logcat | grep NeriPlayer
 
 ### Testing & PR
 
-Automatic APK packaging waits for the existing JVM, lint, Worker, and emulator jobs and runs the Native Release host check before building. Manual Release verifies the actual `target_ref` checkout with JVM tests, lint, available module-boundary checks, and the Native Release host check before building signed APKs; reports are named with that checkout's SHA. Historical refs use their own native test layout, and a missing configuration in an existing test facility fails verification. Additional emulator, sanitizer, and physical DAC validation follows the risk of the change; physical hardware is not a prerequisite for every release.
+Automatic APK packaging waits for existing JVM, lint, Worker, and emulator jobs and runs the Native Release host check before building. Manual Release verifies the actual `target_ref` checkout with JVM tests, lint, available module-boundary checks, and the Native Release host check, naming verification reports after the target commit SHA. `test_release` defaults to `true` (building unsigned test APKs for a draft pre-release); setting it to `false` builds signed APKs for a formal release. Historical refs use their own native test layout, and missing configurations in an existing test facility fail the release. Additional emulator, sanitizer, and physical DAC validation follows the risk of the change; physical hardware is not a prerequisite for every release.
 
 Before submitting, consider at least these checks:
 

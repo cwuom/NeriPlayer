@@ -38,6 +38,11 @@ YouTube scripts are in `src/main/assets/youtube`. `youtube/api/challenge` owns E
 
 ## 音乐服务器接入 / Music server integration
 
+> [!WARNING]
+> 自建音乐服务器功能目前为预览版本，缺乏充分测试。不同服务器、曲库和网络环境下的兼容性与稳定性仍需验证。
+>
+> Self-hosted music server support is a preview feature and has not been sufficiently tested. Compatibility and stability across servers, libraries, and network conditions still need validation.
+
 沿用现有 `SongItem`、`SongUrlResult`、`LyricEntry` 与 playback host；账号、仓库和共享 HTTP 由 app 宿主注入。请求参数、身份和缓存语义见 [API 契约](../../docs/music-server-api.md)。
 
 The integration reuses the existing song, playback URL, lyric, and playback host models. The app injects accounts, the repository, and shared HTTP. See the [API contract](../../docs/music-server-api.md) for request, identity, and cache semantics (Chinese).
