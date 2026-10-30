@@ -5,7 +5,7 @@ artifactRoot: .report/usb/execution
 batch: B0
 baselineCommit: HEAD
 planPath: modules/native/src/main/cpp/tests/usb/config/host-gate-contract.md
-planSha256: 30f06095d7515e7279f507bf206c7318c966f5be9e07282211106ce6d8e3dfca
+planSha256: 55d4826674afa75a81b20bae6e6acc36fc55414cad9a4147955f4b406b1ebde0
 logPath:
 logSha256:
 issue247SnapshotPath:

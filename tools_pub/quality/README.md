@@ -20,9 +20,20 @@
 ./gradlew :app:crapReport
 ```
 
-`verifyModularization` 汇总结构检查、app 和自有 JVM 库的 Debug JVM 测试、合并 CRAP 报告、域依赖、lint 和构建逻辑测试。`:app:check` 包含 CRAP 与域依赖检查。`:app:crapReport` 保留输入校验，但不会因分数超限而失败。
+| 任务 | 检查范围与行为 |
+| --- | --- |
+| `verifyModularization` | 汇总结构检查、`app` 与自有 JVM 库的 Debug JVM 测试、合并 CRAP 报告、域依赖、lint 与构建逻辑测试 |
+| `:app:check` | 包含 CRAP 与域依赖检查 |
+| `:app:crapReport` | 校验输入并生成报告，分数超限不失败 |
+| `:sync:verifyCrap` | 合并 `:sync` 与 `:model` 中同步模型的覆盖率 |
+| `:local:verifySyncIntegrationCrap` | 运行同步 Android 适配的 JVM 测试并检查 `:local` 下整个 `data/sync` 目录，不替代 `:local` 全量门禁 |
 
-14 个自有库由 [gradle/owned-modules.txt](../../gradle/owned-modules.txt) 登记。`:native` 是纯 Native Android library，参与登记、结构与 lint 检查，不生成 JaCoCo 执行数据、不创建 CRAP 或 JVM 测试任务；原有 Kotlin/Java 模块仍完整收集覆盖率。Native USB host 三组 profile 和四 ABI 编译由独立 CI 验证；`tests/dsp/` 是另一套独立 CMake/CTest 测试，不在 USB host profile 或 JVM 门禁内，命令见 [Native 模块](../../modules/native/README.md)。只检查受影响模块时可使用：
+14 个自有库登记在 [gradle/owned-modules.txt](../../gradle/owned-modules.txt)。各模块职责见 [实现概览](../../docs/implementation.md#模块结构)：
+
+- **Kotlin/Java 模块**：完整收集覆盖率；独立 CRAP 任务沿用统一阈值与各自源码范围。
+- **`:native` 模块**：纯 Native Android library，仅参与模块登记、结构与 lint 检查，不生成 JaCoCo 数据、CRAP 或 JVM 测试任务。Native USB host 三组 profile 与四 ABI 编译由独立 CI 检查；`tests/dsp/` 是另一套独立 CMake/CTest 测试。这些检查不在 JVM 门禁内，命令见 [Native 模块](../../modules/native/README.md)。
+
+按受影响模块单独执行：
 
 ```bash
 ./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
@@ -35,17 +46,18 @@
 ./gradlew :listentogether:verifyCrap :listentogether:verifyDomainDependencies :listentogether:lintDebug
 ```
 
-独立 CRAP 任务保留相同阈值和对应源码范围。`:sync:verifyCrap` 合并同步库与 `:model` 中同步模型的覆盖率；`:local:verifySyncIntegrationCrap` 单独运行同步 Android 适配的 JVM 测试，检查本地库整个 `data/sync` 目录，不替代本地库全量门禁。模块职责见 [实现概览](../../docs/implementation.md#模块结构)。
-
 ## CRAP
 
-`crap_report.py` 使用 `C² × (1 − cov)³ + C`：
+`crap_report.py` 按 `C² × (1 − cov)³ + C` 计算方法风险分：
 
-- `C` 是 JaCoCo `COMPLEXITY` 的 missed + covered，即方法圈复杂度
-- `cov` 是 covered / C，即复杂度覆盖率，作为路径覆盖率的近似值；不是行覆盖率，也不是严格的独立路径测量
-- 受检方法的原始分数大于 9 时失败，等于 9 时通过，不使用平均分或历史 baseline 豁免
+| 指标 / 规则 | 定义 |
+| --- | --- |
+| `C` | JaCoCo `COMPLEXITY` 的 `missed + covered`，即方法圈复杂度 |
+| `cov` | `covered / C`（复杂度覆盖率），作为路径覆盖率的近似值，不等同于行覆盖率或严格独立路径测量 |
+| 通过条件 | 受检方法未取整原始分 `<= 9` 通过，`> 9` 失败；无平均分折算或历史 baseline 豁免 |
+| 满覆盖下限 | `cov = 100%` 时 `CRAP = C` |
 
-**9 是本项目的风险门禁，不是架构质量证明。** 即使覆盖率达到 100%，CRAP 仍等于圈复杂度。低分不证明职责清晰，覆盖率也不证明断言有效。重构应让入口、业务步骤、状态所有权和失败处理更容易追踪，不能仅为降分拆函数、增加纯转发层，或调整阈值、受检范围和有效测试。审查仍需结合依赖、行为与边界测试、lint，以及必要的集成或设备验证。Mutation testing 可检查断言能否发现错误，当前门禁未自动提供它。
+阈值 `9` 用于检查复杂度与覆盖率风险。重构应让入口、业务步骤、状态所有权与失败处理更易追踪，禁止仅为降分拆分函数、增加纯转发层，或放宽阈值、缩小受检范围、弱化有效测试。当前门禁未集成自动变异测试（Mutation testing），审查需结合模块依赖、行为与边界测试、lint 以及必要的集成或设备验证，评估职责划分与断言有效性。
 
 公式与计数器说明：[CRAP 原作者](https://www.artima.com/weblogs/viewpost.jsp?thread=215899)、[JaCoCo](https://www.jacoco.org/jacoco/trunk/doc/counters.html)。
 
@@ -74,15 +86,19 @@
 
 ## 依赖 / Dependencies
 
-`module_boundaries.py` 无需 Android SDK，读取登记、Gradle 声明和源码，检查未登记构建节点、依赖循环、禁止引用、生产包所有者与包目录一致性。`:model` 不依赖项目实现，库不得依赖 app，受管生产包不得回流 app。库主源码文件少于 2000 行；库生产目录及脚本的 `APP_FAMILIES` 区域每个目录最多 16 个直接 Kotlin/Java 文件。
+依赖门禁分为源码结构检查与字节码直接依赖检查，规则定义在 [module_boundaries.py](./module_boundaries.py) 与 [domain-dependencies.json](../../config/quality/domain-dependencies.json)，不按目录名称推导依赖层级：
 
-模块边界不能代替同库内部的职责边界。平台协议不应反向读取账号仓库、Room 或播放器；播放与下载规则、同步计算、歌词解析和本地存储计算分别保留自己的允许列表。具体规则在 [module_boundaries.py](./module_boundaries.py) 与 [domain-dependencies.json](../../config/quality/domain-dependencies.json)，不从目录名称推导依赖层级。
+| 层级 | 入口 | 检查工具与规则 |
+| --- | --- | --- |
+| 源码与模块边界 | `module_boundaries.py` | 无需 Android SDK；读取模块登记、Gradle 声明与源码，检查未登记构建节点、依赖循环、禁止引用、生产包归属与包目录一致性。`:model` 不依赖项目实现，库不依赖 `app`，受管生产包不回流 `app`。库主源码单文件少于 2000 行；库生产目录及 `APP_FAMILIES` 每个目录最多 16 个直接 Kotlin/Java 文件。 |
+| 字节码域依赖 | `verifyDomainDependencies` | 使用运行 Gradle 的 JDK 自带 `jdeps` 检查直接类依赖，并用 `javap` 校验桥接成员的完整 JVM 签名。平台协议不得反向读取账号仓库、Room 或播放器；播放与下载规则、同步计算、歌词解析与本地存储计算各自维护允许列表。 |
 
-`verifyDomainDependencies` 使用运行 Gradle 的 JDK 所带的 `jdeps` 检查直接类依赖，用 `javap` 检查桥接成员的完整 JVM 签名。受管包的新类、嵌套类、lambda 和 Kotlin 生成类自动纳入检查；允许一个桥接方法不等于允许访问整个宿主类。
+### 域配置与检查边界
 
-`excluded_classes` 只排除指定源类及其 `$` 内部类，不支持通配符；排除子包必须由另一受管域覆盖。排除源类不会放宽其它类对它的引用限制。缺失产物、重复类、空域、工具失败或分析遗漏目标类都会失败。
-
-聚合域报告位于 `app/build/reports/domain-dependencies/report.json`；`:platform`、`:sync`、`:listentogether` 的独立报告位于各自模块的 `build/reports/domain-dependencies/report.json`。这是直接依赖检查，不分析传递依赖或反射，也不证明共享模型或桥接内部没有平台依赖。
+- **自动纳入与最小授权**：受管包内的新类、嵌套类、lambda 和 Kotlin 生成类自动受检；放行单个桥接方法不会放行整个宿主类。
+- **排除规则**：`excluded_classes` 仅排除指定源类及其 `$` 内部类，不支持通配符；排除子包必须由另一受管域接管，且排除源类不会放宽其它类对它的引用限制。
+- **失败条件**：缺失产物、重复类、空域、工具执行失败或分析遗漏目标类均直接失败。
+- **输出与分析范围**：聚合报告生成于 `app/build/reports/domain-dependencies/report.json`，`:platform`、`:sync`、`:listentogether` 的独立报告位于各自模块的 `build/reports/domain-dependencies/report.json`。该任务检查直接字节码依赖，不追踪传递依赖或反射调用；共享模型和桥接实现内部的平台依赖仍需单独审查。
 
 ## 工具回归 / Tool tests
 

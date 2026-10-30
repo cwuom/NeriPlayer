@@ -16,45 +16,133 @@ Sources are in `src/main/java/moe/ouom/neriplayer`.
 - `data/sync/codec`、`sanitize`、`change`、`merge`：编解码、清洗、变化检测与合并 / codecs, sanitization, change detection, and merging
 - `data/sync/remote`、`retry`、`store`、`schedule`：远端版本、重试、凭据与调度 / remote versions, retries, credentials, and scheduling
 
-V4 使用明确的协议和记录 schema 版本。`neriplayer-sync-v3.manifest` 文件名继续作为唯一发布点，内容标识为 `NPSYNC04`，对象使用 `neriplayer-sync-v4-` 前缀。传统 JSON/GZIP 与 V3 仅供读取迁移，V4 版本字段缺失或出现未知未来版本会中止读取和发布。旧客户端不能写入 V4，升级前必须确认使用该地址的所有设备都已更新。
+## 归档协议 / Archive protocol
 
-V4 stores explicit protocol and record schema versions. The existing `neriplayer-sync-v3.manifest` filename remains the only publication point; its envelope is `NPSYNC04`, and object names use `neriplayer-sync-v4-`. Traditional JSON/GZIP and V3 are read only for migration. Missing V4 version fields or unsupported future versions abort reading and publication. All devices using a target must be updated before migration.
+| 项目 | 规范 |
+| --- | --- |
+| 发布入口与标识 | 沿用 `neriplayer-sync-v3.manifest` 作为唯一发布文件名，内容封装标识为 `NPSYNC04`，数据对象使用 `neriplayer-sync-v4-` 前缀 |
+| 版本校验 | 显式记录协议与 record schema 版本；缺失 V4 版本字段或遇到未知未来版本时，立即中止读取与发布 |
+| 迁移与多端要求 | 传统 JSON/GZIP 与 V3 格式仅供只读迁移；旧客户端无法写入 V4，迁移前须确保共用同一同步目标的所有设备均已升级 |
 
-压缩将记录元数据按有界块组织，以内容地址复用歌词全文；时间戳、数字和文字编码均可精确还原。歌曲身份相同但内容不同的旧歌词版本、空值、原词基线和历史日桶元数据全部保留。主记录、旧歌词候选和正文池分别建立 Merkle 树，数据块解压预算为 4 MiB，索引为 128 KiB，网络对象最多 2 MiB；不可压缩块会继续拆分。解包后的原始记录流还必须通过完整 SHA-256 校验。准备、读取失败或取消会清理临时工作目录。
+| Item | Specification |
+| --- | --- |
+| Publication Entry & Prefix | Retains `neriplayer-sync-v3.manifest` as the sole publication filename with envelope `NPSYNC04` and object prefix `neriplayer-sync-v4-` |
+| Version Validation | Stores explicit protocol and record schema versions; missing V4 version fields or unknown future versions abort both reads and publication |
+| Migration & Device Requirement | Legacy JSON/GZIP and V3 formats are read-only for migration; older clients cannot write V4, so all devices sharing a target must be updated before migrating |
 
-Packing uses bounded metadata blocks and content addresses for lyric text. Numeric, timestamp, and text encodings are exactly reversible. Distinct legacy lyric variants, nullable fields, baselines, and historical bucket metadata are preserved. Main records, legacy candidates, and the text pool have separate Merkle trees. Decoded data blocks are limited to 4 MiB, indexes to 128 KiB, and wire objects to 2 MiB; incompressible blocks are split further. Unpacked original streams also require complete SHA-256 verification. Temporary workspaces are released on completion, failure, and cancellation.
+| 维度 | 规则与限制 |
+| --- | --- |
+| 编码与内容复用 | 元数据按有界块组织，歌词全文按内容寻址复用；数字、时间戳与文本编码均精确可逆 |
+| 历史与特殊状态保留 | 保留同曲不同内容的旧歌词候选、可空字段、原词基线及历史日桶元数据 |
+| Merkle 树与块大小上限 | 主记录、旧歌词候选与正文池分别构建独立 Merkle 树；数据块解压上限 4 MiB、索引上限 128 KiB、网络对象上限 2 MiB，不可压缩块继续拆分 |
+| 完整性与临时目录 | 解包后的原始记录流须通过完整 SHA-256 校验；操作完成、失败或取消时均自动清理临时工作目录 |
+
+| Aspect | Rules and Limits |
+| --- | --- |
+| Encoding & Content Reuse | Organizes metadata into bounded blocks and deduplicates lyric text by content address; numeric, timestamp, and text encodings are exactly reversible |
+| Preserved States | Retains distinct legacy lyric variants for the same song identity, nullable fields, original baselines, and historical daily-bucket metadata |
+| Merkle Trees & Block Limits | Builds separate Merkle trees for main records, legacy candidates, and the text pool; caps decoded data blocks at 4 MiB, indexes at 128 KiB, and wire objects at 2 MiB, splitting incompressible blocks further |
+| Stream Integrity & Cleanup | Unpacked raw record streams must pass full SHA-256 verification; temporary workspaces are cleaned up on completion, failure, or cancellation |
 
 新对象使用 ZSTD level 6 降低本地压缩耗时，V3/V4 的窗口限制和帧校验保持不变。已有 level 19 缓存继续校验原始内容哈希并复用；缺失或损坏块按当前设置重建。压缩级别不改变无损协议，完整数据仍需通过原始哈希和记录流校验。
 
 New objects use ZSTD level 6 to reduce local compression time, preserving the V3/V4 window limits and frame checksums. Existing level 19 cache objects still pass raw-content hash validation before reuse; missing or corrupt blocks are rebuilt with the current setting. The compression level does not change the lossless protocol, and raw hashes and complete record-stream checks remain required.
 
+## 读取与缓存 / Reads and caching
+
 V4 读取先按顺序验证索引、叶子数量和字节预算，再每批最多并发下载四个数据对象。同一读取中的重复对象复用已校验内容，记录顺序保持不变；生产读取仍验证所有远端引用对象。取消会中止归档 GET 与缺失目录探测的实际 HTTP 请求。WebDAV 续租和租约状态使用共享锁保护，网络读取与正文解析在锁外执行；GitHub 同一冷却期内的并发限流响应只计作一轮，冷却到期后的新轮仍遵守自动重试上限。
 
-GitHub 每轮重新解析默认分支，从同一分支响应取得提交与根树 OID，再读取完整根文件树，用普通 blob 的 Git OID 验证已通过压缩长度与 SHA-256 校验的本地块。匹配时直接复用缓存，避免逐块 GET 和重复 fsync；缓存缺失、损坏或 OID 改变时下载，并再次核对响应 OID。同一轮上传复用该完整树证明，证明绑定 API 地址、仓库、分支和提交，目标或版本不一致时重新读取。对象清理仍使用完整根树，不能仅使用清单引用的子集。树截断、缺少引用对象或正文不匹配仍失败，所有解压、原始哈希和完整记录流校验继续执行。平铺归档热缓存无变化同步需要四次读取，少量变更通常再增加一次提交请求；整轮耗时仍取决于网络和本地数据量。
-
-Each GitHub read resolves the current default branch and obtains its commit and root tree OIDs from the same branch response before reading the complete root tree. A regular blob's Git OID can approve cached chunks only after their compressed length and SHA-256 have passed validation. Matching chunks avoid per-object GETs and repeated fsyncs. Missing, corrupt, or changed cache entries are downloaded and checked against the tree OID. Publication reuses that round's complete tree proof only for the same API base, repository, branch, and commit; mismatches require a fresh read. Collection uses every owned root object, rather than only the manifest's referenced subset. Truncated trees, missing references, and mismatched bodies still fail. Decompression, raw hashes, and complete record-stream checks remain in place. A warm flat archive needs four read requests for an unchanged sync; a small edit normally adds one publication request. Total latency still depends on network and local data size.
-
 V4 reads validate indexes, leaf counts, and byte budgets in order before downloading at most four data objects per batch. Repeated objects reuse verified content within the read, preserving record order; production reads still verify every referenced remote object. Cancellation aborts the actual archive GET and missing-directory probe HTTP calls. WebDAV synchronizes lease renewal and state while keeping network reads and body parsing outside the lock. Concurrent GitHub rate-limit responses share a cooldown round; new rounds after expiration still observe the automatic retry limit.
+
+| 环节 | 行为 |
+| --- | --- |
+| 分支与根树解析 | 每轮同步重新解析默认分支，从同一次分支响应获取 commit 与 root tree OID，再读取完整根文件树 |
+| 本地块缓存校验 | 本地缓存块须先通过压缩长度与 SHA-256 校验，再与完整根树中普通 blob 的 Git OID 比对；匹配则直接复用（省去逐块 GET 与重复 `fsync`），缺失、损坏或 OID 变化则重新下载并核对响应 OID |
+| 树证明复用与垃圾清理 | 同一轮上传仅在 API 地址、仓库、分支与 commit 完全一致时复用该完整树证明，不一致则重读；对象清理基于完整根树（而非仅看清单引用子集），树被截断、缺失引用对象或正文不符均直接失败，同时保留全部解压、原始哈希与完整记录流校验 |
+| 请求开销 | 平铺归档在热缓存且无变更时需 4 次读取请求，少量修改通常增加 1 次发布请求；实际总耗时取决于网络状况与本地数据规模 |
+
+| Stage | Behavior |
+| --- | --- |
+| Branch & Root Tree Resolution | Resolves the default branch on every round, extracts the commit and root tree OIDs from that same response, and fetches the complete root tree |
+| Local Chunk Cache Validation | Cached chunks must pass compressed-length and SHA-256 checks before matching against a regular blob's Git OID in the root tree; hits skip per-object GETs and repeated `fsync` calls, while missing, corrupt, or changed entries are downloaded and verified against the tree OID |
+| Tree Proof & Garbage Collection | Publication reuses the round's complete tree proof only when the API base, repository, branch, and commit match; collection inspects all owned root objects rather than just manifest references, failing on truncated trees, missing objects, or body mismatches while keeping all decompression, raw-hash, and stream checks |
+| Request Overhead | A warm flat archive takes 4 read requests when unchanged, and a small edit typically adds 1 publication request; total latency depends on network conditions and local dataset size |
 
 归档仓库初始化和创建工作目录时回收进程退出后遗留的规范 `sync-stage-UUID` 目录，包括旧版本未标记的目录。每个活跃目录持有独立文件锁，创建与回收另由稳定根锁保护，避免并发实例误删正在使用的原始记录；进程终止会自动释放锁。清理不跟随符号链接，不处理无关目录或保留的旧歌词来源，删除失败会保留所有权文件供后续重试。
 
 Archive initialization and workspace creation reclaim canonical `sync-stage-UUID` directories abandoned by a terminated process, including unmarked older workspaces. Active workspaces hold individual file locks; a stable root lock also protects creation and recovery, preserving raw records used by concurrent repository instances. Process termination releases ownership automatically. Cleanup does not follow symbolic links or touch unrelated directories or retained lyric sources. Failed deletion preserves the ownership file for a later retry.
 
-GitHub 固定 HEAD 读取。新增文件和删除项合计不超过 64 项、原内容不超过 3 MiB、完整 UTF-8 JSON 不超过 4 MiB 时，通过 GraphQL `createCommitOnBranch` 一次提交二进制对象、清单和清理，并用 `expectedHeadOid` 检查分支版本。上述限制是客户端快速路径预算；超预算在发送写请求前改用分阶段上传，最后通过 `updateRefs` 的 `beforeOid` 与 `force=false` 原子更新引用。已发送快速提交后的错误、取消或不完整响应不回退到另一条写入流程。新清单与引用对象在同一提交中发布；该提交同时移除根目录中不再引用的规范 V3/V4 内容对象，保留无关文件和旧 Git 历史。WebDAV 使用 `If-None-Match: *` 创建内容对象与首次清单，读取归档要求未压缩响应，避免 nginx 等服务器把强 ETag 降为弱 ETag。每次发布前都重新核对清单的内容指纹；已有强 ETag 时同时核对并提交 `If-Match`，防止忽略条件头的服务器覆盖其它设备的新发布。坚果云等返回不带引号 ETag 的无锁服务器，原样提交该 ETag 的 `If-Match`，由服务端拒绝并发发布；服务器返回 412 而清单指纹未变时，视为不支持该 ETag 并退回下述指纹保护。无锁且没有可用 ETag 的服务器在指纹一致时发布，发布后回读确认清单仍为本次内容，否则按冲突重新合并；对象清理仍要求有限锁与强 ETag。支持有限租期独占目录 `Depth: infinity` 写锁的服务器上，完整读取、上传与发布都持锁，请求携带锁令牌并受实际租期限制；每次 WebDAV 发布带新 publicationId；仅当前完整闭包受保护，前代刚失去引用时重置候选年龄并开始新的七天观察。普通无变更读取也推进候选观察；只有候选到期时才条件刷新同一闭包的 publicationId，确认新的强 ETag 后删除，不重复上传内容对象。清理验证当前完整闭包，并按对象强 ETag 条件删除；目录、无关文件与传统备份不删除。服务器明确不支持 LOCK（405、501，或尚未确认锁能力的目标返回 403，例如坚果云），或首次合法长租期锁已成功释放时，继续条件同步并保留旧对象；曾支持有限锁的目标失锁或能力降级会中止操作。生产读取验证远端完整对象闭包，本地缓存不能证明远端对象仍存在。
+## 发布与并发控制 / Publication and concurrency
 
-GitHub reads a fixed HEAD. Archives with at most 64 additions and deletions combined, 3 MiB of raw content, and 4 MiB of complete UTF-8 JSON publish binary objects, the manifest, and cleanup with one GraphQL `createCommitOnBranch` mutation guarded by `expectedHeadOid`. These are client fast-path budgets. Larger archives select staged uploads before any write request and publish atomically with `updateRefs`, `beforeOid`, and `force=false`. Errors, cancellation, or incomplete acknowledgements after sending a fast commit never switch to another write flow. The new manifest, its objects, and deletion of unreferenced canonical V3/V4 root objects share one commit. Unrelated files and previous Git history are preserved. WebDAV creates objects and the initial manifest with `If-None-Match: *`, and reads archives with identity encoding so servers such as nginx cannot weaken strong ETags through compression. Every publication first rereads the manifest and checks its observed fingerprint, plus its strong ETag with `If-Match` when available. This protects against servers that ignore conditional PUT headers. Unlocked servers returning unquoted ETags, such as Nutstore, receive that ETag verbatim in `If-Match` so the server rejects concurrent publications; a 412 while the manifest fingerprint is unchanged means the server does not accept that ETag and falls back to fingerprint protection. Unlocked servers without a usable ETag publish after a matching fingerprint and reread the manifest afterwards; a different manifest is reported as a conflict and merged again. Garbage collection still requires a finite lease and strong ETags. Servers supporting finite exclusive depth-infinity collection leases protect complete reads and publication, with a positive lock condition on every request. Each WebDAV publication adds a fresh publicationId. Only the complete current closure is protected; newly retired objects start a fresh seven-day observation period. Unchanged reads also advance candidate observation. Eligible candidates trigger a conditional publicationId refresh for the same closure, and deletion requires a new strong root ETag. Content objects are not uploaded again. Collection validates the complete current closure and requires each object's strong ETag. Servers without LOCK (405, 501, or 403 from a target with no confirmed lease, such as Nutstore), or whose first valid long-lived grant was successfully released, retain old objects while continuing conditional sync; a target with confirmed finite leases never silently downgrades. Production reads validate every referenced remote object; a local cache cannot establish remote availability.
+### GitHub 发布 / GitHub publication
 
-WebDAV 的目录锁会短时阻止同目录其它写入者。实际租期必须有限且不超过请求的 300 秒；无限期或过长的锁会立即尝试释放并拒绝持有，降低进程退出后留下长期目录锁的风险。锁内请求不跟随重定向，防止规范对象操作跳转到其它文件。带 query 的地址保留原有路由和强 ETag 同步，不探测可选目录锁、不清理对象；曾确认有限锁能力的目标仍拒绝降级。fragment 不参与 HTTP 锁和维护状态的资源身份。七天宽限来自本机观察，不能证明其它设备两次观察之间的完整引用历史；时钟异常、重新引用或对象变化会重置候选年龄。旧版无锁读取可能在清理后遇到缺块，完整校验失败时不得应用部分数据；使用有限锁的新客户端整段读取持锁。普通清理失败保留并返回已校验或已经发布的版本，后续同步再重试，不回滚清单。完整上传成功后，若仅释放锁的网络或服务端错误使结果不确定，会尝试一次重新取得有限独占锁，核对原清单的强 ETag、指纹及全部远端引用对象，并成功释放新锁后才确认原发布；此过程不重新上传或清理。失锁、条件冲突、取消或未完成上述核对时不确认本次同步，保留已经发布的清单，之后重新读取再重试。
+| 路径 / 环节 | 行为与约束 |
+| --- | --- |
+| 快速路径（单次提交） | 读取固定 HEAD；当新增与删除合计不超过 64 项、原始内容不超过 3 MiB 且完整 UTF-8 JSON 不超过 4 MiB 时，调用 GraphQL `createCommitOnBranch`（附带 `expectedHeadOid`）单次原子提交二进制对象、清单与清理 |
+| 分阶段上传路径 | 超出客户端快速路径预算时，在发送任何写请求前切换为分阶段上传，最后通过 `updateRefs`（`beforeOid`、`force=false`）原子更新引用；已发出快速提交后若遇报错、取消或响应不完整，不会回退至另一写入流程 |
+| 清理范围 | 新清单、引用对象及根目录内未引用的规范 V3/V4 内容对象在同一提交中完成发布与移除，保留无关文件与既有 Git 历史 |
 
-Collection locks briefly block other writers in the same WebDAV directory. The actual lease must be finite and no longer than the requested 300 seconds. Infinite or longer grants are released where possible and never held, to reduce the risk of long-lived locks after process termination. Locked requests do not follow redirects to other files. Query URLs retain their routing and strong ETag sync, without optional lease probing or collection; targets with confirmed finite leases still refuse to downgrade. Fragments do not participate in HTTP lock or maintenance identity. The grace period tracks local observations, rather than claiming a complete global reference history. Clock anomalies, renewed references, and changed objects reset candidate age. Older readers without leases may encounter missing old objects and must reject incomplete data; clients using finite leases hold them for their full remote read. Ordinary deferred maintenance returns the validated or newly published version and retries during a later sync. If a complete upload succeeds and only a network or server error during release leaves its outcome uncertain, one recovery attempt acquires a fresh finite exclusive lease, verifies the original manifest's strong ETag, fingerprint, and complete remote object closure, then successfully releases that lease before acknowledging the original publication. Recovery does not upload or collect objects. Lost leases, conditional conflicts, cancellation, or incomplete recovery leave the remote publication intact without acknowledging the sync; a later attempt must read the current version again.
+| Path / Stage | Behavior and Constraints |
+| --- | --- |
+| Fast Path (Single Commit) | Reads a fixed HEAD; when additions plus deletions total at most 64, raw content is at most 3 MiB, and full UTF-8 JSON is at most 4 MiB, publishes binary objects, the manifest, and cleanup in one GraphQL `createCommitOnBranch` mutation guarded by `expectedHeadOid` |
+| Staged Upload Path | Archives exceeding client fast-path budgets switch to staged uploads before sending any write request and finalize atomically via `updateRefs` (`beforeOid`, `force=false`); errors, cancellation, or incomplete responses after dispatching a fast commit never fall back to another write flow |
+| Cleanup Scope | Publishes the new manifest, its referenced objects, and removal of unreferenced canonical V3/V4 root objects in the same commit while preserving unrelated files and Git history |
+
+### WebDAV 发布与清理 / WebDAV publication and garbage collection
+
+| 场景 | 行为与约束 |
+| --- | --- |
+| 对象创建与读取 | 内容对象与首次清单使用 `If-None-Match: *` 创建；读取归档强制使用未压缩响应（identity encoding），防止 nginx 等服务端因压缩将强 ETag 降级为弱 ETag |
+| 条件发布与无引号 ETag | 每次发布前重读清单并核对内容指纹；若有强 ETag 则同时核对该 ETag 并提交 `If-Match`。对坚果云等返回无引号 ETag 的无锁服务端，原样将 ETag 填入 `If-Match` 交由服务端拦截并发；仅当返回 `412` 且清单指纹未变时，才判定服务端不支持该 ETag 并退回指纹保护 |
+| 无可用 ETag 降级 | 无锁且无可用 ETag 的服务端在指纹匹配后发布，发布后立即回读确认清单仍为本次写入内容，否则按冲突重新合并 |
+| 有限独占目录锁与 7 天观察 | 支持有限租期独占 `Depth: infinity` 写锁的服务端在完整读取、上传、发布期间全程持锁，每个请求携带锁令牌。每次发布生成新 `publicationId`，仅保护当前完整闭包；前代对象刚失去引用时重置候选年龄并启动 7 天本地观察，无变更读取也会推进观察 |
+| 到期条件清理 | 仅在持有有限锁且候选满 7 天后，先在不重传内容对象的前提下条件刷新同一闭包的 `publicationId`，确认获得新强 ETag 后，再核对当前完整闭包并按各对象的强 ETag 条件删除规范对象，每批最多 32 个；本地最多跟踪 1,024 个候选；目录、无关文件与传统备份永不删除 |
+| 无锁兼容与拒绝降级 | 尚未确认有限锁能力的目标，在不支持 `LOCK`（返回 `405`、`501` 或 `403`，如坚果云），或初次获授无限期或超过 300 秒的锁并成功释放时，继续条件同步并保留旧对象；曾确认支持有限锁的目标一旦失锁或能力降级则立即中止操作 |
+| 远端闭包验证 | 生产读取强制验证远端完整对象闭包，本地缓存命中不能替代远端对象存在性证明 |
+
+| Scenario | Behavior and Constraints |
+| --- | --- |
+| Creation & Identity Encoding | Creates content objects and the initial manifest with `If-None-Match: *`; requests archives with identity encoding so servers like nginx do not weaken strong ETags via compression |
+| Conditional Put & Unquoted ETags | Rereads the manifest before every publication to verify its content fingerprint and checks the strong ETag and submits it in `If-Match` when available. Unlocked servers returning unquoted ETags (such as Nutstore) receive that verbatim ETag in `If-Match`; a `412` while the fingerprint is unchanged marks the ETag unsupported and falls back to fingerprint protection |
+| No-ETag Fallback | Unlocked servers without usable ETags publish after matching the fingerprint and immediately reread the manifest; any mismatch is treated as a conflict and merged again |
+| Finite Exclusive Leases & 7-Day Window | Servers supporting finite exclusive `Depth: infinity` collection locks hold the lease across full reads, uploads, and publication with lock tokens on every request. Each publication assigns a fresh `publicationId` protecting only the current closure; newly unreferenced objects reset their candidate age and start a 7-day local observation window advanced by both writes and unchanged reads |
+| Conditional Garbage Collection | With a finite lease held and mature candidates, refreshes the same closure's `publicationId` conditionally without re-uploading content objects, confirms a new strong root ETag, re-validates the complete closure, and deletes up to 32 canonical objects per batch using each object's strong ETag; the local journal tracks at most 1,024 candidates; directories, unrelated files, and legacy backups are never deleted |
+| Lockless Targets & No Downgrade | Targets without confirmed finite leases continue conditional sync and retain old objects if they reject `LOCK` (`405`, `501`, or `403`, e.g., Nutstore) or their initial infinite or oversized grant was cleanly released; targets with confirmed finite leases abort on lease loss or capability downgrade |
+| Remote Closure Verification | Production reads verify the complete remote object closure; local cache hits never prove remote availability |
+
+| 机制 | 行为与边界 |
+| --- | --- |
+| 租期上限与释放 | 目录锁会短时阻塞同目录其他写入方；实际授予租期必须有限且不超过 300 秒，无限期或超过 300 秒的锁会立即尝试释放并拒绝持有，降低进程异常退出遗留长期目录锁的风险 |
+| 重定向与 URL 规范 | 持锁请求禁止跟随重定向；带 `query` 的地址保留既有路由与强 ETag 同步，不探测目录锁也不清理对象（但已确认支持有限锁的目标仍拒绝降级）；`fragment` 不参与 HTTP 锁与维护状态的资源身份计算 |
+| 本机观察与无锁读取边界 | 7 天宽限期基于本机观察，不代表跨设备全局引用历史；时钟异常、对象被重新引用或内容变化均会重置候选年龄。使用有限锁的客户端整段读取全程持锁；旧版无锁读取在清理后若遇到缺块，完整校验会直接拒绝应用部分数据 |
+| 清理失败与解锁恢复 | 普通延迟清理失败时保留并返回已校验或已发布的版本，留待后续同步重试，不回滚清单。若完整上传成功后仅在释放锁阶段因网络或服务端错误导致结果不确定，客户端会尝试一次重新获取有限独占锁，核对原清单的强 ETag、指纹及全部远端引用对象并成功释放新锁后才确认发布（期间不重复上传或清理）；若失锁、条件冲突、取消或核对未完成，则不确认本次同步，保留远端已发布清单并在下次同步重读 |
+
+| Mechanism | Behavior and Boundaries |
+| --- | --- |
+| Lease Cap & Release | Collection locks briefly block other writers in the same directory; granted leases must be finite and at most 300 seconds, while infinite or longer grants are immediately released where possible and never held |
+| Redirects & URL Identity | Locked requests never follow redirects; URLs with `query` strings keep their routing and strong ETag sync without probing locks or collecting objects (targets with confirmed finite leases still refuse to downgrade); URL `fragment`s are excluded from lock and maintenance resource identity |
+| Local Observation & Reader Safety | The 7-day grace window reflects local observations rather than global cross-device history; clock anomalies, renewed references, or object changes reset candidate age. Lease-capable clients hold a finite lock across the entire read, whereas older lockless readers encountering collected blocks fail full verification and reject partial data |
+| Maintenance Failure & Unlock Recovery | Ordinary cleanup failures return the validated or newly published version and retry on a later sync without rolling back the manifest. If a full upload succeeds and only lock release fails with a network or server error, one recovery attempt acquires a fresh finite exclusive lease, verifies the original manifest's strong ETag, fingerprint, and complete remote object closure, and releases the new lease before acknowledging publication (without re-uploading or collecting); lease loss, conflicts, cancellation, or incomplete verification leave the remote manifest intact without acknowledging the sync |
+
+## 升级与容量 / Upgrade and capacity
 
 新安装和空远端使用 V4。已有同步地址首次升级时显示一次升级确认；新增地址读取到合法传统载荷或 V3 时提示。迁移许可绑定地址、实际内容指纹和来源/目标版本；更换地址、内容或版本后重新确认。只有观察到该地址已使用 V4 才完成升级并移除提示，失败或取消仍可重试。升级完整保留旧歌词，历史有损开关不再参与快照、迁移和投影，不再显示常驻压缩选项。普通网络缓存仍按既有编辑状态语义省略，已编辑歌词和恢复版本独立持久保存。
 
 New installations and empty targets use V4. Existing targets prompt once when updating; newly configured targets prompt after validated traditional or V3 data is found. Approval binds the target, actual content fingerprint, and source/destination versions. Changed content, targets, or versions require renewed approval. Migration completes and its prompt disappears only after V4 is observed for that target. Failures and cancellations remain retryable. Unknown legacy lyrics are preserved completely; the historical lossy preference is no longer consumed, and the permanent compression setting is removed. Ordinary known network caches retain their existing omission semantics, while edits and resets remain independently durable.
 
-分块和内容复用减少增量流量，初次全库总流量没有统一上限或固定压缩比。播放统计使用磁盘暂存和分页处理，歌单、历史与歌词 registry 仍有列表成本。保留在内存的记录使用对称读写预算：主元数据与旧歌词候选合计最多 32 MiB 原始载荷和 131,072 个已知解码对象；真正分页的统计不计入总量，但每条记录仍有独立限制。超限明确失败，不截断历史或歌词，也不应用部分数据。物化为 SyncData 列表的统计使用相同总量限制。预算界定留存记录容量，整个 Android 合并流程的低堆内存行为仍需独立验证。
+| 维度 | 预算与限制 |
+| --- | --- |
+| 流量与存储结构 | 分块与内容寻址复用可减少增量同步流量，首次全库体积与压缩比取决于实际数据；播放统计采用磁盘暂存与分页处理，歌单、历史与歌词 registry 仍保有列表开销 |
+| 对称留存记录预算 | 读写共用对称的留存记录上限：主元数据与旧歌词候选合计最多 32 MiB 原始载荷及 131,072 个已知解码对象 |
+| 分页统计与列表物化 | 真正分页处理的统计不计入上述聚合总额（单条记录仍有独立上限）；但物化为 `SyncData` 列表的统计共享该聚合预算 |
+| 超限行为与内存边界 | 超出容量预算时直接报错中止，不截断历史或歌词，也不应用部分数据；该预算仅约束留存记录容量，完整 Android 合并流程在低堆内存设备上的表现仍需独立验证 |
 
-Chunking and content reuse reduce incremental traffic. Initial archive size and compression ratio depend on the data. Playback statistics use disk staging and pages, while playlists, history, and the lyric registry still have list costs. Symmetric read and write budgets limit retained main metadata and legacy candidates to 32 MiB of original payloads and 131,072 known decoded objects combined. Truly paged statistics are excluded from the aggregate but have independent per-record limits. Exceeding capacity fails explicitly without truncating history or lyrics or applying partial data. Statistics materialized into SyncData lists share the aggregate budget. These limits bound retained record capacity; low-heap behavior across the complete Android merge workflow still requires separate verification.
+| Aspect | Budgets and Limits |
+| --- | --- |
+| Traffic & Storage Model | Chunking and content-addressed reuse reduce incremental traffic, while initial archive size and compression ratio depend on the dataset; playback statistics use disk staging and pagination, whereas playlists, history, and the lyric registry retain in-memory list costs |
+| Symmetric Retained-Record Budget | Read and write paths enforce a symmetric retained-record budget: main metadata and legacy lyric candidates combined cannot exceed 32 MiB of raw payloads or 131,072 decoded objects |
+| Paged vs. Materialized Stats | Truly paged statistics are excluded from the aggregate budget (while keeping per-record limits), whereas statistics materialized into `SyncData` lists share the aggregate cap |
+| Overflow & Heap Boundaries | Exceeding capacity fails explicitly without truncating history or lyrics or applying partial data; these budgets bound retained record capacity, while low-heap behavior across the full Android merge workflow still requires separate verification |
 
 歌词同步说明 / Lyric sync details: [歌词 / Lyrics](LYRIC_SYNC.md)。
 

@@ -23,18 +23,20 @@ Run from the repository root:
 ./gradlew :app:crapReport
 ```
 
-`verifyModularization` runs structural checks, app and owned JVM-library Debug tests,
-combined CRAP reporting, domain dependency checks, lint, and build-logic tests.
-`:app:check` includes CRAP and domain checks. `:app:crapReport` still validates its
-inputs, but does not fail for scores above the threshold.
+| Task | Scope and Behavior |
+| --- | --- |
+| `verifyModularization` | Runs structural checks, `app` and owned JVM-library Debug tests, combined CRAP reporting, domain dependency checks, lint, and build-logic tests |
+| `:app:check` | Includes CRAP and domain dependency checks |
+| `:app:crapReport` | Validates inputs and generates the report without failing on over-threshold scores |
+| `:sync:verifyCrap` | Combines coverage from `:sync` and its sync models in `:model` |
+| `:local:verifySyncIntegrationCrap` | Runs JVM tests for Android sync adapters and checks `:local`'s entire `data/sync` directory; does not replace the full `:local` gate |
 
-The 14 owned libraries are registered in [gradle/owned-modules.txt](../../gradle/owned-modules.txt).
-`:native` is a pure-native Android library included in registration, structural checks,
-and lint. It creates no JaCoCo execution data, CRAP tasks, or JVM test tasks; existing
-Kotlin/Java modules retain complete coverage collection. The independent native USB CI
-checks all three host profiles and four Android ABIs; commands are in the
-[Native module README](../../modules/native/README.md). `tests/dsp/` is a separate
-CMake/CTest suite, outside USB host profiles and JVM gates. For focused checks:
+The 14 owned libraries are registered in [gradle/owned-modules.txt](../../gradle/owned-modules.txt). See the [implementation notes](../../docs/implementation_EN.md#module-layout) for module responsibilities:
+
+- **Kotlin/Java modules**: Retain full coverage collection. Independent CRAP tasks enforce the same threshold across their respective source scopes.
+- **`:native` module**: Pure-native Android library included in registration, structural checks, and lint only; creates no JaCoCo data, CRAP tasks, or JVM test tasks. Independent CI checks the three native USB host profiles and four Android ABI builds. The standalone `tests/dsp/` CMake/CTest suite is separate from those USB profiles. These checks run outside the JVM gates (see [Native module README](../../modules/native/README.md)).
+
+Run focused checks for affected modules:
 
 ```bash
 ./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
@@ -47,35 +49,20 @@ CMake/CTest suite, outside USB host profiles and JVM gates. For focused checks:
 ./gradlew :listentogether:verifyCrap :listentogether:verifyDomainDependencies :listentogether:lintDebug
 ```
 
-Independent CRAP tasks retain the same threshold and corresponding source scope.
-`:sync:verifyCrap` combines coverage from sync and its models in `:model`.
-`:local:verifySyncIntegrationCrap` separately runs JVM tests for Android sync adapters
-and checks the local library's entire `data/sync` directory; it does not replace
-the full local-library gate. See the [implementation notes](../../docs/implementation_EN.md#module-layout)
-for module responsibilities.
-
 ## CRAP
 
-`crap_report.py` uses `C² × (1 − cov)³ + C`:
+`crap_report.py` calculates method risk using `C² × (1 − cov)³ + C`:
 
-- `C` is JaCoCo `COMPLEXITY` missed + covered, the method's cyclomatic complexity.
-- `cov` is covered / C, complexity coverage used as a path-coverage proxy. It is
-  neither line coverage nor a strict measurement of independent paths.
-- A scoped method fails when its unrounded score is greater than 9; exactly 9
-  passes. There is no average-score gate or historical baseline exemption.
+| Metric / Rule | Definition |
+| --- | --- |
+| `C` | JaCoCo `COMPLEXITY` `missed + covered` (method cyclomatic complexity) |
+| `cov` | `covered / C` (complexity coverage), used as a path-coverage proxy rather than line coverage or strict independent-path measurement |
+| Pass / Fail | Fails when a scoped method's unrounded score is `> 9`; `<= 9` passes. No average-score gate or historical baseline exemption |
+| Full-Coverage Floor | At `100%` coverage, `CRAP = C` |
 
-**9 is this project's risk threshold, not proof of architectural quality.**
-With 100% coverage, CRAP still equals cyclomatic complexity. Low scores do not
-prove clear responsibilities, and coverage does not prove useful assertions.
-Refactoring should make entry points, business steps, state ownership, and failures
-easier to trace. Do not split methods, add forwarding layers, or adjust thresholds,
-scope, or valid tests solely to improve scores. Review still needs dependencies,
-behavior and boundary tests, lint, and relevant integration or device checks.
-Mutation testing can assess whether assertions detect faults; the current gate
-does not provide it automatically.
+The threshold of `9` is a risk gate for complexity and coverage. Refactoring must make entry points, business steps, state ownership, and failure handling easier to trace; never split methods, add forwarding layers, or weaken thresholds, scope, or valid tests just to lower a score. The gate does not run automated mutation testing. Review CRAP results alongside dependency checks, behavior and boundary tests, lint, and relevant integration or device checks to assess responsibilities and assertion quality.
 
-References: [CRAP author](https://www.artima.com/weblogs/viewpost.jsp?thread=215899),
-[JaCoCo counters](https://www.jacoco.org/jacoco/trunk/doc/counters.html).
+References: [CRAP author](https://www.artima.com/weblogs/viewpost.jsp?thread=215899), [JaCoCo counters](https://www.jacoco.org/jacoco/trunk/doc/counters.html).
 
 ### Scope
 
@@ -120,39 +107,19 @@ Local sync adapter reports use `modules/local/build/reports/sync-crap/`.
 
 ## Dependencies
 
-`module_boundaries.py` requires no Android SDK. It reads the registry, Gradle
-declarations, and source to check unregistered build nodes, cycles, forbidden
-references, production package ownership, and package paths. `:model` cannot
-depend on project implementations; libraries cannot depend on app, and protected
-production packages cannot move back into app. Library production files must
-remain below 2000 lines. Library production directories and the script's
-`APP_FAMILIES` directories allow at most 16 direct Kotlin/Java files.
+Dependency enforcement combines source-level structural checks with bytecode-level direct dependency checks. Rules are defined in [module_boundaries.py](./module_boundaries.py) and [domain-dependencies.json](../../config/quality/domain-dependencies.json); directory names do not imply dependency layers.
 
-A module boundary does not enforce every responsibility inside the same library.
-Platform protocols must not read account repositories, Room, or player state.
-Playback/download rules, sync calculations, lyric parsing, and local storage
-calculations retain their own allowlists. The rules live in
-[module_boundaries.py](./module_boundaries.py) and
-[domain-dependencies.json](../../config/quality/domain-dependencies.json);
-directory names do not define dependency layers.
+| Layer | Entry Point | Tooling and Rules |
+| --- | --- | --- |
+| Source & Module Boundaries | `module_boundaries.py` | Runs without the Android SDK. Reads the module registry, Gradle declarations, and source files to check unregistered build nodes, cycles, forbidden references, production package ownership, and package paths. `:model` cannot depend on project implementations, libraries cannot depend on `app`, and protected production packages cannot move back into `app`. Library production files must stay under 2000 lines, and library production directories plus `APP_FAMILIES` directories allow at most 16 direct Kotlin/Java files. |
+| Bytecode Domain Dependencies | `verifyDomainDependencies` | Uses `jdeps` from the Gradle JDK to inspect direct class dependencies and `javap` to verify full JVM member signatures on host bridges. Platform protocols must not read account repositories, Room, or player state; playback/download rules, sync calculations, lyric parsing, and local storage calculations maintain separate allowlists. |
 
-`verifyDomainDependencies` uses `jdeps` from the JDK running Gradle to inspect
-direct class dependencies, and `javap` to inspect complete JVM member signatures
-for host bridges. New classes, nested classes, lambdas, and Kotlin-generated
-classes in protected packages are included automatically. Allowing one bridge
-method does not grant access to the entire host class.
+### Domain Configuration and Scope
 
-`excluded_classes` excludes only the named source class and its `$` nested
-classes, without wildcards. An excluded subpackage must be covered by another
-protected domain. Excluding a source does not relax other classes' references
-to it. Missing artifacts, duplicate classes, empty domains, tool failures, or
-analysis that omits protected classes cause failure.
-
-The combined domain report is `app/build/reports/domain-dependencies/report.json`.
-Independent `:platform`, `:sync`, and `:listentogether` reports use each module's
-`build/reports/domain-dependencies/report.json`. This checks direct dependencies,
-not transitive or reflective calls. It does not prove that shared models or bridge
-internals have no platform dependencies.
+- **Automatic inclusion & least privilege**: New classes, nested classes, lambdas, and Kotlin-generated classes in protected packages are checked automatically. Allowing a single bridge method does not grant access to the rest of its host class.
+- **Exclusions**: `excluded_classes` matches only the named source class and its `$` nested classes (no wildcards). Any excluded subpackage must be covered by another protected domain, and excluding a source class does not relax incoming reference restrictions from other classes.
+- **Fail-closed conditions**: Missing artifacts, duplicate classes, empty domains, tool failures, or omitted protected classes fail the task.
+- **Reports & analysis boundary**: The combined report writes to `app/build/reports/domain-dependencies/report.json`, while `:platform`, `:sync`, and `:listentogether` write independent reports to each module's `build/reports/domain-dependencies/report.json`. Inspection covers direct bytecode dependencies; it does not trace transitive calls or reflection. Review platform dependencies inside shared models and bridge implementations separately.
 
 ## Tool tests
 

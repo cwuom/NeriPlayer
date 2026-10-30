@@ -22,33 +22,97 @@ Room 数据由 `:database` 保存，平台账号和缓存由 `:platform` 管理�
 
 `:database` persists Room data, `:platform` manages platform accounts and caches, and `:sync` runs sync sessions. UI and playback access this library through repositories and host interfaces.
 
-配置导入会先检查备份包含的账号存储。恢复凭据需要使用软件兼容存储时，必须由界面明确确认；直接调用 `ConfigFileManager.importConfig` 默认拒绝这类恢复。取消确认或账号存储不可持久化时，不会恢复任何配置内容。确认期间保留同一份已解析的备份，不重新读取来源文件。
+## 配置导入 / Configuration import
 
-Configuration import checks account storage before restoring any section. Restoring credentials into software compatibility storage requires explicit UI confirmation; direct `ConfigFileManager.importConfig` calls reject it by default. Cancellation or unavailable persistent account storage leaves all configuration sections unchanged. Confirmation retains the same parsed backup without reading the source file again.
+配置导入在恢复任何分段前先检查备份内的账号存储：
+
+| 条件 / 阶段 | 行为 |
+| --- | --- |
+| 需软件兼容存储 | 必须经界面明确确认；直接调用 `ConfigFileManager.importConfig` 默认拒绝恢复 |
+| 取消或不可持久化 | 用户取消确认或账号存储无法持久化时，中止操作且不修改任何配置分段 |
+| 确认等待期 | 复用同一份已解析的备份数据，不重复读取来源文件 |
+
+Configuration import inspects account storage in the backup before restoring any section:
+
+| Condition / Stage | Behavior |
+| --- | --- |
+| Software Compatibility Storage | Requires explicit UI confirmation; direct calls to `ConfigFileManager.importConfig` reject restoration by default |
+| Cancellation or Unwritable Store | Cancelling confirmation or lacking persistent account storage aborts the import and leaves all sections unchanged |
+| Confirmation Window | Reuses the already parsed backup payload without re-reading the source file |
+
+## 缓存与本地编辑 / Cache and local edits
 
 缓存清理保留已下载的音频、歌词和封面。`ExtraCacheClearResult` 区分文件释放空间与 Room 可复用空间；删除记录不会立即缩小数据库文件。已有目录、索引文件名及同步 Worker 类名需保持升级兼容。
 
-本地编辑保留首次修改前的歌词和封面，恢复时优先使用持久化原始值，重扫不会用当前侧载内容覆盖原始值。未知内容与明确为空分开处理；缺失且为空的翻译、罗马字歌词不会创建额外文件，已有歌词文件按类型复用。
-
 Cache cleanup preserves downloaded audio, lyrics, and covers. `ExtraCacheClearResult` distinguishes freed file bytes from reusable Room space; deleting records does not immediately shrink the database file. Existing directories, index filenames, and sync Worker class names must remain compatible across upgrades.
 
-Local edits preserve lyrics and artwork from before the first edit. Restoration prefers persisted originals, and rescanning keeps those originals separate from current sidecars. Unknown and explicitly empty values remain distinct; missing empty translation and romanization tracks do not create files, and existing lyric files are reused by type.
+| 项目 | 规则 |
+| --- | --- |
+| 原始基线与恢复 | 本地编辑保留首次修改前的歌词与封面，恢复时优先采用持久化的原始值 |
+| 重扫隔离 | 重新扫描不会用当前侧载内容覆盖已保存的原始值 |
+| 空值与文件复用 | 区分未知内容与明确为空；缺失且为空的翻译、罗马音歌词不创建新文件，已有歌词文件按类型复用 |
 
-`LocalMediaWriteAccess` 在写入前规划授权：Android 11 及以上对尚不可写的 MediaStore 条目分批请求系统同意，Android 10 对其他应用创建的文件引导授予所在文件夹。音频与歌词、封面伴随文件的修改由恢复日志记录写入意图、原始备份和对象身份，读回确认后才提交；恢复遇到对象替换或内容冲突时保留日志，避免覆盖外部更改。
+| Aspect | Rule |
+| --- | --- |
+| Original Baseline & Restore | Local edits preserve lyrics and artwork from before the first edit; restoration prefers persisted originals |
+| Rescan Isolation | Rescanning never overwrites persisted originals with current sidecar contents |
+| Empty Values & File Reuse | Unknown and explicitly empty values remain distinct; missing empty translation or romanization tracks do not create extra files, and existing lyric files are reused by type |
 
-`LocalMediaWriteAccess` plans authorization before writes: Android 11 and later request system consent in batches for MediaStore items that are not yet writable; Android 10 requests a folder grant for files created by other apps. Recovery journals track write intent, original backups, and object identity for audio and lyric/artwork companions, committing only after read-back verification. Replaced objects or content conflicts retain their journals rather than overwriting external changes.
+## 写入授权与恢复 / Write authorization and recovery
 
-大型扫描对仅有 content URI 的音频复用目录行和已知侧载索引，不逐首打开音频或查询文档。延后的身份信息在预览后台补全，提交导入前还会按有界批次核对所选 MP3 的原始身份，立即关闭预览也不会跳过这一步；歌词和封面基线保持原值。
+`LocalMediaWriteAccess` 在写入前规划存储授权；音频及歌词、封面伴随文件的修改通过恢复日志管理：
 
-Large scans of content-only audio reuse directory rows and known sidecar indexes without opening each audio file or querying each document. Deferred identity is hydrated in the preview background, and selected MP3s undergo bounded raw identity checks before playlist persistence, even when the preview closes immediately. Existing lyric and artwork baselines are retained.
+| 环节 | 行为 |
+| --- | --- |
+| Android 11+ 授权 | 对尚不可写的 MediaStore 条目分批请求系统写入同意 |
+| Android 10 授权 | 对其他应用创建的文件引导授予所在文件夹权限 |
+| 恢复日志与提交 | 日志记录写入意图、原始备份与对象身份，写入后经读回校验确认才提交 |
+| 冲突保护 | 恢复时若检测到对象被替换或内容冲突，保留恢复日志并中止覆盖，避免破坏外部更改 |
 
-收藏、历史和歌单使用统计在 IO 协程中加载。Room 读取失败与尚未迁移是不同状态，读取失败时保留原数据，相关写入、备份和同步等待成功加载后再继续；再次操作可重试，其他功能仍可使用。只有确认 Room 尚未接管且旧 JSON 完整可读时才导入，缺失文件与合法空列表仍支持首次迁移。保留 JSON 回退的仓库只有在主存标记也成功保存后才确认落盘；事务提交后取消会使内存基线失效，恢复时重新读取实际主存。
+`LocalMediaWriteAccess` plans storage authorization before writing. Recovery journals manage audio and lyric/artwork companion updates:
 
-Favorites, history, and playlist usage load on an IO coroutine. A failed Room read differs from an unmigrated store: original data is retained, and related writes, backups, and sync require a successful load. Later operations can retry while other features remain available. Legacy import requires confirmation that Room is not primary and that existing JSON is readable; missing files and valid empty lists still support first migration. Repositories retaining JSON fallback acknowledge persistence only after the primary-store marker is saved. Cancellation after commit invalidates the in-memory baseline; recovery reads the actual primary store again.
+| Stage | Behavior |
+| --- | --- |
+| Android 11+ Authorization | Requests system write consent in batches for MediaStore items that are not yet writable |
+| Android 10 Authorization | Prompts for folder grants when modifying files created by other apps |
+| Recovery Journal & Commit | Tracks write intent, original backups, and object identity; commits only after read-back verification |
+| Conflict Protection | Retains the journal instead of overwriting when object replacement or content conflicts are detected during recovery |
 
-歌曲播放统计直接使用 Room 主存，不再冷启动读取完整曲目和日桶列表，也不在每次写入时生成全量 JSON 投影。旧数据通过流式导入迁移；稳定事件 ID、持久回执和待应用增量在同一事务中入队，重试不重复计数。同步捕获固定页快照与持久 revision，远端数据完整校验后才能应用，revision 冲突会拒绝旧结果。统计总览与排行榜使用 SQL 汇总和分页查询，手动 JSON 备份统计导入、导出逐页处理，完整历史不按 1,000 条截断。导入在整份 JSON 与版本校验通过后才应用，拒绝未知未来版本；歌单、历史和歌词元数据仍按既有列表恢复，整个备份不是跨仓库事务。配置导入和完整播放队列仍有各自的容量约束。
+## 数据加载与统计 / Data loading and statistics
 
-Track playback statistics use Room as their primary store, without loading all tracks and daily buckets at startup or writing complete JSON projections after every change. Legacy data is imported as a stream. Stable event IDs, durable receipts, and pending deltas are enqueued in one transaction so retries do not count twice. Sync captures fixed-size pages and a durable revision, validates the complete remote dataset before applying it, and rejects stale revisions. Summaries and rankings use SQL aggregation and paginated queries; manual JSON backup imports and exports statistics in pages and retains complete history without the former 1,000-entry truncation. Import validates the entire JSON document and version before application, rejecting future versions. Playlist, history, and lyric metadata still use lists; the overall backup is not a transaction spanning all repositories. Configuration import and full playback queues retain their existing capacity limits.
+收藏、历史与歌单使用统计在 IO 协程中加载，严格区分 Room 读取失败与尚未迁移状态：
+
+| 状态 / 环节 | 行为 |
+| --- | --- |
+| Room 读取失败 | 保留原数据；相关写入、备份与同步等待成功加载后才继续，后续操作可触发重试，其余功能保持可用 |
+| 旧 JSON 首次迁移 | 仅在确认 Room 尚未接管且旧 JSON 完整可读时导入；文件缺失或合法空列表同样支持首次迁移 |
+| 主存标记与取消恢复 | 保留 JSON 回退的仓库须待主存标记保存成功后才确认落盘；事务提交后若协程取消，内存基线即刻失效并在恢复时重读实际主存 |
+
+Favorites, history, and playlist usage statistics load on an IO coroutine, strictly separating failed Room reads from unmigrated stores:
+
+| State / Stage | Behavior |
+| --- | --- |
+| Failed Room Read | Retains existing data; related writes, backups, and sync wait for a successful load while other features stay available and subsequent actions can retry |
+| First Legacy JSON Migration | Imports only after confirming Room is not yet primary and the legacy JSON is fully readable; missing files and valid empty lists still complete initial migration |
+| Primary Marker & Cancellation | Repositories with JSON fallback acknowledge persistence only after saving the primary-store marker; post-commit cancellation invalidates the in-memory baseline and forces a fresh read from the primary store |
+
+歌曲播放统计以 Room 为主存，冷启动不加载全量曲目与日桶列表，写入时也不生成全量 JSON 投影：
+
+| 环节 | 行为与边界 |
+| --- | --- |
+| 迁移与记账事务 | 旧数据采用流式导入迁移；稳定事件 ID、持久回执与待应用增量在同一事务入队，重试不重复计数 |
+| 远端同步 | 捕获固定页快照与持久 `revision`，完整校验远端数据集后才应用，遇到 `revision` 冲突直接拒绝旧结果 |
+| 查询与手动备份 | 统计总览与排行榜采用 SQL 汇总与分页查询；手动 JSON 备份按页导入/导出统计并保留完整历史，取消原 1,000 条截断 |
+| 备份校验与容量边界 | 导入须通过整份 JSON 与版本校验，拒绝未知未来版本；歌单、历史与歌词元数据仍按列表恢复，整份备份非跨仓库原子事务，配置导入与完整播放队列保留各自容量上限 |
+
+Track playback statistics use Room as their primary store, avoiding full track or daily-bucket loads at startup and full JSON projections on writes:
+
+| Area | Behavior and Boundaries |
+| --- | --- |
+| Migration & Accounting | Legacy data streams into Room; stable event IDs, durable receipts, and pending deltas enqueue in a single transaction so retries never double-count |
+| Remote Sync | Captures fixed-size pages and a durable `revision`, validates the entire remote dataset before applying, and rejects stale `revision` conflicts |
+| Queries & Manual Backup | Summaries and rankings use SQL aggregation and pagination; manual JSON backups import and export statistics in pages, keeping full history without the 1,000-entry truncation |
+| Validation & Limits | Imports validate the entire JSON document and version, rejecting unknown future versions; playlists, history, and lyric metadata still restore as lists, backups are not cross-repository transactions, and config imports plus full queues keep their own capacity limits |
 
 带事件 ID 的歌单播放增量只有在 Room 计数和回执共用事务时才能确认。旧 JSON 导入失败时保留该事件，恢复后先确认实际主存再重试迁移，避免进程重启后重复计数。没有事件 ID 的既有歌单写入仍支持 JSON 回退。
 
@@ -59,6 +123,18 @@ Playlist play increments carrying event IDs are acknowledged only when Room pers
 文件夹扫描优先保存授权树内的音频引用，不把路径存在当作 MediaStore 读取授权。旧引用不可读时，播放器可在同一存储卷和已授权目录内恢复同一文件的 SAF 引用，编辑回写也复用这一来源。封面和元数据侧载共用恢复事务，失败或取消时回滚；回滚未完成时停止尝试其它音频别名。
 
 Folder scans prefer audio references within the granted document tree; an existing path does not establish MediaStore read access. When an old reference is unreadable, playback can recover a SAF reference to the same file within a granted directory on the same volume, and metadata edits reuse that source. Artwork and metadata sidecars share a recovery transaction. Failure or cancellation rolls back the changes, and an unresolved rollback stops further audio alias attempts.
+
+| 阶段 | 行为 |
+| --- | --- |
+| 扫描期复用 | 对仅有 content URI 的音频直接复用目录行与已知侧载索引，不逐首打开音频或查询文档 |
+| 预览期后台补全 | 延后的曲目身份信息在预览界面后台异步补全 |
+| 导入前身份核对 | 提交歌单持久化前，按有界批次核对所选 MP3 的原始身份（即使立即关闭预览也不会跳过）；现有歌词与封面基线保持原值 |
+
+| Phase | Behavior |
+| --- | --- |
+| Scan Reuse | Content-URI-only audio reuses directory rows and known sidecar indexes without opening each audio file or querying individual documents |
+| Preview Hydration | Deferred track identity is populated in the background while previewing |
+| Pre-Commit Verification | Selected MP3s undergo bounded raw-identity checks before playlist persistence, even if the preview closes immediately; existing lyric and artwork baselines remain intact |
 
 从扫描预览创建或加入普通歌单时，持久化用户明确选择的本地引用，保留旁车恢复的远端身份。本机播放仅接受与当前首选引用完全一致的来源标记；同步投影清除此标记和本地地址。旧记录没有扫描来源证据时不自动推断，再次显式扫描导入同一远端条目可以更新它的本地来源。
 

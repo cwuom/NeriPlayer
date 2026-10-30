@@ -1,5 +1,8 @@
 # 音乐服务器 API 与客户端契约
 
+> [!WARNING]
+> 自建音乐服务器功能目前为预览版本，缺乏充分测试。不同服务器、曲库和网络环境下的兼容性与稳定性仍需验证。
+
 本文记录 Navidrome / OpenSubsonic 接入的实际 HTTP 请求、模型映射与客户端仓库约定。基础参数使用 Subsonic 1.16.1，优先读取可选的 `songLyrics` 扩展，并兼容标准歌词接口；不声明完整实现 OpenSubsonic。用户操作见 [README](../README.md#连接音乐服务器)，核心文件职责见 [平台模块说明](../modules/platform/README.md#音乐服务器接入--music-server-integration)。
 
 ## 1. 分层与术语
@@ -52,10 +55,10 @@
 1. 本地校验 URL 和必填项。
 2. 使用候选配置请求 `ping`，HTTP 和业务状态都成功后才保存。
 3. `getOpenSubsonicExtensions` 查询可选扩展。当前在首次读取歌词时按需发现。
-4. 加载专辑或执行用户搜索；`ping` 成功不保证曲库读取权限或媒体格式可播放。
+4. 加载专辑或执行用户搜索；`ping` 只确认连接，曲库读取需对应权限，媒体播放还取决于格式与设备。
 5. 认证失败提示重新登录，不循环重试密码，不替换为另一个配置。
 
-扩展名与版本以返回值为准；未知扩展忽略。`songLyrics` 缺失表示不能按歌曲 ID 读取结构化歌词。当前扩展查询遇到协议错误 code=0/70 或 HTTP 404/501 时回退为不支持，其他错误继续向上传播；code=0 是通用错误，这种回退不等于已确认服务器完全不支持扩展。能力缓存绑定配置修订号，尚未接入服务器版本/TTL 失效或手动刷新；发现失败的细分与刷新属于后续完善。[能力发现](https://opensubsonic.netlify.app/docs/endpoints/getopensubsonicextensions/)
+扩展名与版本以返回值为准；未知扩展忽略。`songLyrics` 缺失表示不能按歌曲 ID 读取结构化歌词。当前扩展查询遇到协议错误 code=0/70 或 HTTP 404/501 时回退为不支持，其他错误继续向上传播；code=0 是通用错误，在此仅按可选能力缺失处理。能力缓存绑定配置修订号，尚未接入服务器版本/TTL 失效或手动刷新；发现失败的细分与刷新属于后续完善。[能力发现](https://opensubsonic.netlify.app/docs/endpoints/getopensubsonicextensions/)
 
 ## 3. 响应与失败约定
 
@@ -131,7 +134,7 @@ retryable 只是分类。JSON client 没有额外的业务重试循环，共享 
 
 [OpenSubsonic search3](https://opensubsonic.netlify.app/docs/endpoints/search3/) 要求支持空 query 返回曲库数据；仅支持基础 Subsonic 的服务器是否遵循此行为需按实际响应确认。分类本地搜索使用完整目录，不把扫描中尚未完成的部分页面作为完整结果。歌手接口见 [getArtists](https://opensubsonic.netlify.app/docs/endpoints/getartists/) 与 [getArtist](https://opensubsonic.netlify.app/docs/endpoints/getartist/)。
 
-offset 按服务器返回条数递增，显示内容按完整身份去重；短页结束，满页可能再请求一次空页。服务器扫描更新时不承诺跨页快照一致性，可刷新重新加载。各服务器、分类、关键词分别保存状态；切分类保留已提交关键词，进入专辑清空详情筛选，返回恢复父列表和位置。
+offset 按服务器返回条数递增，显示内容按完整身份去重；短页结束，满页可能再请求一次空页。服务器扫描更新可能改变分页结果，刷新可重新加载。各服务器、分类、关键词分别保存状态；切分类保留已提交关键词，进入专辑清空详情筛选，返回恢复父列表和位置。
 
 本地筛选保留目录顺序，不增加相关性重排。跨服务器综合搜索尚未实现。服务器不提供可靠的全库变更校验标记，客户端不使用文件系统索引的修改时间推断全部 ID3 元数据未变化。
 
@@ -145,7 +148,7 @@ offset 按服务器返回条数递增，显示内容按完整身份去重；短�
 | album | album | 真实专辑名，不用它承载平台标签 |
 | albumId | SongItem.albumId 的 Long 代理值 | 不能用于服务器 API 请求；专辑浏览/详情使用 ServerAlbum.id 的原始字符串，歌曲模型尚未保存可逆专辑引用 |
 | duration | durationMs | 当前 optLong 读取整秒，限制在 0..604800 后乘 1000；缺失为 0，不保留小数秒 |
-| coverArt | coverUrl | 按原始封面 ID 创建内部引用，不能默认等于歌曲或专辑 ID |
+| coverArt | coverUrl | 按原始 `coverArt` ID 构造带 `neri-cover=v1:<scope>` 来源标记的真实 `getCoverArt` URL，不能默认用歌曲或专辑 ID 替代 |
 | contentType、suffix、bitRate 等 | PlaybackAudioInfo | 来自服务器声明，不是客户端解码实测；bitRate 为 kbps，samplingRate 为 Hz，另读 bitDepth/channelCount/size |
 
 服务器歌曲 ID 与其他平台数值 ID 没有关联。[Navidrome 接口差异](https://www.navidrome.org/docs/developers/subsonic-api/)、[Child 响应字段](https://opensubsonic.netlify.app/docs/responses/child/)
@@ -190,7 +193,7 @@ fragment 是客户端来源标记，不发送到服务器。解析仅接受 v1 �
 
 旧 https://neri-server.invalid/v1/<profileId>/cover/<encodedCoverId> 仍可加载。Android 在后台准备账号后，导出同步时将本机能解析的旧封面引用投影为真实端点，不额外下载图片、不改原歌曲身份；无法解析的旧引用保留，不能据此推断未知服务器或账号。相同本机账号下，新链接可读取旧磁盘封面缓存，保留原有版本和尺寸键；缓存清理和估算也按同一映射保留图片，不需要重新下载。
 
-同步继续使用原有 coverUrl/customCoverUrl/originalCoverUrl 字段及既有 JSON、Protobuf 和 V4 归档结构，收藏歌单、历史和播放统计封面遵循同一投影规则。另一台 Android 须自行添加相同服务器地址及用户名，认证信息不随同步迁移。桌面端当前只需保留这些不含凭据的 URL；后续可按此格式接入账号和图片请求，不必重新定义同步字段。本轮仅改进封面可移植性；服务器歌曲的 audioId/mediaUri 仍按原 profile UUID 标识，播放、歌词和下载的跨设备账号绑定不在此变更内。
+同步继续使用既有的 `coverUrl` / `customCoverUrl` / `originalCoverUrl` 字段及 JSON、Protobuf 和 V4 归档结构，收藏歌单、历史和播放统计封面遵循同一投影规则。认证凭据不随同步迁移，另一台 Android 设备需自行添加相同的服务器地址与用户名；服务器歌曲的 `audioId` / `mediaUri` 仍绑定原配置的 profile UUID，跨设备播放、歌词和下载不会自动重绑账号。桌面端仅保留这些不含凭据的封面 URL，尚未实现服务器封面加载。
 
 当前音频表示固定 raw，缓存键 `subsonic:<audioId>:raw:v1`；封面固定 600 像素，新图片引用包含真实端点、封面 ID、尺寸和账号 scope。后续增加可变尺寸或转码时必须把尺寸/格式/码率/表示版本加入缓存身份。同一 ID 内容原地替换后的主动缓存失效属于后续待办。
 
@@ -225,15 +228,15 @@ stream / download / getCoverArt 成功是二进制，失败可能返回 XML/JSON
 
 页面先展示完整缓存快照再按新鲜度刷新，首次打开会预热其余两个分类。服务器页可手动刷新当前分类；刷新失败继续保留旧完整目录。扫描中已完成的短期分页可被普通重试复用；没有同键进行中的扫描时，手动强制刷新会重取所有页，在途同键请求仍按共享规则复用。应用脱机开关与资源库公共刷新入口尚未统一接入。全量目录只保存元数据，封面按需加载，音频缓存不等于持久离线下载。
 
-下一首预取在非随机、非单曲循环、下一首目标仍匹配、非计费网络、缓存可用、播放器 READY 且正播放、缓冲至少 5 秒（或已覆盖剩余短尾）时启动；列表循环可以预取回到首曲。最大取 1.5 MiB，按已知文件长度与缓存预算的 1/8 缩小；总任务预算 30 秒，媒体读取预算 10 秒，保留 1 MiB 可用空间。切歌、暂停、网络/配置变化或当前播放争用缓存时取消/让出，不等待播放持有的缓存锁。小文件可能完整落入预算，但不保证整曲缓存或持久离线可播；日志 read 字节也不等于全部新增网络下载或新增缓存写入。
+下一首预取仅在非随机、非单曲循环、下一首目标仍匹配、非计费网络、缓存可用、播放器处于 `READY` 且正在播放、已缓冲至少 5 秒（或已覆盖剩余短尾）时启动；列表循环可预取首曲。单次上限为 1.5 MiB，并按已知文件长度与缓存预算的 1/8 缩减；总任务预算 30 秒，媒体读取预算 10 秒，同时保留 1 MiB 可用空间。发生切歌、暂停、网络或配置变化，或与当前播放争用缓存锁时取消/让出，不等待播放持有的锁。预取仅作有限缓存，持久离线播放请使用下载功能；日志中的 `read` 字节数包含缓存读取，不等于新增网络下载或新增缓存写入。
 
-HTTP 416 保留原始响应头交给 Media3，供其区分文件末尾与读取越界；真正越界和短读仍保留错误信号。服务器瞬时传输错误有限重试，失败后保留当前曲目/进度供手动重试；不承诺网络恢复自动续播或跨源替换。
+HTTP 416 保留原始响应头交给 Media3，供其区分文件末尾与读取越界；真正越界和短读仍保留错误信号。服务器瞬时传输错误会有限重试，仍失败时暂停并保留当前曲目与进度，网络恢复后需手动重试；不会自动跨源替换。
 
 ## 6. 歌词
 
 先查 `songLyrics` 扩展，只接受已知版本 1 或 2；未知扩展版本不假定兼容。请求为 `getLyricsBySongId(id)`，不发送 enhanced=true，读取 v1 兼容的 line 数据；v2 的 cueLine/kind/agents 不消费。不将 Long 代理 ID 发给歌词接口。[端点](https://opensubsonic.netlify.app/docs/endpoints/getlyricsbysongid/)、[扩展版本](https://opensubsonic.netlify.app/docs/extensions/songlyrics/)
 
-缺少已知版本或可选歌词端点返回 HTTP 404/501、协议 0/70 时，尝试标准 `getLyrics(artist,title)`，省略缺失标签。文本复用已有 LRC 解析器，无时间轴时按普通歌词显示；此接口按名称检索，不保证与 ID 端点有相同的匹配精度。结构化端点成功返回空歌词后不再额外请求标准接口。认证、权限、限流、网络、TLS 和服务器错误继续传播，取消不转成空歌词；协议 0 的局部回退不代表通用错误都是“不支持”。[标准歌词](https://opensubsonic.netlify.app/docs/endpoints/getlyrics/)
+当服务器缺少已知扩展版本，或可选歌词端点返回 HTTP 404/501、Subsonic 协议错误 0/70 时，回退至[标准歌词](https://opensubsonic.netlify.app/docs/endpoints/getlyrics/)接口 `getLyrics(artist,title)`（缺失标签自动省略）。返回文本复用 LRC 解析器，无时间轴时按普通文本歌词展示；该接口按歌手与歌名检索，匹配精度可能与按 ID 检索的端点不同。若结构化歌词端点成功响应但返回空歌词，则不再请求标准接口。认证、权限、限流、网络、TLS、服务器错误及外部取消会继续向上传播；仅在此可选能力路径上对协议错误 0 执行回退，不将通用协议错误 0 泛化为“不支持”。
 
 示意响应的业务部分：
 
