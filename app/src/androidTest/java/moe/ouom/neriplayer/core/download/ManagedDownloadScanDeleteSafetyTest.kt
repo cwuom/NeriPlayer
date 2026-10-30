@@ -292,60 +292,63 @@ class ManagedDownloadScanDeleteSafetyTest {
     @Test fun durableExactSidecarsReplayWithoutAudioMetadataOrCatalog() = runBlocking {
         val previousProgress = GlobalDownloadManager.downloadedSongDeleteProgressMutable.value
         try {
-        GlobalDownloadManager.startupRecoveryMutex.withLock {
-            if (deletePhase != "recover") {
-                val fixture = deletionFixture()
-                val rootKey = ManagedDownloadStorage.currentSnapshotCacheKey(context)
-                assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
-                assertTrue(PersistentDownloadedSongDeleteIntentStore.begin(context, rootKey, listOf(fixture.song)))
-                val plan = ManagedDownloadDeletePlanner().buildFullLibraryDeletePlan(context)
-                assertTrue(plan.snapshotComplete)
-                assertTrue(PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(context, rootKey, plan.requestedReferences))
-                val core = setOf(fixture.audio.uri.toString(), fixture.metadata.uri.toString())
-                assertEquals(core, ManagedDownloadStorage.deleteFullLibraryReferences(context, core))
-                assertTrue(fixture.cover.exists())
-                deleteMarker.writeText(JSONObject().put("pid", android.os.Process.myPid())
-                    .put("cover", fixture.cover.uri.toString())
-                    .put("foreign", org.json.JSONArray(fixture.foreign.map { it.uri.toString() })).toString())
-                if (deletePhase == "seed") {
-                    keepDeleteFixture = true
-                    awaitProcessDeathAtSeedCheckpoint()
-                    return@withLock
+            GlobalDownloadManager.startupRecoveryMutex.withLock {
+                // 后台回放使用删除锁，持久意图必须在同一把锁内建立和消费
+                GlobalDownloadManager.downloadedSongDeleteMutex.withLock deleteReplay@{
+                    if (deletePhase != "recover") {
+                        val fixture = deletionFixture()
+                        val rootKey = ManagedDownloadStorage.currentSnapshotCacheKey(context)
+                        assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
+                        assertTrue(PersistentDownloadedSongDeleteIntentStore.begin(context, rootKey, listOf(fixture.song)))
+                        val plan = ManagedDownloadDeletePlanner().buildFullLibraryDeletePlan(context)
+                        assertTrue(plan.snapshotComplete)
+                        assertTrue(PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(context, rootKey, plan.requestedReferences))
+                        val core = setOf(fixture.audio.uri.toString(), fixture.metadata.uri.toString())
+                        assertEquals(core, ManagedDownloadStorage.deleteFullLibraryReferences(context, core))
+                        assertTrue(fixture.cover.exists())
+                        deleteMarker.writeText(JSONObject().put("pid", android.os.Process.myPid())
+                            .put("cover", fixture.cover.uri.toString())
+                            .put("foreign", org.json.JSONArray(fixture.foreign.map { it.uri.toString() })).toString())
+                        if (deletePhase == "seed") {
+                            keepDeleteFixture = true
+                            awaitProcessDeathAtSeedCheckpoint()
+                            return@deleteReplay
+                        }
+                    }
+                    val state = JSONObject(deleteMarker.readText())
+                    if (deletePhase == "recover") {
+                        assertNotEquals("recovery requires a fresh target process", state.getInt("pid"), android.os.Process.myPid())
+                    }
+                    ManagedDownloadStorage.snapshotCacheStore.invalidate()
+                    ManagedDownloadStorage.treeChildRegistry.clear()
+                    val before = counts()
+                    val startedAt = System.nanoTime()
+                    val waitingProgress = DownloadedSongDeleteProgress(
+                        deleteId = GlobalDownloadManager.downloadedSongDeleteIdGenerator.incrementAndGet(),
+                        phase = DownloadedSongDeletePhase.WAITING_FOR_DOWNLOADS,
+                        requestedSongCount = 1,
+                        fullLibraryDelete = true
+                    )
+                    GlobalDownloadManager.downloadedSongDeleteProgressMutable.value = waitingProgress
+                    assertTrue(GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog(context))
+                    val finishedProgress = requireNotNull(GlobalDownloadManager.downloadedSongDeleteProgressMutable.value)
+                    assertEquals(waitingProgress.deleteId, finishedProgress.deleteId)
+                    assertEquals(DownloadedSongDeletePhase.COMPLETED, finishedProgress.phase)
+                    assertEquals(0, finishedProgress.failedReferenceCount)
+                    val cover = requireNotNull(DocumentFile.fromSingleUri(context, android.net.Uri.parse(state.getString("cover"))))
+                    assertFalse(cover.exists())
+                    val foreign = state.getJSONArray("foreign")
+                    repeat(foreign.length()) {
+                        assertTrue(requireNotNull(DocumentFile.fromSingleUri(context, android.net.Uri.parse(foreign.getString(it)))).exists())
+                    }
+                    assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
+                    val deleteCount = counts().getInt("deleteCalls")
+                    assertFalse("no durable intent remains to replay", GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog(context))
+                    assertEquals("repeat replay must not delete anything", deleteCount, counts().getInt("deleteCalls"))
+                    reportCounters("replay phase=$deletePhase seedPid=${state.getInt("pid")} recoverPid=${android.os.Process.myPid()} elapsedMs=${(System.nanoTime() - startedAt) / 1_000_000}", before)
+                    assertTrue(deleteMarker.delete())
                 }
             }
-            val state = JSONObject(deleteMarker.readText())
-            if (deletePhase == "recover") {
-                assertNotEquals("recovery requires a fresh target process", state.getInt("pid"), android.os.Process.myPid())
-            }
-            ManagedDownloadStorage.snapshotCacheStore.invalidate()
-            ManagedDownloadStorage.treeChildRegistry.clear()
-            val before = counts()
-            val startedAt = System.nanoTime()
-            val waitingProgress = DownloadedSongDeleteProgress(
-                deleteId = GlobalDownloadManager.downloadedSongDeleteIdGenerator.incrementAndGet(),
-                phase = DownloadedSongDeletePhase.WAITING_FOR_DOWNLOADS,
-                requestedSongCount = 1,
-                fullLibraryDelete = true
-            )
-            GlobalDownloadManager.downloadedSongDeleteProgressMutable.value = waitingProgress
-            assertTrue(GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog(context))
-            val finishedProgress = requireNotNull(GlobalDownloadManager.downloadedSongDeleteProgressMutable.value)
-            assertEquals(waitingProgress.deleteId, finishedProgress.deleteId)
-            assertEquals(DownloadedSongDeletePhase.COMPLETED, finishedProgress.phase)
-            assertEquals(0, finishedProgress.failedReferenceCount)
-            val cover = requireNotNull(DocumentFile.fromSingleUri(context, android.net.Uri.parse(state.getString("cover"))))
-            assertFalse(cover.exists())
-            val foreign = state.getJSONArray("foreign")
-            repeat(foreign.length()) {
-                assertTrue(requireNotNull(DocumentFile.fromSingleUri(context, android.net.Uri.parse(foreign.getString(it)))).exists())
-            }
-            assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
-            val deleteCount = counts().getInt("deleteCalls")
-            assertFalse("no durable intent remains to replay", GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog(context))
-            assertEquals("repeat replay must not delete anything", deleteCount, counts().getInt("deleteCalls"))
-            reportCounters("replay phase=$deletePhase seedPid=${state.getInt("pid")} recoverPid=${android.os.Process.myPid()} elapsedMs=${(System.nanoTime() - startedAt) / 1_000_000}", before)
-            assertTrue(deleteMarker.delete())
-        }
         } finally {
             GlobalDownloadManager.downloadedSongDeleteProgressMutable.value = previousProgress
         }
