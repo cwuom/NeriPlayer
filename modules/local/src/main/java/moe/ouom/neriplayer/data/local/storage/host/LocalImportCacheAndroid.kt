@@ -35,6 +35,7 @@ internal fun androidLocalImportCache(context: Context, additionalSongs: () -> Li
         File(context.filesDir, "local_audio_covers"), references::read,
         referenceSnapshotValid = references::isSnapshotValid,
         fileAccessLock = LocalMediaSupport.embeddedCoverCacheLock,
+        isCoverInUse = LocalMediaSupport::isEmbeddedCoverInUse,
         clearReadCaches = LocalMediaSupport::clearCoverLookupCache
     )
 }

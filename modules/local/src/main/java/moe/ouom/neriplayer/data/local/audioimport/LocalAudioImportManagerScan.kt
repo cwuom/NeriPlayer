@@ -111,7 +111,7 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromIndexedMetadataSidecar(
     }.getOrRethrowCancellation {
         NPLogger.w(TAG, "indexed metadata sidecar unavailable: ${it.message}")
     } ?: return song
-    return hydrateLocalSongFromMetadataSidecar(song, metadata)
+    return hydrateLocalSongFromMetadataSidecar(context, song, metadata)
 }
 
 internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
@@ -126,10 +126,11 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
             metadataReference = metadataReference
         )
     }.getOrNull() ?: return song
-    return hydrateLocalSongFromMetadataSidecar(song, metadata)
+    return hydrateLocalSongFromMetadataSidecar(context, song, metadata)
 }
 
 private fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
+    context: Context,
     song: SongItem,
     metadata: LocalMetadataSidecar
 ): SongItem {
@@ -198,8 +199,8 @@ private fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
     if (!hasIdentity && metadata.durationMs <= 0L && resolvedCover == null && metadata.sourceModifiedAtMs == null &&
         metadata.originalLyric == null && metadata.originalTranslatedLyric == null &&
         metadata.originalRomanizedLyric == null
-    ) return song
-    return song.copy(
+    ) return LocalMediaSupport.retainEmbeddedSongCovers(context, song)
+    return LocalMediaSupport.retainEmbeddedSongCovers(context, song.copy(
         sourceModifiedAtMs = metadata.sourceModifiedAtMs ?: song.sourceModifiedAtMs,
         id = metadata.songId ?: song.id,
         name = resolvedName ?: song.name,
@@ -240,7 +241,7 @@ private fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
             ?: song.playlistContextId,
         sourceStableKey = metadata.stableKey?.takeIf(String::isNotBlank)
             ?: song.sourceStableKey
-    )
+    ))
 }
 
 internal fun LocalAudioImportManager.resolveCachedManagedCoverReference(

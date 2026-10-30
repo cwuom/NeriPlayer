@@ -19,6 +19,7 @@ internal class LocalImportCache(
     private val readReferences: suspend () -> Set<String>,
     private val referenceSnapshotValid: () -> Boolean = { true },
     private val fileAccessLock: Any = Any(),
+    private val isCoverInUse: (File) -> Boolean = { false },
     private val clearReadCaches: () -> Unit
 ) : LocalImportCacheAccess {
     override suspend fun scan(): FileStats = try {
@@ -37,11 +38,8 @@ internal class LocalImportCache(
             val candidates = unreferencedCandidates()
             for (candidate in candidates) {
                 currentCoroutineContext().ensureActive()
-                if (!referenceSnapshotValid()) {
-                    success = false
-                    break
-                }
                 val deleted = synchronized(fileAccessLock) {
+                    check(referenceSnapshotValid()) { "Local cover references changed during cleanup" }
                     if (candidate(candidate.file) != candidate) null else candidate.file.delete()
                 }
                 when (deleted) {
@@ -75,12 +73,12 @@ internal class LocalImportCache(
         return candidates.filter { it.file.canonicalPath !in referencedPaths }
     }
 
-    private fun candidate(file: File): Candidate? {
-        if (!GENERATED_COVER_NAME.matches(file.name)) return null
+    private fun candidate(file: File): Candidate? = synchronized(fileAccessLock) {
+        if (!GENERATED_COVER_NAME.matches(file.name) || isCoverInUse(file)) return@synchronized null
         if (Files.isSymbolicLink(directory.toPath())) throw IOException("Local cover cache root changed")
-        val attributes = attributes(file) ?: return null
-        if (!attributes.isRegularFile || attributes.isSymbolicLink) return null
-        return Candidate(file, attributes.size(), attributes.lastModifiedTime().toMillis(), attributes.fileKey())
+        val attributes = attributes(file) ?: return@synchronized null
+        if (!attributes.isRegularFile || attributes.isSymbolicLink) return@synchronized null
+        Candidate(file, attributes.size(), attributes.lastModifiedTime().toMillis(), attributes.fileKey())
     }
 
     private fun attributes(file: File): BasicFileAttributes? = try {

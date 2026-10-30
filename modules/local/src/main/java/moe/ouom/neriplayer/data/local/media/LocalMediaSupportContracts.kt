@@ -416,19 +416,23 @@ private fun isRemoteCoverReference(reference: String): Boolean =
     reference.startsWith("http://", ignoreCase = true) || reference.startsWith("https://", ignoreCase = true)
 
 private fun validateLocalCoverReference(context: Context, uri: Uri): CoverReferenceValidation = when {
-    uri.scheme.equals("file", ignoreCase = true) -> validateCoverFilePath(uri.path)
+    uri.scheme.equals("file", ignoreCase = true) -> validateCoverFilePath(context, uri.path)
     uri.scheme.equals("content", ignoreCase = true) -> validateContentCoverReference(context, uri)
-    uri.scheme.isNullOrBlank() -> validateCoverFilePath(absolutePathOrNull(uri.path))
+    uri.scheme.isNullOrBlank() -> validateCoverFilePath(context, absolutePathOrNull(uri.path))
     else -> CoverReferenceValidation.USABLE
 }
 
 private fun absolutePathOrNull(path: String?): String? = path?.takeIf { it.startsWith("/") }
 
-private fun validateCoverFilePath(path: String?): CoverReferenceValidation =
-    if (path?.let(::File)?.let(::isUsableCoverFile) == true) {
-        CoverReferenceValidation.USABLE
-    } else {
-        CoverReferenceValidation.INVALID
+private fun validateCoverFilePath(context: Context, path: String?): CoverReferenceValidation =
+    synchronized(LocalMediaSupport.embeddedCoverCacheLock) {
+        if (path?.let(::File)?.let(::isUsableCoverFile) == true &&
+            LocalMediaSupport.retainEmbeddedCoverReference(context, path) != null
+        ) {
+            CoverReferenceValidation.USABLE
+        } else {
+            CoverReferenceValidation.INVALID
+        }
     }
 
 internal fun validateContentCoverReference(

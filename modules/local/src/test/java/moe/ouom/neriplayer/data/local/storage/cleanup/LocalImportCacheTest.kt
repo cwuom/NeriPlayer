@@ -139,6 +139,51 @@ class LocalImportCacheTest {
         assertTrue(cached.exists())
     }
 
+    @Test
+    fun finalReferenceValidationSharesTheCoverAccessLockWithDeletion() = runBlocking {
+        val directory = temporary.newFolder()
+        val cached = cover(directory, 'a', 7)
+        val coverAccessLock = Any()
+        val cache = LocalImportCache(
+            directory,
+            { emptySet() },
+            referenceSnapshotValid = { Thread.holdsLock(coverAccessLock) },
+            fileAccessLock = coverAccessLock
+        ) {}
+
+        assertEquals(ExtraCacheClearResult(true, 7, 0, 1), cache.clear())
+        assertFalse(cached.exists())
+    }
+
+    @Test
+    fun aCoverAcquiredAfterTheScanIsExcludedWithoutChangingItsFileAttributes() = runBlocking {
+        val directory = temporary.newFolder()
+        val acquired = cover(directory, 'a', 7)
+        val orphan = cover(directory, 'b', 11)
+        val coverAccessLock = Any()
+        val inUse = mutableSetOf<String>()
+        val cache = LocalImportCache(
+            directory,
+            { emptySet() },
+            referenceSnapshotValid = {
+                assertTrue(Thread.holdsLock(coverAccessLock))
+                inUse += acquired.canonicalPath
+                true
+            },
+            fileAccessLock = coverAccessLock,
+            isCoverInUse = {
+                assertTrue(Thread.holdsLock(coverAccessLock))
+                it.canonicalPath in inUse
+            }
+        ) {}
+
+        assertEquals(FileStats(18, 2), cache.scan())
+        assertEquals(ExtraCacheClearResult(true, 11, 0, 1), cache.clear())
+        assertTrue(acquired.exists())
+        assertFalse(orphan.exists())
+        assertEquals(FileStats.Empty, cache.scan())
+    }
+
     private fun cover(directory: File, key: Char, bytes: Int): File =
         File(directory, "${key.toString().repeat(64)}.jpg").apply { writeBytes(ByteArray(bytes)) }
 }

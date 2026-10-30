@@ -1052,7 +1052,7 @@ object LocalAudioImportManager {
             } else {
                 song.matchedSongId
             }
-        )
+        ).let { LocalMediaSupport.retainEmbeddedSongCovers(context, it) }
     }
 
     /**

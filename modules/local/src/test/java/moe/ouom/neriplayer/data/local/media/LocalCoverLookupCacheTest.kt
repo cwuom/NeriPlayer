@@ -5,9 +5,12 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import java.io.File
 import java.io.InputStream
+import java.net.URI
+import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.storage.cleanup.LocalImportCache
 import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.LocalCoverCacheHit
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.QueriedContentInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.ResolvedInspectableLocalMedia
@@ -15,6 +18,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -25,6 +29,7 @@ import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.isNull
 import org.mockito.Mockito.CALLS_REAL_METHODS
 import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockStatic
 
@@ -151,6 +156,140 @@ class LocalCoverLookupCacheTest {
     }
 
     @Test
+    fun `a reused cover remains owned before its song is published`() = runBlocking {
+        val cached = embeddedCover("content://provider/document/song", byteArrayOf(1, 2, 3))
+        withDecodableImages {
+            assertEquals(
+                cached.toURI().toString(),
+                LocalMediaSupport.findCachedEmbeddedCover(context, "content://provider/document/song")
+            )
+        }
+        val cache = LocalImportCache(
+            cached.parentFile!!,
+            { emptySet() },
+            fileAccessLock = LocalMediaSupport.embeddedCoverCacheLock,
+            isCoverInUse = LocalMediaSupport::isEmbeddedCoverInUse
+        ) { LocalMediaSupport.clearCoverLookupCache() }
+
+        assertEquals(ExtraCacheClearResult(true, 0, 0, 0), cache.clear())
+        assertEquals(ExtraCacheClearResult(true, 0, 0, 0), cache.clear())
+        assertTrue(cached.exists())
+    }
+
+    @Test
+    fun `a remembered embedded cover is retained when a lookup returns it`() = runBlocking {
+        val cached = embeddedCover("content://provider/document/song", byteArrayOf(1, 2, 3))
+        mockStatic(Uri::class.java, CALLS_REAL_METHODS).use { uris ->
+            uris.`when`<Uri> { Uri.parse(anyString()) }.thenAnswer { uri(it.getArgument(0)) }
+            withDecodableImages {
+                LocalMediaSupport.rememberLocalCoverLookup("song|1|2", cached.toURI().toString())
+                assertEquals(
+                    LocalCoverCacheHit(cached.toURI().toString()),
+                    LocalMediaSupport.cachedLocalCoverLookup(context, "song|1|2")
+                )
+            }
+        }
+        LocalMediaSupport.clearCoverLookupCache()
+        val cache = LocalImportCache(
+            cached.parentFile!!,
+            { emptySet() },
+            fileAccessLock = LocalMediaSupport.embeddedCoverCacheLock,
+            isCoverInUse = LocalMediaSupport::isEmbeddedCoverInUse
+        ) {}
+
+        assertEquals(ExtraCacheClearResult(true, 0, 0, 0), cache.clear())
+        assertTrue(cached.exists())
+    }
+
+    @Test
+    fun `a cover removed before retention is not returned as a usable reference`() {
+        val cached = embeddedCover("content://provider/document/song", byteArrayOf(1, 2, 3))
+        assertTrue(cached.delete())
+
+        assertNull(LocalMediaSupport.retainEmbeddedCoverReference(context, cached.toURI().toString()))
+        assertFalse(LocalMediaSupport.isEmbeddedCoverInUse(cached))
+    }
+
+    @Test
+    fun `external and unknown cover files are not retained`() {
+        val external = temporaryFolder.newFile("${"a".repeat(64)}.jpg").apply { writeBytes(byteArrayOf(1)) }
+        val unknown = File(temporaryFolder.root, "local_audio_covers/selected.jpg").apply {
+            requireNotNull(parentFile).mkdirs()
+            writeBytes(byteArrayOf(2))
+        }
+        listOf(external, unknown).forEach { file ->
+            assertEquals(file.path, LocalMediaSupport.retainEmbeddedCoverReference(context, file.path))
+            assertFalse(LocalMediaSupport.isEmbeddedCoverInUse(file))
+        }
+    }
+
+    @Test
+    fun `remote references do not access local storage`() {
+        val remoteContext = mock(Context::class.java)
+        doThrow(IllegalStateException("local storage unavailable")).`when`(remoteContext).filesDir
+
+        assertEquals(
+            "https://img.example.com/cover.jpg",
+            LocalMediaSupport.retainEmbeddedCoverReference(remoteContext, "https://img.example.com/cover.jpg")
+        )
+        assertEquals(
+            "content://provider/cover",
+            LocalMediaSupport.retainEmbeddedCoverReference(remoteContext, "content://provider/cover")
+        )
+        assertNull(LocalMediaSupport.retainEmbeddedCoverReference(remoteContext, null))
+    }
+
+    @Test
+    fun `empty covers and symbolic links are not returned as retained covers`() {
+        val cached = embeddedCover("empty", ByteArray(0))
+        val target = temporaryFolder.newFile("outside.jpg").apply { writeBytes(byteArrayOf(1)) }
+        val link = LocalMediaSupport.embeddedCoverFile(context, "linked")
+        Files.createSymbolicLink(link.toPath(), target.toPath())
+
+        assertNull(LocalMediaSupport.retainEmbeddedCoverReference(context, cached.path))
+        assertNull(LocalMediaSupport.retainEmbeddedCoverReference(context, link.path))
+        assertFalse(LocalMediaSupport.isEmbeddedCoverInUse(cached))
+        assertFalse(LocalMediaSupport.isEmbeddedCoverInUse(target))
+    }
+
+    @Test
+    fun `all local cover fields are retained without changing the song`() = runBlocking {
+        val covers = listOf("cover", "custom", "original").map { embeddedCover(it, byteArrayOf(1, 2, 3)) }
+        val orphan = embeddedCover("orphan", byteArrayOf(4))
+        val song = SongItem(
+            id = 1L, name = "Song", artist = "Artist", album = "Album", albumId = 0L, durationMs = 1L,
+            coverUrl = covers[0].toURI().toString(), customCoverUrl = covers[1].path,
+            originalCoverUrl = covers[2].toURI().toString()
+        )
+        assertSame(song, LocalMediaSupport.retainEmbeddedSongCovers(context, song))
+        LocalMediaSupport.clearCoverLookupCache()
+        val cache = LocalImportCache(
+            covers.first().parentFile!!,
+            { emptySet() },
+            fileAccessLock = LocalMediaSupport.embeddedCoverCacheLock,
+            isCoverInUse = LocalMediaSupport::isEmbeddedCoverInUse
+        ) {}
+
+        assertEquals(ExtraCacheClearResult(true, 1, 0, 1), cache.clear())
+        assertFalse(orphan.exists())
+        covers.forEach { assertTrue(it.exists()) }
+    }
+
+    @Test
+    fun `missing extracted cover fields are removed while other song metadata is preserved`() {
+        val missing = LocalMediaSupport.embeddedCoverFile(context, "missing").toURI().toString()
+        val song = SongItem(
+            id = 1L, name = "Song", artist = "Artist", album = "Album", albumId = 0L, durationMs = 1L,
+            coverUrl = missing, customCoverUrl = "https://img.example.com/custom.jpg", originalCoverUrl = missing
+        )
+
+        assertEquals(
+            song.copy(coverUrl = null, originalCoverUrl = null),
+            LocalMediaSupport.retainEmbeddedSongCovers(context, song)
+        )
+    }
+
+    @Test
     fun `retriever extraction reuses the cover cached for the resolved path`() {
         val cached = embeddedCover("/music/song.flac", byteArrayOf(4, 5, 6))
 
@@ -213,7 +352,7 @@ class LocalCoverLookupCacheTest {
 
     private fun embeddedCover(uriKey: String, bytes: ByteArray): File {
         return LocalMediaSupport.embeddedCoverFile(context, uriKey).apply {
-            parentFile.mkdirs()
+            requireNotNull(parentFile).mkdirs()
             writeBytes(bytes)
         }
     }
@@ -267,7 +406,10 @@ class LocalCoverLookupCacheTest {
 
     private fun uri(value: String): Uri {
         val uri = mock(Uri::class.java)
+        val parsed = URI(value)
         doReturn(value).`when`(uri).toString()
+        doReturn(parsed.scheme).`when`(uri).scheme
+        doReturn(parsed.path).`when`(uri).path
         return uri
     }
 }

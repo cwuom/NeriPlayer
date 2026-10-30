@@ -68,9 +68,19 @@ import java.util.LinkedHashMap
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import moe.ouom.neriplayer.data.local.media.cache.EmbeddedCoverCacheUsage
 
 object LocalMediaSupport {
     internal val embeddedCoverCacheLock = Any()
+
+    internal fun retainEmbeddedCoverReference(context: Context, reference: String?): String? =
+        EmbeddedCoverCacheUsage.retain(context, reference)
+
+    internal fun isEmbeddedCoverInUse(file: File): Boolean = EmbeddedCoverCacheUsage.isInUse(file)
+
+    internal fun retainEmbeddedSongCovers(context: Context, song: SongItem): SongItem =
+        EmbeddedCoverCacheUsage.retainSong(context, song)
+
     internal const val TAG = "LocalMediaSupport"
     internal const val CONSECUTIVE_EMPTY_REFRESH_CACHE_LIMIT = 512
     internal val localLyricsPerfLogCount = AtomicInteger()

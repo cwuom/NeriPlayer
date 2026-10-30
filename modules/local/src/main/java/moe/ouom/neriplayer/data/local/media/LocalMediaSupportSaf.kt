@@ -659,7 +659,7 @@ internal fun LocalMediaSupport.cachedLocalCoverLookup(
         }
         return null
     }
-    return LocalCoverCacheHit(coverUri)
+    return retainEmbeddedCoverReference(context, coverUri)?.let(::LocalCoverCacheHit)
 }
 
 internal fun LocalMediaSupport.isUsableCachedCoverUri(context: Context, coverUri: String): Boolean {
@@ -748,7 +748,7 @@ internal fun LocalMediaSupport.findCachedEmbeddedCover(context: Context, uriKey:
     }
     // 复用旧图也改变代次，避免并发回收删除刚被扫描或播放重新使用的文件
     if (!file.setLastModified(maxOf(System.currentTimeMillis(), file.lastModified() + 1))) return null
-    file.toURI().toString()
+    retainEmbeddedCoverReference(context, file.toURI().toString())
 }
 
 internal fun LocalMediaSupport.embeddedCoverFile(context: Context, uriKey: String): File {
@@ -763,8 +763,10 @@ internal fun LocalMediaSupport.saveEmbeddedCover(context: Context, uriKey: Strin
     val parent = file.parentFile ?: return null
     if (!ensureEmbeddedCoverDirectory(parent)) return null
     val cacheBytes = compactEmbeddedCoverForCache(embeddedPicture) ?: return null
-    writeEmbeddedCoverCache(file, parent, cacheBytes)
-    return file.toURI().toString()
+    return synchronized(embeddedCoverCacheLock) {
+        writeEmbeddedCoverCache(file, parent, cacheBytes)
+        retainEmbeddedCoverReference(context, file.toURI().toString())
+    }
 }
 
 private fun LocalMediaSupport.ensureEmbeddedCoverDirectory(directory: File): Boolean {
@@ -773,7 +775,7 @@ private fun LocalMediaSupport.ensureEmbeddedCoverDirectory(directory: File): Boo
     return false
 }
 
-private fun writeEmbeddedCoverCache(file: File, parent: File, bytes: ByteArray) = synchronized(LocalMediaSupport.embeddedCoverCacheLock) {
+private fun writeEmbeddedCoverCache(file: File, parent: File, bytes: ByteArray) {
     val tempFile = File(parent, ".${file.name}.tmp")
     tempFile.writeBytes(bytes)
     if (!tempFile.renameTo(file)) {

@@ -46,9 +46,9 @@ Configuration import inspects account storage in the backup before restoring any
 
 Cache cleanup preserves downloaded audio, lyrics, and covers. `ExtraCacheClearResult` distinguishes freed file bytes from reusable Room space; deleting records does not immediately shrink the database file. Existing directories, index filenames, and sync Worker class names must remain compatible across upgrades.
 
-本地导入缓存可单独清理完全没有引用的提取封面，并重置临时扫描索引。歌单、历史、统计、队列和下载仍使用的封面，以及手动封面与编辑前原图均会保留。无法完整确认引用，或下载、元数据恢复任务未完成时，不回收封面。
+本地导入缓存可单独清理完全没有引用的提取封面，并重置临时扫描索引。歌单、历史、统计、队列和下载仍使用的封面，以及手动封面与编辑前原图均会保留。本次启动中已使用的封面留待下次冷启动判断，保护尚未完成的导入和预览。无法完整确认引用，或下载、元数据恢复任务未完成时，不回收封面。
 
-Local import cache cleanup removes extracted covers with no remaining references and resets temporary scan indexes. Covers used by playlists, history, statistics, queues, or downloads, custom covers, and originals from before edits are retained. Covers are not reclaimed when references cannot be read completely or download or metadata recovery tasks are unfinished.
+Local import cache cleanup removes extracted covers with no remaining references and resets temporary scan indexes. Covers used by playlists, history, statistics, queues, or downloads, custom covers, and originals from before edits are retained. Covers used during the current app session are reconsidered after the next cold start to protect pending imports and previews. Covers are not reclaimed when references cannot be read completely or download or metadata recovery tasks are unfinished.
 
 | 项目 | 规则 |
 | --- | --- |
