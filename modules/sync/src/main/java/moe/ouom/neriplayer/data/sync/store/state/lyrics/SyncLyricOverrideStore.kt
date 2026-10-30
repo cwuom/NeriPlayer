@@ -14,6 +14,7 @@ import java.io.File
 import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 
 internal class SyncLyricOverrideStore(
     private val preferences: SharedPreferences,
@@ -22,7 +23,7 @@ internal class SyncLyricOverrideStore(
 ) {
     private val mutation = SyncMutationVersionStore(preferences)
     private val recovery = SyncLegacyLyricRecoveryStore(files)
-    private val notifications = SyncLyricOverrideNotifications(preferences, directory, notificationMarker())
+    private val notifications = SyncLyricOverrideNotifications(preferences, directory, initialNotificationMarker())
     val version: StateFlow<Long> = notifications.changes
 
     fun getLyricOverrides(): List<SyncSong> = synchronized(syncMutationLock) {
@@ -44,6 +45,13 @@ internal class SyncLyricOverrideStore(
 
     fun retainLegacyLyricCandidates(candidates: List<SyncSong>) = synchronized(syncMutationLock) {
         if (recovery.retain(candidates)) notifications.committed(notificationMarker())
+    }
+
+    private fun initialNotificationMarker(): String? = try {
+        notificationMarker()
+    } catch (_: SyncStorageUnavailableException) {
+        // 标记未知时仍保留订阅，成功提交后再通知播放器刷新
+        null
     }
 
     private fun notificationMarker(): String =
