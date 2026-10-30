@@ -1088,7 +1088,8 @@ private fun PlayerManager.showLocalEditableMetadataWriteFeedback(
             CoreCommonR.string.local_song_metadata_write_sidecar_only
         }
         LocalMediaMetadataWriteOutcome.NOT_WRITABLE -> CoreCommonR.string.local_song_metadata_write_not_writable
-        LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE -> {
+        LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE,
+        LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER -> {
             CoreCommonR.string.local_song_metadata_write_unsupported
         }
         LocalMediaMetadataWriteOutcome.FAILED -> CoreCommonR.string.local_song_metadata_write_failed

@@ -303,6 +303,7 @@ enum class LocalMediaMetadataWriteOutcome {
     SIDECAR_ONLY,
     NOT_WRITABLE,
     UNSUPPORTED_OR_UNREADABLE,
+    UNSUPPORTED_EMBEDDED_COVER,
     FAILED
 }
 
@@ -318,7 +319,8 @@ internal fun combineEditableMetadataWriteOutcome(
     if (allowSidecarAuthoritativeFallback &&
         directOutcome in setOf(
             LocalMediaMetadataWriteOutcome.FAILED,
-            LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE
+            LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE,
+            LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER
         )
     ) {
         // 部分 WAV 等容器不能由 TagLib 回写，但完整侧载已经通过读回校验。

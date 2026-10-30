@@ -1,9 +1,19 @@
 package moe.ouom.neriplayer.core.player.lifecycle
 
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.update
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.host.settingsRepo
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
+import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
+import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
+
+// 来源偏好变化时同时刷新页面和外部歌词，避免继续沿用旧来源缓存
+internal fun PlayerManager.evictLyricCachesForSourcePreferenceChange() {
+    PlayerLyricsProvider.clearLyricsCaches(neteaseLyricsCache, ytMusicLyricsCache)
+    _lyricsPreferenceRevisionFlow.update { it + 1L }
+    syncExternalBluetoothLyrics(_currentSongFlow.value)
+}
 
 /**
  * B 站 CC 字幕歌词的开关与轨道偏好。

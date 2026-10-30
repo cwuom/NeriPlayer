@@ -22,6 +22,7 @@ internal fun installPlayerDependencies(application: Application) {
 }
 
 private object AppPlayerRepositories : PlayerRepositoryDependencies {
+    override val subsonicRepository get() = AppContainer.subsonicRepository
     override val settingsRepo get() = AppContainer.settingsRepo
     override val biliCookieRepo get() = AppContainer.biliCookieRepo
     override val neteaseCookieRepo get() = AppContainer.neteaseCookieRepo

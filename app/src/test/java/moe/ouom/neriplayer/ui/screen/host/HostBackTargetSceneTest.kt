@@ -44,6 +44,29 @@ class HostBackTargetSceneTest {
     }
 
     @Test
+    fun `server album shares the library detail depth and back target`() {
+        val selected = LibrarySelectedItem.ServerAlbum("server-a", "album-1", "Album", "Artist", null, 2)
+
+        assertEquals(LibraryNavigationScene(selected, 1), libraryNavigationScene(selected, emptyList()))
+        assertEquals(LibraryNavigationScene(null, 0), resolveLibraryBackScene(selected, emptyList()))
+        assertEquals("server-a", selected.summary().profileId)
+        assertEquals("album-1", selected.summary().id)
+    }
+
+    @Test
+    fun `server artist album returns to the same artist before the library root`() {
+        val artist = LibrarySelectedItem.ServerArtist("server-a", "artist / 中文", "Artist", null, 3)
+        val album = LibrarySelectedItem.ServerAlbum("server-a", "album-1", "Album", "Artist", null, 2)
+
+        assertEquals(LibraryNavigationScene(artist, 1), libraryNavigationScene(artist, emptyList()))
+        assertEquals(LibraryNavigationScene(album, 2), libraryNavigationScene(album, listOf(artist)))
+        assertEquals(LibraryNavigationScene(artist, 1), resolveLibraryBackScene(album, listOf(artist)))
+        assertEquals(LibraryNavigationScene(null, 0), resolveLibraryBackScene(artist, emptyList()))
+        assertEquals("server-a", artist.summary().profileId)
+        assertEquals("artist / 中文", artist.summary().id)
+    }
+
+    @Test
     fun `settings back gesture only seeks once the requested page has settled`() {
         assertTrue(
             isSettingsScreenSettled(

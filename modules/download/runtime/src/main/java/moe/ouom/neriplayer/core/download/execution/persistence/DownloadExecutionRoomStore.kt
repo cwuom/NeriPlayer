@@ -299,9 +299,11 @@ internal object DownloadExecutionRoomStore {
         errorCode: String? = null,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
         nowMs: Long = System.currentTimeMillis(),
-        expectedAttemptId: Long? = null
+        expectedAttemptId: Long? = null,
+        retryNotBeforeMs: Long? = null
     ): Boolean {
-        return this.updateStateImpl(context, operationId, state, errorCode, database, nowMs, expectedAttemptId)
+        return this.updateStateImpl(context, operationId, state, errorCode, database, nowMs, expectedAttemptId,
+            retryNotBeforeMs)
     }
 
     suspend fun recordPostCoreRetryFailure(
@@ -311,7 +313,8 @@ internal object DownloadExecutionRoomStore {
         expectedAttemptId: Long?,
         errorCode: String,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
-        nowMs: Long = System.currentTimeMillis()
+        nowMs: Long = System.currentTimeMillis(),
+        retryNotBeforeMs: Long? = null
     ): PostCoreRetryRecord? {
         return this.recordPostCoreRetryFailureImpl(
             operationId,
@@ -319,7 +322,8 @@ internal object DownloadExecutionRoomStore {
             expectedAttemptId,
             errorCode,
             database,
-            nowMs
+            nowMs,
+            retryNotBeforeMs
         )
     }
 

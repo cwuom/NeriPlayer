@@ -79,6 +79,8 @@ class SettingsStorageCacheSectionTest {
                     onClearBiliArchiveCacheChange = {},
                     clearYoutubePlaylistCache = false,
                     onClearYoutubePlaylistCacheChange = {},
+                    clearServerBrowseCache = false,
+                    onClearServerBrowseCacheChange = {},
                     clearLogFiles = false,
                     onClearLogFilesChange = {},
                     clearCrashLogs = false,

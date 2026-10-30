@@ -237,6 +237,10 @@ internal fun LocalMediaSupport.selectEditableMetadataWriteFallback(
         }
         current == LocalMediaMetadataWriteOutcome.FAILED ||
             candidate == LocalMediaMetadataWriteOutcome.FAILED -> LocalMediaMetadataWriteOutcome.FAILED
+        current == LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER ||
+            candidate == LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER -> {
+            LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER
+        }
         current == LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE ||
             candidate == LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE -> {
             LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE
@@ -447,21 +451,21 @@ internal fun LocalMediaSupport.writeEditableMetadataDirectTransaction(
         return EditableMetadataWriteTransaction(LocalMediaMetadataWriteOutcome.FAILED)
     }
 
-    val verified = verifyEditableMetadataReadback(
+    val readbackOutcome = verifyEditableMetadataReadback(
         context = context,
         song = song,
         sourceUri = sourceUri,
         resolved = resolved,
         metadataSnapshot = metadataSnapshot
     )
-    if (!verified) {
+    if (readbackOutcome != LocalMediaMetadataWriteOutcome.SUCCESS) {
         logEditableMetadataFailure(
             "readback",
             sourceUri,
             IllegalStateException("required metadata readback mismatch")
         )
         rollbackEmbeddedMetadata()
-        return EditableMetadataWriteTransaction(LocalMediaMetadataWriteOutcome.FAILED)
+        return EditableMetadataWriteTransaction(readbackOutcome)
     }
 
     if (metadataSnapshot.picturePlan !is EditableCoverWritePlan.Unchanged) {
@@ -479,13 +483,15 @@ internal fun LocalMediaSupport.verifyEditableMetadataReadback(
     sourceUri: Uri,
     resolved: ResolvedInspectableLocalMedia,
     metadataSnapshot: EditableMetadataSnapshot
-): Boolean {
+): LocalMediaMetadataWriteOutcome {
     var failedPropertyKeys: Set<String> = emptySet()
     var coverVerified = false
+    var missingWaveCover = false
     val preservedCommentKeys = metadataSnapshot.updatedProperties.keys.filter {
         it.equals("COMMENT", ignoreCase = true) || it.startsWith("COMMENT:", ignoreCase = true)
     }.toSet()
     val verified = retryEditableMetadataReadback(sourceUri.scheme) {
+        missingWaveCover = false
         openTagLibDescriptor(
             context = context,
             uri = sourceUri,
@@ -542,6 +548,9 @@ internal fun LocalMediaSupport.verifyEditableMetadataReadback(
                         logEditableMetadataFailure("readback_cover", sourceUri, error)
                         return@use false
                     }
+                    missingWaveCover = propertiesMatch && pictures.isEmpty() &&
+                        picturePlan.pictures.isNotEmpty() &&
+                        resolved.fileExtension?.lowercase(Locale.ROOT) in setOf("wav", "wave")
                     hasExpectedEditableCover(
                         actualPictures = pictures,
                         expectedPictures = picturePlan.pictures,
@@ -563,7 +572,11 @@ internal fun LocalMediaSupport.verifyEditableMetadataReadback(
     if (!verified) {
         NPLogger.d(TAG, "metadata readback diagnostics: keys=$failedPropertyKeys, coverVerified=$coverVerified")
     }
-    return verified
+    return when {
+        verified -> LocalMediaMetadataWriteOutcome.SUCCESS
+        missingWaveCover -> LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER
+        else -> LocalMediaMetadataWriteOutcome.FAILED
+    }
 }
 
 data class EmbeddedMetadataPropertyPlan(val properties: PropertyMap, val requiredKeys: Set<String>)
@@ -672,7 +685,13 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
                 "暂存 TagLib 回写未确认，保留原音频并等待重试: " +
                     "stage=staged_taglib, uri=$sourceUri, outcome=$stagedOutcome"
             )
-            return EditableMetadataWriteTransaction(fallbackOutcome)
+            return EditableMetadataWriteTransaction(
+                if (stagedOutcome == LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER) {
+                    stagedOutcome
+                } else {
+                    fallbackOutcome
+                }
+            )
         }
         val preparedRecord = companionTransaction?.record ?: LocalMediaMetadataRecoveryStore.begin(
             context = context,

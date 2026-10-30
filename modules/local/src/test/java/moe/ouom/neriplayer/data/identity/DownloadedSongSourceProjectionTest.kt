@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.model.server.ServerSongRef
 import moe.ouom.neriplayer.data.sync.identity.stableRemoteIdentityId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -15,6 +16,24 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DownloadedSongSourceProjectionTest {
+    @Test
+    fun `downloaded server songs retain account scoped identity through local projection`() {
+        val first = ServerSongRef("00000000-0000-0000-0000-000000000001", "same-id")
+        val second = ServerSongRef("00000000-0000-0000-0000-000000000002", "same-id")
+        val projected = listOf(first, second).map { ref ->
+            downloaded(id = ref.numericId, sourceChannelId = ServerSongRef.CHANNEL,
+                sourceIdentityAlbum = ServerSongRef.CHANNEL, sourceAudioId = ref.audioId,
+                sourceMediaUri = ref.mediaUri).toPlaybackSongItem()
+        }
+        for ((ref, item) in listOf(first, second).zip(projected)) {
+            assertEquals(SongIdentity(ref.numericId, ServerSongRef.CHANNEL, ref.mediaUri), item.identity())
+            assertEquals(item.identity().stableKey(), item.sourceStableKey)
+            assertEquals("/music/Song.flac", item.localFilePath)
+            assertEquals(ref, ServerSongRef.from(item))
+        }
+        org.junit.Assert.assertNotEquals(projected[0].stableKey(), projected[1].stableKey())
+    }
+
     @Test
     fun `netease downloads project every stored field onto the playback item`() {
         val song = downloaded(

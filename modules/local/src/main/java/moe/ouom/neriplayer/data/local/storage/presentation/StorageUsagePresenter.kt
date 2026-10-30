@@ -87,6 +87,7 @@ private val sections = listOf(
         ItemText(StorageUsageItemKind.BiliFavoriteCache, CoreCommonR.string.storage_type_bili_favorite_cache, CoreCommonR.string.storage_desc_bili_favorite_cache),
         ItemText(StorageUsageItemKind.BiliArchiveCache, CoreCommonR.string.storage_type_bili_archive_cache, CoreCommonR.string.storage_desc_bili_archive_cache),
         ItemText(StorageUsageItemKind.YouTubePlaylistCache, CoreCommonR.string.storage_type_youtube_playlist_cache, CoreCommonR.string.storage_desc_youtube_playlist_cache),
+        ItemText(StorageUsageItemKind.ServerBrowseCache, CoreCommonR.string.storage_type_server_browse_cache, CoreCommonR.string.storage_desc_server_browse_cache),
         ItemText(StorageUsageItemKind.OtherCache, CoreCommonR.string.storage_type_other_cache, CoreCommonR.string.storage_desc_other_cache),
         ItemText(StorageUsageItemKind.LogFiles, CoreCommonR.string.storage_type_log_files, CoreCommonR.string.storage_desc_log_files),
         ItemText(StorageUsageItemKind.CrashLogs, CoreCommonR.string.storage_type_crash_logs, CoreCommonR.string.storage_desc_crash_logs)

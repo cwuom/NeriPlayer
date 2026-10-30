@@ -103,6 +103,11 @@ import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
 import moe.ouom.neriplayer.ui.util.restorePlaylistSummary
 import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
+import moe.ouom.neriplayer.platform.subsonic.repository.ServerAlbum as MusicServerAlbum
+import moe.ouom.neriplayer.platform.subsonic.repository.ServerArtist as MusicServerArtist
+import moe.ouom.neriplayer.ui.screen.server.album.ServerAlbumDetailScreen
+import moe.ouom.neriplayer.ui.screen.server.artist.ServerArtistDetailScreen
+import moe.ouom.neriplayer.ui.screen.server.artist.serverArtistDetailKey
 
 @Parcelize
 sealed class LibrarySelectedItem : Parcelable {
@@ -115,6 +120,38 @@ sealed class LibrarySelectedItem : Parcelable {
     @Parcelize
     data class LocalArtist(val artistName: String) : LibrarySelectedItem() {
         override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "localArtist", "artistName" to artistName)
+    }
+    @Parcelize
+    data class ServerAlbum(
+        val profileId: String,
+        val albumId: String,
+        val name: String,
+        val artist: String,
+        val coverUrl: String?,
+        val songCount: Int
+    ) : LibrarySelectedItem() {
+        fun summary() = MusicServerAlbum(profileId, albumId, name, artist, coverUrl, songCount)
+
+        override fun saveState() = hashMapOf(
+            SAVED_TYPE_KEY to "serverAlbum", "profileId" to profileId, "albumId" to albumId,
+            "name" to name, "artist" to artist, "coverUrl" to coverUrl, "songCount" to songCount
+        )
+    }
+    @Parcelize
+    data class ServerArtist(
+        val profileId: String,
+        val artistId: String,
+        val name: String,
+        val coverUrl: String?,
+        val albumCount: Int,
+        val fallbackCoverUrl: String? = null
+    ) : LibrarySelectedItem() {
+        fun summary() = MusicServerArtist(profileId, artistId, name, coverUrl, albumCount, fallbackCoverUrl)
+
+        override fun saveState() = hashMapOf(
+            SAVED_TYPE_KEY to "serverArtist", "profileId" to profileId, "artistId" to artistId,
+            "name" to name, "coverUrl" to coverUrl, "albumCount" to albumCount
+        ).apply { fallbackCoverUrl?.let { put("fallbackCoverUrl", it) } }
     }
     @Parcelize
     data class Hot(val monthly: Boolean) : LibrarySelectedItem() {
@@ -476,6 +513,7 @@ fun LibraryHostScreen(
                     is LibrarySelectedItem.NeteaseArtist -> "netease_artist_${item.artist.id}"
                     is LibrarySelectedItem.YouTubeCreator -> youtubeMusicCreatorDetailStateKey(item.summary())
                     is LibrarySelectedItem.BiliUploader -> "bili_uploader_${item.uploader.mid}"
+                    is LibrarySelectedItem.ServerArtist -> serverArtistDetailKey(item.summary())
                     else -> item
                 }
             },
@@ -534,6 +572,18 @@ fun LibraryHostScreen(
                                 LibraryScreen(
                             initialTab = selectedTab,
                             onTabChange = { selectedTab = it },
+                            onServerAlbumClick = { album ->
+                                skipDetailCloseAnimation = false
+                                openLibrarySelectedItem(LibrarySelectedItem.ServerAlbum(
+                                    album.profileId, album.id, album.name, album.artist, album.coverUrl, album.songCount
+                                ))
+                            },
+                            onServerArtistClick = { artist ->
+                                skipDetailCloseAnimation = false
+                                openLibrarySelectedItem(LibrarySelectedItem.ServerArtist(
+                                    artist.profileId, artist.id, artist.name, artist.coverUrl, artist.albumCount, artist.fallbackCoverUrl
+                                ))
+                            },
                             localListState = localListState,
                             favoriteListState = favoriteListState,
                             neteaseAlbumState = neteaseAlbumState,
@@ -704,6 +754,31 @@ fun LibraryHostScreen(
                                 onSongClick = onSongClick,
                                 offlineMode = offlineMode
                             )
+                        }
+
+                        is LibrarySelectedItem.ServerAlbum -> {
+                            ServerAlbumDetailScreen(
+                                album = current.summary(),
+                                onBack = { closeSelectedDetail() },
+                                onSongClick = onSongClick,
+                                offlineMode = offlineMode
+                            )
+                        }
+
+                        is LibrarySelectedItem.ServerArtist -> {
+                            libraryStateHolder.SaveableStateProvider(serverArtistDetailKey(current.summary())) {
+                                ServerArtistDetailScreen(
+                                    artist = current.summary(),
+                                    onBack = { closeSelectedDetail() },
+                                    onAlbumClick = { album ->
+                                        creatorParents = creatorParents + current
+                                        openLibrarySelectedItem(LibrarySelectedItem.ServerAlbum(
+                                            album.profileId, album.id, album.name, album.artist, album.coverUrl, album.songCount
+                                        ))
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
                         }
 
                         is LibrarySelectedItem.Hot -> {
@@ -881,6 +956,8 @@ internal val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
 private val librarySelectedItemRestorers: Map<String, (Map<String, Any?>) -> LibrarySelectedItem?> = mapOf(
     "local" to { saved -> saved.savedNumber("playlistId")?.toLong()?.let(LibrarySelectedItem::Local) },
     "localArtist" to { saved -> saved.savedNonBlankString("artistName")?.let(LibrarySelectedItem::LocalArtist) },
+    "serverAlbum" to ::restoreServerAlbumItem,
+    "serverArtist" to ::restoreServerArtistItem,
     "hot" to { saved -> LibrarySelectedItem.Hot(saved["monthly"] == true) },
     "neteaseAlbum" to { saved -> restoreAlbumSummary(saved.savedMap("album"))?.let(LibrarySelectedItem::NeteaseAlbum) },
     "netease" to { saved -> restorePlaylistSummary(saved.savedMap("playlist"))?.let(LibrarySelectedItem::Netease) },
@@ -891,6 +968,24 @@ private val librarySelectedItemRestorers: Map<String, (Map<String, Any?>) -> Lib
     "biliArtist" to ::restoreBiliUploaderItem,
     "youtubeArtist" to ::restoreYouTubeCreatorItem
 )
+
+private fun restoreServerAlbumItem(saved: Map<String, Any?>): LibrarySelectedItem? {
+    val profileId = saved.savedNonBlankString("profileId") ?: return null
+    val albumId = saved.savedNonBlankString("albumId") ?: return null
+    return LibrarySelectedItem.ServerAlbum(
+        profileId, albumId, saved.savedString("name").orEmpty(), saved.savedString("artist").orEmpty(),
+        saved.savedString("coverUrl"), saved.savedNumber("songCount")?.toInt()?.coerceAtLeast(0) ?: 0
+    )
+}
+
+private fun restoreServerArtistItem(saved: Map<String, Any?>): LibrarySelectedItem? {
+    val profileId = saved.savedNonBlankString("profileId") ?: return null
+    val artistId = saved.savedNonBlankString("artistId") ?: return null
+    return LibrarySelectedItem.ServerArtist(
+        profileId, artistId, saved.savedString("name").orEmpty(), saved.savedString("coverUrl"),
+        saved.savedNumber("albumCount")?.toInt()?.coerceAtLeast(0) ?: 0, saved.savedString("fallbackCoverUrl")
+    )
+}
 
 private fun restoreNeteaseArtistAlbumItem(saved: Map<String, Any?>): LibrarySelectedItem? {
     val artist = saved.savedNeteaseArtist() ?: return null

@@ -89,6 +89,7 @@ Current positioning:
 
 - **Account as capability**: third-party platform authorization enables search,
   playback, playlists, and favorites access.
+- **Self-hosted music**: connect to Navidrome / OpenSubsonic under Library → Music servers to browse and search albums, songs, and artists with the existing player, artwork, lyrics, local favorites, playlists, and original-file offline downloads. Server writes, Listen Together, and profile migration are not supported yet. See [Connecting a music server](#connecting-a-music-server).
 - **Local-first**: playback cache, downloads, playlists, history, settings, and
   auth data are stored locally on the device by default.
 - **Optional sync**: playlists, favorites, recent plays, and playback stats can be
@@ -105,6 +106,20 @@ Current positioning:
 Architecture, startup flow, and test guardrails live in
 [docs/implementation_EN.md](./docs/implementation_EN.md) and
 [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md).
+
+### Connecting a music server
+
+1. Under Settings → Third-party platform sign-in → Music servers, enter a name, address, username, and password. Save after the connection check succeeds.
+2. Use the server's base address, such as `https://music.example.com:4533/navidrome/`. Ports and reverse-proxy subpaths are supported; omit `/app/` and `/rest/`.
+3. Open Library → Music servers, select a profile, and browse or search albums, songs, and artists. Open an artist to browse their albums. Switching categories keeps the query; searching inside an album filters only that album.
+4. Play a song, or add it to favorites, the queue, or a local playlist. Structured server lyrics are preferred, with the standard lyrics endpoint as a fallback; decoding and seeking depend on the server and device.
+5. Long-press a song or select multiple songs and choose Download to local. When the server permits downloads, files keep their original format and use the existing download manager for progress and retries. Completed files appear under Local music → Downloaded and remain playable offline or after removing the server profile.
+
+Opening a profile automatically loads and caches all three metadata directories. Searches use the local directories, and caches are reused for 24 hours; refresh manually after changing your library. Failed refreshes keep the previous complete directory. Artist images use server artwork first, then the last available song cover for that artist. Artwork loads on demand, and audio is fetched for playback or explicit downloads.
+
+Profiles and passwords stay in encrypted local storage. Editing changes only the name and password. A different address or username requires a new profile; existing playlist entries are not migrated automatically, and ordinary sync does not migrate server credentials. Browse caches and next-song prefetch do not provide complete offline downloads. See the [API contract](docs/music-server-api.md) for protocol and client behavior (Chinese).
+
+Server artwork syncs as a real endpoint URL without authentication parameters. Another Android device can load it using its own account after adding the same server address and username. Private servers still require sign-in; passwords and access tokens are not included in synced artwork URLs. Desktop clients can retain these URLs for a future music-server integration; desktop artwork loading is not implemented yet.
 
 ---
 
