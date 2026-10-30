@@ -233,17 +233,18 @@ class SyncBackendTransportTest {
         val store = tokenStorage()
         store.saveToken("test-token")
         store.saveRepository("owner", "repo")
+        store.setAutoSyncEnabled(true)
         store.saveLastRemoteSha("previous-sha")
         store.saveLastSyncTime(50L)
         val configuration = store.snapshot()
-        val fixture = GitHubFixture(storage = store)
+        val fixture = GitHubFixture(storage = store, metadataGuard = store.captureSyncMetadataGuard())
         fixture.failure = 401
 
         val error = checkNotNull(fixture.backend.fetch().exceptionOrNull())
         assertTrue(error is TokenExpiredException)
         fixture.backend.onFailure(error)
 
-        assertEquals(configuration, store.snapshot())
+        assertEquals(configuration.copy(autoSyncEnabled = false), store.snapshot())
         assertTrue(store.isConfigured())
         assertEquals("previous-sha", store.getLastRemoteSha())
         assertEquals(50L, store.getLastSyncTime())
@@ -254,7 +255,7 @@ class SyncBackendTransportTest {
         val store = tokenStorage()
         store.saveToken("test-token")
         store.saveRepository("owner", "repo")
-        val fixture = GitHubFixture(storage = store)
+        val fixture = GitHubFixture(storage = store, metadataGuard = store.captureSyncMetadataGuard())
         fixture.failure = 401
         val error = checkNotNull(fixture.backend.fetch().exceptionOrNull())
         assertTrue(error is TokenExpiredException)
@@ -711,7 +712,8 @@ class SyncBackendTransportTest {
     private inner class GitHubFixture(
         val cacheDirectory: File = temporary.newFolder(),
         private val repoName: String = "repo",
-        val storage: SecureTokenStorage = mock(SecureTokenStorage::class.java)
+        val storage: SecureTokenStorage = mock(SecureTokenStorage::class.java),
+        metadataGuard: (() -> Unit) -> Boolean = { write -> write(); true }
     ) {
         val files = mutableMapOf<String, ByteArray>()
         val reads = CopyOnWriteArrayList<Request>()
@@ -867,7 +869,7 @@ class SyncBackendTransportTest {
             "owner", repoName, SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { followUps++ },
             archive,
             authorizeLegacyMigration = { authorizeMigration(it) },
-            currentProtocolObserved = { currentObservations++ }, metadataGuard = { write -> write(); true })
+            currentProtocolObserved = { currentObservations++ }, metadataGuard = metadataGuard)
     }
 
     private inner class WebDavFixture {
