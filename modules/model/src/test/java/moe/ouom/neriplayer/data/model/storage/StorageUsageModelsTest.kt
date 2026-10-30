@@ -31,6 +31,7 @@ class StorageUsageModelsTest {
             none.copy(downloadStaging = true),
             none.copy(sharedMedia = true),
             none.copy(lyricsCache = true),
+            none.copy(localImportCache = true),
             none.copy(logFiles = true),
             none.copy(crashLogs = true)
         ).forEach { options ->

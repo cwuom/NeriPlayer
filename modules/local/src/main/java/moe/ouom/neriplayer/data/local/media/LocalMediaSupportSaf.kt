@@ -737,7 +737,7 @@ internal fun LocalMediaSupport.extractEmbeddedCoverWithTagLib(
     return saveEmbeddedCover(context, uriKey, coverBytes)
 }
 
-internal fun LocalMediaSupport.findCachedEmbeddedCover(context: Context, uriKey: String): String? {
+internal fun LocalMediaSupport.findCachedEmbeddedCover(context: Context, uriKey: String): String? = synchronized(embeddedCoverCacheLock) {
     val file = embeddedCoverFile(context, uriKey)
     if (!file.isFile || file.length() <= 0L) return null
     if (!isUsableCoverFile(file)) {
@@ -746,7 +746,9 @@ internal fun LocalMediaSupport.findCachedEmbeddedCover(context: Context, uriKey:
         }
         return null
     }
-    return file.toURI().toString()
+    // 复用旧图也改变代次，避免并发回收删除刚被扫描或播放重新使用的文件
+    if (!file.setLastModified(maxOf(System.currentTimeMillis(), file.lastModified() + 1))) return null
+    file.toURI().toString()
 }
 
 internal fun LocalMediaSupport.embeddedCoverFile(context: Context, uriKey: String): File {
@@ -771,7 +773,7 @@ private fun LocalMediaSupport.ensureEmbeddedCoverDirectory(directory: File): Boo
     return false
 }
 
-private fun writeEmbeddedCoverCache(file: File, parent: File, bytes: ByteArray) {
+private fun writeEmbeddedCoverCache(file: File, parent: File, bytes: ByteArray) = synchronized(LocalMediaSupport.embeddedCoverCacheLock) {
     val tempFile = File(parent, ".${file.name}.tmp")
     tempFile.writeBytes(bytes)
     if (!tempFile.renameTo(file)) {

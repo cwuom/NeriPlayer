@@ -93,7 +93,13 @@ internal fun rememberAppSettingsCacheClearOwner(application: Application): AppSe
             clearExtraCaches = { options ->
                 // Cancel server snapshot writers before the shared Room cleanup.
                 if (options.serverBrowseCache) moe.ouom.neriplayer.core.di.AppContainer.subsonicRepository.browseCache.clear(clearStore = false)
-                clearExtraStorageCaches(context, options)
+                clearExtraStorageCaches(
+                    context,
+                    options,
+                    additionalSongsProvider = {
+                        PlayerManager.currentQueueFlow.value + listOfNotNull(PlayerManager.currentSongFlow.value)
+                    }
+                )
             },
             formatExtraResult = { result ->
                 formatExtraCacheClearResult(

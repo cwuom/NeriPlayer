@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.data.local.storage
 import moe.ouom.neriplayer.data.local.storage.host.AndroidStorageCacheFiles
 import moe.ouom.neriplayer.data.local.storage.host.AndroidStoragePlatformCaches
 import moe.ouom.neriplayer.data.local.storage.host.AndroidStorageUsageSource
+import moe.ouom.neriplayer.data.local.storage.host.androidLocalImportCache
 import moe.ouom.neriplayer.data.local.storage.host.storageLocations
 import moe.ouom.neriplayer.data.local.storage.presentation.StorageUsagePresenter
 import moe.ouom.neriplayer.data.local.storage.cleanup.StorageCacheCleaner
@@ -34,23 +35,31 @@ import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
 import moe.ouom.neriplayer.data.local.storage.scan.StorageUsageScanner
 import android.content.Context
+import moe.ouom.neriplayer.data.model.SongItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withContext(Dispatchers.IO) {
+suspend fun analyzeStorageUsage(
+    context: Context,
+    additionalSongsProvider: () -> List<SongItem> = { emptyList() }
+): StorageUsageSummary = withContext(Dispatchers.IO) {
     val appContext = context.applicationContext
-    val snapshot = StorageUsageScanner(storageLocations(appContext), AndroidStorageUsageSource(appContext)).scan()
+    val snapshot = StorageUsageScanner(
+        storageLocations(appContext), AndroidStorageUsageSource(appContext), androidLocalImportCache(appContext, additionalSongsProvider)
+    ).scan()
     StorageUsagePresenter(appContext.resources).present(snapshot)
 }
 
 suspend fun clearExtraStorageCaches(
     context: Context,
-    options: StorageCacheClearOptions
+    options: StorageCacheClearOptions,
+    additionalSongsProvider: () -> List<SongItem> = { emptyList() }
 ): ExtraCacheClearResult = withContext(Dispatchers.IO) {
     val appContext = context.applicationContext
     StorageCacheCleaner(
         storageLocations(appContext),
         AndroidStorageCacheFiles(appContext),
-        AndroidStoragePlatformCaches(appContext)
+        AndroidStoragePlatformCaches(appContext),
+        androidLocalImportCache(appContext, additionalSongsProvider)
     ).clear(options)
 }

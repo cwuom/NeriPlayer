@@ -16,32 +16,46 @@ import moe.ouom.neriplayer.data.model.storage.StorageUsageMeasurement
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSnapshot
 import moe.ouom.neriplayer.data.local.storage.policy.storageScanOrDefault
 import moe.ouom.neriplayer.data.local.storage.source.StorageLocations
+import moe.ouom.neriplayer.data.local.storage.source.LocalImportCacheAccess
 import moe.ouom.neriplayer.data.local.storage.source.StorageUsageSource
 import moe.ouom.neriplayer.data.local.storage.source.storageCacheItemKinds
 import moe.ouom.neriplayer.data.local.storage.source.storagePlatformCaches
 
 class StorageUsageScanner(
     private val locations: StorageLocations,
-    private val source: StorageUsageSource
+    private val source: StorageUsageSource,
+    private val localImport: LocalImportCacheAccess? = null
 ) {
     suspend fun scan(): StorageUsageSnapshot = coroutineScope {
         val library = async { storageScanOrDefault(ManagedDownloadLibraryUsage.Empty) { source.downloadLibraryUsage() } }
         val platform = async { storageScanOrDefault(emptyMap()) { source.platformCacheStats() } }
         val index = async { storageScanOrDefault(StorageDownloadIndexStats.Empty) { source.downloadIndexStats() } }
         val database = async { statsOfFiles(locations.databaseFiles) }
-        assembleSnapshot(library.await(), platform.await(), index.await(), database.await())
+        val importCache = async { storageScanOrDefault(FileStats.Empty) { localImport?.scan() ?: FileStats.Empty } }
+        assembleSnapshot(library.await(), platform.await(), index.await(), database.await(), importCache.await())
     }
 
     private fun assembleSnapshot(
         library: ManagedDownloadLibraryUsage,
         platform: Map<String, StoragePlatformCacheStats>,
         index: StorageDownloadIndexStats,
-        database: FileStats
+        database: FileStats,
+        importCache: FileStats
     ): StorageUsageSnapshot {
         val attributed = normalizeDatabaseStorageAttribution(platform, index, database.sizeBytes)
         val items = cacheMeasurements(attributed.platformCacheStats).toMutableMap()
         items.putAll(libraryMeasurements(library, attributed.downloadIndexStorageStats))
         items.putAll(appDataMeasurements(library, attributed, database))
+        val allCovers = items.getValue(StorageUsageItemKind.LocalCovers)
+        val cleanableCovers = FileStats(
+            importCache.sizeBytes.coerceIn(0, allCovers.stats.sizeBytes),
+            importCache.fileCount.coerceIn(0, allCovers.stats.fileCount)
+        )
+        items[StorageUsageItemKind.LocalImportCache] = StorageUsageMeasurement(cleanableCovers, locations.localCoverDir.absolutePath)
+        items[StorageUsageItemKind.LocalCovers] = allCovers.copy(stats = FileStats(
+            allCovers.stats.sizeBytes - cleanableCovers.sizeBytes,
+            allCovers.stats.fileCount - cleanableCovers.fileCount
+        ))
         items[StorageUsageItemKind.ProtectedCache] = StorageUsageMeasurement(
             measuredStatsOf(locations.cacheDir, locations.cacheExclusions()), locations.cacheDir.absolutePath
         )

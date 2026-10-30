@@ -39,6 +39,7 @@
     <string name="storage_type_crash_logs">Crash Logs</string>
     <string name="storage_type_other_cache">Other Cache</string>
     <string name="storage_type_local_covers">Local Music Covers</string>
+    <string name="storage_type_local_import_cache">Local Import Cache</string>
     <string name="storage_type_custom_background">Custom Background</string>
     <string name="storage_type_legacy_migration_files">Legacy Migration Files</string>
     <string name="storage_type_database">Room Database and Indexes</string>
@@ -60,6 +61,7 @@
     <string name="storage_desc_log_files">App activity logs for troubleshooting</string>
     <string name="storage_desc_crash_logs">Reports for troubleshooting crashes or freezes</string>
     <string name="storage_desc_local_covers">Covers extracted or saved for imported local music</string>
+    <string name="storage_desc_local_import_cache">Remove extracted covers with no remaining references and reset temporary scan indexes; keep covers still used by history or statistics</string>
     <string name="storage_desc_custom_background">A managed copy of the selected app background image</string>
     <string name="storage_desc_legacy_migration_files">Legacy JSON kept only for Room migration fallback; startup cleanup removes it after Room becomes primary</string>
     <string name="storage_desc_database">Room database and WAL/SHM files; platform cache pages are apportioned above, while core data is never removed by cache cleanup</string>

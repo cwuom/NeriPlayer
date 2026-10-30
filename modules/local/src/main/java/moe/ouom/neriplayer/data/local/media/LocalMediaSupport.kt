@@ -70,6 +70,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 object LocalMediaSupport {
+    internal val embeddedCoverCacheLock = Any()
     internal const val TAG = "LocalMediaSupport"
     internal const val CONSECUTIVE_EMPTY_REFRESH_CACHE_LIMIT = 512
     internal val localLyricsPerfLogCount = AtomicInteger()

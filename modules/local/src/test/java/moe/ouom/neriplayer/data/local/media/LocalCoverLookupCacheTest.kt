@@ -5,6 +5,9 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import java.io.File
 import java.io.InputStream
+import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.data.local.storage.cleanup.LocalImportCache
+import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.LocalCoverCacheHit
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.QueriedContentInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.ResolvedInspectableLocalMedia
@@ -132,6 +135,18 @@ class LocalCoverLookupCacheTest {
                 LocalMediaSupport.findCachedEmbeddedCover(context, "content://provider/document/song")
             )
         }
+        assertTrue(cached.exists())
+    }
+
+    @Test
+    fun `reusing a candidate while references load protects it from cleanup`() = runBlocking {
+        val cached = embeddedCover("content://provider/document/song", byteArrayOf(1, 2, 3))
+        val cache = LocalImportCache(cached.parentFile!!, {
+            withDecodableImages { LocalMediaSupport.findCachedEmbeddedCover(context, "content://provider/document/song") }
+            emptySet()
+        }, fileAccessLock = LocalMediaSupport.embeddedCoverCacheLock) {}
+
+        assertEquals(ExtraCacheClearResult(true, 0, 0, 0), cache.clear())
         assertTrue(cached.exists())
     }
 
