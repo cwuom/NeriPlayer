@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.core.player.download.transfer
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.network.range.ChunkRequestIOException
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicFailureKind
 import okhttp3.Request
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,6 +17,15 @@ import java.io.File
 import java.io.IOException
 
 class AudioDownloadTransferPolicyTest {
+    @Test
+    fun `typed server failures preserve transient retry and reject permanent failures`() {
+        for (kind in SubsonicFailureKind.entries) {
+            val error = SubsonicException(-1, "safe failure", kind)
+            assertEquals("kind=$kind", error.retryable,
+                AudioDownloadTransferPolicy.shouldRetryDownloadFailureForSource(error, false))
+        }
+    }
+
     @get:Rule
     val tempFolder = TemporaryFolder()
 

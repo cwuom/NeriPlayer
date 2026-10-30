@@ -165,6 +165,19 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `unsupported embedded cover only accepts a complete verified sidecar fallback`() {
+        assertEquals(LocalMediaMetadataWriteOutcome.SIDECAR_ONLY,
+            combineEditableMetadataWriteOutcome(LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER,
+                lyricsSidecarWritten = true, coverSidecarWritten = true, allowSidecarAuthoritativeFallback = true))
+        assertEquals(LocalMediaMetadataWriteOutcome.FAILED,
+            combineEditableMetadataWriteOutcome(LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER,
+                lyricsSidecarWritten = true, coverSidecarWritten = false, allowSidecarAuthoritativeFallback = true))
+        assertEquals(LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER,
+            combineEditableMetadataWriteOutcome(LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER,
+                lyricsSidecarWritten = true, coverSidecarWritten = true))
+    }
+
+    @Test
     fun `missing lyric sidecar is repaired only for variants that have content`() {
         assertTrue(
             LocalMediaSupport.shouldRebuildLyricSidecars(

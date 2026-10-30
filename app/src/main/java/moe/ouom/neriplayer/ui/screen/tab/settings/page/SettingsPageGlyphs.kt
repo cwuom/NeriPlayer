@@ -58,6 +58,7 @@ private val Slate = Color(0xFF636366)
 
 internal fun SettingsPage.cleanGlyph(): SettingsPageGlyph = when (this) {
     SettingsPage.Accounts -> SettingsPageGlyph(Icons.Rounded.AccountCircle, Indigo)
+    SettingsPage.MusicServers -> SettingsPageGlyph(Icons.Rounded.Storage, Indigo)
     SettingsPage.General -> SettingsPageGlyph(Icons.Rounded.Settings, Graphite)
     SettingsPage.Language -> SettingsPageGlyph(Icons.Rounded.Translate, Blue)
     SettingsPage.Playback -> SettingsPageGlyph(Icons.Rounded.PlayCircle, Red)

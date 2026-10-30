@@ -31,6 +31,8 @@
   - 面向开发者，说明真实模块边界、扩展路径、测试和提交要求。
 - [docs/kotlin-helpers.md](docs/kotlin-helpers.md)
   - 说明请求代次、单位、播放器读取和协程结果等辅助工具的用法与边界。
+- [docs/music-server-api.md](docs/music-server-api.md)
+  - 音乐服务器实际使用的 HTTP 接口、认证、来源身份与缓存约定；核心文件职责见平台模块 README。
 - [tools_pub/quality/README.md](tools_pub/quality/README.md)
   - 说明 CRAP、模块归属、依赖边界检查的范围、命令和验证限制。
 - [modules/native/src/main/cpp/README.md](modules/native/src/main/cpp/README.md)

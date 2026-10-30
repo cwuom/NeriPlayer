@@ -181,6 +181,8 @@ internal fun SettingsStorageCacheSection(
     onClearBiliArchiveCacheChange: (Boolean) -> Unit,
     clearYoutubePlaylistCache: Boolean,
     onClearYoutubePlaylistCacheChange: (Boolean) -> Unit,
+    clearServerBrowseCache: Boolean,
+    onClearServerBrowseCacheChange: (Boolean) -> Unit,
     clearLogFiles: Boolean,
     onClearLogFilesChange: (Boolean) -> Unit,
     clearCrashLogs: Boolean,
@@ -536,6 +538,7 @@ internal fun SettingsStorageCacheSection(
                 biliFavoriteCache = clearBiliFavoriteCache,
                 biliArchiveCache = clearBiliArchiveCache,
                 youtubePlaylistCache = clearYoutubePlaylistCache,
+                serverBrowseCache = clearServerBrowseCache,
                 logFiles = clearLogFiles,
                 crashLogs = clearCrashLogs,
                 otherCache = clearOtherCache,
@@ -552,6 +555,7 @@ internal fun SettingsStorageCacheSection(
                 onClearBiliFavoriteCacheChange(options.biliFavoriteCache)
                 onClearBiliArchiveCacheChange(options.biliArchiveCache)
                 onClearYoutubePlaylistCacheChange(options.youtubePlaylistCache)
+                onClearServerBrowseCacheChange(options.serverBrowseCache)
                 onClearLogFilesChange(options.logFiles)
                 onClearCrashLogsChange(options.crashLogs)
             },

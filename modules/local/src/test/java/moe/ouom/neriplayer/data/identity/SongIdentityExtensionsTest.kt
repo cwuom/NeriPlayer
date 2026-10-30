@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.identity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.server.ServerSongRef
 import moe.ouom.neriplayer.data.sync.identity.stableRemoteIdentityId
 import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
@@ -14,6 +15,21 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SongIdentityExtensionsTest {
+    @Test
+    fun `server download and visual ownership use the same complete profile scoped identity`() {
+        val refs = listOf(
+            ServerSongRef("00000000-0000-0000-0000-000000000001", "same-id"),
+            ServerSongRef("00000000-0000-0000-0000-000000000002", "same-id"))
+        for (ref in refs) {
+            val server = song(ref.numericId, "Album", ref.mediaUri, ServerSongRef.CHANNEL, ref.audioId)
+            assertEquals(server.identity(), server.remoteDownloadIdentityOrNull())
+            assertEquals("remote:${server.stableKey()}", server.playbackVisualKey())
+            val downloaded = server.copy(mediaUri = "file:///music/song.flac", localFilePath = "/music/song.flac")
+            assertEquals(server.identity(), downloaded.remoteDownloadIdentityOrNull())
+            assertEquals(server.stableKey(), downloaded.stableKey())
+        }
+    }
+
     @Test
     fun `songs without a remote source fall back to their own identity or local metadata`() {
         val stream = song(id = 5, album = "Some Album", mediaUri = "https://example.com/a.mp3")

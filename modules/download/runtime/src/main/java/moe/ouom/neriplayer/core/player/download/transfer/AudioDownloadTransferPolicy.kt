@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.network.range.ResumableHttpRangeSupport
 import moe.ouom.neriplayer.platform.youtube.api.transport.range.YouTubeGoogleVideoRangeSupport
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import okhttp3.Request
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -429,6 +430,7 @@ internal object AudioDownloadTransferPolicy {
         if (error is java.util.concurrent.CancellationException) {
             return false
         }
+        SubsonicException.find(error)?.let { return it.retryable }
         if (error is DownloadSourceUnavailableException || error is DownloadIntegrityException) {
             return false
         }

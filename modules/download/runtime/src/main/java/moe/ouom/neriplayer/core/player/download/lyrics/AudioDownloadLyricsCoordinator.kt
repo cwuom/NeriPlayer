@@ -12,6 +12,9 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.server.isServerSong
+import moe.ouom.neriplayer.lyrics.parser.toEditableLyricsText
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
 import org.json.JSONObject
@@ -97,6 +100,14 @@ internal object AudioDownloadLyricsCoordinator {
             val isYouTubeMusic = isYouTubeMusicSong(song)
             val isBili = song.album.startsWith(SongSourceTags.BILIBILI)
             when {
+                song.isServerSong() -> {
+                    romanizedText = resolveLocalLyric(song.matchedRomanizedLyric)
+                    if (lyricText == null && shouldFetchPrimaryLyric) {
+                        val repository = DownloadHosts.sources.subsonicRepository
+                            ?: throw SubsonicException.accountUnavailable()
+                        lyricText = repository.lyrics(song).toEditableLyricsText().takeIf(String::isNotBlank)
+                    }
+                }
                 isYouTubeMusic -> {
                     if (lyricText == null && shouldFetchPrimaryLyric) {
                         lyricText = downloadYouTubeMusicLyrics(song)
@@ -281,6 +292,7 @@ internal object AudioDownloadLyricsCoordinator {
             NPLogger.d(TAG, "歌词整理阶段收到取消: ${song.name}")
             throw cancellation
         } catch (error: Exception) {
+            if (song.isServerSong() && error is SubsonicException) throw error
             NPLogger.w(
                 TAG,
                 "歌词下载失败: ${song.name} - ${error.javaClass.simpleName}: ${error.message}",

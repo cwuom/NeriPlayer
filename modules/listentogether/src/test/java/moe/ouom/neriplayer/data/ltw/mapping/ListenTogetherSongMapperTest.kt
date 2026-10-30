@@ -12,6 +12,17 @@ import org.mockito.Mockito.*
 
 class ListenTogetherSongMapperTest {
     @Test
+    fun `server songs cannot enter shared tracks even when a stream url is supplied`() = with(TestSongMapper) {
+        val server = testSong(channel = "subsonic").copy(mediaUri = "neri-server://server/song/id", streamUrl = "https://example.test/stream")
+        assertNull(server.toListenTogetherTrackOrNull(includeLocal = true))
+        assertNull(server.copy(channelId = null).toListenTogetherTrackOrNull())
+        assertFalse(server.isShareableForListenTogether())
+        val (queue, index) = listOf(server, testSong("2")).toShareableQueueSnapshot(0)
+        assertEquals(listOf("netease:2"), queue.map { it.stableKey })
+        assertEquals(0, index)
+    }
+
+    @Test
     fun `explicit source identity wins while legacy songs infer channel and identifiers`() = with(TestSongMapper) {
         assertEquals("custom", testSong(channel = "custom").resolvedChannelId())
         assertEquals("local", testSong().copy(channelId = null, localFilePath = "/song.flac").resolvedChannelId())
