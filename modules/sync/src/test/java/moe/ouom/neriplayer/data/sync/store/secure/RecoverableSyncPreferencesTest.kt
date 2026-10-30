@@ -127,6 +127,47 @@ class RecoverableSyncPreferencesTest {
     }
 
     @Test
+    fun `rejecting stale editors preserves recovered sessions and metadata guards`() {
+        var available = true
+        val disk = MemorySyncPreferences(mapOf(
+            "github_token" to "saved-token", "sync_mutation_version" to 7L, "sync_configuration_generation" to 3L
+        ))
+        val primary = object : SharedPreferences by disk.preferences {
+            override fun getString(key: String?, defValue: String?): String? {
+                if (!available) throw KeyStoreException("interrupted")
+                return disk.preferences.getString(key, defValue)
+            }
+        }
+        var opens = 0
+        val preferences = RecoverableSyncPreferences {
+            if (!available) throw KeyStoreException("temporarily unavailable")
+            opens++
+            primary
+        }
+        val storage = SecureTokenStorage(preferences)
+        val stale = preferences.edit().putString("github_token", "stale-token")
+        available = false
+        assertThrows(SyncStorageUnavailableException::class.java) { storage.getToken() }
+        available = true
+        val guard = storage.captureSyncMetadataGuard()
+        val healthy = preferences.edit().putString("healthy", "saved")
+
+        repeat(2) {
+            assertThrows(SyncStorageUnavailableException::class.java) { stale.putString("github_token", "late-token") }
+            assertThrows(SyncStorageUnavailableException::class.java) { stale.commit() }
+            assertThrows(SyncStorageUnavailableException::class.java) { stale.apply() }
+            assertEquals(8L, storage.getSyncMutationVersion())
+            assertEquals(4L, disk.values["sync_configuration_generation"])
+            assertTrue(guard { storage.saveLastCompletedSyncTime(100L) })
+        }
+
+        assertTrue(healthy.commit())
+        assertEquals(2, opens)
+        assertEquals("saved-token", disk.restart().values["github_token"])
+        assertEquals("saved", disk.restart().values["healthy"])
+    }
+
+    @Test
     fun `reopening invalidates snapshots and completion guards captured before the interruption`() {
         var available = true
         val disk = MemorySyncPreferences(mapOf("sync_mutation_version" to 7L, "sync_configuration_generation" to 3L))

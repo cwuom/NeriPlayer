@@ -69,6 +69,42 @@ class SyncConfigurationStorageTest {
     }
 
     @Test
+    fun `webdav configuration save reports failed persistence and can durably retry`() {
+        val prefs = MemorySyncPreferences()
+        val store = WebDavStorage(prefs.preferences)
+        store.saveConfiguration("https://original.example/dav", "user", "original-password", "original")
+        store.saveLastRemoteFingerprint("original-fingerprint")
+        store.saveLastSyncTime(50L)
+        store.saveLastCompletedSyncTime(70L)
+        val original = store.snapshot()
+        val previousSession = store.captureSyncMetadataGuard()
+        prefs.failNextCommit = true
+
+        assertThrows(IOException::class.java) {
+            store.saveConfiguration("https://replacement.example/dav", "new-user", "replacement-password", "replacement")
+        }
+
+        val retained = WebDavStorage(prefs.restart().preferences)
+        assertEquals(original, retained.snapshot())
+        assertEquals("original-fingerprint", retained.getLastRemoteFingerprint())
+        assertEquals(50L, retained.getLastSyncTime())
+        assertEquals(70L, retained.getLastCompletedSyncTime())
+        assertFalse(previousSession { store.saveLastCompletedSyncTime(99L) })
+
+        store.saveConfiguration("https://replacement.example/dav", "new-user", "replacement-password", "replacement")
+        val restarted = WebDavStorage(prefs.restart().preferences)
+        assertEquals(WebDavSyncConfigSnapshot(
+            "https://replacement.example/dav", "replacement", "new-user", "replacement-password", true
+        ), restarted.snapshot())
+        assertNull(restarted.getLastRemoteFingerprint())
+        assertEquals(0L, restarted.getLastSyncTime())
+        assertEquals(0L, restarted.getLastCompletedSyncTime())
+        val currentSession = restarted.captureSyncMetadataGuard()
+        assertTrue(currentSession { restarted.saveLastCompletedSyncTime(100L) })
+        assertEquals(100L, restarted.getLastCompletedSyncTime())
+    }
+
+    @Test
     fun `configuration requires each credential and repository field`() {
         val prefs = MemorySyncPreferences()
         val github = SecureTokenStorage(prefs.preferences)

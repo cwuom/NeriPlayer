@@ -46,7 +46,9 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
         password: String,
         basePath: String
     ) {
-        completionTime.editTarget(::storedTarget, target(serverUrl, basePath, username), TARGET_CHECKPOINT_KEYS) {
+        completionTime.editTarget(
+            ::storedTarget, target(serverUrl, basePath, username), TARGET_CHECKPOINT_KEYS, requirePersistence = true
+        ) {
             putString(KEY_SERVER_URL, normalizeServerUrl(serverUrl))
             putString(KEY_BASE_PATH, normalizeBasePath(basePath))
             putString(KEY_USERNAME, username)

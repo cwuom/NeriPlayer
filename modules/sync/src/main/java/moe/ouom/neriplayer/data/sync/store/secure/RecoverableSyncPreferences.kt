@@ -90,10 +90,10 @@ internal class RecoverableSyncPreferences(private val open: () -> SharedPreferen
         private val editor: SharedPreferences.Editor,
         private val capturedSession: Long
     ) : SharedPreferences.Editor {
-        private fun <T> use(action: () -> T): T = access { active ->
+        private fun <T> use(action: () -> T): T = synchronized(lock) {
             // 重开前创建的编辑器不能在新会话中提交旧快照
-            if (active !== owner || capturedSession != session) throw SyncStorageUnavailableException()
-            action()
+            if (current !== owner || capturedSession != session) throw SyncStorageUnavailableException()
+            access { action() }
         }
 
         private fun stage(action: SharedPreferences.Editor.() -> Unit): SharedPreferences.Editor = apply {
