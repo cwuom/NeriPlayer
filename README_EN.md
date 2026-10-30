@@ -155,6 +155,7 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 - **In-app downloads**: multi-platform audio with resume and startup recovery, 6 concurrent by default (adjustable 1–8).
 - **Relocatable directory**: SAF custom directory and filename templates, migrating existing downloads on switch.
 - **Cache cleanup**: 1 GB audio cache cap by default; a 0–1000 track slider keeps recent plays while the current track stays protected.
+- **Local import cache**: In Settings → Storage & Cache → Clear Cache, remove extracted covers with no remaining references and reset temporary scan indexes. Covers still used by history, statistics, or other records are kept. Covers used in the current app session are reconsidered after the next cold start.
 
 ### 🔄 Sync, stats, and backup
 

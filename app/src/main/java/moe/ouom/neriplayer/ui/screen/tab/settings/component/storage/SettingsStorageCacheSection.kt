@@ -201,6 +201,7 @@ internal fun SettingsStorageCacheSection(
 ) {
     val composeResources = LocalResources.current
     var clearOtherCache by rememberSaveable { mutableStateOf(false) }
+    var clearLocalImportCache by rememberSaveable { mutableStateOf(false) }
     var retainRecentSongs by rememberSaveable { mutableStateOf(0) }
     val showDownloadFileNameDialog = remember { mutableStateOf(false) }
     var pendingDownloadFileNameTemplate by rememberSaveable(
@@ -542,10 +543,12 @@ internal fun SettingsStorageCacheSection(
                 logFiles = clearLogFiles,
                 crashLogs = clearCrashLogs,
                 otherCache = clearOtherCache,
+                localImportCache = clearLocalImportCache,
                 retainRecentSongs = retainRecentSongs
             ),
             onOptionsChange = { options ->
                 clearOtherCache = options.otherCache
+                clearLocalImportCache = options.localImportCache
                 retainRecentSongs = options.retainRecentSongs
                 onClearAudioCacheChange(options.audioCache)
                 onClearImageCacheChange(options.imageCache)

@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.yield
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
@@ -147,7 +148,14 @@ internal fun rememberSettingsStorageDetailsController(
             detailsState = detailsState,
             loadingState = loadingState,
             scanRequestState = scanRequestState,
-            analyze = { analyzeStorageUsage(context) }
+            analyze = {
+                analyzeStorageUsage(
+                    context,
+                    additionalSongsProvider = {
+                        PlayerManager.currentQueueFlow.value + listOfNotNull(PlayerManager.currentSongFlow.value)
+                    }
+                )
+            }
         )
     }
     LaunchedEffect(scanRequestState.intValue) { controller.scanRequested() }

@@ -30,6 +30,10 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.format.formatFileSize
 import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.model.storage.StorageCacheKind
+import moe.ouom.neriplayer.data.model.storage.StorageUsageItem
+import moe.ouom.neriplayer.data.model.storage.StorageUsageItemKind
+import moe.ouom.neriplayer.data.model.storage.StorageUsageSection
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertEquals
@@ -140,11 +144,55 @@ class StorageCacheCleanupContentTest {
             assertTrue(result.biliFavoriteCache)
             assertTrue(result.biliArchiveCache)
             assertTrue(result.youtubePlaylistCache)
+            assertTrue(result.serverBrowseCache)
             assertTrue(result.logFiles)
             assertTrue(result.crashLogs)
+            assertTrue(result.localImportCache)
             assertTrue(result.otherCache)
             assertFalse(result.downloadStaging)
             assertEquals(50, result.retainRecentSongs)
+        }
+    }
+
+    @Test
+    fun localImportCacheCanBeClearedWithoutSelectingOtherCaches() {
+        var options by mutableStateOf(StorageCacheClearOptions(audioCache = false, imageCache = false))
+        var cleared: StorageCacheClearOptions? = null
+        val summary = StorageUsageSummary(listOf(StorageUsageSection("Cache", listOf(
+            StorageUsageItem(
+                title = "Unused local imports", description = "", path = null,
+                sizeBytes = 3L * CACHE_PREVIEW_MIB, fileCount = 2,
+                kind = StorageUsageItemKind.LocalImportCache, cacheKind = StorageCacheKind.LocalImport
+            )
+        ))))
+        composeRule.setContent {
+            MaterialTheme {
+                StorageCacheCleanupContent(
+                    storageDetails = summary,
+                    isScanning = false, hasScanned = true, isClearing = false,
+                    options = options, onOptionsChange = { options = it },
+                    onClear = { cleared = it }, onDismiss = {},
+                    estimate = PlayerCacheClearEstimate(0L, 0L)
+                )
+            }
+        }
+
+        composeRule.onNodeWithText(string(CoreCommonR.string.action_confirm_clear)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(CoreCommonR.string.storage_type_local_import_cache))
+            .performScrollTo().performClick()
+        composeRule.onNodeWithText(string(CoreCommonR.string.storage_desc_local_import_cache)).assertExists()
+        composeRule.onNodeWithTag("cache_estimate_LocalImport", useUnmergedTree = true)
+            .assertTextEquals(formatFileSize(3L * CACHE_PREVIEW_MIB))
+        composeRule.onNodeWithTag("cache_estimate_selected", useUnmergedTree = true).assertTextEquals(
+            context.getString(CoreCommonR.string.storage_cleanup_selected_size, formatFileSize(3L * CACHE_PREVIEW_MIB))
+        )
+        captureCacheCleanupScreenshot("local-import-cache-cleanup.png")
+        composeRule.onNodeWithText(string(CoreCommonR.string.action_confirm_clear)).assertIsEnabled().performClick()
+        composeRule.runOnIdle {
+            assertEquals(
+                StorageCacheClearOptions(audioCache = false, imageCache = false, localImportCache = true),
+                cleared
+            )
         }
     }
 

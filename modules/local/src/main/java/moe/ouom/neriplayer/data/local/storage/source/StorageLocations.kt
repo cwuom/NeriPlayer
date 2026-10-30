@@ -27,6 +27,7 @@ val storageCacheItemKinds = mapOf(
     StorageCacheKind.ServerBrowse to StorageUsageItemKind.ServerBrowseCache,
     StorageCacheKind.LogFiles to StorageUsageItemKind.LogFiles,
     StorageCacheKind.CrashLogs to StorageUsageItemKind.CrashLogs,
+    StorageCacheKind.LocalImport to StorageUsageItemKind.LocalImportCache,
     StorageCacheKind.Other to StorageUsageItemKind.OtherCache
 )
 
@@ -65,6 +66,7 @@ class StorageLocations(
         StorageCacheKind.ServerBrowse to emptyList(),
         StorageCacheKind.LogFiles to listOf(logDir),
         StorageCacheKind.CrashLogs to listOf(crashDir),
+        StorageCacheKind.LocalImport to emptyList(),
         StorageCacheKind.Other to otherCacheDirs
     )
 

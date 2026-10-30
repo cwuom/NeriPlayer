@@ -164,6 +164,7 @@ class StorageCacheDetailsContentTest {
         StorageUsageItemKind.LogFiles to CoreCommonR.string.storage_type_log_files,
         StorageUsageItemKind.CrashLogs to CoreCommonR.string.storage_type_crash_logs,
         StorageUsageItemKind.LocalCovers to CoreCommonR.string.storage_type_local_covers,
+        StorageUsageItemKind.LocalImportCache to CoreCommonR.string.storage_type_local_import_cache,
         StorageUsageItemKind.CustomBackground to CoreCommonR.string.storage_type_custom_background,
         StorageUsageItemKind.LegacyMigrationFiles to CoreCommonR.string.storage_type_legacy_migration_files,
         StorageUsageItemKind.Database to CoreCommonR.string.storage_type_database,

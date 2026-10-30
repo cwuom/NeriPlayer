@@ -568,6 +568,7 @@ private fun StorageUsageItemKind.toStorageIcon(): ImageVector {
         StorageUsageItemKind.LogFiles -> StorageGlyphs.Logs
         StorageUsageItemKind.CrashLogs -> StorageGlyphs.Crash
         StorageUsageItemKind.LocalCovers -> StorageGlyphs.LocalCovers
+        StorageUsageItemKind.LocalImportCache -> StorageGlyphs.LocalCovers
         StorageUsageItemKind.CustomBackground -> StorageGlyphs.Background
         StorageUsageItemKind.LegacyMigrationFiles -> StorageGlyphs.Migration
         StorageUsageItemKind.Database -> StorageGlyphs.Database
