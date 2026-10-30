@@ -126,6 +126,38 @@ class BilingualLyricDisplayTest {
     }
 
     @Test
+    fun `mixed line splitting preserves supplementary han characters`() {
+        val displayed = prepareBilingualLyricsForDisplay(listOf(line("Hello world 𠀀𠮷")))
+
+        assertEquals("Hello world\n𠀀𠮷", displayed.single().text)
+    }
+
+    @Test
+    fun `nearby grouping recognizes supplementary han characters`() {
+        val displayed = prepareBilingualLyricsForDisplay(
+            listOf(line("Hello world", 1_000L, 1_030L), line("𠀀𠮷", 1_030L, 4_000L))
+        )
+
+        assertEquals(listOf(LyricEntry("Hello world\n𠀀𠮷", 1_000L, 4_000L)), displayed)
+    }
+
+    @Test
+    fun `supplementary letters from another script prevent bilingual inference`() {
+        val mixed = listOf(line("Hello 𐐀 你好"))
+        val nearby = listOf(line("Hello world", 1_000L, 1_030L), line("𐐀你好", 1_030L, 4_000L))
+
+        assertSame(mixed, prepareBilingualLyricsForDisplay(mixed))
+        assertSame(nearby, prepareBilingualLyricsForDisplay(nearby))
+    }
+
+    @Test
+    fun `mixed line splitting preserves combining accents before the language boundary`() {
+        val displayed = prepareBilingualLyricsForDisplay(listOf(line("Cafe\u0301 你好")))
+
+        assertEquals("Cafe\u0301\n你好", displayed.single().text)
+    }
+
+    @Test
     fun `mixed line splitting also handles a chinese sentence followed by english`() {
         val displayed = prepareBilingualLyricsForDisplay(listOf(line("你说你想去哪 Where do you wanna go?")))
 

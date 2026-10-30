@@ -3,6 +3,9 @@ package moe.ouom.neriplayer.lyrics.parser
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 
 private const val BilingualDisplayTimestampToleranceMs = 50L
+private val BilingualDisplayLetterRegex = Regex("""\p{L}""")
+private val BilingualDisplayLatinRegex = Regex("""\p{sc=Latin}""")
+private val BilingualDisplayHanRegex = Regex("""\p{sc=Han}""")
 
 private enum class BilingualScript {
     Latin,
@@ -26,7 +29,9 @@ fun prepareBilingualLyricDisplay(lyrics: List<LyricEntry>): BilingualLyricDispla
             val group = lyrics.subList(index, groupEnd)
             original.copy(
                 text = group.joinToString("\n") { it.text.splitBilingualSentence() },
-                endTimeMs = group.maxOf { it.endTimeMs },
+                endTimeMs = group.fold(original.endTimeMs) { endTimeMs, line ->
+                    maxOf(endTimeMs, line.endTimeMs)
+                },
                 translation = group.mergedTranslationsForDisplay()
             )
         } else {
@@ -77,15 +82,10 @@ private fun List<LyricEntry>.mergedTranslationsForDisplay(): String? {
 
 private fun String.singleBilingualScript(): BilingualScript? {
     var script: BilingualScript? = null
-    var index = 0
-    while (index < length) {
-        val codePoint = codePointAt(index)
-        if (Character.isLetter(codePoint)) {
-            val nextScript = codePoint.bilingualScript() ?: return null
-            if (script != null && script != nextScript) return null
-            script = nextScript
-        }
-        index += Character.charCount(codePoint)
+    for (letter in BilingualDisplayLetterRegex.findAll(this)) {
+        val nextScript = letter.value.bilingualScript() ?: return null
+        if (script != null && script != nextScript) return null
+        script = nextScript
     }
     return script
 }
@@ -100,25 +100,20 @@ private fun String.splitBilingualSentence(): String {
     if (contains('\n')) return this
     var script: BilingualScript? = null
     var boundary = -1
-    var index = 0
-    while (index < length) {
-        val codePoint = codePointAt(index)
-        if (Character.isLetter(codePoint)) {
-            val nextScript = codePoint.bilingualScript() ?: return this
-            if (script != null && script != nextScript) {
-                if (boundary >= 0) return this
-                boundary = index
-            }
-            script = nextScript
+    for (letter in BilingualDisplayLetterRegex.findAll(this)) {
+        val nextScript = letter.value.bilingualScript() ?: return this
+        if (script != null && script != nextScript) {
+            if (boundary >= 0) return this
+            boundary = letter.range.first
         }
-        index += Character.charCount(codePoint)
+        script = nextScript
     }
     if (boundary < 0) return this
     return substring(0, boundary).trimEnd() + "\n" + substring(boundary)
 }
 
-private fun Int.bilingualScript(): BilingualScript? = when (Character.UnicodeScript.of(this)) {
-    Character.UnicodeScript.LATIN -> BilingualScript.Latin
-    Character.UnicodeScript.HAN -> BilingualScript.Han
+private fun String.bilingualScript(): BilingualScript? = when {
+    BilingualDisplayLatinRegex.matches(this) -> BilingualScript.Latin
+    BilingualDisplayHanRegex.matches(this) -> BilingualScript.Han
     else -> null
 }
