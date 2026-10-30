@@ -135,8 +135,7 @@ internal fun SettingsLoginExpandedContent(
                     savedAtLabel = accountSavedAtText(youtube.health.savedAt),
                     profile = youtubeProfile.profile,
                     profileLoading = youtubeProfile.loading
-                ),
-                SettingsAccountCardUiState(platform = SettingsAccountPlatform.QqMusic)
+                )
             ),
             onLogin = controller.actions::openPlatformLogin,
             onManageSaved = controller.actions::openPlatformSavedAuthorization,

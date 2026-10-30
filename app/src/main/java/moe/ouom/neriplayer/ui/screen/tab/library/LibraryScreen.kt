@@ -202,7 +202,6 @@ internal fun libraryTabDisplayOrder(
             LibraryTab.YTMUSIC,
             LibraryTab.NETEASE,
             LibraryTab.BILI,
-            LibraryTab.QQMUSIC,
             LibraryTab.MY_MUSIC
         )
     } else {
@@ -212,7 +211,6 @@ internal fun libraryTabDisplayOrder(
             LibraryTab.NETEASE,
             LibraryTab.YTMUSIC,
             LibraryTab.BILI,
-            LibraryTab.QQMUSIC,
             LibraryTab.MY_MUSIC
         )
     }
