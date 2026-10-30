@@ -320,8 +320,10 @@ class MoreOptionsSheetPredictiveBackTest {
     }
 
     private fun awaitDismissal() {
+        // 先完成冻结时钟中的关闭动画，避免慢帧耗尽墙钟等待
+        composeRule.mainClock.advanceTimeUntil(timeoutMillis = 3_000L) { !visible }
+        composeRule.mainClock.advanceTimeByFrame()
         composeRule.waitUntil(timeoutMillis = 3_000L) {
-            advance(16L)
             !visible && composeRule.onAllNodesWithTag(BodyTag).fetchSemanticsNodes().isEmpty()
         }
         composeRule.onNodeWithTag(BodyTag).assertDoesNotExist()
