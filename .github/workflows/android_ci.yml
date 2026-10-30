@@ -16,8 +16,6 @@ on:
       - '.github/workflows/automation_checks.yml'
       - '.github/workflows/manual_release.yml'
       - '.github/workflows/recover_keystore.yml'
-      - 'site/**'
-      - '.github/workflows/site_pages.yml'
   pull_request:
     paths-ignore:
       - '**/*.md'
@@ -31,8 +29,6 @@ on:
       - '.github/workflows/automation_checks.yml'
       - '.github/workflows/manual_release.yml'
       - '.github/workflows/recover_keystore.yml'
-      - 'site/**'
-      - '.github/workflows/site_pages.yml'
   workflow_dispatch:
 
 permissions:
