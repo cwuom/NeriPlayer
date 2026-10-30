@@ -22,6 +22,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -149,7 +150,7 @@ class LyricShareSheetComposeTest {
         }
     }
 
-    private fun assertActionsRemainUsableWithScrollableLyrics() {
+    private fun assertActionsRemainUsableWithScrollableLyrics(expectedListHeight: Dp? = null) {
         val manyLyrics = List(30) { index ->
             LyricEntry(
                 text = "Lyric line $index",
@@ -159,6 +160,9 @@ class LyricShareSheetComposeTest {
         }
         setSheet(sheetLyrics = manyLyrics, initialLine = manyLyrics.first())
 
+        expectedListHeight?.let { height ->
+            composeRule.onNode(hasScrollToIndexAction()).assertHeightIsEqualTo(height)
+        }
         assertActionIconsKeepTheirSize()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(manyLyrics.lastIndex)
         composeRule.onNodeWithText(manyLyrics.last().text).performClick()
@@ -185,8 +189,8 @@ class LyricShareSheetComposeTest {
 
     @Test
     @Config(qualifiers = "w411dp-h900dp-mdpi")
-    fun `tall portrait keeps full size action icons and scrollable lyrics`() {
-        assertActionsRemainUsableWithScrollableLyrics()
+    fun `tall portrait caps the lyric list while keeping actions usable`() {
+        assertActionsRemainUsableWithScrollableLyrics(expectedListHeight = 430.dp)
     }
 
     @Test
