@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.platform.subsonic.auth.SubsonicAccounts
 import moe.ouom.neriplayer.platform.subsonic.auth.SubsonicCredentials
 import moe.ouom.neriplayer.platform.subsonic.auth.SubsonicProfile
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -100,6 +101,22 @@ class SubsonicCatalogTest {
         assertFalse(page.hasMore)
     }
 
+    @Test fun `song catalog stores a real credential free cover endpoint for synchronization`() = runTest {
+        val repo = repository(SubsonicBrowseCache(scope = backgroundScope)) {
+            JSONObject().put("searchResult3", JSONObject().put("song", JSONArray().put(
+                JSONObject().put("id", "song").put("coverArt", "cover / 中文 + ? &"))))
+        }
+        val song = repo.catalog(profile.id, ServerLibraryCategory.SONGS).songs.single()
+        val cover = requireNotNull(song.coverUrl).toHttpUrl()
+        assertEquals("example.test", cover.host)
+        assertEquals("/rest/getCoverArt.view", cover.encodedPath)
+        assertEquals("cover / 中文 + ? &", cover.queryParameter("id"))
+        assertEquals(setOf("id", "size"), cover.queryParameterNames)
+        assertEquals("600", cover.queryParameter("size"))
+        assertTrue(requireNotNull(cover.fragment).matches(Regex("neri-cover=v1:[0-9a-f]{64}")))
+        assertEquals(ServerSongRef(profile.id, "song"), ServerSongRef.from(song))
+    }
+
     @Test fun `artist catalog flattens the ID3 index and artist albums reuse a 24 hour cache`() = runTest {
         var now = 100L
         val paths = mutableListOf<String>()
@@ -121,7 +138,10 @@ class SubsonicCatalogTest {
         assertEquals(profile.id, artists.single().profileId)
         assertEquals("artist / 中文", artists.single().id)
         assertEquals(2, artists.single().albumCount)
-        assertTrue(requireNotNull(artists.single().coverUrl).startsWith("https://neri-server.invalid/"))
+        val cover = requireNotNull(artists.single().coverUrl).toHttpUrl()
+        assertEquals("example.test", cover.host)
+        assertEquals("/rest/getCoverArt.view", cover.encodedPath)
+        assertEquals("cover / artist", cover.queryParameter("id"))
         assertEquals(ServerBrowseKey(profile.id, profile.revision, "artist", "artist / 中文", size = 500),
             repo.artistAlbumsKey(profile.id, "artist / 中文"))
         assertEquals(2, repo.artistAlbums(profile.id, "artist / 中文").albums.size)

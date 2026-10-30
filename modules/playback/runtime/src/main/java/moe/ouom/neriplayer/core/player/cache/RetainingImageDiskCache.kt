@@ -10,13 +10,24 @@ import java.util.Base64
 /** 记录公开 API 使用过的键，让清理时可以找到使用版本化键的封面 */
 class RetainingImageDiskCache(
     private val delegate: DiskCache,
-    registryFile: File
+    registryFile: File,
+    private val fallbackKeys: (String) -> List<String> = { emptyList() }
 ) : DiskCache by delegate {
     private val registry = ImageCacheKeyRegistry(registryFile)
 
     @Synchronized
-    override fun openSnapshot(key: String): DiskCache.Snapshot? =
-        delegate.openSnapshot(key)?.also { registry.record(key) }
+    override fun openSnapshot(key: String): DiskCache.Snapshot? {
+        delegate.openSnapshot(key)?.let { snapshot ->
+            registry.record(key)
+            return snapshot
+        }
+        for (alias in aliases(key)) {
+            val snapshot = delegate.openSnapshot(alias) ?: continue
+            registry.record(alias)
+            return snapshot
+        }
+        return null
+    }
 
     @Synchronized
     override fun openEditor(key: String): DiskCache.Editor? =
@@ -30,8 +41,13 @@ class RetainingImageDiskCache(
 
     @Synchronized
     override fun remove(key: String): Boolean {
-        val removed = delegate.remove(key)
-        if (removed) registry.remove(key)
+        var removed = false
+        for (candidate in listOf(key) + aliases(key)) {
+            if (delegate.remove(candidate)) {
+                registry.remove(candidate)
+                removed = true
+            }
+        }
         return removed
     }
 
@@ -42,6 +58,11 @@ class RetainingImageDiskCache(
     }
 
     internal fun knownKeys(): Set<String> = registry.keys()
+
+    internal fun matchesCover(key: String, url: String): Boolean =
+        imageCacheKeyMatchesCover(key, url) || aliases(url).any { imageCacheKeyMatchesCover(key, it) }
+
+    private fun aliases(key: String): List<String> = fallbackKeys(key).filter { it != key }.distinct()
 
     @Synchronized
     internal fun snapshotForEstimate(key: String): DiskCache.Snapshot? = delegate.openSnapshot(key)

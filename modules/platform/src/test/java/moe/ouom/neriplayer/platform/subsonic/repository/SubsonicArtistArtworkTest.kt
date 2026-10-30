@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomSt
 import moe.ouom.neriplayer.data.model.server.ServerSongRef
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.platform.subsonic.api.SubsonicClient
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicCoverReference
 import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 import moe.ouom.neriplayer.platform.subsonic.api.SubsonicFailureKind
 import moe.ouom.neriplayer.platform.subsonic.auth.SubsonicAccounts
@@ -22,6 +23,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 
@@ -42,11 +44,13 @@ class SubsonicArtistArtworkTest {
     }
 
     private fun repository(cache: SubsonicBrowseCache, current: () -> SubsonicProfile? = { profile },
+                           coverUrls: Map<String, String> = emptyMap(),
                            handler: (HttpUrl) -> JSONObject): SubsonicRepository {
         val accounts = mock(SubsonicAccounts::class.java)
         `when`(accounts.profiles).thenReturn(MutableStateFlow(listOf(profile)))
         `when`(accounts.profile(profile.id)).thenAnswer { current() }
         `when`(accounts.credentials(profile.id)).thenReturn(SubsonicCredentials(profile, "test-password"))
+        coverUrls.forEach { (raw, portable) -> doReturn(portable).`when`(accounts).portableCoverUrl(raw) }
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val json = JSONObject().put("subsonic-response", handler(chain.request().url).put("status", "ok"))
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("OK")
@@ -66,11 +70,11 @@ class SubsonicArtistArtworkTest {
         assertEquals(imageUrl, repo.catalog(profile.id, ServerLibraryCategory.ARTISTS).artists.single().coverUrl)
     }
 
-    @Test fun `opaque server coverArt stays ahead of an external artist image URL`() = runTest {
+    @Test fun `real server coverArt stays ahead of an external artist image URL`() = runTest {
         val repo = repository(SubsonicBrowseCache(scope = backgroundScope)) {
             artistResponse(artist.put("coverArt", "cover / 艺人").put("artistImageUrl", "https://images.example.test/avatar.jpg"))
         }
-        assertEquals(ServerSongRef(profile.id, artistId).resourceUrl("cover", "cover / 艺人"),
+        assertEquals(SubsonicCoverReference.create(profile, "cover / 艺人"),
             repo.catalog(profile.id, ServerLibraryCategory.ARTISTS).artists.single().coverUrl)
     }
 
@@ -95,7 +99,7 @@ class SubsonicArtistArtworkTest {
         val page = repo.artistAlbums(profile.id, artistId)
         assertEquals(1, page.artists.size)
         assertEquals(ServerArtist(profile.id, artistId, "Artist",
-            ServerSongRef(profile.id, artistId).resourceUrl("cover", "detail-cover"), 2), page.artists.single())
+            SubsonicCoverReference.create(profile, "detail-cover"), 2), page.artists.single())
     }
 
     @Test fun `artist detail server header survives a Room round trip`() = runTest {
@@ -131,8 +135,8 @@ class SubsonicArtistArtworkTest {
             JSONObject().put("searchResult3", JSONObject().put("song", rows))
         }
         val page = repo.catalog(profile.id, ServerLibraryCategory.SONGS)
-        val first = ServerSongRef(profile.id, "first").resourceUrl("cover", "first-cover")
-        val last = ServerSongRef(profile.id, "last").resourceUrl("cover", "last-cover")
+        val first = SubsonicCoverReference.create(profile, "first-cover")
+        val last = SubsonicCoverReference.create(profile, "last-cover")
         assertEquals(mapOf(artistId to last, "collaborator" to last, "album-legacy" to first, "album-multi" to first),
             page.artistArtwork)
         val before = cache.updates.value
@@ -297,13 +301,60 @@ class SubsonicArtistArtworkTest {
         store.pages[repo.catalogKey(profile.id, ServerLibraryCategory.SONGS)] = old
         store.pages[repo.browseKey(profile.id, size = 500, category = ServerLibraryCategory.SONGS)] = old
         val page = repo.catalog(profile.id, ServerLibraryCategory.SONGS)
-        assertEquals(mapOf(artistId to ref.resourceUrl("cover", "new-cover")), page.artistArtwork)
+        assertEquals(mapOf(artistId to SubsonicCoverReference.create(profile, "new-cover")), page.artistArtwork)
         assertEquals(1, requests)
         val reopened = repository(SubsonicBrowseCache(store, backgroundScope, now = { 300L })) {
             error("A new complete artwork index must survive a restart")
         }
         assertEquals(page.artistArtwork, reopened.catalog(profile.id, ServerLibraryCategory.SONGS).artistArtwork)
-        assertEquals(ref.resourceUrl("cover", "new-cover"), reopened.cachedArtist(ServerArtist(profile.id, artistId, "Artist", null, 2)).imageUrl)
+        assertEquals(SubsonicCoverReference.create(profile, "new-cover"), reopened.cachedArtist(ServerArtist(profile.id, artistId, "Artist", null, 2)).imageUrl)
+    }
+
+    @Test fun `reopened complete legacy covers project without network writes or source identity changes`() = runTest {
+        val store = Store()
+        val ref = ServerSongRef(profile.id, "song / 中文")
+        val legacy = listOf("cover", "custom", "original").associateWith { ref.resourceUrl("cover", it) }
+        val portable = legacy.mapValues { SubsonicCoverReference.create(profile, it.key) }
+        val song = SongItem(ref.numericId, "Song", "Artist", "Album", 7, 8, legacy.getValue("cover"),
+            mediaUri = ref.mediaUri, channelId = ServerSongRef.CHANNEL, audioId = ref.audioId,
+            customCoverUrl = legacy.getValue("custom"), originalCoverUrl = legacy.getValue("original"))
+        val artist = ServerArtist(profile.id, artistId, "Artist", legacy.getValue("cover"), 1,
+            fallbackCoverUrl = legacy.getValue("custom"))
+        val old = ServerBrowsePage(albums = listOf(ServerAlbum(profile.id, "album", "Album", "Artist", legacy.getValue("cover"), 1)),
+            songs = listOf(song), artists = listOf(artist), artistArtwork = mapOf(artistId to legacy.getValue("custom")), savedAtMs = 100L)
+        val expectedSong = song.copy(coverUrl = portable.getValue("cover"), customCoverUrl = portable.getValue("custom"),
+            originalCoverUrl = portable.getValue("original"))
+        val expectedArtist = artist.copy(coverUrl = portable.getValue("cover"), fallbackCoverUrl = portable.getValue("custom"))
+        val expected = old.copy(albums = old.albums.map { it.copy(coverUrl = portable.getValue("cover")) },
+            songs = listOf(expectedSong), artists = listOf(expectedArtist), artistArtwork = mapOf(artistId to portable.getValue("custom")))
+        val first = repository(SubsonicBrowseCache(store, backgroundScope, now = { 200L })) {
+            error("Preparing complete cache keys must not request metadata")
+        }
+        val keys = ServerLibraryCategory.entries.map { first.catalogKey(profile.id, it) } +
+            first.browseKey(profile.id, albumId = "album") + first.artistAlbumsKey(profile.id, artistId)
+        keys.forEach { store.pages[it] = old }
+        var requests = 0
+        val reopenedCache = SubsonicBrowseCache(store, backgroundScope, now = { 201L })
+        val reopened = repository(reopenedCache,
+            coverUrls = legacy.entries.associate { it.value to portable.getValue(it.key) }) {
+            requests++; error("Fresh complete legacy covers must not force a refresh")
+        }
+        for (category in ServerLibraryCategory.entries) assertEquals(expected, reopened.catalog(profile.id, category))
+        assertEquals(expected, reopened.browse(first.browseKey(profile.id, albumId = "album")))
+        assertEquals(expected, reopened.artistAlbums(profile.id, artistId))
+        keys.forEach { assertEquals(expected, reopened.cached(it)) }
+        assertEquals(expectedArtist, reopened.cachedArtist(artist))
+        assertEquals(listOf(expectedArtist), reopened.cachedArtists(profile.id, listOf(artist)))
+        val projected = requireNotNull(reopened.cached(first.catalogKey(profile.id, ServerLibraryCategory.SONGS))).songs.single()
+        assertEquals(ref, ServerSongRef.from(projected))
+        assertEquals(song.id, projected.id)
+        assertEquals(song.audioId, projected.audioId)
+        assertEquals(song.mediaUri, projected.mediaUri)
+        assertEquals(0, requests)
+        keys.forEach {
+            assertEquals(old, store.pages[it])
+            assertEquals(old, reopenedCache.snapshot(it))
+        }
     }
 
     @Test fun `Room distinguishes legacy null artwork from empty and populated complete indexes`() = runTest {

@@ -108,7 +108,7 @@ class ServerAlbumDetailViewModel(
             try {
                 val key = repository.browseKey(album.profileId, albumId = album.id)
                 // 过期快照仍可离线浏览，等待服务器响应期间保留已有曲目
-                val cached = repository.browseCache.snapshot(key)
+                val cached = repository.cached(key)
                 if (!isCurrent(requestVersion, album, revision)) return@launch
                 if (cached != null) mutableState.value = state.value.copy(songs = cached.songs)
                 val page = repository.browse(key, force)

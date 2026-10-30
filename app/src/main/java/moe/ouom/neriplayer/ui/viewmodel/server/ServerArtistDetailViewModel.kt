@@ -128,7 +128,7 @@ class ServerArtistDetailViewModel(
                 val initialArtist = repository.cachedArtist(artist)
                 if (!isCurrent(requestVersion, artist, revision)) return@launch
                 mutableState.value = state.value.copy(artist = initialArtist)
-                repository.browseCache.snapshot(key)?.let { cached ->
+                repository.cached(key)?.let { cached ->
                     val updated = repository.cachedArtist(artist)
                     if (isCurrent(requestVersion, artist, revision)) {
                         mutableState.value = state.value.copy(artist = updated, albums = cached.albums)

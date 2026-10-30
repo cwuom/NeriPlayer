@@ -321,7 +321,7 @@ class MusicServerViewModelTest {
     @Test fun `failed refresh retains complete cached catalog and retry replaces it atomically`() = runTest(dispatcher) {
         val old = ServerAlbum(profile.id, "old", "Old", "Artist", null, 1)
         val page = ServerBrowsePage(albums = listOf(old), savedAtMs = System.currentTimeMillis())
-        `when`(repository.browseCache.snapshot(rootKey)).thenReturn(page)
+        `when`(repository.cached(rootKey)).thenReturn(page)
         `when`(repository.catalog(profile.id, ServerLibraryCategory.ALBUMS, false)).thenReturn(page)
         `when`(repository.catalog(profile.id, ServerLibraryCategory.ALBUMS, true)).thenThrow(IllegalStateException("offline"))
         val vm = MusicServerViewModel(repository)
@@ -356,7 +356,7 @@ class MusicServerViewModelTest {
     @Test fun `offline opening displays the saved complete catalog with a retryable error`() = runTest(dispatcher) {
         val old = ServerAlbum(profile.id, "old", "Saved album", "Artist", null, 1)
         val page = ServerBrowsePage(albums = listOf(old), savedAtMs = 1L)
-        `when`(repository.browseCache.snapshot(rootKey)).thenReturn(page)
+        `when`(repository.cached(rootKey)).thenReturn(page)
         `when`(repository.catalog(profile.id, ServerLibraryCategory.ALBUMS, false)).thenThrow(IllegalStateException("offline"))
         val vm = MusicServerViewModel(repository)
         try {

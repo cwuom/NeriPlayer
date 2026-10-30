@@ -168,17 +168,31 @@ Base64URL 不带 padding。完整身份使用现有 SongIdentity(id, "subsonic",
 
 ### 5.1 请求时认证
 
-当前复用现有 Media3 / Coil / 下载器的共享 OkHttp，向播放器、图片组件和下载器提供内部地址：
+当前复用现有 Media3 / Coil / 下载器的共享 OkHttp。播放和下载继续使用内部地址，保持已有歌曲、缓存和下载身份：
 
 ```text
 https://neri-server.invalid/v1/<profileId>/stream/<encodedSongId>
 https://neri-server.invalid/v1/<profileId>/download/<encodedSongId>
-https://neri-server.invalid/v1/<profileId>/cover/<encodedCoverId>
 ```
 
-`.invalid` 地址不是服务器 API 或代理服务；专用拦截器只识别这个保留域，在客户端内部解析为当前配置的请求并补认证。解析失败就中止，不能访问该保留域。其他图片和平台请求不附带服务器凭据。返回给调用方的 request 仍为无凭据内部引用，队列恢复使用同一机制。
+`.invalid` 地址不是服务器 API 或代理服务；专用拦截器在客户端内部解析为当前配置的请求并补认证。解析失败就中止，不能访问该保留域。返回给调用方的 request 仍为无凭据引用，队列恢复使用同一机制。
 
-当前音频表示固定 raw，缓存键 `subsonic:<audioId>:raw:v1`；封面固定 600 像素，图片引用包含配置、封面 ID 和引用版本。后续增加可变尺寸或转码时必须把尺寸/格式/码率/表示版本加入缓存身份。同一 ID 内容原地替换后的主动缓存失效属于后续待办。
+新封面使用真实服务器端点，原始 coverArt ID 仍由 URL builder 编码：
+
+```text
+https://music.example.com/navidrome/rest/getCoverArt.view?id=<coverArtId>&size=600#neri-cover=v1:<scope>
+scope = lowercaseHex(SHA-256(UTF8(normalizedBaseUrl + "\n" + username.trim())))
+```
+
+normalizedBaseUrl 使用与服务器配置相同的 HTTP URL 规范化，保留端口和反代子路径，并以单个斜杠结尾。scope 是稳定账号指纹，不是登录凭据；同地址同用户名在不同设备生成的配置 UUID 不同，也能匹配同一封面来源。用户名大小写不折叠，不按歌曲 ID、域名或唯一账号猜测映射。
+
+fragment 是客户端来源标记，不发送到服务器。解析仅接受 v1 标记、64 位小写十六进制 scope、精确的 rest/getCoverArt.view 路径，以及各出现一次的 id 和 size=600 参数。拦截器只向精确地址和 scope 均匹配的本机已启用账号请求补认证；未标记的普通图片不会自动附加服务器认证。密码、u/p/t/s、API Key 等认证参数不保存在封面模型或同步载荷中，网络请求仍按当前账号即时签名；返回的 response.request 不携带认证参数。
+
+旧 https://neri-server.invalid/v1/<profileId>/cover/<encodedCoverId> 仍可加载。Android 在后台准备账号后，导出同步时将本机能解析的旧封面引用投影为真实端点，不额外下载图片、不改原歌曲身份；无法解析的旧引用保留，不能据此推断未知服务器或账号。相同本机账号下，新链接可读取旧磁盘封面缓存，保留原有版本和尺寸键；缓存清理和估算也按同一映射保留图片，不需要重新下载。
+
+同步继续使用原有 coverUrl/customCoverUrl/originalCoverUrl 字段及既有 JSON、Protobuf 和 V4 归档结构，收藏歌单、历史和播放统计封面遵循同一投影规则。另一台 Android 须自行添加相同服务器地址及用户名，认证信息不随同步迁移。桌面端当前只需保留这些不含凭据的 URL；后续可按此格式接入账号和图片请求，不必重新定义同步字段。本轮仅改进封面可移植性；服务器歌曲的 audioId/mediaUri 仍按原 profile UUID 标识，播放、歌词和下载的跨设备账号绑定不在此变更内。
+
+当前音频表示固定 raw，缓存键 `subsonic:<audioId>:raw:v1`；封面固定 600 像素，新图片引用包含真实端点、封面 ID、尺寸和账号 scope。后续增加可变尺寸或转码时必须把尺寸/格式/码率/表示版本加入缓存身份。同一 ID 内容原地替换后的主动缓存失效属于后续待办。
 
 ### 5.2 流与失败
 

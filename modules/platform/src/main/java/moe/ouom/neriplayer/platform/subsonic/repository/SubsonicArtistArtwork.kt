@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.platform.subsonic.repository
 
 import java.util.Locale
 import moe.ouom.neriplayer.data.model.server.ServerSongRef
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicCoverReference
+import moe.ouom.neriplayer.platform.subsonic.auth.SubsonicProfile
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONException
 import org.json.JSONObject
@@ -19,10 +21,10 @@ internal fun publicArtistImageUrl(raw: String?): String? {
     return url.toString()
 }
 
-internal fun songArtistArtwork(profileId: String, rows: List<JSONObject>): Map<String, String> = buildMap {
+internal fun songArtistArtwork(profile: SubsonicProfile, rows: List<JSONObject>): Map<String, String> = buildMap {
     for (row in rows) {
         val coverArt = (row.opt("coverArt") as? String)?.takeIf { it.isNotBlank() && it != "null" } ?: continue
-        val cover = ServerSongRef(profileId, row.getString("id")).resourceUrl("cover", coverArt)
+        val cover = SubsonicCoverReference.create(profile, coverArt)
         val ids = linkedSetOf<String>()
         for (field in listOf("artistId", "albumArtistId")) {
             (row.opt(field) as? String)?.takeIf { it.isNotEmpty() }?.let(ids::add)

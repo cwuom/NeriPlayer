@@ -272,7 +272,7 @@ class MusicServerViewModel(
                 val key = if (snapshot.album != null) repository.browseKey(id, albumId = snapshot.album.id)
                     else repository.catalogKey(id, snapshot.category)
                 // 先展示完整旧快照，后台同步失败时仍可浏览
-                repository.browseCache.snapshot(key)?.let { cached ->
+                repository.cached(key)?.let { cached ->
                     val page = withArtistArtwork(cached)
                     if (version == requestVersion) mutableState.update { current ->
                         applyPage(current, page).copy(loading = true)

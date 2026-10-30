@@ -12,10 +12,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 import moe.ouom.neriplayer.platform.subsonic.api.SubsonicFailureKind
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicCoverReference
+import moe.ouom.neriplayer.data.model.server.ServerSongRef
 import java.util.UUID
 
 /**
@@ -66,6 +69,26 @@ class SubsonicAccounts(context: Context) {
         val profile = profile(id) ?: throw IllegalStateException("音乐服务器账号不可用")
         SubsonicCredentials(profile, preferences.getString("password:$id", null)
             ?: throw IllegalStateException("服务器账号需要重新登录"))
+    }
+
+    fun coverCredentials(reference: SubsonicCoverReference): SubsonicCredentials = synchronized(this) {
+        if (snapshot == null) publish(readProfiles())
+        val profile = snapshot?.lastOrNull { it.enabled && reference.matches(it) }
+            ?: throw IllegalStateException("音乐服务器账号不可用")
+        credentials(profile.id)
+    }
+
+    fun portableCoverUrl(raw: String?): String? {
+        val url = raw?.toHttpUrlOrNull() ?: return raw
+        if (url.host != ServerSongRef.RESOURCE_HOST || url.scheme != "https" || url.port != 443 ||
+            url.username.isNotEmpty() || url.password.isNotEmpty() || url.query != null || url.fragment != null) return raw
+        val path = url.pathSegments
+        if (path.size != 4 || path[0] != "v1" || path[2] != "cover") return raw
+        return runCatching {
+            val ref = ServerSongRef.reference(path[1], path[3])
+            val profile = profile(ref.profileId) ?: return raw
+            SubsonicCoverReference.create(profile, ref.songId)
+        }.getOrDefault(raw)
     }
 
     suspend fun save(profile: SubsonicProfile, password: String, expectedRevision: Long? = null) = withContext(Dispatchers.IO) {

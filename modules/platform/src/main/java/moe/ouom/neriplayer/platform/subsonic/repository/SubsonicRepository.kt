@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import moe.ouom.neriplayer.data.model.server.ServerSongRef
 import moe.ouom.neriplayer.lyrics.parser.convertPlainLyricsToEntries
 import moe.ouom.neriplayer.platform.subsonic.api.SubsonicClient
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicCoverReference
 import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 import moe.ouom.neriplayer.platform.subsonic.api.SubsonicFailureKind
 import moe.ouom.neriplayer.platform.subsonic.auth.SubsonicAccounts
@@ -35,6 +36,8 @@ data class ServerArtist(val profileId: String, val id: String, val name: String,
 /** Minimal album/search/playback adapter using the application's existing song and lyric models. */
 class SubsonicRepository(val accounts: SubsonicAccounts, private val client: SubsonicClient,
                         val browseCache: SubsonicBrowseCache = SubsonicBrowseCache()) {
+    private val covers = SubsonicCoverProjection(accounts::portableCoverUrl)
+
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             accounts.profiles.collect { profiles ->
@@ -66,6 +69,13 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
     fun artistAlbumsKey(profileId: String, artistId: String): ServerBrowseKey =
         browseKey(profileId, size = CATALOG_PAGE_SIZE).copy(kind = "artist", value = artistId)
 
+    suspend fun cached(key: ServerBrowseKey): ServerBrowsePage? = withContext(Dispatchers.IO) {
+        requireRevision(key)
+        val result = browseCache.snapshot(key)?.let(covers::page)
+        requireRevision(key)
+        result
+    }
+
     suspend fun catalog(profileId: String, category: ServerLibraryCategory,
                         force: Boolean = false): ServerBrowsePage = withContext(Dispatchers.IO) {
         val key = catalogKey(profileId, category)
@@ -92,7 +102,7 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
             page
         }
         requireRevision(key)
-        result
+        covers.page(result)
     }
 
     suspend fun artistAlbums(profileId: String, artistId: String,
@@ -106,7 +116,7 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
             page
         }
         requireRevision(key)
-        result
+        covers.page(result)
     }
 
     suspend fun cachedArtist(artist: ServerArtist): ServerArtist = withContext(Dispatchers.IO) {
@@ -116,7 +126,7 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
         val root = browseCache.snapshot(rootKey)?.artists?.firstOrNull { it.id == artist.id }
         val artwork = browseCache.snapshot(rootKey.copy(kind = "catalog-songs"))?.artistArtwork
         requireRevision(rootKey)
-        projectArtistArtwork(artist, root, detail, artwork)
+        covers.artist(projectArtistArtwork(artist, root, detail, artwork))
     }
 
     suspend fun cachedArtists(profileId: String, artists: List<ServerArtist>): List<ServerArtist> = withContext(Dispatchers.IO) {
@@ -125,7 +135,7 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
         val roots = browseCache.snapshot(rootKey)?.artists.orEmpty().associateBy { it.id }
         val artwork = browseCache.snapshot(rootKey.copy(kind = "catalog-songs"))?.artistArtwork
         val details = browseCache.artistHeaders(profileId, rootKey.revision)
-        val result = artists.map { projectArtistArtwork(it, roots[it.id], details[it.id], artwork) }
+        val result = artists.map { covers.artist(projectArtistArtwork(it, roots[it.id], details[it.id], artwork)) }
         requireRevision(rootKey)
         result
     }
@@ -153,7 +163,7 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
             page
         }
         requireRevision(key)
-        result
+        covers.page(result)
     }
 
     private fun requireRevision(key: ServerBrowseKey) {
@@ -219,7 +229,7 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
             "songCount" to size.toString(), "artistCount" to "0", "albumCount" to "0"))
             .requiredCollection("searchResult3").collectionRows("song")
         return ServerBrowsePage(songs = rows.map { mapSong(profileId, it) }, hasMore = rows.size == size,
-            artistArtwork = songArtistArtwork(profileId, rows))
+            artistArtwork = songArtistArtwork(accounts.profile(profileId) ?: throw SubsonicException.accountUnavailable(), rows))
     }
 
     private suspend fun fetchArtists(profileId: String): List<ServerArtist> =
@@ -395,26 +405,26 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
                 ServerSongRef.surrogateId("album:$profileId:$it")
             } ?: 0L,
             durationMs = json.optLong("duration", 0).coerceIn(0, 604800) * 1000L,
-            coverUrl = cover(profileId, id, json), mediaUri = ref.mediaUri,
+            coverUrl = cover(profileId, json), mediaUri = ref.mediaUri,
             channelId = ServerSongRef.CHANNEL, audioId = ref.audioId)
     }
 
     private fun mapAlbum(profileId: String, json: JSONObject): ServerAlbum {
         val id = json.getString("id")
         return ServerAlbum(profileId, id, json.optString("name", id),
-            json.optString("artist"), cover(profileId, id, json), json.optInt("songCount"))
+            json.optString("artist"), cover(profileId, json), json.optInt("songCount"))
     }
 
     private fun mapArtist(profileId: String, json: JSONObject): ServerArtist {
         val id = json.getString("id")
         return ServerArtist(profileId, id, json.optString("name", id),
-            cover(profileId, id, json) ?: publicArtistImageUrl(json.opt("artistImageUrl") as? String),
+            cover(profileId, json) ?: publicArtistImageUrl(json.opt("artistImageUrl") as? String),
             json.optInt("albumCount").coerceAtLeast(0))
     }
 
-    private fun cover(profileId: String, resourceId: String, json: JSONObject): String? =
+    private fun cover(profileId: String, json: JSONObject): String? =
         json.optString("coverArt").takeIf { it.isNotBlank() && it != "null" }
-            ?.let { ServerSongRef(profileId, resourceId).resourceUrl("cover", it) }
+            ?.let { SubsonicCoverReference.create(accounts.profile(profileId) ?: throw SubsonicException.accountUnavailable(), it) }
 
     private fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else
         (0 until length()).mapNotNull { optJSONObject(it) }

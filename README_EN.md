@@ -119,6 +119,8 @@ Opening a profile automatically loads and caches all three metadata directories.
 
 Profiles and passwords stay in encrypted local storage. Editing changes only the name and password. A different address or username requires a new profile; existing playlist entries are not migrated automatically, and ordinary sync does not migrate server credentials. Browse caches and next-song prefetch do not provide complete offline downloads. See the [API contract](docs/music-server-api.md) for protocol and client behavior (Chinese).
 
+Server artwork syncs as a real endpoint URL without authentication parameters. Another Android device can load it using its own account after adding the same server address and username. Private servers still require sign-in; passwords and access tokens are not included in synced artwork URLs. Desktop clients can retain these URLs for a future music-server integration; desktop artwork loading is not implemented yet.
+
 ---
 
 ## Key Features

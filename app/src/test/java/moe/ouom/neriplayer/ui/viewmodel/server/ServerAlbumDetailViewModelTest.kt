@@ -27,6 +27,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.doAnswer
+import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
@@ -49,7 +50,6 @@ class ServerAlbumDetailViewModelTest {
     )
     private lateinit var profiles: MutableStateFlow<List<SubsonicProfile>>
     private lateinit var repository: SubsonicRepository
-    private lateinit var cache: SubsonicBrowseCache
 
     @Before fun setUp() {
         Dispatchers.setMain(dispatcher)
@@ -60,8 +60,6 @@ class ServerAlbumDetailViewModelTest {
         `when`(accounts.profile(otherProfile.id)).thenAnswer { profiles.value.firstOrNull { it.id == otherProfile.id && it.enabled } }
         repository = mock(SubsonicRepository::class.java)
         `when`(repository.accounts).thenReturn(accounts)
-        cache = mock(SubsonicBrowseCache::class.java)
-        `when`(repository.browseCache).thenReturn(cache)
         `when`(repository.browseKey(profile.id, albumId = album.id)).thenReturn(key)
     }
 
@@ -81,7 +79,7 @@ class ServerAlbumDetailViewModelTest {
             ServerBrowsePage(songs = songs)
         }
         val reopened = SubsonicBrowseCache(store, backgroundScope, now = { 120_001L })
-        `when`(repository.browseCache).thenReturn(reopened)
+        doReturn(reopened.snapshot(key)).`when`(repository).cached(key)
         doAnswer { throw SubsonicException(-1, "offline", SubsonicFailureKind.NETWORK) }
             .`when`(repository).browse(key, false)
         val vm = ServerAlbumDetailViewModel(repository)
@@ -96,7 +94,7 @@ class ServerAlbumDetailViewModelTest {
     }
 
     @Test fun `cached album is visible while a successful refresh replaces its songs`() = runTest(dispatcher) {
-        `when`(cache.snapshot(key)).thenReturn(ServerBrowsePage(songs = songs, savedAtMs = 1L))
+        `when`(repository.cached(key)).thenReturn(ServerBrowsePage(songs = songs, savedAtMs = 1L))
         lateinit var response: Continuation<ServerBrowsePage>
         doAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
@@ -123,12 +121,12 @@ class ServerAlbumDetailViewModelTest {
             @Suppress("UNCHECKED_CAST")
             snapshot = invocation.rawArguments.last() as Continuation<ServerBrowsePage?>
             COROUTINE_SUSPENDED
-        }.`when`(cache).snapshot(key)
+        }.`when`(repository).cached(key)
         `when`(repository.browse(key, false)).thenReturn(ServerBrowsePage(songs = songs))
         val otherAlbum = album.copy(profileId = otherProfile.id)
         val otherKey = key.copy(profileId = otherProfile.id)
         `when`(repository.browseKey(otherProfile.id, albumId = album.id)).thenReturn(otherKey)
-        `when`(cache.snapshot(otherKey)).thenReturn(ServerBrowsePage(songs = songs.reversed()))
+        `when`(repository.cached(otherKey)).thenReturn(ServerBrowsePage(songs = songs.reversed()))
         `when`(repository.browse(otherKey, false)).thenReturn(ServerBrowsePage(songs = songs.reversed()))
         val vm = ServerAlbumDetailViewModel(repository)
         try {
@@ -151,11 +149,11 @@ class ServerAlbumDetailViewModelTest {
             @Suppress("UNCHECKED_CAST")
             snapshot = invocation.rawArguments.last() as Continuation<ServerBrowsePage?>
             COROUTINE_SUSPENDED
-        }.`when`(cache).snapshot(key)
+        }.`when`(repository).cached(key)
         `when`(repository.browse(key, false)).thenReturn(ServerBrowsePage(songs = songs))
         val revised = profile.copy(revision = 1L)
         val revisedKey = key.copy(revision = 1L)
-        `when`(cache.snapshot(revisedKey)).thenReturn(ServerBrowsePage(songs = songs.reversed()))
+        `when`(repository.cached(revisedKey)).thenReturn(ServerBrowsePage(songs = songs.reversed()))
         `when`(repository.browse(revisedKey, false)).thenReturn(ServerBrowsePage(songs = songs.reversed()))
         val vm = ServerAlbumDetailViewModel(repository)
         try {

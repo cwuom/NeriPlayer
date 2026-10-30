@@ -11,16 +11,24 @@ import org.json.JSONObject
 class SubsonicResourceInterceptor(private val accounts: () -> SubsonicAccounts) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        if (request.url.host != ServerSongRef.RESOURCE_HOST) return chain.proceed(request)
+        val markedCover = request.url.fragment?.startsWith("neri-cover") == true
+        if (request.url.host != ServerSongRef.RESOURCE_HOST && !markedCover) return chain.proceed(request)
         try {
-            val path = request.url.pathSegments
-            require(path.size == 4 && path[0] == "v1")
-            val ref = ServerSongRef.reference(path[1], path[3])
             val store = accounts()
-            val credentials = try { store.credentials(ref.profileId) }
-            catch (_: IllegalStateException) { throw SubsonicException.accountUnavailable() }
-            val parameters = mutableMapOf("id" to ref.songId)
-            val method = when (path[2]) {
+            val cover = if (markedCover) requireNotNull(SubsonicCoverReference.parse(request.url)) else null
+            val path = request.url.pathSegments
+            val ref = if (cover == null) {
+                require(path.size == 4 && path[0] == "v1")
+                ServerSongRef.reference(path[1], path[3])
+            } else null
+            val credentials = try {
+                if (cover != null) store.coverCredentials(cover) else store.credentials(requireNotNull(ref).profileId)
+            } catch (_: IllegalStateException) { throw SubsonicException.accountUnavailable() }
+            val parameters = mutableMapOf("id" to (cover?.coverArtId ?: requireNotNull(ref).songId))
+            val method = if (cover != null) {
+                parameters["size"] = "600"
+                "getCoverArt"
+            } else when (path[2]) {
                 "stream", "download" -> { parameters["format"] = "raw"; path[2] }
                 "cover" -> { parameters["size"] = "600"; "getCoverArt" }
                 else -> throw IOException("无效的服务器资源类型")

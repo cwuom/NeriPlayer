@@ -548,6 +548,10 @@ object AppContainer {
             )
         )
         moe.ouom.neriplayer.data.network.DataHttpClients.bind { sharedOkHttpClient }
+        moe.ouom.neriplayer.data.sync.policy.SyncCoverUrlProjection.bind(
+            prepare = { subsonicAccounts.load() },
+            project = { subsonicAccounts.portableCoverUrl(it) }
+        )
         moe.ouom.neriplayer.data.sync.host.SyncPlaybackActivity.bind {
             moe.ouom.neriplayer.core.player.PlayerManager.playbackControlPlayingFlow.value
         }
@@ -602,6 +606,7 @@ object AppContainer {
         scope.launch {
             runCatching {
                 CoverUrlMapper.getInstance(application)
+                subsonicAccounts.load()
             }.onFailure { error ->
                 NPLogger.e("AppContainer", "Failed to preload cover URL mappings", error)
             }
