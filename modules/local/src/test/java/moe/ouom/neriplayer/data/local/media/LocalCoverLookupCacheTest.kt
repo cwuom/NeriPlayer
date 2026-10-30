@@ -7,6 +7,8 @@ import java.io.File
 import java.io.InputStream
 import java.net.URI
 import java.nio.file.Files
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.storage.cleanup.LocalImportCache
 import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
@@ -211,6 +213,35 @@ class LocalCoverLookupCacheTest {
     }
 
     @Test
+    fun `cleanup can finish during image decoding and a deleted cover is rejected`() {
+        val cached = embeddedCover("decode-race", byteArrayOf(1, 2, 3))
+        val cache = LocalImportCache(
+            requireNotNull(cached.parentFile),
+            { emptySet() },
+            fileAccessLock = LocalMediaSupport.embeddedCoverCacheLock,
+            isCoverInUse = LocalMediaSupport::isEmbeddedCoverInUse
+        ) {}
+        val cleanupExecutor = Executors.newSingleThreadExecutor()
+        var cleanupResult: ExtraCacheClearResult? = null
+        try {
+            withDecodableImages(onDecode = {
+                cleanupResult = cleanupExecutor.submit<ExtraCacheClearResult> {
+                    runBlocking { cache.clear() }
+                }.get(5, TimeUnit.SECONDS)
+            }) {
+                assertEquals(CoverReferenceValidation.INVALID, validateCoverReference(context, uri(cached.path)))
+            }
+
+            assertEquals(ExtraCacheClearResult(true, 3, 0, 1), cleanupResult)
+            assertFalse(cached.exists())
+            assertFalse(LocalMediaSupport.isEmbeddedCoverInUse(cached))
+        } finally {
+            cleanupExecutor.shutdownNow()
+            assertTrue(cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
     fun `external and unknown cover files are not retained`() {
         val external = temporaryFolder.newFile("${"a".repeat(64)}.jpg").apply { writeBytes(byteArrayOf(1)) }
         val unknown = File(temporaryFolder.root, "local_audio_covers/selected.jpg").apply {
@@ -357,7 +388,7 @@ class LocalCoverLookupCacheTest {
         }
     }
 
-    private fun withDecodableImages(block: () -> Unit) {
+    private fun withDecodableImages(onDecode: () -> Unit = {}, block: () -> Unit) {
         mockStatic(BitmapFactory::class.java).use { decoder ->
             decoder.`when`<Any?> {
                 BitmapFactory.decodeStream(any(InputStream::class.java), isNull(), any())
@@ -366,6 +397,7 @@ class LocalCoverLookupCacheTest {
                     outWidth = 1
                     outHeight = 1
                 }
+                onDecode()
                 null
             }
             block()

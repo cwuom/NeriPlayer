@@ -425,14 +425,12 @@ private fun validateLocalCoverReference(context: Context, uri: Uri): CoverRefere
 private fun absolutePathOrNull(path: String?): String? = path?.takeIf { it.startsWith("/") }
 
 private fun validateCoverFilePath(context: Context, path: String?): CoverReferenceValidation =
-    synchronized(LocalMediaSupport.embeddedCoverCacheLock) {
-        if (path?.let(::File)?.let(::isUsableCoverFile) == true &&
-            LocalMediaSupport.retainEmbeddedCoverReference(context, path) != null
-        ) {
-            CoverReferenceValidation.USABLE
-        } else {
-            CoverReferenceValidation.INVALID
-        }
+    if (path?.let(::File)?.let(::isUsableCoverFile) == true &&
+        LocalMediaSupport.retainEmbeddedCoverReference(context, path) != null
+    ) {
+        CoverReferenceValidation.USABLE
+    } else {
+        CoverReferenceValidation.INVALID
     }
 
 internal fun validateContentCoverReference(
