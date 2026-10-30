@@ -53,6 +53,30 @@ class SyncPreferenceRecoveryTest {
     }
 
     @Test
+    fun `retry reopens preserved sync metadata after the keystore recovers`() {
+        val name = uniqueName()
+        var available = false
+        val persistent = mock(SharedPreferences::class.java)
+        val create = {
+            if (!available) throw KeyStoreException("temporarily unavailable")
+            persistent
+        }
+        fun open() = SyncPreferenceRecovery.open(
+            name = name,
+            create = create,
+            delete = { throw AssertionError("sync metadata must not be deleted") },
+            onOpenFailure = {},
+            onDeleteFailure = {},
+            recoverOnFailure = false
+        )
+
+        assertFalse(SecurePreferencesOpener.isPersistent(open()))
+        available = true
+
+        assertSame(persistent, open())
+    }
+
+    @Test
     fun `healthy preferences never clear storage`() {
         val preferences = mock(SharedPreferences::class.java)
         assertSame(preferences, SyncPreferenceRecovery.open(

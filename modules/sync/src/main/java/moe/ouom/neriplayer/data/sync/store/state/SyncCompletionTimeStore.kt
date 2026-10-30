@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.sync.store.state
 
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -37,12 +38,20 @@ internal class SyncCompletionTimeStore(
         }
     }
 
-    fun editConfiguration(action: SharedPreferences.Editor.() -> Unit) = synchronized(configurationLock) {
+    fun editConfiguration(
+        requirePersistence: Boolean = false,
+        action: SharedPreferences.Editor.() -> Unit
+    ) = synchronized(configurationLock) {
         val nextGeneration = configurationGeneration() + 1L
-        preferences.edit {
+        val editor = preferences.edit().apply {
             action()
             // clear() 也会清除代次，必须在配置编辑后保存新代次
             putLong(KEY_CONFIGURATION_GENERATION, nextGeneration)
+        }
+        if (requirePersistence) {
+            if (!editor.commit()) throw IOException("Failed to persist sync configuration")
+        } else {
+            editor.apply()
         }
     }
 
@@ -54,13 +63,14 @@ internal class SyncCompletionTimeStore(
         storedTarget: () -> List<String>,
         nextTarget: List<String>,
         checkpointKeys: List<String>,
+        requirePersistence: Boolean = false,
         action: SharedPreferences.Editor.() -> Unit
     ) {
         val targetChanged = synchronized(configurationLock) {
             val owner = preferences.getString(KEY_CHECKPOINT_TARGET, null) ?: targetKey(storedTarget())
             val next = targetKey(nextTarget)
             val changed = isOtherTarget(owner, next)
-            editConfiguration {
+            editConfiguration(requirePersistence) {
                 if (changed) (checkpointKeys + KEY_LAST_COMPLETED_SYNC_TIME).forEach { remove(it) }
                 (next ?: owner)?.let { putString(KEY_CHECKPOINT_TARGET, it) }
                 action()
@@ -91,7 +101,6 @@ internal class SyncCompletionTimeStore(
 
     private companion object {
         const val KEY_LAST_COMPLETED_SYNC_TIME = "last_completed_sync_time"
-        const val KEY_CONFIGURATION_GENERATION = "sync_configuration_generation"
         const val KEY_CHECKPOINT_TARGET = "sync_checkpoint_target"
     }
 }

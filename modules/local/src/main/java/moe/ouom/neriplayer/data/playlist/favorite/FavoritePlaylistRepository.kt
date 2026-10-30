@@ -45,6 +45,7 @@ import moe.ouom.neriplayer.data.local.database.store.FavoritePlaylistRoomStore
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -198,8 +199,7 @@ class FavoritePlaylistRepository internal constructor(
         val persisted = persist(normalized)
         if (triggerSync) {
             if (persisted) {
-                syncStorage.markSyncMutation()
-                triggerAutoSync()
+                markMutationAndScheduleSync()
             } else {
                 NPLogger.w(TAG, "收藏歌单未成功落盘，跳过自动同步")
             }
@@ -242,10 +242,18 @@ class FavoritePlaylistRepository internal constructor(
         return if (resolvedSortOrder == sortOrder) this else copy(sortOrder = resolvedSortOrder)
     }
 
-    private fun triggerAutoSync() {
+    private fun markMutationAndScheduleSync() {
+        try {
+            syncStorage.markSyncMutation()
+        } catch (_: SyncStorageUnavailableException) {
+            NPLogger.w(TAG, "Secure sync storage unavailable; saved favorites retained and automatic sync skipped")
+            return
+        }
         try {
             GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
             WebDavSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
+        } catch (_: SyncStorageUnavailableException) {
+            NPLogger.w(TAG, "Secure sync storage unavailable; saved favorites retained and automatic sync skipped")
         } catch (e: Exception) {
             NPLogger.e(TAG, "Failed to schedule sync", e)
         }
@@ -332,8 +340,7 @@ class FavoritePlaylistRepository internal constructor(
                 initialLoadFailure = error
                 throw error
             }
-            syncStorage.markSyncMutation()
-            triggerAutoSync()
+            markMutationAndScheduleSync()
             imported.addedCount
         }
     }

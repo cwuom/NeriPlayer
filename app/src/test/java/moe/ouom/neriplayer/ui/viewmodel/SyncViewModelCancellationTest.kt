@@ -19,6 +19,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.sync.SyncResult
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -186,7 +188,15 @@ class SyncViewModelCancellationTest {
 
     private fun fixtures(): List<Fixture> {
         val github = GitHubSyncViewModel().also(viewModels::add)
+        github.ioDispatcher = Dispatchers.Main
+        val githubStorage = mock(SecureTokenStorage::class.java)
+        `when`(githubStorage.isPersistent).thenReturn(true)
+        GitHubSyncViewModel::class.java.getDeclaredField("storage").apply { isAccessible = true }.set(github, githubStorage)
         val webdav = WebDavSyncViewModel().also(viewModels::add)
+        webdav.ioDispatcher = Dispatchers.Main
+        val webDavStorage = mock(WebDavStorage::class.java)
+        `when`(webDavStorage.isPersistent).thenReturn(true)
+        WebDavSyncViewModel::class.java.getDeclaredField("storage").apply { isAccessible = true }.set(webdav, webDavStorage)
         return listOf(
             Fixture(CoreCommonR.string.github_sync_failed, { github.syncOperation = it }, { github.performSync(it) }, github::performSync, github::clearConfiguration,
                 { github.uiState.value.isSyncing }, { github.uiState.value.successMessage }, { github.uiState.value.errorMessage }),

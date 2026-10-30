@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.store.FavoritePlaylistRoomStore
 import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -34,6 +35,70 @@ class FavoritePlaylistRepositoryEditingTest {
     private val syncStorage: SecureTokenStorage = mock(SecureTokenStorage::class.java)
     private val primary: File
         get() = File(temporaryFolder.root, "favorite_playlists.json")
+
+    @Test
+    fun `adding a favorite keeps the saved value when secure sync storage is unavailable`() = runTest {
+        val repository = repository(backgroundScope)
+        doAnswer { throw SyncStorageUnavailableException() }.`when`(syncStorage).markSyncMutation()
+
+        val failure = runCatching {
+            repository.addFavorite(1L, "Saved favorite", null, 3, "netease", songs = emptyList())
+        }.exceptionOrNull()
+
+        assertEquals("Saved favorite", repository.getFavorite(1L, "netease")?.name)
+        assertEquals("Saved favorite", stored().single().name)
+        assertFalse(stored().single().isDeleted)
+        assertEquals(stored(), repository.getSyncSnapshots())
+        assertNull(failure)
+    }
+
+    @Test
+    fun `removing a favorite keeps its saved tombstone when secure sync storage is unavailable`() = runTest {
+        val repository = repository(backgroundScope, favorite(1L, "Saved favorite", sortOrder = 30L))
+        doAnswer { throw SyncStorageUnavailableException() }.`when`(syncStorage).markSyncMutation()
+
+        val failure = runCatching { repository.removeFavorite(1L, "netease") }.exceptionOrNull()
+
+        assertFalse(repository.isFavorite(1L, "netease"))
+        assertTrue(stored().single().isDeleted)
+        assertEquals(0, stored().single().trackCount)
+        assertEquals(stored(), repository.getSyncSnapshots())
+        assertNull(failure)
+    }
+
+    @Test
+    fun `follow import returns the saved batch when secure sync storage is unavailable`() = runTest {
+        val repository = repository(backgroundScope)
+        doAnswer { throw SyncStorageUnavailableException() }.`when`(syncStorage).markSyncMutation()
+
+        val result = runCatching {
+            repository.mergeFollowedArtists(
+                FAVORITE_SOURCE_NETEASE_ARTIST,
+                listOf(FavoriteArtist(2L, "Saved artist")),
+                importStartedAt = 100L
+            )
+        }
+
+        assertEquals("Saved artist", repository.favorites.value.single().name)
+        assertEquals("Saved artist", stored().single().name)
+        assertEquals(stored(), repository.getSyncSnapshots())
+        assertEquals(1, result.getOrThrow())
+    }
+
+    @Test
+    fun `unexpected sync metadata failures still propagate after a favorite is saved`() = runTest {
+        val repository = repository(backgroundScope)
+        val expected = IOException("Unexpected metadata failure")
+        doAnswer { throw expected }.`when`(syncStorage).markSyncMutation()
+
+        val failure = runCatching {
+            repository.addFavorite(1L, "Saved favorite", null, 3, "netease", songs = emptyList())
+        }.exceptionOrNull()
+
+        assertEquals("Saved favorite", stored().single().name)
+        assertTrue(failure is IOException)
+        assertEquals("Unexpected metadata failure", failure?.message)
+    }
 
     @Test
     fun `removing a favorite stores a tombstone and repeated removals change nothing`() = runTest {

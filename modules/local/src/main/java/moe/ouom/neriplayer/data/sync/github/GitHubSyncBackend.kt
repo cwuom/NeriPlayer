@@ -9,7 +9,6 @@ import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.api.sync.github.GitHubApiClient
 import moe.ouom.neriplayer.api.sync.github.GitHubArchiveHead
 import moe.ouom.neriplayer.api.sync.github.GitHubArchiveProof
-import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
 import moe.ouom.neriplayer.api.sync.github.GitHubFileNotFoundException
 import moe.ouom.neriplayer.api.sync.github.GitHubContentConflictException
 import moe.ouom.neriplayer.api.sync.github.GitHubSyncHead
@@ -68,9 +67,7 @@ internal class GitHubSyncBackend(
     override fun scheduleFollowUp() {
         followUp()
     }
-    override fun onFailure(error: Throwable) {
-        if (error is TokenExpiredException) storage.clearToken()
-    }
+    override fun onFailure(error: Throwable) = Unit
 
     data class Version(
         val sha: String?,

@@ -158,6 +158,7 @@ class SyncViewModelCompletionTimeTest {
         val github = GitHubSyncViewModel().also(viewModels::add)
         github.ioDispatcher = StandardTestDispatcher(scheduler)
         val githubStorage = mock(SecureTokenStorage::class.java)
+        `when`(githubStorage.isPersistent).thenReturn(true)
         val githubFixture = Fixture({ github.initialize(context) },
             { github.uiState.value.lastSyncTime }, { github.uiState.value.isSyncing },
             { github.uiState.value.successMessage },
@@ -181,6 +182,7 @@ class SyncViewModelCompletionTimeTest {
         val webDav = WebDavSyncViewModel().also(viewModels::add)
         webDav.ioDispatcher = StandardTestDispatcher(scheduler)
         val webDavStorage = mock(WebDavStorage::class.java)
+        `when`(webDavStorage.isPersistent).thenReturn(true)
         val webDavFixture = Fixture({ webDav.initialize(context) },
             { webDav.uiState.value.lastSyncTime }, { webDav.uiState.value.isSyncing },
             { webDav.uiState.value.successMessage },
