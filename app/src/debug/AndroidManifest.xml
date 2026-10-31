@@ -11,5 +11,6 @@
             android:name=".testing.DebugCookieImportReceiver"
             android:exported="true"
             android:permission="android.permission.DUMP" />
+        <receiver android:name=".testing.DebugLanReceiver" android:exported="true" android:permission="android.permission.DUMP" />
     </application>
 </manifest>

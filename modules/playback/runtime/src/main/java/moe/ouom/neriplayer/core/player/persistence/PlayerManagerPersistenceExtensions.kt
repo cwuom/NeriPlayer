@@ -612,124 +612,6 @@ internal fun PlayerManager.playBiliVideoAsAudioImpl(videos: List<BiliVideoItem>,
     playPlaylist(songs, startIndex)
 }
 
-internal suspend fun PlayerManager.getNeteaseLyricsImpl(songId: Long): List<LyricEntry> {
-    return PlayerLyricsProvider.getNeteaseLyrics(songId, neteaseClient, neteaseLyricsCache)
-}
-
-internal suspend fun PlayerManager.getNeteaseTranslatedLyricsImpl(songId: Long): List<LyricEntry> {
-    return PlayerLyricsProvider.getNeteaseTranslatedLyrics(
-        songId,
-        neteaseClient,
-        neteaseLyricsCache
-    )
-}
-
-internal suspend fun PlayerManager.getNeteaseRomanizedLyricsImpl(songId: Long): List<LyricEntry> {
-    return PlayerLyricsProvider.getNeteaseRomanizedLyrics(
-        songId,
-        neteaseClient,
-        neteaseLyricsCache
-    )
-}
-
-internal suspend fun PlayerManager.getPreferredNeteaseLyricContentImpl(songId: Long): String {
-    return PlayerLyricsProvider.getPreferredNeteaseLyricContent(
-        songId,
-        neteaseClient,
-        neteaseLyricsCache
-    )
-}
-
-internal suspend fun PlayerManager.getPreferredNeteaseRomanizedLyricContentImpl(songId: Long): String {
-    return PlayerLyricsProvider.getPreferredNeteaseRomanizedLyricContent(
-        songId,
-        neteaseClient,
-        neteaseLyricsCache
-    )
-}
-
-internal suspend fun PlayerManager.getTranslatedLyricsImpl(
-    song: SongItem,
-    skipPreferredSource: Boolean = false
-): List<LyricEntry> {
-    return PlayerLyricsProvider.getTranslatedLyrics(
-        song = song,
-        application = application,
-        neteaseClient = neteaseClient,
-        neteaseLyricsCache = neteaseLyricsCache,
-        editableLyricsMatcher = PlayerDependencies.repositories.editableLyricsMatcher,
-        preferWordTimedLyrics = preferWordTimedLyrics,
-        defaultLyricSource = if (skipPreferredSource) {
-            LyricSourcePreference.Automatic
-        } else {
-            defaultLyricSource
-        },
-        ytMusicLyricsCache = ytMusicLyricsCache,
-        biliSourceTag = BILI_SOURCE_TAG,
-        biliClient = biliClient,
-        biliSubtitleOptions = BiliSubtitleLyricsOptions(
-            enabled = biliCcSubtitleLyricsEnabled,
-            preferredLanguage = biliCcSubtitleLanguage,
-            aiSubtitleAllowed = biliCcSubtitleAiOnlyEnabled
-        )
-    )
-}
-
-internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem): List<LyricEntry> {
-    return PlayerLyricsProvider.getRomanizedLyrics(
-        song = song,
-        application = application,
-        neteaseClient = neteaseClient,
-        neteaseLyricsCache = neteaseLyricsCache,
-        editableLyricsMatcher = PlayerDependencies.repositories.editableLyricsMatcher,
-        preferWordTimedLyrics = preferWordTimedLyrics,
-        defaultLyricSource = defaultLyricSource,
-        amllLyricsEnabled = amllLyricsEnabled
-    )
-}
-
-internal suspend fun PlayerManager.getLyricsImpl(
-    song: SongItem,
-    skipPreferredSource: Boolean = false
-): List<LyricEntry> {
-    return PlayerLyricsProvider.getLyrics(
-        song = song,
-        application = application,
-        neteaseClient = neteaseClient,
-        neteaseLyricsCache = neteaseLyricsCache,
-        youtubeMusicClient = youtubeMusicClient,
-        lrcLibClient = lrcLibClient,
-        editableLyricsMatcher = PlayerDependencies.repositories.editableLyricsMatcher,
-        amllTtmlClient = amllTtmlClient,
-        amllLyricsEnabled = amllLyricsEnabled,
-        preferWordTimedLyrics = preferWordTimedLyrics,
-        defaultLyricSource = if (skipPreferredSource) {
-            LyricSourcePreference.Automatic
-        } else {
-            defaultLyricSource
-        },
-        ytMusicLyricsCache = ytMusicLyricsCache,
-        biliSourceTag = BILI_SOURCE_TAG,
-        biliClient = biliClient,
-        biliSubtitleOptions = BiliSubtitleLyricsOptions(
-            enabled = biliCcSubtitleLyricsEnabled,
-            preferredLanguage = biliCcSubtitleLanguage,
-            aiSubtitleAllowed = biliCcSubtitleAiOnlyEnabled
-        )
-    )
-}
-
-internal suspend fun PlayerManager.getPreferredLyricSourceResultImpl(
-    song: SongItem,
-    preference: LyricSourcePreference
-): PreferredLyricSourceResult? = PlayerLyricsProvider.tryGetPreferredLyricSourceResult(
-    song = song,
-    preference = preference,
-    preferWordTimed = preferWordTimedLyrics,
-    editableLyricsMatcher = PlayerDependencies.repositories.editableLyricsMatcher,
-    neteaseClient = neteaseClient,
-    neteaseLyricsCache = neteaseLyricsCache
-)
 
 internal fun PlayerManager.playFromQueueImpl(
     index: Int,
@@ -741,6 +623,7 @@ internal fun PlayerManager.playFromQueueImpl(
     if (currentPlaylist.isEmpty()) return
     if (index !in currentPlaylist.indices) return
     val targetSong = currentPlaylist[index]
+    if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.playlist(currentPlaylist, index, commandSource)) return
     NPLogger.d(
         "NERI-PlayerManager",
         "playFromQueue(): index=$index, source=$commandSource, currentIndex=$currentIndex, queueSize=${currentPlaylist.size}, target=${targetSong.name}/${targetSong.id}, stack=[${debugStackHint()}]"

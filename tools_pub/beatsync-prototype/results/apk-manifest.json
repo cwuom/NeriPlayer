@@ -1,0 +1,20 @@
+[
+  {
+    "file": "beatsync-candidate-debug.apk",
+    "bytes": 15432758,
+    "sha256": "3674821ea03b0abc7de7793d74310dc553f0c5b4d56a1dde22958bba1d8bbf29",
+    "scope": "Prototype only; not installed or device-tested"
+  },
+  {
+    "file": "beatsync-candidate-release-unsigned.apk",
+    "bytes": 9160978,
+    "sha256": "6015afc46174c80571088b1dada02476e05fffaca5b4d8acfb35e901245bdecf",
+    "scope": "Prototype only; not installed or device-tested"
+  },
+  {
+    "file": "beatsync-full-debug.apk",
+    "bytes": 23190932,
+    "sha256": "0a42cbfcb32caeeb86bf02e2db40a044e7307569e3746c2d1c141c4e3d742834",
+    "scope": "Prototype only; not installed or device-tested"
+  }
+]

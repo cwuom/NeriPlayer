@@ -30,7 +30,7 @@ When maintaining docs, split them by audience:
 | Document | Purpose |
 | --- | --- |
 | [README](README_EN.md) | For users and new contributors: project scope, key features, feature boundaries, installation/builds, sync, and privacy. |
-| [Implementation notes](docs/implementation_EN.md) | Build versions, the 14 owned libraries, entry points and navigation, playback and caching, data sources, and download/backup paths. |
+| [Implementation notes](docs/implementation_EN.md) | Build versions, the 15 owned libraries, entry points and navigation, playback and caching, data sources, and download/backup paths. |
 | [Contribution guide](CONTRIBUTING_EN.md) | For developers: module boundaries, extension paths, tests, and PR expectations. |
 | [Kotlin helpers](docs/kotlin-helpers_EN.md) | Usage and boundaries for request generations, units, player reads, and coroutine results. |
 | [Music server API](docs/music-server-api.md) | **Preview feature; not sufficiently tested.** Current music-server HTTP endpoints, authentication, identity, and cache contracts (Chinese); see the platform README for core file responsibilities. |

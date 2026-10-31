@@ -22,7 +22,6 @@ package moe.ouom.neriplayer.core.player.service
  * File: moe.ouom.neriplayer.core.player.service/AudioPlayerService
  * Updated: 2026/3/23
  */
-
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import moe.ouom.neriplayer.core.player.policy.service.TaskRemovedPlaybackCallbacks
 import moe.ouom.neriplayer.core.player.policy.service.executeTaskRemovedPlaybackAction
@@ -1620,6 +1619,7 @@ class AudioPlayerService : Service() {
     }
 
     override fun onDestroy() {
+        moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.notifyServiceStopped()
         NPLogger.w("NERI-APS", "onDestroy ${buildStateSummary()}")
         val preservePlaybackForRestart = shouldPreservePlaybackForRestart()
         try {

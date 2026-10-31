@@ -1,0 +1,23 @@
+{
+  "warnings": [
+    "libquickjs.so packaged without symbol stripping",
+    "Conservative reflection keep rules; not a size benchmark"
+  ],
+  "kotlin": "2.4.10",
+  "candidate": {
+    "deviceExecution": "not performed; adb device list empty",
+    "debug": "passed",
+    "release": "passed R8 and lintVitalRelease; unsigned",
+    "components": "Zipline QuickJS 1.28.0, Java-WebSocket 1.6.0, OkHttp 5.4.0"
+  },
+  "minSdk": 28,
+  "agp": "9.4.1",
+  "date": "2026-10-28",
+  "targetSdk": 36,
+  "compileSdk": 37,
+  "fullComparison": {
+    "evidence": "android-full-r8-missing-rules.txt",
+    "debug": "passed",
+    "release": "failed R8: Rhino java.beans/jdk.dynalink; Ktor java.lang.management"
+  }
+}

@@ -1057,10 +1057,12 @@ object PlayerManager {
     internal fun activeListenTogetherSessionState() = PlayerDependencies.listenTogether.sessionState.value
 
     internal fun isListenTogetherActive(): Boolean {
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.active) return true
         return !activeListenTogetherSessionState().roomId.isNullOrBlank()
     }
 
     internal fun isCurrentUserControllerInListenTogether(): Boolean {
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.active) return moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.isHost()
         val session = activeListenTogetherSessionState()
         val room = activeListenTogetherRoomState()
         return resolveListenTogetherSessionRole(
@@ -1276,6 +1278,7 @@ object PlayerManager {
     }
 
     internal fun shouldBlockLocalSongSwitch(song: SongItem, commandSource: PlaybackCommandSource): Boolean {
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.active) return false
         if (commandSource != PlaybackCommandSource.LOCAL) return false
         if (!isListenTogetherActive()) return false
         if (!isLocalSong(song)) return false
@@ -1387,6 +1390,7 @@ object PlayerManager {
     }
 
     fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.blockSpeedChange(persist)) return
         ensureInitialized()
         playbackSoundOwner.setSpeed(speed, persist)
     }
@@ -1397,6 +1401,7 @@ object PlayerManager {
     }
 
     fun setPlaybackSpeedAndPitch(speed: Float, pitch: Float, persist: Boolean = true) {
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.blockSpeedChange(persist)) return
         ensureInitialized()
         playbackSoundOwner.setSpeedAndPitch(speed, pitch, persist)
     }

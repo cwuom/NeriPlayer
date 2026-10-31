@@ -1823,6 +1823,18 @@ object AutoSettingsSchema {
         order = 110
     )
     object playback : PlaybackSettingsSection() {
+        @AutoSetting(order = 991, ui = SettingUiType.Custom)
+        val lanHostPermissions = autoIntSetting(
+            key = "lan_listen_host_permissions", defaultValue = 0,
+            titleRes = CoreCommonR.string.lan_permissions, icon = AutoSettingIcon.Bolt
+        )
+
+        @AutoSetting(order = 990, ui = SettingUiType.Custom)
+        val lanNudgeMs = autoIntSetting(
+            key = "lan_listen_nudge_ms", defaultValue = 0,
+            titleRes = CoreCommonR.string.lan_nudge, icon = AutoSettingIcon.Bolt
+        )
+
         val metadata = autoSettingsSection(
             titleRes = CoreCommonR.string.settings_playback,
             descriptionRes = CoreCommonR.string.settings_playback_expand,

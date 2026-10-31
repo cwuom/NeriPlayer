@@ -518,6 +518,7 @@ object AppContainer {
             youtubeMusicClient = youtubeMusicClient
         )
     }
+    val lanListenTogether by lazy { moe.ouom.neriplayer.core.di.lan.AppLanModule.create() }
     val listenTogetherApi by lazy { ListenTogetherApi(sharedOkHttpClient) }
     private val listenTogetherOkHttpClient by lazy {
         sharedOkHttpClient.newBuilder()

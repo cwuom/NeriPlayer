@@ -56,6 +56,7 @@ class NeriMiniPlayerComposeTest {
         width: Dp? = null,
         isPlaying: Boolean = false,
         playPauseEnabled: Boolean = true,
+        skipEnabled: Boolean = true,
         coverUrl: String? = null,
         tabletControls: MiniPlayerTabletControls? = null
     ) {
@@ -67,6 +68,7 @@ class NeriMiniPlayerComposeTest {
                 isPlaying = isPlaying,
                 modifier = (if (width != null) Modifier.width(width) else Modifier).testTag("mini"),
                 playPauseEnabled = playPauseEnabled,
+                skipEnabled = skipEnabled,
                 onPlayPause = { events += "playPause" },
                 onPrevious = { events += "previous" },
                 onNext = { events += "next" },
@@ -78,6 +80,27 @@ class NeriMiniPlayerComposeTest {
     }
 
     private fun string(id: Int) = context.getString(id)
+
+    @Test fun `denied skip ignores horizontal gestures`() {
+        setPlayer(skipEnabled = false)
+        composeRule.onNodeWithTag("mini").performTouchInput { swipeLeft() }
+        composeRule.onNodeWithTag("mini").performTouchInput { swipeRight() }
+        composeRule.waitForIdle()
+        assertEquals(emptyList<String>(), events.filter { it == "next" || it == "previous" })
+    }
+
+    @Test
+    @Config(qualifiers = "sw800dp-w1280dp-h800dp")
+    fun `denied tablet transport and progress expose disabled semantics`() {
+        setPlayer(width = 1_000.dp, playPauseEnabled = false, skipEnabled = false,
+            tabletControls = tabletControls(seekEnabled = false))
+        listOf("miniPlayerPrevious", "miniPlayerNext", "miniPlayerPlayPause", "miniPlayerProgress").forEach {
+            composeRule.onNodeWithTag(it).assertIsNotEnabled()
+        }
+        composeRule.onNodeWithTag("miniPlayerPrevious").performClick()
+        composeRule.onNodeWithTag("miniPlayerNext").performClick()
+        assertEquals(emptyList<String>(), events)
+    }
 
     @Test
     fun `phone player shows metadata and routes play and expand taps`() {
