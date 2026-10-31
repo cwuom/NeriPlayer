@@ -251,7 +251,8 @@
       "kotlin.*",
       "moe.ouom.neriplayer.data.model.SongIdentity",
       "moe.ouom.neriplayer.data.sync.model.SyncCausalToken",
-      "moe.ouom.neriplayer.data.model.sync.*"
+      "moe.ouom.neriplayer.data.model.sync.*",
+      "moe.ouom.neriplayer.data.sync.policy.SyncBiliCollectionBindingMergePolicy"
     ],
     "bridges": {
       "moe.ouom.neriplayer.data.model.SongIdentityKt": [
@@ -530,6 +531,7 @@
       "moe.ouom.neriplayer.data.model.SongIdentity",
       "moe.ouom.neriplayer.data.sync.mapping.stats.SyncPlaybackStatMapping",
       "moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePolicy",
+      "moe.ouom.neriplayer.data.sync.policy.SyncBiliCollectionBindingMergePolicy",
       "moe.ouom.neriplayer.data.sync.policy.SyncBiliVideoSkipMergePolicy"
     ],
     "bridges": {
@@ -1951,8 +1953,10 @@
       "moe.ouom.neriplayer.platform.bilibili.auth.*",
       "moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase",
       "moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase$Companion",
+      "moe.ouom.neriplayer.data.local.database.dao.BiliCollectionBindingDao",
       "moe.ouom.neriplayer.data.local.database.dao.BiliVideoSkipDao",
       "moe.ouom.neriplayer.data.local.database.dao.SyncMetadataDao",
+      "moe.ouom.neriplayer.data.local.database.entity.BiliCollectionBindingEntity",
       "moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipDraftEntity",
       "moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipIntervalEntity",
       "moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity",
@@ -1966,6 +1970,7 @@
       "moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState",
       "moe.ouom.neriplayer.data.model.bilibili.auth.BiliAuthBundle",
       "moe.ouom.neriplayer.data.model.bilibili.auth.BiliAuthBundle$Companion",
+      "moe.ouom.neriplayer.data.model.bilibili.binding.*",
       "moe.ouom.neriplayer.data.model.bilibili.cache.archive.BiliArchiveContentCache",
       "moe.ouom.neriplayer.data.model.bilibili.cache.archive.CachedBiliArchiveVideo",
       "moe.ouom.neriplayer.data.model.bilibili.cache.favorite.BiliFavoriteFolderContentCache",

@@ -32,7 +32,8 @@ data class SyncData(
     @ProtoNumber(16) val localPlaylistPlaybackBuckets: List<SyncLocalPlaylistPlaybackBucket> = emptyList(),
     @ProtoNumber(17) val biliVideoSkipRules: List<SyncBiliVideoSkipRule> = emptyList(),
     @ProtoNumber(18) val lyricOverrides: List<SyncSong> = emptyList(),
-    @ProtoNumber(19) val playlistUsageDeletions: List<SyncPlaylistUsageDeletion> = emptyList()
+    @ProtoNumber(19) val playlistUsageDeletions: List<SyncPlaylistUsageDeletion> = emptyList(),
+    @ProtoNumber(20) val biliCollectionBindings: List<SyncBiliCollectionBinding> = emptyList()
 )
 
 @Serializable

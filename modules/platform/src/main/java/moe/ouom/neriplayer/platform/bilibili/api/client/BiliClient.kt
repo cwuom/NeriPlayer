@@ -197,6 +197,9 @@ class BiliClient(
 
         /** CC 字幕文件体积不稳定，单独限制整次调用的耗时 */
         private const val SUBTITLE_CALL_TIMEOUT_MS = 10_000L
+
+        /** 短链最多跟随的跳转次数：b23.tv → bilibili.com → 视频页，留一点余量 */
+        private const val MAX_SHARE_REDIRECTS = 5
     }
 
     private val http: OkHttpClient = client ?: OkHttpClient.Builder()
@@ -211,6 +214,12 @@ class BiliClient(
     // 字幕 CDN 直接返回文件内容, 关闭重定向避免 Cookie 被带到其他主机
     private val subtitleHttp: OkHttpClient = http.newBuilder()
         .callTimeout(SUBTITLE_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+
+    // 短链还原只需要看 Location，重定向必须手动跟
+    private val shareLinkHttp: OkHttpClient = http.newBuilder()
         .followRedirects(false)
         .followSslRedirects(false)
         .build()
@@ -451,6 +460,34 @@ class BiliClient(
             numPages = data.optInt("numPages", 1),
             items = items
         )
+    }
+
+    /**
+     * 还原手机端分享的短链（b23.tv / bili2233.cn）。
+     *
+     * 分享出来的链接里没有 BV 号，必须跟随一次跳转才能拿到真实地址；
+     * 短链有时会连跳两层，所以最多跟 [MAX_SHARE_REDIRECTS] 次。
+     */
+    suspend fun resolveShareLink(url: String): String? = withContext(Dispatchers.IO) {
+        var current = url.trim()
+        if (!current.startsWith("http", ignoreCase = true)) return@withContext null
+        repeat(MAX_SHARE_REDIRECTS) {
+            val next = runCatching { requestRedirectLocation(current, head = true) }.getOrNull()
+                ?: runCatching { requestRedirectLocation(current, head = false) }.getOrNull()
+            if (next.isNullOrBlank() || next == current) return@withContext current
+            current = next
+        }
+        current
+    }
+
+    private fun requestRedirectLocation(url: String, head: Boolean): String? {
+        val builder = Request.Builder().url(url).header("User-Agent", DEFAULT_WEB_UA)
+        val request = if (head) builder.head().build() else builder.get().build()
+        return shareLinkHttp.newCall(request).execute().use { response ->
+            response.header("Location")?.let { location ->
+                response.request.url.resolve(location)?.toString()
+            } ?: if (response.isSuccessful) url else null
+        }
     }
 
     // UP 主空间 //

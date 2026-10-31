@@ -1134,7 +1134,10 @@ class PlaylistUsagePersistenceTest {
         `when`(history.syncSnapshot()).thenReturn(emptyList())
         `when`(localStats.syncSnapshot()).thenReturn(LocalPlaylistPlaybackSyncSnapshot(emptyList(), emptyList()))
         `when`(skip.snapshot()).thenReturn(emptyList())
-        return AndroidSyncSnapshotBuilder(storage, playlists, favorites, history, usage, localStats, skip).build(context, 0L)
+        return kotlinx.coroutines.runBlocking {
+            AndroidSyncSnapshotBuilder(storage, playlists, favorites, history, usage, localStats, skip)
+                .build(context, 0L)
+        }
     }
 
     private fun realStorage(preferences: RamDiskPreferences): SecureTokenStorage {
