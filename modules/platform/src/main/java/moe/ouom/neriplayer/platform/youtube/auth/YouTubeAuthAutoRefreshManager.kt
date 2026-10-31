@@ -281,6 +281,9 @@ class YouTubeAuthAutoRefreshManager(
                 }
                 synchronized(refreshJobLock) {
                     refreshJobs += attempt
+                    attempt.invokeOnCompletion {
+                        synchronized(refreshJobLock) { refreshJobs -= attempt }
+                    }
                     attempt.start()
                 }
                 try {
@@ -288,8 +291,6 @@ class YouTubeAuthAutoRefreshManager(
                 } catch (_: RefreshStoppedException) {
                     currentCoroutineContext().ensureActive()
                     YouTubeAuthAutoRefreshResult(attempted = true, reason = "refresh_cancelled")
-                } finally {
-                    synchronized(refreshJobLock) { refreshJobs -= attempt }
                 }
             }
         } catch (error: IOException) {

@@ -4,13 +4,16 @@ import android.app.Application
 import android.content.Context
 import android.webkit.WebView
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
@@ -36,6 +39,72 @@ import org.robolectric.annotation.Config
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
 class YouTubeAuthRefreshLifecycleTest {
+    @Test
+    fun `logout waits for teardown after the refresh caller is cancelled`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val mainDispatcher = object : CoroutineDispatcher() {
+            var paused = false
+            val queued = ArrayDeque<Pair<CoroutineContext, Runnable>>()
+
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                if (paused) queued.addLast(context to block) else dispatcher.dispatch(context, block)
+            }
+
+            fun resume() {
+                paused = false
+                while (queued.isNotEmpty()) {
+                    val (context, block) = queued.removeFirst()
+                    dispatcher.dispatch(context, block)
+                }
+            }
+        }
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            withManager { manager, store ->
+                val view = mock(WebView::class.java)
+                val loading = CompletableDeferred<Unit>()
+                val events = mutableListOf<String>()
+                doAnswer { loading.complete(Unit); null }.`when`(view).loadUrl(anyString())
+                doAnswer { events += "destroy"; null }.`when`(view).destroy()
+                manager.setWebView(view)
+                val caller = launch { manager.refreshIfNeeded("synthetic caller cancellation", force = true) }
+                var logout: kotlinx.coroutines.Job? = null
+                try {
+                    loading.await()
+                    mainDispatcher.paused = true
+                    caller.cancel()
+                    runCurrent()
+
+                    assertTrue(caller.isCancelled)
+                    assertFalse("The cancelled caller must still own its pending teardown", caller.isCompleted)
+                    assertTrue("WebView teardown must be waiting for the main dispatcher", mainDispatcher.queued.isNotEmpty())
+                    assertTrue(events.isEmpty())
+                    store.replaceAuth(YouTubeAuthBundle())
+                    logout = launch {
+                        manager.cancelAndAwaitRefresh()
+                        events += "clearCookies"
+                    }
+                    runCurrent()
+
+                    assertFalse("Logout must wait for the cancelled refresh to finish teardown", logout.isCompleted)
+                    assertTrue(events.isEmpty())
+                    mainDispatcher.resume()
+                    caller.join()
+                    logout.join()
+
+                    verify(view).destroy()
+                    assertEquals(listOf("destroy", "clearCookies"), events)
+                } finally {
+                    mainDispatcher.resume()
+                    caller.cancelAndJoin()
+                    logout?.cancelAndJoin()
+                }
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun `logout waits for refresh destruction before clearing cookies without cancelling its caller`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
