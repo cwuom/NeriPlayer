@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.ui.screen
 
 import android.content.res.Configuration
 import android.net.Uri
-import android.view.KeyEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -36,7 +35,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.Preferences
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -54,6 +52,7 @@ import moe.ouom.neriplayer.testing.TestComposeActivity
 import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.performNativeBack
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingScreen
 import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
 import moe.ouom.neriplayer.ui.theme.NeriTheme
@@ -197,7 +196,7 @@ class NowPlayingPortraitImmersiveLayoutTest {
             composeRule.onNodeWithText(label(CoreCommonR.string.nowplaying_immersive_mode_off))
                 .assertDoesNotExist()
             assertEquals("长按切换沉浸模式不能触发播放或暂停", wasPlaying, PlayerManager.isPlayingFlow.value)
-            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            composeRule.onNodeWithText(label(CoreCommonR.string.local_song_open_details)).performNativeBack()
             composeRule.onNodeWithText(label(CoreCommonR.string.local_song_open_details)).assertDoesNotExist()
         }
     }

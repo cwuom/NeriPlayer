@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.testutil
 
 import android.app.AlertDialog
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -61,6 +62,43 @@ class NativeTouchInputTest {
             composeRule.runOnIdle {
                 dialog?.dismiss()
             }
+        }
+    }
+
+    @Test
+    fun nativeBackRequiresOwningWindowFocusAndRecoversAfterDialog() {
+        assumeComposeHostAvailable()
+        var backs = 0
+        composeRule.setContent {
+            BackHandler { backs++ }
+            Box(Modifier.fillMaxSize().testTag("native-back-target"), contentAlignment = Alignment.Center) {
+                Text("Native back target")
+            }
+        }
+        val activity = composeRule.activity
+        var dialog: AlertDialog? = null
+        try {
+            composeRule.runOnIdle {
+                dialog = AlertDialog.Builder(activity).setMessage("Window focus fixture").create().also { it.show() }
+            }
+            composeRule.waitUntil(5_000) {
+                composeRule.runOnIdle {
+                    dialog?.window?.decorView?.hasWindowFocus() == true && !activity.hasWindowFocus()
+                }
+            }
+            val failure = assertThrows(AssertionError::class.java) {
+                composeRule.onNodeWithTag("native-back-target").performNativeBack()
+            }
+            assertTrue(failure.message.orEmpty().startsWith("原生返回目标窗口未就绪:"))
+            composeRule.runOnIdle {
+                assertEquals(0, backs)
+                assertTrue("返回不能发送到持有焦点的其它窗口", dialog?.isShowing == true)
+                dialog?.dismiss()
+            }
+            composeRule.onNodeWithTag("native-back-target").performNativeBack()
+            composeRule.runOnIdle { assertEquals("一次原生返回应恰好触发一次宿主回调", 1, backs) }
+        } finally {
+            composeRule.runOnIdle { dialog?.dismiss() }
         }
     }
 }

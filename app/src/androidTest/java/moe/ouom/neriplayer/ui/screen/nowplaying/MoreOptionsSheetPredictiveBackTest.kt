@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
 import android.graphics.Bitmap
-import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,6 +43,7 @@ import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.testing.TestComposeActivity
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.performNativeBack
 import moe.ouom.neriplayer.ui.component.common.PREDICTIVE_DISMISS_CANCEL_DURATION_MS
 import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.theme.NeriTheme
@@ -138,7 +138,7 @@ class MoreOptionsSheetPredictiveBackTest {
         render(UiStyle.Material, false, startPage = MoreOptionsPage.EDIT_INFO, saving = true)
         composeRule.onNodeWithTag("$PageTag${MoreOptionsPage.EDIT_INFO.name}").assertIsDisplayed()
         val idle = frame("idle")
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        composeRule.onNodeWithTag(BodyTag).performNativeBack()
         composeRule.waitForIdle()
         composeRule.mainClock.autoAdvance = false
 
@@ -156,21 +156,21 @@ class MoreOptionsSheetPredictiveBackTest {
         }
         advance(16L)
 
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        composeRule.onNodeWithTag(BodyTag).performNativeBack()
         advance(600L)
         composeRule.runOnIdle {
             assertEquals(MoreOptionsPage.MAIN, sheetOwner.page)
             assertEquals(0, dismissals)
             assertTrue(visible)
         }
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        composeRule.onNodeWithTag(BodyTag).performNativeBack()
         awaitDismissal()
         composeRule.runOnIdle { assertEquals(1, dismissals) }
     }
 
     @Test
     fun systemBackClosesTheRealSheetExactlyOnce() = verifySingleDismissal("system-back") {
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        composeRule.onNodeWithTag(BodyTag).performNativeBack()
     }
 
     @Test

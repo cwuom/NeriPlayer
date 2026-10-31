@@ -29,13 +29,28 @@ internal fun SemanticsNodeInteraction.performNativeClick(): SemanticsNodeInterac
     return this
 }
 
-private fun SemanticsNodeInteraction.awaitFocusedNativeInputNode(): SemanticsNode {
+internal fun SemanticsNodeInteraction.performNativeBack(): SemanticsNodeInteraction {
+    awaitFocusedNativeInputNode("原生返回")
+    val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+    val downTime = SystemClock.uptimeMillis()
+    // 原生返回通过 UiAutomation 同步窗口输入事务，避免丢键后误报业务状态失败
+    for (action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+        val event = KeyEvent(
+            downTime, SystemClock.uptimeMillis(), action, KeyEvent.KEYCODE_BACK, 0, 0,
+            KeyCharacterMap.VIRTUAL_KEYBOARD, 0, KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD
+        )
+        assertTrue("原生返回应被宿主接受: action=$action", automation.injectInputEvent(event, true))
+    }
+    return this
+}
+
+private fun SemanticsNodeInteraction.awaitFocusedNativeInputNode(input: String = "原生触摸"): SemanticsNode {
     val instrumentation = InstrumentationRegistry.getInstrumentation()
     val deadline = SystemClock.uptimeMillis() + 5_000L
     var state = "not sampled"
     do {
         val node = fetchSemanticsNode()
-        val view = checkNotNull(node.root as? ViewRootForTest) { "原生触摸需要 Android Compose 宿主" }.view
+        val view = checkNotNull(node.root as? ViewRootForTest) { "${input}需要 Android Compose 宿主" }.view
         var ready = false
         instrumentation.runOnMainSync {
             state = "attached=${view.isAttachedToWindow}, shown=${view.isShown}, focused=${view.hasWindowFocus()}"
@@ -45,7 +60,7 @@ private fun SemanticsNodeInteraction.awaitFocusedNativeInputNode(): SemanticsNod
         if (ready) return node
         SystemClock.sleep(10L)
     } while (SystemClock.uptimeMillis() < deadline)
-    throw AssertionError("原生触摸目标窗口未就绪: $state")
+    throw AssertionError("${input}目标窗口未就绪: $state")
 }
 
 internal fun sendNativeSoftKeyboardText(text: String) {

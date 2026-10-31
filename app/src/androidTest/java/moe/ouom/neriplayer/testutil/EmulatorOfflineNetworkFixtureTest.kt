@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.testutil
 
+import android.content.IntentFilter
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
@@ -60,6 +62,9 @@ class EmulatorOfflineNetworkFixtureTest {
 
     private fun assertOffline() {
         assertEquals("Wifi is disabled", wifiStatus())
+        assertEquals("夹具返回前 Wi-Fi 必须已完成关闭", WifiManager.WIFI_STATE_DISABLED,
+            context.registerReceiver(null, IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION))
+                ?.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN))
         assertEquals(1, Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON))
         assertEquals(LikelyNetworkTransportAvailability.OFFLINE,
             context.currentLikelyNetworkTransportAvailability())
