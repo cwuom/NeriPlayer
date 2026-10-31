@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_SUFFIX
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.isUsableCoverReference
 import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import kotlin.time.Duration.Companion.milliseconds
@@ -1203,21 +1204,36 @@ internal class AudioDownloadPlaybackCoordinator(
                 }
         }
         if (!coverReference.isNullOrBlank()) {
-            return ManagedDownloadStorage.toPlayableUri(coverReference) ?: coverReference
+            val playableCover = ManagedDownloadStorage.toPlayableUri(coverReference) ?: coverReference
+            if (
+                !allowBlockingLookup || !resolveLocalMediaFallback ||
+                isUsableCoverReference(context, playableCover)
+            ) {
+                return playableCover
+            }
         }
 
-        if (localAudio != null || !allowBlockingLookup) {
+        if (!allowBlockingLookup || !resolveLocalMediaFallback) {
             return null
         }
-        if (!resolveLocalMediaFallback) {
-            return null
-        }
-        if (!LocalSongSupport.isLocalSong(song)) {
-            return null
+        // 显式选择的文件不能被同来源下载替换，其余队列引用需要避开旧目录路径
+        val localSong = if (
+            localAudio != null && LocalSongSupport.validExplicitLocalSourceReference(song) == null
+        ) {
+            val playbackUri = playableReferenceForManagedAudio(localAudio)
+                ?: return null
+            song.copy(
+                mediaUri = playbackUri,
+                localFilePath = null,
+                localFileName = localAudio.logicalName
+            )
+        } else {
+            if (!LocalSongSupport.isLocalSong(song)) return null
+            song
         }
 
         return runCatching {
-            LocalMediaSupport.resolveCoverUri(context, song)
+            LocalMediaSupport.resolveCoverUri(context, localSong)
         }.getOrElse {
             NPLogger.w(tag, "resolve local cover fallback failed: ${it.message}")
             null
