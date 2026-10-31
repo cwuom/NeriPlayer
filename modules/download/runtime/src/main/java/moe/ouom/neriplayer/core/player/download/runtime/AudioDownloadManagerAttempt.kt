@@ -442,27 +442,21 @@ internal suspend fun AudioDownloadManager.prepareDownloadAttempt(
             "下载来源长度提示: file=$fileName, sourceExpected=$sourceExpectedBytes"
         )
     }
-    val requestBuilder = Request.Builder().url(url)
-    if (AudioDownloadSourceResolver.isBiliSource(song)) {
-        val cookieMap = DownloadHosts.credentials.biliCookies()
-        val cookieHeader = cookieMap.entries.joinToString("; ") { (key, value) ->
-            "$key=$value"
+    val request = when {
+        AudioDownloadSourceResolver.isBiliSource(song) -> {
+            buildBiliAudioDownloadRequest(url, DownloadHosts.credentials.biliCookies())
         }
-        requestBuilder
-            .header("User-Agent", BILI_UA)
-            .header("Referer", BILI_REFERER)
-            .apply {
-                if (cookieHeader.isNotBlank()) header("Cookie", cookieHeader)
-            }
-    } else if (isYouTubeMusicSong(song)) {
-        val auth = DownloadHosts.credentials.youtubeAuth().normalized()
-        auth.buildYouTubeStreamRequestHeaders(
-            refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
-            streamUrl = url
-        ).forEach { (name, value) -> requestBuilder.header(name, value) }
-        // 直链统一交给分块传输，避免整档 Range 触发 googlevideo 风控
+        isYouTubeMusicSong(song) -> {
+            val auth = DownloadHosts.credentials.youtubeAuth().normalized()
+            Request.Builder().url(url).apply {
+                auth.buildYouTubeStreamRequestHeaders(
+                    refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
+                    streamUrl = url
+                ).forEach { (name, value) -> header(name, value) }
+            }.build()
+        }
+        else -> Request.Builder().url(url).build()
     }
-    val request = requestBuilder.build()
     val transportKind = resolveDownloadTransportKind(
         streamType = resolved.streamType,
         request = request

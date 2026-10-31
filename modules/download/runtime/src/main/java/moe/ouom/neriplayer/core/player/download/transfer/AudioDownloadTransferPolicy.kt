@@ -21,6 +21,8 @@ import moe.ouom.neriplayer.platform.youtube.api.transport.range.YouTubeGoogleVid
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
+import moe.ouom.neriplayer.platform.bilibili.api.stream.isBiliStreamHost
+import moe.ouom.neriplayer.platform.youtube.api.transport.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import okhttp3.Request
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -147,29 +149,23 @@ internal object AudioDownloadTransferPolicy {
         if (recordedUrl == currentUrl) {
             return false
         }
-        if (!resolveResumeValidatorHeader(fingerprint).isNullOrBlank()) {
-            return false
-        }
-        val recordedKey = resumeResourceKey(recordedUrl) ?: return false
-        val currentKey = resumeResourceKey(currentUrl) ?: return false
+        // ETag 只校验同一资源的表示，不能证明不同地址的内容相同
+        val recordedKey = resumeResourceKey(recordedUrl) ?: return true
+        val currentKey = resumeResourceKey(currentUrl) ?: return true
         return recordedKey != currentKey
     }
 
     private fun resumeResourceKey(url: String): String? {
-        val volatileQueryKeys = setOf(
-            "alr",
-            "expire",
-            "expires",
-            "lsig",
-            "n",
-            "sig",
-            "signature",
-            "sp",
-            "st",
-            "token"
-        )
         return runCatching {
             val uri = java.net.URI(url)
+            val host = uri.host ?: return null
+            val volatileQueryKeys = when {
+                isYouTubeGoogleVideoHost(host) -> setOf(
+                    "alr", "expire", "expires", "lsig", "n", "sig", "signature", "sp", "st", "token"
+                )
+                isBiliStreamHost(host) -> setOf("deadline", "upsig", "wstime", "wssecret", "token")
+                else -> emptySet()
+            }
             val query = uri.rawQuery
                 ?.split('&')
                 ?.mapNotNull { part ->

@@ -49,13 +49,14 @@ private const val YOUTUBE_AUTH_RECOVERY_MASTER_KEY_ALIAS =
     "youtube_auth_recovery_master_key"
 private const val KEY_YOUTUBE_AUTH_BUNDLE = "youtube_auth_bundle"
 
-class YouTubeAuthRepository(private val context: Context) : YouTubeAuthProvider {
+class YouTubeAuthRepository(private val context: Context) : YouTubeAuthProvider, YouTubeAuthStore {
     private var encryptedPrefs: SharedPreferences
     private var usingRecoveryStorage = false
     private var usingCompatibilityStorage = false
     private val _authFlow: MutableStateFlow<YouTubeAuthBundle>
     private val _authHealthFlow: MutableStateFlow<YouTubeAuthHealth>
     private val authMutationLock = Any()
+    private var authGeneration = Any()
 
     val authFlow: StateFlow<YouTubeAuthBundle>
         get() = _authFlow.asStateFlow()
@@ -100,37 +101,36 @@ class YouTubeAuthRepository(private val context: Context) : YouTubeAuthProvider 
         }
     }
 
-    /** 在现有快照上合并轮换值, 防止并发页面刷新覆盖其它最新字段 */
-    fun mergeRotatedCookies(rotatedCookies: Map<String, String>): YouTubeAuthBundle {
-        synchronized(authMutationLock) {
-            val merged = mergeYouTubeAuthBundle(
-                base = _authFlow.value,
-                observedCookies = rotatedCookies,
-                savedAt = System.currentTimeMillis()
-            )
-            saveAuthLocked(merged)
-            return merged
-        }
+    override fun captureAuthSnapshot(): YouTubeAuthSnapshot = synchronized(authMutationLock) {
+        YouTubeAuthSnapshot(_authFlow.value, authGeneration)
     }
+
+    override fun updateAuthIfCurrent(
+        expected: YouTubeAuthSnapshot,
+        update: (YouTubeAuthBundle) -> YouTubeAuthBundle?
+    ): YouTubeAuthSnapshot? = synchronized(authMutationLock) {
+        if (expected.generation !== authGeneration) return@synchronized null
+        val updated = update(_authFlow.value) ?: return@synchronized expected
+        saveAuthLocked(updated)
+        YouTubeAuthSnapshot(_authFlow.value, authGeneration)
+    }
+
+    override fun runIfCurrent(expected: YouTubeAuthSnapshot, action: () -> Unit): Boolean =
+        synchronized(authMutationLock) {
+            if (expected.generation !== authGeneration) return@synchronized false
+            action()
+            true
+        }
 
     private fun saveAuthLocked(bundle: YouTubeAuthBundle) {
         val normalized = bundle.normalized(
             savedAt = bundle.savedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
         )
         persistAuthBundle(normalized)
+        // 内容相同的重新登录也属于新会话，不能让旧请求借相等的 Cookie 通过
+        authGeneration = Any()
         _authFlow.value = normalized
         _authHealthFlow.value = evaluateYouTubeAuthHealth(normalized)
-    }
-
-    fun mergeCookieUpdates(setCookieHeaders: Iterable<String>): Boolean {
-        synchronized(authMutationLock) {
-            val merged = mergeYouTubeAuthCookieUpdates(
-                base = _authFlow.value,
-                setCookieHeaders = setCookieHeaders
-            ) ?: return false
-            saveAuthLocked(merged)
-            return true
-        }
     }
 
     fun clear() {
@@ -156,6 +156,7 @@ class YouTubeAuthRepository(private val context: Context) : YouTubeAuthProvider 
                     requireAuthBundleCommit(serialized)
                 }
             }
+            authGeneration = Any()
             _authFlow.value = cleared
             _authHealthFlow.value = evaluateYouTubeAuthHealth(cleared)
         }

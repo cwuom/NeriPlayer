@@ -47,12 +47,12 @@ class LocalMediaTargetedRecoveryTest {
         val unrelated = temporaryFolder.newFile("unrelated.mp3").apply { writeText("original") }
         val record = record(unrelated)
         LocalMediaMetadataRecoveryStore.markReplacing(record)
-        unrelated.writeText("interrupted")
+        unrelated.writeText("up")
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
         val target = temporaryFolder.newFile("selected.mp3")
 
         assertEquals("written", write(target) { "written" })
-        assertEquals("interrupted", unrelated.readText())
+        assertEquals("up", unrelated.readText())
         assertTrue(record.journalFile.exists())
         assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
         assertEquals("updated", unrelated.readText())
@@ -167,7 +167,7 @@ class LocalMediaTargetedRecoveryTest {
         val target = temporaryFolder.newFile("recoverable.mp3").apply { writeText("original") }
         val record = record(target)
         LocalMediaMetadataRecoveryStore.markReplacing(record)
-        target.writeText("interrupted")
+        target.writeText("up")
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
         assertEquals("written", write(target) {
             assertEquals("updated", target.readText())
@@ -227,7 +227,7 @@ class LocalMediaTargetedRecoveryTest {
         assertTrue(obstruction.exists())
         assertTrue(obstruction.delete())
         assertTrue(target.delete())
-        target.writeText("interrupted")
+        target.writeText("original")
         assertEquals("written", write(target) {
             assertEquals("original", target.readText())
             target.writeText("new edit")
@@ -313,13 +313,13 @@ class LocalMediaTargetedRecoveryTest {
         val secondTarget = temporaryFolder.newFile("second-context.mp3").apply { writeText("original") }
         val first = LocalMediaMetadataRecoveryStore.markReplacing(record(firstTarget))
         val second = LocalMediaMetadataRecoveryStore.markReplacing(record(secondTarget, otherContext))
-        firstTarget.writeText("first interrupted")
-        secondTarget.writeText("second interrupted")
+        firstTarget.writeText("up")
+        secondTarget.writeText("upd")
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
 
         assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
         assertEquals("updated", firstTarget.readText())
-        assertEquals("second interrupted", secondTarget.readText())
+        assertEquals("upd", secondTarget.readText())
         assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(otherContext))
         assertEquals("updated", secondTarget.readText())
         assertFalse(first.journalFile.exists())

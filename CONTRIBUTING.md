@@ -48,7 +48,7 @@
 | 组件 | 要求 |
 | --- | --- |
 | Android Studio | 最新稳定版 |
-| JDK | 17 用于构建；运行 `:playback:runtime` JVM 测试另需 21 |
+| JDK | 编译目标为 17；运行 `:app` 和 `:playback:runtime` 的 Android 16 JVM 测试需 21 |
 | Kotlin | 2.4.10，JVM target 17 |
 | AGP | 9.4.1 |
 | Gradle | 9.6.1 |
@@ -64,9 +64,10 @@
 - 仓库依赖 Git 子模块，首次克隆请使用 `--recursive`，或手动执行
   `git submodule update --init --recursive`。
 - `build-logic` 的 Java/Kotlin 编译目标为 17，`ksp-annotations` 与 `ksp-processor` 使用 JDK 17 工具链；
-  请安装 JDK 17，建议 Android Studio 的 Gradle JDK 和命令行 `JAVA_HOME` 也指向它。
-- `:playback:runtime` 的 JVM 测试通过 Java toolchain 使用 JDK 21 运行 Android 16 Robolectric sandbox。
-  运行该模块测试或 `verifyModularization` 前，还需安装可被 Gradle 发现的 JDK 21；生产字节码目标仍为 17。
+  请保留已安装的 JDK 17 供工具链使用。
+- `:app` 和 `:playback:runtime` 的 Android 16 Robolectric sandbox 需要 JDK 21。
+  运行完整测试或 `verifyModularization` 时请将 Gradle JDK / `JAVA_HOME` 设为 21，
+  并保留可被 Gradle 发现的 JDK 17 工具链；生产字节码目标仍为 17。
 - 构建脚本会读取 Git 短提交生成版本名，本地请确保已安装 Git。
 - 依赖版本由 `gradle/libs.versions.toml` 与各模块 `build.gradle.kts` 管理。
 - 应用只保留 `zh` 与 `en` 资源，见 `build-logic` 的 locale filter。
@@ -434,8 +435,8 @@
   不能把缓存命中或本地单测当作真实账号/网络稳定性证明；长音频大幅 Seek 会走
   更短的启动恢复窗口，仍需验证真实网络下的体验。
 - 状态栏歌词依赖厂商私有能力，当前仅适用于部分支持设备。
-- `RuntimeShader` 流体/音频响应背景只在 Android 13+ 启用；封面模糊与高级模糊
-  只在 Android 12+ 启用，修改动效时必须保留低版本降级路径。
+- `RuntimeShader` 流体/音频响应背景与高级模糊只在 Android 13+ 启用；
+  封面模糊支持 Android 9+，修改动效时必须保留低版本降级路径。
 - 歌词音译显示依赖平台返回的音译歌词或内嵌逐字歌词的 phonetic 字段；
   当前没有音译数据时，不应强行合成或展示空的第二行。
 - 歌词分享会通过 `FileProvider` 分享缓存目录中的歌词卡片文件；
@@ -842,7 +843,7 @@ adb logcat | grep NeriPlayer
 
 ### 测试与提交流程 / Testing & PR
 
-自动 APK 构建等待已有 JVM、lint、Worker 与模拟器作业完成，并在打包前运行 Native Release host 检查。手动 Release 会针对 `target_ref` 实际检出的源码依次运行 JVM 测试、lint、可用的模块边界检查与 Native Release host 检查，验证报告以目标提交 SHA 命名。`test_release` 默认为 `true`，生成未签名测试 APK 与草稿预发布；设为 `false` 时才构建签名 APK 并正式发布。历史版本使用其对应的新旧 Native 测试入口，若存在测试设施但缺少配置则拒绝发布。额外的模拟器、sanitizer 和真实 DAC 验证按变更风险执行，真实硬件并非每次发布的前置条件。
+自动 CI 的候选 APK 可与测试并行构建，打包前运行 Native Release host 检查；最终发布等待 JVM、lint、Worker 与模拟器作业完成，并核验候选产物身份和测试报告。手动 Release 会针对 `target_ref` 实际检出的源码依次运行 JVM 测试、lint、可用的模块边界检查与 Native Release host 检查，验证报告以目标提交 SHA 命名。`test_release` 默认为 `true`，生成未签名测试 APK 与草稿预发布；设为 `false` 时才构建签名 APK 并正式发布。手动流程不包含完整主 CI 的模拟器、Worker 与 CRAP 矩阵。历史版本使用其对应的新旧 Native 测试入口，若存在测试设施但缺少配置则拒绝发布。额外的模拟器、sanitizer 和真实 DAC 验证按变更风险执行，真实硬件并非每次发布的前置条件。
 
 提交前建议至少完成以下检查：
 

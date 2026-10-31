@@ -868,6 +868,9 @@
     "name": "platform-bilibili-client",
     "package": "moe.ouom.neriplayer.platform.bilibili.api.",
     "allowed_classes": [
+      "moe.ouom.neriplayer.network.security.TrustedHostSupportKt",
+      "okhttp3.Interceptor",
+      "okhttp3.Interceptor$Chain",
       "java.io.Closeable",
       "java.io.IOException",
       "java.lang.Boolean",
@@ -2768,6 +2771,9 @@
     "name": "platform-youtube-auth",
     "package": "moe.ouom.neriplayer.platform.youtube.",
     "allowed_classes": [
+      "kotlinx.coroutines.AwaitKt",
+      "kotlinx.coroutines.JobKt",
+      "kotlinx.coroutines.NonCancellable",
       "android.content.Context",
       "android.content.SharedPreferences",
       "android.content.SharedPreferences$Editor",

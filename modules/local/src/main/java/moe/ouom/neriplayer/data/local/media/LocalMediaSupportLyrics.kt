@@ -711,7 +711,8 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
                 context = context,
                 targetReference = sourceUri.toString(),
                 source = updated,
-                lastModifiedMs = activeRecord.originalLastModifiedMs
+                lastModifiedMs = activeRecord.originalLastModifiedMs,
+                recoveryRecord = activeRecord
             ) || !retryEditableMetadataReadback(sourceUri.scheme) {
                 LocalMediaMetadataRecoveryStore.targetMatches(
                     context = context,

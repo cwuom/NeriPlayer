@@ -9,7 +9,7 @@ If this contract changes, update `planSha256` in `run-manifest.example.yaml` to 
 | Check Area | Requirement |
 | --- | --- |
 | Host CTest Profiles | `.github/workflows/android_native_ci.yml` runs `release-werror-asserts` (Release + `-Werror`), `asan-ubsan`, and `tsan` on native changes; all three run the same CTest inventory with assertions enabled |
-| Source-Declared CTest Inventory | 36 CTest entries declared in source: 31 native C++ host model tests (using environment seed `324508639`), 1 runner self-check, and 4 fail-closed fixtures covering warning, source-fingerprint, port, and daemon failures; every entry declares a 60-second timeout |
+| Source-Declared CTest Inventory | 37 CTest entries declared in source: 32 native C++ host model tests (using environment seed `324508639`), 1 runner self-check, and 4 fail-closed fixtures covering warning, source-fingerprint, port, and daemon failures; every entry declares a 60-second timeout |
 | Compiler Warnings | Compiler warnings fail the gate unless matched by an exact environment-owned baseline entry |
 | Runner Integrity | Verifies a stable source fingerprint across the entire attempt and performs resource auditing |
 | Android ABI Compilation | Separate CI job verifying non-empty `lib_neri.so` outputs for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64` |

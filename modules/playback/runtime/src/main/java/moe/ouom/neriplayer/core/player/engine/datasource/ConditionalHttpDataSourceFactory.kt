@@ -138,8 +138,8 @@ class ConditionalHttpDataSourceFactory(
      * 是否需要为该 URI 注入 B 站拉流所需的请求头
      */
     private fun shouldInjectBiliHeaders(uri: Uri): Boolean {
-        val host = uri.host.orEmpty()
-        return isBiliStreamHost(host) || isBiliStreamUrl(uri.toString())
+        return uri.scheme.equals("https", ignoreCase = true) &&
+            (isBiliStreamHost(uri.host.orEmpty()) || isBiliStreamUrl(uri.toString()))
     }
 
     private fun shouldInjectYouTubeHeaders(uri: Uri): Boolean {

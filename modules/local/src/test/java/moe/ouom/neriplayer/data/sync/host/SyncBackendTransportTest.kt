@@ -448,9 +448,9 @@ class SyncBackendTransportTest {
             WebDavConcurrencyToken(lastModified = "Thu, 01 Oct 2026 00:00:00 GMT"))) {
             assertTrue(fixture.backend.upload(staged(payload), withoutToken.copy(token = token)).exceptionOrNull()
                 is WebDavMissingConcurrencyTokenException)
-            // 只有内容指纹时必须先确认远端仍是同一版本，远端缺失或变化都不能写入
+            // 内容指纹不能替代有限锁或可用 ETag，必须在上传任何对象前拒绝发布
             assertTrue(fixture.backend.upload(staged(payload), withoutToken.copy(token = token, lastKnownFingerprint = fingerprint))
-                .exceptionOrNull() is WebDavContentConflictException)
+                .exceptionOrNull() is WebDavMissingConcurrencyTokenException)
         }
         assertTrue(fixture.writes.isEmpty())
         val uploaded = fixture.backend.upload(staged(payload), WebDavSyncBackend.Version(null, true)).getOrThrow()

@@ -12,9 +12,12 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.json.JSONObject
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class LocalMediaMetadataRecoveryStoreTest {
     @get:Rule
@@ -49,7 +52,7 @@ class LocalMediaMetadataRecoveryStoreTest {
             originalLastModifiedMs = target.lastModified()
         )
         LocalMediaMetadataRecoveryStore.markReplacing(record)
-        target.writeText("truncated")
+        target.writeText("updated audio")
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
 
         assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
@@ -79,7 +82,7 @@ class LocalMediaMetadataRecoveryStoreTest {
         )
         LocalMediaMetadataRecoveryStore.markReplacing(record)
         updated.writeText("corrupt update")
-        target.writeText("truncated")
+        target.writeText("original")
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
 
         assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
@@ -105,10 +108,10 @@ class LocalMediaMetadataRecoveryStoreTest {
             updatedFile = updated,
             originalLastModifiedMs = target.lastModified()
         )
-        target.writeText("active write")
+        target.writeText("up")
 
         assertEquals(0, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
-        assertEquals("active write", target.readText())
+        assertEquals("up", target.readText())
         assertTrue(LocalMediaMetadataRecoveryStore.rollback(context, record))
     }
 
@@ -170,6 +173,99 @@ class LocalMediaMetadataRecoveryStoreTest {
     }
 
     @Test
+    fun `replacing recovery preserves an external file swapped into the same path`() = runBlocking {
+        val context = recoveryContext()
+        val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
+        val target = temporaryFolder.newFile("replacing.flac").apply { writeText("original") }
+        val record = LocalMediaMetadataRecoveryStore.begin(
+            context, target.absolutePath,
+            File(directory, "source.flac").apply { writeText("original") },
+            File(directory, "updated.flac").apply { writeText("updated") },
+            target.lastModified()
+        )
+        LocalMediaMetadataRecoveryStore.markReplacing(record)
+        val replacement = temporaryFolder.newFile("external.flac").apply { writeText("up") }
+        Files.move(replacement.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+
+        assertEquals(0, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+        assertEquals("up", target.readText())
+        assertTrue(record.journalFile.exists())
+        assertTrue(record.backupFile.exists())
+        assertTrue(record.updatedFile.exists())
+    }
+
+    @Test
+    fun `rollback preserves an external file swapped into the same path`() {
+        val context = recoveryContext()
+        val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
+        val target = temporaryFolder.newFile("rollback-external.flac").apply { writeText("original") }
+        val prepared = LocalMediaMetadataRecoveryStore.begin(
+            context, target.absolutePath,
+            File(directory, "source.flac").apply { writeText("original") },
+            File(directory, "updated.flac").apply { writeText("updated") },
+            target.lastModified()
+        )
+        val replacing = LocalMediaMetadataRecoveryStore.markReplacing(prepared)
+        val replacement = temporaryFolder.newFile("external.flac").apply { writeText("up") }
+        Files.move(replacement.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+
+        assertFalse(LocalMediaMetadataRecoveryStore.rollback(context, replacing))
+        assertEquals("up", target.readText())
+        assertTrue(replacing.journalFile.exists())
+        assertTrue(replacing.backupFile.exists())
+        assertTrue(replacing.updatedFile.exists())
+    }
+
+    @Test
+    fun `replacing recovery preserves external edits made inside the original file instance`() = runBlocking {
+        val context = recoveryContext()
+        val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
+        val target = temporaryFolder.newFile("edited.flac").apply { writeText("original") }
+        val record = LocalMediaMetadataRecoveryStore.begin(
+            context, target.absolutePath,
+            File(directory, "source.flac").apply { writeText("original") },
+            File(directory, "updated.flac").apply { writeText("updated") },
+            target.lastModified()
+        )
+        LocalMediaMetadataRecoveryStore.markReplacing(record)
+        target.writeText("external in-place edit")
+        LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+
+        assertEquals(0, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+        assertEquals("external in-place edit", target.readText())
+        assertTrue(record.journalFile.exists())
+        assertTrue(record.backupFile.exists())
+        assertTrue(record.updatedFile.exists())
+    }
+
+    @Test
+    fun `legacy replacing journals without instance identity preserve ambiguous target bytes`() = runBlocking {
+        val context = recoveryContext()
+        val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
+        val target = temporaryFolder.newFile("legacy-replacing.flac").apply { writeText("original") }
+        val record = LocalMediaMetadataRecoveryStore.begin(
+            context, target.absolutePath,
+            File(directory, "source.flac").apply { writeText("original") },
+            File(directory, "updated.flac").apply { writeText("updated") },
+            target.lastModified()
+        )
+        LocalMediaMetadataRecoveryStore.markReplacing(record)
+        record.journalFile.writeText(JSONObject(record.journalFile.readText()).apply {
+            remove("originalFileIdentity")
+            remove("originalWritableFileIdentity")
+        }.toString())
+        target.writeText("ambiguous bytes")
+        LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+
+        assertEquals(0, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+        assertEquals("ambiguous bytes", target.readText())
+        assertTrue(record.journalFile.exists())
+        assertTrue(record.backupFile.exists())
+        assertTrue(record.updatedFile.exists())
+    }
+
+    @Test
     fun `partial rollback cleanup never reapplies the updated copy`() = runBlocking {
         val context = recoveryContext()
         val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
@@ -188,7 +284,7 @@ class LocalMediaMetadataRecoveryStoreTest {
             originalLastModifiedMs = target.lastModified()
         )
         val replacing = LocalMediaMetadataRecoveryStore.markReplacing(prepared)
-        target.writeText("truncated")
+        target.writeText("ori")
         assertTrue(updated.delete())
         assertTrue(updated.mkdir())
         File(updated, "keep").writeText("block cleanup")

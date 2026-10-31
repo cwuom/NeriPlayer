@@ -93,22 +93,26 @@ Archive initialization and workspace creation reclaim canonical `sync-stage-UUID
 | 场景 | 行为与约束 |
 | --- | --- |
 | 对象创建与读取 | 内容对象与首次清单使用 `If-None-Match: *` 创建；读取归档强制使用未压缩响应（identity encoding），防止 nginx 等服务端因压缩将强 ETag 降级为弱 ETag |
-| 条件发布与无引号 ETag | 每次发布前重读清单并核对内容指纹；若有强 ETag 则同时核对该 ETag 并提交 `If-Match`。对坚果云等返回无引号 ETag 的无锁服务端，原样将 ETag 填入 `If-Match` 交由服务端拦截并发；仅当返回 `412` 且清单指纹未变时，才判定服务端不支持该 ETag 并退回指纹保护 |
-| 无可用 ETag 降级 | 无锁且无可用 ETag 的服务端在指纹匹配后发布，发布后立即回读确认清单仍为本次写入内容，否则按冲突重新合并 |
+| 条件发布与无引号 ETag | 每次发布前重读清单并核对内容指纹；若有强 ETag 则同时核对该 ETag 并提交 `If-Match`。对坚果云等返回无引号 ETag 的无锁服务端，原样将 ETag 填入 `If-Match` 交由服务端拦截并发；返回 `412` 时按冲突处理，不退回无条件写入 |
+| 无可用 ETag 的更新 | 无有限锁且没有可用于 `If-Match` 的 ETag 时，在上传任何对象前拒绝更新已有清单，保留本地与远端数据；首次创建仍使用 `If-None-Match: *`。发布后的回读可发现部分覆盖，不能替代服务端原子条件写入 |
 | 有限独占目录锁与 7 天观察 | 支持有限租期独占 `Depth: infinity` 写锁的服务端在完整读取、上传、发布期间全程持锁，每个请求携带锁令牌。每次发布生成新 `publicationId`，仅保护当前完整闭包；前代对象刚失去引用时重置候选年龄并启动 7 天本地观察，无变更读取也会推进观察 |
 | 到期条件清理 | 仅在持有有限锁且候选满 7 天后，先在不重传内容对象的前提下条件刷新同一闭包的 `publicationId`，确认获得新强 ETag 后，再核对当前完整闭包并按各对象的强 ETag 条件删除规范对象，每批最多 32 个；本地最多跟踪 1,024 个候选；目录、无关文件与传统备份永不删除 |
-| 无锁兼容与拒绝降级 | 尚未确认有限锁能力的目标，在不支持 `LOCK`（返回 `405`、`501` 或 `403`，如坚果云），或初次获授无限期或超过 300 秒的锁并成功释放时，继续条件同步并保留旧对象；曾确认支持有限锁的目标一旦失锁或能力降级则立即中止操作 |
+| 无锁兼容与拒绝降级 | 尚未确认有限锁能力的目标，在不支持 `LOCK`（返回 `405`、`501` 或 `403`，如坚果云），或初次获授无限期或超过 300 秒的锁并成功释放时，仅在有可用 ETag 时更新已有清单并保留旧对象；曾确认支持有限锁的目标一旦失锁或能力降级则立即中止操作 |
 | 远端闭包验证 | 生产读取强制验证远端完整对象闭包，本地缓存命中不能替代远端对象存在性证明 |
 
 | Scenario | Behavior and Constraints |
 | --- | --- |
 | Creation & Identity Encoding | Creates content objects and the initial manifest with `If-None-Match: *`; requests archives with identity encoding so servers like nginx do not weaken strong ETags via compression |
-| Conditional Put & Unquoted ETags | Rereads the manifest before every publication to verify its content fingerprint and checks the strong ETag and submits it in `If-Match` when available. Unlocked servers returning unquoted ETags (such as Nutstore) receive that verbatim ETag in `If-Match`; a `412` while the fingerprint is unchanged marks the ETag unsupported and falls back to fingerprint protection |
-| No-ETag Fallback | Unlocked servers without usable ETags publish after matching the fingerprint and immediately reread the manifest; any mismatch is treated as a conflict and merged again |
+| Conditional Put & Unquoted ETags | Rereads the manifest before every publication to verify its content fingerprint and checks the strong ETag and submits it in `If-Match` when available. Unlocked servers returning unquoted ETags (such as Nutstore) receive that verbatim ETag in `If-Match`; a `412` remains a conflict and never falls back to an unconditional write |
+| Updates Without Usable ETags | Without a finite lease or an ETag usable in `If-Match`, rejects updates to existing manifests before uploading any objects and retains local and remote data. Initial creation still uses `If-None-Match: *`. A post-publication read can detect some overwrites but cannot replace atomic conditional writes on the server |
 | Finite Exclusive Leases & 7-Day Window | Servers supporting finite exclusive `Depth: infinity` collection locks hold the lease across full reads, uploads, and publication with lock tokens on every request. Each publication assigns a fresh `publicationId` protecting only the current closure; newly unreferenced objects reset their candidate age and start a 7-day local observation window advanced by both writes and unchanged reads |
 | Conditional Garbage Collection | With a finite lease held and mature candidates, refreshes the same closure's `publicationId` conditionally without re-uploading content objects, confirms a new strong root ETag, re-validates the complete closure, and deletes up to 32 canonical objects per batch using each object's strong ETag; the local journal tracks at most 1,024 candidates; directories, unrelated files, and legacy backups are never deleted |
-| Lockless Targets & No Downgrade | Targets without confirmed finite leases continue conditional sync and retain old objects if they reject `LOCK` (`405`, `501`, or `403`, e.g., Nutstore) or their initial infinite or oversized grant was cleanly released; targets with confirmed finite leases abort on lease loss or capability downgrade |
+| Lockless Targets & No Downgrade | Targets without confirmed finite leases update existing manifests only with usable ETags and retain old objects if they reject `LOCK` (`405`, `501`, or `403`, e.g., Nutstore) or their initial infinite or oversized grant was cleanly released; targets with confirmed finite leases abort on lease loss or capability downgrade |
 | Remote Closure Verification | Production reads verify the complete remote object closure; local cache hits never prove remote availability |
+
+若现有服务既不提供有限目录锁，也没有服务端支持的条件 ETag，更新同步会明确报错。可改用支持这两种机制之一的 WebDAV 服务，或切换 GitHub 同步；切换前先导出本地备份，并在新目标完成同步后再处理旧目标。有限锁下仍兼容弱或缺失 ETag；仅靠避免同时手动同步不能为无锁写入提供保证。
+
+Existing servers without either finite collection locks or server-supported conditional ETags report an explicit update error. Use a WebDAV server supporting either mechanism or switch to GitHub sync; export a local backup before switching and complete sync with the new target before retiring the old one. Finite leases still support weak or absent ETags; manually avoiding simultaneous sync does not guarantee safe unlocked writes.
 
 | 机制 | 行为与边界 |
 | --- | --- |
@@ -167,9 +171,9 @@ New installations and empty targets use V4. Existing targets prompt once when up
 
 Real provider tests use isolated temporary collections to verify fresh V4 publication, cold-cache reopening, V3 migration, complete lyrics and paged statistics, stale publication rejection, encoded collection refresh, contention, and reacquisition after release. Providers must bind to loopback and allow anonymous access, with no credentials, query, or fragment in their URLs. Lease tests read only `NERIPLAYER_WEBDAV_COMPAT_URLS`; full sync tests also read `NERIPLAYER_WEBDAV_COMPAT_UNLOCKED_URLS`. Tests without configured targets are skipped.
 
-本地验证服务为 WsgiDAV 4.3.5 + Cheroot 11.1.2、rclone 1.75.1 和 Apache 2.4.67 mod_dav。WsgiDAV 的裸令牌、rclone 的十进制令牌和续租目录规范化、Apache 省略的 lockroot 与缺失或弱 ETag 均有回归覆盖；不接受任意相对令牌或错误锁根。拒绝 LOCK 的服务（例如坚果云）放在 `NERIPLAYER_WEBDAV_COMPAT_UNLOCKED_URLS`，验证无锁指纹核对、弱或缺失 ETag 与忽略条件头的同步。
+本地验证服务为 WsgiDAV 4.3.5 + Cheroot 11.1.2、rclone 1.75.1 和 Apache 2.4.67 mod_dav。WsgiDAV 的裸令牌、rclone 的十进制令牌和续租目录规范化、Apache 省略的 lockroot 与有限锁下缺失或弱 ETag 均有回归覆盖；不接受任意相对令牌或错误锁根。拒绝 LOCK 的服务（例如坚果云）放在 `NERIPLAYER_WEBDAV_COMPAT_UNLOCKED_URLS`，验证有可用 ETag 的条件同步；缺失或弱 ETag 拒绝更新及条件冲突不降级由确定性交错回归覆盖。
 
-The local matrix covers WsgiDAV 4.3.5 with Cheroot 11.1.2, rclone 1.75.1, and Apache 2.4.67 mod_dav. Regression coverage includes bare tokens, decimal tokens and refreshed collection normalization, optional lockroot, and absent or weak ETags. Arbitrary relative tokens and mismatched lock roots remain rejected. Providers that refuse LOCK, such as Nutstore, go in `NERIPLAYER_WEBDAV_COMPAT_UNLOCKED_URLS` to verify unlocked fingerprint checks with weak or absent ETags and ignored conditional headers.
+The local matrix covers WsgiDAV 4.3.5 with Cheroot 11.1.2, rclone 1.75.1, and Apache 2.4.67 mod_dav. Regression coverage includes bare tokens, decimal tokens and refreshed collection normalization, optional lockroot, and absent or weak ETags under finite leases. Arbitrary relative tokens and mismatched lock roots remain rejected. Providers that refuse LOCK, such as Nutstore, go in `NERIPLAYER_WEBDAV_COMPAT_UNLOCKED_URLS` to verify conditional sync with usable ETags; deterministic interleaving regressions cover rejected updates without usable ETags and conflicts that must not downgrade to unconditional writes.
 
 ```bash
 NERIPLAYER_WEBDAV_COMPAT_URLS='http://127.0.0.1:38091/,http://127.0.0.1:38090/,http://127.0.0.1:38092/' \

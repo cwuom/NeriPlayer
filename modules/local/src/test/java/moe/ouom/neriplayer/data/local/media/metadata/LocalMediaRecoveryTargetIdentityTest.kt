@@ -57,11 +57,16 @@ class LocalMediaRecoveryTargetIdentityTest {
     fun `file uri targets are replaced in place`() {
         val source = temporaryFolder.newFile("updated.flac").apply { writeText("tagged audio") }
         val target = File(temporaryFolder.newFolder("music"), "song.flac").apply { writeText("original") }
+        val staging = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
+        val backup = File.createTempFile("source-", ".flac", staging).apply { writeText("original") }
+        val updated = File.createTempFile("updated-", ".flac", staging).apply { writeText("tagged audio") }
+        val record = LocalMediaMetadataRecoveryStore.begin(context, Uri.fromFile(target).toString(), backup, updated, null)
 
         assertTrue(
-            LocalMediaMetadataRecoveryStore.replaceTargetFromFile(context, Uri.fromFile(target).toString(), source)
+            LocalMediaMetadataRecoveryStore.replaceTargetFromFile(context, Uri.fromFile(target).toString(), source, record)
         )
 
         assertEquals("tagged audio", target.readText())
+        LocalMediaMetadataRecoveryStore.complete(LocalMediaMetadataRecoveryStore.markTargetVerified(record))
     }
 }

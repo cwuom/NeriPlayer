@@ -72,6 +72,8 @@ Local import cache cleanup removes extracted covers with no remaining references
 | Android 10 授权 | 对其他应用创建的文件引导授予所在文件夹权限 |
 | 恢复日志与提交 | 日志记录写入意图、原始备份与对象身份，写入后经读回校验确认才提交 |
 | 冲突保护 | 恢复时若检测到对象被替换或内容冲突，保留恢复日志并中止覆盖，避免破坏外部更改 |
+| 中断写入 | 音频内容不完整时，须同时匹配原对象身份与已校验原始或更新副本的内容前缀，旧日志缺少身份时不推断写入归属 |
+| URI 写入 | 在同一可读写描述符上先校验再截断；Provider 不支持非截断打开时，保留文件与恢复日志 |
 
 `LocalMediaWriteAccess` plans storage authorization before writing. Recovery journals manage audio and lyric/artwork companion updates:
 
@@ -81,6 +83,8 @@ Local import cache cleanup removes extracted covers with no remaining references
 | Android 10 Authorization | Prompts for folder grants when modifying files created by other apps |
 | Recovery Journal & Commit | Tracks write intent, original backups, and object identity; commits only after read-back verification |
 | Conflict Protection | Retains the journal instead of overwriting when object replacement or content conflicts are detected during recovery |
+| Interrupted Writes | Incomplete audio must match both the recorded file instance and a prefix of a verified original or updated copy; legacy journals without instance identity cannot claim ambiguous content |
+| URI Writes | Verifies the same read/write descriptor before truncation; providers without non-truncating access leave files and recovery journals intact |
 
 ## 数据加载与统计 / Data loading and statistics
 
