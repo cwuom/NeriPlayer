@@ -162,6 +162,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailViewMode
 import moe.ouom.neriplayer.data.model.netease.collection.NeteaseCollectionHeader
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import androidx.compose.material.icons.outlined.Link
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
@@ -406,6 +407,7 @@ fun DetailScreen(
 
     var showExportSheet by remember { mutableStateOf(false) }
     var showExportAllSheet by remember { mutableStateOf(false) }
+    var showBiliCollectionBinding by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val favoriteAddedText = stringResource(CoreCommonR.string.favorite_added)
@@ -593,6 +595,15 @@ fun DetailScreen(
                                 }
                             },
                             actions = {
+                                HapticIconButton(onClick = { showBiliCollectionBinding = true }) {
+                                    Icon(
+                                        Icons.Outlined.Link,
+                                        contentDescription = stringResource(
+                                            CoreCommonR.string.bili_collection_binding_entry
+                                        ),
+                                        tint = playlistTopBarContentColor
+                                    )
+                                }
                                 HapticIconButton(onClick = {
                                     showSearch = !showSearch
                                     if (!showSearch) {
@@ -954,6 +965,28 @@ fun DetailScreen(
                             }
                         }
                     }
+                }
+
+                // 专辑 / 歌单 → B 站分 P 绑定 //
+                if (showBiliCollectionBinding) {
+                    val bindingName = ui.header?.name.orEmpty()
+                    val bindingTarget = if (playlistSource == "neteaseAlbum") {
+                        biliBindingTargetForAlbum(
+                            albumId = playlistId,
+                            name = bindingName,
+                            artist = ui.tracks.firstOrNull()?.artist.orEmpty()
+                        )
+                    } else {
+                        biliBindingTargetForPlaylist(
+                            playlistId = playlistId,
+                            name = bindingName
+                        )
+                    }
+                    BiliCollectionBindingDialog(
+                        target = bindingTarget,
+                        songs = ui.tracks,
+                        onDismiss = { showBiliCollectionBinding = false }
+                    )
                 }
 
                 // 导出面板 //

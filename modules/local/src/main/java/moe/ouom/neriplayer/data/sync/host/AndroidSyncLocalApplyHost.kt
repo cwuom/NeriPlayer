@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.platform.bilibili.skip.BiliVideoSkipRepository
+import moe.ouom.neriplayer.platform.bilibili.binding.BiliCollectionBindingRepository
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
@@ -25,6 +26,7 @@ internal class AndroidSyncLocalApplyHost(
     private val playlistUsageRepo: PlaylistUsageRepository,
     private val localPlaylistPlaybackStatsRepo: LocalPlaylistPlaybackStatsRepository,
     private val biliVideoSkipRepo: BiliVideoSkipRepository,
+    private val biliCollectionBindingRepo: BiliCollectionBindingRepository?,
     private val readLocalizedContext: () -> Context = { LanguageManager.applyLanguage(appContext) }
 ) : SyncLocalApplyHost {
     override suspend fun applyPlaylists(data: SyncData, expectedMutationVersion: Long): Boolean {
@@ -116,6 +118,17 @@ internal class AndroidSyncLocalApplyHost(
             return false
         }
         return true
+    }
+
+    override suspend fun applyAlbumBindings(data: SyncData, expectedMutationVersion: Long): Boolean {
+        val applied = biliCollectionBindingRepo?.replaceAll(
+            bindings = data.biliCollectionBindings.mapNotNull { binding -> binding.toBiliCollectionBindingOrNull() },
+            expectedMutationVersion = expectedMutationVersion
+        ) ?: true
+        if (!applied) {
+            NPLogger.w(TAG, "Skip applying Bili collection bindings because local state changed")
+        }
+        return applied
     }
 
     private companion object {

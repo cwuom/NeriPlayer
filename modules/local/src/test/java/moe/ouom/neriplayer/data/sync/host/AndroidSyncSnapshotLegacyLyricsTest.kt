@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.sync.host
 
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
@@ -25,7 +26,7 @@ class AndroidSyncSnapshotLegacyLyricsTest {
         val fixture = Fixture()
         val legacy = SyncSong(id = 7, album = "Netease", matchedLyric = "old edited lyrics", originalLyric = "baseline")
         `when`(fixture.storage.getLegacyLyricCandidates()).thenReturn(listOf(legacy))
-        val snapshot = fixture.builder.build(fixture.context, 0L)
+        val snapshot = runBlocking { fixture.builder.build(fixture.context, 0L) }
         val override = snapshot.lyricOverrides.single()
         assertEquals(legacy.matchedLyric, override.matchedLyric)
         assertEquals(legacy.originalLyric, override.originalLyric)
@@ -40,7 +41,7 @@ class AndroidSyncSnapshotLegacyLyricsTest {
         val reset = legacy.copy(matchedLyric = null, lyricSyncEdited = false, lyricSyncRevision = 2)
         `when`(fixture.storage.getLyricOverrides()).thenReturn(listOf(reset))
         `when`(fixture.storage.getLegacyLyricCandidates()).thenReturn(listOf(legacy))
-        assertEquals(listOf(reset), fixture.builder.build(fixture.context, 0L).lyricOverrides)
+        assertEquals(listOf(reset), runBlocking { fixture.builder.build(fixture.context, 0L) }.lyricOverrides)
     }
 
     @Test
@@ -52,7 +53,7 @@ class AndroidSyncSnapshotLegacyLyricsTest {
         `when`(fixture.storage.isLegacyLyricOptimizationEnabled()).thenReturn(true)
         `when`(fixture.storage.getLegacyLyricCandidates()).thenReturn(listOf(legacy))
         `when`(fixture.storage.getLyricOverrides()).thenReturn(listOf(bilibili, edited))
-        val overrides = fixture.builder.build(fixture.context, 0L).lyricOverrides
+        val overrides = runBlocking { fixture.builder.build(fixture.context, 0L) }.lyricOverrides
         assertEquals(setOf(legacy.id, bilibili.id, edited.id), overrides.map { it.id }.toSet())
         assertEquals(legacy.matchedLyric, overrides.single { it.id == legacy.id }.matchedLyric)
         assertEquals(true, overrides.single { it.id == legacy.id }.lyricSyncEdited)

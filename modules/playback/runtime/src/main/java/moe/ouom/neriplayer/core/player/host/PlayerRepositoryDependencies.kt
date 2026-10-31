@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.platform.lyrics.repository.EditableLyricsMatcher
 import moe.ouom.neriplayer.platform.lyrics.repository.LrcLibLyricsRepository
 import moe.ouom.neriplayer.platform.lyrics.repository.QQMusicLyricsRepository
 import moe.ouom.neriplayer.platform.bilibili.playback.BiliPlaybackRepository
+import moe.ouom.neriplayer.platform.bilibili.binding.BiliCollectionBindingRepository
 import moe.ouom.neriplayer.platform.bilibili.skip.BiliVideoSkipRepository
 import moe.ouom.neriplayer.platform.bilibili.skip.sponsorblock.BiliSponsorBlockRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
@@ -35,6 +36,8 @@ interface PlayerRepositoryDependencies {
     val neteaseClient: NeteaseClient
     val youtubeMusicClient: YouTubeMusicClient
     val biliPlaybackRepository: BiliPlaybackRepository
+    /** 专辑 → B 站分 P 绑定；未装配时播放链路自动跳过该功能 */
+    val biliCollectionBindingRepository: BiliCollectionBindingRepository? get() = null
     val youtubeMusicPlaybackRepository: YouTubeMusicPlaybackRepository
     val biliSponsorBlockRepository: BiliSponsorBlockRepository
     val biliVideoSkipRepository: BiliVideoSkipRepository

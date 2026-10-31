@@ -657,6 +657,12 @@ class SettingsRepository(private val context: Context) {
     val neteaseLocalSourceFallbackFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK] ?: false }
 
+    val neteaseAutoSourceQualityProbeFlow: Flow<Boolean> =
+        dataStoreSettingFlow { it[SettingsKeys.NETEASE_AUTO_SOURCE_QUALITY_PROBE] ?: true }
+
+    val biliAlbumBindingPriorityFlow: Flow<Boolean> =
+        dataStoreSettingFlow { it[SettingsKeys.BILI_COLLECTION_BINDING_PRIORITY] ?: true }
+
     val stopOnBluetoothDisconnectFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true }
 
@@ -1522,6 +1528,14 @@ class SettingsRepository(private val context: Context) {
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(neteaseLocalSourceFallback = enabled)
         }
+    }
+
+    suspend fun setNeteaseAutoSourceQualityProbe(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.NETEASE_AUTO_SOURCE_QUALITY_PROBE] = enabled }
+    }
+
+    suspend fun setBiliCollectionBindingPriority(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.BILI_COLLECTION_BINDING_PRIORITY] = enabled }
     }
 
     suspend fun setNeteasePlaybackSourceFallback(enabled: Boolean) {

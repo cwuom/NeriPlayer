@@ -17,6 +17,9 @@ import moe.ouom.neriplayer.data.sync.mapping.buildPlaylistSyncSnapshots
 import moe.ouom.neriplayer.data.sync.mapping.buildRecentPlaySyncSnapshots
 import moe.ouom.neriplayer.data.sync.mapping.toSyncBiliVideoSkipRule
 import moe.ouom.neriplayer.data.sync.policy.SyncBiliVideoSkipMergePolicy
+import moe.ouom.neriplayer.data.sync.policy.SyncBiliCollectionBindingMergePolicy
+import moe.ouom.neriplayer.data.model.sync.toSyncBiliCollectionBinding
+import moe.ouom.neriplayer.platform.bilibili.binding.BiliCollectionBindingRepository
 import moe.ouom.neriplayer.data.sync.policy.copyWithNormalizedMembershipTokens
 import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 
@@ -27,9 +30,10 @@ internal class AndroidSyncSnapshotBuilder(
     private val playHistoryRepo: PlayHistoryRepository,
     private val playlistUsageRepo: PlaylistUsageRepository,
     private val localPlaylistPlaybackStatsRepo: LocalPlaylistPlaybackStatsRepository,
-    private val biliVideoSkipRepo: BiliVideoSkipRepository
+    private val biliVideoSkipRepo: BiliVideoSkipRepository,
+    private val biliCollectionBindingRepo: BiliCollectionBindingRepository? = null
 ) {
-    fun build(localizedContext: Context, playbackStatsClearedAt: Long): SyncData {
+    suspend fun build(localizedContext: Context, playbackStatsClearedAt: Long): SyncData {
         val deviceId = getDeviceId()
         val syncPlaylists = buildPlaylistSyncSnapshots(playlistRepo.playlists.value, storage.getDeletedPlaylistTimestamps(), localizedContext)
         val syncFavoritePlaylists = favoritePlaylists(localizedContext)
@@ -57,6 +61,7 @@ internal class AndroidSyncSnapshotBuilder(
             localPlaylistPlaybackStats = localPlaylistPlaybackSnapshot.stats,
             localPlaylistPlaybackBuckets = localPlaylistPlaybackSnapshot.buckets,
             biliVideoSkipRules = syncBiliVideoSkipRules,
+            biliCollectionBindings = albumBindings(),
             lyricOverrides = storage.getLyricOverrides() + storage.getLegacyLyricCandidates()
         )
         return SyncSongLyricMergePolicy.prepareLegacy(data)
@@ -95,6 +100,13 @@ internal class AndroidSyncSnapshotBuilder(
         )
 
         return syncBiliVideoSkipRules
+    }
+
+    private suspend fun albumBindings(): List<moe.ouom.neriplayer.data.model.sync.SyncBiliCollectionBinding> {
+        val repo = biliCollectionBindingRepo ?: return emptyList()
+        return SyncBiliCollectionBindingMergePolicy.sanitize(
+            repo.snapshot().map { it.toSyncBiliCollectionBinding() }
+        )
     }
 
     private fun getDeviceId(): String {

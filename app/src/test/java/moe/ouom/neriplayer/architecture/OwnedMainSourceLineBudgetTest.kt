@@ -130,6 +130,7 @@ class OwnedMainSourceLineBudgetTest {
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/usb/confirmation/UsbExclusiveLoudPlaybackConfirmationOwner.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/usb/confirmation/UsbExclusiveLoudPlaybackSnapshotSource.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingScreen.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingPlaybackSourceResolution.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsLoadPolicy.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsLoadOwner.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsLoadSources.kt",
@@ -223,7 +224,14 @@ class OwnedMainSourceLineBudgetTest {
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/audio/effects/AudioEffectsOwner.kt",
             "modules/model/src/main/java/moe/ouom/neriplayer/data/model/playback/effects/AudioEffectsPresets.kt",
             "modules/model/src/main/java/moe/ouom/neriplayer/data/model/playback/effects/NeriDspParams.kt",
-            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/audio/AudioEffectsSettingsPage.kt"
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/audio/AudioEffectsSettingsPage.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/playlist/BiliCollectionBindingDialog.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/component/playback/NeteaseSourceQualitySettingsItems.kt",
+            "modules/platform/src/main/java/moe/ouom/neriplayer/platform/bilibili/binding/BiliCollectionBindingRepository.kt",
+            "modules/platform/src/main/java/moe/ouom/neriplayer/platform/bilibili/binding/BiliCollectionTrackMatcher.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/resolver/netease/PlayerManagerNeteaseCollectionBinding.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/lifecycle/PlayerManagerBiliBindingSettingsObserver.kt",
+            "modules/sync/src/main/java/moe/ouom/neriplayer/data/sync/policy/SyncBiliCollectionBindingMergePolicy.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)

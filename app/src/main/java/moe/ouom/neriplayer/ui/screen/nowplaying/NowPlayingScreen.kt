@@ -115,12 +115,13 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.presentation.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayState
 import moe.ouom.neriplayer.data.model.playback.forSource
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
+import moe.ouom.neriplayer.ui.screen.playlist.BiliCollectionBindingDialog
+import moe.ouom.neriplayer.ui.screen.playlist.biliBindingTargetForSong
 import moe.ouom.neriplayer.ui.screen.playback.shouldConfirmFavoriteSync
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -365,37 +366,6 @@ internal fun shouldHideDownloadActionForSong(
     currentTask: DownloadTask?
 ): Boolean = shouldHideRemoteDownloadAction(hasLocalDownload, currentTask)
 
-internal fun resolveNowPlayingPlaybackSourceType(
-    isLocalSong: Boolean,
-    isYouTubeMusicSong: Boolean,
-    isFromNeteaseTag: Boolean,
-    isFromBiliTag: Boolean,
-    currentMediaUrl: String?,
-    playbackAudioSource: PlaybackAudioSource?,
-    isNeteaseLocalFallback: Boolean = false
-): PlaybackSourceType? {
-    if (isLocalSong || isNeteaseLocalFallback) return PlaybackSourceType.LOCAL
-
-    when (playbackAudioSource) {
-        PlaybackAudioSource.SUBSONIC -> return PlaybackSourceType.SUBSONIC
-        PlaybackAudioSource.NETEASE -> return PlaybackSourceType.NETEASE
-        PlaybackAudioSource.BILIBILI -> return PlaybackSourceType.BILIBILI
-        PlaybackAudioSource.YOUTUBE_MUSIC -> return PlaybackSourceType.YOUTUBE_MUSIC
-        PlaybackAudioSource.LOCAL,
-        null -> Unit
-    }
-
-    if (isYouTubeMusicSong) return PlaybackSourceType.YOUTUBE_MUSIC
-
-    val isFromNeteaseUrl = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
-    val isFromBiliUrl = currentMediaUrl?.contains("bilivideo.", ignoreCase = true) == true
-    return when {
-        isFromBiliTag || (!isFromNeteaseTag && isFromBiliUrl) -> PlaybackSourceType.BILIBILI
-        isFromNeteaseTag || (!isFromBiliTag && isFromNeteaseUrl) -> PlaybackSourceType.NETEASE
-        else -> null
-    }
-}
-
 internal fun hasPublishedManagedDownload(
     song: SongItem,
     catalogLookup: (SongItem) -> Boolean = { candidate ->
@@ -575,6 +545,23 @@ fun NowPlayingScreen(
         currentSong?.album?.startsWith(PlayerManager.NETEASE_SOURCE_TAG) == true
     val isFromBiliTag =
         currentSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true
+    val biliBindingRepository = remember { AppContainer.biliCollectionBindingRepository }
+    val biliBindingRevision by biliBindingRepository.revisionFlow.collectAsStateWithLifecycle()
+    val playbackSourceSongKey = currentSong?.let {
+        listOf(it.id.toString(), it.album, it.mediaUri.orEmpty(), it.localFilePath.orEmpty())
+            .joinToString(separator = "|")
+    }
+    var biliBoundSongKey by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(playbackSourceSongKey, biliBindingRevision) {
+        val song = currentSong
+        biliBoundSongKey = when {
+            song == null -> null
+            biliBindingRepository.forSong(song) != null -> playbackSourceSongKey
+            else -> null
+        }
+    }
+    val hasBiliCollectionBinding =
+        biliBoundSongKey != null && biliBoundSongKey == playbackSourceSongKey
     val rawPlaybackSourceType = resolveNowPlayingPlaybackSourceType(
         isLocalSong = currentSong?.isLocalSong() == true,
         isYouTubeMusicSong = currentSong?.let { isYouTubeMusicSong(it) } == true,
@@ -582,12 +569,9 @@ fun NowPlayingScreen(
         isFromBiliTag = isFromBiliTag,
         currentMediaUrl = currentMediaUrl,
         playbackAudioSource = currentPlaybackAudioInfo?.source,
-        isNeteaseLocalFallback = currentPlaybackAudioInfo?.isNeteaseLocalFallback == true
+        isNeteaseLocalFallback = currentPlaybackAudioInfo?.isNeteaseLocalFallback == true,
+        hasBiliCollectionBinding = hasBiliCollectionBinding
     )
-    val playbackSourceSongKey = currentSong?.let {
-        listOf(it.id.toString(), it.album, it.mediaUri.orEmpty(), it.localFilePath.orEmpty())
-            .joinToString(separator = "|")
-    }
     var playbackSourceType by remember { mutableStateOf<PlaybackSourceType?>(null) }
 
     val playlists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
@@ -669,6 +653,7 @@ fun NowPlayingScreen(
     var startMoreOptionsWithLyricBehavior by remember { mutableStateOf(false) }
     var showCommentSheet by remember { mutableStateOf(false) }
     var showQualitySwitchDialog by remember { mutableStateOf(false) }
+    var biliBindingSong by remember { mutableStateOf<SongItem?>(null) }
     val addSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // 评论来源只由「逻辑音源」决定 (平台 + 原始资源 id), 与最终播放地址无关 (§3/§49.2)
@@ -1805,6 +1790,7 @@ fun NowPlayingScreen(
                                         onEnterAlbum = onEnterAlbum,
                                         onNavigateUp = onNavigateUp,
                                         onShowQualitySwitch = { showQualitySwitchDialog = true },
+                                        onBindBiliSource = { biliBindingSong = it },
                                         startWithLyricBehavior = startMoreOptionsWithLyricBehavior,
                                         onEnterArtist = onEnterArtist,
                                         onEnterPlaylist = onEnterPlaylist,
@@ -1875,6 +1861,14 @@ fun NowPlayingScreen(
                                 source = commentSource,
                                 offlineMode = offlineMode,
                                 onDismissRequest = { showCommentSheet = false }
+                            )
+                        }
+
+                        biliBindingSong?.let { bindingSong ->
+                            BiliCollectionBindingDialog(
+                                target = biliBindingTargetForSong(bindingSong),
+                                songs = listOf(bindingSong),
+                                onDismiss = { biliBindingSong = null }
                             )
                         }
 

@@ -113,7 +113,9 @@ internal fun AutoSettingInfo.settingsPage(): SettingsPage? {
     }
     if (
         keyName == "netease_auto_source_switch" ||
-        keyName == "netease_local_source_fallback"
+        keyName == "netease_local_source_fallback" ||
+        keyName == "netease_auto_source_quality_probe" ||
+        keyName == "bili_collection_binding_priority"
     ) {
         return SettingsPage.PlaybackSource
     }
@@ -1075,6 +1077,20 @@ private val SettingSearchAliases = mapOf(
         "本地音源",
         "本地还原",
         "bendi yinyuan"
+    ),
+    "netease_auto_source_quality_probe" to listOf(
+        "quality probe",
+        "bitrate",
+        "最高音质",
+        "音质优先",
+        "yinzhi"
+    ),
+    "bili_collection_binding_priority" to listOf(
+        "bili binding",
+        "分 p",
+        "专辑绑定",
+        "歌单绑定",
+        "bangding"
     ),
     "bili_sponsor_block_enabled" to listOf(
         "哔哩哔哩",

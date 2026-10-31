@@ -151,9 +151,17 @@ class SettingsPageTest {
         val localSourceFallback = AutoSettingsMetadata.settings.first {
             it.keyName == "netease_local_source_fallback"
         }
+        val qualityProbe = AutoSettingsMetadata.settings.first {
+            it.keyName == "netease_auto_source_quality_probe"
+        }
+        val biliBindingPriority = AutoSettingsMetadata.settings.first {
+            it.keyName == "bili_collection_binding_priority"
+        }
 
         assertEquals(SettingsPage.PlaybackSource, autoSourceSwitch.settingsPage())
         assertEquals(SettingsPage.PlaybackSource, localSourceFallback.settingsPage())
+        assertEquals(SettingsPage.PlaybackSource, qualityProbe.settingsPage())
+        assertEquals(SettingsPage.PlaybackSource, biliBindingPriority.settingsPage())
     }
 
     @Test

@@ -27,6 +27,8 @@ import moe.ouom.neriplayer.data.local.database.dao.stats.TrafficStatsDao
 import moe.ouom.neriplayer.data.local.database.dao.SyncMetadataDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaybackQueueDao
 import moe.ouom.neriplayer.data.local.database.dao.BiliVideoSkipDao
+import moe.ouom.neriplayer.data.local.database.dao.BiliCollectionBindingDao
+import moe.ouom.neriplayer.data.local.database.entity.BiliCollectionBindingEntity
 import moe.ouom.neriplayer.data.local.database.dao.CoverUrlMappingDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadOperationDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadBatchDao
@@ -77,6 +79,8 @@ import moe.ouom.neriplayer.data.local.database.migration.library.FavoritePlaylis
 import moe.ouom.neriplayer.data.local.database.migration.library.TrafficStatsMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackQueueMigration
 import moe.ouom.neriplayer.data.local.database.migration.platform.BiliVideoSkipMigration
+import moe.ouom.neriplayer.data.local.database.migration.platform.BiliCollectionBindingMigration
+import moe.ouom.neriplayer.data.local.database.migration.platform.BiliCollectionBindingTargetMigration
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadQueueMigration
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadedSongCatalogMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.CoverUrlMappingMigration
@@ -87,7 +91,7 @@ import moe.ouom.neriplayer.data.local.database.migration.download.DownloadFinali
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadBatchMigration
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadRecoveryCursorMigration
 
-private const val NERI_USER_DATA_FINAL_VERSION = 21
+private const val NERI_USER_DATA_FINAL_VERSION = 23
 
 @Database(
     entities = [
@@ -125,6 +129,7 @@ private const val NERI_USER_DATA_FINAL_VERSION = 21
         BiliVideoSkipRuleEntity::class,
         BiliVideoSkipIntervalEntity::class,
         BiliVideoSkipDraftEntity::class,
+        BiliCollectionBindingEntity::class,
         CoverUrlMappingEntity::class,
         DownloadOperationEntity::class,
         DownloadBatchEntity::class,
@@ -159,6 +164,8 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun playbackQueueDao(): PlaybackQueueDao
 
     abstract fun biliVideoSkipDao(): BiliVideoSkipDao
+
+    abstract fun biliCollectionBindingDao(): BiliCollectionBindingDao
 
     abstract fun downloadOperationDao(): DownloadOperationDao
     abstract fun downloadBatchDao(): DownloadBatchDao
@@ -228,7 +235,9 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
             MIGRATION_17_18,
             MIGRATION_18_19,
             MIGRATION_19_20,
-            MIGRATION_20_21
+            MIGRATION_20_21,
+            MIGRATION_21_22,
+            MIGRATION_22_23
         )
 
         private fun checkMainProcess(context: Context) {
@@ -260,6 +269,8 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
         val MIGRATION_18_19: Migration = LyricSyncPersistenceMigration
         val MIGRATION_19_20: Migration = PlaybackStatsPagedMigration
         val MIGRATION_20_21: Migration = LocalSourceProvenanceMigration
+        val MIGRATION_21_22: Migration = BiliCollectionBindingMigration
+        val MIGRATION_22_23: Migration = BiliCollectionBindingTargetMigration
 
         const val FINAL_DB_VERSION = NERI_USER_DATA_FINAL_VERSION
     }

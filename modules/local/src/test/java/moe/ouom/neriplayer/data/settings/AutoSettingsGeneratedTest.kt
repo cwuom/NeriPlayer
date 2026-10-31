@@ -429,8 +429,8 @@ class AutoSettingsGeneratedTest {
     fun inheritedPlaybackSectionKeepsEveryGeneratedSetting() {
         val settings = AutoSettingsMetadata.settingsIn(AutoSettingsSections.playback)
 
-        assertEquals(41, settings.size)
-        assertEquals(41, settings.map { it.keyName }.toSet().size)
+        assertEquals(43, settings.size)
+        assertEquals(43, settings.map { it.keyName }.toSet().size)
         assertEquals("playback_fade_in", settings.first().keyName)
         assertEquals(
             AutoSettingsSections.playback,
@@ -447,6 +447,14 @@ class AutoSettingsGeneratedTest {
         assertEquals(
             AutoSettingsSchema.playback.biliSponsorBlockEnabled.key,
             AutoSettingsMetadata.requireSetting(SettingsKeys.BILI_SPONSOR_BLOCK_ENABLED).keyName
+        )
+        assertEquals(
+            SettingAccessMode.ReadWrite,
+            AutoSettingsMetadata.requireSetting(SettingsKeys.NETEASE_AUTO_SOURCE_QUALITY_PROBE).access
+        )
+        assertEquals(
+            SettingAccessMode.ReadWrite,
+            AutoSettingsMetadata.requireSetting(SettingsKeys.BILI_COLLECTION_BINDING_PRIORITY).access
         )
         assertEquals(
             SettingAccessMode.KeyOnly,

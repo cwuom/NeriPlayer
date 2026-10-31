@@ -1198,7 +1198,7 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    internal suspend fun <T> withCommittedSyncSnapshot(read: () -> T): T {
+    internal suspend fun <T> withCommittedSyncSnapshot(read: suspend () -> T): T {
         return commitPlaylistMutation {
             flushPendingSyncMutationBeforeSync()
             currentCoroutineContext().ensureActive()

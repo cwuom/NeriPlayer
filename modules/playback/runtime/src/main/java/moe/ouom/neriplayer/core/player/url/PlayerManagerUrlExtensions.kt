@@ -62,6 +62,7 @@ import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.platform.netease.api.playback.parser.NeteasePlaybackResponseParser
+import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseAlbumBindingSource
 import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseAutoBiliSource
 import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseMatchedLocalSource
 import moe.ouom.neriplayer.core.player.watchdog.configureActivePlaybackCandidates
@@ -192,6 +193,20 @@ internal suspend fun PlayerManager.resolveSongUrl(
         return SongUrlResult.Success(song.streamUrl.orEmpty())
     }
     val isYouTubeTrack = isYouTubeMusicTrack(song)
+    // 绑定了 B 站分 P 的曲目必须先按绑定解析：否则命中网易云完整缓存或 URL 预取就会抢先返回，
+    // 用户明明选了 B 站音源，实际还在放缓存里的网易云音频。解析失败时照旧走后面的缓存与网络。
+    if (
+        !serverSong && !isYouTubeTrack && !isBiliTrack(song) && !shouldDeferNeteaseAlternateSources
+    ) {
+        tryResolveNeteaseAlbumBindingSource(song, sideEffects)?.let { boundSource ->
+            prepareBiliPlaybackSkipsForResolvedPlayback(song, playbackRequestTokenOverride)
+            return mergeListenTogetherFallbackResult(
+                localResult = boundSource,
+                listenTogetherFallback = initialListenTogetherFallback,
+                preferredQualityKey = listenTogetherPreferredQualityKey(song)
+            )
+        }
+    }
     val cacheKey = computeCacheKey(
         song = song,
         youtubeQualityOverride = youtubeRecoveryStrategy?.preferredQualityOverride,
@@ -1609,6 +1624,13 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
     allowAutoBiliFallback: Boolean = true
 ): SongUrlResult = withContext(Dispatchers.IO) {
     try {
+        // 专辑已手动绑定的分 P 优先，用户选的就是要放的那一轨
+        if (allowAutoBiliFallback) {
+            tryResolveNeteaseAlbumBindingSource(song, sideEffects)?.let {
+                return@withContext it
+            }
+        }
+
         val effectiveQuality = effectiveNeteaseQuality()
         val qualityCandidates = buildNeteaseQualityCandidates(effectiveQuality)
         var previewFallback: SongUrlResult.Success? = null
