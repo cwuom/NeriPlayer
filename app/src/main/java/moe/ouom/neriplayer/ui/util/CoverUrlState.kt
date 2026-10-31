@@ -427,7 +427,9 @@ internal fun rememberSongDisplayCoverUrl(
         if (!shouldResolveEmbeddedCoverFallback(
                 resolveLocalFallback = resolveLocalFallback,
                 allowEmbeddedCoverFallback = allowEmbeddedCoverFallback
-            ) || !cachedCover.isNullOrBlank()
+            ) || (!cachedCover.isNullOrBlank() &&
+                (!CustomSongCoverStorage.isRemoteReference(cachedCover) ||
+                    !GlobalDownloadManager.hasDownloadedSongCached(song)))
         ) {
             if (cachedCover.isNullOrBlank() && immediateCover.isNullOrBlank()) {
                 coverUrl = finishCoverResolution(
