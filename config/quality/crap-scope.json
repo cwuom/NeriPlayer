@@ -771,20 +771,6 @@
         "acceptTrackEndIdentity",
         "isDuplicateTrackEnd",
         "acceptTrackEndTiming",
-        "seekToImpl",
-        "logSeekRequested",
-        "acceptSeekCommand",
-        "allowsLocalRoomSeek",
-        "preparePlaybackSeek",
-        "shouldRefreshYouTubeUrlForSeek",
-        "knownSeekDuration",
-        "rememberYouTubeSeekPosition",
-        "applyPendingSeekPosition",
-        "applyPlaybackSeek",
-        "seekPlayerIfReady",
-        "syncSeekOutputs",
-        "refreshPlaybackUrlAfterSeek",
-        "seekRefreshReason",
         "maybePersistPlaybackStatsProgress",
         "pauseInternal",
         "startProgressUpdates",
@@ -830,6 +816,26 @@
         "clearQueueStopMediaUrl",
         "logQueueStopComplete",
         "<clinit>"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/player/playback/PlayerManagerSeekExtensions.kt",
+      "class": "moe.ouom.neriplayer.core.player.playback.PlayerManagerSeekExtensionsKt",
+      "methods": [
+        "seekToImpl",
+        "logSeekRequested",
+        "acceptSeekCommand",
+        "allowsLocalRoomSeek",
+        "preparePlaybackSeek",
+        "shouldRefreshYouTubeUrlForSeek",
+        "knownSeekDuration",
+        "rememberYouTubeSeekPosition",
+        "applyPendingSeekPosition",
+        "applyPlaybackSeek",
+        "seekPlayerIfReady",
+        "syncSeekOutputs",
+        "refreshPlaybackUrlAfterSeek",
+        "seekRefreshReason"
       ]
     },
     {
