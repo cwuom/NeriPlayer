@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lyric_offset_input_action">点按数值输入</string>
+    <string name="lyric_offset_delay_limit">延后 −5 s</string>
+    <string name="lyric_offset_advance_limit">提前 +5 s</string>
+    <string name="lyric_offset_input_hint">范围 −5000 至 +5000 ms，按 50 ms 对齐。正值提前，负值延后</string>
+    <string name="lyric_offset_input_invalid">请输入 −5000 至 +5000 之间的整数</string>
+</resources>

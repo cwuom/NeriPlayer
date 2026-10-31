@@ -152,7 +152,6 @@
     <string name="settings_lyrics_offset_bili_cc_subtitle_desc">Default offset applied when loading Bilibili CC subtitle lyrics</string>
     <string name="settings_lyrics_offset_reset">Reset</string>
     <string name="settings_lyrics_offset_reset_all">Reset all</string>
-    <string name="settings_lyrics_offset_value">Current offset: %1$s ms</string>
     <string name="settings_live_update_lyric_enabled">Live lyric notification</string>
     <string name="settings_live_update_lyric_enabled_desc">Show the current lyric in an Android 16 Live Update notification</string>
     <string name="settings_status_bar_lyrics_title">Status Bar Lyrics</string>

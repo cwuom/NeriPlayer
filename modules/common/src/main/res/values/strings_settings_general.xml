@@ -272,7 +272,6 @@
     <string name="settings_lyrics_lyric_font_size">歌词字号</string>
     <string name="settings_lyrics_translation_font_size">翻译字号</string>
     <string name="settings_lyrics_translation_sample">示例翻译：the moonlight stays with you</string>
-    <string name="settings_lyrics_sample">示例歌词：昨夜小楼又东风</string>
     <string name="settings_custom_background">自定义背景图</string>
     <string name="settings_background_change">点击更换</string>
     <string name="settings_background_select">选择一张图片</string>

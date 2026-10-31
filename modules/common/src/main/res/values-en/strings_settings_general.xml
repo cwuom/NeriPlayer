@@ -272,7 +272,6 @@
     <string name="settings_lyrics_lyric_font_size">Lyric font size</string>
     <string name="settings_lyrics_translation_font_size">Translation font size</string>
     <string name="settings_lyrics_translation_sample">Sample translation: the moonlight stays with you</string>
-    <string name="settings_lyrics_sample">Sample lyrics: Last night the east wind blew</string>
     <string name="settings_custom_background">Custom Background</string>
     <string name="settings_background_change">Change</string>
     <string name="settings_background_select">Select image</string>
