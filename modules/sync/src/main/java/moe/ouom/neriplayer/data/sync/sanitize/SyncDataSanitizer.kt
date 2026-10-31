@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.sync.merge.song.SyncPlaylistSongMergePolicy
 import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.playlist.normalizedForDisplayOrder
 import moe.ouom.neriplayer.data.sync.policy.SyncBiliVideoSkipMergePolicy
+import moe.ouom.neriplayer.data.sync.policy.SyncBiliCollectionBindingMergePolicy
 import moe.ouom.neriplayer.data.sync.policy.copyWithNormalizedMembershipTokens
 import moe.ouom.neriplayer.data.sync.policy.hasResolvableSyncIdentity
 import moe.ouom.neriplayer.data.sync.policy.sanitizeCoverUrlForSync
@@ -47,6 +48,7 @@ class SyncDataSanitizer(private val host: SyncSanitizationHost) {
                 SyncPlaylistUsageStatsMergePolicy.sanitize(bucket)
             },
             biliVideoSkipRules = SyncBiliVideoSkipMergePolicy.sanitize(data.biliVideoSkipRules),
+            biliCollectionBindings = SyncBiliCollectionBindingMergePolicy.sanitize(data.biliCollectionBindings),
             lyricOverrides = data.lyricOverrides.mapNotNull { sanitizeSyncSong(it) }
                 .filter { it.lyricSyncRevision > 0L }
         )

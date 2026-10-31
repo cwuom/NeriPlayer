@@ -486,6 +486,10 @@ object PlayerManager {
     @Volatile
     internal var neteaseAutoSourceSwitchEnabled = false
     @Volatile
+    internal var neteaseAutoSourceQualityProbeEnabled = true
+    @Volatile
+    internal var biliAlbumBindingPriorityEnabled = true
+    @Volatile
     internal var neteaseLocalSourceFallbackEnabled = false
     internal var stopOnBluetoothDisconnectEnabled = true
     @Volatile
@@ -760,6 +764,7 @@ object PlayerManager {
     val beatImpulseFlow get() = AudioReactive.beat
 
     val biliRepo by lazy { PlayerDependencies.repositories.biliPlaybackRepository }
+    val biliCollectionBindingRepo by lazy { PlayerDependencies.repositories.biliCollectionBindingRepository }
     val biliClient by lazy { PlayerDependencies.repositories.biliClient }
     val neteaseClient by lazy { PlayerDependencies.repositories.neteaseClient }
     val youtubeMusicPlaybackRepository by lazy { PlayerDependencies.repositories.youtubeMusicPlaybackRepository }

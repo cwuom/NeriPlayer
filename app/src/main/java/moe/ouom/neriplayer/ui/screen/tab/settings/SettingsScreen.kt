@@ -79,6 +79,7 @@ import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.PlaybackServiceIdleShutdownSetting
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.NeteaseSourceQualitySettingsItems
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.SettingsAudioQualitySection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.lyrics.SettingsLyricsSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.appearance.SettingsMotionSection
@@ -1007,6 +1008,11 @@ internal fun SettingsScreen(
                                     onClick = {
                                         playbackActions.onNeteaseAutoSourceSwitchChange(!playbackState.playbackSources.neteaseAutoSourceSwitch)
                                     }
+                                )
+                                NeteaseSourceQualitySettingsItems(
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
+                                    onHighlightFinished = onSettingsHighlightFinished
                                 )
                             }
                         },

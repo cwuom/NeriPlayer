@@ -122,6 +122,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android 音频
 
 - **多源与本地播放**：网易云、Bilibili、YouTube Music 与本地音频共用一个播放队列。
 - **播放兜底**：网易云不可播时先降音质；开启兜底后按歌名、歌手与时长匹配 Bilibili 候选，连续失败自动跳过。
+- **Bilibili 音源绑定**：单曲、专辑或歌单可手动绑定到 B 站多 P 视频（软件内搜索或粘贴分享短链），播放与来源角标跟随绑定，绑定随 GitHub / WebDAV 同步保存。
 - **YouTube 播放兼容**：保留有效身份 Cookie 并支持轮换；缓存的 `player.js` 或播放候选失效时进入 EJS/HLS 回退，避免同一候选反复重试。
 - **音效**：自研 DSP 提供内置音效、10 段均衡器、AutoEQ 导入、响度均衡与 32-bit 高解析输出，关闭即完全旁路。
 - **USB 独占**：支持 UAC1.0 与兼容 UAC2.0 Type I PCM 的 DAC，可比特完美输出；插入响应可单独关闭。

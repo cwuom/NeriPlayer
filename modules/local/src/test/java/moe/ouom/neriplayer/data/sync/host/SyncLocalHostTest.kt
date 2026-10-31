@@ -41,14 +41,18 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.mockito.ArgumentMatchers.*
 import org.mockito.Mockito.*
+import org.mockito.invocation.InvocationOnMock
 
 class SyncLocalHostTest {
     private val fixtures = ArrayList<Fixture>()
     private val playbackStoreMatcherFallback = mock(FileSyncPlaybackDatasetStore::class.java)
-    private val snapshotReaderMatcherFallback: () -> SyncData = { SyncData() }
+    private val snapshotReaderMatcherFallback: suspend () -> SyncData = { SyncData() }
     private fun anyPlaybackStore(): FileSyncPlaybackDatasetStore =
         any(FileSyncPlaybackDatasetStore::class.java) ?: playbackStoreMatcherFallback
-    private fun anySnapshotReader(): () -> SyncData = any<() -> SyncData>() ?: snapshotReaderMatcherFallback
+    private fun anySnapshotReader(): suspend () -> SyncData =
+        any<suspend () -> SyncData>() ?: snapshotReaderMatcherFallback
+    private fun <T> InvocationOnMock.invokeSnapshotReader(): T =
+        runBlocking { (getArgument(0) as suspend () -> T)() }
     @After fun clearMapper() { CoverUrlMapper.installForTest(null); fixtures.forEach { it.directory.deleteRecursively() } }
 
     @Test
@@ -68,7 +72,7 @@ class SyncLocalHostTest {
     }
 
     @Test
-    fun `snapshot emits absent playlist tombstones and excludes local history`() {
+    fun `snapshot emits absent playlist tombstones and excludes local history`() = runTest {
         val fixture = Fixture()
         CoverUrlMapper.installForTest(CoverUrlMapper.createForTest())
         val empty = fixture.builder.build(fixture.context, 0L)
@@ -132,7 +136,7 @@ class SyncLocalHostTest {
         }.`when`(fixture.stats).borrowSyncCapture(anyPlaybackStore())
         doAnswer { invocation ->
             assertTrue(prepared)
-            invocation.getArgument<() -> SyncData>(0).invoke()
+            invocation.invokeSnapshotReader<SyncData>()
         }.`when`(fixture.playlist).withCommittedSyncSnapshot(anySnapshotReader())
         try {
             fixture.store.snapshot().use { assertEquals(3L, it.capturedPlaybackRevision) }
@@ -239,7 +243,7 @@ class SyncLocalHostTest {
         doAnswer { invocation ->
             assertFalse(insideBoundary)
             insideBoundary = true
-            try { invocation.getArgument<() -> SyncData>(0).invoke() }
+            try { invocation.invokeSnapshotReader<SyncData>() }
             finally { insideBoundary = false }
         }.`when`(fixture.playlist).withCommittedSyncSnapshot(anySnapshotReader())
         `when`(fixture.playlist.playlists).thenAnswer { assertTrue(insideBoundary); fixture.playlists }
@@ -291,7 +295,7 @@ class SyncLocalHostTest {
         fixture.configureSealedPlaybackCapture()
         val cancelled = CancellationException("core capture cancelled before ownership return")
         doAnswer { invocation ->
-            invocation.getArgument<() -> SyncData>(0).invoke()
+            invocation.invokeSnapshotReader<SyncData>()
             throw cancelled
         }.`when`(fixture.playlist).withCommittedSyncSnapshot(anySnapshotReader())
 
@@ -479,7 +483,7 @@ class SyncLocalHostTest {
         }
         val store by lazy { AndroidSyncLocalDataStore(context, storage, playlist, favorites, playHistory, stats, usage, localStats, skip) { context } }
         suspend fun configureReady() {
-            doAnswer { invocation -> invocation.getArgument<() -> SyncData>(0).invoke() }
+            doAnswer { invocation -> invocation.invokeSnapshotReader<SyncData>() }
                 .`when`(playlist).withCommittedSyncSnapshot(anySnapshotReader())
             `when`(playlist.awaitInitialized()).thenReturn(true)
             `when`(favorites.awaitInitialized()).thenReturn(true)
@@ -497,6 +501,6 @@ class SyncLocalHostTest {
             }.`when`(stats).borrowSyncCapture(anyPlaybackStore())
         }
         val builder = AndroidSyncSnapshotBuilder(storage, playlist, favorites, playHistory, usage, localStats, skip)
-        val applier = AndroidSyncLocalApplyHost(context, storage, playlist, favorites, playHistory, usage, localStats, skip) { context }
+        val applier = AndroidSyncLocalApplyHost(context, storage, playlist, favorites, playHistory, usage, localStats, skip, null) { context }
     }
 }

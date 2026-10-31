@@ -493,6 +493,11 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   nested replies, and copying. Signing in also enables likes, posting, and replying.
   Link recognition supports selected parts, collection shares, and `season_id`
   context, but this is still not a full Bilibili client.
+- Netease songs, albums, and playlists can be bound to Bilibili videos or collections.
+  Bindings are stored locally and synced through GitHub / WebDAV. When a binding is hit,
+  the now-playing source badge shows Bilibili, and changing a binding that affects the
+  current track refreshes playback state. Picking a source for a single track saves it
+  directly instead of running cross-source matching again.
 - `YouTube Music` supports login, anonymous playback, home/playlist browsing,
   details, search, playback, and downloads. Valid identity cookies are preserved
   and rotated when needed; bootstrap, `player.js`, PoToken, and challenge-result
@@ -745,7 +750,8 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    `data/sync/codec/SyncDataSerializer.kt` in `:sync` compatibility first. Shared payload
    models must not move back into the GitHub provider package.
 2. Sync data includes playlists, favorite playlists, recent plays, deletion records,
-   playback stats, and independent lyric overrides. V4 uses a Protobuf record stream,
+   playback stats, Bilibili source bindings, and independent lyric overrides. V4 uses a
+   Protobuf record stream,
    ZSTD content chunks, and a root manifest, keeping the `neriplayer-sync-v3.manifest` filename.
    V3 archives are read only for migration. Legacy JSON, raw GZIP, and Base64 are read
    only when the manifest is absent. GitHub binary upload requests use Base64 only

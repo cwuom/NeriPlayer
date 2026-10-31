@@ -9,4 +9,7 @@ interface SyncLocalApplyHost {
     suspend fun applyHistory(data: SyncData, remoteChanged: Boolean, expectedMutationVersion: Long): Boolean
     suspend fun applyStatistics(data: SyncData)
     suspend fun applyVideoSkipRules(data: SyncData, expectedMutationVersion: Long): Boolean
+
+    /** 专辑分 P 绑定；实现方可忽略（默认视为无此类本地数据） */
+    suspend fun applyAlbumBindings(data: SyncData, expectedMutationVersion: Long): Boolean = true
 }

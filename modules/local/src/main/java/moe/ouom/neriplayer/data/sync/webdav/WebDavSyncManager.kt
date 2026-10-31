@@ -35,6 +35,7 @@ import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.host.createWebDavSyncBackend
 import moe.ouom.neriplayer.data.sync.host.SyncServiceInstance
 import moe.ouom.neriplayer.data.sync.host.AndroidSyncLocalDataStore
+import moe.ouom.neriplayer.data.local.platform.bilibili.BiliCollectionBindingRepositoryProvider
 import moe.ouom.neriplayer.data.sync.host.AndroidSyncMergeHost
 import moe.ouom.neriplayer.data.sync.merge.engine.SyncDataMerger
 import moe.ouom.neriplayer.data.sync.runtime.SyncSession
@@ -46,7 +47,12 @@ import moe.ouom.neriplayer.common.locale.LanguageManager
 class WebDavSyncManager private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val storage by lazy { SecureTokenStorage(appContext) }
-    private val local by lazy { AndroidSyncLocalDataStore(appContext, storage) }
+    private val local by lazy {
+        AndroidSyncLocalDataStore(
+            appContext, storage,
+            biliCollectionBindingRepo = BiliCollectionBindingRepositoryProvider.getInstance(appContext)
+        )
+    }
     private val protocolUpgrade = SyncProtocolUpgradeRepository(appContext)
 
     companion object {

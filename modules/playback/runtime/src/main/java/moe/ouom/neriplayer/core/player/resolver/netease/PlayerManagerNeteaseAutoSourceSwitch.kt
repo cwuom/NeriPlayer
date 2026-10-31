@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.core.player.url.buildBiliPlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.buildBiliRepresentationIdentity
 import moe.ouom.neriplayer.core.player.url.inferBiliQualityKey
 import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
+import moe.ouom.neriplayer.platform.bilibili.playback.quality.biliStreamQualityTier
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
 import kotlin.math.absoluteValue
@@ -19,6 +20,15 @@ import kotlin.math.absoluteValue
 private const val NETEASE_AUTO_SOURCE_SEARCH_LIMIT = 6
 private const val NETEASE_AUTO_SOURCE_MIN_ACCEPT_SCORE = 70
 private const val NETEASE_AUTO_SOURCE_FALLBACK_LIMIT = 2
+
+/** 音质优先模式下最多探测多少个候选视频的实际音轨 */
+private const val NETEASE_AUTO_SOURCE_QUALITY_PROBE_LIMIT = 3
+
+/** 关闭音质优先时仍需探测的候选数：1 个主用 + 2 个备用 */
+private const val NETEASE_AUTO_SOURCE_PLAIN_PROBE_LIMIT = 3
+
+/** 无损/高解析级音轨，出现即无需继续探测 */
+private const val NETEASE_AUTO_SOURCE_BEST_QUALITY_TIER = 3
 private val autoSourceCacheKeyUnsafeRegex = Regex("[^A-Za-z0-9_.-]+")
 private val autoSourceNonTextRegex = Regex("[^\\p{L}\\p{N}]+")
 private val autoSourceWhitespaceRegex = Regex("\\s+")
@@ -34,49 +44,103 @@ internal suspend fun PlayerManager.tryResolveNeteaseAutoBiliSource(
 
     NPLogger.w(
         "NERI-PlayerManager",
-        "Netease source unavailable, trying Bili auto source: song=${song.name}, artist=${song.artist}"
+        "Netease source unavailable, trying Bili auto source: song=${song.name}, artist=${song.artist}, " +
+            "qualityProbe=${neteaseAutoSourceQualityProbeEnabled}"
     )
 
-    val visitedCandidates = mutableSetOf<String>()
-    var primaryResult: SongUrlResult.Success? = null
-    val fallbackResults = mutableListOf<PlaybackUrlCandidate>()
+    val compareByQuality = neteaseAutoSourceQualityProbeEnabled
+    val probeLimit = if (compareByQuality) {
+        NETEASE_AUTO_SOURCE_QUALITY_PROBE_LIMIT
+    } else {
+        NETEASE_AUTO_SOURCE_PLAIN_PROBE_LIMIT
+    }
 
-    for (query in queries) {
+    val visitedCandidates = mutableSetOf<String>()
+    val probes = mutableListOf<BiliAutoSourceProbe>()
+    var attempted = 0
+    var bestProbe: BiliAutoSourceProbe? = null
+
+    probeLoop@ for (query in queries) {
         val candidates = fetchBiliAutoSourceCandidates(song, "$query 无损")
             .sortedByDescending { scoreNeteaseAutoBiliCandidate(song, it) }
             .take(NETEASE_AUTO_SOURCE_SEARCH_LIMIT)
 
         for (candidate in candidates) {
+            if (attempted >= probeLimit) break@probeLoop
             val candidateKey = candidate.bvid.ifBlank { candidate.aid.toString() }
             if (!visitedCandidates.add(candidateKey)) continue
+            attempted++
 
-            val result = resolveNeteaseAutoBiliCandidate(
+            val probe = probeNeteaseAutoBiliCandidate(
                 song = song,
-                candidate = candidate,
-                sideEffects = sideEffects
-            )
-            if (result == null) continue
-            if (primaryResult == null) {
-                primaryResult = result
-            } else {
-                fallbackResults += result.toPlaybackUrlCandidate()
-                if (fallbackResults.size >= NETEASE_AUTO_SOURCE_FALLBACK_LIMIT) {
-                    return primaryResult.copy(fallbackCandidates = fallbackResults)
+                candidate = candidate
+            ) ?: continue
+            probes += probe
+            if (compareByQuality) {
+                val current = bestProbe
+                if (current == null || probe.isBetterThan(current)) {
+                    bestProbe = probe
                 }
+                // 已经拿到无损级，继续探测只会白花流量
+                if (probe.qualityTier >= NETEASE_AUTO_SOURCE_BEST_QUALITY_TIER) break@probeLoop
+            } else if (bestProbe == null) {
+                bestProbe = probe
             }
         }
     }
 
-    primaryResult?.let { result ->
-        return result.copy(fallbackCandidates = fallbackResults)
+    val winner = bestProbe ?: run {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "Bili auto source not found: song=${song.name}, artist=${song.artist}"
+        )
+        return null
     }
 
-    NPLogger.w(
-        "NERI-PlayerManager",
-        "Bili auto source not found: song=${song.name}, artist=${song.artist}"
-    )
-    return null
+    winner.durationMs?.let { durationMs ->
+        sideEffects.updateDuration {
+            maybeUpdateSongDuration(song, durationMs)
+        }
+    }
+
+    val fallbackResults = probes
+        .filter { it !== winner }
+        .sortedWith(probeFallbackComparator())
+        .map { it.result.toPlaybackUrlCandidate() }
+        .distinctBy { it.url }
+        .take(NETEASE_AUTO_SOURCE_FALLBACK_LIMIT)
+
+    if (compareByQuality) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "Bili auto source quality pick: song=${song.name}, probes=${probes.size}, " +
+                "tier=${winner.qualityTier}, bitrate=${winner.bitrateKbps}, score=${winner.matchScore}, " +
+                "url=${winner.result.url.take(96)}"
+        )
+    }
+
+    return winner.result.copy(fallbackCandidates = fallbackResults)
 }
+
+/** 候选探测结果：音质档位 + 码率 + 文本匹配分，用于跨视频比较 */
+private data class BiliAutoSourceProbe(
+    val result: SongUrlResult.Success,
+    val qualityTier: Int,
+    val bitrateKbps: Int,
+    val matchScore: Int,
+    val durationMs: Long?
+) {
+    fun isBetterThan(other: BiliAutoSourceProbe): Boolean {
+        if (qualityTier != other.qualityTier) return qualityTier > other.qualityTier
+        if (bitrateKbps != other.bitrateKbps) return bitrateKbps > other.bitrateKbps
+        return matchScore > other.matchScore
+    }
+}
+
+private fun probeFallbackComparator(): Comparator<BiliAutoSourceProbe> =
+    compareByDescending<BiliAutoSourceProbe> { it.qualityTier }
+        .thenByDescending { it.bitrateKbps }
+        .thenByDescending { it.matchScore }
 
 private fun SongUrlResult.Success.toPlaybackUrlCandidate(): PlaybackUrlCandidate {
     return PlaybackUrlCandidate(
@@ -140,11 +204,10 @@ private suspend fun PlayerManager.fetchBiliAutoSourceCandidates(
     }
 }
 
-private suspend fun PlayerManager.resolveNeteaseAutoBiliCandidate(
+private suspend fun PlayerManager.probeNeteaseAutoBiliCandidate(
     song: SongItem,
-    candidate: SearchVideoItem,
-    sideEffects: RefreshResolverSideEffects
-): SongUrlResult.Success? {
+    candidate: SearchVideoItem
+): BiliAutoSourceProbe? {
     val videoInfo = fetchBiliAutoSourceVideoInfo(candidate) ?: return null
     val pageMatch = selectNeteaseAutoBiliPage(song, candidate, videoInfo) ?: return null
     if (pageMatch.score < NETEASE_AUTO_SOURCE_MIN_ACCEPT_SCORE) {
@@ -171,30 +234,33 @@ private suspend fun PlayerManager.resolveNeteaseAutoBiliCandidate(
     val durationMs = pageMatch.page.durationSec
         .takeIf { it > 0 }
         ?.times(1000L)
-    if (durationMs != null) {
-        sideEffects.updateDuration {
-            maybeUpdateSongDuration(song, durationMs)
-        }
-    }
 
-    NPLogger.w(
+    NPLogger.d(
         "NERI-PlayerManager",
-        "Bili auto source selected: song=${song.name}, bvid=${videoInfo.bvid}, cid=${pageMatch.page.cid}, score=${pageMatch.score}"
+        "Bili auto source candidate resolved: song=${song.name}, bvid=${videoInfo.bvid}, " +
+            "cid=${pageMatch.page.cid}, score=${pageMatch.score}, tier=${biliStreamQualityTier(selectedStream)}, " +
+            "bitrate=${selectedStream.bitrateKbps}, streams=${availableStreams.size}"
     )
-    return SongUrlResult.Success(
-        url = selectedStream.url,
-        candidateUrls = selectedStream.candidateUrls,
-        durationMs = durationMs,
-        mimeType = selectedStream.mimeType,
-        audioInfo = buildBiliPlaybackAudioInfo(selectedStream, availableStreams) {
-            getLocalizedString(it)
-        },
-        representationIdentity = buildBiliRepresentationIdentity(selectedStream),
-        cacheKeyOverride = buildNeteaseAutoBiliCacheKey(
-            bvid = videoInfo.bvid,
-            cid = pageMatch.page.cid,
-            selectedStream = selectedStream
-        )
+    return BiliAutoSourceProbe(
+        result = SongUrlResult.Success(
+            url = selectedStream.url,
+            candidateUrls = selectedStream.candidateUrls,
+            durationMs = durationMs,
+            mimeType = selectedStream.mimeType,
+            audioInfo = buildBiliPlaybackAudioInfo(selectedStream, availableStreams) {
+                getLocalizedString(it)
+            },
+            representationIdentity = buildBiliRepresentationIdentity(selectedStream),
+            cacheKeyOverride = buildNeteaseAutoBiliCacheKey(
+                bvid = videoInfo.bvid,
+                cid = pageMatch.page.cid,
+                selectedStream = selectedStream
+            )
+        ),
+        qualityTier = biliStreamQualityTier(selectedStream),
+        bitrateKbps = selectedStream.bitrateKbps,
+        matchScore = pageMatch.score,
+        durationMs = durationMs
     )
 }
 

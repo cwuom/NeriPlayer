@@ -101,3 +101,16 @@ fun selectStreamByPreference(
 
     return sorted.firstOrNull()
 }
+
+/**
+ * 音轨跨视频比较用的音质档位，越大越好：
+ * 3 = 无损 / 高解析（FLAC），2 = 杜比全景声，1 = 高码率（≥180kbps），0 = 其余。
+ *
+ * 换源时不同视频能提供的音轨差别很大，先比档位再比码率，才能挑出真正更清晰的那个。
+ */
+fun biliStreamQualityTier(stream: BiliAudioStreamInfo): Int {
+    if (isLosslessLikeStream(stream)) return 3
+    val qualityTag = stream.normalizedQualityTag()
+    if (qualityTag == "dolby") return 2
+    return if (stream.bitrateKbps >= BiliQuality.HIGH.minBitrateKbps) 1 else 0
+}

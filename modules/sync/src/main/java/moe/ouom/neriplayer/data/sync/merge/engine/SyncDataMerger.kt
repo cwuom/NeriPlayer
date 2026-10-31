@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.sync.merge.playlist.SyncPlaylistDeletionPolicy
 import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaybackStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.policy.SyncBiliVideoSkipMergePolicy
+import moe.ouom.neriplayer.data.sync.policy.SyncBiliCollectionBindingMergePolicy
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageDeletionPolicy
@@ -94,6 +95,10 @@ class SyncDataMerger(
             local = local.biliVideoSkipRules,
             remote = remote.biliVideoSkipRules
         )
+        val mergedBiliCollectionBindings = SyncBiliCollectionBindingMergePolicy.merge(
+            local = local.biliCollectionBindings,
+            remote = remote.biliCollectionBindings
+        )
 
         val mergedData = SyncData(
             deviceId = local.deviceId,
@@ -116,7 +121,8 @@ class SyncDataMerger(
             localPlaylistPlaybackStats = finalizedLocalPlaylistPlaybackStats.stats,
             localPlaylistPlaybackBuckets = finalizedLocalPlaylistPlaybackStats.buckets,
             biliVideoSkipRules = mergedBiliVideoSkipRules,
-            lyricOverrides = mergedLyricOverrides
+            lyricOverrides = mergedLyricOverrides,
+            biliCollectionBindings = mergedBiliCollectionBindings
         )
 
         return SyncMergeResult(

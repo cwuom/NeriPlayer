@@ -16,6 +16,7 @@ class SyncLocalDataApplier(private val host: SyncLocalApplyHost) {
         if (!host.applyHistory(data, remoteChanged, expectedMutationVersion)) return false
         if (!applyPlayback()) return false
         host.applyStatistics(data)
-        return host.applyVideoSkipRules(data, expectedMutationVersion)
+        if (!host.applyVideoSkipRules(data, expectedMutationVersion)) return false
+        return host.applyAlbumBindings(data, expectedMutationVersion)
     }
 }

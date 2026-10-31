@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bili_collection_binding_entry">Bind Bilibili parts</string>
+    <string name="bili_collection_binding_title">Bind Bilibili parts</string>
+    <string name="bili_collection_binding_desc">Bind a multi-part Bilibili video to this collection; songs are matched to parts and play straight from Bilibili.</string>
+    <string name="bili_collection_binding_input_hint">Video link or BV id</string>
+    <string name="bili_collection_binding_parse">Resolve</string>
+    <string name="bili_collection_binding_reparse">Resolve again</string>
+    <string name="bili_collection_binding_save">Save binding</string>
+    <string name="bili_collection_binding_unbind">Remove binding</string>
+    <string name="bili_collection_binding_cancel">Cancel</string>
+    <string name="bili_collection_binding_invalid_input">Could not recognize a video link or BV id</string>
+    <string name="bili_collection_binding_parse_failed">Resolve failed, check your network or whether the video is available</string>
+    <string name="bili_collection_binding_no_pages">This video has no usable parts</string>
+    <string name="bili_collection_binding_matched_format">Matched %1$d / %2$d songs</string>
+    <string name="bili_collection_binding_unmatched">Not matched, tap to choose</string>
+    <string name="bili_collection_binding_part_format">P%1$d · %2$s</string>
+    <string name="bili_collection_binding_saved">Bilibili part binding saved</string>
+    <string name="bili_collection_binding_save_failed">Save failed, at least one song must map to a part</string>
+    <string name="bili_collection_binding_removed">Binding removed</string>
+    <string name="bili_collection_binding_clear_match">Do not bind this song</string>
+    <string name="bili_collection_binding_current">Current: %1$s</string>
+    <string name="bili_collection_binding_loading">Resolving video info…</string>
+    <string name="bili_collection_binding_album_unavailable">Album info is still loading, try again later</string>
+    <string name="bili_binding_title_song">Pick a Bilibili source</string>
+    <string name="bili_binding_title_album">Bind Bilibili parts for this album</string>
+    <string name="bili_binding_title_playlist">Bind Bilibili parts for this playlist</string>
+    <string name="bili_binding_desc">The name is prefilled for searching. For a single song, tapping a result saves it immediately; for collections, songs are matched to parts by name and can be changed by hand. Playback prefers the source picked here.</string>
+    <string name="bili_binding_search_hint">Search Bilibili</string>
+    <string name="bili_binding_search">Search</string>
+    <string name="bili_binding_search_empty">No video found, try another keyword</string>
+    <string name="bili_binding_use_link">Use a link</string>
+    <string name="bili_binding_result_count">Results (%1$d)</string>
+    <string name="bili_binding_song_entry">Pick a Bilibili source</string>
+</resources>

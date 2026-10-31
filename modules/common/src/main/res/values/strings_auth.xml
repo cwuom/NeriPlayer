@@ -41,6 +41,10 @@
     <string name="settings_netease_auto_source_switch_desc">默认关闭；开启后，网易云歌曲无权限或仅返回试听片段时，自动在哔哩哔哩查找音源</string>
     <string name="settings_netease_local_source_fallback">本地音频兜底</string>
     <string name="settings_netease_local_source_fallback_desc">默认关闭；开启后，网易云歌曲无权限或仅返回试听片段时，优先播放已匹配相同歌曲信息的本地音频</string>
+    <string name="settings_netease_auto_source_quality_probe">换源时优先最高音质</string>
+    <string name="settings_netease_auto_source_quality_probe_desc">默认开启；自动换源时依次检测最多 3 个候选视频的实际音轨，选中音质最高的一个，其余作为备用</string>
+    <string name="settings_bili_collection_binding_priority">专辑分 P 绑定优先播放</string>
+    <string name="settings_bili_collection_binding_priority_desc">默认开启；专辑已手动绑定哔哩哔哩分 P 时，专辑内歌曲直接播放对应分 P，不再走网易云与自动搜索</string>
     <string name="settings_youtube_playback_source">YouTube 播放源</string>
     <string name="settings_youtube_playback_source_desc">选择优先使用的 YouTube 播放客户端；不可用时会自动回退到其余来源</string>
     <string name="settings_youtube_playback_source_web_remix">Web Remix 低延迟</string>

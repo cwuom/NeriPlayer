@@ -25,7 +25,8 @@ internal object SyncArchiveRecords {
         syncLog = emptyList(), recentPlayDeletions = emptyList(), playbackStats = emptyList(),
         playbackStatBuckets = emptyList(), playlistSongDeletions = emptyList(), playlistUsageStats = emptyList(),
         localPlaylistPlaybackStats = emptyList(), localPlaylistPlaybackBuckets = emptyList(), biliVideoSkipRules = emptyList(),
-        lyricOverrides = emptyList(), playlistUsageDeletions = emptyList()
+        lyricOverrides = emptyList(), playlistUsageDeletions = emptyList(),
+        biliCollectionBindings = emptyList()
     )
 
     fun write(data: SyncData, stream: OutputStream, checkActive: () -> Unit = {},
@@ -40,6 +41,7 @@ internal object SyncArchiveRecords {
         data.biliVideoSkipRules.forEach { writer.record(14, it) }
         SyncSongLyricMergePolicy.collectOverrides(data).forEach { writer.record(15, SyncSongLyricMergePolicy.normalize(it)) }
         data.playlistUsageDeletions.forEach { writer.record(16, it) }
+        data.biliCollectionBindings.forEach { writer.record(17, it) }
         return writer.count
     }
 
@@ -69,6 +71,7 @@ internal object SyncArchiveRecords {
         data.biliVideoSkipRules.forEach { writer.record(14, it) }
         SyncSongLyricMergePolicy.collectOverrides(data).forEach { writer.record(15, SyncSongLyricMergePolicy.normalize(it)) }
         data.playlistUsageDeletions.forEach { writer.record(16, it) }
+        data.biliCollectionBindings.forEach { writer.record(17, it) }
         return writer.count
     }
 
@@ -210,7 +213,7 @@ private class SyncRecordReader(
 
     private fun validateHeader(kind: Int) {
         require(count < expectedRecords) { "Unexpected sync record" }
-        require(kind in 1..16) { "Unexpected sync record" }
+        require(kind in 1..17) { "Unexpected sync record" }
         require(expectedBytes - consumed >= 5L) { "Unexpected sync record" }
     }
 
@@ -248,6 +251,7 @@ private class SyncRecordAccumulator(private val header: SyncData, private val in
     private val skip = ArrayList<SyncBiliVideoSkipRule>()
     private val lyricOverrides = ArrayList<SyncSong>()
     private val usageDeletions = ArrayList<SyncPlaylistUsageDeletion>()
+    private val albumBindings = ArrayList<SyncBiliCollectionBinding>()
     private var playlist: SyncPlaylist? = null
     private var favorite: SyncFavoritePlaylist? = null
     private var songs = ArrayList<SyncSong>()
@@ -331,6 +335,7 @@ private class SyncRecordAccumulator(private val header: SyncData, private val in
             14 -> skip.add(ProtoBuf.decodeFromByteArray(payload))
             15 -> lyricOverrides.add(ProtoBuf.decodeFromByteArray(payload))
             16 -> usageDeletions.add(ProtoBuf.decodeFromByteArray(payload))
+            17 -> albumBindings.add(ProtoBuf.decodeFromByteArray(payload))
         }
     }
 
@@ -352,7 +357,8 @@ private class SyncRecordAccumulator(private val header: SyncData, private val in
             recentPlayDeletions = recentDeletions, playbackStats = stats, playbackStatBuckets = buckets,
             playlistSongDeletions = songDeletions, playlistUsageStats = usage,
             localPlaylistPlaybackStats = localStats, localPlaylistPlaybackBuckets = localBuckets, biliVideoSkipRules = skip,
-            lyricOverrides = lyricOverrides, playlistUsageDeletions = usageDeletions
+            lyricOverrides = lyricOverrides, playlistUsageDeletions = usageDeletions,
+            biliCollectionBindings = albumBindings
         )
     }
 }

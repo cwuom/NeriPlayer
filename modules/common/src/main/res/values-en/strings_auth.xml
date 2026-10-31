@@ -41,6 +41,10 @@
     <string name="settings_netease_auto_source_switch_desc">Off by default. When enabled, search Bilibili automatically when a NetEase song is unavailable or only returns a preview clip.</string>
     <string name="settings_netease_local_source_fallback">Local Audio Fallback</string>
     <string name="settings_netease_local_source_fallback_desc">Off by default. When enabled, prefer a local audio file matched to the same song when a NetEase song is unavailable or only returns a preview clip.</string>
+    <string name="settings_netease_auto_source_quality_probe">Prefer Highest Quality When Switching</string>
+    <string name="settings_netease_auto_source_quality_probe_desc">On by default. When switching sources, probe up to 3 candidate videos and play the one with the best audio track, keeping the rest as fallbacks.</string>
+    <string name="settings_bili_collection_binding_priority">Prefer Bound Bilibili Parts</string>
+    <string name="settings_bili_collection_binding_priority_desc">On by default. Songs in a collection bound to Bilibili parts play those parts directly instead of going through NetEase search.</string>
     <string name="settings_youtube_playback_source">YouTube Playback Source</string>
     <string name="settings_youtube_playback_source_desc">Choose the preferred YouTube playback client; unavailable clients fall back to the remaining sources</string>
     <string name="settings_youtube_playback_source_web_remix">Web Remix Low Latency</string>

@@ -152,6 +152,11 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 - NetEase playback automatically tries lower quality when the current quality is
   unavailable, and can switch to a matched Bilibili or local-audio fallback candidate
   for restricted or preview-only tracks.
+- NetEase songs, albums, and playlists can be bound to a Bilibili video or collection
+  from the app (search inside the dialog or paste a share link, including `b23.tv`
+  short links). Bindings persist locally in Room and sync as metadata; a hit switches
+  the now-playing source badge to Bilibili, and edits affecting the current track
+  refresh playback state.
 - Playback state is persisted periodically for queue and state recovery.
 - Player code is split by responsibility across `playback/`, `url/`, `resolver/`,
   `service/`, `effects/`, `lifecycle/`, `watchdog/`, and `usb/`. Shared song

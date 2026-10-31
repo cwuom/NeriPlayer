@@ -485,7 +485,8 @@ private class MoreOptionsMainActions(
     private val onShowSongDetails: (SongItem) -> Unit,
     private val onShowQualitySwitch: () -> Unit,
     private val onEnterAlbum: (AlbumSummary) -> Unit,
-    private val onNavigateUp: () -> Unit
+    private val onNavigateUp: () -> Unit,
+    private val onRequestBindBiliSource: (SongItem) -> Unit
 ) {
     val onOpenSearch: () -> Unit = { owner.open(MoreOptionsPage.SEARCH) }
     val onOpenEditInfo: () -> Unit = { owner.open(MoreOptionsPage.EDIT_INFO) }
@@ -495,6 +496,7 @@ private class MoreOptionsMainActions(
     val onOpenBiliCcSubtitle: () -> Unit = { owner.open(MoreOptionsPage.BILI_CC_SUBTITLE) }
     val onOpenListenTogether: () -> Unit = { owner.open(MoreOptionsPage.LISTEN_TOGETHER) }
     val onOpenEncyclopedia: () -> Unit = { owner.open(MoreOptionsPage.ENCYCLOPEDIA) }
+    val onBindBiliSource: () -> Unit = { owner.dismiss { onRequestBindBiliSource(originalSong) } }
     val onShowDetails: () -> Unit = { owner.dismiss { onShowSongDetails(originalSong) } }
     val onShowQuality: () -> Unit = { owner.dismiss(onShowQualitySwitch) }
     val onAlbum: (AlbumSummary) -> Unit = { album ->
@@ -539,7 +541,9 @@ class MoreOptionsSheetNavigation(
     val onEnterArtist: (NeteaseArtistSummary) -> Unit = {},
     val onEnterPlaylist: (PlaylistSummary) -> Unit = {},
     /** 百科页「查看全部评论」：先关掉更多面板，再由宿主打开原生评论面板。 */
-    val onOpenComments: (CommentSource) -> Unit = {}
+    val onOpenComments: (CommentSource) -> Unit = {},
+    /** 单曲指定 B 站音源：收起面板后由宿主弹出绑定面板。 */
+    val onBindBiliSource: (SongItem) -> Unit = {}
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -607,7 +611,8 @@ private fun MoreOptionsSheetContent(
 
     val mainActions = MoreOptionsMainActions(
         session.owner, originalSong, navigation.onShowSongDetails,
-        navigation.onShowQualitySwitch, navigation.onEnterAlbum, navigation.onNavigateUp
+        navigation.onShowQualitySwitch, navigation.onEnterAlbum, navigation.onNavigateUp,
+        navigation.onBindBiliSource
     )
 
     MoreOptionsSheetSurface(session.owner, session.sheetState, snackbarHostState) {
@@ -1187,6 +1192,7 @@ private fun MoreOptionsMainPageContent(
         onOpenBiliCcSubtitle = actions.onOpenBiliCcSubtitle,
         onOpenListenTogether = actions.onOpenListenTogether,
         onOpenEncyclopedia = actions.onOpenEncyclopedia,
+        onBindBiliSource = actions.onBindBiliSource,
         onShowSongDetails = actions.onShowDetails,
         onShowQualitySwitch = actions.onShowQuality,
         onEnterAlbum = actions.onAlbum,

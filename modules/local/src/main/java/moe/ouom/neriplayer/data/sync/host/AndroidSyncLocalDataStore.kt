@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDataset
 import java.io.File
 import moe.ouom.neriplayer.data.local.platform.bilibili.BiliVideoSkipRepositoryProvider
 import moe.ouom.neriplayer.platform.bilibili.skip.BiliVideoSkipRepository
+import moe.ouom.neriplayer.platform.bilibili.binding.BiliCollectionBindingRepository
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
@@ -33,18 +34,19 @@ internal class AndroidSyncLocalDataStore(
     private val playlistUsageRepo: PlaylistUsageRepository = PlaylistUsageRepository.getInstance(appContext),
     private val localPlaylistPlaybackStatsRepo: LocalPlaylistPlaybackStatsRepository = LocalPlaylistPlaybackStatsRepository.getInstance(appContext),
     private val biliVideoSkipRepo: BiliVideoSkipRepository = BiliVideoSkipRepositoryProvider.getInstance(appContext),
+    private val biliCollectionBindingRepo: BiliCollectionBindingRepository? = null,
     private val readLocalizedContext: () -> Context = { LanguageManager.applyLanguage(appContext) }
 ) : SyncLocalDataStore {
     private val datasetStore by lazy { FileSyncPlaybackDatasetStore(File(appContext.cacheDir, "sync-v3/playback-staging")) }
     private val snapshotBuilder = AndroidSyncSnapshotBuilder(
         storage, playlistRepo, favoriteRepo, playHistoryRepo,
-        playlistUsageRepo, localPlaylistPlaybackStatsRepo, biliVideoSkipRepo
+        playlistUsageRepo, localPlaylistPlaybackStatsRepo, biliVideoSkipRepo, biliCollectionBindingRepo
     )
     private val sanitizer = SyncDataSanitizer(AndroidSyncSanitizationHost(appContext))
     private val applier = SyncLocalDataApplier(
         AndroidSyncLocalApplyHost(
             appContext, storage, playlistRepo, favoriteRepo, playHistoryRepo,
-            playlistUsageRepo, localPlaylistPlaybackStatsRepo, biliVideoSkipRepo, readLocalizedContext
+            playlistUsageRepo, localPlaylistPlaybackStatsRepo, biliVideoSkipRepo, biliCollectionBindingRepo, readLocalizedContext
         )
     )
 
