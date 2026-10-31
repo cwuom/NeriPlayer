@@ -60,22 +60,28 @@ internal fun canRecoverMetadataTarget(context: Context, record: LocalMetadataRec
 
 internal fun canRecoverMetadataDescriptor(descriptor: ParcelFileDescriptor, record: LocalMetadataRecoveryRecord): Boolean =
     runCatching {
-        val stat = Os.fstat(descriptor.fileDescriptor)
-        check(OsConstants.S_ISREG(stat.st_mode)) { "元信息恢复目标缺少稳定文件身份" }
-        val identity = "${stat.st_dev}:${stat.st_ino}"
-        val legacyIdentity = if (LocalMediaMetadataRecoveryStore.directFile(record.targetReference) != null) {
-            "file:(dev=${java.lang.Long.toHexString(stat.st_dev)},ino=${stat.st_ino})"
-        } else null
-        val recordedIdentities = listOfNotNull(record.originalFileIdentity, record.originalWritableFileIdentity)
-        if (recordedIdentities.none { it == identity || it == legacyIdentity }) {
-            return@runCatching false
-        }
+        if (!metadataDescriptorMatchesRecordedIdentity(descriptor, record)) return@runCatching false
         val digest = metadataDescriptorSha256(descriptor)
         if (digest == record.originalSha256 || digest == record.updatedSha256) return@runCatching true
         interruptedMetadataSources(record).any { source ->
             withMetadataDescriptorInput(descriptor) { matchesMetadataPrefix(it, source) }
         }
     }.getOrDefault(false)
+
+internal fun metadataDescriptorMatchesRecordedIdentity(
+    descriptor: ParcelFileDescriptor,
+    record: LocalMetadataRecoveryRecord
+): Boolean {
+    val recordedIdentities = listOfNotNull(record.originalFileIdentity, record.originalWritableFileIdentity)
+    if (recordedIdentities.isEmpty()) return false
+    val stat = Os.fstat(descriptor.fileDescriptor)
+    check(OsConstants.S_ISREG(stat.st_mode)) { "元信息恢复目标缺少稳定文件身份" }
+    val identity = "${stat.st_dev}:${stat.st_ino}"
+    val legacyIdentity = if (LocalMediaMetadataRecoveryStore.directFile(record.targetReference) != null) {
+        "file:(dev=${java.lang.Long.toHexString(stat.st_dev)},ino=${stat.st_ino})"
+    } else null
+    return recordedIdentities.any { it == identity || it == legacyIdentity }
+}
 
 internal fun metadataDescriptorSha256(descriptor: ParcelFileDescriptor): String =
     withMetadataDescriptorInput(descriptor, LocalMediaMetadataRecoveryStore::sha256)

@@ -184,7 +184,6 @@ object LocalMediaMetadataRecoveryStore {
             val targetFile = directFile(record.targetReference)
             val originalTime = record.originalLastModifiedMs?.takeIf { it > 0L }
             targetFile == null || originalTime == null || targetFile.lastModified() == originalTime ||
-                !canRecoverMetadataTarget(context, record) ||
                 restoreOriginalDirectFileTime(targetFile, record, originalTime)
         } else if (canRecoverMetadataTarget(context, latestRecord) &&
             latestRecord.backupFile.isFile && runCatching {
@@ -629,9 +628,10 @@ object LocalMediaMetadataRecoveryStore {
         record: LocalMetadataRecoveryRecord,
         lastModifiedMs: Long
     ): Boolean = runCatching {
+        if (record.originalFileIdentity == null && record.originalWritableFileIdentity == null) return@runCatching true
         ParcelFileDescriptor.open(target, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
             // 已是原文的新 owner 只做凭据清理，不能继承旧文件时间
-            if (!canRecoverMetadataDescriptor(descriptor, record)) return@use true
+            if (!metadataDescriptorMatchesRecordedIdentity(descriptor, record)) return@use true
             check(metadataDescriptorSha256(descriptor) == record.originalSha256)
             restoreDescriptorTime(descriptor, lastModifiedMs)
             true

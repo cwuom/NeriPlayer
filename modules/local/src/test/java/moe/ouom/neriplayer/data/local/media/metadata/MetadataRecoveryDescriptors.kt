@@ -32,6 +32,7 @@ internal fun <T> withMetadataRecoveryDescriptors(block: suspend MetadataRecovery
     runBlocking(Dispatchers.IO) { MetadataRecoveryDescriptors().use { it.run(block) } }
 
 internal class MetadataRecoveryDescriptors : Closeable {
+    var beforeStat: (FileDescriptor) -> Unit = {}
     var beforeTruncate: (FileDescriptor) -> Unit = {}
     var beforePathReplace: (Path, Path) -> Unit = { _, _ -> }
 
@@ -85,7 +86,9 @@ internal class MetadataRecoveryDescriptors : Closeable {
             // Robolectric 的 fstat 丢失身份，dup 会重开原路径；桥接只补这些宿主缺口
             mockStatic(Os::class.java, CALLS_REAL_METHODS).use { descriptorOs ->
                 descriptorOs.`when`<StructStat> { Os.fstat(any()) }.thenAnswer { call ->
-                    val view = views.getValue(call.getArgument(0))
+                    val descriptor = call.getArgument<FileDescriptor>(0)
+                    beforeStat(descriptor)
+                    val view = views.getValue(descriptor)
                     val file = view.heldFile
                     StructStat(
                         view.device, view.inode,

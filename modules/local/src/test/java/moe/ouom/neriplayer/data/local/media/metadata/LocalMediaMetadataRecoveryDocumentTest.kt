@@ -45,6 +45,7 @@ class LocalMediaMetadataRecoveryDocumentTest {
     private lateinit var context: Context
     private lateinit var audio: File
     private lateinit var provider: RecoveryDocumentProvider
+    private var beforeStat: (FileDescriptor) -> Unit = {}
     private var beforeTruncate: (FileDescriptor) -> Unit = {}
     private var beforePathReplace: () -> Unit = {}
     private val reference = "content://metadata.recovery.test/audio"
@@ -66,6 +67,7 @@ class LocalMediaMetadataRecoveryDocumentTest {
 
     private fun withDescriptors(block: suspend () -> Unit) = withMetadataRecoveryDescriptors {
         provider.trackDescriptor = { descriptor, file, offset, inode -> track(descriptor, file, offset, inode) }
+        beforeStat = { this@LocalMediaMetadataRecoveryDocumentTest.beforeStat(it) }
         beforeTruncate = { this@LocalMediaMetadataRecoveryDocumentTest.beforeTruncate(it) }
         beforePathReplace = { _, target ->
             if (target == audio.toPath()) this@LocalMediaMetadataRecoveryDocumentTest.beforePathReplace()
@@ -189,6 +191,58 @@ class LocalMediaMetadataRecoveryDocumentTest {
 
         assertEquals("original", audio.readText())
         assertEquals(externalTime, audio.lastModified())
+    }
+
+    @Test
+    fun `an original owner identity read failure retains evidence until its timestamp can be restored`() = withDescriptors {
+        val originalTime = 1_700_000_000_123L
+        val record = prepareDirect(originalTime)
+        val changedTime = 1_800_000_000_456L
+        assertTrue(audio.setLastModified(changedTime))
+        var identityReads = 0
+        beforeStat = {
+            identityReads++
+            throw IOException("temporary descriptor identity read failure")
+        }
+
+        val restored = LocalMediaMetadataRecoveryStore.rollback(context, record)
+
+        assertTrue("the failure must occur while reading the opened descriptor identity", identityReads > 0)
+        assertFalse(restored)
+        assertEquals("original", audio.readText())
+        assertEquals(changedTime, audio.lastModified())
+        assertTrue(record.journalFile.isFile)
+        assertEquals("ROLLBACK_FAILED", JSONObject(record.journalFile.readText()).getString("stage"))
+        assertEquals("original", record.backupFile.readText())
+        assertEquals("updated audio", record.updatedFile.readText())
+
+        beforeStat = {}
+        assertTrue(LocalMediaMetadataRecoveryStore.rollback(context, record))
+
+        assertEquals("original", audio.readText())
+        assertEquals(originalTime, audio.lastModified())
+        assertFalse(record.journalFile.exists())
+        assertFalse(record.backupFile.exists())
+        assertFalse(record.updatedFile.exists())
+    }
+
+    @Test
+    fun `an identityless legacy journal with original bytes cleans up without restoring an unowned timestamp`() = withDescriptors {
+        val prepared = prepareDirect()
+        val legacy = LocalMediaMetadataRecoveryStore.markReplacing(
+            prepared.copy(originalFileIdentity = null, originalWritableFileIdentity = null)
+        )
+        val unchangedTime = 1_800_000_000_456L
+        assertTrue(audio.setLastModified(unchangedTime))
+        beforeStat = { throw IOException("legacy cleanup has no descriptor identity evidence") }
+
+        assertTrue(LocalMediaMetadataRecoveryStore.rollback(context, legacy))
+
+        assertEquals("original", audio.readText())
+        assertEquals(unchangedTime, audio.lastModified())
+        assertFalse(legacy.journalFile.exists())
+        assertFalse(legacy.backupFile.exists())
+        assertFalse(legacy.updatedFile.exists())
     }
 
     @Test
@@ -334,8 +388,8 @@ class LocalMediaMetadataRecoveryDocumentTest {
         return record
     }
 
-    private fun prepareDirect(): LocalMetadataRecoveryRecord {
-        assertTrue(audio.setLastModified(1_700_000_000_000L))
+    private fun prepareDirect(originalTime: Long = 1_700_000_000_000L): LocalMetadataRecoveryRecord {
+        assertTrue(audio.setLastModified(originalTime))
         val staging = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
         return LocalMediaMetadataRecoveryStore.markReplacing(LocalMediaMetadataRecoveryStore.begin(
             context, audio.absolutePath,
