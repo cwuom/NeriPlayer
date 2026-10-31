@@ -48,6 +48,7 @@ class LocalMediaMetadataRecoveryDocumentTest {
     private var beforeStat: (FileDescriptor) -> Unit = {}
     private var beforeTruncate: (FileDescriptor) -> Unit = {}
     private var beforePathReplace: () -> Unit = {}
+    private var beforeJournalPublish: (String) -> Unit = {}
     private val reference = "content://metadata.recovery.test/audio"
 
     @Before
@@ -69,8 +70,11 @@ class LocalMediaMetadataRecoveryDocumentTest {
         provider.trackDescriptor = { descriptor, file, offset, inode -> track(descriptor, file, offset, inode) }
         beforeStat = { this@LocalMediaMetadataRecoveryDocumentTest.beforeStat(it) }
         beforeTruncate = { this@LocalMediaMetadataRecoveryDocumentTest.beforeTruncate(it) }
-        beforePathReplace = { _, target ->
+        beforePathReplace = { source, target ->
             if (target == audio.toPath()) this@LocalMediaMetadataRecoveryDocumentTest.beforePathReplace()
+            if (target.fileName.toString().startsWith("recovery-") && target.fileName.toString().endsWith(".json")) {
+                beforeJournalPublish(JSONObject(source.toFile().readText()).getString("stage"))
+            }
         }
         block()
     }
@@ -296,6 +300,51 @@ class LocalMediaMetadataRecoveryDocumentTest {
         assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
         assertEquals("original", audio.readText())
         assertFalse(record.journalFile.exists())
+    }
+
+    @Test
+    fun `failed rollback intent publication keeps evidence and allows same process recovery`() = withDescriptors {
+        val record = prepareDirect()
+        val journalBeforeRollback = record.journalFile.readText()
+        audio.writeText("up")
+        beforeJournalPublish = { stage ->
+            if (stage == "ROLLBACK_FAILED") throw IOException("simulated rollback intent storage failure")
+        }
+
+        assertFalse(LocalMediaMetadataRecoveryStore.rollback(context, record))
+        assertEquals("up", audio.readText())
+        assertEquals(journalBeforeRollback, record.journalFile.readText())
+        assertEquals("original", record.backupFile.readText())
+        assertEquals("updated audio", record.updatedFile.readText())
+        beforeJournalPublish = {}
+
+        assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+        assertEquals("updated audio", audio.readText())
+        assertFalse(record.journalFile.exists())
+        assertFalse(record.backupFile.exists())
+        assertFalse(record.updatedFile.exists())
+    }
+
+    @Test
+    fun `failed rolled back publication keeps evidence and allows same process cleanup`() = withDescriptors {
+        val record = prepareDirect()
+        audio.writeText("up")
+        beforeJournalPublish = { stage ->
+            if (stage == "ROLLED_BACK") throw IOException("simulated rollback completion storage failure")
+        }
+
+        assertFalse(LocalMediaMetadataRecoveryStore.rollback(context, record))
+        assertEquals("original", audio.readText())
+        assertEquals("ROLLBACK_FAILED", JSONObject(record.journalFile.readText()).getString("stage"))
+        assertEquals("original", record.backupFile.readText())
+        assertEquals("updated audio", record.updatedFile.readText())
+        beforeJournalPublish = {}
+
+        assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+        assertEquals("original", audio.readText())
+        assertFalse(record.journalFile.exists())
+        assertFalse(record.backupFile.exists())
+        assertFalse(record.updatedFile.exists())
     }
 
     @Test

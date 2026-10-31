@@ -171,7 +171,10 @@ object LocalMediaMetadataRecoveryStore {
             // 回滚也可能被中断，必须先记录意图，重启后不能重新发布更新副本
             runCatching { updateStage(record, LocalMetadataRecoveryStage.ROLLBACK_FAILED) }
                 .onFailure { error -> NPLogger.e(TAG, "记录元信息回滚意图失败，保留原文件", error) }
-                .getOrNull() ?: return false
+                .getOrElse {
+                    releaseCompanionRecord(record)
+                    return false
+                }
         } else record
         val companionResult = if (rollbackRecord.companionTransaction) rollbackLocalMediaCompanions(context, rollbackRecord)
             else CompanionRollbackResult(rollbackRecord, true)
@@ -204,7 +207,10 @@ object LocalMediaMetadataRecoveryStore {
                 updateStage(latestRecord, LocalMetadataRecoveryStage.ROLLED_BACK)
             }.onFailure { error ->
                 NPLogger.e(TAG, "记录元信息已回滚状态失败，保留恢复文件", error)
-            }.getOrNull() ?: return false
+            }.getOrElse {
+                releaseCompanionRecord(record)
+                return false
+            }
             return cleanup(rolledBack)
         } else {
             runCatching {
@@ -212,8 +218,7 @@ object LocalMediaMetadataRecoveryStore {
             }.onFailure { error ->
                 NPLogger.e(TAG, "记录元信息回滚失败状态失败，保留恢复文件", error)
             }
-            activeRecordIds -= record.id
-            recoveryCompleted = false
+            releaseCompanionRecord(record)
         }
         return false
     }
