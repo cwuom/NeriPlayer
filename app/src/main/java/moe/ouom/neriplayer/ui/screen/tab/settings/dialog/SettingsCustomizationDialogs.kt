@@ -74,7 +74,7 @@ import androidx.core.graphics.toColorInt
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
-import moe.ouom.neriplayer.ui.component.settings.HsvPicker
+import moe.ouom.neriplayer.ui.component.settings.ThemeColorPicker
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
@@ -136,7 +136,7 @@ internal fun ColorPickerDialog(
                         stringResource(CoreCommonR.string.settings_custom_color),
                         style = MaterialTheme.typography.titleSmall
                     )
-                    HsvPicker(
+                    ThemeColorPicker(
                         initialHex = currentHex,
                         onColorChanged = { pickedHex = it.uppercase(Locale.ROOT) }
                     )
