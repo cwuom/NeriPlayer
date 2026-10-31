@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.data.local.media
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
 
 import android.content.Context
-import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.data.local.media.metadata.withMetadataRecoveryDescriptors
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,6 +12,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.json.JSONObject
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
@@ -19,6 +22,8 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LocalMediaMetadataRecoveryStoreTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
@@ -34,7 +39,7 @@ class LocalMediaMetadataRecoveryStoreTest {
     }
 
     @Test
-    fun `startup recovery completes a prepared updated copy`() = runBlocking {
+    fun `startup recovery completes a prepared updated copy`() = withMetadataRecoveryDescriptors {
         val context = recoveryContext()
         val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
         val target = temporaryFolder.newFile("song.flac").apply { writeText("original audio") }
@@ -63,7 +68,7 @@ class LocalMediaMetadataRecoveryStoreTest {
     }
 
     @Test
-    fun `startup recovery restores backup when updated copy is invalid`() = runBlocking {
+    fun `startup recovery restores backup when updated copy is invalid`() = withMetadataRecoveryDescriptors {
         val context = recoveryContext()
         val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
         val target = temporaryFolder.newFile("song.mp3").apply { writeText("original audio") }
@@ -91,7 +96,7 @@ class LocalMediaMetadataRecoveryStoreTest {
     }
 
     @Test
-    fun `same process recovery does not take over an active transaction`() = runBlocking {
+    fun `same process recovery does not take over an active transaction`() = withMetadataRecoveryDescriptors {
         val context = recoveryContext()
         val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
         val target = temporaryFolder.newFile("active.flac").apply { writeText("original") }
@@ -101,13 +106,14 @@ class LocalMediaMetadataRecoveryStoreTest {
         val updated = File(directory, "metadata-updated-active.flac").apply {
             writeText("updated")
         }
-        val record = LocalMediaMetadataRecoveryStore.begin(
+        val prepared = LocalMediaMetadataRecoveryStore.begin(
             context = context,
             targetReference = target.absolutePath,
             backupFile = backup,
             updatedFile = updated,
             originalLastModifiedMs = target.lastModified()
         )
+        val record = LocalMediaMetadataRecoveryStore.markReplacing(prepared)
         target.writeText("up")
 
         assertEquals(0, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
@@ -116,7 +122,7 @@ class LocalMediaMetadataRecoveryStoreTest {
     }
 
     @Test
-    fun `prepared recovery does not overwrite an externally replaced target`() = runBlocking {
+    fun `prepared recovery does not overwrite an externally replaced target`() = withMetadataRecoveryDescriptors {
         val context = recoveryContext()
         val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
         val target = temporaryFolder.newFile("prepared.flac").apply { writeText("original") }
@@ -144,7 +150,7 @@ class LocalMediaMetadataRecoveryStoreTest {
     }
 
     @Test
-    fun `verified recovery does not overwrite a later external edit`() = runBlocking {
+    fun `verified recovery does not overwrite a later external edit`() = withMetadataRecoveryDescriptors {
         val context = recoveryContext()
         val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
         val target = temporaryFolder.newFile("verified.mp3").apply { writeText("original") }
@@ -173,7 +179,7 @@ class LocalMediaMetadataRecoveryStoreTest {
     }
 
     @Test
-    fun `replacing recovery preserves an external file swapped into the same path`() = runBlocking {
+    fun `replacing recovery preserves an external file swapped into the same path`() = withMetadataRecoveryDescriptors {
         val context = recoveryContext()
         val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
         val target = temporaryFolder.newFile("replacing.flac").apply { writeText("original") }
@@ -218,7 +224,7 @@ class LocalMediaMetadataRecoveryStoreTest {
     }
 
     @Test
-    fun `replacing recovery preserves external edits made inside the original file instance`() = runBlocking {
+    fun `replacing recovery preserves external edits made inside the original file instance`() = withMetadataRecoveryDescriptors {
         val context = recoveryContext()
         val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
         val target = temporaryFolder.newFile("edited.flac").apply { writeText("original") }
@@ -240,7 +246,7 @@ class LocalMediaMetadataRecoveryStoreTest {
     }
 
     @Test
-    fun `legacy replacing journals without instance identity preserve ambiguous target bytes`() = runBlocking {
+    fun `legacy replacing journals without instance identity preserve ambiguous target bytes`() = withMetadataRecoveryDescriptors {
         val context = recoveryContext()
         val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
         val target = temporaryFolder.newFile("legacy-replacing.flac").apply { writeText("original") }
@@ -266,7 +272,7 @@ class LocalMediaMetadataRecoveryStoreTest {
     }
 
     @Test
-    fun `partial rollback cleanup never reapplies the updated copy`() = runBlocking {
+    fun `partial rollback cleanup never reapplies the updated copy`() = withMetadataRecoveryDescriptors {
         val context = recoveryContext()
         val directory = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
         val target = temporaryFolder.newFile("rollback.mp3").apply { writeText("original") }

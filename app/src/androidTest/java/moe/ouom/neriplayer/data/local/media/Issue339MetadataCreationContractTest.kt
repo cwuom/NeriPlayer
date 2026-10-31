@@ -46,6 +46,8 @@ class Issue339MetadataCreationContractTest {
         assertEquals(uri, repeated)
         assertArrayEquals(sentinel, resolver.openInputStream(uri)!!.use { it.readBytes() })
         resolver.openFileDescriptor(uri, "rw")!!.close()
+        assertArrayEquals(sentinel, resolver.openInputStream(uri)!!.use { it.readBytes() })
+        resolver.openFileDescriptor(uri, "wt")!!.close()
         assertArrayEquals(byteArrayOf(), resolver.openInputStream(uri)!!.use { it.readBytes() })
     }
 }

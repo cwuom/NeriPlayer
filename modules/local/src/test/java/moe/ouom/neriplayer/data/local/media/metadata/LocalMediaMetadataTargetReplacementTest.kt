@@ -12,6 +12,9 @@ import org.junit.Before
 import org.junit.After
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.mockito.Mockito.CALLS_REAL_METHODS
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.doThrow
@@ -23,6 +26,8 @@ import java.io.FileNotFoundException
 import org.mockito.Mockito.never
 import org.mockito.Mockito.clearInvocations
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LocalMediaMetadataTargetReplacementTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
@@ -41,7 +46,7 @@ class LocalMediaMetadataTargetReplacementTest {
     }
 
     @Test
-    fun `direct targets are replaced and preserve the original modification time`() {
+    fun `direct targets are replaced and preserve the original modification time`() = withMetadataRecoveryDescriptors {
         val source = temporaryFolder.newFile("updated.flac").apply { writeText("tagged audio") }
         val target = File(temporaryFolder.newFolder("albums"), "song.flac").apply { writeText("original audio") }
 
@@ -57,7 +62,7 @@ class LocalMediaMetadataTargetReplacementTest {
     }
 
     @Test
-    fun `direct replacement reports blocked parents, occupied targets and unusable sources`() {
+    fun `direct replacement reports blocked parents, occupied targets and unusable sources`() = withMetadataRecoveryDescriptors {
         val source = temporaryFolder.newFile("updated.flac").apply { writeText("tagged audio") }
         val blocker = temporaryFolder.newFile("blocker").apply { writeText("plain file") }
         val album = temporaryFolder.newFolder("album")
@@ -129,7 +134,9 @@ class LocalMediaMetadataTargetReplacementTest {
         val updated = File.createTempFile("updated-", ".flac", staging).apply {
             writeText(if (source.isFile && source.length() > 0L) source.readText() else "updated audio")
         }
-        return LocalMediaMetadataRecoveryStore.begin(context, reference, backup, updated, null)
+        return LocalMediaMetadataRecoveryStore.markReplacing(
+            LocalMediaMetadataRecoveryStore.begin(context, reference, backup, updated, null)
+        )
     }
 
     private fun contentUri(): Uri = mock(Uri::class.java).also { uri ->

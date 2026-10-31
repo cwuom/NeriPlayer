@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.local.media
 
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMetadataRecoveryRecord
+import moe.ouom.neriplayer.data.local.media.metadata.withMetadataRecoveryDescriptors
 
 import android.content.Context
 import java.io.File
@@ -21,10 +22,15 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import kotlin.time.Duration.Companion.milliseconds
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LocalMediaTargetedRecoveryTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
@@ -43,7 +49,7 @@ class LocalMediaTargetedRecoveryTest {
     }
 
     @Test
-    fun `editing one target does not recover unrelated audio and global recovery remains available`() = runBlocking {
+    fun `editing one target does not recover unrelated audio and global recovery remains available`() = withMetadataRecoveryDescriptors {
         val unrelated = temporaryFolder.newFile("unrelated.mp3").apply { writeText("original") }
         val record = record(unrelated)
         LocalMediaMetadataRecoveryStore.markReplacing(record)
@@ -163,7 +169,7 @@ class LocalMediaTargetedRecoveryTest {
     }
 
     @Test
-    fun `same target recovery finishes before new edit and cannot overwrite it later`() = runBlocking {
+    fun `same target recovery finishes before new edit and cannot overwrite it later`() = withMetadataRecoveryDescriptors {
         val target = temporaryFolder.newFile("recoverable.mp3").apply { writeText("original") }
         val record = record(target)
         LocalMediaMetadataRecoveryStore.markReplacing(record)
@@ -293,7 +299,7 @@ class LocalMediaTargetedRecoveryTest {
     }
 
     @Test
-    fun `already restored bytes still restore the original file modification time`() {
+    fun `already restored bytes still restore the original file modification time`() = withMetadataRecoveryDescriptors {
         val target = temporaryFolder.newFile("timestamp.mp3").apply { writeText("original") }
         val originalTime = 1_600_000_000_000L
         assertTrue(target.setLastModified(originalTime))
@@ -306,7 +312,7 @@ class LocalMediaTargetedRecoveryTest {
     }
 
     @Test
-    fun `completed recovery cache belongs to its own staging directory`() = runBlocking {
+    fun `completed recovery cache belongs to its own staging directory`() = withMetadataRecoveryDescriptors {
         val otherContext = mock(Context::class.java)
         `when`(otherContext.noBackupFilesDir).thenReturn(temporaryFolder.newFolder("other-no-backup"))
         val firstTarget = temporaryFolder.newFile("first-context.mp3").apply { writeText("original") }

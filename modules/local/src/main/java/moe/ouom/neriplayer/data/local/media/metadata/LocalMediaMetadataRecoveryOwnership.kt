@@ -44,31 +44,41 @@ internal fun verifiedMetadataTargetIdentity(
 internal fun canRecoverMetadataTarget(context: Context, record: LocalMetadataRecoveryRecord): Boolean = runCatching {
     val file = LocalMediaMetadataRecoveryStore.directFile(record.targetReference)
     if (file == null) {
-        return@runCatching context.contentResolver.openFileDescriptor(record.targetReference.toUri(), "r")
+        // 读取视图可能是管道，已有写入身份时用非截断的写入视图验证恢复许可
+        val mode = if (record.originalWritableFileIdentity != null) "rw" else "r"
+        return@runCatching context.contentResolver.openFileDescriptor(record.targetReference.toUri(), mode)
             ?.use { canRecoverMetadataDescriptor(it, record) } == true
     }
-    if (LocalMediaMetadataRecoveryStore.targetMatches(context, record.targetReference, record.originalSha256) ||
-        LocalMediaMetadataRecoveryStore.targetMatches(context, record.targetReference, record.updatedSha256)
-    ) return@runCatching true
     val identity = record.originalFileIdentity ?: return@runCatching false
     if (metadataFileIdentity(file) != identity) return@runCatching false
     // 同一个实例也可能被外部原地修改，拒绝不符合已校验写入前缀的内容
-    interruptedMetadataSources(record).any { source -> file.inputStream().use { matchesMetadataPrefix(it, source) } } &&
+    (LocalMediaMetadataRecoveryStore.targetMatches(context, record.targetReference, record.originalSha256) ||
+        LocalMediaMetadataRecoveryStore.targetMatches(context, record.targetReference, record.updatedSha256) ||
+        interruptedMetadataSources(record).any { source -> file.inputStream().use { matchesMetadataPrefix(it, source) } }) &&
         metadataFileIdentity(file) == identity
 }.getOrDefault(false)
 
 internal fun canRecoverMetadataDescriptor(descriptor: ParcelFileDescriptor, record: LocalMetadataRecoveryRecord): Boolean =
     runCatching {
-        val identity = metadataDescriptorIdentity(descriptor)
-        val digest = withMetadataDescriptorInput(descriptor, LocalMediaMetadataRecoveryStore::sha256)
-        if (digest == record.originalSha256 || digest == record.updatedSha256) return@runCatching true
-        if (identity != record.originalFileIdentity && identity != record.originalWritableFileIdentity) {
+        val stat = Os.fstat(descriptor.fileDescriptor)
+        check(OsConstants.S_ISREG(stat.st_mode)) { "元信息恢复目标缺少稳定文件身份" }
+        val identity = "${stat.st_dev}:${stat.st_ino}"
+        val legacyIdentity = if (LocalMediaMetadataRecoveryStore.directFile(record.targetReference) != null) {
+            "file:(dev=${java.lang.Long.toHexString(stat.st_dev)},ino=${stat.st_ino})"
+        } else null
+        val recordedIdentities = listOfNotNull(record.originalFileIdentity, record.originalWritableFileIdentity)
+        if (recordedIdentities.none { it == identity || it == legacyIdentity }) {
             return@runCatching false
         }
+        val digest = metadataDescriptorSha256(descriptor)
+        if (digest == record.originalSha256 || digest == record.updatedSha256) return@runCatching true
         interruptedMetadataSources(record).any { source ->
             withMetadataDescriptorInput(descriptor) { matchesMetadataPrefix(it, source) }
         }
     }.getOrDefault(false)
+
+internal fun metadataDescriptorSha256(descriptor: ParcelFileDescriptor): String =
+    withMetadataDescriptorInput(descriptor, LocalMediaMetadataRecoveryStore::sha256)
 
 private fun interruptedMetadataSources(record: LocalMetadataRecoveryRecord): List<File> =
     listOf(record.updatedFile to record.updatedSha256, record.backupFile to record.originalSha256)

@@ -11,19 +11,14 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.system.Os
 import android.system.OsConstants
-import android.system.StructStat
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
-import java.io.Closeable
 import java.io.FileNotFoundException
 import java.io.FileDescriptor
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.nio.channels.FileChannel
+import java.io.IOException
 import java.nio.file.Files
-import java.util.IdentityHashMap
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.Dispatchers
+import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.BasicFileAttributes
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -40,11 +35,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowContentResolver
 import org.robolectric.shadows.ShadowLog
-import org.mockito.ArgumentMatchers.any
-import org.mockito.ArgumentMatchers.anyLong
-import org.mockito.ArgumentMatchers.eq
-import org.mockito.Mockito.CALLS_REAL_METHODS
-import org.mockito.Mockito.mockStatic
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -55,8 +45,8 @@ class LocalMediaMetadataRecoveryDocumentTest {
     private lateinit var context: Context
     private lateinit var audio: File
     private lateinit var provider: RecoveryDocumentProvider
-    private val channels = IdentityHashMap<FileDescriptor, FileChannel>()
-    private val borrowedStreams = mutableListOf<Closeable>()
+    private var beforeTruncate: (FileDescriptor) -> Unit = {}
+    private var beforePathReplace: () -> Unit = {}
     private val reference = "content://metadata.recovery.test/audio"
 
     @Before
@@ -74,38 +64,13 @@ class LocalMediaMetadataRecoveryDocumentTest {
         ShadowContentResolver.registerProviderInternal("metadata.recovery.test", provider)
     }
 
-    private fun withDescriptors(block: suspend () -> Unit) = runBlocking(Dispatchers.IO) {
-        // Robolectric 的 fstat(FileDescriptor) 丢失文件身份，桥接这三个系统调用到同一个真实文件描述符
-        mockStatic(Os::class.java, CALLS_REAL_METHODS).use { descriptorOs ->
-            descriptorOs.`when`<StructStat> { Os.fstat(any()) }.thenAnswer { call ->
-                val view = provider.files.getValue(call.getArgument(0))
-                val file = view.file
-                StructStat(
-                    view.device, view.inode,
-                    (Files.getAttribute(file.toPath(), "unix:mode") as Number).toInt(),
-                    1, 0, 0, 0, file.length(), 0, file.lastModified() / 1_000, 0, 4_096, 0
-                )
-            }
-            descriptorOs.`when`<Long> { Os.lseek(any(), anyLong(), eq(OsConstants.SEEK_SET)) }.thenAnswer { call ->
-                val descriptor = call.getArgument<FileDescriptor>(0)
-                val channel = channels.getOrPut(descriptor) {
-                    FileInputStream(descriptor).also { borrowedStreams += it }.channel
-                }
-                channel.position(call.getArgument<Long>(1)).position()
-            }
-            descriptorOs.`when`<Unit> { Os.ftruncate(any(), anyLong()) }.thenAnswer { call ->
-                val descriptor = call.getArgument<FileDescriptor>(0)
-                FileOutputStream(descriptor).also { borrowedStreams += it }.channel.truncate(call.getArgument(1))
-                null
-            }
-            try {
-                block()
-            } finally {
-                borrowedStreams.asReversed().forEach { runCatching(it::close) }
-                channels.clear()
-                borrowedStreams.clear()
-            }
+    private fun withDescriptors(block: suspend () -> Unit) = withMetadataRecoveryDescriptors {
+        provider.trackDescriptor = { descriptor, file, offset, inode -> track(descriptor, file, offset, inode) }
+        beforeTruncate = { this@LocalMediaMetadataRecoveryDocumentTest.beforeTruncate(it) }
+        beforePathReplace = { _, target ->
+            if (target == audio.toPath()) this@LocalMediaMetadataRecoveryDocumentTest.beforePathReplace()
         }
+        block()
     }
 
     @After
@@ -123,7 +88,7 @@ class LocalMediaMetadataRecoveryDocumentTest {
         assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
         assertEquals("updated audio", audio.readText())
         assertFalse(record.journalFile.exists())
-        assertEquals(listOf("rw"), provider.writeModes)
+        assertEquals(listOf("rw", "rw"), provider.writeModes)
     }
 
     @Test
@@ -155,6 +120,128 @@ class LocalMediaMetadataRecoveryDocumentTest {
         assertTrue(record.backupFile.exists())
         assertTrue(record.updatedFile.exists())
         assertEquals(listOf("rw"), provider.writeModes)
+    }
+
+    @Test
+    fun `rollback preserves a new document instance even when it matches the updated hash`() = withDescriptors {
+        val record = prepare()
+        val external = directory.newFile("same-update.flac").apply { writeText("updated audio") }
+        provider.audio = external
+
+        assertFalse(LocalMediaMetadataRecoveryStore.rollback(context, record))
+
+        assertEquals("updated audio", external.readText())
+        assertEquals("original", audio.readText())
+        assertTrue(record.journalFile.exists())
+        assertTrue(record.backupFile.exists())
+    }
+
+    @Test
+    fun `legacy journal without identity cannot authorize a complete updated document rollback`() = withDescriptors {
+        val prepared = prepare()
+        val legacy = prepared.copy(originalFileIdentity = null, originalWritableFileIdentity = null)
+        audio.writeText("updated audio")
+
+        assertFalse(LocalMediaMetadataRecoveryStore.rollback(context, legacy))
+
+        assertEquals("updated audio", audio.readText())
+        assertTrue(legacy.journalFile.exists())
+        assertTrue(legacy.backupFile.exists())
+    }
+
+    @Test
+    fun `direct replacement preserves the object swapped into the path at publication`() = withDescriptors {
+        val record = prepareDirect()
+        val external = directory.newFile("late-owner.flac").apply {
+            writeText("external owner")
+            assertTrue(setLastModified(1_800_000_000_000L))
+        }
+        val externalTime = external.lastModified()
+        var swapped = false
+        fun swapPath() {
+            if (swapped) return
+            Files.move(external.toPath(), audio.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            swapped = true
+        }
+        beforeTruncate = { swapPath() }
+        beforePathReplace = { swapPath() }
+        LocalMediaMetadataRecoveryStore.replaceTargetFromFile(
+            context, audio.absolutePath, record.updatedFile, record, record.originalLastModifiedMs
+        )
+
+        assertTrue("the external replacement must occur at the real mutation boundary", swapped)
+        assertEquals("external owner", audio.readText())
+        assertEquals(externalTime, audio.lastModified())
+        assertTrue(record.journalFile.exists())
+    }
+
+    @Test
+    fun `already original bytes do not authorize changing a replacement file timestamp`() = withDescriptors {
+        val record = prepareDirect()
+        val external = directory.newFile("original-owner.flac").apply {
+            writeText("original")
+            assertTrue(setLastModified(1_800_000_000_000L))
+        }
+        val externalTime = external.lastModified()
+        Files.move(external.toPath(), audio.toPath(), StandardCopyOption.REPLACE_EXISTING)
+
+        assertTrue(LocalMediaMetadataRecoveryStore.rollback(context, record))
+
+        assertEquals("original", audio.readText())
+        assertEquals(externalTime, audio.lastModified())
+    }
+
+    @Test
+    fun `legacy direct file keys remain bound to the same descriptor instance`() = withDescriptors {
+        val prepared = prepareDirect()
+        val legacyIdentity = "file:${Files.readAttributes(audio.toPath(), BasicFileAttributes::class.java).fileKey()}"
+        val record = LocalMediaMetadataRecoveryStore.markReplacing(
+            prepared.copy(originalFileIdentity = legacyIdentity, originalWritableFileIdentity = legacyIdentity)
+        )
+        audio.writeText("up")
+        LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+
+        assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+        assertEquals("updated audio", audio.readText())
+        assertFalse(record.journalFile.exists())
+    }
+
+    @Test
+    fun `direct recovery resumes empty partial update and partial rollback bytes`() = withDescriptors {
+        for (prefix in listOf("", "up", "ori")) {
+            audio.writeText("original")
+            val record = prepareDirect()
+            audio.writeText(prefix)
+            if (prefix == "ori") record.updatedFile.writeText("corrupt update")
+            LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+
+            assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+            assertEquals(if (prefix == "ori") "original" else "updated audio", audio.readText())
+            assertFalse(record.journalFile.exists())
+        }
+    }
+
+    @Test
+    fun `verified audio rollback publishes its intent before a crash leaves original prefix bytes`() = withDescriptors {
+        val replacing = prepareDirect()
+        audio.writeText("updated audio")
+        val record = LocalMediaMetadataRecoveryStore.markTargetVerified(replacing)
+        var crashJournal: String? = null
+        beforeTruncate = {
+            crashJournal = record.journalFile.readText()
+            throw IOException("simulated interruption at the first destructive operation")
+        }
+
+        assertFalse(LocalMediaMetadataRecoveryStore.rollback(context, record))
+        beforeTruncate = {}
+        audio.writeText("ori")
+        record.journalFile.writeText(requireNotNull(crashJournal))
+        assertEquals("updated audio", record.updatedFile.readText())
+        LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+
+        assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+        assertEquals("original", audio.readText())
+        assertFalse(record.journalFile.exists())
     }
 
     @Test
@@ -246,8 +333,18 @@ class LocalMediaMetadataRecoveryDocumentTest {
         provider.writeModes.clear()
         return record
     }
-}
 
+    private fun prepareDirect(): LocalMetadataRecoveryRecord {
+        assertTrue(audio.setLastModified(1_700_000_000_000L))
+        val staging = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
+        return LocalMediaMetadataRecoveryStore.markReplacing(LocalMediaMetadataRecoveryStore.begin(
+            context, audio.absolutePath,
+            File.createTempFile("direct-original-", ".flac", staging).apply { writeText("original") },
+            File.createTempFile("direct-updated-", ".flac", staging).apply { writeText("updated audio") },
+            audio.lastModified()
+        ))
+    }
+}
 private class RecoveryDocumentProvider(var audio: File) : ContentProvider() {
     var allowReadWrite = true
     var beforeWrite: () -> Unit = {}
@@ -255,7 +352,7 @@ private class RecoveryDocumentProvider(var audio: File) : ContentProvider() {
     var readDeviceOffset = 0L
     var writeDeviceOffset = 0L
     var forcedInode: Long? = null
-    val files = IdentityHashMap<FileDescriptor, RecoveryDescriptorView>()
+    var trackDescriptor: (ParcelFileDescriptor, File, Long, Long?) -> ParcelFileDescriptor = { descriptor, _, _, _ -> descriptor }
 
     override fun onCreate(): Boolean = true
 
@@ -266,12 +363,8 @@ private class RecoveryDocumentProvider(var audio: File) : ContentProvider() {
             beforeWrite()
         }
         val access = if (mode == "r") ParcelFileDescriptor.MODE_READ_ONLY else ParcelFileDescriptor.MODE_READ_WRITE
-        val device = (Files.getAttribute(audio.toPath(), "unix:dev") as Number).toLong() +
-            if (mode == "r") readDeviceOffset else writeDeviceOffset
-        val inode = forcedInode ?: (Files.getAttribute(audio.toPath(), "unix:ino") as Number).toLong()
-        return ParcelFileDescriptor.open(audio, access).also {
-            files[it.fileDescriptor] = RecoveryDescriptorView(audio, device, inode)
-        }
+        val offset = if (mode == "r") readDeviceOffset else writeDeviceOffset
+        return trackDescriptor(ParcelFileDescriptor.open(audio, access), audio, offset, forcedInode)
     }
 
     override fun getType(uri: Uri): String = "audio/flac"
@@ -280,5 +373,3 @@ private class RecoveryDocumentProvider(var audio: File) : ContentProvider() {
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
     override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = 0
 }
-
-private data class RecoveryDescriptorView(val file: File, val device: Long, val inode: Long)

@@ -14,11 +14,16 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import java.io.File
 import java.io.IOException
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LocalMediaCompanionTransactionLifecycleTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
@@ -91,10 +96,11 @@ class LocalMediaCompanionTransactionLifecycleTest {
     }
 
     @Test
-    fun `a failed audio verification keeps the journal so rollback can restore the original`() {
+    fun `a failed audio verification keeps the journal so rollback can restore the original`() = withMetadataRecoveryDescriptors {
         val target = File(music, "song.flac").apply { writeText("original audio") }
         val transaction = LocalMediaCompanionTransaction(context, target.absolutePath)
         transaction.initialize(stagedCopy("source", "original audio"), stagedCopy("updated", "updated audio"), MODIFIED_AT)
+        transaction.prepareUpdatedAudio()
         target.writeText("updated")
 
         val error = expectFailure<IOException> { transaction.commit() }

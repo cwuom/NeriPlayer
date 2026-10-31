@@ -13,8 +13,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
 
 @RunWith(AndroidJUnit4::class)
+@Config(sdk = [35])
 class LocalMediaRecoveryTargetIdentityTest {
 
     @get:Rule
@@ -54,13 +56,15 @@ class LocalMediaRecoveryTargetIdentityTest {
     }
 
     @Test
-    fun `file uri targets are replaced in place`() {
+    fun `file uri targets are replaced in place`() = withMetadataRecoveryDescriptors {
         val source = temporaryFolder.newFile("updated.flac").apply { writeText("tagged audio") }
         val target = File(temporaryFolder.newFolder("music"), "song.flac").apply { writeText("original") }
         val staging = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
         val backup = File.createTempFile("source-", ".flac", staging).apply { writeText("original") }
         val updated = File.createTempFile("updated-", ".flac", staging).apply { writeText("tagged audio") }
-        val record = LocalMediaMetadataRecoveryStore.begin(context, Uri.fromFile(target).toString(), backup, updated, null)
+        val record = LocalMediaMetadataRecoveryStore.markReplacing(
+            LocalMediaMetadataRecoveryStore.begin(context, Uri.fromFile(target).toString(), backup, updated, null)
+        )
 
         assertTrue(
             LocalMediaMetadataRecoveryStore.replaceTargetFromFile(context, Uri.fromFile(target).toString(), source, record)
