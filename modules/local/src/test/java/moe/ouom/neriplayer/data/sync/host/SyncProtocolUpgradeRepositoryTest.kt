@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.common.storage.VolatileSharedPreferences
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import org.junit.Assert.*
 import org.junit.Rule
@@ -314,7 +315,7 @@ class SyncProtocolUpgradeRepositoryTest {
         val webDav = WebDavStorage::class.java.getConstructor(SharedPreferences::class.java)
             .newInstance(readOnlyPreferences(webDavConfiguration()))
 
-        val failure = assertThrows(IllegalStateException::class.java) {
+        val failure = assertThrows(SyncStorageUnavailableException::class.java) {
             SyncProtocolUpgradeRepository.configuredTargetIds(github, webDav)
         }
         assertEquals("Secure sync storage is unavailable", failure.message)

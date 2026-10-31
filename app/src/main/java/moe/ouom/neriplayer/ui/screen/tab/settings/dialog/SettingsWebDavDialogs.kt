@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.dialog
 
 import moe.ouom.neriplayer.ui.i18n.asString
+import moe.ouom.neriplayer.ui.i18n.UiText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsInlineMessage
@@ -86,15 +88,24 @@ internal fun SettingsWebDavDialogs(
 
     if (showWebDavConfigDialog) {
         val webDavState by webDavVm.uiState.collectAsStateWithLifecycleCompat()
-        val storage = remember(context) { WebDavStorage(context) }
+        val savedConfiguration = remember(context) {
+            try {
+                WebDavStorage(context).snapshot()
+            } catch (_: SyncStorageUnavailableException) {
+                null
+            }
+        }
         val draft = rememberWebDavConfigDraft(
-            loadServerUrl = { storage.getServerUrl().orEmpty() },
-            loadUsername = { storage.getUsername().orEmpty() },
-            loadPassword = { storage.getPassword().orEmpty() },
-            loadBasePath = storage::getBasePath
+            loadServerUrl = { savedConfiguration?.serverUrl.orEmpty() },
+            loadUsername = { savedConfiguration?.username.orEmpty() },
+            loadPassword = { savedConfiguration?.password.orEmpty() },
+            loadBasePath = { savedConfiguration?.basePath.orEmpty() }
         )
+        val dialogState = if (savedConfiguration == null && webDavState.errorMessage == null && webDavState.successMessage == null) {
+            webDavState.copy(errorMessage = UiText.Resource(CoreCommonR.string.sync_secure_storage_unavailable))
+        } else webDavState
         WebDavConfigurationDialog(
-            webDavState = webDavState,
+            webDavState = dialogState,
             draft = draft,
             onDismiss = {
                 webDavVm.clearMessages()

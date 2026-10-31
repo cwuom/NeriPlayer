@@ -2,6 +2,16 @@ package moe.ouom.neriplayer.ui.viewmodel
 
 import moe.ouom.neriplayer.ui.i18n.UiText
 import android.content.Context
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,46 +32,83 @@ class SyncSettingsActionsTest {
     }
 
     @Test
-    fun `GitHub auto sync toggle updates state and cancels or schedules periodic work`() {
-        withSchedulers { schedulers ->
-            val viewModel = GitHubSyncViewModel()
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `GitHub auto sync toggle updates state and cancels or schedules periodic work`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val viewModel = GitHubSyncViewModel().also { it.ioDispatcher = Dispatchers.Main }
+        try {
+            mockConstruction(SecureTokenStorage::class.java) { storage, _ ->
+                `when`(storage.isPersistent).thenReturn(true)
+            }.use {
+                withSchedulers { schedulers ->
+                    viewModel.toggleAutoSync(context, enabled = false)
+                    testScheduler.runCurrent()
+                    assertFalse(viewModel.uiState.value.autoSyncEnabled)
+                    viewModel.toggleAutoSync(context, enabled = true)
+                    testScheduler.runCurrent()
+                    assertTrue(viewModel.uiState.value.autoSyncEnabled)
 
-            viewModel.toggleAutoSync(context, enabled = false)
-            assertFalse(viewModel.uiState.value.autoSyncEnabled)
-            viewModel.toggleAutoSync(context, enabled = true)
-            assertTrue(viewModel.uiState.value.autoSyncEnabled)
-
-            assertEquals(listOf("cancel", "schedulePeriodic"), schedulerCalls(schedulers))
+                    assertEquals(listOf("cancel", "schedulePeriodic"), schedulerCalls(schedulers))
+                }
+            }
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
         }
     }
 
     @Test
-    fun `WebDAV auto sync toggle updates state and cancels or schedules periodic work`() {
-        withSchedulers { schedulers ->
-            val viewModel = WebDavSyncViewModel()
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `WebDAV auto sync toggle updates state and cancels or schedules periodic work`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val viewModel = WebDavSyncViewModel().also { it.ioDispatcher = Dispatchers.Main }
+        try {
+            mockConstruction(WebDavStorage::class.java) { storage, _ ->
+                `when`(storage.isPersistent).thenReturn(true)
+            }.use {
+                withSchedulers { schedulers ->
+                    viewModel.toggleAutoSync(context, enabled = false)
+                    testScheduler.runCurrent()
+                    assertFalse(viewModel.uiState.value.autoSyncEnabled)
+                    viewModel.toggleAutoSync(context, enabled = true)
+                    testScheduler.runCurrent()
+                    assertTrue(viewModel.uiState.value.autoSyncEnabled)
 
-            viewModel.toggleAutoSync(context, enabled = false)
-            assertFalse(viewModel.uiState.value.autoSyncEnabled)
-            viewModel.toggleAutoSync(context, enabled = true)
-            assertTrue(viewModel.uiState.value.autoSyncEnabled)
-
-            assertEquals(listOf("cancel", "schedulePeriodic"), schedulerCalls(schedulers))
+                    assertEquals(listOf("cancel", "schedulePeriodic"), schedulerCalls(schedulers))
+                }
+            }
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
         }
     }
 
     @Test
-    fun `GitHub repository setup without a saved token reports the missing token`() {
-        val creating = GitHubSyncViewModel()
-        creating.createRepository(context, "neri-backup")
-        assertEquals(UiText.Resource(CoreCommonR.string.github_token_required), creating.uiState.value.errorMessage)
-        assertFalse(creating.uiState.value.isCreatingRepo)
-        assertFalse(creating.uiState.value.isConfigured)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `GitHub repository setup without a saved token reports the missing token`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val creating = GitHubSyncViewModel().also { it.ioDispatcher = Dispatchers.Main }
+        val linking = GitHubSyncViewModel().also { it.ioDispatcher = Dispatchers.Main }
+        try {
+            mockConstruction(SecureTokenStorage::class.java) { storage, _ ->
+                `when`(storage.isPersistent).thenReturn(true)
+            }.use {
+                creating.createRepository(context, "neri-backup")
+                linking.useExistingRepository(context, "owner/neri-backup")
+                testScheduler.runCurrent()
 
-        val linking = GitHubSyncViewModel()
-        linking.useExistingRepository(context, "owner/neri-backup")
-        assertEquals(UiText.Resource(CoreCommonR.string.github_token_required), linking.uiState.value.errorMessage)
-        assertFalse(linking.uiState.value.isCheckingRepo)
-        assertEquals("", linking.uiState.value.repoName)
+                assertEquals(UiText.Resource(CoreCommonR.string.github_token_required), creating.uiState.value.errorMessage)
+                assertFalse(creating.uiState.value.isCreatingRepo)
+                assertFalse(creating.uiState.value.isConfigured)
+                assertEquals(UiText.Resource(CoreCommonR.string.github_token_required), linking.uiState.value.errorMessage)
+                assertFalse(linking.uiState.value.isCheckingRepo)
+                assertEquals("", linking.uiState.value.repoName)
+            }
+        } finally {
+            creating.viewModelScope.cancel()
+            linking.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
     }
 
     @Test

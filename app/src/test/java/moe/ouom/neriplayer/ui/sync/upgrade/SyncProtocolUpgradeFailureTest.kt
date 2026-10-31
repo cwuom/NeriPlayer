@@ -32,6 +32,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.SyncResult
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -57,6 +58,8 @@ class SyncProtocolUpgradeFailureTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val sensitive = "https://private.example/dav?authorization=private-service-body"
         val cases = listOf(
+            SyncStorageUnavailableException(IOException(sensitive)) to
+                SyncProtocolUpgradeError(CoreCommonR.string.sync_secure_storage_unavailable),
             WebDavAuthException(sensitive) to SyncProtocolUpgradeError(CoreCommonR.string.webdav_auth_failed, 401),
             WebDavDirectoryNotFoundException(sensitive) to SyncProtocolUpgradeError(CoreCommonR.string.webdav_directory_missing, 404),
             WebDavNotDirectoryException(sensitive) to SyncProtocolUpgradeError(CoreCommonR.string.webdav_sync_not_directory),

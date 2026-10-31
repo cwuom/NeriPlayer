@@ -38,6 +38,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
@@ -128,8 +129,14 @@ internal fun SettingsGitHubDialogs(
         var useExistingRepo by draft.useExistingRepo
         var existingRepoName by draft.existingRepoName
 
+        DisposableEffect(githubVm, context) {
+            githubVm.resetTokenValidation()
+            githubVm.initialize(context)
+            onDispose { githubVm.resetTokenValidation() }
+        }
+
         val dismissConfigDialog = {
-            githubVm.clearMessages()
+            githubVm.resetTokenValidation()
             onShowGitHubConfigDialogChange(false)
         }
 
@@ -163,7 +170,10 @@ internal fun SettingsGitHubDialogs(
                     )
                     MiuixSettingsTextField(
                         value = githubToken,
-                        onValueChange = { githubToken = it },
+                        onValueChange = {
+                            githubToken = it
+                            githubVm.resetTokenValidation()
+                        },
                         label = { Text(stringResource(CoreCommonR.string.settings_github_token_label)) },
                         placeholder = { Text(stringResource(CoreCommonR.string.settings_github_token_placeholder)) },
                         singleLine = true,
@@ -180,7 +190,7 @@ internal fun SettingsGitHubDialogs(
                         Text(stringResource(CoreCommonR.string.sync_create_token))
                     }
 
-                    if (githubState.tokenValid) {
+                    if (githubState.tokenValid && !githubState.isConfigured) {
                         Text(
                             stringResource(CoreCommonR.string.sync_step2_repo),
                             style = MaterialTheme.typography.titleSmall
@@ -223,7 +233,7 @@ internal fun SettingsGitHubDialogs(
             },
             confirmButton = {
                 when {
-                    githubState.isConfigured -> {
+                    githubState.isConfigured && (githubToken.isBlank() || githubState.tokenValid) -> {
                         MiuixSettingsButton(onClick = dismissConfigDialog) {
                             Text(stringResource(CoreCommonR.string.action_close))
                         }

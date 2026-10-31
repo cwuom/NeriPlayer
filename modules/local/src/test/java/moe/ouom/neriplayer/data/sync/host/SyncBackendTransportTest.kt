@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.sync.host
 
+import android.content.SharedPreferences
+import moe.ouom.neriplayer.common.storage.VolatileSharedPreferences
 import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
 import java.io.IOException
 import kotlinx.coroutines.test.runTest
@@ -48,6 +50,7 @@ import org.mockito.Mockito.*
 import org.json.JSONObject
 import org.json.JSONArray
 import java.util.Base64
+import java.util.UUID
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.io.File
@@ -214,17 +217,57 @@ class SyncBackendTransportTest {
         fixture.backend.saveRemoteVersion(version.copy(sha = null))
         fixture.backend.saveSyncTime(42)
         fixture.backend.scheduleFollowUp()
-        fixture.backend.onFailure(TokenExpiredException("expired"))
         fixture.backend.onFailure(IOException("offline"))
         verify(fixture.storage).saveLastRemoteSha(githubCommit)
         verify(fixture.storage).saveLastSyncTime(42)
-        verify(fixture.storage).clearToken()
         assertEquals(1, fixture.followUps)
         fixture.failure = 409
         val failed = fixture.backend.upload(staged(payload), version)
         assertTrue(failed.isFailure)
         assertTrue(fixture.backend.isConflict(GitHubContentConflictException(409, "changed")))
         assertFalse(fixture.backend.isConflict(null))
+    }
+
+    @Test
+    fun `GitHub unauthorized response preserves saved credentials and repository configuration`() = runTest {
+        val store = tokenStorage()
+        store.saveToken("test-token")
+        store.saveRepository("owner", "repo")
+        store.setAutoSyncEnabled(true)
+        store.saveLastRemoteSha("previous-sha")
+        store.saveLastSyncTime(50L)
+        val configuration = store.snapshot()
+        val fixture = GitHubFixture(storage = store, metadataGuard = store.captureSyncMetadataGuard())
+        fixture.failure = 401
+
+        val error = checkNotNull(fixture.backend.fetch().exceptionOrNull())
+        assertTrue(error is TokenExpiredException)
+        fixture.backend.onFailure(error)
+
+        assertEquals(configuration.copy(autoSyncEnabled = false), store.snapshot())
+        assertTrue(store.isConfigured())
+        assertEquals("previous-sha", store.getLastRemoteSha())
+        assertEquals(50L, store.getLastSyncTime())
+    }
+
+    @Test
+    fun `GitHub unauthorized result from an old request cannot clear replacement credentials`() = runTest {
+        val store = tokenStorage()
+        store.saveToken("test-token")
+        store.saveRepository("owner", "repo")
+        val fixture = GitHubFixture(storage = store, metadataGuard = store.captureSyncMetadataGuard())
+        fixture.failure = 401
+        val error = checkNotNull(fixture.backend.fetch().exceptionOrNull())
+        assertTrue(error is TokenExpiredException)
+        assertEquals("Bearer test-token", fixture.requests.single().header("Authorization"))
+        store.saveToken("replacement-token")
+        store.saveRepository("replacement-owner", "replacement-repo")
+        val replacement = store.snapshot()
+
+        fixture.backend.onFailure(error)
+
+        assertEquals(replacement, store.snapshot())
+        assertTrue(store.isConfigured())
     }
 
     @Test
@@ -662,8 +705,16 @@ class SyncBackendTransportTest {
         assertFalse(fixture.backend.isConflict(null))
     }
 
-    private inner class GitHubFixture(val cacheDirectory: File = temporary.newFolder(), private val repoName: String = "repo") {
-        val storage = mock(SecureTokenStorage::class.java)
+    private fun tokenStorage(): SecureTokenStorage = SecureTokenStorage::class.java.getDeclaredConstructor(
+        SharedPreferences::class.java, File::class.java, Function1::class.java
+    ).newInstance(VolatileSharedPreferences.shared("backend-credentials-${UUID.randomUUID()}"), null, null)
+
+    private inner class GitHubFixture(
+        val cacheDirectory: File = temporary.newFolder(),
+        private val repoName: String = "repo",
+        val storage: SecureTokenStorage = mock(SecureTokenStorage::class.java),
+        metadataGuard: (() -> Unit) -> Boolean = { write -> write(); true }
+    ) {
         val files = mutableMapOf<String, ByteArray>()
         val reads = CopyOnWriteArrayList<Request>()
         val writes = CopyOnWriteArrayList<Request>()
@@ -818,7 +869,7 @@ class SyncBackendTransportTest {
             "owner", repoName, SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { followUps++ },
             archive,
             authorizeLegacyMigration = { authorizeMigration(it) },
-            currentProtocolObserved = { currentObservations++ }, metadataGuard = { write -> write(); true })
+            currentProtocolObserved = { currentObservations++ }, metadataGuard = metadataGuard)
     }
 
     private inner class WebDavFixture {
