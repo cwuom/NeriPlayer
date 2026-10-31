@@ -16,6 +16,9 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 
 public final class StagedMetadataTestProvider extends ContentProvider {
     public static final String AUTHORITY =
@@ -27,12 +30,39 @@ public final class StagedMetadataTestProvider extends ContentProvider {
     );
 
     private boolean failNextWrite;
+    private final ArrayList<String> writeModes = new ArrayList<>();
 
     @Override
     public Bundle call(@NonNull String method, String arg, Bundle extras) {
         if ("failNextWrite".equals(method)) {
             failNextWrite = true;
             return new Bundle();
+        }
+        if ("resetWriteModes".equals(method)) {
+            writeModes.clear();
+            return new Bundle();
+        }
+        if ("writeModes".equals(method)) {
+            Bundle result = new Bundle();
+            result.putStringArrayList("modes", new ArrayList<>(writeModes));
+            return result;
+        }
+        if ("replaceWithSameBytes".equals(method)) {
+            File file = backingFile();
+            try {
+                File replacement = File.createTempFile("replacement-", ".m4a", file.getParentFile());
+                try {
+                    Files.copy(file.toPath(), replacement.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    if (!replacement.renameTo(file)) throw new IOException("Unable to replace provider object");
+                } finally {
+                    if (replacement.exists() && !replacement.delete()) {
+                        throw new IOException("Unable to remove replacement fixture");
+                    }
+                }
+                return new Bundle();
+            } catch (IOException error) {
+                throw new IllegalStateException("Unable to replace provider object", error);
+            }
         }
         return super.call(method, arg, extras);
     }
@@ -80,7 +110,8 @@ public final class StagedMetadataTestProvider extends ContentProvider {
     @Override
     public ParcelFileDescriptor openFile(@NonNull Uri uri, @NonNull String mode) throws FileNotFoundException {
         File file = backingFile();
-        if ("rw".equals(mode)) {
+        if (mode.contains("w")) writeModes.add(mode);
+        if ("rw".equals(mode) && "true".equals(uri.getQueryParameter("noRw"))) {
             throw new FileNotFoundException("The provider does not support direct rw access");
         }
         if ("r".equals(mode) && "true".equals(uri.getQueryParameter("pipe"))) {
@@ -101,21 +132,11 @@ public final class StagedMetadataTestProvider extends ContentProvider {
                 throw new FileNotFoundException(error.getMessage());
             }
         }
-        if (mode.contains("w") && failNextWrite) {
+        if (mode.contains("w") && (failNextWrite || "true".equals(uri.getQueryParameter("readOnlyWrites")))) {
             failNextWrite = false;
-            try {
-                new java.io.FileOutputStream(file).close();
-            } catch (IOException error) {
-                throw new FileNotFoundException(error.getMessage());
-            }
             return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
         }
-        int flags = mode.contains("w")
-            ? ParcelFileDescriptor.MODE_READ_WRITE
-                | ParcelFileDescriptor.MODE_CREATE
-                | ParcelFileDescriptor.MODE_TRUNCATE
-            : ParcelFileDescriptor.MODE_READ_ONLY;
-        return ParcelFileDescriptor.open(file, flags);
+        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.parseMode(mode));
     }
 
     @Override
@@ -125,6 +146,8 @@ public final class StagedMetadataTestProvider extends ContentProvider {
 
     @Override
     public int delete(@NonNull Uri uri, String selection, String[] selectionArgs) {
+        failNextWrite = false;
+        writeModes.clear();
         return backingFile().delete() ? 1 : 0;
     }
 

@@ -3,7 +3,10 @@
 package moe.ouom.neriplayer.core.player.engine.datasource
 
 import android.net.Uri
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.traffic.TrafficUsageSource
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
@@ -12,6 +15,7 @@ import moe.ouom.neriplayer.platform.bilibili.auth.BiliCookieRepository
 import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthRepository
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
@@ -59,18 +63,85 @@ class ConditionalHttpRequestHeaderInjectionTest {
     }
 
     @Test
-    fun `bilibili stream urls are recognised even when the uri has no parsed host`() {
-        val hostless = mock(Uri::class.java).also {
-            `when`(it.scheme).thenReturn("https")
-            `when`(it.toString()).thenReturn("https://cn-hk-eq-01-13.bilivideo.com/live/1.flv")
+    fun `trusted http streams get public headers and drop caller cookies`() {
+        for (url in listOf(
+            "http://cdn.bilivideo.com/audio.m4s",
+            "http://cdn.bilivideo.cn/audio.m4s",
+            "HTTP://b-demo.edge.mountaintoys.cn/audio.m4s"
+        )) {
+            val sent = headersSentFor(
+                mockHttpUri(url),
+                linkedMapOf(
+                    "Accept" to "audio/*",
+                    "Cookie" to "SESSDATA=old-session",
+                    "cOoKiE" to "SESSDATA=another-session"
+                )
+            )
+
+            assertFalse(url, sent.keys.any { it.equals("Cookie", ignoreCase = true) })
+            assertEquals(url, "https://www.bilibili.com", sent["Referer"])
+            assertEquals(url, BILI_WEB_USER_AGENT, sent["User-Agent"])
+            assertEquals(url, "audio/*", sent["Accept"])
+        }
+    }
+
+    @Test
+    fun `bili cookies require trusted https while public headers allow trusted http`() = runBlocking {
+        `when`(cookieRepo.cookieFlow).thenReturn(MutableStateFlow(mapOf("SESSDATA" to "synthetic-session")))
+        val sourceFactory = factory()
+        val trustedHttps = mockHttpUri("https://cdn.bilivideo.com/audio.m4s")
+        withTimeout(5_000) {
+            while (headersSentFor(trustedHttps, emptyMap(), sourceFactory)["Cookie"] != "SESSDATA=synthetic-session") {
+                delay(1)
+            }
         }
 
-        val sent = headersSentFor(hostless, emptyMap())
+        for (url in listOf(
+            "https://cdn.bilivideo.com/audio.m4s",
+            "https://cdn.bilivideo.cn/audio.m4s",
+            "https://b-demo.edge.mountaintoys.cn/audio.m4s"
+        )) {
+            val sent = headersSentFor(mockHttpUri(url), emptyMap(), sourceFactory)
+            assertEquals(url, "SESSDATA=synthetic-session", sent["Cookie"])
+            assertEquals(url, "https://www.bilibili.com", sent["Referer"])
+            assertEquals(url, BILI_WEB_USER_AGENT, sent["User-Agent"])
+        }
+        for (url in listOf(
+            "http://cdn.bilivideo.com/audio.m4s",
+            "http://cdn.bilivideo.cn/audio.m4s",
+            "http://b-demo.edge.mountaintoys.cn/audio.m4s"
+        )) {
+            val sent = headersSentFor(mockHttpUri(url), emptyMap(), sourceFactory)
+            assertFalse(url, sent.keys.any { it.equals("Cookie", ignoreCase = true) })
+            assertEquals(url, "https://www.bilibili.com", sent["Referer"])
+            assertEquals(url, BILI_WEB_USER_AGENT, sent["User-Agent"])
+        }
+        for (url in listOf(
+            "https://bilivideo.com.attacker.example/audio.m4s",
+            "http://notbilivideo.com/audio.m4s",
+            "https://library.example/audio.m4s",
+            "ftp://cdn.bilivideo.com/audio.m4s",
+            "custom://cdn.bilivideo.com/audio.m4s"
+        )) {
+            val original = mapOf("Accept" to "audio/*")
+            assertEquals(url, original, headersSentFor(mockHttpUri(url), original, sourceFactory))
+        }
+    }
 
-        assertEquals(
-            mapOf("Referer" to "https://www.bilibili.com", "User-Agent" to BILI_WEB_USER_AGENT),
-            sent
-        )
+    @Test
+    fun `bilibili stream urls are recognised even when the uri has no parsed host`() {
+        for (scheme in listOf("https", "http")) {
+            val hostless = mock(Uri::class.java).also {
+                `when`(it.scheme).thenReturn(scheme)
+                `when`(it.toString()).thenReturn("$scheme://cn-hk-eq-01-13.bilivideo.com/live/1.flv")
+            }
+
+            assertEquals(
+                scheme,
+                mapOf("Referer" to "https://www.bilibili.com", "User-Agent" to BILI_WEB_USER_AGENT),
+                headersSentFor(hostless, emptyMap())
+            )
+        }
     }
 
     @Test
@@ -121,7 +192,11 @@ class ConditionalHttpRequestHeaderInjectionTest {
 
     @Test
     fun `other hosts are forwarded with the caller headers only`() {
-        val original = mapOf("Accept" to "audio/*", "Referer" to "https://example.com/")
+        val original = mapOf(
+            "Accept" to "audio/*",
+            "Referer" to "https://example.com/",
+            "Cookie" to "custom-server-session=synthetic"
+        )
 
         assertEquals(original, headersSentFor(mockHttpUri("https://cdn.example.com/a.mp3"), original))
         assertEquals(
@@ -153,8 +228,12 @@ class ConditionalHttpRequestHeaderInjectionTest {
             .also(factories::add)
     }
 
-    private fun headersSentFor(uri: Uri, headers: Map<String, String>): Map<String, String> {
-        val source = factory().createDataSource()
+    private fun headersSentFor(
+        uri: Uri,
+        headers: Map<String, String>,
+        sourceFactory: ConditionalHttpDataSourceFactory = factory()
+    ): Map<String, String> {
+        val source = sourceFactory.createDataSource()
         source.open(httpGet(uri, headers = headers))
         source.close()
         return server.requests.last().httpRequestHeaders

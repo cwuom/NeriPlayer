@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.platform.youtube.auth
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
@@ -20,6 +21,82 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class YouTubeAuthRepositorySessionTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun `discarded response cookies do not invalidate a pending refresh or write storage`() {
+        val (context, repository) = repository()
+        val pendingRefresh = repository.captureAuthSnapshot()
+        val responseSnapshot = repository.captureAuthSnapshot()
+        val preferences = AccountPreferencesOpener.fallback(context, "youtube_auth_secure_prefs")
+        val storedBefore = preferences.all
+        var storageEdits = 0
+        val countedPreferences = object : SharedPreferences by preferences {
+            override fun edit(): SharedPreferences.Editor {
+                storageEdits += 1
+                return preferences.edit()
+            }
+        }
+        repository.javaClass.getDeclaredField("encryptedPrefs").apply {
+            isAccessible = true
+            set(repository, countedPreferences)
+        }
+
+        val result = repository.updateAuthIfCurrent(responseSnapshot) { current ->
+            requireNotNull(mergeYouTubeAuthCookieUpdates(
+                current,
+                listOf("NID=synthetic-unpersisted-cookie; Secure"),
+                savedAt = 456L
+            ))
+        }
+        var browserSyncs = 0
+
+        assertNotNull(result)
+        assertEquals(pendingRefresh.auth, result!!.auth)
+        assertTrue(repository.runIfCurrent(pendingRefresh) { browserSyncs += 1 })
+        assertEquals(1, browserSyncs)
+        assertEquals(0, storageEdits)
+        assertEquals(storedBefore, preferences.all)
+        assertEquals(pendingRefresh.auth, YouTubeAuthRepository(context).getAuthOnce())
+    }
+
+    @Test
+    fun `a timestamp only conditional update preserves the saved bundle and active snapshot`() {
+        val (context, repository) = repository()
+        val captured = repository.captureAuthSnapshot()
+        val healthBefore = repository.getAuthHealthOnce()
+
+        val result = repository.updateAuthIfCurrent(captured) { current ->
+            current.copy(savedAt = 456L)
+        }
+
+        assertNotNull(result)
+        assertEquals(captured.auth, result!!.auth)
+        assertTrue(repository.isCurrent(captured))
+        assertEquals(123L, repository.getAuthOnce().savedAt)
+        assertEquals(healthBefore, repository.getAuthHealthOnce())
+        assertEquals(captured.auth, YouTubeAuthRepository(context).getAuthOnce())
+    }
+
+    @Test
+    fun `changed account metadata still invalidates an earlier refresh snapshot`() {
+        val changes: List<(YouTubeAuthBundle) -> YouTubeAuthBundle> = listOf(
+            { it.copy(authorization = "SAPISIDHASH synthetic-authorization") },
+            { it.copy(xGoogAuthUser = "3") },
+            { it.copy(origin = "https://www.youtube.com") },
+            { it.copy(userAgent = "changed-agent") }
+        )
+        changes.forEach { change ->
+            val (_, repository) = repository()
+            val captured = repository.captureAuthSnapshot()
+
+            val result = repository.updateAuthIfCurrent(captured, change)
+
+            assertNotNull(result)
+            assertFalse(repository.isCurrent(captured))
+            assertTrue(repository.isCurrent(result!!))
+            assertEquals(change(captured.auth), result.auth)
+        }
+    }
 
     @Test
     fun `full refresh captured before logout cannot restore the account in memory or on disk`() {

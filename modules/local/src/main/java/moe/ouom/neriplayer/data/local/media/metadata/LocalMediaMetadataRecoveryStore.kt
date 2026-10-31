@@ -95,24 +95,28 @@ object LocalMediaMetadataRecoveryStore {
         require(directory.exists() || directory.mkdirs())
         val id = UUID.randomUUID().toString()
         val originalSha256 = sha256(backupFile)
+        val updatedSha256 = sha256(updatedFile)
+        val originalFileIdentity = if (audioUnchanged) null else verifiedMetadataTargetIdentity(
+            context, targetReference, originalSha256
+        )
         val record = LocalMetadataRecoveryRecord(
             id = id,
             targetReference = targetReference,
             backupFile = backupFile,
             updatedFile = updatedFile,
             originalSha256 = originalSha256,
-            updatedSha256 = sha256(updatedFile),
+            updatedSha256 = updatedSha256,
             originalLastModifiedMs = originalLastModifiedMs,
             stage = LocalMetadataRecoveryStage.PREPARED,
             journalFile = File(directory, "$METADATA_RECOVERY_PREFIX$id$METADATA_RECOVERY_SUFFIX"),
             companionTransaction = companionTransaction,
             audioUnchanged = audioUnchanged,
-            originalFileIdentity = if (audioUnchanged) null else verifiedMetadataTargetIdentity(
-                context, targetReference, originalSha256
-            ),
-            originalWritableFileIdentity = if (audioUnchanged) null else verifiedMetadataTargetIdentity(
-                context, targetReference, originalSha256, writable = true
-            )
+            originalFileIdentity = originalFileIdentity,
+            originalWritableFileIdentity = when {
+                audioUnchanged -> null
+                directFile(targetReference) != null -> originalFileIdentity
+                else -> verifiedMetadataTargetIdentity(context, targetReference, originalSha256, writable = true)
+            }
         )
         recordGeneration.incrementAndGet()
         activeRecordIds += id

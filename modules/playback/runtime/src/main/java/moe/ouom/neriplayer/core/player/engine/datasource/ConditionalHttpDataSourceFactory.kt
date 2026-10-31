@@ -97,7 +97,10 @@ class ConditionalHttpDataSourceFactory(
             transformDataSpec = { dataSpec ->
                 when {
                     shouldInjectBiliHeaders(dataSpec.uri) -> {
-                        val headers = buildBiliHeaders(dataSpec.httpRequestHeaders)
+                        val headers = buildBiliHeaders(
+                            dataSpec.httpRequestHeaders,
+                            allowCookies = dataSpec.uri.scheme.equals("https", ignoreCase = true)
+                        )
                         dataSpec.buildUpon()
                             .setHttpRequestHeaders(headers)
                             .build()
@@ -138,7 +141,7 @@ class ConditionalHttpDataSourceFactory(
      * 是否需要为该 URI 注入 B 站拉流所需的请求头
      */
     private fun shouldInjectBiliHeaders(uri: Uri): Boolean {
-        return uri.scheme.equals("https", ignoreCase = true) &&
+        return (uri.scheme.equals("https", ignoreCase = true) || uri.scheme.equals("http", ignoreCase = true)) &&
             (isBiliStreamHost(uri.host.orEmpty()) || isBiliStreamUrl(uri.toString()))
     }
 
@@ -157,11 +160,15 @@ class ConditionalHttpDataSourceFactory(
     /**
      * 基于原始请求头构建 B 站拉流所需的头部 (Referer/UA/Cookie)
      */
-    private fun buildBiliHeaders(original: Map<String, String>): Map<String, String> {
+    private fun buildBiliHeaders(original: Map<String, String>, allowCookies: Boolean): Map<String, String> {
         val newHeaders = LinkedHashMap<String, String>(original)
         newHeaders["Referer"] = "https://www.bilibili.com"
         newHeaders["User-Agent"] = BILI_USER_AGENT
-        if (latestCookieHeader.isNotBlank()) newHeaders["Cookie"] = latestCookieHeader
+        if (!allowCookies) {
+            newHeaders.keys.removeAll { it.equals("Cookie", ignoreCase = true) }
+        } else if (latestCookieHeader.isNotBlank()) {
+            newHeaders["Cookie"] = latestCookieHeader
+        }
         return newHeaders
     }
 

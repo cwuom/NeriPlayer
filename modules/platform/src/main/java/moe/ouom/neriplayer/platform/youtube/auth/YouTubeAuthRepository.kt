@@ -110,7 +110,10 @@ class YouTubeAuthRepository(private val context: Context) : YouTubeAuthProvider,
         update: (YouTubeAuthBundle) -> YouTubeAuthBundle?
     ): YouTubeAuthSnapshot? = synchronized(authMutationLock) {
         if (expected.generation !== authGeneration) return@synchronized null
-        val updated = update(_authFlow.value) ?: return@synchronized expected
+        val current = _authFlow.value
+        val updated = update(current) ?: return@synchronized expected
+        // 未保留的响应 Cookie 可能只改变时间戳，不能因此使正在刷新的快照失效
+        if (!hasMeaningfulYouTubeAuthChange(current, updated)) return@synchronized expected
         saveAuthLocked(updated)
         YouTubeAuthSnapshot(_authFlow.value, authGeneration)
     }
