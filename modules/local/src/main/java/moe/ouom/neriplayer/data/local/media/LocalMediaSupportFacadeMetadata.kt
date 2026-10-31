@@ -469,6 +469,8 @@ internal fun LocalMediaSupport.buildLocalLyricsMetadataJsonImpl(
         originalValue = song.originalRomanizedLyric,
         clearMissing = clearMissingLyricFields
     )
+    updateRestorableLocalMetadataOverrides(root, song, writeMetadata = false,
+        writeLyrics = true, clearMissingLyrics = clearMissingLyricFields)
     return root.toString()
 }
 
@@ -519,11 +521,12 @@ internal fun LocalMediaSupport.buildEditableLocalMetadataJsonImpl(
     }
 
     if (writeLyrics) {
+        // 完整回写使用与音频和歌词侧载相同的当前值，已确认的空基线不能留下旧覆盖
         updateLyricMetadataField(
             root = root,
             matchedKey = "matchedLyric",
             originalKey = "originalLyric",
-            matchedValue = song.matchedLyric,
+            matchedValue = song.matchedLyric ?: song.originalLyric,
             originalValue = song.originalLyric,
             clearMissing = true
         )
@@ -531,7 +534,7 @@ internal fun LocalMediaSupport.buildEditableLocalMetadataJsonImpl(
             root = root,
             matchedKey = "matchedTranslatedLyric",
             originalKey = "originalTranslatedLyric",
-            matchedValue = song.matchedTranslatedLyric,
+            matchedValue = song.matchedTranslatedLyric ?: song.originalTranslatedLyric,
             originalValue = song.originalTranslatedLyric,
             clearMissing = true
         )
@@ -539,7 +542,7 @@ internal fun LocalMediaSupport.buildEditableLocalMetadataJsonImpl(
             root = root,
             matchedKey = "matchedRomanizedLyric",
             originalKey = "originalRomanizedLyric",
-            matchedValue = song.matchedRomanizedLyric,
+            matchedValue = song.matchedRomanizedLyric ?: song.originalRomanizedLyric,
             originalValue = song.originalRomanizedLyric,
             clearMissing = true
         )
@@ -547,5 +550,39 @@ internal fun LocalMediaSupport.buildEditableLocalMetadataJsonImpl(
         putValue("matchedSongId", song.matchedSongId)
         putValue("userLyricOffsetMs", song.userLyricOffsetMs)
     }
+    updateRestorableLocalMetadataOverrides(root, song, writeMetadata = true,
+        writeLyrics = writeLyrics, clearMissingLyrics = true)
     return root.toString()
+}
+
+private fun updateRestorableLocalMetadataOverrides(
+    root: JSONObject,
+    song: SongItem,
+    writeMetadata: Boolean,
+    writeLyrics: Boolean,
+    clearMissingLyrics: Boolean
+) {
+    val restorable = root.optJSONObject("restorableMetadata") ?: return
+    val overrides = restorable.optJSONObject("overrides") ?: JSONObject().also {
+        restorable.put("overrides", it)
+    }
+    fun update(key: String, value: Any?) {
+        if (value == null) overrides.remove(key) else overrides.put(key, value)
+    }
+    // 下载目录也读取嵌套覆盖值，必须与本次侧载提交一起更新，避免恢复后读回旧值
+    if (writeMetadata) {
+        update("title", song.customName)
+        update("artist", song.customArtist)
+        update("coverReference", song.customCoverUrl)
+    }
+    if (writeLyrics) {
+        fun updateLyric(key: String, value: String?) {
+            if (value != null || clearMissingLyrics) update(key, value)
+        }
+        updateLyric("originalLyric", song.matchedLyric)
+        updateLyric("translatedLyric", song.matchedTranslatedLyric)
+        updateLyric("romanizedLyric", song.matchedRomanizedLyric)
+        update("userLyricOffsetMs", song.userLyricOffsetMs)
+        root.put("userLyricOffsetMs", song.userLyricOffsetMs)
+    }
 }

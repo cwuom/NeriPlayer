@@ -7,6 +7,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.media.MediaMetadata
+import android.media.session.MediaController
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -14,7 +20,11 @@ import android.os.Looper
 import android.os.StrictMode
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
+import androidx.core.os.BundleCompat
+import androidx.compose.material3.SnackbarHostState
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -25,16 +35,33 @@ import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.persistence.PlaybackQueueRoomStore
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.stats.flushPlaybackStatsPendingWrites
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.PersistedState
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
+import moe.ouom.neriplayer.data.stats.PlaybackStatsCursor
+import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongRestoreSelection
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.NowPlayingSongEditOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.PlayerManagerNowPlayingSongEditPlaybackPort
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongBaselineFromSong
+import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -484,6 +511,492 @@ class RestoredLocalPlaybackThreadTest {
         }
     }
 
+    @Test
+    fun singleRestoreWhilePlayingPublishesOriginalMetadataToSessionAndNotification() {
+        listOf(false, true).forEach(::verifySingleRestoreWhilePlaying)
+    }
+
+    @Test
+    fun titleAndArtistOnlyEditsWhilePausedReachSessionAndNotificationAfterResuming() {
+        verifySingleRestoreWhilePlaying(notificationLyricsEnabled = true, metadataOnly = true)
+    }
+
+    private fun verifySingleRestoreWhilePlaying(notificationLyricsEnabled: Boolean) =
+        verifySingleRestoreWhilePlaying(notificationLyricsEnabled, metadataOnly = false)
+
+    private fun verifySingleRestoreWhilePlaying(notificationLyricsEnabled: Boolean, metadataOnly: Boolean) {
+        assumeTrue("仅在 API 37 模拟器运行", Build.VERSION.SDK_INT == 37 &&
+            Build.HARDWARE in setOf("ranchu", "goldfish"))
+        assumeFalse("已有服务时不干预其生命周期", AudioPlayerService.isInstanceActiveForDiagnostics())
+        assumeFalse("已有播放时不干预播放器", PlayerManager.isPlayingFlow.value ||
+            PlayerManager.playWhenReadyFlow.value || PlayerManager.playbackControlPlayingFlow.value)
+        assumeFalse("已有睡眠定时器时不干预播放", PlayerManager.sleepTimerManager.timerState.value.isActive)
+        assumeFalse("安全模式不创建播放服务", PlayerDependencies.presentation.shouldEnterSafeMode(context))
+        assumeNoFixtureSyncTargets()
+        val notifications = checkNotNull(context.getSystemService(NotificationManager::class.java))
+        assumeTrue("必须允许真实媒体通知", notifications.areNotificationsEnabled())
+        assumeTrue("媒体通知渠道不能被关闭", notifications.getNotificationChannel(PlaybackNotificationChannel)
+            ?.importance != NotificationManager.IMPORTANCE_NONE)
+        val app = context.applicationContext as Application
+        val preferences = readPlaybackPreferenceSnapshotSync(app)
+        val savedQueue = runBlocking { SavedPlaybackQueue.read(context) }
+        val settings = AppContainer.settingsRepo
+        val savedLyricSettings = runBlocking { NotificationLyricSettingsSnapshot(
+            settings.dynamicIslandLyricsEnabledFlow.first(), settings.externalBluetoothLyricsEnabledFlow.first(),
+            settings.externalBluetoothTranslationEnabledFlow.first(), settings.colorOsLockscreenLyricsEnabledFlow.first()
+        ) }
+        val directory = File(context.cacheDir, "playing-metadata-restore-${UUID.randomUUID()}")
+        val fixtureSongs = mutableListOf<SongItem>()
+        val extractedCovers = mutableSetOf<File>()
+        var connection: ServiceConnection? = null
+        var ownsService = false
+        var failure: Throwable? = null
+        try {
+            instrumentation.runOnMainSync { PlayerManager.release() }
+            runBlocking {
+                settings.setDynamicIslandLyricsEnabled(notificationLyricsEnabled)
+                settings.setExternalBluetoothLyricsEnabled(notificationLyricsEnabled)
+                settings.setExternalBluetoothTranslationEnabled(notificationLyricsEnabled)
+                settings.setColorOsLockscreenLyricsEnabled(false)
+            }
+            check(directory.mkdirs())
+            val audio = File(directory, "synthetic-playing-restore.flac")
+            instrumentation.context.assets.open("metadata/synthetic-playing-restore.flac").use { input ->
+                audio.outputStream().use { output -> input.copyTo(output) }
+            }
+            val cover = File(directory, "edited-cover.png")
+            Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).let { bitmap ->
+                try {
+                    bitmap.eraseColor(Color.rgb(227, 43, 70))
+                    cover.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            val originalTranslation = if (notificationLyricsEnabled && !metadataOnly) "" else OriginalTranslation
+            val original = SongItem(
+                id = -System.nanoTime(), name = OriginalTitle, artist = OriginalArtist,
+                album = "Synthetic restore fixture", albumId = 0L, durationMs = 30_000L, coverUrl = null,
+                mediaUri = Uri.fromFile(audio).toString(), localFilePath = audio.path, localFileName = audio.name,
+                channelId = "local", audioId = audio.name, originalName = OriginalTitle,
+                originalArtist = OriginalArtist, originalCoverUrl = "", matchedLyric = OriginalLyric,
+                matchedTranslatedLyric = originalTranslation, matchedRomanizedLyric = OriginalRomanization,
+                originalLyric = OriginalLyric, originalTranslatedLyric = originalTranslation,
+                originalRomanizedLyric = OriginalRomanization, lyricSyncEdited = false
+            )
+            fixtureSongs += original
+            if (notificationLyricsEnabled) {
+                assertEquals(LocalMediaMetadataWriteOutcome.SUCCESS, runBlocking {
+                    LocalMediaSupport.writeEditableMetadata(app, original, writeLyrics = true)
+                })
+            }
+            val embedded = checkNotNull(LocalMediaSupport.inspectEmbeddedLyrics(app, original))
+            assertTrue(embedded.embeddedSourceResolved)
+            assertEquals(OriginalLyric, embedded.lyric)
+            assertEquals(originalTranslation, embedded.translatedLyric.orEmpty())
+            assertEquals(OriginalRomanization, embedded.romanizedLyric)
+            instrumentation.runOnMainSync {
+                PlayerManager.initializePreloaded(app, preferences.copy(
+                    keepLastPlaybackProgress = false, maxCacheSizeBytes = 0L, usbExclusivePlayback = false,
+                    playbackFadeIn = false, playbackCrossfadeNext = false, playbackSpeed = 1f,
+                    amllLyricsEnabled = false
+                ), restored(original).copy(resumePositionMs = 0L, shouldResumePlayback = false, repeatMode = 1))
+            }
+            ActivityScenario.launch(TestComposeActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    val intent = Intent(activity, AudioPlayerService::class.java)
+                        .setAction(AudioPlayerService.ACTION_PLAY)
+                        .putParcelableArrayListExtra("playlist", arrayListOf(original))
+                        .putExtra("index", 0)
+                        .putExtra(AudioPlayerService.EXTRA_START_SOURCE, "playing_metadata_restore_test")
+                    assertNotNull(ContextCompat.startForegroundService(activity, intent))
+                    ownsService = true
+                }
+                awaitServiceState("合成 FLAC 必须进入真实播放") {
+                    AudioPlayerService.isForegroundActiveForDiagnostics() &&
+                        PlayerManager.currentSongFlow.value?.id == original.id &&
+                        PlayerManager.isPlayingFlow.value && PlayerManager.playbackPositionFlow.value > 0L
+                }
+                val token = CompletableFuture<MediaSession.Token>()
+                val client = object : ServiceConnection {
+                    override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                        try {
+                            token.complete(checkNotNull(binder).javaClass.getMethod("getSessionToken")
+                                .invoke(binder) as? MediaSession.Token ?: error("播放服务没有媒体会话"))
+                        } catch (error: Exception) {
+                            token.completeExceptionally(error)
+                        }
+                    }
+
+                    override fun onServiceDisconnected(name: ComponentName?) {
+                        token.completeExceptionally(AssertionError("播放服务绑定中断"))
+                    }
+                }
+                instrumentation.runOnMainSync {
+                    assertTrue(context.bindService(Intent(context, AudioPlayerService::class.java)
+                        .setAction(ActionBindCar), client, Context.BIND_AUTO_CREATE))
+                    connection = client
+                }
+                val controller = MediaController(context, token.get(ServiceTimeoutSeconds, TimeUnit.SECONDS))
+                assertEquals(context.packageName, controller.packageName)
+                listOf(false, true).forEachIndexed { round, writeLocalMetadata ->
+                    instrumentation.runOnMainSync { PlayerManager.seekTo(0L) }
+                    val editedTitle = "Edited title $round"
+                    val editedArtist = "Edited artist $round"
+                    val editedLyrics = if (metadataOnly) listOf(OriginalLyric, originalTranslation, OriginalRomanization)
+                    else listOf("[00:01.00]edited lyric $round",
+                        if (notificationLyricsEnabled) "" else "[00:01.00]edited translation $round",
+                        "[00:01.00]edited romanization $round")
+                    if (metadataOnly) {
+                        instrumentation.runOnMainSync { PlayerManager.pause(forcePersist = false) }
+                        awaitServiceState("仅编辑名称前必须暂停") { !PlayerManager.isPlayingFlow.value }
+                        saveFixtureNamesOnce(scenario, checkNotNull(PlayerManager.currentSongFlow.value),
+                            editedTitle, editedArtist, writeLocalMetadata)
+                        instrumentation.runOnMainSync { PlayerManager.play() }
+                    } else runBlocking {
+                        assertTrue(PlayerManager.updateSongLyricsAndTranslation(
+                            songToUpdate = checkNotNull(PlayerManager.currentSongFlow.value),
+                            newLyrics = editedLyrics[0], newTranslatedLyrics = editedLyrics[1],
+                            newRomanizedLyrics = editedLyrics[2], writeLocalMetadata = true
+                        ))
+                        assertTrue(PlayerManager.updateSongCustomInfo(
+                            originalSong = checkNotNull(PlayerManager.currentSongFlow.value),
+                            customCoverUrl = Uri.fromFile(cover).toString(), customName = editedTitle,
+                            customArtist = editedArtist, writeLocalMetadata = true, writeLyrics = true
+                        ))
+                    }
+                    awaitPlayingMetadata("通知歌词=$notificationLyricsEnabled，第 $round 轮修改必须到达当前歌曲、媒体会话和系统通知",
+                        controller, notifications, original.id, editedTitle, editedArtist, editedLyrics,
+                        hasArtwork = !metadataOnly, notificationLyricsEnabled)
+                    LocalMediaSupport.peekCachedEmbeddedCoverUri(app, original)?.let { reference ->
+                        Uri.parse(reference).path?.let { extractedCovers += File(it) }
+                    }
+                    val edited = checkNotNull(PlayerManager.currentSongFlow.value)
+                    restorePlayingFixtureOnce(scenario, edited, writeLocalMetadata)
+                    val originalLyrics = listOf(OriginalLyric, originalTranslation, OriginalRomanization)
+                    awaitPlayingMetadata("通知歌词=$notificationLyricsEnabled，第 $round 轮一次恢复保存必须刷新全部真实播放展示",
+                        controller, notifications, original.id, OriginalTitle, OriginalArtist, originalLyrics,
+                        hasArtwork = false, notificationLyricsEnabled)
+                    val stableUntil = SystemClock.elapsedRealtime() + 1_500L
+                    while (SystemClock.elapsedRealtime() < stableUntil) {
+                        instrumentation.runOnMainSync {
+                            if (!playingMetadataMatches(controller, notifications, original.id, OriginalTitle,
+                                OriginalArtist, originalLyrics, hasArtwork = false, notificationLyricsEnabled)) {
+                                throw AssertionError("恢复值不能被延迟的旧快照重新覆盖\n" + playingMetadataDiagnostics(
+                                    controller, notifications, original.id, OriginalTitle, OriginalArtist,
+                                    originalLyrics, hasArtwork = false, notificationLyricsEnabled))
+                            }
+                            val restored = checkNotNull(PlayerManager.currentSongFlow.value)
+                            assertNull(restored.customName)
+                            assertNull(restored.customArtist)
+                            assertEquals("", restored.originalCoverUrl)
+                            assertEquals(OriginalLyric, restored.originalLyric)
+                            assertEquals(originalTranslation, restored.originalTranslatedLyric)
+                            assertEquals(OriginalRomanization, restored.originalRomanizedLyric)
+                        }
+                        Thread.sleep(25L)
+                    }
+                    val physical = checkNotNull(LocalMediaSupport.inspectEmbeddedLyrics(app, original))
+                    assertEquals(if (writeLocalMetadata) originalLyrics else editedLyrics,
+                        listOf(physical.lyric, physical.translatedLyric.orEmpty(), physical.romanizedLyric))
+                }
+            }
+        } catch (error: Throwable) {
+            failure = error
+            throw error
+        } finally {
+            val failures = mutableListOf<Throwable>()
+            fun cleanup(action: () -> Unit) {
+                runCatching(action).exceptionOrNull()?.let(failures::add)
+            }
+            cleanup {
+                if (ownsService) {
+                    instrumentation.runOnMainSync { PlayerManager.pause(forcePersist = true) }
+                    awaitServiceState("清理前停止本次合成音频播放") {
+                        !PlayerManager.isPlayingFlow.value && !PlayerManager.playWhenReadyFlow.value
+                    }
+                }
+            }
+            cleanup {
+                instrumentation.runOnMainSync {
+                    connection?.let(context::unbindService)
+                    connection = null
+                    if (ownsService) context.stopService(Intent(context, AudioPlayerService::class.java))
+                }
+            }
+            if (ownsService) cleanup { awaitServiceState("清理本次元数据验收服务") { activeService() == null } }
+            cleanup { instrumentation.runOnMainSync { PlayerManager.release() } }
+            cleanup { runBlocking { removePlayingFixtureStatistics(directory, fixtureSongs) } }
+            cleanup { runBlocking { savedQueue.restore(context) } }
+            cleanup { runBlocking {
+                settings.setDynamicIslandLyricsEnabled(savedLyricSettings.dynamicIsland)
+                settings.setExternalBluetoothLyricsEnabled(savedLyricSettings.externalLyrics)
+                settings.setExternalBluetoothTranslationEnabled(savedLyricSettings.externalTranslation)
+                settings.setColorOsLockscreenLyricsEnabled(savedLyricSettings.colorOs)
+            } }
+            cleanup {
+                val coverDirectory = File(context.filesDir, "local_audio_covers").canonicalFile
+                extractedCovers.filter { it.canonicalFile.parentFile == coverDirectory }.forEach {
+                    check(!it.exists() || it.delete())
+                }
+                fixtureSongs.forEach(LocalMediaSupport::invalidateSongAssetCaches)
+                check(!directory.exists() || directory.deleteRecursively())
+            }
+            cleanup { instrumentation.runOnMainSync { PlayerManager.initializePreloaded(app, preferences) } }
+            if (failure != null) failures.forEach(failure::addSuppressed)
+            else if (failures.isNotEmpty()) {
+                val first = failures.first()
+                failures.drop(1).forEach(first::addSuppressed)
+                throw first
+            }
+        }
+    }
+
+    private fun saveFixtureNamesOnce(
+        scenario: ActivityScenario<TestComposeActivity>, song: SongItem,
+        title: String, artist: String, writeLocalMetadata: Boolean
+    ) {
+        lateinit var owner: NowPlayingSongEditOwner
+        var saved = 0
+        scenario.onActivity { activity ->
+            owner = NowPlayingSongEditOwner(song, song.customCoverUrl ?: song.coverUrl.orEmpty(),
+                resolveEditSongBaselineFromSong(song, null, null, null, null), activity.lifecycleScope, {},
+                PlayerManagerNowPlayingSongEditPlaybackPort)
+            owner.updateTitle(title)
+            owner.updateArtist(artist)
+            owner.saveEditedSongInfo(song, ViewModelProvider(activity)[NowPlayingViewModel::class.java],
+                writeLocalMetadata, SnackbarHostState(), activity.resources, onSaved = { saved++ })
+        }
+        try {
+            awaitServiceState("仅改歌名和歌手的一次保存必须成功") { saved == 1 }
+        } finally {
+            instrumentation.runOnMainSync { owner.dispose() }
+        }
+        assertEquals(1, saved)
+    }
+
+    private fun restorePlayingFixtureOnce(
+        scenario: ActivityScenario<TestComposeActivity>, song: SongItem, writeLocalMetadata: Boolean
+    ) {
+        lateinit var owner: NowPlayingSongEditOwner
+        var saved = 0
+        scenario.onActivity { activity ->
+            owner = NowPlayingSongEditOwner(
+                initialSong = song, initialCoverUrl = song.customCoverUrl ?: song.coverUrl.orEmpty(),
+                initialBaseline = resolveEditSongBaselineFromSong(song, null, null, null, null),
+                scope = activity.lifecycleScope, onSavingChanged = {},
+                playbackPort = PlayerManagerNowPlayingSongEditPlaybackPort
+            )
+            owner.restoreOriginalInfo(context, song, ViewModelProvider(activity)[NowPlayingViewModel::class.java],
+                EditSongRestoreSelection(cover = true, title = true, artist = true, lyrics = true))
+        }
+        try {
+            awaitServiceState("一次恢复选择必须完成") { !owner.isOriginalInfoRestoringState.value }
+            scenario.onActivity { activity ->
+                owner.saveEditedSongInfo(song, ViewModelProvider(activity)[NowPlayingViewModel::class.java],
+                    writeLocalMetadata, SnackbarHostState(), activity.resources, onSaved = { saved++ })
+            }
+            awaitServiceState("一次恢复保存必须成功，不能依赖再次点击恢复") { saved == 1 }
+        } finally {
+            instrumentation.runOnMainSync { owner.dispose() }
+        }
+        assertEquals(1, saved)
+    }
+
+    private fun playingMetadataMatches(
+        controller: MediaController, notifications: NotificationManager, songId: Long,
+        title: String, artist: String, lyrics: List<String>, hasArtwork: Boolean,
+        notificationLyricsEnabled: Boolean
+    ): Boolean {
+        val song = PlayerManager.currentSongFlow.value ?: return false
+        val metadata = controller.metadata ?: return false
+        val notification = notifications.activeNotifications.singleOrNull {
+            it.notification.category == Notification.CATEGORY_TRANSPORT &&
+                BundleCompat.getParcelable(it.notification.extras, Notification.EXTRA_MEDIA_SESSION,
+                    MediaSession.Token::class.java) == controller.sessionToken
+        }?.notification ?: return false
+        val sessionText = currentPlayingSessionText(song) ?: return false
+        if (sessionText.forceLyrics != notificationLyricsEnabled || sessionText.colorOs) return false
+        if (notificationLyricsEnabled) {
+            val expectedLine = lyrics.first().substringAfter("]")
+            val expectedTranslation = lyrics[1].takeIf(String::isNotEmpty)?.substringAfter("]")
+            val expectedArtist = expectedTranslation ?: "$title - $artist"
+            if (sessionText.lyric != expectedLine || sessionText.translation.orEmpty() != expectedTranslation.orEmpty() ||
+                sessionText.title != expectedLine || sessionText.artist != expectedArtist
+            ) return false
+            if (expectedTranslation != null &&
+                metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION) != "$title - $artist"
+            ) return false
+        } else if (sessionText.title != title || sessionText.artist != artist) return false
+        return song.id == songId && song.displayName() == title && song.displayArtist() == artist &&
+            listOf(song.matchedLyric, song.matchedTranslatedLyric, song.matchedRomanizedLyric) == lyrics &&
+            (hasArtwork || song.coverUrl == null && song.customCoverUrl == null) &&
+            PlayerManager.isPlayingFlow.value && controller.playbackState?.state == PlaybackState.STATE_PLAYING &&
+            metadata.getString(MediaMetadata.METADATA_KEY_TITLE) == sessionText.title &&
+            metadata.getString(MediaMetadata.METADATA_KEY_ARTIST) == sessionText.artist &&
+            metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE) == sessionText.displayTitle &&
+            metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE) == sessionText.displaySubtitle &&
+            (metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) != null) == hasArtwork &&
+            (metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON) != null) == hasArtwork &&
+            notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() == title &&
+            notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() == artist &&
+            (notification.getLargeIcon() != null) == hasArtwork
+    }
+
+    private fun awaitPlayingMetadata(
+        message: String, controller: MediaController, notifications: NotificationManager, songId: Long,
+        title: String, artist: String, lyrics: List<String>, hasArtwork: Boolean,
+        notificationLyricsEnabled: Boolean
+    ) {
+        try {
+            awaitServiceState(message) {
+                playingMetadataMatches(controller, notifications, songId, title, artist, lyrics,
+                    hasArtwork, notificationLyricsEnabled)
+            }
+        } catch (failure: AssertionError) {
+            var details = ""
+            instrumentation.runOnMainSync {
+                details = playingMetadataDiagnostics(controller, notifications, songId, title, artist,
+                    lyrics, hasArtwork, notificationLyricsEnabled)
+            }
+            throw AssertionError("$message\n$details", failure)
+        }
+    }
+
+    private fun playingMetadataDiagnostics(
+        controller: MediaController, notifications: NotificationManager, songId: Long,
+        title: String, artist: String, lyrics: List<String>, hasArtwork: Boolean,
+        notificationLyricsEnabled: Boolean
+    ): String = buildString {
+        appendLine("expected=" + mapOf("songId" to songId, "title" to title, "artist" to artist,
+            "lyrics" to lyrics, "artwork" to hasArtwork, "notificationLyrics" to notificationLyricsEnabled))
+        fun capture(label: String, read: () -> Any?) {
+            appendLine("$label=" + runCatching(read).getOrElse { "${it.javaClass.simpleName}: ${it.message}" })
+        }
+        fun bitmap(bitmap: Bitmap?): String? = bitmap?.let { "${it.width}x${it.height},recycled=${it.isRecycled}" }
+        val song = PlayerManager.currentSongFlow.value
+        if (song?.id != songId) {
+            appendLine("currentFlow=" + if (song == null) "null" else "unrelated song, content redacted")
+            return@buildString
+        }
+        capture("currentFlow") { mapOf("name" to song.name, "artist" to song.artist,
+            "displayName" to song.displayName(), "displayArtist" to song.displayArtist(),
+            "cover" to song.coverUrl, "customCover" to song.customCoverUrl,
+            "customName" to song.customName, "customArtist" to song.customArtist,
+            "lyrics" to listOf(song.matchedLyric, song.matchedTranslatedLyric, song.matchedRomanizedLyric),
+            "originalLyrics" to listOf(song.originalLyric, song.originalTranslatedLyric, song.originalRomanizedLyric),
+            "lyricSyncEdited" to song.lyricSyncEdited) }
+        capture("player") { mapOf("isPlaying" to PlayerManager.isPlayingFlow.value,
+            "playWhenReady" to PlayerManager.playWhenReadyFlow.value,
+            "controlPlaying" to PlayerManager.playbackControlPlayingFlow.value,
+            "positionMs" to PlayerManager.playbackPositionFlow.value) }
+        capture("source") { currentPlayingSessionText(song) }
+        capture("lyricSwitches") { listOf("dynamicIslandLyricsEnabled", "externalBluetoothLyricsEnabled",
+            "externalBluetoothTranslationEnabled").associateWith { PlayerManager.field(it) } }
+        capture("sessionToken") { controller.sessionToken }
+        capture("sessionPlayback") { controller.playbackState?.let { mapOf("state" to it.state,
+            "positionMs" to it.position, "speed" to it.playbackSpeed, "error" to it.errorMessage) } }
+        capture("sessionText") { controller.metadata?.let { metadata -> listOf(
+            MediaMetadata.METADATA_KEY_TITLE, MediaMetadata.METADATA_KEY_ARTIST,
+            MediaMetadata.METADATA_KEY_ALBUM, MediaMetadata.METADATA_KEY_ALBUM_ARTIST,
+            MediaMetadata.METADATA_KEY_DISPLAY_TITLE, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
+            MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION, MediaMetadata.METADATA_KEY_MEDIA_ID,
+            MediaMetadata.METADATA_KEY_ART_URI, MediaMetadata.METADATA_KEY_ALBUM_ART_URI,
+            MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI
+        ).associateWith(metadata::getString) } }
+        capture("sessionBitmaps") { controller.metadata?.let { metadata -> listOf(
+            MediaMetadata.METADATA_KEY_ART, MediaMetadata.METADATA_KEY_ALBUM_ART,
+            MediaMetadata.METADATA_KEY_DISPLAY_ICON
+        ).associateWith { bitmap(metadata.getBitmap(it)) } } }
+        capture("notifications") { notifications.activeNotifications.filter { posted ->
+            val value = posted.notification
+            val token = BundleCompat.getParcelable(value.extras, Notification.EXTRA_MEDIA_SESSION, MediaSession.Token::class.java)
+            val notificationTitle = value.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
+            value.category == Notification.CATEGORY_TRANSPORT && (token == controller.sessionToken ||
+                notificationTitle in setOf(OriginalTitle, "Edited title 0", "Edited title 1"))
+        }.map { posted ->
+            val value = posted.notification
+            val token = BundleCompat.getParcelable(value.extras, Notification.EXTRA_MEDIA_SESSION, MediaSession.Token::class.java)
+            mapOf("id" to posted.id, "sessionToken" to token, "sessionMatches" to (token == controller.sessionToken),
+                "title" to value.extras.getCharSequence(Notification.EXTRA_TITLE),
+                "text" to value.extras.getCharSequence(Notification.EXTRA_TEXT),
+                "subText" to value.extras.getCharSequence(Notification.EXTRA_SUB_TEXT),
+                "largeIcon" to value.getLargeIcon(), "smallIcon" to value.smallIcon)
+        } }
+    }
+
+    private data class NotificationLyricSettingsSnapshot(
+        val dynamicIsland: Boolean, val externalLyrics: Boolean, val externalTranslation: Boolean, val colorOs: Boolean
+    )
+
+    private data class PlayingSessionText(
+        val title: String, val artist: String, val displayTitle: String, val displaySubtitle: String,
+        val lyric: String?, val translation: String?, val forceLyrics: Boolean, val colorOs: Boolean,
+        val audioDeviceType: Int?, val bluetoothMode: String
+    )
+
+    private fun currentPlayingSessionText(song: SongItem): PlayingSessionText? {
+        val service = activeService() ?: return null
+        val owner = checkNotNull((service.field("presentationOwnerDelegate") as Lazy<*>).value)
+        val source = owner.field("source")
+        val inputs = source.javaClass.getMethod("metadata").invoke(source)
+        fun input(name: String): Any? = inputs.javaClass.getMethod(name).invoke(inputs)
+        val payload = checkNotNull(input("getPayload"))
+        val forceLyrics = input("getForceSendLyrics") as Boolean
+        val colorOs = input("getColorOsLyricsEnabled") as Boolean
+        val audioDeviceType = input("getAudioDeviceType") as? Int
+        val bluetoothMode = owner.field("bluetoothMode")
+        val method = Class.forName(
+            "moe.ouom.neriplayer.core.player.service.presentation.PlaybackServiceMetadataPresentationKt"
+        ).declaredMethods.single { it.name == "serviceMetadataText" }.apply { isAccessible = true }
+        val projection = checkNotNull(method.invoke(null, song, payload, audioDeviceType, forceLyrics,
+            bluetoothMode, input("getAlbum"), colorOs))
+        fun text(name: String): String = projection.javaClass.getMethod(name).invoke(projection) as String
+        fun lyric(name: String): String? = payload.javaClass.getMethod(name).invoke(payload) as? String
+        return PlayingSessionText(text("getTitle"), text("getArtist"), text("getDisplayTitle"),
+            text("getDisplaySubtitle"), lyric("getLyric"), lyric("getTranslation"), forceLyrics, colorOs,
+            audioDeviceType, bluetoothMode.toString())
+    }
+
+    private fun assumeNoFixtureSyncTargets() {
+        val noTargets = runCatching {
+            val keysets = setOf("__androidx_security_crypto_encrypted_prefs_key_keyset__",
+                "__androidx_security_crypto_encrypted_prefs_value_keyset__")
+            val webDavEmpty = context.getSharedPreferences("webdav_secure_prefs", Context.MODE_PRIVATE)
+                .all.keys.all { it in keysets }
+            val github = SecureTokenStorage(context)
+            webDavEmpty && github.isPersistent && github.getToken().isNullOrEmpty() &&
+                github.getRepoOwner().isNullOrEmpty() && github.getRepoName().isNullOrEmpty()
+        }.getOrDefault(false)
+        assumeTrue("仅允许没有 GitHub 或 WebDAV 同步目标的专用模拟器", noTargets)
+    }
+
+    private suspend fun removePlayingFixtureStatistics(directory: File, songs: List<SongItem>) {
+        if (songs.isEmpty()) return
+        flushPlaybackStatsPendingWrites(context)
+        val history = AppContainer.playHistoryRepo
+        check(history.awaitHistoryLoaded())
+        history.removeSongs(songs)
+        withTimeout(TimeUnit.SECONDS.toMillis(ServiceTimeoutSeconds)) {
+            history.historyFlow.first { entries -> entries.none { entry ->
+                songs.any { song -> entry.id == song.id && entry.localFilePath == song.localFilePath }
+            } }
+        }
+        val statistics = AppContainer.playbackStatsRepo
+        val keys = mutableSetOf<String>()
+        var cursor: PlaybackStatsCursor? = null
+        do {
+            val page = statistics.readPage(PlaybackStatsQuery(), after = cursor)
+            page.tracks.filter { it.localFilePath?.startsWith("${directory.path}/") == true }
+                .mapTo(keys) { it.identityKey }
+            cursor = page.nextCursor
+        } while (cursor != null)
+        statistics.removeTracks(keys)
+        withTimeout(TimeUnit.SECONDS.toMillis(ServiceTimeoutSeconds)) {
+            while (keys.any { statistics.getStatForTrack(it) != null }) delay(50L)
+        }
+    }
+
     private fun activeService(): AudioPlayerService? = AudioPlayerService::class.java
         .getDeclaredField("activeServiceInstance").apply { isAccessible = true }.get(null) as? AudioPlayerService
 
@@ -563,6 +1076,12 @@ class RestoredLocalPlaybackThreadTest {
         const val PositionMs = 1_500L
         const val ServiceTimeoutSeconds = 25L
         const val ActionBindCar = "moe.ouom.neriplayer.action.BIND_CAR"
+        const val PlaybackNotificationChannel = "neriplayer_playback_channel"
+        const val OriginalTitle = "Original title"
+        const val OriginalArtist = "Original artist"
+        const val OriginalLyric = "[00:01.00]original lyric"
+        const val OriginalTranslation = "[00:01.00]original translation"
+        const val OriginalRomanization = "[00:01.00]original romanization"
         val QueueFiles = listOf("last_playlist.json", "last_playback_state.json")
     }
 }

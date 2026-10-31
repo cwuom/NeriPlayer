@@ -26,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
 import moe.ouom.neriplayer.data.model.artwork.CoverArtColorSample
 import moe.ouom.neriplayer.util.media.normalizeCoverArtColorCacheKey
@@ -34,6 +35,7 @@ import moe.ouom.neriplayer.util.media.isRemoteImageSource
 import kotlin.time.Duration.Companion.milliseconds
 
 internal fun SongItem?.resolveUiCoverSource(context: Context): String? {
+    if (hasKnownEmptyLocalCover()) return null
     return this?.displayCoverUrl(context)
 }
 
@@ -112,22 +114,26 @@ internal data class PlaybackVisualCoverState(
 
 internal data class PlaybackVisualCoverRequest(
     val coverUrl: String?,
-    val songKey: String?
+    val songKey: String?,
+    val clearCover: Boolean = false
 )
 
 internal fun playbackVisualCoverRequest(
     coverUrl: String?,
-    songKey: String?
+    songKey: String?,
+    clearCover: Boolean = false
 ): PlaybackVisualCoverRequest = PlaybackVisualCoverRequest(
-    coverUrl?.trim()?.takeIf(String::isNotEmpty), songKey
+    coverUrl?.trim()?.takeIf(String::isNotEmpty)?.takeUnless { clearCover }, songKey, clearCover
 )
 
 internal fun resolvePlaybackVisualCoverState(
     currentCoverUrl: String?,
     previousState: PlaybackVisualCoverState?,
     currentSongKey: String?,
-    hasCurrentSong: Boolean
+    hasCurrentSong: Boolean,
+    clearCover: Boolean = false
 ): PlaybackVisualCoverState {
+    if (clearCover) return PlaybackVisualCoverState(null, currentSongKey)
     val normalizedCoverUrl = currentCoverUrl?.trim()?.takeIf(String::isNotEmpty)
     return when {
         normalizedCoverUrl != null -> PlaybackVisualCoverState(
@@ -158,7 +164,8 @@ internal fun rememberPlaybackVisualCoverState(
         currentSongKey = request.songKey,
         hasCurrentSong = hasCurrentOrRetainedVisualCover(
             request.songKey, visualCoverState.value
-        )
+        ),
+        clearCover = request.clearCover
     )
     SideEffect {
         synchronizePlaybackVisualCoverState(visualCoverState, resolvedVisualCoverState)

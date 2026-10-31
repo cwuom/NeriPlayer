@@ -610,7 +610,8 @@ internal fun deserializeDownloadedSongsCatalog(
                     customArtist = item.optString("customArtist").takeIf(String::isNotBlank),
                     originalName = item.optString("originalName").takeIf(String::isNotBlank),
                     originalArtist = item.optString("originalArtist").takeIf(String::isNotBlank),
-                    originalCoverUrl = item.optString("originalCoverUrl").takeIf(String::isNotBlank),
+                    originalCoverUrl = item.optPresentCatalogString("originalCoverUrl")
+                        ?.takeIf { it.isEmpty() || it.isNotBlank() },
                     originalLyric = if (includeOriginalLyrics) {
                         item.optPresentCatalogString("originalLyric")
                     } else {

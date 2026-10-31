@@ -1894,9 +1894,8 @@ class AudioPlayerService : Service() {
     }
 
     private fun stopForegroundIfStarted(reason: String) {
-        if (!isForegroundStarted) {
-            return
-        }
+        if (presentationOwnerDelegate.isInitialized()) presentationOwner.stopNotificationUpdates()
+        if (!isForegroundStarted) return
         NPLogger.w("NERI-APS", "stopForegroundIfStarted reason=$reason ${buildStateSummary()}")
         stopForeground(STOP_FOREGROUND_REMOVE)
         isForegroundStarted = false

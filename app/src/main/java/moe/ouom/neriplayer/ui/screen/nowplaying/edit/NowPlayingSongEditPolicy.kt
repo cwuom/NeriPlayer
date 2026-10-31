@@ -15,11 +15,10 @@ import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayCoverUrl
-import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSeed
 import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 
 internal fun shouldFetchOriginalSongInfo(song: SongItem): Boolean {
@@ -52,12 +51,18 @@ internal fun latestMatchingEditSong(current: SongItem?, original: SongItem): Son
 internal fun resolveEditSongInitialCoverUrl(
     song: SongItem,
     resolvedDisplayCoverUrl: String?
-): String = selectEditSongInitialCover(
-    directCover = song.displayCoverUrl(),
-    downloadedCover = AudioDownloadManager.peekLocalCoverUri(song),
-    originalCover = song.originalCoverUrl,
-    resolvedDisplayCoverUrl = resolvedDisplayCoverUrl
-)
+): String {
+    if (song.hasKnownEmptyEditSongCover()) return ""
+    return selectEditSongInitialCover(
+        directCover = song.displayCoverUrl(),
+        downloadedCover = AudioDownloadManager.peekLocalCoverUri(song),
+        originalCover = song.originalCoverUrl,
+        resolvedDisplayCoverUrl = resolvedDisplayCoverUrl
+    )
+}
+
+internal fun SongItem.hasKnownEmptyEditSongCover(): Boolean =
+    hasKnownEmptyLocalCover()
 
 internal fun selectEditSongInitialCover(
     directCover: String?,
@@ -265,9 +270,12 @@ private fun managedEditSongCover(
     resolved: String?,
     baseline: ManagedDownloadRestorableMetadata.Baseline?,
     current: String
-): String = listOfNotNull(resolved, baseline?.coverReference, current)
-    .firstOrNull { !isMediaStoreCoverReference(it) }
-    .orEmpty()
+): String {
+    if (baseline?.coverReference == "") return ""
+    return listOfNotNull(resolved, baseline?.coverReference, current)
+        .firstOrNull { !isMediaStoreCoverReference(it) }
+        .orEmpty()
+}
 
 private fun managedOriginalLyric(
     baseline: ManagedDownloadRestorableMetadata.Baseline?,
@@ -323,6 +331,23 @@ internal data class EditSongLyricsSavePlan(
     val writeLyricsToLocalMetadata: Boolean,
     val persistLocalSidecars: Boolean
 )
+
+internal fun shouldWriteEditSongLyrics(
+    song: SongItem,
+    plan: EditSongLyricsSavePlan,
+    writeLocalMetadata: Boolean
+): Boolean {
+    if (plan.writeLyricsWithSongMetadata) return true
+    if (!writeLocalMetadata || !song.isLocalSong() || plan.draft != null) return false
+    return listOf(
+        song.matchedLyric,
+        song.matchedTranslatedLyric,
+        song.matchedRomanizedLyric,
+        song.originalLyric,
+        song.originalTranslatedLyric,
+        song.originalRomanizedLyric
+    ).any { it != null }
+}
 
 internal fun resolveEditSongLyricsSavePlan(
     pendingDraft: EditSongLyricsDraft?,
@@ -499,28 +524,7 @@ private fun NowPlayingViewModel.OriginalSongInfo.hasLyrics(): Boolean =
 private fun preferredRestoreLyric(source: String?, baseline: String?): String =
     source?.takeIf(String::isNotBlank) ?: baseline.orEmpty()
 
-internal fun shouldConfirmLocalMetadataWriteBack(
-    song: SongItem,
-    title: String,
-    artist: String,
-    coverUrl: String,
-    hasPendingLyricsChange: Boolean = false
-): Boolean {
-    if (!song.isLocalSong()) return false
-    if (hasPendingLyricsChange) return true
-    return editSongTitleChanged(song, title) ||
-        editSongArtistChanged(song, artist) ||
-        editSongCoverChanged(song, coverUrl)
-}
-
-private fun editSongTitleChanged(song: SongItem, title: String): Boolean =
-    song.displayName().trim() != title.trim().ifBlank { song.name }
-
-private fun editSongArtistChanged(song: SongItem, artist: String): Boolean =
-    song.displayArtist().trim() != artist.trim().ifBlank { song.artist }
-
-private fun editSongCoverChanged(song: SongItem, coverUrl: String): Boolean =
-    (song.customCoverUrl ?: song.coverUrl)?.trim() != coverUrl.trim().ifBlank { null }
+internal fun shouldConfirmLocalMetadataWriteBack(song: SongItem): Boolean = song.isLocalSong()
 
 internal fun shouldAllowLocalCoverReplacement(
     song: SongItem,

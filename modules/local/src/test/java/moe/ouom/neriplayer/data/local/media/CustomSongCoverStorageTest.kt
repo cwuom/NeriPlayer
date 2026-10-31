@@ -3,6 +3,10 @@ package moe.ouom.neriplayer.data.local.media
 import android.content.Context
 import android.content.ContentResolver
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.data.model.SongItem
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -20,11 +24,46 @@ import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import okhttp3.Call
 
 class CustomSongCoverStorageTest {
 
     @get:Rule
     val tempFolder = TemporaryFolder()
+
+    @Test
+    fun `cancelling remote cover preparation cancels the request before any file is published`() = runBlocking {
+        val started = CompletableDeferred<Call>()
+        val release = CountDownLatch(1)
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            started.complete(chain.call())
+            check(release.await(5, TimeUnit.SECONDS))
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                .code(200).message("OK").body(byteArrayOf(1, 2, 3).toResponseBody("image/png".toMediaType()))
+                .build()
+        }.build()
+        val previousClient = CustomSongCoverStorage.remoteCoverHttpClientProvider
+        CustomSongCoverStorage.remoteCoverHttpClientProvider = { client }
+        val lookup = launch {
+            CustomSongCoverStorage.persistManuallySelectedRemoteCover(context, "https://example.com/cancel.png")
+        }
+        try {
+            val call = withTimeout(5_000L) { started.await() }
+            lookup.cancel()
+            assertTrue("cancellation must reach the active cover request", call.isCanceled())
+            assertFalse(File(tempFolder.root, "custom_song_covers").exists())
+        } finally {
+            release.countDown()
+            lookup.cancelAndJoin()
+            CustomSongCoverStorage.remoteCoverHttpClientProvider = previousClient
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
+    }
 
     @Test
     fun `prepared covers are found by content and only covers inside the directory are deleted`() = runBlocking {

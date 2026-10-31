@@ -131,6 +131,9 @@ internal fun choosePreferredPlaylistCover(
 
 private fun String?.normalizedCoverReference(): String? = this?.trim()?.takeIf(String::isNotBlank)
 
+internal fun SongItem?.hasKnownEmptyLocalCover(): Boolean = this != null &&
+    isLocalSong() && originalCoverUrl == "" && listOf(coverUrl, customCoverUrl).all { it.isNullOrBlank() }
+
 internal fun shouldProbeFastLocalCoverCandidate(
     isLocalSong: Boolean,
     immediateCover: String?,
@@ -247,6 +250,7 @@ internal fun rememberSongDisplayCoverUrl(
     allowEmbeddedCoverFallback: Boolean = true,
     localAssetGeneration: String? = null
 ): String? {
+    if (song.hasKnownEmptyLocalCover()) return null
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
     val localCoverReference = remember(song, downloadPresenceVersion, localAssetGeneration) {

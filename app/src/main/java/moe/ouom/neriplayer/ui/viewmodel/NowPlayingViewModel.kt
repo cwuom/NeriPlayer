@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.metadata.SongMetadataApplyOptions
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.encyclopedia.encyclopediaSongKey
@@ -125,6 +126,10 @@ class NowPlayingViewModel : ViewModel() {
         )
     )
     val manualSearchState = _manualSearchState.asStateFlow()
+    private val metadataApplicationOwner = ManualMetadataApplicationOwner { application ->
+        _manualSearchState.update { it.copy(isApplyingMetadata = application.isRunning) }
+    }
+    val metadataApplicationState = metadataApplicationOwner.state
 
     private val _encyclopediaState = MutableStateFlow<SongEncyclopediaUiState>(SongEncyclopediaUiState.Idle)
 
@@ -210,6 +215,7 @@ class NowPlayingViewModel : ViewModel() {
     }
 
     fun prepareForSearch(initialKeyword: String): Long {
+        metadataApplicationOwner.reset()
         cancelSearchRequest()
         val sessionId = ++nextSearchSessionId
         activeSearchSessionId = sessionId
@@ -325,6 +331,8 @@ class NowPlayingViewModel : ViewModel() {
         if (activeSearchSessionId != sessionId) return
         activeSearchSessionId = 0L
         cancelSearchRequest()
+        metadataApplicationOwner.cancel()
+        metadataApplicationOwner.reset()
     }
 
     private fun cancelSearchRequest() {
@@ -339,20 +347,21 @@ class NowPlayingViewModel : ViewModel() {
     fun onSongSelected(
         originalSong: SongItem,
         selectedSong: SongSearchInfo,
-        onComplete: (Boolean) -> Unit = {}
+        onComplete: (Boolean) -> Unit = {},
+        options: SongMetadataApplyOptions? = null
     ): Boolean {
-        if (_manualSearchState.value.isApplyingMetadata) return false
-        _manualSearchState.update { it.copy(isApplyingMetadata = true) }
-        PlayerManager.replaceMetadataFromSearch(
-            originalSong = originalSong,
-            selectedSong = selectedSong,
-            onComplete = { success ->
-                _manualSearchState.update { it.copy(isApplyingMetadata = false) }
-                onComplete(success)
-            }
-        )
-        return true
+        return metadataApplicationOwner.start(onComplete) { onProgress, finished ->
+            PlayerManager.replaceMetadataFromSearch(
+                originalSong = originalSong,
+                selectedSong = selectedSong,
+                onComplete = finished,
+                options = options,
+                onProgress = onProgress
+            )
+        }
     }
+
+    fun cancelMetadataApplication() = metadataApplicationOwner.cancel()
 
     fun downloadSong(context: Context, song: SongItem) {
         GlobalDownloadManager.startDownload(context, song)

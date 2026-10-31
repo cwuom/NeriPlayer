@@ -621,7 +621,7 @@ object LocalMediaMetadataRecoveryStore {
             Os.ftruncate(target.fileDescriptor, 0)
             Os.lseek(target.fileDescriptor, 0, OsConstants.SEEK_SET)
             ParcelFileDescriptor.AutoCloseOutputStream(target.dup()).use { output ->
-                input.copyTo(output)
+                input.copyTo(output, LOCAL_METADATA_IO_BUFFER_BYTES)
                 output.flush()
                 Os.fsync(target.fileDescriptor)
             }
@@ -657,7 +657,7 @@ object LocalMediaMetadataRecoveryStore {
 
     internal fun sha256(input: java.io.InputStream): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        val buffer = ByteArray(LOCAL_METADATA_IO_BUFFER_BYTES)
         while (true) {
             val read = input.read(buffer)
             if (read < 0) break

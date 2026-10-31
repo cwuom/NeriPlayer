@@ -82,6 +82,7 @@ internal val MP4_SUPPORTED_COVER_MIME_TYPES = setOf(
 )
 internal val EDITABLE_COVER_JPEG_QUALITIES = intArrayOf(95, 90, 85, 80, 75, 70, 65, 60)
 internal const val EDITABLE_METADATA_WRITE_BUDGET_MS = 3_000L
+internal const val LOCAL_METADATA_IO_BUFFER_BYTES = 128 * 1024
 internal val SAF_WRITE_READBACK_DELAYS_MS = longArrayOf(0L, 8L, 24L)
 internal const val LOCAL_METADATA_SUFFIX = ".npmeta.json"
 internal const val LEGACY_DOWNLOAD_ROOT = "/storage/emulated/0/neriplayer-download"

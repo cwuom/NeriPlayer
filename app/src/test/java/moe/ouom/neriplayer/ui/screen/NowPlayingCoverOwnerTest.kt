@@ -35,6 +35,53 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class NowPlayingCoverOwnerTest {
     @Test
+    fun `restored known empty artwork source clears the playing songs decoded cover`() = runTest {
+        val key = "cover-owner-explicit-local-restore"
+        val edited = previewSong("__local_files__").copy(
+            mediaUri = "content://cover-owner-local-restore/audio/7",
+            coverUrl = null,
+            customCoverUrl = "content://cover-owner-local-restore/edited",
+            originalCoverUrl = ""
+        )
+        val owner = NowPlayingCoverOwner(this)
+        try {
+            val original = requireNotNull(owner.newRequest(edited.customCoverUrl, key, "edited"))
+            owner.presentation(original, key, emptyList())
+            val decoded = original.frame.copy(decodedBitmap = markerBitmap)
+            owner.publishDecodedFrame(original, decoded)
+            assertEquals(decoded, owner.presentation(original, key, emptyList()).visibleFrame)
+
+            val pending = owner.newRequest(null, key, "loading")
+            assertEquals(decoded, owner.presentation(pending, key, emptyList()).visibleFrame)
+
+            val source = buildNowPlayingCoverSource(
+                coverUrl = "content://cover-owner-local-restore/stale-parent",
+                songKey = key,
+                songKeyAliases = emptyList(),
+                downloadPresenceVersion = 0,
+                assetRootGeneration = 0,
+                assetSongRevision = 1,
+                song = edited.copy(customCoverUrl = null)
+            )
+            assertTrue(source.clearCover)
+            assertNull(source.coverUrl)
+            val request = owner.requestFor(
+                NowPlayingCoverRequestInput(source.coverUrl, source.songKey, source.cacheKey, source.clearCover)
+            )
+            assertNull(owner.presentation(request, source.songKey, source.songKeyAliases).visibleFrame)
+            owner.publishDecodedFrame(original, decoded)
+            assertNull(owner.presentation(request, source.songKey, source.songKeyAliases).visibleFrame)
+
+            val replacement = requireNotNull(owner.requestFor(
+                NowPlayingCoverRequestInput("content://cover-owner-local-restore/new", key, "new")
+            ))
+            assertEquals(replacement.frame, owner.presentation(replacement, key, emptyList()).visibleFrame)
+        } finally {
+            owner.close()
+        }
+    }
+
+    @Test
     fun `new cover surface starts with its requested song while mounted surfaces keep the handoff`() = runTest {
         val owner = NowPlayingCoverOwner(this)
         val first = owner.newRequest("content://surface-reentry/first", "surface-reentry-first", "g1")!!
@@ -264,6 +311,22 @@ class NowPlayingCoverOwnerTest {
             source.cacheKey
         )
         assertEquals("", buildNowPlayingCoverSource(null, null, emptyList(), 0, 0L, 0L, null).contentDescription)
+    }
+
+    @Test
+    fun `original empty artwork does not hide a current or custom local cover`() {
+        val song = previewSong("__local_files__").copy(
+            mediaUri = "content://cover-owner-local-current/audio/7",
+            originalCoverUrl = ""
+        )
+        listOf(song, song.copy(coverUrl = null, customCoverUrl = "content://cover-owner-local-current/custom"))
+            .forEach { current ->
+                val source = buildNowPlayingCoverSource(
+                    "content://cover-owner-local-current/visible", "current", emptyList(), 0, 0, 0, current
+                )
+                assertFalse(source.clearCover)
+                assertEquals("content://cover-owner-local-current/visible", source.coverUrl)
+            }
     }
 
     @Test
