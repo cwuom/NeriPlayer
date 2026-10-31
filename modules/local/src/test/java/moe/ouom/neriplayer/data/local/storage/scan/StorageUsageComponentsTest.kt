@@ -7,6 +7,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.storage.cleanup.StorageCacheCleaner
+import moe.ouom.neriplayer.data.local.storage.cleanup.LocalImportCache
 import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
 import moe.ouom.neriplayer.data.model.storage.FileStats
 import moe.ouom.neriplayer.data.model.storage.ManagedDownloadLibraryUsage
@@ -27,6 +28,38 @@ import org.junit.rules.TemporaryFolder
 class StorageUsageComponentsTest {
     @get:Rule
     val temporary = TemporaryFolder()
+
+    @Test
+    fun selectingLocalImportCacheDoesNotSilentlySkipCleanup() = runBlocking {
+        val result = StorageCacheCleaner(locations(), TestCacheFiles(), TestPlatformCaches()).clear(
+            StorageCacheClearOptions(audioCache = false, imageCache = false, localImportCache = true)
+        )
+
+        // 缺少可靠引用来源时必须报告未清理，不能让选中的类型静默成功
+        assertEquals(ExtraCacheClearResult(false, 0, 0, 0), result)
+    }
+
+    @Test
+    fun localImportCoversArePartitionedWithoutDoubleCountingOrDeletingReferencedFiles() = runBlocking {
+        val locations = locations()
+        val retained = write(locations.localCoverDir, "${"a".repeat(64)}.jpg", 7)
+        val unused = write(locations.localCoverDir, "${"b".repeat(64)}.jpg", 11)
+        val cache = LocalImportCache(locations.localCoverDir, { setOf(retained.toURI().toString()) }) {}
+        val snapshot = StorageUsageScanner(locations, TestSource(), cache).scan()
+
+        assertEquals(FileStats(11, 1), snapshot.items.getValue(StorageUsageItemKind.LocalImportCache).stats)
+        assertEquals(FileStats(7, 1), snapshot.items.getValue(StorageUsageItemKind.LocalCovers).stats)
+        assertEquals(FileStats.Empty, snapshot.items.getValue(StorageUsageItemKind.AppData).stats)
+        assertEquals(18L, snapshot.items.values.sumOf { it.stats.sizeBytes })
+
+        val result = StorageCacheCleaner(locations, TestCacheFiles(), TestPlatformCaches(), cache).clear(
+            StorageCacheClearOptions(audioCache = false, imageCache = false, localImportCache = true)
+        )
+
+        assertEquals(ExtraCacheClearResult(true, 11, 0, 1), result)
+        assertTrue(retained.exists())
+        assertFalse(unused.exists())
+    }
 
     @Test
     fun disappearingFileDoesNotDiscardOtherFilesInTheDirectory() {
@@ -127,6 +160,23 @@ class StorageUsageComponentsTest {
         assertTrue(untouched.exists())
         assertTrue(locations.sharedMediaDir.isDirectory)
         assertEquals(setOf(StorageCacheKind.SharedMedia, StorageCacheKind.NeteasePlaylist), files.cleared.toSet())
+    }
+
+    @Test
+    fun cleanerSelectsOnlyServerBrowseCacheWithoutClaimingPhysicalBytes() = runBlocking {
+        val locations = locations()
+        val retained = write(locations.sharedMediaDir, "shared", 7)
+        val files = TestCacheFiles()
+        val platforms = TestPlatformCaches()
+
+        val result = StorageCacheCleaner(locations, files, platforms).clear(
+            StorageCacheClearOptions(audioCache = false, imageCache = false, serverBrowseCache = true)
+        )
+
+        assertEquals(ExtraCacheClearResult(true, 0, 80, 0), result)
+        assertEquals(listOf("subsonic"), platforms.cleared)
+        assertTrue(files.cleared.isEmpty())
+        assertTrue(retained.exists())
     }
 
     @Test

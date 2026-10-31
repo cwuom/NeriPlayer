@@ -4,7 +4,10 @@ import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState
@@ -31,6 +34,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockingDetails
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 class PlaybackServiceMatchedFavoritesTest {
     private val remote = SongItem(
@@ -80,6 +84,8 @@ class PlaybackServiceMatchedFavoritesTest {
         favorites()
         assertTrue(fixture.owner.refreshFavoriteSongKeys())
         fixture.publish()
+        advanceTimeBy(500L)
+        runCurrent()
         assertFalse(fixture.notification().favorite)
         assertFalse(fixture.notification().interactiveFavorite)
         assertFalse(fixture.widget().isFavorite)
@@ -130,6 +136,8 @@ class PlaybackServiceMatchedFavoritesTest {
         )
         assertTrue(fixture.owner.refreshFavoriteSongKeys())
         fixture.publish()
+        advanceTimeBy(500L)
+        runCurrent()
         assertFalse(fixture.notification().favorite)
         assertFalse(fixture.widget().isFavorite)
     }

@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.platform.netease.api.playback.parser.NeteasePlaybackResponseParser
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.platform.youtube.api.transport.isYouTubeWebRemixDirectMissingPoToken
@@ -30,7 +31,8 @@ internal class RetryableDownloadFailureException(
     message: String,
     val networkUnavailable: Boolean,
     cause: Throwable? = null,
-    val errorCode: String? = null
+    val errorCode: String? = null,
+    val retryAfterMs: Long? = null
 ) : IOException(message, cause)
 
 /**
@@ -42,6 +44,18 @@ internal object AudioDownloadSourceResolver {
     private const val TAG = "NERI-Downloader"
 
     internal fun isBiliSource(song: SongItem): Boolean = song.identity().album == "bilibili"
+
+    internal suspend fun resolveServer(song: SongItem): AudioDownloadManager.ResolvedDownloadSource {
+        val repository = DownloadHosts.sources.subsonicRepository ?: throw SubsonicException.accountUnavailable()
+        val source = repository.download(song)
+        return AudioDownloadManager.ResolvedDownloadSource(
+            url = source.url,
+            mimeType = source.mimeType,
+            fileExtensionHint = source.fileExtensionHint,
+            contentLength = source.contentLength,
+            durationMs = source.durationMs
+        )
+    }
 
     internal sealed interface NeteaseDownloadLookup {
         data class Resolved(
@@ -354,6 +368,8 @@ internal object AudioDownloadSourceResolver {
         "audio/webm" -> "webm"
         "audio/ogg" -> "ogg"
         "audio/mpeg" -> "mp3"
+        "audio/wav", "audio/x-wav" -> "wav"
+        "audio/aiff", "audio/x-aiff" -> "aiff"
         else -> null
     }
 

@@ -126,7 +126,7 @@
     <string name="settings_stop_on_bluetooth_disconnect">Stop On Bluetooth Disconnect</string>
     <string name="settings_stop_on_bluetooth_disconnect_desc">Pause playback when a Bluetooth device disconnects</string>
     <string name="settings_usb_exclusive_playback">USB Exclusive Playback</string>
-    <string name="settings_usb_exclusive_playback_desc">Use direct exclusive output for USB DACs</string>
+    <string name="settings_usb_exclusive_playback_desc">Try direct exclusive output when a USB DAC is connected</string>
     <string name="settings_usb_exclusive_background_permission_title">Allow USB exclusive background playback</string>
     <string name="settings_usb_exclusive_background_permission_desc">USB exclusive output needs the foreground service and wake lock to keep running. To avoid screen-off limits, set NeriPlayer battery/background behavior to unrestricted or fully allowed in system settings.</string>
     <string name="settings_usb_exclusive_background_permission_battery">Request battery optimization exemption</string>
@@ -272,7 +272,6 @@
     <string name="settings_lyrics_lyric_font_size">Lyric font size</string>
     <string name="settings_lyrics_translation_font_size">Translation font size</string>
     <string name="settings_lyrics_translation_sample">Sample translation: the moonlight stays with you</string>
-    <string name="settings_lyrics_sample">Sample lyrics: Last night the east wind blew</string>
     <string name="settings_custom_background">Custom Background</string>
     <string name="settings_background_change">Change</string>
     <string name="settings_background_select">Select image</string>

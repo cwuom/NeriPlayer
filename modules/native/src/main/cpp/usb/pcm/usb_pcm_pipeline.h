@@ -138,6 +138,8 @@ private:
     size_t writeIndex_ = 0;
     size_t levelBytes_ = 0;
     PcmResampler resampler_;
+    // 转换完成并写入 ring 后才交换状态，失败重试保留原历史，两个实例复用各自的容量
+    PcmResampler pendingResampler_;
     std::vector<float> resampleInput_;
     std::vector<float> resampleOutput_;
     std::vector<uint8_t> conversionBuffer_;

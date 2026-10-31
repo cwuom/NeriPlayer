@@ -22,25 +22,27 @@ For installation, capability boundaries and privacy see the README; for extensio
 
 ## Module layout
 
-The project owns 15 Android libraries, registered once in [gradle/owned-modules.txt](../gradle/owned-modules.txt). Top-level directories name business domains; playback and downloads retain separate rule and runtime build boundaries. Remote music, lyric, and metadata sources belong to `:platform`, with `api` describing its internal protocol responsibility. Shared models and host interfaces define public capability contracts.
+The project owns 14 Android libraries, registered once in [gradle/owned-modules.txt](../gradle/owned-modules.txt). Top-level directories name business domains; playback and downloads retain separate rule and runtime build boundaries. Remote music, lyric, and metadata sources belong to `:platform`, with `api` describing its internal protocol responsibility. Shared models and host interfaces define public capability contracts.
 
-- [`:common`](../modules/common/README.md): utilities, logging, shared text/icons, locale support, and test fixtures.
-- [`:network`](../modules/network/README.md): HTTP, Range handling, network parsing, and Web login infrastructure.
-- [`:model`](../modules/model/README.md): business models, enums, and cross-module state contracts without project implementation dependencies.
-- [`:database`](../modules/database/README.md): Room database, entities, DAOs, historical schemas, and upgrades.
-- [`:native`](../modules/native/README.md): Native crash handling, DSP effects, USB protocols and PCM calculations, exclusive transport, and third-party libusb; builds and packages `lib_neri.so`.
-- [`:playback:logic`](../modules/playback/logic/README.md): policy decisions, runtime coordinators, PCM/audio processing, and queue rules with package-level isolation.
-- [`:playback:runtime`](../modules/playback/runtime/README.md): Media3 engine, service, source resolution, USB output, effects, floating/Bluetooth lyrics, and host integration.
-- [`:download:logic`](../modules/download/logic/README.md): admission, state transitions, retries, scheduling, permits, ownership, commit rules, and metadata codecs.
-- [`:download:runtime`](../modules/download/runtime/README.md): execution, Room queues, managed files, migration/recovery, Workers, and JobService.
-- [`:lyrics`](../modules/lyrics/README.md): LRC/YRC/TTML parsing, transforms, timelines, translation alignment, time offsets, and Lyricon/SuperLyric output coordination.
-- [`:platform`](../modules/platform/README.md): Bilibili, NetEase, and YouTube protocols, accounts, caches, and business services, plus comments, lyric sources, metadata search, matching, and fallback.
-- [`:local`](../modules/local/README.md): settings, local media/playlists, history/statistics, backups, traffic, storage accounting, scans, cleanup, and Android sync host adapters.
-- [`:sync`](../modules/sync/README.md): GitHub/WebDAV transport, encrypted credential state, sessions, compatible codecs, merges, concurrency protection, and Worker policies.
-- [`:listentogether`](../modules/listentogether/README.md): protocol, HTTP/WebSocket transport, identity rules, sessions, reconnects, controls, and playback synchronization.
-- [`:ltwlan`](../modules/ltwlan/README.md): LAN rooms, BeatSync timing, discovery, permissions and device media volume.
+| Module | Responsibility |
+| --- | --- |
+| [`:common`](../modules/common/README.md) | utilities, logging, shared text/icons, locale support, and test fixtures. |
+| [`:network`](../modules/network/README.md) | HTTP, Range handling, network parsing, and Web login infrastructure. |
+| [`:model`](../modules/model/README.md) | business models, enums, and cross-module state contracts without project implementation dependencies. |
+| [`:database`](../modules/database/README.md) | Room database, entities, DAOs, historical schemas, and upgrades. |
+| [`:native`](../modules/native/README.md) | Native crash handling, DSP effects, USB protocols and PCM calculations, exclusive transport, and third-party libusb; builds and packages `lib_neri.so`. |
+| [`:playback:logic`](../modules/playback/logic/README.md) | policy decisions, runtime coordinators, PCM/audio processing, and queue rules with package-level isolation. |
+| [`:playback:runtime`](../modules/playback/runtime/README.md) | Media3 engine, service, source resolution, USB output, effects, floating/Bluetooth lyrics, and host integration. |
+| [`:download:logic`](../modules/download/logic/README.md) | admission, state transitions, retries, scheduling, permits, ownership, commit rules, and metadata codecs. |
+| [`:download:runtime`](../modules/download/runtime/README.md) | execution, Room queues, managed files, migration/recovery, Workers, and JobService. |
+| [`:lyrics`](../modules/lyrics/README.md) | LRC/YRC/TTML parsing, transforms, timelines, translation alignment, time offsets, and Lyricon/SuperLyric output coordination. |
+| [`:platform`](../modules/platform/README.md) | Bilibili, NetEase, YouTube, and Subsonic music server (preview; not sufficiently tested) protocols, accounts, caches, and business services, plus comments, lyric sources, metadata search, matching, and fallback. |
+| [`:local`](../modules/local/README.md) | settings, local media/playlists, history/statistics, backups, traffic, storage accounting, scans, cleanup, and Android sync host adapters. |
+| [`:ltwlan`](../modules/ltwlan/README.md) | LAN rooms, BeatSync timing, discovery, permissions and device media volume. |
+| [`:sync`](../modules/sync/README.md) | GitHub/WebDAV transport, encrypted credential state, sessions, compatible codecs, merges, concurrency protection, and Worker policies. |
+| [`:listentogether`](../modules/listentogether/README.md) | protocol, HTTP/WebSocket transport, identity rules, sessions, reconnects, controls, and playback synchronization. |
 
-`:app` owns Android entry points, Compose screens, and cross-domain assembly. `:ksp-annotations` / `:ksp-processor` generate settings metadata; `:accompanist-lyrics-core` / `:accompanist-lyrics-ui` are upstream lyric modules. `:hidden-api` supplies compile-only API stubs for playback runtime and is not packaged in the app. `build-logic` supplies build tooling. `np-submodule/NeriPlayer-LTW` is the Cloudflare Workers server; the vendored `np-submodule/miuix` source/docs tree is outside the app graph. These are not part of the 15 owned Android libraries.
+`:app` owns Android entry points, Compose screens, and cross-domain assembly. `:ksp-annotations` / `:ksp-processor` generate settings metadata; `:accompanist-lyrics-core` / `:accompanist-lyrics-ui` are upstream lyric modules. `:hidden-api` supplies compile-only API stubs for playback runtime and is not packaged in the app. `build-logic` supplies build tooling. `np-submodule/NeriPlayer-LTW` is the Cloudflare Workers server; the vendored `np-submodule/miuix` source/docs tree is outside the app graph. These are not part of the 14 owned Android libraries.
 
 Dependencies follow responsibilities rather than directory categories. `:model` has no project implementation dependencies, and `:common` has no business-domain dependencies. Database, storage calculations, lyric parsing, and playback/download rules must not depend on repository or Android runtime implementations. Repositories inside `:platform` consume their corresponding protocols; APIs cannot read account repositories, Room, or player state, and each platform retains its package dependency boundary. `:local` consumes the database and domain services. Clients receive account, credential-refresh, and storage capabilities through narrow injected interfaces. No library may depend on app, and the graph must remain acyclic.
 
@@ -91,9 +93,7 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 - `LauncherShortcuts` maps app-icon shortcuts to continue playback, Explore,
   Library, and shuffle-favorites requests without bypassing normal navigation
   or playback-service state recovery.
-- `Library` uses paged navigation for Local, Favorites, NetEase, YouTube Music,
-  Bilibili, and the QQ Music placeholder. It also exposes Recent Plays and
-  Playback Stats.
+- `Library` uses paged navigation for Local, Favorites, Music Server (preview), NetEase, YouTube Music, and Bilibili; the YouTube Music entry can be disabled in Settings. Recent Plays and Playback Stats are also available.
 - Local Library has playlist/artist categories; Favorites has playlist/artist/Hot
   categories; NetEase has playlist/album categories.
 - `LocalArtistDetailScreen` handles local artist pages with play-all,
@@ -200,17 +200,19 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   request generations so stale results cannot replace the current song. Failures in
   optional artist or credit data degrade that content separately; local listening
   statistics remain distinct from online encyclopedia data.
-- **Lyrics**:
-  besides platform lyrics, LRCLIB is available as an external lyrics client.
-  The lyrics editor has a dedicated Match entry where the search keyword can be
-  edited, sources are selected before searching, and results are cached
-  temporarily by source. Changing the source filter updates cached candidates
-  locally without repeated requests. Matched lyrics automatically drop title,
-  credit, and production-info lines before candidates are ranked by title,
-  artist, album, duration, and lyric type, preferring word-level lyrics while
-  keeping regular lyric candidates. The player supports original lyrics,
-  translated lyrics, phonetic lyrics, word timing, lyric sharing, and manual
-  editing.
+- **Lyrics sources and matching**:
+  - **Capabilities & editor matching**: The player supports original, translated, phonetic, and word-timed lyrics, plus lyric sharing and manual editing. Alongside platform lyrics, LRCLIB is integrated as an external client. The lyrics editor provides a dedicated Match entry supporting custom keywords, source selection prior to searching, and per-source temporary caching (changing the source filter updates candidates locally without re-requesting). Matched lyrics strip title, credit, and production-info lines and rank candidates by title, artist, album, duration, and lyric type (preferring word-level lyrics while retaining regular candidates).
+  - **Source preferences & fallback**: `Settings > Lyrics Settings > Source Preference` selects the default source (`Automatic` / `NetEase` / `Kugou` / `QQ Music` / `LRCLIB` / `AMLL TTML`) and toggles `Prefer Word-Timed Lyrics` (defaulting to `Automatic` with word-level preference enabled). Searching a specific source by title and artist validates track duration, falling back to automatic lyrics when duration is unknown or mismatched. Online tracks display cached lyrics first and query the preferred source in the background, replacing the lyrics on match or retaining existing lyrics on miss. Changing preferences clears cached results immediately.
+  - **Bilibili CC subtitles**: Controlled by a standalone setting, enabled by default, and requires a signed-in Bilibili account.
+  - **Phonetic completion**: When the active lyric source lacks phonetic lyrics, the player attempts to backfill phonetics from NetEase while preserving the current source's original and translated text; native source phonetics and user edits/clears always take precedence.
+  - **Default lyric offsets**: The `Lyric Offset` card adjusts default offsets across 6 sources with individual or batch reset:
+
+| Lyric Source | Default Offset |
+| :--- | :--- |
+| NetEase | `1000 ms` |
+| QQ Music | `500 ms` |
+| Kugou / LRCLIB / AMLL TTML / Bilibili CC | `0 ms` |
+
 - **Lyricon integration**:
   `LyriconManager` outputs the current song, playback state, position,
   word-level lyrics, and translated lyrics to Lyricon and SuperLyric. Position is
@@ -254,12 +256,10 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 - GitHub/WebDAV sync uses a locally generated UUID as the device identifier,
   not `ANDROID_ID`.
 - Opening the app immediately queues persistent sync work for configured providers with auto sync enabled, including during playback. When both providers are enabled, WebDAV starts with a 10-second delay. Automatic settings and sync-format upgrade approval still control execution.
-- GitHub sync creates a raw binary blob through the Git Data API, writes it through
-  a tree and commit, and atomically advances the default branch with an expected HEAD condition.
-  Reads use the raw content endpoint; Base64 in blob requests is only the API
-  transport envelope and does not change the stored body. New sync uses a Protobuf
-  record stream with ZSTD content chunks capped at 2 MiB each. A manifest commits
-  the complete snapshot; unchanged chunks are reused.
+- GitHub transport and V4 archive format:
+  - Sync archives use a Protobuf record stream with ZSTD content chunks capped at 2 MiB each. A root manifest commits the complete snapshot, reusing unchanged chunks without re-uploading.
+  - Eligible commits within the fast-path budgets publish atomically via GraphQL `createCommitOnBranch` with `expectedHeadOid`. Other commits write binary blobs, trees, and commits via the Git Data API, then advance the default branch atomically via GraphQL `updateRefs` (`beforeOid`, `force=false`). Selection depends on the current changes, rather than the total archive size.
+  - Repositories store raw binary bodies read via the raw endpoint pinned to a fixed remote commit; Base64 is used only as the API transport envelope.
 - New installations default to V4. Existing installations with configured sync targets show the upgrade dialog on their first updated launch;
   newly configured targets prompt when traditional cloud data or V3 is detected. The format is not backward compatible:
   update every participating device before confirming. Confirmation immediately syncs and migrates that target.
@@ -324,6 +324,3 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 ---
 
 For release build and signing details, see [CONTRIBUTING_EN.md](../CONTRIBUTING_EN.md#release-build).
-
-
-LAN listen together adds `:ltwlan` for room transport, BeatSync timing, discovery, permissions and device media volume. See [LAN module](../modules/ltwlan/README.md) and [local audio preparation](lan-local-audio-preparation.md). The latter is a design, not an implemented feature.

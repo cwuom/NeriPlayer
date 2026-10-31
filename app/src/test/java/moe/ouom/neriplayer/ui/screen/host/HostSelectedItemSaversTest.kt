@@ -45,6 +45,9 @@ class HostSelectedItemSaversTest {
             null,
             LibrarySelectedItem.Local(playlistId = 11L),
             LibrarySelectedItem.LocalArtist(artistName = "Local Artist"),
+            LibrarySelectedItem.ServerAlbum("server-a", "album / 中文", "Album", "Artist", "opaque-cover", 12),
+            LibrarySelectedItem.ServerArtist("server-a", "artist / 中文", "Artist", "opaque-cover", 3),
+            LibrarySelectedItem.ServerArtist("server-a", "artist / 中文", "Artist", null, 3, "last-song-cover"),
             LibrarySelectedItem.Hot(monthly = true),
             LibrarySelectedItem.Netease(playlist),
             LibrarySelectedItem.NeteaseAlbum(album),
@@ -78,6 +81,16 @@ class HostSelectedItemSaversTest {
             mapOf("type" to "hot", "monthly" to false),
             LibrarySelectedItem.Hot(monthly = false).saveState()
         )
+        assertEquals(
+            mapOf("type" to "serverAlbum", "profileId" to "server-a", "albumId" to "album / 中文",
+                "name" to "Album", "artist" to "Artist", "coverUrl" to null, "songCount" to 12),
+            LibrarySelectedItem.ServerAlbum("server-a", "album / 中文", "Album", "Artist", null, 12).saveState()
+        )
+        assertEquals(
+            mapOf("type" to "serverArtist", "profileId" to "server-a", "artistId" to "artist / 中文",
+                "name" to "Artist", "coverUrl" to null, "albumCount" to 3),
+            LibrarySelectedItem.ServerArtist("server-a", "artist / 中文", "Artist", null, 3).saveState()
+        )
     }
 
     @Test
@@ -87,6 +100,12 @@ class HostSelectedItemSaversTest {
             mapOf("type" to "unknown"),
             mapOf("type" to "local", "playlistId" to "1"),
             mapOf("type" to "localArtist", "artistName" to " "),
+            mapOf("type" to "serverAlbum", "profileId" to " ", "albumId" to "album-1"),
+            mapOf("type" to "serverAlbum", "profileId" to "server-a"),
+            mapOf("type" to "serverAlbum", "profileId" to "server-a", "albumId" to 1L),
+            mapOf("type" to "serverArtist", "profileId" to " ", "artistId" to "artist-1"),
+            mapOf("type" to "serverArtist", "profileId" to "server-a"),
+            mapOf("type" to "serverArtist", "profileId" to "server-a", "artistId" to 1L),
             mapOf("type" to "netease"),
             mapOf("type" to "neteaseAlbum", "album" to "not a map"),
             mapOf("type" to "neteaseArtist", "artistId" to 0L, "artistName" to "Artist"),
@@ -113,6 +132,19 @@ class HostSelectedItemSaversTest {
         assertEquals(
             LibrarySelectedItem.Local(playlistId = 5L),
             restore(librarySelectedItemSaver, mapOf("type" to "local", "playlistId" to 5))
+        )
+        assertEquals(
+            LibrarySelectedItem.ServerAlbum("server-a", "album-1", "", "", null, 0),
+            restore(librarySelectedItemSaver, mapOf("type" to "serverAlbum", "profileId" to "server-a", "albumId" to "album-1"))
+        )
+        assertEquals(
+            LibrarySelectedItem.ServerArtist("server-a", "artist-1", "", null, 0),
+            restore(librarySelectedItemSaver, mapOf("type" to "serverArtist", "profileId" to "server-a", "artistId" to "artist-1"))
+        )
+        assertEquals(
+            LibrarySelectedItem.ServerArtist("server-b", "artist-1", "", null, 0),
+            restore(librarySelectedItemSaver, mapOf("type" to "serverArtist", "profileId" to "server-b",
+                "artistId" to "artist-1", "albumCount" to -3))
         )
         assertEquals(
             LibrarySelectedItem.BiliUploader(BiliUploaderSummary(mid = 99L, name = "Up", avatarUrl = "")),

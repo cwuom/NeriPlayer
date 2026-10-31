@@ -65,13 +65,14 @@ class DownloadedM4aStagingRegressionTest {
         assertArrayEquals(original, file.readBytes())
     }
 
-    @Test fun pipePublicationFailureRestoresExactOriginalAudio() = fixture(false) { file ->
+    @Test fun pipePublicationFailurePreservesExactOriginalAudio() = fixture(false) { file ->
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val provider = StagedMetadataTestProvider.CONTENT_URI.buildUpon().appendQueryParameter("pipe", "true").build()
+        val provider = StagedMetadataTestProvider.CONTENT_URI.buildUpon()
+            .appendQueryParameter("pipe", "true")
+            .appendQueryParameter("readOnlyWrites", "true").build()
         val original = file.readBytes()
-        context.contentResolver.openOutputStream(provider, "wt")!!.use { it.write(original) }
+        context.contentResolver.openOutputStream(StagedMetadataTestProvider.CONTENT_URI, "wt")!!.use { it.write(original) }
         try {
-            context.contentResolver.call(provider, "failNextWrite", null, null)
             val outcome = runBlocking {
                 DownloadedAudioTagWriter.write(context,
                     ManagedDownloadStorage.StoredEntry(file.name, provider.toString(), provider.toString(), null, file.length(), file.lastModified()),
@@ -80,6 +81,30 @@ class DownloadedM4aStagingRegressionTest {
             }
             assertEquals(DownloadedAudioTagWriteOutcome.FAILED, outcome)
             assertArrayEquals(original, context.contentResolver.openInputStream(provider)!!.use { it.readBytes() })
+        } finally { context.contentResolver.delete(provider, null, null) }
+    }
+
+    @Test fun pipeProviderWithoutNonTruncatingWritesPreservesExactOriginalAudio() = fixture(false) { file ->
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val provider = StagedMetadataTestProvider.CONTENT_URI.buildUpon()
+            .appendQueryParameter("pipe", "true").appendQueryParameter("noRw", "true").build()
+        val original = file.readBytes()
+        context.contentResolver.openOutputStream(provider, "wt")!!.use { it.write(original) }
+        context.contentResolver.call(provider, "resetWriteModes", null, null)
+        try {
+            val outcome = runBlocking {
+                DownloadedAudioTagWriter.write(context,
+                    ManagedDownloadStorage.StoredEntry(file.name, provider.toString(), provider.toString(), null, file.length(), file.lastModified()),
+                    SongItem(id = 5L, name = "failed title", artist = "artist", album = "album", albumId = 0L,
+                        durationMs = 1000L, coverUrl = null, mediaUri = provider.toString()), null, true)
+            }
+
+            assertEquals(DownloadedAudioTagWriteOutcome.FAILED, outcome)
+            assertArrayEquals(original, context.contentResolver.openInputStream(provider)!!.use { it.readBytes() })
+            val modes = requireNotNull(context.contentResolver.call(provider, "writeModes", null, null))
+                .getStringArrayList("modes")!!
+            assertTrue(modes.isNotEmpty())
+            assertTrue(modes.all { it == "rw" })
         } finally { context.contentResolver.delete(provider, null, null) }
     }
 

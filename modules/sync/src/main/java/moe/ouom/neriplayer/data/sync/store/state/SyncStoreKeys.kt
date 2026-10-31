@@ -20,6 +20,7 @@ internal const val KEY_LEGACY_LYRIC_RECOVERY = "legacy_lyric_recovery"
 internal const val KEY_TOKEN_WARNING_DISMISSED = "token_warning_dismissed"
 internal const val KEY_DATA_SAVER_MODE = "data_saver_mode"
 internal const val KEY_SYNC_MUTATION_VERSION = "sync_mutation_version"
+internal const val KEY_CONFIGURATION_GENERATION = "sync_configuration_generation"
 internal const val KEY_SYNC_CAUSAL_COUNTER = "sync_causal_counter"
 internal val syncMutationLock = Any()
 internal val syncCausalTokenLock = Any()

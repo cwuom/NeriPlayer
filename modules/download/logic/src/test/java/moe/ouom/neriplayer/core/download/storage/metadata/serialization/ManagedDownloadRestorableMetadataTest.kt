@@ -140,6 +140,20 @@ class ManagedDownloadRestorableMetadataTest {
     }
 
     @Test
+    fun `explicitly absent baseline cover survives round trip without a current cover override`() {
+        val restored = ManagedDownloadRestorableMetadata.fromJson(
+            ManagedDownloadRestorableMetadata(
+                sourceStableKey = "stable",
+                baseline = ManagedDownloadRestorableMetadata.Baseline(coverReference = ""),
+                overrides = ManagedDownloadRestorableMetadata.Overrides(coverReference = "")
+            ).toJson()
+        )
+
+        assertEquals("", restored?.baseline?.coverReference)
+        assertNull(restored?.overrides?.coverReference)
+    }
+
+    @Test
     fun `baseline empty lyrics survive round trip as explicit absence`() {
         val restored = ManagedDownloadRestorableMetadata.fromJson(
             ManagedDownloadRestorableMetadata(

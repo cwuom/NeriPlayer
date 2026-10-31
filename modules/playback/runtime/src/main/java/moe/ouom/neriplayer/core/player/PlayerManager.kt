@@ -184,6 +184,8 @@ import moe.ouom.neriplayer.core.player.persistence.removeQueueItemImpl
 import moe.ouom.neriplayer.core.player.persistence.removeQueueItemsImpl
 import moe.ouom.neriplayer.core.player.persistence.replaceCurrentInQueueAndPlayImpl
 import moe.ouom.neriplayer.core.player.persistence.replaceMetadataFromSearchImpl
+import moe.ouom.neriplayer.core.player.metadata.SongMetadataApplyOptions
+import moe.ouom.neriplayer.core.player.metadata.SongMetadataApplyStage
 import moe.ouom.neriplayer.core.player.persistence.resumeRestoredPlaybackIfNeededImpl
 import moe.ouom.neriplayer.core.player.persistence.moveQueueItemImpl
 import moe.ouom.neriplayer.core.player.persistence.reorderQueueImpl
@@ -571,6 +573,8 @@ object PlayerManager {
     internal var lastUrlRefreshAtMs: Long = 0L
     internal var currentMediaUrlResolvedAtMs: Long = 0L
     internal var currentPlaybackDemandCacheKey: String? = null
+    // One-shot retry position for the current server track, independent of restart preferences.
+    internal var serverRecoveryPosition: Pair<String, Long>? = null
     private val restoredPlayback = AtomicReference<RestoredPlaybackState>(RestoredPlaybackState.None)
     internal val restoredResumePositionMs: Long
         get() = restoredPlayback.get().positionMs
@@ -1852,6 +1856,13 @@ object PlayerManager {
         preference: LyricSourcePreference
     ): PreferredLyricSourceResult? = getPreferredLyricSourceResultImpl(song, preference)
 
+    fun getCachedOriginalLyrics(song: SongItem): List<LyricEntry>? {
+        if (song.channelId != moe.ouom.neriplayer.data.model.server.ServerSongRef.CHANNEL &&
+            song.mediaUri?.startsWith("neri-server://") != true) return null
+        if (!PlayerDependencies.isInitialized()) return null
+        return PlayerDependencies.repositories.subsonicRepository?.cachedLyrics(song)
+    }
+
     fun getCachedPreferredLyricSourceResult(
         song: SongItem,
         preference: LyricSourcePreference,
@@ -1897,8 +1908,10 @@ object PlayerManager {
         originalSong: SongItem,
         selectedSong: SongSearchInfo,
         isAuto: Boolean = false,
-        onComplete: ((Boolean) -> Unit)? = null
-    ) = replaceMetadataFromSearchImpl(originalSong, selectedSong, isAuto, onComplete)
+        onComplete: ((Boolean) -> Unit)? = null,
+        options: SongMetadataApplyOptions? = null,
+        onProgress: ((SongMetadataApplyStage) -> Unit)? = null
+    ): Job? = replaceMetadataFromSearchImpl(originalSong, selectedSong, isAuto, onComplete, options, onProgress)
 
     suspend fun updateSongCustomInfo(
         originalSong: SongItem,

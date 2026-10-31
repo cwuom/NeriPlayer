@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.data.settings.playback.toPlaybackSoundConfig
 import moe.ouom.neriplayer.data.ltw.validation.format
 import moe.ouom.neriplayer.core.player.audio.effects.AudioOutputRouteMonitor
 
+import moe.ouom.neriplayer.core.player.engine.datasource.ServerMediaLoadErrorPolicy
 import moe.ouom.neriplayer.core.player.lyrics.floating.FloatingLyricsContent
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
@@ -41,7 +42,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
@@ -68,7 +68,6 @@ import moe.ouom.neriplayer.core.player.lyrics.releaseLiveLyricSurfaces
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalTranslatedLyrics
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
-import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.network.PlaybackNetworkResumeOwner
 import moe.ouom.neriplayer.core.player.service.notification.FlymeStatusBarLyricSupport
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
@@ -517,7 +516,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
     val mediaSourceFactory = DefaultMediaSourceFactory(
         finalDataSourceFactory,
         extractorsFactory
-    )
+    ).setLoadErrorHandlingPolicy(ServerMediaLoadErrorPolicy())
 
     // USB 独占优先保留解码器的原生整数 PCM, 别在进入 native USB 前强行改成 float
     val enableFloatOutput = shouldEnableFloatPlaybackOutput(
@@ -696,6 +695,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
                 return
             }
 
+            if (handleServerPlaybackError(error)) return
             val currentSong = _currentSongFlow.value
             val currentUrl = _currentMediaUrl.value
             val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
@@ -1836,6 +1836,7 @@ internal fun PlayerManager.scheduleUsbAudioSinkReconfiguration(
 }
 
 internal fun PlayerManager.releaseImpl() {
+    serverRecoveryPosition = null
     if (!initialized) {
         NPLogger.d("NERI-PlayerManager", "release(): ignored because manager is already released")
         return
@@ -1984,16 +1985,4 @@ private fun PlayerManager.finishPlaybackRelease() {
     UsbExclusiveSessionController.forceStopAllSessions("player_release_finally")
     UsbExclusiveSystemSoundGuard.forceRelease(application, "player_release_finally")
     StartupAudioFocusController.forceRelease("player_release_finally")
-}
-
-/**
- * 歌词来源相关设置变更后必须清空全部歌词缓存。
- *
- * 这些缓存都没有 TTL, 只靠设置变化时主动失效来维持一致, 否则改完设置后
- * 当前歌曲会继续沿用旧来源的歌词, 表现为"设置没生效"。
- */
-internal fun PlayerManager.evictLyricCachesForSourcePreferenceChange() {
-    PlayerLyricsProvider.clearLyricsCaches(neteaseLyricsCache, ytMusicLyricsCache)
-    _lyricsPreferenceRevisionFlow.update { it + 1L }
-    syncExternalBluetoothLyrics(_currentSongFlow.value)
 }

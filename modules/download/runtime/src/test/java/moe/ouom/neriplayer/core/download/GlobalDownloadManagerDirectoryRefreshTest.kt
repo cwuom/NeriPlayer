@@ -85,6 +85,7 @@ class GlobalDownloadManagerDirectoryRefreshTest {
             withTimeout(2_000L.milliseconds) {
                 refresh.await()
             }
+            fixture.awaitCleanup(operationId, scanWaiter)
             assertEquals(ManagedLibraryProcessingState.Idle, ManagedLibraryProcessingCoordinator.state.value)
             assertTrue(GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(waiting, false))
             ManagedLibraryProcessingCoordinator.waitingForRetry(fixture.context, operationId)
@@ -164,14 +165,20 @@ class GlobalDownloadManagerDirectoryRefreshTest {
                 synchronized(GlobalDownloadManager) { GlobalDownloadManager.refreshWaiters.single() }
             }
 
+        suspend fun awaitCleanup(operationId: String, scanWaiter: CompletableDeferred<ManagedLibraryRefreshOutcome>) {
+            // await() 返回时完成回调可能仍在运行，先等待本测试的登记释放
+            withTimeout(2_000L.milliseconds) {
+                while (synchronized(GlobalDownloadManager) {
+                    operationId in GlobalDownloadManager.directoryRefreshOperations ||
+                        scanWaiter in GlobalDownloadManager.refreshWaiters
+                }) delay(5L.milliseconds)
+            }
+        }
+
         suspend fun close(operationId: String, scanWaiter: CompletableDeferred<ManagedLibraryRefreshOutcome>) {
             scanWaiter.complete(ManagedLibraryRefreshOutcome.Failed("test finished"))
             refreshTask?.cancelAndJoin()
-            withTimeout(2_000L.milliseconds) {
-                while (synchronized(GlobalDownloadManager) {
-                    scanWaiter in GlobalDownloadManager.refreshWaiters
-                }) delay(5L.milliseconds)
-            }
+            awaitCleanup(operationId, scanWaiter)
             `when`(editor.commit()).thenReturn(true)
             ManagedLibraryProcessingCoordinator.complete(context, operationId)
             activeScan.cancelAndJoin()

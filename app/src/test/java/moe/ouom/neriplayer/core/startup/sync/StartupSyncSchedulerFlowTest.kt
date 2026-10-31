@@ -10,11 +10,13 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
 import org.mockito.Mockito.`when`
+import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockConstruction
 import org.mockito.Mockito.mockingDetails
@@ -24,6 +26,16 @@ import org.mockito.Mockito.mockStatic
 class StartupSyncSchedulerFlowTest {
 
     private val context = mock(Context::class.java).also { `when`(it.applicationContext).thenReturn(it) }
+
+    @Test
+    fun `unavailable credentials skip the current startup scheduling round and permit a later retry`() = runTest {
+        for (provider in listOf("github", "webdav")) {
+            val skipped = runScheduler(SyncSettings(gitHubReady = true, webDavReady = true, unavailableProvider = provider))
+            assertEquals(emptyList<String>(), skipped.scheduled)
+            val retried = runScheduler(SyncSettings(gitHubReady = true, webDavReady = true))
+            assertEquals(listOf("github@0", "webdav@0"), retried.scheduled)
+        }
+    }
 
     @Test
     fun `opening the app queues both providers before any startup delay`() = runTest {
@@ -102,7 +114,8 @@ class StartupSyncSchedulerFlowTest {
         val gitHubConfigured: Boolean = gitHubReady,
         val gitHubAutoSync: Boolean = gitHubReady,
         val webDavConfigured: Boolean = webDavReady,
-        val webDavAutoSync: Boolean = webDavReady
+        val webDavAutoSync: Boolean = webDavReady,
+        val unavailableProvider: String? = null
     )
 
     private class SchedulerRun(val scheduled: List<String>, val initialDelays: List<Long>, val storagesOpened: Int)
@@ -115,10 +128,16 @@ class StartupSyncSchedulerFlowTest {
         return mockConstruction(SecureTokenStorage::class.java) { storage, _ ->
             `when`(storage.isConfigured()).thenReturn(settings.gitHubConfigured)
             `when`(storage.isAutoSyncEnabled()).thenReturn(settings.gitHubAutoSync)
+            if (settings.unavailableProvider == "github") {
+                doAnswer { throw SyncStorageUnavailableException() }.`when`(storage).isConfigured()
+            }
         }.use { gitHubStorages ->
             mockConstruction(WebDavStorage::class.java) { storage, _ ->
                 `when`(storage.isConfigured()).thenReturn(settings.webDavConfigured)
                 `when`(storage.isAutoSyncEnabled()).thenReturn(settings.webDavAutoSync)
+                if (settings.unavailableProvider == "webdav") {
+                    doAnswer { throw SyncStorageUnavailableException() }.`when`(storage).isConfigured()
+                }
             }.use { webDavStorages ->
                 StartupSyncScheduler(
                     context = context,

@@ -152,6 +152,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricSeekPosition
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
@@ -376,6 +377,7 @@ internal fun resolveNowPlayingPlaybackSourceType(
     if (isLocalSong || isNeteaseLocalFallback) return PlaybackSourceType.LOCAL
 
     when (playbackAudioSource) {
+        PlaybackAudioSource.SUBSONIC -> return PlaybackSourceType.SUBSONIC
         PlaybackAudioSource.NETEASE -> return PlaybackSourceType.NETEASE
         PlaybackAudioSource.BILIBILI -> return PlaybackSourceType.BILIBILI
         PlaybackAudioSource.YOUTUBE_MUSIC -> return PlaybackSourceType.YOUTUBE_MUSIC
@@ -619,7 +621,7 @@ fun NowPlayingScreen(
     } else {
         playbackSongKeyAliases
     }
-    val currentCoverUrl = resolveNowPlayingCoverRequestUrl(
+    val currentCoverUrl = if (currentSong.hasKnownEmptyLocalCover()) null else resolveNowPlayingCoverRequestUrl(
         resolvedCoverUrl = resolvedCoverUrl,
         resolvedCoverSongKey = playbackSongKey,
         resolvedCoverOwnerRequired = playbackSongKey == null && currentSongVisualKey != null,
@@ -773,6 +775,15 @@ fun NowPlayingScreen(
     )
     val loadedLyricsState = lyricsLoadOwner.state
     val secondaryLyricsResolved = lyricsLoadOwner.secondaryResolved
+    LaunchedEffect(lyricsLoadOwner, lyricsLoadOwner.errorMessage) {
+        val message = lyricsLoadOwner.errorMessage ?: return@LaunchedEffect
+        val result = snackbarHostState.showNeriSnackbar(
+            message = composeResources.getString(CoreCommonR.string.server_lyrics_error, message),
+            actionLabel = composeResources.getString(CoreCommonR.string.server_retry),
+            withDismissAction = true
+        )
+        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) lyricsLoadOwner.retry()
+    }
     val lyrics = loadedLyricsState.lyrics
     val translatedLyrics = loadedLyricsState.translatedLyrics
     val rawLyricsText = loadedLyricsState.rawLyrics
@@ -1201,7 +1212,8 @@ fun NowPlayingScreen(
                                         coverCacheKey = coverSource.cacheKey,
                                         contentDescription = coverSource.contentDescription,
                                         modifier = modifier,
-                                        songKeyAliases = coverSource.songKeyAliases
+                                        songKeyAliases = coverSource.songKeyAliases,
+                                        clearCover = coverSource.clearCover
                                     )
                                 }
                             )
@@ -1614,7 +1626,7 @@ fun NowPlayingScreen(
                                 useWideLandscapeLayout, showCoverPageLyrics && !immersiveMode, coverLyricsAvailable
                             )
                             val embeddedLyricContent = buildNowPlayingSyncedLyricContent(
-                                plainLyrics, secondaryPlainLyrics, showSecondaryLyrics,
+                                lyrics, secondaryPlainLyrics, showSecondaryLyrics,
                                 usePhoneticTranslation, currentSong, totalOffset
                             )
                             val embeddedLyricStyle = NowPlayingEmbeddedLyricStyle(

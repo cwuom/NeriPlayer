@@ -84,11 +84,7 @@ class CloudMusicSearchApi(
 
     override suspend fun getSongInfo(id: String): SongDetails {
         return withContext(Dispatchers.IO) {
-            val songDetailUrl = "https://music.163.com/api/song/detail/?id=${id}&ids=[${id}]"
-            val songInfoJson = executeRequest(songDetailUrl) as String
-            val songData = json.decodeFromString<CloudMusicSongDetailResponse>(songInfoJson).songs.firstOrNull()
-                ?: throw IOException("找不到ID为 $id 的歌曲")
-
+            val metadata = getSongMetadataOnly(id)
             val (lyric, translatedLyric) = try {
                 fetchLyrics(id)
             } catch (error: CancellationException) {
@@ -97,16 +93,26 @@ class CloudMusicSearchApi(
                 NPLogger.w(TAG, "网易云歌词获取失败，继续使用歌曲详情: ${error.message.orEmpty()}")
                 null to null
             }
-            SongDetails(
-                id = id,
-                songName = songData.name,
-                singer = songData.artists.joinToString("/") { it.name },
-                album = songData.album.name,
-                coverUrl = songData.album.picUrl,
+            metadata.copy(
                 lyric = lyric,
                 translatedLyric = translatedLyric
             )
         }
+    }
+
+    suspend fun getSongMetadataOnly(id: String): SongDetails = withContext(Dispatchers.IO) {
+        val songDetailUrl = "https://music.163.com/api/song/detail/?id=${id}&ids=[${id}]"
+        val songInfoJson = executeRequest(songDetailUrl) as String
+        val songData = json.decodeFromString<CloudMusicSongDetailResponse>(songInfoJson).songs.firstOrNull()
+            ?: throw IOException("找不到ID为 $id 的歌曲")
+        SongDetails(
+            id = id,
+            songName = songData.name,
+            singer = songData.artists.joinToString("/") { it.name },
+            album = songData.album.name,
+            coverUrl = songData.album.picUrl,
+            lyric = null
+        )
     }
 
     private suspend fun fetchLyrics(id: String): Pair<String?, String?> {

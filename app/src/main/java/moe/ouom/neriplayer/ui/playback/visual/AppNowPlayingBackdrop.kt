@@ -61,7 +61,8 @@ private fun NowPlayingBlurRetentionEffect(
     effectOwner: NowPlayingBlurEffectOwner
 ) {
     val retentionRequest = NowPlayingBlurRetentionRequest(
-        blurAvailable, request.background.blurEnabled, request.cover.songKey, request.cover.url
+        blurAvailable, request.background.blurEnabled, request.cover.songKey,
+        request.cover.url, request.cover.clearCover
     )
     SideEffect(nowPlayingBlurRetentionAction(effectOwner, retentionRequest))
 }
@@ -83,21 +84,22 @@ internal fun nowPlayingBackdropFrame(
     blurState: NowPlayingBlurState,
     blurAvailable: Boolean
 ): NowPlayingBackdropFrame {
+    val effectiveCover = if (cover.clearCover) cover.copy(url = null) else cover
     val blurStrength = background.blurAmount.coerceIn(0f, 500f)
-    val effectiveBlurStrength = resolvedNowPlayingBlurStrength(cover.url, blurStrength)
-    val assetVersion = nowPlayingBlurAssetVersion(cover)
+    val effectiveBlurStrength = resolvedNowPlayingBlurStrength(effectiveCover.url, blurStrength)
+    val assetVersion = nowPlayingBlurAssetVersion(effectiveCover)
     return NowPlayingBackdropFrame(
-        cover = cover,
+        cover = effectiveCover,
         background = background,
         blurState = blurState,
-        hasCoverBlur = hasNowPlayingCoverBlur(
-            blurAvailable, background.blurEnabled, cover.url, blurState.stableCoverUrl
+        hasCoverBlur = !effectiveCover.clearCover && hasNowPlayingCoverBlur(
+            blurAvailable, background.blurEnabled, effectiveCover.url, blurState.stableCoverUrl
         ),
         blurStrength = effectiveBlurStrength,
-        imageSizePx = resolvedNowPlayingBlurImageSizePx(cover.url),
+        imageSizePx = resolvedNowPlayingBlurImageSizePx(effectiveCover.url),
         assetVersion = assetVersion,
         requestKey = nowPlayingBlurRequestKey(
-            cover.url, cover.songKey, effectiveBlurStrength, assetVersion
+            effectiveCover.url, effectiveCover.songKey, effectiveBlurStrength, assetVersion
         ),
         latestRequestKey = null
     )

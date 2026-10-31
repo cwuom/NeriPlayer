@@ -23,12 +23,12 @@ package moe.ouom.neriplayer.data.auth.youtube
  * Created: 2026/7/27
  */
 
-import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import moe.ouom.neriplayer.platform.youtube.api.auth.YouTubeCookieSupport
 import moe.ouom.neriplayer.platform.youtube.auth.SharedPreferencesYouTubeCookieRotationStateStore
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationOutcome
 import moe.ouom.neriplayer.platform.youtube.auth.YouTubeCookieRotator
 import moe.ouom.neriplayer.platform.youtube.auth.hasYouTubeRotationPrerequisites
+import moe.ouom.neriplayer.platform.youtube.auth.mergeYouTubeAuthBundle
 import moe.ouom.neriplayer.platform.youtube.auth.web.applyYouTubeWebCookies
 import moe.ouom.neriplayer.platform.youtube.auth.youtubeAuthRotationMutex
 import android.content.Context
@@ -100,7 +100,9 @@ class YouTubeAuthRotationWorker(
                 NPLogger.d(TAG, "skip rotation: YouTube is disabled")
                 return Result.success()
             }
-            val auth = host.readAuth().normalized()
+            val authStore = host.authStore
+            val snapshot = authStore.captureAuthSnapshot()
+            val auth = snapshot.auth
             if (!hasYouTubeRotationPrerequisites(auth.cookies)) {
                 NPLogger.d(TAG, "skip rotation: no usable session cookies")
                 return Result.success()
@@ -118,8 +120,16 @@ class YouTubeAuthRotationWorker(
                     force = true
                 )
                 if (result is YouTubeCookieRotationOutcome.Rotated) {
-                    host.persistRotatedCookies(result.cookies)
-                    syncRotatedCookiesToWebView(result.cookies)
+                    val updated = authStore.updateAuthIfCurrent(snapshot) { current ->
+                        mergeYouTubeAuthBundle(
+                            base = current,
+                            observedCookies = result.cookies,
+                            savedAt = System.currentTimeMillis()
+                        )
+                    } ?: return Result.success()
+                    if (!authStore.runIfCurrent(updated) { syncRotatedCookiesToWebView(result.cookies) }) {
+                        return Result.success()
+                    }
                 }
                 result
             }) {

@@ -22,25 +22,27 @@
 
 ## 模块结构
 
-自有 Android 库按业务域组织，由 [gradle/owned-modules.txt](../gradle/owned-modules.txt) 统一登记，共 15 个。一级领域使用 `modules/<领域>`，播放和下载保留规则与运行实现两个独立构建边界。远程音乐、歌词和元数据来源集中在 `:platform`，`api` 表达同库内部的请求协议职责；公共能力契约由模型和宿主接口表达。
+自有 Android 库按业务域组织，由 [gradle/owned-modules.txt](../gradle/owned-modules.txt) 统一登记，共 14 个。一级领域使用 `modules/<领域>`，播放和下载保留规则与运行实现两个独立构建边界。远程音乐、歌词和元数据来源集中在 `:platform`，`api` 表达同库内部的请求协议职责；公共能力契约由模型和宿主接口表达。
 
-- [`:common`](../modules/common/README.md)：共享工具、日志、文案、图标、语言能力和测试夹具。
-- [`:network`](../modules/network/README.md)：通用 HTTP、Range、网络解析和 Web 登录基础能力。
-- [`:model`](../modules/model/README.md)：按业务分类的数据模型、枚举和跨模块状态契约，不依赖项目实现。
-- [`:database`](../modules/database/README.md)：Room 数据库、实体、DAO、历史 schema 与版本升级。
-- [`:native`](../modules/native/README.md)：Native 崩溃处理、DSP 音效、USB 协议与 PCM 计算、独占传输和第三方 libusb，生成并打包 `lib_neri.so`。
-- [`:playback:logic`](../modules/playback/logic/README.md)：播放 policy、状态协调 runtime、PCM/audio 和队列 queue 规则，保持包级隔离。
-- [`:playback:runtime`](../modules/playback/runtime/README.md)：Media3 引擎、播放服务、音源解析、USB 输出、Native DSP 接入、浮窗与蓝牙歌词及宿主接入。
-- [`:download:logic`](../modules/download/logic/README.md)：下载准入、状态迁移、重试、调度、传输槽位、所有权、提交与元数据规则。
-- [`:download:runtime`](../modules/download/runtime/README.md)：下载执行、Room 队列、受管文件、迁移与恢复，以及 Worker 和 JobService。
-- [`:lyrics`](../modules/lyrics/README.md)：LRC/YRC/TTML 解析、转换、时间轴、翻译对齐、时间偏移，以及词幕（Lyricon）和 SuperLyric 接入。
-- [`:platform`](../modules/platform/README.md)：Bilibili、网易云、YouTube 的协议、账号、缓存和业务能力，跨平台评论，以及歌词来源、元数据搜索、匹配与回退。
-- [`:local`](../modules/local/README.md)：本地设置、媒体、歌单、历史与统计、备份、流量、存储统计与缓存清理，以及 Android 同步宿主适配。
-- [`:sync`](../modules/sync/README.md)：GitHub/WebDAV 传输、加密凭据状态、会话、兼容编解码、合并、并发保护与 Worker 策略。
-- [`:listentogether`](../modules/listentogether/README.md)：一起听协议、HTTP/WebSocket 传输、身份规则、会话、连接恢复、控制与播放同步。
-- [`:ltwlan`](../modules/ltwlan/README.md)：局域网房间、BeatSync 对时、发现、权限和设备媒体音量。
+| 模块 | 职责 |
+| --- | --- |
+| [`:common`](../modules/common/README.md) | 共享工具、日志、文案、图标、语言能力和测试夹具。 |
+| [`:network`](../modules/network/README.md) | 通用 HTTP、Range、网络解析和 Web 登录基础能力。 |
+| [`:model`](../modules/model/README.md) | 按业务分类的数据模型、枚举和跨模块状态契约，不依赖项目实现。 |
+| [`:database`](../modules/database/README.md) | Room 数据库、实体、DAO、历史 schema 与版本升级。 |
+| [`:native`](../modules/native/README.md) | Native 崩溃处理、DSP 音效、USB 协议与 PCM 计算、独占传输和第三方 libusb，生成并打包 `lib_neri.so`。 |
+| [`:playback:logic`](../modules/playback/logic/README.md) | 播放 policy、状态协调 runtime、PCM/audio 和队列 queue 规则，保持包级隔离。 |
+| [`:playback:runtime`](../modules/playback/runtime/README.md) | Media3 引擎、播放服务、音源解析、USB 输出、Native DSP 接入、浮窗与蓝牙歌词及宿主接入。 |
+| [`:download:logic`](../modules/download/logic/README.md) | 下载准入、状态迁移、重试、调度、传输槽位、所有权、提交与元数据规则。 |
+| [`:download:runtime`](../modules/download/runtime/README.md) | 下载执行、Room 队列、受管文件、迁移与恢复，以及 Worker 和 JobService。 |
+| [`:lyrics`](../modules/lyrics/README.md) | LRC/YRC/TTML 解析、转换、时间轴、翻译对齐、时间偏移，以及词幕（Lyricon）和 SuperLyric 接入。 |
+| [`:platform`](../modules/platform/README.md) | Bilibili、网易云、YouTube 与 Subsonic 自建音乐服务器（预览版，缺乏充分测试）的协议、账号、缓存和业务能力，跨平台评论，以及歌词来源、元数据搜索、匹配与回退。 |
+| [`:local`](../modules/local/README.md) | 本地设置、媒体、歌单、历史与统计、备份、流量、存储统计与缓存清理，以及 Android 同步宿主适配。 |
+| [`:ltwlan`](../modules/ltwlan/README.md) | 局域网房间、BeatSync 对时、发现、权限和设备媒体音量。 |
+| [`:sync`](../modules/sync/README.md) | GitHub/WebDAV 传输、加密凭据状态、会话、兼容编解码、合并、并发保护与 Worker 策略。 |
+| [`:listentogether`](../modules/listentogether/README.md) | 一起听协议、HTTP/WebSocket 传输、身份规则、会话、连接恢复、控制与播放同步。 |
 
-`:app` 维护 Android 入口、Compose 页面和跨领域依赖组装。设置项生成由 `:ksp-annotations` / `:ksp-processor` 维护，上游歌词子模块为 `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`；`:hidden-api` 只为播放运行模块提供编译期接口桩，不随应用打包；`build-logic` 提供构建逻辑。`np-submodule/NeriPlayer-LTW` 是一起听 Cloudflare Workers 服务端，`np-submodule/miuix` 是未参与主应用构建的上游源码与文档树。这些不计入 15 个自有 Android 库。
+`:app` 维护 Android 入口、Compose 页面和跨领域依赖组装。设置项生成由 `:ksp-annotations` / `:ksp-processor` 维护，上游歌词子模块为 `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`；`:hidden-api` 只为播放运行模块提供编译期接口桩，不随应用打包；`build-logic` 提供构建逻辑。`np-submodule/NeriPlayer-LTW` 是一起听 Cloudflare Workers 服务端，`np-submodule/miuix` 是未参与主应用构建的上游源码与文档树。这些不计入 14 个自有 Android 库。
 
 依赖按实际职责维护，不由目录分类推导层级。`:model` 不依赖项目实现，`:common` 不依赖业务领域；数据库、存储计算、歌词解析与播放/下载规则不得反向依赖仓库或 Android 运行实现。`:platform` 内的业务仓库消费对应协议，API 不反向读取账号仓库、Room 或播放器状态，各平台仍保持包级依赖边界。`:local` 消费数据库与领域服务，客户端的账号、凭据刷新和存储能力通过窄接口注入。所有库禁止依赖 app 或形成循环。
 
@@ -82,8 +84,7 @@ python3 -B tools_pub/quality/module_boundaries.py
   底部常驻 `Mini Player`；Mini Player 支持横向滑动切歌。
 - 启动器快捷方式由 `LauncherShortcuts` 映射为继续播放、探索、媒体库和随机喜欢，
   只落到主标签或播放服务入口，不会绕过正常导航状态恢复。
-- `Library` 使用分页导航组织本地、收藏、网易云、YouTube Music、Bilibili
-  和 QQ 音乐占位；同时提供最近播放和播放统计入口。
+- `Library` 使用分页导航组织本地、收藏、音乐服务器（预览版）、网易云、YouTube Music 与 Bilibili；YouTube Music 入口可在设置中关闭，同时提供最近播放和播放统计入口。
 - 本地媒体库支持歌单/歌手二级分类；收藏页支持歌单/歌手/热点二级分类；
   网易云页支持歌单/专辑二级分类。
 - 本地歌手详情页由 `LocalArtistDetailScreen` 承载，支持播放全部、多选、
@@ -155,23 +156,19 @@ python3 -B tools_pub/quality/module_boundaries.py
   `NeteaseSongEncyclopediaRepository` 根据网易云歌曲身份加载百科，并使用限时内存缓存；
   曲目切换会取消旧请求并校验请求代次，避免旧歌结果覆盖新歌。艺人和创作团队等附加数据
   加载失败时只降级对应内容；本机听歌记录与在线百科分别展示。
-- **歌词来源**：
-  除平台歌词外，还包含 LRCLIB 外部歌词客户端；歌词编辑器提供单独的
-  “匹配”入口，可修改匹配关键字，先选择平台再搜索，并按平台临时缓存
-  搜索结果。切换平台过滤时直接更新已缓存候选，不会频繁重新请求；匹配结果会自动清理
-  标题、制作信息等非歌词行；排序按
-  歌名、歌手、专辑、时长和歌词类型综合计算，优先逐字歌词但保留普通歌词
-  候选。播放页支持原文歌词、翻译歌词、音译歌词、逐词歌词、歌词分享和手动编辑。
-  “设置 > 歌词设置”的“来源偏好”卡片可指定播放时优先使用的默认歌词来源
-  （自动 / 网易云 / 酷狗 / QQ 音乐 / LRCLIB / AMLL TTML），并开关
-  “优先使用逐词歌词”；默认跟随平台并优先逐词，逐词候选的排序可能与旧版不同。
-  按歌名和歌手搜索指定来源时，还会校验歌曲时长；时长未知或不符则回退到自动歌词。
-  在线来源歌曲先显示已缓存的歌词，再于后台尝试指定来源；匹配成功后替换，找不到时继续使用原有歌词。
-  当前歌词源缺少音译时会尝试从网易云补全音译，保留当前来源的原文和译文；来源自带音译以及用户手动编辑或清空的音译保持优先。
-  修改后会清理已缓存的歌词结果，
-  让新偏好立即生效。
-  “歌词偏移”卡片可分别调整网易云、QQ 音乐、酷狗、LRCLIB 和 AMLL TTML
-  歌词的默认偏移，并可单独或全部一键重置；后三者默认均为 0 ms。
+- **歌词来源与匹配**：
+  - **能力与编辑器匹配**：支持原文、翻译、音译、逐词歌词、歌词分享与手动编辑。除平台自带歌词外，内置 LRCLIB 外部歌词客户端。歌词编辑器提供独立的“匹配”入口，支持修改搜索关键字、先选平台再搜索，并按平台临时缓存结果；切换平台过滤直接复用缓存，不重复请求。匹配结果会自动清理标题、制作信息等非歌词行，并综合歌名、歌手、专辑、时长和歌词类型排序（优先逐词歌词，同时保留普通歌词候选）。
+  - **来源偏好与回退**：“设置 > 歌词设置 > 来源偏好”可指定默认歌词来源（`自动` / `网易云` / `酷狗` / `QQ 音乐` / `LRCLIB` / `AMLL TTML`）并开关“优先使用逐词歌词”，默认设为 `自动` 并开启优先逐词。按歌名和歌手检索指定来源时会校验时长，时长未知或不符则回退到自动歌词。在线歌曲先展示已缓存歌词，后台再请求指定来源，匹配成功后替换，未命中则保留原歌词。修改偏好会立即清理已缓存结果以生效。
+  - **B 站 CC 字幕**：属于独立设置项，默认开启，需登录哔哩哔哩账号后生效。
+  - **音译补全**：当前歌词源缺少音译时，会尝试从网易云补全音译并保留当前源的原文与译文；来源自带音译或用户手动编辑/清空的音译始终优先。
+  - **默认歌词偏移**：“歌词偏移”卡片支持分别调整 6 个来源的偏移量，可单独或一键全部重置：
+
+| 歌词来源 | 默认偏移 |
+| :--- | :--- |
+| 网易云 | `1000 ms` |
+| QQ 音乐 | `500 ms` |
+| 酷狗 / LRCLIB / AMLL TTML / B 站 CC | `0 ms` |
+
 - **词幕适配**：
   `LyriconManager` 向 Lyricon 与 SuperLyric 输出当前歌曲、播放状态、进度、
   逐字歌词与翻译歌词；进度通过独立的 200 ms feed loop 推送并使用时间锚点校准，
@@ -200,10 +197,10 @@ python3 -B tools_pub/quality/module_boundaries.py
   删除记录会和撤销操作一起进入合并策略，避免本地撤销后的歌曲在下一轮同步又被旧删除记录移除。
 - GitHub/WebDAV 同步使用本地生成的 UUID 作为设备标识，不依赖 `ANDROID_ID`。
 - 已配置且开启自动同步时，打开应用会立即提交持久同步任务，播放期间也会执行；双后端启用时，WebDAV 任务错开 10 秒。自动同步开关和同步格式升级确认仍决定任务是否允许执行。
-- GitHub 同步通过 Git Data API 在用户仓库中创建原始二进制 blob，再以预期 HEAD 的原子条件更新发布到默认分支；
-  读取使用 raw 内容，API 请求中的 Base64 只属于传输封装，不会改变仓库内保存的正文。
-  新同步使用 Protobuf 记录流和 ZSTD 内容分块，每个压缩对象不超过 2 MiB；
-  根清单提交完整快照，未变化的块不会再次上传。
+- GitHub 同步传输与 V4 归档格式：
+  - 内容采用 Protobuf 记录流和 ZSTD 内容分块，单个压缩对象不超过 2 MiB；根清单提交完整快照，未变更的分块直接复用不重传。
+  - 满足快速路径条件的提交通过 GraphQL `createCommitOnBranch` 配合 `expectedHeadOid` 原子发布；其他提交先通过 Git Data API 写入二进制 blob、tree 和 commit，再通过 GraphQL `updateRefs`（`beforeOid`，`force=false`）原子推进默认分支。路径选择取决于本次增量，而非整个归档的大小。
+  - 仓库内保存原始二进制正文，通过 raw 端点读取固定远端提交的内容；API 请求中的 Base64 仅作传输封装。
 - 新安装默认使用 V4；已有同步地址的旧安装首次启动新版会直接显示升级弹窗，新配置的地址在检测到传统云端数据或 V3 时提示升级。
   新同步格式不向下兼容，必须先将所有参与同步的设备更新到支持新格式的版本，再确认升级；确认后立即同步并迁移该地址的云端数据。
   迁移完整保留旧歌词，不再提供常驻有损压缩选项；该地址迁移完成后升级提示自动消失，失败或取消可以重试。
@@ -253,6 +250,3 @@ python3 -B tools_pub/quality/module_boundaries.py
 ---
 
 构建发布版与签名流程见 [CONTRIBUTING.md](../CONTRIBUTING.md#构建发布版--release-build)。
-
-
-局域网一起听新增 `:ltwlan`，负责房间传输、BeatSync 对时、发现、权限及设备媒体音量。详见 [LAN 模块说明](../modules/ltwlan/README.md) 与 [本地音乐接入准备](lan-local-audio-preparation.md)；后者是设计，尚未实现。

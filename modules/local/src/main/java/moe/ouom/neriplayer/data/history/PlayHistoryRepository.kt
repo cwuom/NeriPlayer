@@ -55,6 +55,7 @@ import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.store.preferences.SyncPreferences
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
 import moe.ouom.neriplayer.common.io.writeTextAtomically
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
@@ -415,8 +416,18 @@ class PlayHistoryRepository private constructor(
         }
     }
 
-    fun record(song: SongItem, now: Long = System.currentTimeMillis()) {
+    private fun launchHistoryMutation(block: suspend () -> Unit) {
         scope.launch {
+            try {
+                block()
+            } catch (_: SyncStorageUnavailableException) {
+                NPLogger.w("PlayHistoryRepo", "Secure sync storage unavailable; local history and sync metadata retained")
+            }
+        }
+    }
+
+    fun record(song: SongItem, now: Long = System.currentTimeMillis()) {
+        launchHistoryMutation {
             historyMutex.withLock {
                 if (!ensureInitializedLocked()) return@withLock
                 NPLogger.d("PlayHistoryRepo", "record() called: songId=${song.id}, name=${song.name}")
@@ -475,7 +486,7 @@ class PlayHistoryRepository private constructor(
         now: Long = System.currentTimeMillis()
     ) {
         val normalizedPositionMs = positionMs.coerceAtLeast(0L)
-        scope.launch {
+        launchHistoryMutation {
             historyMutex.withLock {
                 if (!ensureInitializedLocked()) return@withLock
                 val current = _history.value
@@ -527,7 +538,7 @@ class PlayHistoryRepository private constructor(
         updatedSong: SongItem,
         triggerSync: Boolean = true
     ) {
-        scope.launch {
+        launchHistoryMutation {
             historyMutex.withLock {
                 if (!ensureInitializedLocked()) return@withLock
                 NPLogger.d(
@@ -564,7 +575,7 @@ class PlayHistoryRepository private constructor(
     }
 
     fun clear() {
-        scope.launch {
+        launchHistoryMutation {
             historyMutex.withLock {
                 if (!ensureInitializedLocked()) return@withLock
                 val current = _history.value
@@ -595,7 +606,7 @@ class PlayHistoryRepository private constructor(
             return
         }
 
-        scope.launch {
+        launchHistoryMutation {
             historyMutex.withLock {
                 if (!ensureInitializedLocked()) return@withLock
                 val current = _history.value

@@ -34,6 +34,7 @@ import moe.ouom.neriplayer.network.http.awaitResponse
 import moe.ouom.neriplayer.network.http.isTransientHttp2StreamReset
 import moe.ouom.neriplayer.common.io.readBytesLimited
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.network.http.nonReplayable
 import okhttp3.Cookie
@@ -1058,6 +1059,61 @@ class NeteaseClient(
             params = buildNeteasePlaylistAddTracksParams(playlistId, songIds),
             usePersistedCookies = true
         )
+    }
+
+    internal fun createVerifiedPlaylistAdder(playlistId: Long): (suspend (List<Long>) -> String?)? {
+        val session = sessionStore.currentSession()
+        if (!session.hasLogin()) return null
+        var verificationRequested = false
+        var checkToken = ""
+        return add@{ songIds ->
+            if (sessionStore.currentSession() !== session) return@add "{\"code\":301}"
+            if (!verificationRequested) {
+                verificationRequested = true
+                checkToken = playlistVerificationToken()
+            }
+            if (sessionStore.currentSession() !== session) return@add "{\"code\":301}"
+            if (checkToken.isBlank()) return@add null
+            requestVerifiedPlaylistAdd(
+                session,
+                buildNeteasePlaylistAddTracksParams(playlistId, songIds, checkToken)
+            )
+        }
+    }
+
+    private suspend fun requestVerifiedPlaylistAdd(
+        session: NeteaseRequestSession,
+        params: Map<String, Any>
+    ): String {
+        suspend fun addBatch(): String = requestCancellable(
+            url = "https://music.163.com/weapi/playlist/manipulate/tracks",
+            params = params,
+            session = session
+        )
+        val response = addBatch()
+        if (runCatching { JSONObject(response).optInt("code") }.getOrNull() != 301) return response
+        if (sessionStore.currentSession() !== session) return "{\"code\":301}"
+        try {
+            withContext(Dispatchers.IO) { ensureWeapiSession(session) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            NPLogger.w("NERI-NeteaseClient", "Verified playlist session refresh failed")
+        }
+        if (sessionStore.currentSession() !== session) return "{\"code\":301}"
+        return addBatch()
+    }
+
+    private suspend fun playlistVerificationToken(): String {
+        return try {
+            // 歌单写入与评论沿用同一个网页业务校验令牌
+            commentCheckToken()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            NPLogger.w("NERI-NeteaseClient", "Playlist verification unavailable")
+            ""
+        }
     }
 
     @Throws(IOException::class)

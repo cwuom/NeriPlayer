@@ -17,6 +17,49 @@ class ManagedDownloadedAudioMetadataDecoderTest {
     }
 
     @Test
+    fun `explicitly absent flat original cover does not fall back to a nested cover`() {
+        val root = JSONObject()
+            .put("originalCoverUrl", "")
+            .put("coverUrl", "https://example.com/current.jpg")
+            .put("restorableMetadata", restorable().toJson())
+
+        assertEquals("", decode(root).originalCoverUrl)
+        assertEquals("https://example.com/current.jpg", decode(root).coverUrl)
+    }
+
+    @Test
+    fun `original cover keeps explicit absence while other blank values fall back to baseline`() {
+        val cases = listOf(
+            null to "baseline-cover",
+            JSONObject.NULL to "baseline-cover",
+            "" to "",
+            " \t " to "baseline-cover",
+            "null" to "null",
+            " padded " to " padded ",
+            42 to "42",
+            true to "true"
+        )
+        cases.forEach { (raw, expected) ->
+            val root = JSONObject()
+                .put("originalCoverUrl", raw)
+                .put("restorableMetadata", restorable().toJson())
+            assertEquals("originalCoverUrl: $raw", expected, decode(root).originalCoverUrl)
+        }
+    }
+
+    @Test
+    fun `explicitly absent nested original cover survives metadata decoding`() {
+        val root = JSONObject().put(
+            "restorableMetadata",
+            restorable().copy(
+                baseline = ManagedDownloadRestorableMetadata.Baseline(coverReference = "")
+            ).toJson()
+        )
+
+        assertEquals("", decode(root).originalCoverUrl)
+    }
+
+    @Test
     fun `nonblank fields preserve whitespace literal null and JSON coercion`() {
         val cases = listOf(
             null to null,
@@ -143,7 +186,7 @@ class ManagedDownloadedAudioMetadataDecoderTest {
             val root = JSONObject().put("restorableMetadata", nested.toJson())
             listOf(
                 "stableKey", "name", "artist", "customName", "customArtist",
-                "originalName", "originalArtist", "originalCoverUrl", "coverPath"
+                "originalName", "originalArtist", "coverPath"
             ).forEach { root.put(it, raw) }
 
             val metadata = decode(root)
@@ -404,7 +447,6 @@ class ManagedDownloadedAudioMetadataDecoderTest {
         MetadataField("customArtist") { it.customArtist },
         MetadataField("originalName") { it.originalName },
         MetadataField("originalArtist") { it.originalArtist },
-        MetadataField("originalCoverUrl") { it.originalCoverUrl },
         MetadataField("mediaUri") { it.mediaUri },
         MetadataField("channelId") { it.channelId },
         MetadataField("audioId") { it.audioId },

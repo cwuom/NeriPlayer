@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lyric_offset_input_action">Tap value to edit</string>
+    <string name="lyric_offset_delay_limit">Delay −5 s</string>
+    <string name="lyric_offset_advance_limit">Advance +5 s</string>
+    <string name="lyric_offset_input_hint">Range: −5000 to +5000 ms, rounded to 50 ms. Positive values advance lyrics; negative values delay them.</string>
+    <string name="lyric_offset_input_invalid">Enter a whole number from −5000 to +5000</string>
+</resources>

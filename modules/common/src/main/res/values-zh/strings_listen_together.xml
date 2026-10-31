@@ -130,6 +130,7 @@
     <string name="settings_listen_together_server_default_desc">留空即可使用内置默认服务器</string>
     <string name="settings_listen_together_server_custom_desc">当前使用自定义一起听服务器，分享邀请时会附带服务器地址</string>
     <string name="settings_listen_together_server_input_label">服务器地址</string>
+    <string name="settings_listen_together_server_http_warning">HTTP 连接不加密，房间凭据和播放状态可能被他人读取。建议使用 HTTPS。</string>
     <string name="settings_listen_together_server_input_placeholder">示例：https://example.com，留空使用内置默认服务器</string>
     <string name="settings_listen_together_server_input_invalid">服务器地址格式无效，请输入完整的 http:// 或 https:// 地址</string>
     <string name="listen_together_error_room_id_length">房间 ID 需要为 %1$d 位</string>

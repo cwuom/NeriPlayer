@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -17,6 +18,9 @@ import moe.ouom.neriplayer.testing.awaitProcessDeathAtSeedCheckpoint
 import com.kyant.taglib.TagLib
 import java.io.File
 import java.io.IOException
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -34,6 +38,7 @@ import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecution
 import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
 import moe.ouom.neriplayer.core.download.manager.runtime.recoverPostCoreDownloadOperation
 import moe.ouom.neriplayer.core.download.manager.runtime.recoverPostCoreDownloadsForWorkerImpl
+import moe.ouom.neriplayer.core.download.manager.commit.runDownloadedAudioMetadataPostProcessing
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
@@ -288,6 +293,102 @@ class DownloadCorePublicationInstrumentedTest {
 
     @Test
     fun safUntaggableContainerCompletesWithSidecarMetadata() = assertUntaggableContainerCompletes(true)
+
+    @Test
+    fun privateWavWithUnsupportedEmbeddedCoverPublishesVerifiedSidecars() = assertWavSidecarPublication(false)
+
+    @Test
+    fun safWavWithUnsupportedEmbeddedCoverPublishesVerifiedSidecars() = assertWavSidecarPublication(true)
+
+    @Test
+    fun privateWavWithoutCoverStillEmbedsMetadata() = runBlocking<Unit> {
+        withStorage(false, fileName = "Memories of Kindness.wav") {
+            val pending = commit(silentWav(), mimeType = "audio/wav")
+            assertEquals(DownloadedAudioTagWriteOutcome.SUCCESS,
+                DownloadedAudioTagWriter.write(context, pending, song, null, standardizedLyricEmbeddingEnabled = true))
+        }
+    }
+
+    @Test
+    fun privateWavWithUnreadableCoverPreservesAudioAndFails() = runBlocking<Unit> {
+        withStorage(false, fileName = "Memories of Kindness.wav") {
+            val original = silentWav()
+            val pending = commit(original, mimeType = "audio/wav")
+            val references = AudioDownloadManager.DownloadedSidecarReferences(
+                coverReference = File(context.cacheDir, "missing-cover.png").toURI().toString(), expectedCover = true
+            )
+            assertEquals(DownloadedAudioTagWriteOutcome.FAILED,
+                DownloadedAudioTagWriter.write(context, pending, song, references, standardizedLyricEmbeddingEnabled = true))
+            assertArrayEquals(original, read(pending.reference))
+        }
+    }
+
+    private fun assertWavSidecarPublication(saf: Boolean) = runBlocking<Unit> {
+        withStorage(saf, fileName = "Memories of Kindness.wav") {
+            val original = silentWav()
+            val pending = commit(original, mimeType = "audio/wav")
+            val coverBytes = ByteArrayOutputStream().use { output ->
+                val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+                try {
+                    bitmap.eraseColor(android.graphics.Color.BLUE)
+                    assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                    output.toByteArray()
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            val cover = requireNotNull(ManagedDownloadStorage.commitCoverBytes(context, coverBytes, "wav-cover.png", "image/png"))
+            val lyrics = listOf("[00:00.00]original", "[00:00.00]translated", "[00:00.00]romanized")
+            val references = lyrics.mapIndexed { index, text ->
+                requireNotNull(ManagedDownloadStorage.overwriteLyric(context, "wav-$index.lrc", text))
+            }
+            val sidecars = AudioDownloadManager.DownloadedSidecarReferences(
+                coverReference = cover.reference, lyricReference = references[0],
+                translatedLyricReference = references[1], romanizedLyricReference = references[2],
+                expectedCover = true, expectedLyric = true, expectedTranslatedLyric = true, expectedRomanizedLyric = true,
+                lyricContent = lyrics[0], translatedLyricContent = lyrics[1], romanizedLyricContent = lyrics[2]
+            )
+            assertEquals(GlobalDownloadManager.MetadataPostProcessingResult.UNSUPPORTED_CONTAINER,
+                GlobalDownloadManager.runDownloadedAudioMetadataPostProcessing(context, pending, song, sidecars))
+            assertArrayEquals(original, read(pending.reference))
+            assertTrue(DownloadedAudioMetadataStore(1, 0L, "PublicationTest").persist(
+                context, pending, song, sidecars, downloadFinalized = true,
+                metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER,
+                resolveExistingSidecars = false, operationId = operationId
+            ))
+            val published = requireNotNull(ManagedDownloadStorage.promoteFinalizedPendingAudio(context, pending)).audio
+            assertFalse(published.isPendingAudioWrite)
+            assertArrayEquals(original, read(published.reference))
+            val metadata = requireNotNull(ManagedDownloadStorage.findMetadataForAudio(context, published))
+                .let { JSONObject(read(it.reference).toString(Charsets.UTF_8)) }
+            assertTrue(metadata.getBoolean("downloadFinalized"))
+            assertEquals("UNSUPPORTED_CONTAINER", metadata.getString("metadataEmbeddingState"))
+            assertArrayEquals(coverBytes, read(metadata.getString("coverPath")))
+            listOf("lyricPath", "translatedLyricPath", "romanizedLyricPath").forEachIndexed { index, key ->
+                assertEquals(lyrics[index], read(metadata.getString(key)).toString(Charsets.UTF_8))
+            }
+        }
+    }
+
+    private fun silentWav(): ByteArray {
+        val sampleRate = 8_000
+        val pcm = ByteArray(sampleRate * 2 * 13 / 10)
+        return ByteBuffer.allocate(44 + pcm.size).order(ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray(Charsets.US_ASCII))
+            putInt(36 + pcm.size)
+            put("WAVEfmt ".toByteArray(Charsets.US_ASCII))
+            putInt(16)
+            putShort(1)
+            putShort(1)
+            putInt(sampleRate)
+            putInt(sampleRate * 2)
+            putShort(2)
+            putShort(16)
+            put("data".toByteArray(Charsets.US_ASCII))
+            putInt(pcm.size)
+            put(pcm)
+        }.array()
+    }
 
     private fun assertUntaggableContainerCompletes(saf: Boolean) = runBlocking {
         withStorage(saf, fileName = "Memories of Kindness.webm") {
@@ -1676,7 +1777,8 @@ class DownloadCorePublicationInstrumentedTest {
         suspend fun commit(
             bytes: ByteArray = payload,
             ownerOperationId: String = operationId,
-            ownerStableKey: String = song.stableKey()
+            ownerStableKey: String = song.stableKey(),
+            mimeType: String = "audio/mpeg"
         ): ManagedDownloadStorage.StoredEntry {
             val working = File.createTempFile("core-", ".mp3", context.cacheDir).apply { writeBytes(bytes) }
             val pendingMetadata = JSONObject()
@@ -1692,7 +1794,7 @@ class DownloadCorePublicationInstrumentedTest {
                 .toString()
             return try {
                 ManagedDownloadStorage.saveAudioFromTemp(
-                    context = context, tempFile = working, fileName = fileName, mimeType = "audio/mpeg",
+                    context = context, tempFile = working, fileName = fileName, mimeType = mimeType,
                     expectedSizeBytes = bytes.size.toLong(), transferSizeVerified = true,
                     pendingMetadataJson = pendingMetadata,
                     seedMetadataJson = JSONObject(pendingMetadata).put("artifactState", "CORE_COMMITTED").toString()

@@ -25,26 +25,18 @@
 
 维护文档时建议按用途拆开看：
 
-- [README.md](README.md)
-  - 面向用户和新贡献者，说明项目定位、核心特性、能力边界、安装构建、同步与隐私。
-- [docs/implementation.md](docs/implementation.md)
-  - 说明构建版本、15 个自有库的职责、入口与导航、播放与缓存、数据来源和下载备份。
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-  - 面向开发者，说明真实模块边界、扩展路径、测试和提交要求。
-- [docs/kotlin-helpers.md](docs/kotlin-helpers.md)
-  - 说明请求代次、单位、播放器读取和协程结果等辅助工具的用法与边界。
-- [tools_pub/quality/README.md](tools_pub/quality/README.md)
-  - 说明 CRAP、模块归属、依赖边界检查的范围、命令和验证限制。
-- [modules/native/src/main/cpp/README.md](modules/native/src/main/cpp/README.md)
-  - 说明 NeriPlayer 自有 Native 源码的替代授权范围、第三方排除项和
-    外部贡献所需的显式双授权声明。
-- [modules/native/src/main/cpp/tests/usb/config/host-gate-contract.md](modules/native/src/main/cpp/tests/usb/config/host-gate-contract.md)
-  - 说明公开 Native USB host 门禁、CI 覆盖与真实设备验证边界。
-- [modules/native/src/main/cpp/tests/usb/corpus/README.md](modules/native/src/main/cpp/tests/usb/corpus/README.md) 与
-  [modules/native/src/main/cpp/tests/usb/fixtures/README.md](modules/native/src/main/cpp/tests/usb/fixtures/README.md)
-  - 说明公开测试语料/夹具只能使用合成或可审计资料，真实设备证据留在私有目录。
-- [np-submodule/NeriPlayer-LTW/README.md](https://github.com/TheSmallHanCat/NeriPlayer-LTW#readme)
-  - 面向一起听服务端部署者，说明 Worker API、事件模型、部署和本地检查。
+| 文档 | 用途 |
+| --- | --- |
+| [README](README.md) | 面向用户和新贡献者，说明项目定位、核心特性、能力边界、安装构建、同步与隐私。 |
+| [实现概览](docs/implementation.md) | 构建版本、15 个自有库的职责、入口与导航、播放与缓存、数据来源和下载备份。 |
+| [贡献指南](CONTRIBUTING.md) | 面向开发者，说明真实模块边界、扩展路径、测试和提交要求。 |
+| [Kotlin 辅助工具](docs/kotlin-helpers.md) | 请求代次、单位、播放器读取和协程结果等辅助工具的用法与边界。 |
+| [音乐服务器 API](docs/music-server-api.md) | **预览版本，缺乏充分测试。** 实际使用的 HTTP 接口、认证、来源身份与缓存约定；核心文件职责见平台模块 README。 |
+| [质量门禁](tools_pub/quality/README.md) | CRAP、模块归属、依赖边界检查的范围、命令和验证限制。 |
+| [Native 源码授权](modules/native/src/main/cpp/README.md) | NeriPlayer 自有 Native 源码的替代授权范围、第三方排除项和外部贡献所需的显式双授权声明。 |
+| [Native USB host 门禁](modules/native/src/main/cpp/tests/usb/config/host-gate-contract.md) | 公开 Native USB host 门禁、CI 覆盖与真实设备验证边界。 |
+| [USB 测试语料](modules/native/src/main/cpp/tests/usb/corpus/README.md)与[夹具](modules/native/src/main/cpp/tests/usb/fixtures/README.md) | 公开测试语料/夹具只能使用合成或可审计资料，真实设备证据留在私有目录。 |
+| [一起听服务端](https://github.com/TheSmallHanCat/NeriPlayer-LTW#readme) | 面向服务端部署者，说明 Worker API、事件模型、部署和本地检查。 |
 
 行为变更如果影响用户理解，请同步更新 README；
 如果影响扩展方式、测试方式或模块边界，请同步更新 CONTRIBUTING。
@@ -53,26 +45,29 @@
 
 ### 开发环境 / Development Environment
 
-- **Android Studio**：最新稳定版
-- **JDK**：17 用于构建；运行 `:playback:runtime` JVM 测试另需 21
-- **Kotlin**：2.4.10，JVM target 17
-- **AGP**：9.4.1
-- **Gradle**：9.6.1
-- **compileSdk / targetSdk / minSdk**：37 / 36 / 28
-- **NDK**：`27.0.12077973`
-- **CMake**：`3.22.1`，由 Android 构建脚本固定指定
-- **Node.js**：22，用于一起听 Worker 检查
-- **版本名格式**：`<git短哈希>.<MMddHHmm>`
-- **Release APK 文件名**：`NeriPlayer-<versionName>[-abi].apk`
+| 组件 | 要求 |
+| --- | --- |
+| Android Studio | 最新稳定版 |
+| JDK | 编译目标为 17；运行 `:app` 和 `:playback:runtime` 的 Android 16 JVM 测试需 21 |
+| Kotlin | 2.4.10，JVM target 17 |
+| AGP | 9.4.1 |
+| Gradle | 9.6.1 |
+| compileSdk / targetSdk / minSdk | 37 / 36 / 28 |
+| NDK | `27.0.12077973` |
+| CMake | `3.22.1`，由 Android 构建脚本固定指定 |
+| Node.js | 22，用于一起听 Worker 检查 |
+| 版本名格式 | `<git短哈希>.<MMddHHmm>` |
+| Release APK 文件名 | `NeriPlayer-<versionName>[-abi].apk` |
 
 补充说明：
 
 - 仓库依赖 Git 子模块，首次克隆请使用 `--recursive`，或手动执行
   `git submodule update --init --recursive`。
 - `build-logic` 的 Java/Kotlin 编译目标为 17，`ksp-annotations` 与 `ksp-processor` 使用 JDK 17 工具链；
-  请安装 JDK 17，建议 Android Studio 的 Gradle JDK 和命令行 `JAVA_HOME` 也指向它。
-- `:playback:runtime` 的 JVM 测试通过 Java toolchain 使用 JDK 21 运行 Android 16 Robolectric sandbox。
-  运行该模块测试或 `verifyModularization` 前，还需安装可被 Gradle 发现的 JDK 21；生产字节码目标仍为 17。
+  请保留已安装的 JDK 17 供工具链使用。
+- `:app` 和 `:playback:runtime` 的 Android 16 Robolectric sandbox 需要 JDK 21。
+  运行完整测试或 `verifyModularization` 时请将 Gradle JDK / `JAVA_HOME` 设为 21，
+  并保留可被 Gradle 发现的 JDK 17 工具链；生产字节码目标仍为 17。
 - 构建脚本会读取 Git 短提交生成版本名，本地请确保已安装 Git。
 - 依赖版本由 `gradle/libs.versions.toml` 与各模块 `build.gradle.kts` 管理。
 - 应用只保留 `zh` 与 `en` 资源，见 `build-logic` 的 locale filter。
@@ -174,7 +169,7 @@
 
 - 不要提交 keystore、密码、Cookie、Token 或其他敏感信息。
 - 不要在 Issue / PR 中粘贴完整授权信息。
-- 完整配置导出文件会包含平台授权和同步凭据，不能作为公开测试附件。
+- 配置导出默认不包含登录态（`includeLoginState=false`）。勾选包含登录态后，导出文件会携带平台授权及 GitHub/WebDAV 同步凭据；此类含凭据的配置文件严禁公开上传或作为测试附件。
 
 ---
 
@@ -189,11 +184,11 @@
 - 播放：`:playback:logic` 集中 policy/runtime/audio/queue，`:playback:runtime` 维护引擎、服务、USB、音源解析与接入。policy 的九个叶子包保持窄依赖，USB policy 归运行库；下载只能通过 `PlayerDownloadAccess` 调用。
 - 下载：`:download:logic` 维护可复用规则与基础存储工具，`:download:runtime` 维护 Room、SAF、恢复和服务。规则不得依赖运行实现，Worker 与 JobService 的类全名保持稳定。
 - 歌词：`:lyrics` 维护解析、转换、共用时间偏移和词幕输出。SDK 和位置推送位于同库 `lyrics/lyricon`，`lyrics/output` 管理异步请求代次、取消与偏移快照；播放器通过窄加载端口提供歌词和快照。歌词库不依赖平台或播放器实现。
-- 平台：`:platform` 维护 Bilibili、网易云和 YouTube 的请求协议、账号、缓存与业务，以及评论、歌词来源和元数据搜索、匹配与回退。`api` 是同库协议职责，禁止反向读取账号仓库、Room 和播放器；各平台按包保持依赖边界。YouTube JS assets 和 consumer R8 规则随平台维护，解析能力通过 `api(:lyrics)` 对外提供。
+- 平台：`:platform` 维护 Bilibili、网易云、YouTube 及 Subsonic 自建音乐服务器（预览版，缺乏充分测试）的请求协议、账号、缓存与业务，以及评论、歌词来源和元数据搜索、匹配与回退。`api` 是同库协议职责，禁止反向读取账号仓库、Room 和播放器；各平台按包保持依赖边界。YouTube JS assets 和 consumer R8 规则随平台维护，解析能力通过 `api(:lyrics)` 对外提供。
 - 本地数据：`:local` 按设置、媒体、歌单、统计、备份、流量与同步接入分包，维护业务映射、宿主接口和 WorkManager 适配。设置 schema 在此运行 KSP，页面渲染留在 app。
 - 同步：`:sync` 同时维护 GitHub/WebDAV 传输、加密凭据、设备身份、因果计数器、会话、清洗、合并与 Worker 策略。传输和计算组件仍受各自依赖白名单约束，本地仓库适配位于 `:local`；删除记录与 mutation version 原子提交。
 - 一起听：`:listentogether` 维护协议、传输、身份规则和客户端会话。协议只使用模型、序列化与标准库；业务通过宿主接口接入播放器、资源和 Android 服务。
-- 应用与工具：`:app` 维护 Android 入口、Compose 页面和依赖组装；KSP 工具、上游歌词子模块、`build-logic` 和一起听服务端不计入 15 个库。Miuix 的上游源码与文档树不参与主应用构建。
+- 应用与工具：`:app` 维护 Android 入口、Compose 页面和依赖组装；KSP 工具、上游歌词子模块、`build-logic` 和一起听服务端不计入 14 个库。Miuix 的上游源码与文档树不参与主应用构建。
 
 所有库禁止引用 app、页面或 `AppContainer`，依赖不得形成循环；`:playback:runtime` 内部可以使用自己的 `PlayerManager`。设置通过 provider 按需读取，HTTP 客户端、账号与设备令牌由宿主注入，不通过全局容器绕过接口。Room 业务映射随本地或平台仓库维护；数据库和规则组件不得反向引用运行实现。
 
@@ -247,9 +242,8 @@
   - `ui/component/` 根目录中的同名文件主要是旧包兼容入口，新增实现应放入
     `lyrics/`、`playback/`、`download/`、`navigation/` 等职责子包。
 
-- `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/`
-  - `LibraryScreen.kt` 负责媒体库顶层分类，本地内容可在歌单/歌手之间切换，
-    收藏页可展示歌单、已关注艺术家和热点歌单。
+- `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/library/`
+  - `LibraryScreen.kt` 负责媒体库顶层分类：本地内容可在歌单/歌手之间切换，收藏页展示歌单、已关注艺术家和热点歌单，并提供自建音乐服务器入口（预览版）。
   - `LocalArtistLibraryGrid.kt` 展示本地艺术家网格、空状态和艺术家卡片。
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/playlist/`
@@ -441,8 +435,8 @@
   不能把缓存命中或本地单测当作真实账号/网络稳定性证明；长音频大幅 Seek 会走
   更短的启动恢复窗口，仍需验证真实网络下的体验。
 - 状态栏歌词依赖厂商私有能力，当前仅适用于部分支持设备。
-- `RuntimeShader` 流体/音频响应背景只在 Android 13+ 启用；封面模糊与高级模糊
-  只在 Android 12+ 启用，修改动效时必须保留低版本降级路径。
+- `RuntimeShader` 流体/音频响应背景与高级模糊只在 Android 13+ 启用；
+  封面模糊支持 Android 9+，修改动效时必须保留低版本降级路径。
 - 歌词音译显示依赖平台返回的音译歌词或内嵌逐字歌词的 phonetic 字段；
   当前没有音译数据时，不应强行合成或展示空的第二行。
 - 歌词分享会通过 `FileProvider` 分享缓存目录中的歌词卡片文件；
@@ -490,8 +484,8 @@
   清单不存在时才读取旧 `backup.json`、`backup-raw.bin` GZIP 与 `backup.bin` Base64；
   8/12/16 MiB 安全限制仅适用于旧格式读取。V3 仅供读取迁移，未知未来版本须明确拒绝；
   所有同步设备须支持 V4，传统数据或 V3 迁移须先确认升级。
-- GitHub 小归档通过 GraphQL `createCommitOnBranch` 和 `expectedHeadOid` 同时发布对象、
-  清单和清理；较大归档通过 Git Data API 的 blob/tree/commit 写入仓库，以 GraphQL
+- GitHub 满足快速路径条件的提交通过 GraphQL `createCommitOnBranch` 和 `expectedHeadOid` 同时发布对象、
+  清单和清理；其他提交通过 Git Data API 的 blob/tree/commit 写入仓库，以 GraphQL
   `updateRefs` 的 `beforeOid` 和 `force=false` 原子发布。上传请求的 Base64 只是传输封装，
   仓库正文仍为原始二进制；读取固定分支头并使用 raw 内容。
 - WebDAV 使用 `If-None-Match: *` 创建不可变对象和首次清单；每次发布前重新核对清单指纹，
@@ -824,12 +818,6 @@
 
 ---
 
-### 局域网一起听扩展
-
-`:ltwlan` 维护进程内 Java-WebSocket 房间、客户端传输、对时、发现和调度。共享契约在 `:model/data/model/lan`；播放器适配在 `:playback:runtime/core/player/lan`；app 只组装依赖、反馈和界面。此模式不改变云端 Worker 协议。模型层 `listenTogetherTrackKey` 与原云端包装函数共用身份规则。
-
-修改时运行 `:ltwlan:verifyCrap`、`:ltwlan:lintDebug`、`:app:verifyDomainDependencies` 及 LAN/播放器/设置的对应测试；同时维护自有模块登记、包归属、核心域依赖、行数清单、中英文资源与设置搜索。系统媒体音量通过 AudioManager 操作，不使用播放器增益。上游 JS 固定版本、MIT 许可与文件 hash 一起维护；JVM 测试、合成播放端口和真实声音输出是三种不同证据。
-
 ### 调试与日志 / Debugging & Logs
 
 - 开发者模式开启方式：设置页连续点击**版本号** 7 次。
@@ -855,7 +843,7 @@ adb logcat | grep NeriPlayer
 
 ### 测试与提交流程 / Testing & PR
 
-自动 APK 构建等待已有 JVM、lint、Worker 与模拟器作业，并在打包前运行 Native Release host 检查。手动 Release 对 `target_ref` 实际检出的源码先运行 JVM 测试、lint、可用的模块边界检查与 Native Release host 检查，再构建签名 APK；验证报告以该提交 SHA 命名。历史版本使用自身的新旧 Native 测试入口，存在测试设施但缺少配置时拒绝发布。额外模拟器、sanitizer 和真实 DAC 验证按相关变更风险执行，不把真实设备作为每次发布的前置条件。
+自动 CI 的候选 APK 可与测试并行构建，打包前运行 Native Release host 检查；最终发布等待 JVM、lint、Worker 与模拟器作业完成，并核验候选产物身份和测试报告。手动 Release 会针对 `target_ref` 实际检出的源码依次运行 JVM 测试、lint、可用的模块边界检查与 Native Release host 检查，验证报告以目标提交 SHA 命名。`test_release` 默认为 `true`，生成未签名测试 APK 与草稿预发布；设为 `false` 时才构建签名 APK 并正式发布。手动流程不包含完整主 CI 的模拟器、Worker 与 CRAP 矩阵。历史版本使用其对应的新旧 Native 测试入口，若存在测试设施但缺少配置则拒绝发布。额外的模拟器、sanitizer 和真实 DAC 验证按变更风险执行，真实硬件并非每次发布的前置条件。
 
 提交前建议至少完成以下检查：
 
@@ -1023,5 +1011,3 @@ Commit 信息建议遵循 Conventional Commits，
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)：社区行为准则
 
 如你准备提交较大的结构性改动，建议先开 Issue 对齐方向。
-
-LAN 主控权限通过 `playback.lanHostPermissions` 原子保存，宿主注入读取/写入端口，创建房间在首次 WELCOME 前完成读取。UI 订阅房间状态实时禁用成员控制，但服务端仍独立校验权限；加入/重连期间不沿用旧快照开放按钮。

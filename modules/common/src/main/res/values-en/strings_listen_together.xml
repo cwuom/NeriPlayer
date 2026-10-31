@@ -130,6 +130,7 @@
     <string name="settings_listen_together_server_default_desc">Leave this empty to use the built-in default server. Invite links will not include a server address.</string>
     <string name="settings_listen_together_server_custom_desc">A custom Listen Together server is active. Invite links will include the server address.</string>
     <string name="settings_listen_together_server_input_label">Server Address</string>
+    <string name="settings_listen_together_server_http_warning">HTTP is unencrypted. Others may read room credentials and playback state. Use HTTPS when possible.</string>
     <string name="settings_listen_together_server_input_placeholder">Leave empty to use the built-in default server</string>
     <string name="settings_listen_together_server_input_invalid">Invalid server address. Enter a full http:// or https:// address.</string>
     <string name="listen_together_error_room_id_length">Room ID length must be %1$d.</string>

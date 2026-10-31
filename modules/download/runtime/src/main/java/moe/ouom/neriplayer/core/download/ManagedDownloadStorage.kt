@@ -596,7 +596,7 @@ object ManagedDownloadStorage {
         /** pending metadata 与正式 metadata 同名时, 为 pending 音频保留独立凭据 */
         override val pendingMetadataByAudioName: Map<String, DownloadedAudioMetadata> = emptyMap(),
         /** 本轮根目录已完整返回空，仅等待防瞬时空结果的第二次确认 */
-        val rootEmptyConfirmationPending: Boolean = false
+        override val rootEmptyConfirmationPending: Boolean = false
     ) : DownloadLibrarySnapshotView {
         internal val referenceIdentityIndex by lazy {
             ManagedDownloadDeleteReferenceIndex(buildSet {

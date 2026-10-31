@@ -40,13 +40,13 @@ import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.prepareStatePersist
+import moe.ouom.neriplayer.core.player.persistence.runSongMetadataMutation
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.command.USB_TRACK_TRANSITION_PROTECTION_FADE_DURATION_MS
 import moe.ouom.neriplayer.core.player.policy.command.resolveEffectivePlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.command.resolveManagedPlaybackStartPlan
-import moe.ouom.neriplayer.core.player.policy.command.resolveManualResumePlaybackDecision
 import moe.ouom.neriplayer.core.player.policy.command.resolveNoFadePlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.command.resolvePauseVolumePlan
 import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackContinuationStartPlan
@@ -577,6 +577,7 @@ internal fun PlayerManager.playAtIndex(
 
     val song = currentPlaylist[index]
     if (LanPlaybackBinding.playExternal(song, commandSource)) return
+    serverRecoveryPosition = null
     var keepTransitionWakeLockUntilPlaybackProgress = false
     val resolvedResumePositionMs = resolveRememberedLongFormPlaybackStartPosition(
         song = song,
@@ -875,6 +876,7 @@ internal fun PlayerManager.playAtIndex(
                 }
             }
             is SongUrlResult.Failure -> {
+                if (preserveServerPlaybackForRetry(song, resolvedResumePositionMs, requestToken)) return@launch
                 if (
                     shouldAwaitListenTogetherSharedStreamFallback(
                         song = song,
@@ -939,6 +941,7 @@ private fun PlayerManager.maybeHydrateSongForPlayback(
         return
     }
 
+    val currentSongAtRequest = _currentSongFlow.value?.takeIf { it.sameIdentityAs(song) }
     ioScope.launch {
         val isPublishedManagedDownload = PlayerDependencies.downloads.hasDownloadedSongCached(song)
         // 目录和 URI 线索只决定是否做轻量文本补全，不代表下载已经完成
@@ -960,34 +963,41 @@ private fun PlayerManager.maybeHydrateSongForPlayback(
             return@launch
         }
 
-        var applied = false
         withContext(Dispatchers.Main) {
-            if (requestToken != playbackRequestToken) {
-                return@withContext
-            }
-            applied = updateCurrentQueueSongs { playlist ->
-                if (index !in playlist.indices || !playlist[index].sameIdentityAs(song)) {
-                    return@updateCurrentQueueSongs null
-                }
-                playlist.toMutableList().also { it[index] = hydratedSong }
-            } != null
-            if (!applied) return@withContext
-            if (_currentSongFlow.value?.sameIdentityAs(song) == true) {
-                setCurrentSongForPlayback(hydratedSong, syncLyricon = false)
-            }
+            if (requestToken != playbackRequestToken) return@withContext
+            publishHydratedLocalPlaybackSong(index, song, hydratedSong, currentSongAtRequest, requestToken)
         }
-
-        if (!applied) {
-            return@launch
-        }
-
-        runLocalPlaylistMutationSafely("hydratePlaybackSongMetadata") {
-            withContext(Dispatchers.IO) {
-                localRepo.updateSongMetadata(song, hydratedSong)
-            }
-        }
-        scheduleStatePersist()
     }
+}
+
+private suspend fun PlayerManager.publishHydratedLocalPlaybackSong(
+    index: Int,
+    originalSong: SongItem,
+    hydratedSong: SongItem,
+    currentSongAtRequest: SongItem?,
+    requestToken: Long
+) = runSongMetadataMutation {
+    val applied = withContext(Dispatchers.Main.immediate) publish@{
+        val currentSong = _currentSongFlow.value?.takeIf { it.sameIdentityAs(originalSong) }
+        if (requestToken != playbackRequestToken || currentSong !== currentSongAtRequest) {
+            return@publish false
+        }
+        // 队列保留同值新快照的引用，明确保存后也不能让旧读取重新覆盖
+        val updated = updateCurrentQueueSongs { playlist ->
+            if (playlist.getOrNull(index) !== originalSong) return@updateCurrentQueueSongs null
+            playlist.toMutableList().also { it[index] = hydratedSong }
+        } ?: return@publish false
+        if (currentSong != null) {
+            setCurrentSongForPlayback(updated.playlist[index], syncLyricon = false)
+        }
+        true
+    }
+    if (!applied) return@runSongMetadataMutation
+
+    runLocalPlaylistMutationSafely("hydratePlaybackSongMetadata") {
+        localRepo.updateSongMetadata(originalSong, hydratedSong)
+    }
+    scheduleStatePersist()
 }
 
 internal fun PlayerManager.enterPendingMediaLoad(requestedPositionMs: Long) {
@@ -1157,13 +1167,7 @@ internal fun PlayerManager.playImpl(
             )
         }
         currentPlaylist.isNotEmpty() && currentIndex != -1 -> {
-            val manualResumeDecision = resolveManualResumePlaybackDecision(
-                keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled,
-                restoredResumePositionMs = restoredResumePositionMs,
-                persistedPlaybackPositionMs = _playbackPositionMs.value,
-                isPlayerPrepared = preparedInPlayer,
-                currentMediaUrlResolvedAtMs = currentMediaUrlResolvedAtMs
-            )
+            val manualResumeDecision = resolveManualResumeWithServerRecovery(song, preparedInPlayer)
             val resumePositionMs = resumePositionOverrideMs ?: manualResumeDecision.resumePositionMs
             playAtIndex(
                 currentIndex,
@@ -1887,6 +1891,7 @@ private fun PlayerManager.maybePersistPlaybackStatsProgress() {
 }
 
 internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolean = false) {
+    serverRecoveryPosition = null
     logQueueStopStart(clearMediaUrl)
     cancelPendingPauseRequest(resetVolumeToFull = true)
     clearPlaybackDemandCacheKey(reason = "stop_playback_preserving_queue")

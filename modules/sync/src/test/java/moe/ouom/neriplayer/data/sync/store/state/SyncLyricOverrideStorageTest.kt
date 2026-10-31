@@ -1,14 +1,25 @@
 package moe.ouom.neriplayer.data.sync.store.state
 
+import android.content.SharedPreferences
+import java.security.KeyStoreException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.secure.RecoverableSyncPreferences
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import moe.ouom.neriplayer.data.sync.store.testing.MemorySyncPreferences
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -17,6 +28,63 @@ import org.junit.rules.TemporaryFolder
 
 class SyncLyricOverrideStorageTest {
     @get:Rule val temporary = TemporaryFolder()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `subscription started during an outage receives confirmed lyrics after recovery`() = runTest {
+        var available = false
+        val prefs = MemorySyncPreferences(mapOf("github_token" to "retained-token"))
+        val preferences = RecoverableSyncPreferences {
+            if (!available) throw KeyStoreException("temporarily unavailable")
+            prefs.preferences
+        }
+        val directory = temporary.newFolder()
+        val reader = SecureTokenStorage(preferences, directory)
+        val changes = reader.lyricOverridesVersion
+        val observed = mutableListOf<List<SyncSong>>()
+        var unavailableReads = 0
+        val subscription = backgroundScope.launch {
+            changes.collect {
+                try {
+                    observed += reader.getLyricOverrides()
+                } catch (_: SyncStorageUnavailableException) {
+                    unavailableReads++
+                }
+            }
+        }
+        runCurrent()
+        assertTrue(subscription.isActive)
+        assertEquals(1, unavailableReads)
+        assertTrue(observed.isEmpty())
+        assertEquals(mapOf("github_token" to "retained-token"), prefs.durableValues.toMap())
+
+        available = true
+        val writer = SecureTokenStorage(preferences, directory)
+        prefs.failNextCommit = true
+        assertThrows(IllegalStateException::class.java) { writer.recordLyricOverride(edited()) }
+        runCurrent()
+        assertTrue(observed.isEmpty())
+
+        writer.recordLyricOverride(edited())
+        runCurrent()
+        assertTrue(subscription.isActive)
+        assertEquals("custom", observed.single().single().matchedLyric)
+        writer.recordLyricOverride(edited())
+        runCurrent()
+        assertEquals(1, observed.size)
+    }
+
+    @Test
+    fun `notification initialization preserves cancellation and unexpected failures`() {
+        for (error in listOf(CancellationException("cancelled"), IllegalStateException("unexpected failure"))) {
+            val prefs = MemorySyncPreferences()
+            val preferences = object : SharedPreferences by prefs.preferences {
+                override fun getString(key: String?, defValue: String?): String? = throw error
+            }
+            val store = SecureTokenStorage(preferences, temporary.newFolder())
+            assertSame(error, assertThrows(error.javaClass) { store.lyricOverridesVersion })
+        }
+    }
 
     @Test
     fun `committed overrides notify other storage handles without notifying unrelated directories`() {

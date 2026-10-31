@@ -53,6 +53,19 @@ class CloudMusicSearchApiTest {
     }
 
     @Test
+    fun `metadata only lookup sends one detail request without fetching lyrics`() = runTest {
+        `when`(netease.getCookies()).thenReturn(emptyMap())
+
+        val result = CloudMusicSearchApi(netease, client).getSongMetadataOnly("12")
+
+        assertEquals("Signal", result.songName)
+        assertNull(result.lyric)
+        assertNull(result.translatedLyric)
+        assertEquals(1, requests.size)
+        assertEquals("/api/song/detail/", requests.single().url.encodedPath)
+    }
+
+    @Test
     fun `lyric failure preserves song details`() = runTest {
         `when`(netease.getCookies()).thenReturn(emptyMap())
         lyricStatus = 503

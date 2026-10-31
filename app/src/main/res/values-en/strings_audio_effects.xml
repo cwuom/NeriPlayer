@@ -130,10 +130,10 @@
     <string name="audio_effects_warmth">Warmth</string>
     <string name="audio_effects_warmth_desc">Tube and vinyl style warmth that softens harshness</string>
     <string name="audio_effects_clarity">Clarity</string>
-    <string name="audio_effects_clarity_desc">Brings back detail and air lost to compression</string>
+    <string name="audio_effects_clarity_desc">Adds treble brightness and air</string>
     <string name="audio_effects_clarity_frequency">Clarity range</string>
     <string name="audio_effects_vocal">Vocal focus</string>
-    <string name="audio_effects_vocal_desc">Lifts the centered vocals and leaves the backing alone</string>
+    <string name="audio_effects_vocal_desc">Improves center clarity</string>
     <string name="audio_effects_vocal_removal">Remove vocals (karaoke)</string>
     <string name="audio_effects_vocal_removal_desc">Reduces centered vocals so you can sing along. Results vary by song.</string>
 

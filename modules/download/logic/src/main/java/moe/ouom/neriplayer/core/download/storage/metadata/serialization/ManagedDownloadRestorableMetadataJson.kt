@@ -83,11 +83,18 @@ private fun JSONObject?.toBaseline(): ManagedDownloadRestorableMetadata.Baseline
         title = optionalString("title"),
         artist = optionalString("artist"),
         album = optionalString("album"),
-        coverReference = optionalString("coverReference"),
+        coverReference = originalCoverReference(),
         originalLyric = optionalLyric("originalLyric"),
         translatedLyric = optionalLyric("translatedLyric"),
         romanizedLyric = optionalLyric("romanizedLyric")
     )
+}
+
+private fun JSONObject.originalCoverReference(): String? {
+    if (has("coverReference") && !isNull("coverReference") && optString("coverReference").isEmpty()) {
+        return ""
+    }
+    return optionalString("coverReference")
 }
 
 private fun JSONObject?.toOverrides(): ManagedDownloadRestorableMetadata.Overrides {

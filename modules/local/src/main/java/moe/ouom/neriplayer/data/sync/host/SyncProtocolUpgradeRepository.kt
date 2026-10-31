@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 
 private val Context.syncProtocolUpgradeDataStore by preferencesDataStore("sync_protocol_upgrade")
@@ -331,7 +332,7 @@ class SyncProtocolUpgradeRepository(
 
         internal fun configuredTargetIds(github: SecureTokenStorage, webDav: WebDavStorage): Set<String> = buildSet {
             // 降级的内存存储读不到已保存的地址，登记结果会被持久化，不能把它当成“未配置”
-            check(github.isPersistent && webDav.isPersistent) { "Secure sync storage is unavailable" }
+            if (!github.isPersistent || !webDav.isPersistent) throw SyncStorageUnavailableException()
             if (github.isConfigured()) {
                 val configuration = github.snapshot()
                 add(githubTargetHash(configuration.repoOwner, configuration.repoName))

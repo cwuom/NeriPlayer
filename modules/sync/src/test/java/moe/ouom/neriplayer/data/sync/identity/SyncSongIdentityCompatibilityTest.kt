@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.sync.identity
 import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.model.server.ServerSongRef
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -11,6 +12,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncSongIdentityCompatibilityTest {
+    @Test
+    fun `server references survive display changes and restore from either reversible field`() {
+        val ref = ServerSongRef("00000000-0000-0000-0000-000000000001", "song:中文/01")
+        val expected = SongIdentity(ref.numericId, ServerSongRef.CHANNEL, ref.mediaUri)
+        val wire = SyncSong(id = 123, album = "renamed", channelId = ServerSongRef.CHANNEL,
+            audioId = ref.audioId, mediaUri = ref.mediaUri)
+        assertEquals(expected, wire.identity())
+        assertEquals(expected, wire.copy(mediaUri = null).identity())
+        assertEquals(expected, wire.copy(audioId = null, channelId = null).identity())
+        assertNotEquals(expected, wire.copy(mediaUri = null, channelId = "netease").identity())
+        assertEquals(SongIdentity(0, "other", "neri-server://invalid"),
+            SyncSong(id = 0, album = "other", mediaUri = "neri-server://invalid").identity())
+    }
+
     @Test
     fun `explicit aliases and legacy source hints retain their identity`() {
         for (alias in listOf("youtube", "ytmusic", "youtubemusic", "youtube_music")) {

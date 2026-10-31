@@ -1221,9 +1221,14 @@ interface DownloadOperationDao {
         processToken: String
     ): List<DownloadOperationIdentityRow>
 
-    /** 新进程立即接管普通重试队列，但保留累计重试次数和最后失败原因 */
+    /** 新进程立即接管普通重试，但服务器指定的最早重试时间必须保留 */
     @Query(
-        "UPDATE download_operation SET state = 'QUEUED', next_retry_at_ms = NULL, " +
+        "UPDATE download_operation SET state = CASE " +
+            "WHEN last_error_code = 'DOWNLOAD_SERVER_RETRY_AFTER' AND next_retry_at_ms > 0 " +
+            "THEN 'RETRYABLE' ELSE 'QUEUED' END, " +
+            "next_retry_at_ms = CASE " +
+            "WHEN last_error_code = 'DOWNLOAD_SERVER_RETRY_AFTER' AND next_retry_at_ms > 0 " +
+            "THEN next_retry_at_ms ELSE NULL END, " +
             "host_process_token = NULL, host_admitted_at_ms = NULL, " +
             "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
             "WHERE state = 'RETRYABLE' AND stop_requested_by_user = 0 " +
@@ -1245,6 +1250,7 @@ interface DownloadOperationDao {
         "SELECT operation_id, stable_key FROM download_operation " +
             "WHERE state = 'RETRYABLE' AND stop_requested_by_user = 0 " +
             "AND next_retry_at_ms IS NOT NULL " +
+            "AND (last_error_code IS NULL OR last_error_code != 'DOWNLOAD_SERVER_RETRY_AFTER') " +
             "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
             "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
             "AND batch.generation = download_operation.batch_generation " +
@@ -1261,6 +1267,7 @@ interface DownloadOperationDao {
             "updated_at_ms = MAX(updated_at_ms + 1, :updatedAtMs) " +
             "WHERE state = 'RETRYABLE' AND stop_requested_by_user = 0 " +
             "AND next_retry_at_ms IS NOT NULL " +
+            "AND (last_error_code IS NULL OR last_error_code != 'DOWNLOAD_SERVER_RETRY_AFTER') " +
             "AND ((batch_id IS NULL AND batch_generation IS NULL) OR EXISTS (" +
             "SELECT 1 FROM download_batch batch WHERE batch.batch_id = download_operation.batch_id " +
             "AND batch.generation = download_operation.batch_generation " +

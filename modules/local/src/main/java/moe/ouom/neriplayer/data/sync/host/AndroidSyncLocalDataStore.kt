@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.data.sync.runtime.SyncLocalDataApplier
 import moe.ouom.neriplayer.data.sync.runtime.SyncLocalDataStore
 import moe.ouom.neriplayer.data.sync.sanitize.SyncDataSanitizer
 import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
+import moe.ouom.neriplayer.data.sync.policy.SyncCoverUrlProjection
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.logging.NPLogger
 
@@ -91,6 +92,7 @@ internal class AndroidSyncLocalDataStore(
     }
     override fun mutationVersion(): Long = storage.getSyncMutationVersion()
     override suspend fun snapshot(): SyncDataset {
+        SyncCoverUrlProjection.prepare()
         val captureStarted = System.nanoTime()
         val captured = playbackStatsRepo.borrowSyncCapture(datasetStore)
         try {

@@ -4,7 +4,6 @@ import moe.ouom.neriplayer.api.sync.webdav.WebDavApiClient
 
 import android.content.Context
 import moe.ouom.neriplayer.data.sync.store.secure.EncryptedSyncPreferences
-import moe.ouom.neriplayer.common.storage.SecurePreferencesOpener
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import kotlinx.coroutines.flow.Flow
@@ -21,8 +20,8 @@ import moe.ouom.neriplayer.data.sync.remote.WebDavArchiveGcState
 class WebDavStorage internal constructor(private val encryptedPrefs: SharedPreferences) {
     constructor(context: Context) : this(EncryptedSyncPreferences.open(context, PREFS_NAME, "NERI-WebDavStorage"))
 
-    /** Keystore 不可用时配置只在本进程内存中，不能据此做持久决策 */
-    val isPersistent: Boolean = SecurePreferencesOpener.isPersistent(encryptedPrefs)
+    val isPersistent: Boolean
+        get() = EncryptedSyncPreferences.isPersistent(encryptedPrefs)
 
     private val completionTime = SyncCompletionTimeStore(encryptedPrefs, completionTimeChanges, configurationLock, ::getLastSyncTime)
 
@@ -47,7 +46,9 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
         password: String,
         basePath: String
     ) {
-        completionTime.editTarget(::storedTarget, target(serverUrl, basePath, username), TARGET_CHECKPOINT_KEYS) {
+        completionTime.editTarget(
+            ::storedTarget, target(serverUrl, basePath, username), TARGET_CHECKPOINT_KEYS, requirePersistence = true
+        ) {
             putString(KEY_SERVER_URL, normalizeServerUrl(serverUrl))
             putString(KEY_BASE_PATH, normalizeBasePath(basePath))
             putString(KEY_USERNAME, username)

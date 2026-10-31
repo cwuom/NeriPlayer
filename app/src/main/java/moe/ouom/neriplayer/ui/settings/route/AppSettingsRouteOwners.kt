@@ -90,7 +90,17 @@ internal fun rememberAppSettingsCacheClearOwner(application: Application): AppSe
                     ytMusicLyricsCache = PlayerManager.ytMusicLyricsCache
                 )
             },
-            clearExtraCaches = { options -> clearExtraStorageCaches(context, options) },
+            clearExtraCaches = { options ->
+                // Cancel server snapshot writers before the shared Room cleanup.
+                if (options.serverBrowseCache) moe.ouom.neriplayer.core.di.AppContainer.subsonicRepository.browseCache.clear(clearStore = false)
+                clearExtraStorageCaches(
+                    context,
+                    options,
+                    additionalSongsProvider = {
+                        PlayerManager.currentQueueFlow.value + listOfNotNull(PlayerManager.currentSongFlow.value)
+                    }
+                )
+            },
             formatExtraResult = { result ->
                 formatExtraCacheClearResult(
                     result = result,

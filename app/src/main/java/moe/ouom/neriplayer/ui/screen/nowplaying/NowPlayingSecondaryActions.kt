@@ -69,6 +69,7 @@ import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.metadata.SongMetadataApplyOptions
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.data.local.media.isLocalSong
@@ -381,27 +382,29 @@ internal class MoreOptionsSheetOwner(
         private set
     var isEditSongSaving by mutableStateOf(false)
         private set
+    var isMetadataApplicationBusy by mutableStateOf(false)
+        private set
     var sheetImeVisible by mutableStateOf(false)
         private set
 
     val sheetGesturesEnabled: Boolean
-        get() = page !in setOf(MoreOptionsPage.LISTEN_TOGETHER, MoreOptionsPage.LAN_LISTEN_TOGETHER) && !isEditSongSaving
+        get() = page !in setOf(MoreOptionsPage.LISTEN_TOGETHER, MoreOptionsPage.LAN_LISTEN_TOGETHER) && !isEditSongSaving && !isMetadataApplicationBusy
 
     val onBack: () -> Unit = ::back
     val onDismissRequest: () -> Unit = ::dismiss
     val onSavingChanged: (Boolean) -> Unit = ::setEditSaving
 
     fun open(target: MoreOptionsPage) {
-        if (!isEditSongSaving) page = target
+        if (!isEditSongSaving && !isMetadataApplicationBusy) page = target
     }
 
     /** 返回会回到面板主页；会直接关闭面板或正在保存时为 false，交给弹层自身或保存期间的拦截处理 */
     val canGoBackToMainPage: Boolean
-        get() = !isEditSongSaving && page != MoreOptionsPage.MAIN &&
+        get() = !isEditSongSaving && !isMetadataApplicationBusy && page != MoreOptionsPage.MAIN &&
             !(page == initialPage && initialPage != MoreOptionsPage.MAIN)
 
     fun back() {
-        if (isEditSongSaving) return
+        if (isEditSongSaving || isMetadataApplicationBusy) return
         if (page == initialPage && initialPage != MoreOptionsPage.MAIN) dismiss()
         else page = MoreOptionsPage.MAIN
     }
@@ -410,9 +413,13 @@ internal class MoreOptionsSheetOwner(
         isEditSongSaving = saving
     }
 
+    fun setMetadataApplying(applying: Boolean) {
+        isMetadataApplicationBusy = applying
+    }
+
     /** 子页转场、保存和关闭过程各自持有返回，其余状态由面板接管关闭手势 */
     val canPredictiveDismiss: Boolean
-        get() = !isDismissing && !isEditSongSaving && !canGoBackToMainPage
+        get() = !isDismissing && !isEditSongSaving && !isMetadataApplicationBusy && !canGoBackToMainPage
 
     fun updateSheetImeVisibility(visible: Boolean) {
         sheetImeVisible = visible
@@ -428,7 +435,7 @@ internal class MoreOptionsSheetOwner(
     fun dismiss() = dismiss({})
 
     fun dismiss(afterHidden: () -> Unit) {
-        if (isDismissing || isEditSongSaving) return
+        if (isDismissing || isEditSongSaving || isMetadataApplicationBusy) return
         isDismissing = true
         scope.launch {
             try {
@@ -450,9 +457,10 @@ private class MoreOptionsSearchActions(
     private val song: SongItem,
     private val owner: MoreOptionsSheetOwner
 ) {
-    val onSongSelected: (SongSearchInfo) -> Unit = { result ->
-        owner.dismiss { viewModel.onSongSelected(song, result) }
+    val onSongSelected: (SongSearchInfo, SongMetadataApplyOptions) -> Unit = { result, options ->
+        if (viewModel.onSongSelected(song, result, options = options)) owner.setMetadataApplying(true)
     }
+    val onApplied: () -> Unit = { owner.dismiss() }
     val onDone: () -> Unit = { owner.open(MoreOptionsPage.MAIN) }
 }
 
@@ -750,11 +758,11 @@ internal fun shouldHideCompactEditSongHandle(compactEditSheet: Boolean, imeVisib
 
 /**
  * 子页返回主页由 [MoreOptionsAnimatedPage] 的可拖动转场处理，关闭面板由独立的预测性返回处理器接管；
- * 这里只在保存歌曲信息期间吞掉返回，避免面板被收起
+ * 保存与应用歌曲信息期间吞掉返回，避免面板被收起
  */
 @Composable
 private fun MoreOptionsBackHandlers(owner: MoreOptionsSheetOwner) {
-    BackHandler(enabled = owner.isEditSongSaving) {}
+    BackHandler(enabled = owner.isEditSongSaving || owner.isMetadataApplicationBusy) {}
 }
 
 @Composable
@@ -957,12 +965,17 @@ private fun MoreOptionsSearchContent(
     owner: MoreOptionsSheetOwner
 ) {
     val actions = MoreOptionsSearchActions(viewModel, actualSong, owner)
+    DisposableEffect(owner) {
+        onDispose { owner.setMetadataApplying(false) }
+    }
     SongMetadataSearchContent(
         viewModel = viewModel,
         song = actualSong,
         offlineMode = offlineMode,
         enabled = !owner.isDismissing,
         onSongSelected = actions.onSongSelected,
+        onBusyChanged = owner::setMetadataApplying,
+        onApplied = actions.onApplied,
         onDone = actions.onDone
     )
 }

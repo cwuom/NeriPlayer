@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.api.sync.webdav.WebDavApiClient
 import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavArchiveLeaseLostException
@@ -133,8 +134,8 @@ class WebDavArchiveGcHttpTest {
     }
 
     @Test
-    fun `unlocked servers without strong ETags publish through verified fingerprints`() = runTest {
-        for (etag in listOf(null, "W/\"weak\"", "unquoted-etag")) {
+    fun `unlocked servers without usable ETags reject updates before uploading any object`() = runTest {
+        for (etag in listOf(null, "W/\"weak\"", "invalid tag")) {
             val fixture = Fixture()
             fixture.lockStatus = 403
             fixture.ignoreWriteConditions = true
@@ -142,22 +143,63 @@ class WebDavArchiveGcHttpTest {
             fixture.manifestReadETag = { etag }
             fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
                 val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
-                val second = fixture.backend.upload(data, first).getOrThrow()
-                assertTrue(first.lastKnownFingerprint != second.lastKnownFingerprint)
-                val manifestWrites = fixture.requests.filter {
-                    it.method == "PUT" && it.url.pathSegments.last() == SyncArchiveRepository.MANIFEST_FILE_NAME
-                }
-                val opaque = etag?.takeUnless { it.startsWith("W/") }
-                assertTrue(manifestWrites.drop(1).all { it.header("If-Match") == opaque && it.header("If-Unmodified-Since") == null })
                 val current = fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME).copyOf()
                 fixture.requests.clear()
-                val stale = fixture.backend.upload(data, first)
-                assertTrue(stale.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException)
+                val rejected = fixture.backend.upload(data, first)
+                assertTrue(rejected.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException)
+                assertTrue(rejected.exceptionOrNull()!!.message!!.contains("LOCK"))
                 assertTrue(current.contentEquals(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)))
                 assertTrue(fixture.requests.none { it.method == "PUT" })
             }
             assertFalse(fixture.supported)
             assertTrue(fixture.requests.none { it.method == "DELETE" })
+        }
+    }
+
+    @Test
+    fun `two unlocked writers cannot overwrite a shared base without usable ETags`() = runTest {
+        val fixture = Fixture()
+        fixture.lockStatus = 403
+        fixture.ignoreWriteConditions = true
+        fixture.manifestReadETag = { null }
+        fixture.manifestWriteETag = { null }
+        fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+            val base = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            val previous = fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME).copyOf()
+            fixture.archive.playbackDatasets.fromLegacy(payload.copy(deviceId = "competing-writer")).use { competingData ->
+                var interleaved: Result<WebDavSyncBackend.Version>? = null
+                var intercepting = false
+                fixture.beforeRequest = { request ->
+                    if (!intercepting && request.method == "PUT" &&
+                        request.url.pathSegments.last() == SyncArchiveRepository.MANIFEST_FILE_NAME) {
+                        intercepting = true
+                        interleaved = runBlocking { fixture.backend.upload(competingData, base) }
+                    }
+                }
+                fixture.requests.clear()
+                val first = fixture.backend.upload(data, base)
+                val second = interleaved ?: fixture.backend.upload(competingData, base)
+                assertTrue(first.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException)
+                assertTrue(second.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException)
+                assertTrue(previous.contentEquals(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)))
+                assertTrue(fixture.requests.none { it.method == "PUT" })
+            }
+        }
+    }
+
+    @Test
+    fun `unquoted ETags preserve conditional updates on unlocked servers`() = runTest {
+        val fixture = Fixture()
+        fixture.lockStatus = 403
+        fixture.quoteETags = false
+        fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+            val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            fixture.requests.clear()
+            val second = fixture.backend.upload(data, first).getOrThrow()
+            assertTrue(first.lastKnownFingerprint != second.lastKnownFingerprint)
+            val writes = fixture.requests.filter { it.method == "PUT" && it.url.toString() == fixture.manifestUrl }
+            assertEquals(listOf(first.token!!.etag), writes.map { it.header("If-Match") })
+            assertTrue(writes.none { it.header("If-Unmodified-Since") != null })
         }
     }
 
@@ -183,12 +225,12 @@ class WebDavArchiveGcHttpTest {
                 it.method == "PUT" && it.url.pathSegments.last() == SyncArchiveRepository.MANIFEST_FILE_NAME
             }
             assertEquals(first.token!!.etag, manifestWrites.last().header("If-Match"))
-            assertFalse(first.token!!.etag!!.startsWith("\""))
+            assertFalse(first.token.etag!!.startsWith("\""))
         }
     }
 
     @Test
-    fun `a server rejecting unquoted If-Match still publishes after the manifest is confirmed unchanged`() = runTest {
+    fun `a server rejecting unquoted If-Match never retries an unconditional publication`() = runTest {
         val fixture = Fixture()
         fixture.lockStatus = 403
         fixture.quoteETags = false
@@ -196,13 +238,14 @@ class WebDavArchiveGcHttpTest {
         fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
             val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
             fixture.requests.clear()
-            val second = fixture.backend.upload(data, first).getOrThrow()
-            assertEquals(WebDavApiClient.calculateFingerprint(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)),
-                second.lastKnownFingerprint)
+            val previous = fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME).copyOf()
+            val second = fixture.backend.upload(data, first)
+            assertTrue(second.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException)
+            assertTrue(previous.contentEquals(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)))
             val manifestWrites = fixture.requests.filter {
                 it.method == "PUT" && it.url.pathSegments.last() == SyncArchiveRepository.MANIFEST_FILE_NAME
             }
-            assertEquals(listOf(first.token!!.etag, null), manifestWrites.map { it.header("If-Match") })
+            assertEquals(listOf(first.token!!.etag), manifestWrites.map { it.header("If-Match") })
         }
     }
 
@@ -211,7 +254,7 @@ class WebDavArchiveGcHttpTest {
         val fixture = Fixture()
         fixture.lockStatus = 403
         fixture.ignoreWriteConditions = true
-        fixture.manifestReadETag = { null }
+        fixture.manifestReadETag = { "\"constant\"" }
         fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
             val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
             val competing = byteArrayOf(1, 2, 3)

@@ -19,7 +19,7 @@ internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPr
     }
 
     fun saveToken(token: String) {
-        completionTime.editConfiguration { putString(KEY_GITHUB_TOKEN, token) }
+        completionTime.editConfiguration(requirePersistence = true) { putString(KEY_GITHUB_TOKEN, token) }
     }
 
     fun getToken(): String? {
@@ -31,7 +31,8 @@ internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPr
     }
 
     fun saveRepository(owner: String, name: String) {
-        completionTime.editTarget(::storedRepository, repositoryTarget(owner, name), REPOSITORY_CHECKPOINT_KEYS) {
+        completionTime.editTarget(::storedRepository, repositoryTarget(owner, name), REPOSITORY_CHECKPOINT_KEYS,
+            requirePersistence = true) {
             putString(KEY_REPO_OWNER, owner)
                 .putString(KEY_REPO_NAME, name)
         }

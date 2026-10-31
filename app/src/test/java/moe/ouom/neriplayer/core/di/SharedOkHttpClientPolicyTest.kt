@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.di
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
+import moe.ouom.neriplayer.platform.bilibili.api.stream.BiliStreamCredentialInterceptor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -24,6 +25,8 @@ class SharedOkHttpClientPolicyTest {
         assertEquals(0, client.callTimeoutMillis)
         assertSame(connectionPool, client.connectionPool)
         assertTrue(client.retryOnConnectionFailure)
+        assertExactlyOneStreamCredentialGuard(client)
+        assertExactlyOneStreamCredentialGuard(client.newBuilder().build())
     }
 
     @Test
@@ -32,5 +35,9 @@ class SharedOkHttpClientPolicyTest {
 
         assertTrue(client.protocols.contains(Protocol.HTTP_2))
         assertTrue(client.protocols.contains(Protocol.HTTP_1_1))
+    }
+
+    private fun assertExactlyOneStreamCredentialGuard(client: OkHttpClient) {
+        assertEquals(1, client.networkInterceptors.count { it is BiliStreamCredentialInterceptor })
     }
 }

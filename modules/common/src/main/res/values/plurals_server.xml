@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="server_add_playlist_confirm_message">
+        <item quantity="other">将所选的 %1$d 首歌曲添加到“%2$s”吗？</item>
+    </plurals>
+    <plurals name="server_artist_album_count">
+        <item quantity="other">%1$d 张专辑</item>
+    </plurals>
+</resources>

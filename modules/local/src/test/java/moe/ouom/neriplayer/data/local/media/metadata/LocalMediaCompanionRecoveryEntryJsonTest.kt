@@ -74,7 +74,8 @@ class LocalMediaCompanionRecoveryEntryJsonTest {
             previousIdentity = "7:8",
             stagedFile = File(music, ".song.lrc.companion-3.tmp"),
             restoreInputSha256 = "d".repeat(64),
-            stagedIdentity = "7:10"
+            stagedIdentity = "7:10",
+            writableFileIdentity = "8:9"
         )
 
         assertEquals(entry, LocalMediaCompanionRecoveryEntry.fromJson(entry.toJson(), staging))

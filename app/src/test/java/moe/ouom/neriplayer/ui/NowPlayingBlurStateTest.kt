@@ -84,4 +84,36 @@ class NowPlayingBlurStateTest {
         state.reconcileRetention(NowPlayingBlurRetentionRequest(true, true, "song", null))
         assertEquals("cover", state.stableCoverUrl)
     }
+
+    @Test
+    fun `explicit empty artwork clears retained blur for every availability and preference combination`() = runTest {
+        for (available in listOf(false, true)) {
+            for (enabled in listOf(false, true)) {
+                val state = NowPlayingBlurState()
+                state.onImageSuccess("edited", "edited", "edited-cover", 4f)
+                state.observeRequest("same-song", "stale-parent-cover")
+
+                state.reconcileRetention(
+                    NowPlayingBlurRetentionRequest(available, enabled, "same-song", "stale-parent-cover", true)
+                )
+
+                val scenario = "available=$available enabled=$enabled"
+                assertNull(scenario, state.stableCoverUrl)
+                assertNull(scenario, state.stableBlurStrength)
+                assertFalse(scenario, state.loadFailed)
+            }
+        }
+    }
+
+    @Test
+    fun `blank cover placeholder clears retained blur after playback ends`() = runTest {
+        val state = NowPlayingBlurState()
+        state.onImageSuccess("edited", "edited", "edited-cover", 4f)
+        state.observeRequest(null, " \t ")
+
+        state.reconcileRetention(NowPlayingBlurRetentionRequest(true, true, null, " \t "))
+
+        assertNull(state.stableCoverUrl)
+        assertNull(state.stableBlurStrength)
+    }
 }

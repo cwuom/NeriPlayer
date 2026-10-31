@@ -173,6 +173,13 @@ private fun SettingsListenTogetherServerDialogContent(controller: SettingsListen
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(stringResource(listenTogetherServerDescriptionId(controller.isUsingDefaultServer)))
         SettingsListenTogetherServerInput(controller)
+        if (controller.serverInput.trim().startsWith("http://", ignoreCase = true)) {
+            Text(
+                text = stringResource(CoreCommonR.string.settings_listen_together_server_http_warning),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
         SettingsListenTogetherServerFeedback(controller)
         SettingsListenTogetherServerActions(controller)
     }

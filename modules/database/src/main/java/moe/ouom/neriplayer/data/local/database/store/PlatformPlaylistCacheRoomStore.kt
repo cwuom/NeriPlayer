@@ -55,6 +55,30 @@ data class PlatformPlaylistCacheStorageStats(
 class PlatformPlaylistCacheRoomStore(
     private val database: NeriUserDataDatabase
 ) {
+    suspend fun replaceBounded(record: PlatformPlaylistCacheRecord, maxRecords: Int, maxTracks: Int,
+                               protectedKinds: Set<String> = emptySet()) {
+        database.withTransaction {
+            replace(record)
+            var tracks = 0
+            database.platformPlaylistCacheDao().listCaches(record.platform)
+                .filter { it.kind !in protectedKinds }.forEachIndexed { index, entry ->
+                    tracks += entry.trackCount
+                    if (index >= maxRecords || tracks > maxTracks) clear(record.platform, entry.cacheKey)
+                }
+        }
+    }
+
+    suspend fun clearWhere(platform: String, shouldClear: (PlatformPlaylistCacheEntity) -> Boolean) {
+        database.withTransaction {
+            database.platformPlaylistCacheDao().listCaches(platform).filter(shouldClear).forEach {
+                clear(platform, it.cacheKey)
+            }
+        }
+    }
+
+    suspend fun readHeaders(platform: String): List<PlatformPlaylistCacheRecord> =
+        database.platformPlaylistCacheDao().listCaches(platform).map { it.toRecord(tracks = emptyList()) }
+
     suspend fun read(
         platform: String,
         cacheKey: String

@@ -83,6 +83,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -102,6 +104,7 @@ import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistorySyncPreferences
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferUiState
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreUiState
@@ -228,9 +231,15 @@ internal fun SettingsBackupRestoreSection(
             syncUpgradeVm.requestSync(targetId) { performWebDavSync(targetId) }
         }
         var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
-        var currentMode by remember { mutableStateOf(PlayHistoryUpdateMode.IMMEDIATE) }
-        var dataSaverMode by remember { mutableStateOf(true) }
+        var currentMode by remember { mutableStateOf<PlayHistoryUpdateMode?>(null) }
+        var dataSaverMode by remember { mutableStateOf<Boolean?>(null) }
         var pendingDataSaverMode by remember { mutableStateOf<Boolean?>(null) }
+        var pendingDataSaverGeneration by remember { mutableLongStateOf(0L) }
+        var preferenceLoadFailed by remember { mutableStateOf(false) }
+        var preferenceReload by remember { mutableIntStateOf(0) }
+        var dataSaverSaveFailed by remember { mutableStateOf(false) }
+        var isSavingDataSaver by remember { mutableStateOf(false) }
+        var lastObservedImportState by remember { mutableStateOf<Pair<Boolean, Boolean?>?>(null) }
 
         githubVm?.let { viewModel ->
             LaunchedEffect(viewModel, applicationContext) {
@@ -251,29 +260,41 @@ internal fun SettingsBackupRestoreSection(
             needsDataSaverMode,
             applicationContext,
             configTransferUiState.isImporting,
-            configTransferUiState.lastImportSuccess
+            configTransferUiState.lastImportSuccess,
+            preferenceReload
         ) {
+            val pendingGenerationAtLoad = pendingDataSaverGeneration
+            val importState = configTransferUiState.isImporting to configTransferUiState.lastImportSuccess
+            val importChanged = lastObservedImportState != importState
+            lastObservedImportState = importState
+            var preferenceReadSucceeded = true
             if (needsPlayHistoryMode || needsDataSaverMode) {
-                val snapshot = withContext(Dispatchers.IO) {
+                val loaded = withContext(Dispatchers.IO) {
                     loadBackupSyncPreferenceSnapshot(
                         context = applicationContext,
                         needsPlayHistoryMode = needsPlayHistoryMode,
                         needsDataSaverMode = needsDataSaverMode
                     )
                 }
+                val snapshot = loaded.snapshot
                 if (needsPlayHistoryMode) {
-                    currentMode = snapshot.playHistoryUpdateMode
+                    snapshot.playHistoryUpdateMode?.let { currentMode = it }
                 }
                 if (needsDataSaverMode) {
-                    dataSaverMode = snapshot.dataSaverMode
+                    snapshot.dataSaverMode?.let { dataSaverMode = it }
                 }
+                preferenceReadSucceeded = loaded is BackupSyncPreferenceLoad.Loaded
+                preferenceLoadFailed = !preferenceReadSucceeded
+                if (preferenceReadSucceeded) dataSaverSaveFailed = false
             }
-            if (!configTransferUiState.isImporting && configTransferUiState.lastImportSuccess == true) {
+            if (preferenceReadSucceeded && !configTransferUiState.isImporting && configTransferUiState.lastImportSuccess == true) {
                 withContext(Dispatchers.IO) {
                     githubVm?.initialize(applicationContext)
                     webDavVm?.initialize(applicationContext)
                 }
-                pendingDataSaverMode = null
+                if (importChanged && pendingDataSaverGeneration == pendingGenerationAtLoad) {
+                    pendingDataSaverMode = null
+                }
             }
         }
 
@@ -298,6 +319,16 @@ internal fun SettingsBackupRestoreSection(
                             webDavState.errorMessage != null ||
                             webDavState.successMessage != null
                         )
+
+            if (preferenceLoadFailed || dataSaverSaveFailed) {
+                MiuixSettingsInlineMessage(
+                    message = stringResource(CoreCommonR.string.sync_secure_storage_unavailable),
+                    isSuccess = false
+                )
+                MiuixSettingsTextButton(onClick = { preferenceReload++ }) {
+                    Text(stringResource(CoreCommonR.string.action_retry))
+                }
+            }
 
             if (shouldShowCard(0)) {
                 SyncProtocolUpgradeWarning(syncUpgradeState) { syncUpgradeVm.openConfirmation() }
@@ -639,7 +670,7 @@ internal fun SettingsBackupRestoreSection(
                 },
                 headlineContent = { Text(stringResource(CoreCommonR.string.sync_history_frequency)) },
                 supportingContent = {
-                    Text(playHistoryUpdateModeSummary(currentMode))
+                    currentMode?.let { Text(playHistoryUpdateModeSummary(it)) }
                 },
                 modifier = Modifier
                     .settingsHighlightTarget(
@@ -648,7 +679,7 @@ internal fun SettingsBackupRestoreSection(
                         highlightPulse = highlightPulse,
                         onHighlightFinished = onHighlightFinished
                     )
-                    .settingsItemClickable {
+                    .settingsItemClickable(enabled = currentMode != null) {
                         showPlayHistoryModeDialog = true
                     },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -794,14 +825,18 @@ internal fun SettingsBackupRestoreSection(
                     headlineContent = { Text(stringResource(CoreCommonR.string.sync_data_saver)) },
                     supportingContent = { Text(stringResource(CoreCommonR.string.sync_data_saver_desc)) },
                     trailingContent = {
-                        MiuixSettingsSwitch(
-                            checked = dataSaverMode,
-                            onCheckedChange = { enabled ->
-                                if (enabled != dataSaverMode) {
-                                    pendingDataSaverMode = enabled
+                        dataSaverMode?.let { savedMode ->
+                            MiuixSettingsSwitch(
+                                checked = savedMode,
+                                enabled = !isSavingDataSaver,
+                                onCheckedChange = { enabled ->
+                                    if (enabled != savedMode) {
+                                        pendingDataSaverGeneration++
+                                        pendingDataSaverMode = enabled
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
@@ -1022,9 +1057,9 @@ internal fun SettingsBackupRestoreSection(
             }
         }
 
-        if (showPlayHistoryModeDialog) {
+        currentMode?.takeIf { showPlayHistoryModeDialog }?.let { selectedMode ->
             PlayHistoryModeDialog(
-                currentMode = currentMode,
+                currentMode = selectedMode,
                 onDismiss = { showPlayHistoryModeDialog = false },
                 onSelect = { mode ->
                     currentMode = mode
@@ -1043,20 +1078,37 @@ internal fun SettingsBackupRestoreSection(
             MiuixSettingsDialog(
                 onDismissRequest = { pendingDataSaverMode = null },
                 title = { Text(stringResource(CoreCommonR.string.sync_data_saver_warning_title)) },
-                text = { Text(stringResource(CoreCommonR.string.sync_data_saver_warning_message)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(stringResource(CoreCommonR.string.sync_data_saver_warning_message))
+                        if (dataSaverSaveFailed) MiuixSettingsInlineMessage(
+                            message = stringResource(CoreCommonR.string.sync_secure_storage_unavailable),
+                            isSuccess = false
+                        )
+                    }
+                },
                 confirmButton = {
                     MiuixSettingsTextButton(
                         onClick = {
                             val enabled = pendingDataSaverMode ?: return@MiuixSettingsTextButton
-                            dataSaverMode = enabled
-                            pendingDataSaverMode = null
+                            isSavingDataSaver = true
                             scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    SecureTokenStorage(context.applicationContext)
-                                        .setDataSaverMode(enabled)
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        SecureTokenStorage(context.applicationContext).setDataSaverMode(enabled)
+                                    }
+                                    dataSaverMode = enabled
+                                    pendingDataSaverMode = null
+                                    dataSaverSaveFailed = false
+                                    preferenceReload++
+                                } catch (_: SyncStorageUnavailableException) {
+                                    dataSaverSaveFailed = true
+                                } finally {
+                                    isSavingDataSaver = false
                                 }
                             }
-                        }
+                        },
+                        enabled = !isSavingDataSaver
                     ) {
                         Text(stringResource(CoreCommonR.string.sync_data_saver_warning_confirm))
                     }
@@ -1083,36 +1135,49 @@ internal fun SettingsBackupRestoreSection(
     }
 }
 
-private data class BackupSyncPreferenceSnapshot(
-    val playHistoryUpdateMode: PlayHistoryUpdateMode = PlayHistoryUpdateMode.IMMEDIATE,
-    val dataSaverMode: Boolean = true
+internal data class BackupSyncPreferenceSnapshot(
+    val playHistoryUpdateMode: PlayHistoryUpdateMode? = null,
+    val dataSaverMode: Boolean? = null
 )
 
-private fun loadBackupSyncPreferenceSnapshot(
+internal sealed interface BackupSyncPreferenceLoad {
+    val snapshot: BackupSyncPreferenceSnapshot
+
+    data class Loaded(override val snapshot: BackupSyncPreferenceSnapshot) : BackupSyncPreferenceLoad
+    data class Unavailable(override val snapshot: BackupSyncPreferenceSnapshot) : BackupSyncPreferenceLoad
+}
+
+internal fun loadBackupSyncPreferenceSnapshot(
     context: android.content.Context,
     needsPlayHistoryMode: Boolean,
     needsDataSaverMode: Boolean
-): BackupSyncPreferenceSnapshot {
-    val storage = if (needsPlayHistoryMode || needsDataSaverMode) {
-        SecureTokenStorage(context.applicationContext)
-    } else {
-        null
-    }
+): BackupSyncPreferenceLoad {
+    var unavailable = false
     val mode = if (needsPlayHistoryMode) {
-        PlayHistorySyncPreferences(context.applicationContext)
-            .getUpdateMode(storage?.getLegacyPlayHistoryUpdateModeName())
-    } else {
-        PlayHistoryUpdateMode.IMMEDIATE
-    }
+        try {
+            val preferences = PlayHistorySyncPreferences(context.applicationContext)
+            val snapshot = preferences.snapshot {
+                SecureTokenStorage(context.applicationContext).getLegacyPlayHistoryUpdateModeName()
+            }
+            PlayHistoryUpdateMode.fromStoredName(snapshot.playHistoryUpdateMode)
+        } catch (_: SyncStorageUnavailableException) {
+            unavailable = true
+            null
+        }
+    } else null
     val dataSaver = if (needsDataSaverMode) {
-        storage?.isDataSaverMode() ?: true
-    } else {
-        true
-    }
-    return BackupSyncPreferenceSnapshot(
+        try {
+            SecureTokenStorage(context.applicationContext).isDataSaverMode()
+        } catch (_: SyncStorageUnavailableException) {
+            unavailable = true
+            null
+        }
+    } else null
+    val snapshot = BackupSyncPreferenceSnapshot(
         playHistoryUpdateMode = mode,
         dataSaverMode = dataSaver
     )
+    return if (unavailable) BackupSyncPreferenceLoad.Unavailable(snapshot) else BackupSyncPreferenceLoad.Loaded(snapshot)
 }
 
 @Composable

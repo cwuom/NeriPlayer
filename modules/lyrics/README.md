@@ -12,9 +12,17 @@ Sources are in `src/main/java/moe/ouom/neriplayer/lyrics`: `parser` for parsing,
 
 ## 词幕 / Lyricon
 
-`output/LyriconPlaybackOutput.kt` 接收播放状态，通过 `LyriconLyricsLoader` 加载歌词。`lyricon` 接入词幕 SDK，并兼容 SuperLyric。启用且正在播放、屏幕可交互、provider 就绪时，位置独立每 200 ms 推送；熄屏停止周期推送并保留媒体锚点，亮屏后重新对齐。400 ms 显示预推只用于输出，不改变媒体时间轴。SDK、Manifest 元数据和 consumer R8 规则均在本库。
+| 项目 | 说明 |
+| --- | --- |
+| 组件与打包范围 | `output/LyriconPlaybackOutput.kt` 接收播放状态并通过 `LyriconLyricsLoader` 加载歌词；`lyricon` 包集成词幕（Lyricon）SDK 并兼容 SuperLyric，SDK、Manifest 元数据与 consumer R8 规则均内置于本模块 |
+| 位置推送与熄屏策略 | 已启用、正在播放、屏幕可交互且 provider 就绪时，每 200 ms 独立推送位置；熄屏停止周期推送并保留媒体锚点，亮屏后重新对齐 |
+| 显示预推偏移 | 400 ms 显示预推仅作用于输出端，不改变底层媒体时间轴 |
 
-`output/LyriconPlaybackOutput.kt` receives playback state and loads lyrics through `LyriconLyricsLoader`. The `lyricon` package integrates Lyricon and also supports SuperLyric. Position updates run every 200 ms when enabled, playing, screen-interactive, and using an initialized provider. Screen-off stops the periodic feed while retaining the media anchor; screen-on realigns it. The 400 ms display lead affects output only, leaving the media timeline unchanged. SDKs, manifest metadata, and consumer R8 rules stay in this library.
+| Item | Details |
+| --- | --- |
+| Components & Packaging | `output/LyriconPlaybackOutput.kt` receives playback state and loads lyrics via `LyriconLyricsLoader`; the `lyricon` package integrates the Lyricon SDK with SuperLyric compatibility, keeping SDKs, manifest metadata, and consumer R8 rules inside this module |
+| Position Feed & Screen State | Pushes independent position updates every 200 ms when enabled, playing, screen-interactive, and backed by a ready provider; stops periodic updates on screen-off while keeping the media anchor, then realigns on screen-on |
+| Display Lead | The 400 ms display lead applies only to external output and does not alter the media timeline |
 
 ## 测试 / Tests
 

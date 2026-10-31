@@ -8,6 +8,24 @@ import org.junit.Test
 class BiliStreamUrlsHostTest {
 
     @Test
+    fun `lookalike domains never become trusted stream hosts`() {
+        for (host in listOf(
+            "bilivideo.attacker.example", "bilivideo.com.attacker.example",
+            "notbilivideo.com", "attacker-bilivideo.cn", "evilmountaintoys.cn"
+        )) {
+            assertFalse(host, isBiliStreamHost(host))
+            assertFalse(host, isBiliStreamUrl("https://$host/demo.m4s"))
+        }
+    }
+
+    @Test
+    fun `stream classification only accepts network schemes`() {
+        assertFalse(isBiliStreamUrl("ftp://cdn.bilivideo.com/demo.m4s"))
+        assertFalse(isBiliStreamUrl("//cdn.bilivideo.com/demo.m4s"))
+        assertTrue(isBiliStreamUrl("http://cdn.bilivideo.com/demo.m4s"))
+    }
+
+    @Test
     fun `stream hosts are normalized before matching`() {
         assertTrue(isBiliStreamHost(" UPOS-SZ-MIRRORCOS.BILIVIDEO.COM "))
         assertTrue(isBiliStreamHost("b-demo.edge.mountaintoys.cn"))

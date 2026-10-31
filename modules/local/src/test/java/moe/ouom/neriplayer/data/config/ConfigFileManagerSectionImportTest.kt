@@ -139,6 +139,48 @@ class ConfigFileManagerSectionImportTest {
     }
 
     @Test
+    fun `youtube restoration awaits the injected browser session transition`() = runTest {
+        input = """{"kind":"moe.ouom.neriplayer.config","formatVersion":1,"youTubeAuth":{"cookieHeader":"SID=imported-session"}}"""
+        val stopping = CompletableDeferred<Unit>()
+        val stopped = CompletableDeferred<Unit>()
+        val importing = async {
+            manager { updateAuth ->
+                updateAuth()
+                stopping.complete(Unit)
+                stopped.await()
+            }.importConfig(uri)
+        }
+        stopping.await()
+
+        assertEquals("imported-session", savedAuth.single().cookies["SID"])
+        assertFalse(importing.isCompleted)
+        stopped.complete(Unit)
+
+        assertEquals(1, importing.await().getOrThrow().restoredAuthCount)
+    }
+
+    @Test
+    fun `empty youtube restoration also awaits the injected browser session transition`() = runTest {
+        input = """{"kind":"moe.ouom.neriplayer.config","formatVersion":1,"youTubeAuth":{}}"""
+        val stopping = CompletableDeferred<Unit>()
+        val stopped = CompletableDeferred<Unit>()
+        val importing = async {
+            manager { updateAuth ->
+                updateAuth()
+                stopping.complete(Unit)
+                stopped.await()
+            }.importConfig(uri)
+        }
+        stopping.await()
+
+        verify(youtube).clear()
+        assertFalse(importing.isCompleted)
+        stopped.complete(Unit)
+
+        assertEquals(0, importing.await().getOrThrow().restoredAuthCount)
+    }
+
+    @Test
     fun `english language and a youtube login without origin or timestamp restore with defaults`() = runTest {
         val before = System.currentTimeMillis()
         val result = importSections(
@@ -554,14 +596,17 @@ class ConfigFileManagerSectionImportTest {
         return manager().importConfig(uri, confirmCompatibilityStorage)
     }
 
-    private fun TestScope.manager(): ConfigFileManager = ConfigFileManager(
+    private fun TestScope.manager(
+        withAuthChange: suspend (() -> Unit) -> Unit = { updateAuth -> updateAuth() }
+    ): ConfigFileManager = ConfigFileManager(
         context,
         listenTogether,
         netease,
         bili,
         youtube,
         SyncProtocolUpgradeRepository(MemoryPreferencesStore()),
-        UnconfinedTestDispatcher(testScheduler)
+        UnconfinedTestDispatcher(testScheduler),
+        withYouTubeAuthChange = withAuthChange
     )
 
     private class MemoryPreferencesStore : DataStore<Preferences> {

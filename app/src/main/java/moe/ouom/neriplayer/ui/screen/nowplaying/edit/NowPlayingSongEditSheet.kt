@@ -220,7 +220,7 @@ fun EditSongInfoSheet(
 
     val scrollState = rememberScrollState()
 
-    LaunchedEffect(actualSong.stableKey()) {
+    LaunchedEffect(actualSong) {
         owner.syncUneditedSong(actualSong, resolvedDisplayCoverUrl)
     }
 

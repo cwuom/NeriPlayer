@@ -16,8 +16,6 @@ on:
       - '.github/workflows/automation_checks.yml'
       - '.github/workflows/manual_release.yml'
       - '.github/workflows/recover_keystore.yml'
-      - 'site/**'
-      - '.github/workflows/site_pages.yml'
   pull_request:
     paths-ignore:
       - '**/*.md'
@@ -31,8 +29,6 @@ on:
       - '.github/workflows/automation_checks.yml'
       - '.github/workflows/manual_release.yml'
       - '.github/workflows/recover_keystore.yml'
-      - 'site/**'
-      - '.github/workflows/site_pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -250,6 +246,10 @@ jobs:
 
       - name: Run connected Android tests
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_SERIAL: emulator-5554
+          INSTRUMENTATION_MODULE_TASKS: ${{ matrix.module_tests }}
+          INSTRUMENTATION_APP_ARGUMENTS: ${{ matrix.app_test_arguments }}
         with:
           api-level: 35
           target: google_apis
@@ -273,13 +273,7 @@ jobs:
             adb shell am start -W -a android.settings.SETTINGS &&
             adb shell am force-stop --user 0 com.google.android.apps.nexuslauncher &&
             adb shell am force-stop --user 0 com.google.android.googlesdksetup &&
-            { [ -z "${{ matrix.module_tests }}" ] || ./gradlew ${{ matrix.module_tests }}
-            -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
-            --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace; } &&
-            ./gradlew :app:connectedDebugAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
-            ${{ matrix.app_test_arguments }}
-            --no-daemon -Pkotlin.compiler.execution.strategy=in-process --warning-mode all --stacktrace
+            python3 -B .github/scripts/run_connected_tests.py
 
       - name: Verify instrumented test routing
         if: ${{ matrix.shard < 4 || matrix.test_group == 'Player rotation host' }}

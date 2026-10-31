@@ -19,9 +19,12 @@ import moe.ouom.neriplayer.data.local.media.source.CrashLogCleanup
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaCoverAccess
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaDownloadAccess
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
+import moe.ouom.neriplayer.data.local.storage.cleanup.LocalImportCache
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertSame
 import org.junit.After
@@ -263,6 +266,35 @@ class LocalAudioImportRawId3MetadataTest {
         }.exceptionOrNull()
 
         assertSame(cancellation, failure)
+    }
+
+    @Test
+    fun `indexed sidecar covers remain protected while the scan preview is unpublished`() = runBlocking {
+        doReturn(directory.root).`when`(context).filesDir
+        val covers = File(directory.root, "local_audio_covers").apply { mkdirs() }
+        val current = File(covers, "${"a".repeat(64)}.jpg").apply { writeBytes(ByteArray(7)) }
+        val original = File(covers, "${"b".repeat(64)}.jpg").apply { writeBytes(ByteArray(11)) }
+        val orphan = File(covers, "${"c".repeat(64)}.jpg").apply { writeBytes(ByteArray(13)) }
+        val reference = "content://indexed.sidecars/preview.json"
+        val resolver = mock(ContentResolver::class.java)
+        val metadata = JSONObject().put("coverPath", current.path)
+            .put("originalCoverUrl", original.toURI().toString()).toString().toByteArray()
+        doReturn(resolver).`when`(context).contentResolver
+        doAnswer { ByteArrayInputStream(metadata) }.`when`(resolver).openInputStream(Uri.parse(reference))
+        val preview = LocalAudioImportManager.hydrateLocalSongFromIndexedMetadataSidecar(
+            context, quickSong(taggedFile("preview.mp3"), 9L), reference
+        )
+        val cache = LocalImportCache(
+            covers, { emptySet() }, fileAccessLock = LocalMediaSupport.embeddedCoverCacheLock,
+            isCoverInUse = LocalMediaSupport::isEmbeddedCoverInUse
+        ) { LocalMediaSupport.clearCoverLookupCache() }
+
+        assertEquals(ExtraCacheClearResult(true, 13, 0, 1), cache.clear())
+        assertEquals(current.path, preview.coverUrl)
+        assertEquals(original.toURI().toString(), preview.originalCoverUrl)
+        assertTrue(current.exists())
+        assertTrue(original.exists())
+        assertFalse(orphan.exists())
     }
 
     @Test

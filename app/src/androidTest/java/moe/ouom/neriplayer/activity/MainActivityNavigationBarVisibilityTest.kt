@@ -155,10 +155,15 @@ class MainActivityNavigationBarVisibilityTest {
     }
 
     private fun awaitNavigationPolicy(scenario: ActivityScenario<MainActivity>, hidden: Boolean) {
-        awaitActivity("导航栏应遵循真实设备方向与模式", scenario) { activity ->
+        var state = "not sampled"
+        awaitActivity("导航栏应遵循真实设备方向与模式", scenario, diagnostics = { state }) { activity ->
             val insets = ViewCompat.getRootWindowInsets(activity.window.decorView)
-            activity.hasWindowFocus() && insets != null &&
-                insets.isVisible(WindowInsetsCompat.Type.navigationBars()) == !hidden
+            val focused = activity.hasWindowFocus()
+            val visible = insets?.isVisible(WindowInsetsCompat.Type.navigationBars())
+            val configuration = activity.resources.configuration
+            state = "expectedHidden=$hidden, focused=$focused, navigationVisible=$visible, " +
+                "orientation=${configuration.orientation}, smallestWidthDp=${configuration.smallestScreenWidthDp}"
+            focused && visible == !hidden
         }
         scenario.onActivity { activity ->
             assertWindowTransparency(activity)
@@ -185,7 +190,10 @@ class MainActivityNavigationBarVisibilityTest {
     }
 
     private fun awaitActivity(
-        message: String, scenario: ActivityScenario<MainActivity>, condition: (MainActivity) -> Boolean
+        message: String,
+        scenario: ActivityScenario<MainActivity>,
+        diagnostics: () -> String = { "" },
+        condition: (MainActivity) -> Boolean
     ) {
         val deadline = SystemClock.uptimeMillis() + 15_000L
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
@@ -204,6 +212,6 @@ class MainActivityNavigationBarVisibilityTest {
             if (ready) return
             SystemClock.sleep(25L)
         }
-        assertTrue(message, false)
+        assertTrue("$message ${diagnostics()}", false)
     }
 }

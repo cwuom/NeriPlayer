@@ -705,6 +705,34 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
     }
 
     @Test
+    fun `explicitly absent baseline cover skips leftover cover asset recovery`() = runBlocking {
+        val assetHash = "a".repeat(64)
+        val staleReference = "content://downloads/Covers/stale-original.jpg"
+        var assetReads = 0
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(coverReference = ""),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = assetHash,
+            baselineCoverAssetFileName = "stale-original.jpg"
+        )
+
+        val resolved = resolveRestorableCoverReference(
+            metadata = metadata,
+            baseline = true,
+            fingerprintReference = { reference ->
+                assetReads++
+                ManagedDownloadCoverAssetStore.MaterializedCover(reference, assetHash)
+            },
+            findManagedReferenceByName = { assetReads++; staleReference },
+            findContentAddressedReference = { assetReads++; staleReference }
+        )
+
+        assertNull(resolved)
+        assertEquals(0, assetReads)
+    }
+
+    @Test
     fun `restorable cover retains legacy pure sha lookup fallback`() = runBlocking {
         val assetHash = "b".repeat(64)
         val pureHashReference = "/downloads/Covers/$assetHash.jpg"

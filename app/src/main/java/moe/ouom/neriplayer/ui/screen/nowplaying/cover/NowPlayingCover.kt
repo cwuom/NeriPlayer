@@ -87,6 +87,7 @@ import moe.ouom.neriplayer.ui.animation.sharedCoverTarget
 import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
+import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -513,9 +514,18 @@ internal class NowPlayingCoverOwner(
     fun requestFor(input: NowPlayingCoverRequestInput): NowPlayingCoverRequest? {
         if (input != composedRequestInput) {
             composedRequestInput = input
-            composedRequest = newRequest(input.coverUrl, input.songKey, input.cacheKey)
+            composedRequest = newRequest(input.coverUrl.takeUnless { input.clearCover }, input.songKey, input.cacheKey)
+            if (input.clearCover) clearRestoredArtwork(input.songKey)
         }
         return composedRequest
+    }
+
+    private fun clearRestoredArtwork(songKey: String?) {
+        displayedFrame = null
+        failedCoverRequest = null
+        decodedFramesBySongKey.entries.removeAll { (_, frame) -> frame.ownerSongKey == songKey }
+        clearedInput = NowPlayingCoverInputKey(songKey, null)
+        closePreview()
     }
 
     fun newRequest(coverUrl: String?, songKey: String?, coverCacheKey: String?): NowPlayingCoverRequest? {
@@ -776,7 +786,8 @@ internal data class NowPlayingCoverSource(
     val songKey: String?,
     val songKeyAliases: List<String>,
     val cacheKey: String,
-    val contentDescription: String
+    val contentDescription: String,
+    val clearCover: Boolean = false
 )
 
 internal fun buildNowPlayingCoverSource(
@@ -787,15 +798,19 @@ internal fun buildNowPlayingCoverSource(
     assetRootGeneration: Long,
     assetSongRevision: Long,
     song: SongItem?
-): NowPlayingCoverSource = NowPlayingCoverSource(
-    coverUrl = coverUrl,
-    songKey = songKey,
-    songKeyAliases = songKeyAliases,
-    cacheKey = buildNowPlayingCoverCacheKey(
-        coverUrl, downloadPresenceVersion, assetRootGeneration, assetSongRevision
-    ),
-    contentDescription = song?.displayName().orEmpty()
-)
+): NowPlayingCoverSource {
+    val clearCover = song.hasKnownEmptyLocalCover()
+    return NowPlayingCoverSource(
+        coverUrl = coverUrl.takeUnless { clearCover },
+        songKey = songKey,
+        songKeyAliases = songKeyAliases,
+        cacheKey = buildNowPlayingCoverCacheKey(
+            coverUrl, downloadPresenceVersion, assetRootGeneration, assetSongRevision
+        ),
+        contentDescription = song?.displayName().orEmpty(),
+        clearCover = clearCover
+    )
+}
 
 internal fun Modifier.nowPlayingCoverPanelModifier(
     wideLandscape: Boolean,
@@ -1017,7 +1032,8 @@ private fun NowPlayingCoverImageFrame(
             offlineMode = offlineMode,
             coverCacheKey = source.cacheKey,
             contentDescription = source.contentDescription,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            clearCover = source.clearCover
         )
     }
 }
@@ -1209,10 +1225,11 @@ internal fun StableNowPlayingCoverImage(
     coverCacheKey: String?,
     contentDescription: String?,
     modifier: Modifier,
-    songKeyAliases: List<String>
+    songKeyAliases: List<String>,
+    clearCover: Boolean = false
 ) {
     val presentation = rememberNowPlayingCoverPresentation(
-        owner, coverUrl, songKey, coverCacheKey, songKeyAliases
+        owner, coverUrl, songKey, coverCacheKey, songKeyAliases, clearCover
     )
     NowPlayingCoverSurface(
         owner, presentation, context, coverRequestSizePx, offlineMode,
@@ -1226,9 +1243,10 @@ private fun rememberNowPlayingCoverPresentation(
     coverUrl: String?,
     songKey: String?,
     coverCacheKey: String?,
-    songKeyAliases: List<String>
+    songKeyAliases: List<String>,
+    clearCover: Boolean
 ): NowPlayingCoverPresentation {
-    val request = owner.requestFor(NowPlayingCoverRequestInput(coverUrl, songKey, coverCacheKey))
+    val request = owner.requestFor(NowPlayingCoverRequestInput(coverUrl, songKey, coverCacheKey, clearCover))
     // 封面页重建时只从当前歌曲恢复，留在页面内切歌时才保留交接帧
     var surfaceFrame by remember(owner) { mutableStateOf<NowPlayingCoverFrame?>(null) }
     val presentation = owner.presentation(request, songKey, songKeyAliases, fallbackFrame = surfaceFrame)
@@ -1246,7 +1264,7 @@ internal fun PassiveNowPlayingCoverImage(
     modifier: Modifier
 ) {
     val request = owner.requestFor(
-        NowPlayingCoverRequestInput(source.coverUrl, source.songKey, source.cacheKey)
+        NowPlayingCoverRequestInput(source.coverUrl, source.songKey, source.cacheKey, source.clearCover)
     )
     var surfaceFrame by remember(owner) { mutableStateOf<NowPlayingCoverFrame?>(null) }
     val presentation = owner.presentation(
@@ -1276,7 +1294,8 @@ internal fun PassiveNowPlayingCoverImage(
 internal data class NowPlayingCoverRequestInput(
     val coverUrl: String?,
     val songKey: String?,
-    val cacheKey: String?
+    val cacheKey: String?,
+    val clearCover: Boolean = false
 )
 
 @Composable

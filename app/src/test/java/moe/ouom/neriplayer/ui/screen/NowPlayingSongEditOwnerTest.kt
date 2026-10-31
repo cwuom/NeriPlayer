@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.edit.SongEditLyricsWrite
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.latestMatchingEditSong
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongLyricsForSave
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongLyricsSavePlan
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongInitialCoverUrl
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.withVerifiedEditCoverPickerTarget
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import org.junit.Assert.assertEquals
@@ -308,6 +309,145 @@ class NowPlayingSongEditOwnerTest {
     }
 
     @Test
+    fun `reopened app-only local lyrics are included when metadata writeback is chosen`() = runTest {
+        listOf("[00:01.00]App lyric", "").forEach { lyric ->
+            val edited = song.copy(
+                mediaUri = "content://media/external/audio/media/8",
+                matchedLyric = lyric,
+                lyricSyncEdited = true
+            )
+            var writesLyrics: Boolean? = null
+            var saves = 0
+            val viewModel = Mockito.mock(NowPlayingViewModel::class.java) { invocation ->
+                if (invocation.method.name == "updateSongInfo") {
+                    writesLyrics = invocation.getArgument(9)
+                    true
+                } else {
+                    Mockito.RETURNS_DEFAULTS.answer(invocation)
+                }
+            }
+            val owner = owner(initialSong = edited)
+
+            owner.saveEditedSongInfo(
+                song = edited,
+                viewModel = viewModel,
+                writeLocalMetadata = true,
+                snackbarHostState = SnackbarHostState(),
+                resources = Mockito.mock(Resources::class.java),
+                onSaved = { saves++ }
+            )
+
+            assertEquals(1, saves)
+            assertEquals(true, writesLyrics)
+            owner.dispose()
+        }
+    }
+
+    @Test
+    fun `reopened restored app-only metadata still asks for the file destination`() {
+        val restored = song.copy(
+            coverUrl = "current-cover",
+            mediaUri = "content://media/external/audio/media/8",
+            matchedLyric = "Original lyric",
+            originalLyric = "Original lyric",
+            lyricSyncEdited = false
+        )
+        val owner = owner(initialSong = restored)
+        var confirmations = 0
+        var appOnlySaves = 0
+
+        owner.requestSave(restored, { confirmations++ }, { appOnlySaves++ })
+
+        assertEquals(1, confirmations)
+        assertEquals(0, appOnlySaves)
+    }
+
+    @Test
+    fun `reopened known original lyrics are written even after app-only restoration cleared overrides`() {
+        val local = song.copy(mediaUri = "content://media/external/audio/media/8", lyricSyncEdited = false)
+        val restoredSongs = listOf(
+            local.copy(matchedLyric = "Original lyric", originalLyric = "Original lyric"),
+            local.copy(matchedTranslatedLyric = "Original translation", originalTranslatedLyric = "Original translation"),
+            local.copy(matchedRomanizedLyric = "Original romanization", originalRomanizedLyric = "Original romanization"),
+            local.copy(matchedLyric = "", originalLyric = ""),
+            local.copy(originalLyric = "Original lyric"),
+            local.copy(originalTranslatedLyric = ""),
+            local.copy(originalRomanizedLyric = "Original romanization")
+        )
+
+        restoredSongs.forEach { restored ->
+            assertEquals("known original lyrics must be written: $restored", true, metadataLyricsFlag(restored))
+        }
+        assertEquals(false, metadataLyricsFlag(local))
+    }
+
+    @Test
+    fun `pending lyric draft embeds once before metadata saves without repeating the lyric write`() {
+        val local = song.copy(
+            mediaUri = "content://media/external/audio/media/8",
+            matchedLyric = "Old app lyric",
+            lyricSyncEdited = true
+        )
+
+        assertEquals(
+            false,
+            metadataLyricsFlag(local, EditSongLyricsDraft("New lyric", "", "", true))
+        )
+    }
+
+    @Test
+    fun `reopened known empty cover ignores still embedded cover from an app-only restore`() {
+        val restored = song.copy(
+            mediaUri = "content://media/external/audio/media/8",
+            coverUrl = null,
+            customCoverUrl = null,
+            originalCoverUrl = ""
+        )
+        val staleEmbeddedCover = "file:///still-embedded-edited-cover.jpg"
+        val owner = NowPlayingSongEditOwner(
+            initialSong = restored,
+            initialCoverUrl = resolveEditSongInitialCoverUrl(restored, staleEmbeddedCover),
+            initialBaseline = baseline.copy(coverUrl = ""),
+            scope = CoroutineScope(Dispatchers.Unconfined),
+            onSavingChanged = {},
+            playbackPort = RecordingPlaybackPort()
+        )
+
+        assertEquals("", owner.coverUrlState.value)
+        owner.syncUneditedSong(restored, staleEmbeddedCover)
+        owner.applyResolvedCover(restored, staleEmbeddedCover)
+        assertEquals("", owner.coverUrlState.value)
+        assertEquals("", owner.editBaselineState.value.coverUrl)
+
+        val currentCover = restored.copy(coverUrl = "file:///current-cover.jpg")
+        assertEquals(currentCover.coverUrl, resolveEditSongInitialCoverUrl(currentCover, staleEmbeddedCover))
+        val customCover = restored.copy(customCoverUrl = "file:///custom-cover.jpg")
+        assertEquals(customCover.customCoverUrl, resolveEditSongInitialCoverUrl(customCover, staleEmbeddedCover))
+        val remote = restored.copy(mediaUri = null, channelId = "netease")
+        assertEquals(staleEmbeddedCover, resolveEditSongInitialCoverUrl(remote, staleEmbeddedCover))
+        owner.dispose()
+    }
+
+    @Test
+    fun `save destination reads lyrics saved before the playback snapshot recomposes`() {
+        val local = song.copy(
+            mediaUri = "content://media/external/audio/media/8",
+            coverUrl = "current-cover"
+        )
+        val port = RecordingPlaybackPort().apply {
+            current = local.copy(matchedLyric = "App lyric", lyricSyncEdited = true)
+        }
+        val owner = owner(port, initialSong = local)
+        var confirmations = 0
+        var appOnlySaves = 0
+
+        owner.requestSave(local, { confirmations++ }, { appOnlySaves++ })
+
+        assertEquals(1, confirmations)
+        assertEquals(0, appOnlySaves)
+    }
+
+    @Test
     fun `unedited song sync follows new metadata while manual edits remain stable`() {
         val owner = owner()
         val updated = song.copy(customName = "Updated title", customArtist = "Updated artist")
@@ -318,6 +458,51 @@ class NowPlayingSongEditOwnerTest {
         owner.syncUneditedSong(song, "content://cover/later")
         assertEquals("Manual title", owner.songNameState.value)
         assertEquals("Updated artist", owner.artistNameState.value)
+    }
+
+    @Test
+    fun `same song refresh does not unlock restoration or replace fields during save`() {
+        val owner = owner()
+        val updated = song.copy(customName = "Background update")
+        owner.isOriginalInfoRestoringState.value = true
+
+        owner.syncUneditedSong(updated, "content://cover/updated")
+
+        assertTrue(owner.isOriginalInfoRestoringState.value)
+        assertEquals("Current", owner.songNameState.value)
+
+        owner.isOriginalInfoRestoringState.value = false
+        owner.setSaving(true)
+        owner.syncUneditedSong(updated, "content://cover/updated")
+
+        assertEquals("Current", owner.songNameState.value)
+        owner.setSaving(false)
+    }
+
+    @Test
+    fun `resolved edited cover never replaces an explicitly empty original cover`() {
+        val edited = song.copy(
+            mediaUri = "content://media/external/audio/media/8",
+            customCoverUrl = "file:///edited-cover.jpg",
+            originalCoverUrl = ""
+        )
+        val owner = owner(
+            initialSong = edited,
+            initialBaseline = baseline.copy(coverUrl = "")
+        )
+
+        owner.applyResolvedCover(edited, edited.customCoverUrl)
+        val request = owner.nextOriginalInfoRequest()
+        owner.applyRestoredOriginalInfo(
+            request,
+            EditSongRestoreSelection(cover = true, title = false, artist = false, lyrics = false),
+            owner.editBaselineState.value,
+            null
+        )
+
+        assertEquals("", owner.editBaselineState.value.coverUrl)
+        assertEquals("", owner.coverUrlState.value)
+        assertTrue(owner.shouldRestoreCoverBaseState.value)
     }
 
     @Test
@@ -511,11 +696,47 @@ class NowPlayingSongEditOwnerTest {
         assertEquals(setOf("restore", "lyrics", "cover", "save"), cancelled)
     }
 
-    private fun owner(playbackPort: RecordingPlaybackPort = RecordingPlaybackPort()) =
+    private fun metadataLyricsFlag(song: SongItem, pendingDraft: EditSongLyricsDraft? = null): Boolean? {
+        var writesLyrics: Boolean? = null
+        var saves = 0
+        val viewModel = Mockito.mock(NowPlayingViewModel::class.java) { invocation ->
+            if (invocation.method.name == "updateSongInfo") {
+                writesLyrics = invocation.getArgument(9)
+                true
+            } else {
+                Mockito.RETURNS_DEFAULTS.answer(invocation)
+            }
+        }
+        val playback = RecordingPlaybackPort()
+        val owner = owner(playback, initialSong = song)
+        owner.pendingLyricsDraftState.value = pendingDraft
+        owner.saveEditedSongInfo(
+            song = song,
+            viewModel = viewModel,
+            writeLocalMetadata = true,
+            snackbarHostState = SnackbarHostState(),
+            resources = Mockito.mock(Resources::class.java),
+            onSaved = { saves++ }
+        )
+        assertEquals(1, saves)
+        if (pendingDraft == null) {
+            assertTrue(playback.writes.isEmpty())
+        } else {
+            assertTrue(playback.writes.single().writeLocalMetadata)
+        }
+        owner.dispose()
+        return writesLyrics
+    }
+
+    private fun owner(
+        playbackPort: RecordingPlaybackPort = RecordingPlaybackPort(),
+        initialSong: SongItem = song,
+        initialBaseline: EditSongBaseline = baseline
+    ) =
         NowPlayingSongEditOwner(
-            initialSong = song,
+            initialSong = initialSong,
             initialCoverUrl = "current-cover",
-            initialBaseline = baseline,
+            initialBaseline = initialBaseline,
             scope = CoroutineScope(Dispatchers.Unconfined),
             onSavingChanged = {},
             playbackPort = playbackPort

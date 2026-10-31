@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.yield
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
@@ -42,6 +43,7 @@ internal class SettingsStorageSelectionState {
     var clearBiliFavoriteCache by mutableStateOf(false)
     var clearBiliArchiveCache by mutableStateOf(false)
     var clearYoutubePlaylistCache by mutableStateOf(false)
+    var clearServerBrowseCache by mutableStateOf(false)
     var clearLogFiles by mutableStateOf(false)
     var clearCrashLogs by mutableStateOf(false)
 }
@@ -146,7 +148,14 @@ internal fun rememberSettingsStorageDetailsController(
             detailsState = detailsState,
             loadingState = loadingState,
             scanRequestState = scanRequestState,
-            analyze = { analyzeStorageUsage(context) }
+            analyze = {
+                analyzeStorageUsage(
+                    context,
+                    additionalSongsProvider = {
+                        PlayerManager.currentQueueFlow.value + listOfNotNull(PlayerManager.currentSongFlow.value)
+                    }
+                )
+            }
         )
     }
     LaunchedEffect(scanRequestState.intValue) { controller.scanRequested() }
@@ -212,6 +221,8 @@ internal fun LazyListScope.settingsStoragePageItems(
                 onClearBiliArchiveCacheChange = { selection.clearBiliArchiveCache = it },
                 clearYoutubePlaylistCache = selection.clearYoutubePlaylistCache,
                 onClearYoutubePlaylistCacheChange = { selection.clearYoutubePlaylistCache = it },
+                clearServerBrowseCache = selection.clearServerBrowseCache,
+                onClearServerBrowseCacheChange = { selection.clearServerBrowseCache = it },
                 clearLogFiles = selection.clearLogFiles,
                 onClearLogFilesChange = { selection.clearLogFiles = it },
                 clearCrashLogs = selection.clearCrashLogs,

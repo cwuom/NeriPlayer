@@ -21,6 +21,113 @@ import org.mockito.Mockito.`when`
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackArtworkOwnerTest {
     @Test
+    fun `restoring known empty local artwork clears media and notification bitmaps`() = runTest {
+        val editedSource = "content://covers/edited-local.jpg"
+        val sources = FakeCoverSources().apply {
+            local = true
+            immediateSource = editedSource
+            resolvedLocal = editedSource
+        }
+        val owner = owner(sources, PlaybackArtworkBitmapLoader { bitmap() })
+        val edited = song(1).copy(customCoverUrl = editedSource)
+        owner.observe(edited)
+        runCurrent()
+        assertTrue(owner.snapshotFor(edited).mediaReady)
+        assertTrue(owner.snapshotFor(edited).notificationReady)
+
+        sources.immediateSource = null
+        val temporarilyUnresolved = edited.copy(customCoverUrl = null)
+        assertEquals(editedSource, owner.observe(temporarilyUnresolved).coverSource)
+
+        val restored = temporarilyUnresolved.copy(originalCoverUrl = "")
+        val cleared = owner.observe(restored)
+        assertNull(cleared.coverSource)
+        assertNull(cleared.mediaBitmap)
+        assertNull(cleared.notificationBitmap)
+        assertFalse(cleared.mediaReady)
+        assertFalse(cleared.notificationReady)
+        assertFalse(cleared.pending)
+        runCurrent()
+        assertNull(owner.observe(restored).coverSource)
+
+        sources.immediateSource = "content://covers/new-local.jpg"
+        val editedAgain = restored.copy(customCoverUrl = sources.immediateSource)
+        owner.observe(editedAgain)
+        runCurrent()
+        assertEquals(sources.immediateSource, owner.snapshotFor(editedAgain).coverSource)
+        assertTrue(owner.snapshotFor(editedAgain).mediaReady)
+        owner.close()
+    }
+
+    @Test
+    fun `late local bitmap cannot repopulate artwork after an empty restore`() = runTest {
+        val pending = CompletableDeferred<Bitmap?>()
+        val sources = FakeCoverSources().apply {
+            local = true
+            immediateSource = "content://covers/late-local.jpg"
+        }
+        val owner = owner(sources, PlaybackArtworkBitmapLoader { pending.await() })
+        val edited = song(1).copy(customCoverUrl = sources.immediateSource)
+        owner.observe(edited)
+        runCurrent()
+
+        val restored = edited.copy(customCoverUrl = null, originalCoverUrl = "")
+        owner.observe(restored)
+        pending.complete(bitmap())
+        runCurrent()
+
+        assertNull(owner.snapshotFor(restored).coverSource)
+        assertNull(owner.snapshotFor(restored).mediaBitmap)
+        assertNull(owner.snapshotFor(restored).notificationBitmap)
+        owner.close()
+    }
+
+    @Test
+    fun `restoring blank local cover fields clears retained notification artwork`() = runTest {
+        listOf("" to null, null to "", "" to "", "  " to "\t").forEach { (cover, customCover) ->
+            val sources = FakeCoverSources().apply {
+                local = true
+                immediateSource = "content://covers/edited.jpg"
+            }
+            val owner = owner(sources, PlaybackArtworkBitmapLoader { bitmap() })
+            val edited = song(1).copy(customCoverUrl = sources.immediateSource)
+            owner.observe(edited)
+            runCurrent()
+            assertTrue(owner.snapshotFor(edited).notificationReady)
+
+            val restored = edited.copy(coverUrl = cover, customCoverUrl = customCover, originalCoverUrl = "")
+            val cleared = owner.observe(restored)
+            runCurrent()
+
+            assertNull(cleared.coverSource)
+            assertNull(owner.snapshotFor(restored).mediaBitmap)
+            assertNull(owner.snapshotFor(restored).notificationBitmap)
+            assertFalse(owner.snapshotFor(restored).pending)
+            owner.close()
+        }
+    }
+
+    @Test
+    fun `empty original does not hide a current cover or remote artwork`() = runTest {
+        val source = "content://covers/current.jpg"
+        listOf(true, false).forEach { localSong ->
+            val sources = FakeCoverSources().apply {
+                local = localSong
+                immediateSource = source
+            }
+            val owner = owner(sources, PlaybackArtworkBitmapLoader { bitmap() })
+            val current = song(1).copy(originalCoverUrl = "", coverUrl = source.takeIf { localSong })
+
+            owner.observe(current)
+            runCurrent()
+
+            assertEquals(source, owner.snapshotFor(current).coverSource)
+            assertTrue(owner.snapshotFor(current).mediaReady)
+            owner.close()
+        }
+    }
+
+    @Test
     fun `same cover URL on another song starts a new load and hides old artwork`() = runTest {
         val sources = FakeCoverSources().apply { immediateSource = "https://covers/shared.jpg" }
         val first = bitmap()

@@ -124,7 +124,7 @@ internal class PlaybackServicePresentationOwner(
     private val scope: CoroutineScope,
 ) {
     private val playbackStateThrottler = MediaSessionPlaybackStateThrottler()
-    private var lastNotificationSnapshot: PlaybackNotificationSnapshot? = null
+    private val notificationPublication = PlaybackNotificationPublicationOwner(scope, port, ::withShareUrl)
     private var lastMetadataSnapshot: PlaybackMetadataSnapshot? = null
     // 会话拒收过位图的封面, 同一封面后续只发布 URI, 避免每行歌词都重复失败的 Binder 事务
     private var rejectedArtworkCoverSource: String? = null
@@ -155,9 +155,17 @@ internal class PlaybackServicePresentationOwner(
 
     fun audioAttributes(): AudioAttributes = port.audioAttributes()
 
-    fun releaseSessionAfterForegroundFailure(reason: String) = port.releaseSessionAfterForegroundFailure(reason)
+    fun releaseSessionAfterForegroundFailure(reason: String) {
+        stopNotificationUpdates()
+        port.releaseSessionAfterForegroundFailure(reason)
+    }
 
-    fun releaseSessionForDestroy() = port.releaseSessionForDestroy()
+    fun releaseSessionForDestroy() {
+        stopNotificationUpdates()
+        port.releaseSessionForDestroy()
+    }
+
+    fun stopNotificationUpdates() = notificationPublication.cancel()
 
     fun buildBootstrapNotification(): Notification = port.buildBootstrapNotification()
 
@@ -206,12 +214,13 @@ internal class PlaybackServicePresentationOwner(
         lyricState: StatusBarLyricNotificationState,
         floatingLyricsEnabled: Boolean,
     ) {
-        if (!foregroundStarted) return
+        if (!foregroundStarted) {
+            stopNotificationUpdates()
+            return
+        }
         val prepared = prepareNotification(lyricState, floatingLyricsEnabled)
         updateWidget(force = false, floatingLyricsEnabled = floatingLyricsEnabled)
-        if (!force && prepared.snapshot == lastNotificationSnapshot) return
-        lastNotificationSnapshot = prepared.snapshot
-        port.publishNotification(withShareUrl(prepared.renderInputs))
+        notificationPublication.publish(prepared.snapshot, prepared.renderInputs, force)
     }
 
     private fun withShareUrl(inputs: PlaybackServiceNotificationRenderInputs): PlaybackServiceNotificationRenderInputs =
