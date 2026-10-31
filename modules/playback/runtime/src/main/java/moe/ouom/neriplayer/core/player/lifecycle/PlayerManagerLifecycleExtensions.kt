@@ -1753,7 +1753,7 @@ internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
 }
 
 internal fun PlayerManager.handleAudioBecomingNoisyImpl(): Boolean =
-    moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.interrupt() || audioDeviceRouteOwner.onAudioBecomingNoisy()
+    moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.interruptOr { audioDeviceRouteOwner.onAudioBecomingNoisy() }
 
 private fun PlayerManager.handleUsbExclusivePlaybackSettingChanged(enabled: Boolean) {
     usbPlaybackRouteOwner.changeSetting(enabled)

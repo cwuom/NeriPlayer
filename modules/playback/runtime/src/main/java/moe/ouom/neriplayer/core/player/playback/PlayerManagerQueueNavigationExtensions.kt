@@ -92,6 +92,10 @@ internal fun PlayerManager.handleTrackEnded() {
         "NERI-PlayerManager",
         "handleTrackEnded: currentIndex=$currentIndex, queueSize=${currentPlaylist.size}, repeatMode=$repeatModeSetting, shuffle=${player.shuffleModeEnabled}, isLastInPlaylist=$isLastInPlaylist"
     )
+    finishTrackEndAfterLanGate(isLastInPlaylist)
+}
+
+private fun PlayerManager.finishTrackEndAfterLanGate(isLastInPlaylist: Boolean) {
     if (LanPlaybackBinding.ended()) return
     finishTrackEnd(isLastInPlaylist)
 }
@@ -221,6 +225,15 @@ internal fun PlayerManager.nextImpl(
 ) {
     ensureInitialized()
     if (!initialized) return
+    requestNextTrackAfterLanGate(force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition)
+}
+
+private fun PlayerManager.requestNextTrackAfterLanGate(
+    force: Boolean,
+    commandSource: PlaybackCommandSource,
+    bypassLoudVolumeWarning: Boolean,
+    allowRememberedLongFormPosition: Boolean
+) {
     if (LanPlaybackBinding.step(1, commandSource, force)) return
     requestNextTrack(force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition)
 }
@@ -305,6 +318,13 @@ internal fun PlayerManager.previousImpl(
 ) {
     ensureInitialized()
     if (!initialized) return
+    requestPreviousTrackAfterLanGate(commandSource, bypassLoudVolumeWarning)
+}
+
+private fun PlayerManager.requestPreviousTrackAfterLanGate(
+    commandSource: PlaybackCommandSource,
+    bypassLoudVolumeWarning: Boolean
+) {
     if (LanPlaybackBinding.step(-1, commandSource)) return
     requestPreviousTrack(commandSource, bypassLoudVolumeWarning)
 }

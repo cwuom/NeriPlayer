@@ -1619,7 +1619,7 @@ class AudioPlayerService : Service() {
     }
 
     override fun onDestroy() {
-        moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.stopped?.invoke()
+        moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.notifyServiceStopped()
         NPLogger.w("NERI-APS", "onDestroy ${buildStateSummary()}")
         val preservePlaybackForRestart = shouldPreservePlaybackForRestart()
         try {

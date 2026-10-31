@@ -1390,7 +1390,7 @@ object PlayerManager {
     }
 
     fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
-        if (persist && moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.active) return
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.blockSpeedChange(persist)) return
         ensureInitialized()
         playbackSoundOwner.setSpeed(speed, persist)
     }
@@ -1401,7 +1401,7 @@ object PlayerManager {
     }
 
     fun setPlaybackSpeedAndPitch(speed: Float, pitch: Float, persist: Boolean = true) {
-        if (persist && moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.active) return
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.blockSpeedChange(persist)) return
         ensureInitialized()
         playbackSoundOwner.setSpeedAndPitch(speed, pitch, persist)
     }
