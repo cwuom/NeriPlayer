@@ -57,4 +57,5 @@
     <string name="lan_permission_play_short">播放</string>
     <string name="lan_permission_seek_short">进度</string>
     <string name="lan_host_preparing">正在准备音源，等待设备就绪…</string>
+    <string name="lan_error_source_changed">原文件已变更或不可读取，请重新选择歌曲。</string>
 </resources>

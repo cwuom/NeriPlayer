@@ -57,4 +57,5 @@
     <string name="lan_permission_play_short">Play/pause</string>
     <string name="lan_permission_seek_short">Seek</string>
     <string name="lan_host_preparing">Preparing audio and waiting for devices to be ready…</string>
+    <string name="lan_error_source_changed">The original file changed or is no longer readable. Select the song again.</string>
 </resources>

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.feedback
 import moe.ouom.neriplayer.common.R as CoreR
 
 internal fun lanErrorText(code: String): Int = when (code) {
+    "SOURCE_CHANGED" -> CoreR.string.lan_error_source_changed
     "LOCAL_READ", "LOCAL_STORAGE", "LOCAL_COVER", "METADATA_LIMIT" -> CoreR.string.lan_error_local
     "LOCAL_TRANSFER" -> CoreR.string.lan_error_transfer
     "MEMORY_LIMIT" -> CoreR.string.lan_error_memory

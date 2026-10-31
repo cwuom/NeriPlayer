@@ -52,6 +52,7 @@ async function load(d:any){
  const decoded=await audioContextManager.decodeAudioData(bytes);
  if(generation!==loadGeneration||closed)throw Error('STALE');
  if(decoded.numberOfChannels>2||decoded.length*decoded.numberOfChannels*4>512*1024*1024)throw Error('MEMORY_LIMIT');
+ diagnostic('decode-check',{expectedDurationMs:d.expectedDurationMs||0,actualDurationMs:decoded.duration*1000,frames:decoded.length,sampleRate:decoded.sampleRate,channels:decoded.numberOfChannels});
  if(d.expectedDurationMs>0&&Math.abs(decoded.duration*1000-d.expectedDurationMs)>Math.max(1000,d.expectedDurationMs*.01))throw Error('AUDIO_DURATION');
  buffer=decoded;state.duration=decoded.duration;state.audioSources=[{source:{url:d.key},status:'loaded',buffer:decoded}];
  diagnostic('decoded',{key:d.key,duration:decoded.duration,sampleRate:decoded.sampleRate,channels:decoded.numberOfChannels});return {key:d.key,durationSeconds:decoded.duration};

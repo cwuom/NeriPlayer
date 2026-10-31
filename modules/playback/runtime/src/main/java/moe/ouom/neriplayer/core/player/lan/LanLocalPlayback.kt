@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.lan
 
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import java.io.File
 import java.io.ByteArrayOutputStream
 import java.util.UUID
@@ -25,7 +26,6 @@ internal class LanLocalPlayback {
     var server: LanMediaServer? = null
     private var endpoint: Triple<String, Int, String>? = null
     private var hosted: LanPreparedSource? = null
-    private var hostedFile: File? = null
     private var hostedSong: SongItem? = null
     private var hostedMedia: LanHostedMedia? = null
     private val published = mutableListOf<String>()
@@ -42,31 +42,37 @@ internal class LanLocalPlayback {
     fun endpoint(url: String, port: Int, token: String) { endpoint = Triple(url, port, token) }
     fun clearHosted() {
         published.toList().forEach { server?.retire(it) }; published.clear()
-        hosted = null; hostedFile = null; hostedSong = null; hostedMedia = null
+        hosted = null; hostedSong = null; hostedMedia = null
     }
     fun reset() {
         clearHosted(); clearReceived()
         incoming = null; endpoint = null; server = null
     }
     suspend fun offer(song: SongItem, sampleRate: Int, refresh: Boolean): LanPreparedSource {
-        if (!refresh && hostedSong == song && hostedFile?.isFile == true) return checkNotNull(hosted)
+        if (!refresh && hostedSong == song && hostedMedia != null) {
+            hostedMedia?.audio?.source?.checkCurrent()
+            return checkNotNull(hosted)
+        }
         val service = checkNotNull(server) { "SOURCE" }
         val uri = song.localMediaUri() ?: error("SOURCE")
         val newResources = mutableListOf<String>()
         val temporary = mutableListOf<File>()
         try {
-            val snapshot = LanFileSnapshot.create(directory) {
-                if (uri.scheme == "file") File(checkNotNull(uri.path)).inputStream()
+            val original = uri.path?.let(::File)?.takeIf { uri.scheme == "file" }
+            val originalSize = original?.length()
+            val originalModified = original?.lastModified()
+            val current = { original == null || (original.isFile && original.length() == originalSize && original.lastModified() == originalModified) }
+            val (source, digest) = LanReadableMedia.fingerprint(current) {
+                if (original != null) original.inputStream()
                 else PlayerManager.application.contentResolver.openInputStream(uri) ?: error("LOCAL_READ")
             }
-            temporary += snapshot.file
             val duration = withContext(Dispatchers.IO) {
                 val retriever = MediaMetadataRetriever()
-                try { retriever.setDataSource(snapshot.file.absolutePath)
+                try { retriever.setDataSource(PlayerManager.application, uri)
                     retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: song.durationMs
                 } finally { retriever.release() }
             }
-            val format = withContext(Dispatchers.IO) { loader.validate(snapshot.file, sampleRate, duration) }
+            val format = withContext(Dispatchers.IO) { loader.validate(uri, source.byteLength, sampleRate, duration) }
             val enriched = withContext(Dispatchers.IO) {
                 moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager.hydrateLocalSongMetadata(PlayerManager.application, song)
             }
@@ -75,9 +81,9 @@ internal class LanLocalPlayback {
             val presentation = metadata.copy(cover = cover?.first)
             val presentationResource = publishBytes(LanPresentationCodec.encode(presentation), "application/json", newResources, temporary)
             val mediaId = UUID.randomUUID().toString()
-            service.publish(mediaId, snapshot.file, format.mime ?: "application/octet-stream")
+            service.publishBorrowed(mediaId, source, format.mime ?: "application/octet-stream")
             newResources += mediaId
-            val media = LanLocalMedia(mediaId, snapshot.sha256, snapshot.byteLength, duration,
+            val media = LanLocalMedia(mediaId, digest, source.byteLength, duration,
                 format.mime ?: error("AUDIO_FORMAT"), presentationResource.first)
             val track = ListenTogetherTrack(media.stableKey, "local", media.sha256, name = metadata.name,
                 artist = metadata.artist, album = metadata.album, durationMs = duration)
@@ -85,8 +91,8 @@ internal class LanLocalPlayback {
             published.toList().forEach(service::retire)
             published.clear(); published += newResources
             hosted = LanPreparedSource(track, localMedia = media)
-            hostedFile = snapshot.file; hostedSong = song
-            hostedMedia = LanHostedMedia(media, LanAudioFile(snapshot.file, format), presentation, cover?.second)
+            hostedSong = song
+            hostedMedia = LanHostedMedia(media, LanAudioFile(original, format, source, uri), presentation, cover?.second)
             LanLocalIdentity.bind(song, track)
             return checkNotNull(hosted)
         } catch (error: Throwable) {

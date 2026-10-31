@@ -275,7 +275,7 @@ class LanSessionManager(
                 send(LanMessage("PLAY", audioSource = source.track.stableKey, intent = intent, track = source.track,
                     trackTimeSeconds = position, sourceUrls = source.urls, localMedia = source.localMedia))
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { reportError(error.message?.takeIf { it in setOf("FULL_AUDIO_REQUIRED", "LOCAL_READ", "LOCAL_STORAGE", "LOCAL_COVER", "METADATA_LIMIT", "MEMORY_LIMIT", "AUDIO_FORMAT", "AUDIO_DURATION") } ?: "SOURCE") }
+            catch (error: Exception) { reportError(error.message?.takeIf { it in setOf("SOURCE_CHANGED", "FULL_AUDIO_REQUIRED", "LOCAL_READ", "LOCAL_STORAGE", "LOCAL_COVER", "METADATA_LIMIT", "MEMORY_LIMIT", "AUDIO_FORMAT", "AUDIO_DURATION") } ?: "SOURCE") }
         }
     }
 

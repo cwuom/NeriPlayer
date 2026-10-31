@@ -43,10 +43,12 @@ internal class LanAudioFileLoader {
         } catch (error: Throwable) { file.delete(); throw error }
         finally { source.close() }
     }
-    fun validate(file: File, sampleRate: Int, expectedDurationMs: Long): LanAudioFormat {
+    fun validate(file: File, sampleRate: Int, expectedDurationMs: Long): LanAudioFormat =
+        validate(Uri.fromFile(file), file.length(), sampleRate, expectedDurationMs)
+    fun validate(uri: Uri, byteLength: Long, sampleRate: Int, expectedDurationMs: Long): LanAudioFormat {
         val extractor = MediaExtractor()
         try {
-            extractor.setDataSource(file.absolutePath)
+            extractor.setDataSource(PlayerManager.application, uri, null)
             val format = (0 until extractor.trackCount).map(extractor::getTrackFormat)
                 .firstOrNull { it.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true } ?: error("AUDIO_FORMAT")
             val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
@@ -59,7 +61,7 @@ internal class LanAudioFileLoader {
             check(moe.ouom.neriplayer.data.model.lan.lanPcmFits(durationUs, sampleRate, channels)) { "MEMORY_LIMIT" }
             return LanAudioFormat(format.getString(MediaFormat.KEY_MIME),
                 format.optionalInt(MediaFormat.KEY_BIT_RATE)?.div(1000)
-                    ?: moe.ouom.neriplayer.data.model.playback.estimateBitrateKbps(file.length(), durationUs / 1000),
+                    ?: moe.ouom.neriplayer.data.model.playback.estimateBitrateKbps(byteLength, durationUs / 1000),
                 format.optionalInt(MediaFormat.KEY_SAMPLE_RATE), channels, format.optionalInt("bits-per-sample"))
         } catch (error: IllegalStateException) { throw error }
         catch (_: Exception) { error("AUDIO_FORMAT") }

@@ -112,7 +112,7 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
                 return withTimeout(90_000) {
                     files.clear(currentFile); currentFile = null
                     val downloaded = files.download(url, checkNotNull(engine).state.sampleRate, track.durationMs)
-                    val file = downloaded.file
+                    val file = checkNotNull(downloaded.file)
                     currentFile = file; ensureActive()
                     preparedContentDigest = withContext(Dispatchers.IO) {
                         val digest = java.security.MessageDigest.getInstance("SHA-256")
@@ -152,13 +152,13 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
             PlayerManager.updateResumePlaybackRequested(false)
             PlayerManager.playbackProgressOwner.setDuration(track.durationMs)
             preparedContentDigest = local.incoming?.sha256
-            val ready = checkNotNull(engine).load(track.stableKey, audio.file, position, track.durationMs)
+            val ready = checkNotNull(engine).load(track.stableKey, audio.source, position, track.durationMs)
             ensureCurrentLocal(track)
             if (ready) preparedKey = track.stableKey
             return ready
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
-            preparationError = error.message?.takeIf { it in setOf("LOCAL_TRANSFER", "LOCAL_READ", "LOCAL_STORAGE", "LOCAL_COVER",
+            preparationError = error.message?.takeIf { it in setOf("SOURCE_CHANGED", "LOCAL_TRANSFER", "LOCAL_READ", "LOCAL_STORAGE", "LOCAL_COVER",
                 "METADATA_LIMIT", "AUDIO_CONTENT", "AUDIO_DURATION", "AUDIO_FORMAT", "MEMORY_LIMIT") } ?: "SOURCE"
             return false
         }

@@ -821,6 +821,7 @@ var NeriBeatSyncAudio = (() => {
     const decoded = await audioContextManager.decodeAudioData(bytes);
     if (generation !== loadGeneration || closed) throw Error("STALE");
     if (decoded.numberOfChannels > 2 || decoded.length * decoded.numberOfChannels * 4 > 512 * 1024 * 1024) throw Error("MEMORY_LIMIT");
+    diagnostic("decode-check", { expectedDurationMs: d.expectedDurationMs || 0, actualDurationMs: decoded.duration * 1e3, frames: decoded.length, sampleRate: decoded.sampleRate, channels: decoded.numberOfChannels });
     if (d.expectedDurationMs > 0 && Math.abs(decoded.duration * 1e3 - d.expectedDurationMs) > Math.max(1e3, d.expectedDurationMs * 0.01)) throw Error("AUDIO_DURATION");
     buffer = decoded;
     state.duration = decoded.duration;

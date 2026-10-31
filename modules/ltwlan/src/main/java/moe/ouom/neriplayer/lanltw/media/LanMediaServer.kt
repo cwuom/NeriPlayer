@@ -13,7 +13,7 @@ import java.util.concurrent.SynchronousQueue
 
 /** Session-only resource server. Paths come exclusively from the private resource registry. */
 class LanMediaServer : NanoHTTPD(0) {
-    private data class Resource(val file: File, val mime: String, var readers: Int = 0, var retired: Boolean = false)
+    private data class Resource(val source: LanReadableMedia, val mime: String, val cleanup: () -> Unit, var readers: Int = 0, var retired: Boolean = false)
     private data class Grant(val peer: String, val streams: MutableSet<InputStream> = mutableSetOf())
     private val resources = mutableMapOf<String, Resource>()
     private val grants = mutableMapOf<String, Grant>()
@@ -31,17 +31,23 @@ class LanMediaServer : NanoHTTPD(0) {
         val tokens = grants.filterValues { it.peer == peer }.keys.toList()
         tokens.forEach { token -> grants.remove(token)?.streams?.toList()?.forEach { runCatching { it.close() } } }
     }
-    @Synchronized fun publish(id: String, file: File, mime: String) {
-        require(id.matches(Regex("[a-f0-9-]{36}")) && file.isFile && file.length() > 0)
+    fun publish(id: String, file: File, mime: String) {
+        require(file.isFile && file.length() > 0)
+        register(id, LanReadableMedia.file(file), mime) { file.delete(); Unit }
+    }
+    fun publishBorrowed(id: String, source: LanReadableMedia, mime: String) = register(id, source, mime) {}
+    @Synchronized private fun register(id: String, source: LanReadableMedia, mime: String, cleanup: () -> Unit) {
+        require(id.matches(Regex("[a-f0-9-]{36}")) && source.byteLength > 0)
         check(!stopped) { "LOCAL_TRANSFER" }
-        check(resources.values.sumOf { it.file.length() } + retired.sumOf { it.file.length() } + file.length() <= 2 * moe.ouom.neriplayer.data.model.lan.LanLocalMedia.MAX_BYTES + 32L * 1024 * 1024) { "LOCAL_STORAGE" }
+        check(resources.values.sumOf { it.source.byteLength } + retired.sumOf { it.source.byteLength } + source.byteLength <=
+            2 * moe.ouom.neriplayer.data.model.lan.LanLocalMedia.MAX_BYTES + 32L * 1024 * 1024) { "LOCAL_STORAGE" }
         require(id !in resources)
-        resources[id] = Resource(file, mime)
+        resources[id] = Resource(source, mime, cleanup)
     }
     @Synchronized fun retire(id: String) {
         val resource = resources.remove(id) ?: return
         resource.retired = true
-        if (resource.readers == 0) resource.file.delete() else retired.add(resource)
+        if (resource.readers == 0) resource.cleanup() else retired.add(resource)
     }
     override fun serve(session: IHTTPSession): Response {
         if (session.method != Method.GET && session.method != Method.HEAD) return failure(Response.Status.METHOD_NOT_ALLOWED)
@@ -52,9 +58,9 @@ class LanMediaServer : NanoHTTPD(0) {
             val grant = grants[token] ?: return failure(Response.Status.UNAUTHORIZED)
             val resource = resources[id] ?: return failure(Response.Status.NOT_FOUND)
             if (session.method == Method.HEAD) return newFixedLengthResponse(Response.Status.OK, resource.mime,
-                java.io.ByteArrayInputStream(ByteArray(0)), resource.file.length()).apply { addHeader("Cache-Control", "no-store") }
+                java.io.ByteArrayInputStream(ByteArray(0)), resource.source.byteLength).apply { addHeader("Cache-Control", "no-store") }
             if (!transfers.tryAcquire()) return failure(Response.Status.SERVICE_UNAVAILABLE).apply { addHeader("Retry-After", "1") }
-            val input = try { resource.file.inputStream() } catch (_: Exception) {
+            val input = try { resource.source.open() } catch (_: Exception) {
                 transfers.release(); return failure(Response.Status.NOT_FOUND)
             }
             resource.readers++
@@ -66,13 +72,13 @@ class LanMediaServer : NanoHTTPD(0) {
                         closed = true
                         try { super.close() } finally {
                             grant.streams.remove(this); resource.readers--; transfers.release()
-                            if (resource.retired && resource.readers == 0) { resource.file.delete(); retired.remove(resource) }
+                            if (resource.retired && resource.readers == 0) { resource.cleanup(); retired.remove(resource) }
                         }
                     }
                 }
             }
             grant.streams.add(stream)
-            return newFixedLengthResponse(Response.Status.OK, resource.mime, stream, resource.file.length()).apply {
+            return newFixedLengthResponse(Response.Status.OK, resource.mime, stream, resource.source.byteLength).apply {
                 addHeader("Cache-Control", "no-store")
             }
         }

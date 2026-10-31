@@ -35,6 +35,6 @@ class LanHostedMediaTest {
         catch (expected: IllegalStateException) { assertEquals("AUDIO_CONTENT", expected.message) }
         audioFile.delete()
         try { prepared.read(descriptor, track); fail("Missing snapshot accepted") }
-        catch (expected: IllegalStateException) { assertEquals("LOCAL_READ", expected.message) }
+        catch (expected: IllegalStateException) { assertEquals("SOURCE_CHANGED", expected.message) }
     }
 }

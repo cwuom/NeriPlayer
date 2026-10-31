@@ -7,7 +7,11 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.deriveCodecLabel
 
-internal data class LanAudioFile(val file: File, val format: LanAudioFormat)
+internal data class LanAudioFile(
+    val file: File?, val format: LanAudioFormat,
+    val source: moe.ouom.neriplayer.lanltw.media.LanReadableMedia = moe.ouom.neriplayer.lanltw.media.LanReadableMedia.file(checkNotNull(file)),
+    val originalUri: android.net.Uri = android.net.Uri.fromFile(checkNotNull(file))
+)
 internal data class LanAudioFormat(
     val mime: String?, val bitrateKbps: Int?, val sampleRateHz: Int?,
     val channels: Int?, val bitDepth: Int?

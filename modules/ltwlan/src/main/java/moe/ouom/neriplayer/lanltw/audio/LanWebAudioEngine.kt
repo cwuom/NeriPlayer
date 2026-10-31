@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.lanltw.core.LanNtpEstimator
 import moe.ouom.neriplayer.lanltw.protocol.LanCodec
 import java.io.ByteArrayInputStream
 import java.io.File
+import moe.ouom.neriplayer.lanltw.media.LanReadableMedia
 import java.util.UUID
 
 /** A fixed local page owns Web Audio. No remote page, executable content or arbitrary file path is exposed. */
@@ -33,7 +34,7 @@ class LanWebAudioEngine(
     private var destroyed = false
     private var initialized = false
     private var mediaKey: String? = null
-    @Volatile private var media: Pair<String, File>? = null
+    @Volatile private var media: Pair<String, LanReadableMedia>? = null
     var state = LanAudioState(); private set
     private val assetLoader = WebViewAssetLoader.Builder().addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(app)).build()
     private val bridge = Bridge()
@@ -53,8 +54,8 @@ class LanWebAudioEngine(
                 if (request.url.scheme != "https" || request.url.host != ORIGIN || request.method != "GET") return blocked()
                 val current = media
                 if (current != null && request.url.path == "/media/${current.first}") {
-                    return runCatching { WebResourceResponse("application/octet-stream", null, current.second.inputStream()).apply {
-                        responseHeaders = mapOf("Cache-Control" to "no-store", "Content-Length" to current.second.length().toString())
+                    return runCatching { WebResourceResponse("application/octet-stream", null, current.second.open()).apply {
+                        responseHeaders = mapOf("Cache-Control" to "no-store", "Content-Length" to current.second.byteLength.toString())
                     } }.getOrElse { blocked() }
                 }
                 if (request.url.path?.startsWith("/assets/lan-audio/") != true) return blocked()
@@ -116,11 +117,13 @@ class LanWebAudioEngine(
         if (initialized) return
         state = LanAudioState.parse(invoke("initialize").jsonObject); initialized = true; onState(state)
     }
-    suspend fun load(key: String, file: File, position: Double, expectedDurationMs: Long = 0): Boolean {
+    suspend fun load(key: String, file: File, position: Double, expectedDurationMs: Long = 0): Boolean =
+        load(key, LanReadableMedia.file(file), position, expectedDurationMs)
+    suspend fun load(key: String, source: LanReadableMedia, position: Double, expectedDurationMs: Long = 0): Boolean {
         initialize()
         if (mediaKey == key) return true
-        check(file.length() in 1..moe.ouom.neriplayer.data.model.lan.LanLocalMedia.MAX_BYTES) { "MEMORY_LIMIT" }
-        val token = UUID.randomUUID().toString(); media = token to file
+        check(source.byteLength in 1..moe.ouom.neriplayer.data.model.lan.LanLocalMedia.MAX_BYTES) { "MEMORY_LIMIT" }
+        val token = UUID.randomUUID().toString(); media = token to source
         val result = invoke("load", buildJsonObject { put("key", key); put("url", "https://$ORIGIN/media/$token"); put("position", position); put("expectedDurationMs", expectedDurationMs) })
         mediaKey = result.jsonObject["key"]?.jsonPrimitive?.content
         return mediaKey == key
