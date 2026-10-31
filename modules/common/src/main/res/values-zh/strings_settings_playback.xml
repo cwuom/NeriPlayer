@@ -256,7 +256,7 @@
     <string name="settings_coloros_conflict">配置已变化，请重新检查</string>
     <string name="settings_coloros_unknown">请重新检查配置，确认当前状态</string>
     <string name="settings_coloros_readback_mismatch">配置校验失败，请重新检查</string>
-    <string name="settings_coloros_reload_failed">配置已保存，请重新检查</string>
+    <string name="settings_coloros_reload_failed">加载失败，请重试</string>
     <string name="settings_coloros_error">操作失败，请重试</string>
     <string name="settings_coloros_discard">删除配置备份</string>
     <string name="settings_coloros_discard_confirmation_title">删除配置备份？</string>

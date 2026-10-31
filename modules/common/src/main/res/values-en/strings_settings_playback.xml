@@ -256,7 +256,7 @@
     <string name="settings_coloros_conflict">Configuration changed. Check again.</string>
     <string name="settings_coloros_unknown">Check the configuration to confirm its status</string>
     <string name="settings_coloros_readback_mismatch">Configuration verification failed. Check again.</string>
-    <string name="settings_coloros_reload_failed">Configuration saved. Check again.</string>
+    <string name="settings_coloros_reload_failed">Loading failed. Please try again.</string>
     <string name="settings_coloros_error">Operation failed. Please try again.</string>
     <string name="settings_coloros_discard">Delete configuration backup</string>
     <string name="settings_coloros_discard_confirmation_title">Delete configuration backup?</string>
