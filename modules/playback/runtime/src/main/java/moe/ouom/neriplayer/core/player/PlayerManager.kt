@@ -184,6 +184,8 @@ import moe.ouom.neriplayer.core.player.persistence.removeQueueItemImpl
 import moe.ouom.neriplayer.core.player.persistence.removeQueueItemsImpl
 import moe.ouom.neriplayer.core.player.persistence.replaceCurrentInQueueAndPlayImpl
 import moe.ouom.neriplayer.core.player.persistence.replaceMetadataFromSearchImpl
+import moe.ouom.neriplayer.core.player.metadata.SongMetadataApplyOptions
+import moe.ouom.neriplayer.core.player.metadata.SongMetadataApplyStage
 import moe.ouom.neriplayer.core.player.persistence.resumeRestoredPlaybackIfNeededImpl
 import moe.ouom.neriplayer.core.player.persistence.moveQueueItemImpl
 import moe.ouom.neriplayer.core.player.persistence.reorderQueueImpl
@@ -1901,8 +1903,10 @@ object PlayerManager {
         originalSong: SongItem,
         selectedSong: SongSearchInfo,
         isAuto: Boolean = false,
-        onComplete: ((Boolean) -> Unit)? = null
-    ) = replaceMetadataFromSearchImpl(originalSong, selectedSong, isAuto, onComplete)
+        onComplete: ((Boolean) -> Unit)? = null,
+        options: SongMetadataApplyOptions? = null,
+        onProgress: ((SongMetadataApplyStage) -> Unit)? = null
+    ): Job? = replaceMetadataFromSearchImpl(originalSong, selectedSong, isAuto, onComplete, options, onProgress)
 
     suspend fun updateSongCustomInfo(
         originalSong: SongItem,

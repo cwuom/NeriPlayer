@@ -19,13 +19,18 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import coil.Coil
 import coil.ImageLoader
+import coil.intercept.Interceptor
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.playback.visual.resolveNowPlayingOverlayArtwork
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Rule
 import org.junit.Test
@@ -78,6 +83,70 @@ class NeriMiniPlayerHighResolutionArtworkTest {
         assertFullResolutionArtwork(covers.first(), awaitArtwork(covers.first()))
     }
 
+    @Test
+    fun restoredNoArtworkClearsTheMountedMiniAndRejectsLateSharedFrames() {
+        val requestStarted = CompletableDeferred<Unit>()
+        val releaseRequest = CompletableDeferred<Unit>()
+        val requestFinished = CompletableDeferred<Unit>()
+        try {
+            withLocalCovers(configureLoader = { covers ->
+                components {
+                    add(Interceptor { chain ->
+                        if (chain.request.data.toString() == covers.last().url) {
+                            requestStarted.complete(Unit)
+                            withContext(NonCancellable) {
+                                releaseRequest.await()
+                                try {
+                                    chain.proceed(chain.request)
+                                } finally {
+                                    requestFinished.complete(Unit)
+                                }
+                            }
+                        } else {
+                            chain.proceed(chain.request)
+                        }
+                    })
+                }
+            }) { covers ->
+                val edited = covers.first()
+                val current = mutableStateOf(edited)
+                render(current, tablet = false)
+                val oldBitmap = awaitArtwork(edited)
+
+                composeRule.runOnIdle { current.value = edited.copy(requestCover = false) }
+                composeRule.waitForIdle()
+                composeRule.runOnIdle { assertSame(oldBitmap, flight.miniCoverBitmap) }
+
+                composeRule.runOnIdle { current.value = edited.copy(url = covers.last().url) }
+                composeRule.waitUntil(timeoutMillis = 10_000L) {
+                    composeRule.runOnIdle { requestStarted.isCompleted }
+                }
+                composeRule.runOnIdle {
+                    current.value = edited.copy(requestCover = false, clearCover = true)
+                }
+                composeRule.waitForIdle()
+                composeRule.runOnIdle {
+                    assertNull("restoring no artwork must clear the mounted mini", flight.miniCoverBitmap)
+                }
+
+                releaseRequest.complete(Unit)
+                composeRule.waitUntil(timeoutMillis = 10_000L) {
+                    composeRule.runOnIdle { requestFinished.isCompleted }
+                }
+                composeRule.runOnIdle {
+                    RetainedPlaybackCoverBitmapCache.put(edited.ownerKey, edited.url, null, oldBitmap)
+                    current.value = current.value.copy(revision = 1)
+                }
+                composeRule.waitForIdle()
+                composeRule.runOnIdle {
+                    assertNull("late artwork must not restore a cleared mini", flight.miniCoverBitmap)
+                }
+            }
+        } finally {
+            releaseRequest.complete(Unit)
+        }
+    }
+
     private fun render(current: MutableState<CoverFixture>, tablet: Boolean) {
         composeRule.setContent {
             if (mounted) {
@@ -85,10 +154,11 @@ class NeriMiniPlayerHighResolutionArtworkTest {
                 CompositionLocalProvider(LocalSharedCoverFlight provides flight) {
                     MaterialTheme {
                         NeriMiniPlayer(
-                            title = cover.ownerKey,
+                            title = cover.ownerKey + if (cover.revision == 0) "" else " ${cover.revision}",
                             artist = "Artwork fixture",
-                            coverUrl = cover.url,
+                            coverUrl = cover.url.takeIf { cover.requestCover },
                             coverIdentityKey = cover.ownerKey,
+                            clearCover = cover.clearCover,
                             isPlaying = false,
                             onPlayPause = {},
                             onPrevious = {},
@@ -146,11 +216,14 @@ class NeriMiniPlayerHighResolutionArtworkTest {
         }
     }
 
-    private fun withLocalCovers(test: (List<CoverFixture>) -> Unit) {
+    private fun withLocalCovers(
+        configureLoader: ImageLoader.Builder.(List<CoverFixture>) -> Unit = {},
+        test: (List<CoverFixture>) -> Unit
+    ) {
         val directory = File(context.cacheDir, "mini-player-highres-${System.nanoTime()}")
         check(directory.mkdir())
         val savedImageLoader = Coil.imageLoader(context)
-        val imageLoader = ImageLoader.Builder(context).memoryCache(null).diskCache(null).build()
+        var imageLoader: ImageLoader? = null
         try {
             val covers = listOf(Color.RED, Color.GREEN).mapIndexed { index, color ->
                 val file = File(directory, "cover-$index.png")
@@ -163,6 +236,8 @@ class NeriMiniPlayerHighResolutionArtworkTest {
                 }
                 CoverFixture("${directory.name}-$index", Uri.fromFile(file).toString(), color)
             }
+            imageLoader = ImageLoader.Builder(context).memoryCache(null).diskCache(null)
+                .apply { configureLoader(covers) }.build()
             Coil.setImageLoader(imageLoader)
             test(covers)
         } finally {
@@ -172,7 +247,7 @@ class NeriMiniPlayerHighResolutionArtworkTest {
             } finally {
                 try {
                     Coil.setImageLoader(savedImageLoader)
-                    imageLoader.shutdown()
+                    imageLoader?.shutdown()
                 } finally {
                     check(directory.deleteRecursively())
                 }
@@ -180,5 +255,12 @@ class NeriMiniPlayerHighResolutionArtworkTest {
         }
     }
 
-    private data class CoverFixture(val ownerKey: String, val url: String, val color: Int)
+    private data class CoverFixture(
+        val ownerKey: String,
+        val url: String,
+        val color: Int,
+        val requestCover: Boolean = true,
+        val clearCover: Boolean = false,
+        val revision: Int = 0
+    )
 }

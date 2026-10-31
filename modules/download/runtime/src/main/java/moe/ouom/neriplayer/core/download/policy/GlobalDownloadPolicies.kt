@@ -697,6 +697,7 @@ internal suspend fun resolveRestorableCoverReference(
     findManagedReferenceByName: suspend (String) -> String?,
     findContentAddressedReference: suspend (String) -> String?
 ): String? {
+    if (baseline && metadata.baseline.coverReference == "") return null
     val directReference = if (baseline) {
         metadata.baseline.coverReference
     } else {

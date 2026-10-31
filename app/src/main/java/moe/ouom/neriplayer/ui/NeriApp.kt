@@ -144,6 +144,7 @@ import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.theme.biasCoverSeedTowardBlue
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
+import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -606,7 +607,7 @@ private fun NeriAppContent(
         currentSong?.playbackVisualKeyAliases().orEmpty()
     }
     val playbackVisualCoverState = rememberPlaybackVisualCoverState(
-        playbackVisualCoverRequest(displayCoverUrl, currentSongVisualKey)
+        playbackVisualCoverRequest(displayCoverUrl, currentSongVisualKey, currentSong.hasKnownEmptyLocalCover())
     )
     val playbackVisualCoverUrl = playbackVisualCoverState.url
     // 旋转重建时直接复用当前封面颜色，避免首帧回到默认主题

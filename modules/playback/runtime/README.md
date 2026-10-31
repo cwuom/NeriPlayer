@@ -46,6 +46,20 @@ The app installs `PlayerDependencies` in `core/di/player`; `isInitialized()` che
 | Recovery Timing | Resuming retains the current playback cycle's counted state and restarts timing from the recovery point without fabricating data for the paused interval |
 | Process Exit & Frame Replay | Unpersisted handoff events may be lost on process exit; published durable frames retry with their original IDs, and leftover temporary frames never block the confirmed prefix |
 
+## 歌曲信息获取 / Song information acquisition
+
+手动获取歌曲信息时可选择歌词来源、原文、翻译、音译及逐词偏好；未选择或未获取到的歌词内容会保留原值。本地歌曲可选择回写音频或仅应用内保存。界面显示歌曲信息、歌词、封面和保存进度，准备期间可取消；开始保存校验后等待本轮提交完成，进度走完并显示完成状态后才关闭。选项与保存位置分组排列，小屏和大字体下可滚动选择，底部操作保持可见。
+
+Manual song information acquisition supports lyric sources, original, translated and romanized lyrics, and word-timing preference. Unselected or unavailable lyric content retains its current value. Local songs offer audio write-back or app-only persistence. The UI shows song information, lyric, artwork and save progress. Preparation can be cancelled; once saving and verification start, the current commit finishes before the progress reaches the end and the completed state is shown, then the sheet closes. Options and save destinations are grouped, with scrollable choices and visible actions on small screens or with larger text.
+
+播放中的本地信息补全在提交时校验播放请求及歌曲快照，并与手动保存共用元数据锁，防止旧读取覆盖刚保存或恢复的信息。明确恢复为无封面时，媒体会话和通知清除旧图及未完成的图片请求；暂时未解析到封面时仍保留当前画面。
+
+Local playback hydration validates the playback request and song snapshots when publishing, using the same metadata lock as manual saves so an older read cannot overwrite saved or restored values. A confirmed restoration to no artwork clears media-session and notification images and pending image requests; temporarily unresolved artwork retains the current frame.
+
+媒体通知合并密集更新并确认实际发布的最后一条内容，系统静默丢弃时有限重试。退出前台或销毁服务时取消待发通知与确认任务，初次前台提升仍立即执行。
+
+Media notifications coalesce rapid updates and confirm the latest publication, retrying a silent system drop within a fixed limit. Leaving foreground or destroying the service cancels pending publications and confirmations; initial foreground promotion remains immediate.
+
 ## 兼容 / Compatibility
 
 [UsbExclusiveNativeBridge](src/main/java/moe/ouom/neriplayer/core/player/usb/transport/UsbExclusiveNativeBridge.kt) 的完整类名、native 方法名及 FFmpeg 回调须与 JNI 和 [consumer R8 规则](consumer-rules.pro) 一致；[Manifest](src/main/AndroidManifest.xml) 中的服务类名也须保持兼容。FFmpeg AAR 仅用作编译和测试接口，由 app 打包；[`:native`](../../native/README.md) 维护 C/C++ 实现并通过 AAR 向 app 提供 `lib_neri.so`，Kotlin 桥仍在本模块。

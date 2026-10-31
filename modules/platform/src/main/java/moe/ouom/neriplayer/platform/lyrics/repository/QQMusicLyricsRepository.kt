@@ -38,6 +38,8 @@ class QQMusicLyricsRepository(
 
     override suspend fun getNativeSongInfo(id: String): SongDetails = api.getNativeSongInfo(id)
 
+    suspend fun getSongMetadataOnly(id: String): SongDetails = api.getSongMetadata(id).details
+
     private suspend fun fetchAmllWordLyricIfEnabled(metadata: QQMusicSongMetadata): String? {
         return try {
             if (amllLyricsEnabledProvider()) {

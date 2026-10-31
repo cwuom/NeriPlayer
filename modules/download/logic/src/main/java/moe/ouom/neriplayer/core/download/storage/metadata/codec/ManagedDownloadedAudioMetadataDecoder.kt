@@ -38,7 +38,8 @@ class ManagedDownloadedAudioMetadataDecoder(private val root: JSONObject) {
             customArtist = nonblankString("customArtist", overrides.artist),
             originalName = nonblankString("originalName", baseline.title),
             originalArtist = nonblankString("originalArtist", baseline.artist),
-            originalCoverUrl = nonblankString("originalCoverUrl", baseline.coverReference),
+            originalCoverUrl = presentString("originalCoverUrl")?.takeIf(String::isEmpty)
+                ?: nonblankString("originalCoverUrl", baseline.coverReference),
             originalLyric = presentString("originalLyric", baseline.originalLyric),
             originalTranslatedLyric = presentString(
                 "originalTranslatedLyric", baseline.translatedLyric

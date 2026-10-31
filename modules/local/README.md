@@ -52,15 +52,19 @@ Local import cache cleanup removes extracted covers with no remaining references
 
 | 项目 | 规则 |
 | --- | --- |
-| 原始基线与恢复 | 本地编辑保留首次修改前的歌词与封面，恢复时优先采用持久化的原始值 |
+| 原始基线与恢复 | 本地编辑保留首次修改前的歌词与封面，恢复时优先采用持久化的原始值；明确无原封面的状态在重扫和重开后仍会保留 |
 | 重扫隔离 | 重新扫描不会用当前侧载内容覆盖已保存的原始值 |
 | 空值与文件复用 | 区分未知内容与明确为空；缺失且为空的翻译、罗马音歌词不创建新文件，已有歌词文件按类型复用 |
 
 | Aspect | Rule |
 | --- | --- |
-| Original Baseline & Restore | Local edits preserve lyrics and artwork from before the first edit; restoration prefers persisted originals |
+| Original Baseline & Restore | Local edits preserve lyrics and artwork from before the first edit; restoration prefers persisted originals and retains a confirmed absence of original artwork across rescans and reopening |
 | Rescan Isolation | Rescanning never overwrites persisted originals with current sidecar contents |
 | Empty Values & File Reuse | Unknown and explicitly empty values remain distinct; missing empty translation or romanization tracks do not create extra files, and existing lyric files are reused by type |
+
+本地歌曲每次在编辑页保存时都可选择回写音频或仅应用内保存。显式回写会处理已有的自定义值和已知的恢复值，即使表单内容没有再次改变；未知内容继续保留。
+
+Every local song save offers audio write-back or app-only persistence. Explicit write-back includes existing custom values and known restored values even when the form has not changed again; unknown content remains preserved.
 
 ## 写入授权与恢复 / Write authorization and recovery
 

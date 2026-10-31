@@ -136,13 +136,16 @@ class NowPlayingScreenTest {
             albumId = 0L,
             durationMs = 5_000L,
             coverUrl = "   ",
-            originalCoverUrl = "",
             mediaUri = "content://media/external/audio/media/42"
         )
 
         assertEquals(
             "content://covers/42",
             resolveEditSongInitialCoverUrl(song, "content://covers/42")
+        )
+        assertEquals(
+            "",
+            resolveEditSongInitialCoverUrl(song.copy(originalCoverUrl = ""), "content://covers/42")
         )
     }
 
@@ -255,11 +258,7 @@ class NowPlayingScreenTest {
 
         assertTrue(
             shouldConfirmLocalMetadataWriteBack(
-                song = localSong,
-                title = localSong.name,
-                artist = localSong.artist,
-                coverUrl = localSong.coverUrl.orEmpty(),
-                hasPendingLyricsChange = true
+                song = localSong
             )
         )
         assertFalse(
@@ -268,11 +267,7 @@ class NowPlayingScreenTest {
                     album = "Netease",
                     albumId = 1L,
                     mediaUri = null
-                ),
-                title = localSong.name,
-                artist = localSong.artist,
-                coverUrl = localSong.coverUrl.orEmpty(),
-                hasPendingLyricsChange = true
+                )
             )
         )
     }

@@ -45,6 +45,9 @@ import moe.ouom.neriplayer.util.media.IsLandHelp
 import moe.ouom.neriplayer.util.media.isShareablePublicHttpUrl
 import moe.ouom.neriplayer.core.player.service.car.artwork.CarArtworkProvider
 import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState
+import java.util.UUID
+
+private const val MEDIA_NOTIFICATION_PUBLICATION_TOKEN = "moe.ouom.neriplayer.media.publication"
 
 internal data class PlaybackServiceNotificationRenderInputs(
     val song: SongItem?,
@@ -86,6 +89,8 @@ internal interface PlaybackServicePresentationPort {
     fun buildMinimalForegroundNotification(): Notification
     fun buildNotification(inputs: PlaybackServiceNotificationRenderInputs): Notification
     fun publishNotification(inputs: PlaybackServiceNotificationRenderInputs)
+    fun notificationPublicationToken(): String? = null
+    fun isNotificationPublicationCurrent(token: String): Boolean = false
     fun hasInstalledWidgets(): Boolean
     fun publishWidget(state: PlaybackWidgetState, artwork: Bitmap?)
     fun publishWidgetProgress(state: PlaybackWidgetState)
@@ -110,6 +115,9 @@ internal class AndroidPlaybackServicePresentationPort(
         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
         .build()
     private var mediaSession: MediaSession? = null
+    private val notificationGeneration = UUID.randomUUID().toString()
+    private var notificationSequence = 0L
+    private var lastNotificationPublicationToken: String? = null
 
     override fun initializeSession(callback: MediaSession.Callback) {
         mediaSession = MediaSession(context, "NeriPlayerSession").apply {
@@ -182,7 +190,19 @@ internal class AndroidPlaybackServicePresentationPort(
 
     override fun publishNotification(inputs: PlaybackServiceNotificationRenderInputs) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(AudioPlayerService.NOTIFICATION_ID, buildNotification(inputs))
+        val notification = buildNotification(inputs)
+        manager.notify(AudioPlayerService.NOTIFICATION_ID, notification)
+        lastNotificationPublicationToken = notification.extras.getString(MEDIA_NOTIFICATION_PUBLICATION_TOKEN)
+    }
+
+    override fun notificationPublicationToken(): String? = lastNotificationPublicationToken
+
+    override fun isNotificationPublicationCurrent(token: String): Boolean {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        return manager.activeNotifications.any {
+            it.id == AudioPlayerService.NOTIFICATION_ID && it.tag == null &&
+                it.notification.extras.getString(MEDIA_NOTIFICATION_PUBLICATION_TOKEN) == token
+        }
     }
 
     override fun hasInstalledWidgets(): Boolean = PlayerDependencies.presentation.hasInstalledWidgets(context)
@@ -241,7 +261,10 @@ internal class AndroidPlaybackServicePresentationPort(
         addMediaNotificationActions(builder, inputs, contentIntent)
         applyMediaNotificationText(builder, inputs)
         applyMediaNotificationArtwork(builder, inputs.artwork)
-        return finishNotification(builder, inputs)
+        return finishNotification(builder, inputs).also { notification ->
+            notification.extras.putString(MEDIA_NOTIFICATION_PUBLICATION_TOKEN,
+                "$notificationGeneration:${++notificationSequence}")
+        }
     }
 
     private fun applyMediaNotificationText(

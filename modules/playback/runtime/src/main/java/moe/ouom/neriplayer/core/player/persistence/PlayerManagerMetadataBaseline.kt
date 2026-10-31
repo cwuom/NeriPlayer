@@ -48,12 +48,14 @@ internal suspend fun PlayerManager.confirmLocalCoverBaseline(song: SongItem, ref
 
 internal suspend fun PlayerManager.preserveLocalSongMetadataOriginals(
     song: SongItem,
-    preserveCover: Boolean = false
+    preserveCover: Boolean = false,
+    preserveLyrics: Boolean = true
 ): SongItem = withContext(Dispatchers.IO) {
     if (!LocalSongSupport.isLocalSong(song, application)) return@withContext song
     val localSong = resolveLocalSidecarWriteSong(song) ?: song
     val metadata = LocalMediaSupport.readLocalMetadataSidecarFast(application, localSong)
     val lyrics = if (
+        preserveLyrics &&
         song.lyricSyncEdited != true &&
         (song.originalLyric == null || song.originalTranslatedLyric == null ||
             song.originalRomanizedLyric == null)

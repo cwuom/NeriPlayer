@@ -624,7 +624,7 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
             ?: context.contentResolver.openInputStream(sourceUri)
         val copied = sourceInput?.use { input ->
             FileOutputStream(backup).use { output ->
-                val copiedBytes = input.copyTo(output)
+                val copiedBytes = input.copyTo(output, LOCAL_METADATA_IO_BUFFER_BYTES)
                 output.fd.sync()
                 if (copiedBytes <= 0L) {
                     throw IOException("staged source copy is empty")
@@ -650,7 +650,7 @@ internal fun LocalMediaSupport.writeEditableMetadataThroughStagedContentCopy(
         }
         FileInputStream(backup).use { input ->
             FileOutputStream(updated).use { output ->
-                input.copyTo(output)
+                input.copyTo(output, LOCAL_METADATA_IO_BUFFER_BYTES)
                 output.fd.sync()
             }
         }

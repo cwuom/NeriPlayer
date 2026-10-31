@@ -152,6 +152,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricSeekPosition
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
@@ -619,7 +620,7 @@ fun NowPlayingScreen(
     } else {
         playbackSongKeyAliases
     }
-    val currentCoverUrl = resolveNowPlayingCoverRequestUrl(
+    val currentCoverUrl = if (currentSong.hasKnownEmptyLocalCover()) null else resolveNowPlayingCoverRequestUrl(
         resolvedCoverUrl = resolvedCoverUrl,
         resolvedCoverSongKey = playbackSongKey,
         resolvedCoverOwnerRequired = playbackSongKey == null && currentSongVisualKey != null,
@@ -1210,7 +1211,8 @@ fun NowPlayingScreen(
                                         coverCacheKey = coverSource.cacheKey,
                                         contentDescription = coverSource.contentDescription,
                                         modifier = modifier,
-                                        songKeyAliases = coverSource.songKeyAliases
+                                        songKeyAliases = coverSource.songKeyAliases,
+                                        clearCover = coverSource.clearCover
                                     )
                                 }
                             )
