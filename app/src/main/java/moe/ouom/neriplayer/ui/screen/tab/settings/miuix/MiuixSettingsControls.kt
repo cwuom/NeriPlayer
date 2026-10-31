@@ -474,10 +474,11 @@ internal fun MiuixSettingsSlider(
     enabled: Boolean = true,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     steps: Int = 0,
+    showTicks: Boolean = true,
     onValueChangeFinished: (() -> Unit)? = null
 ) {
     if (NeriDesign.isClean) {
-        CleanSettingsSlider(value, onValueChange, modifier, enabled, valueRange, steps, onValueChangeFinished)
+        CleanSettingsSlider(value, onValueChange, modifier, enabled, valueRange, steps, showTicks, onValueChangeFinished)
         return
     }
     Slider(
@@ -492,8 +493,10 @@ internal fun MiuixSettingsSlider(
             thumbColor = MaterialTheme.colorScheme.onPrimary,
             activeTrackColor = MaterialTheme.colorScheme.primary,
             inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            activeTickColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.55f),
-            inactiveTickColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+            activeTickColor = if (showTicks) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.55f) else Color.Transparent,
+            inactiveTickColor = if (showTicks) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f) else Color.Transparent,
+            disabledActiveTickColor = if (showTicks) Color.Unspecified else Color.Transparent,
+            disabledInactiveTickColor = if (showTicks) Color.Unspecified else Color.Transparent
         )
     )
 }
@@ -514,6 +517,7 @@ private fun CleanSettingsSlider(
     enabled: Boolean,
     valueRange: ClosedFloatingPointRange<Float>,
     steps: Int,
+    showTicks: Boolean,
     onValueChangeFinished: (() -> Unit)?
 ) {
     val colors = MaterialTheme.colorScheme
@@ -567,7 +571,7 @@ private fun CleanSettingsSlider(
                         cornerRadius = radius
                     )
                 }
-                if (state.steps > 0) {
+                if (showTicks && state.steps > 0) {
                     val dot = size.height * 0.18f
                     for (index in 1..state.steps) {
                         val tickFraction = index.toFloat() / (state.steps + 1)

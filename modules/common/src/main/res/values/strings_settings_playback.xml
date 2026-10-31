@@ -148,11 +148,10 @@
     <string name="settings_lyrics_offset_lrclib_desc">设置加载 LRCLIB 歌词时的基础偏移</string>
     <string name="settings_lyrics_offset_amll_ttml">AMLL TTML 默认歌词偏移</string>
     <string name="settings_lyrics_offset_amll_ttml_desc">设置加载 AMLL TTML 歌词时的基础偏移</string>
-    <string name="settings_lyrics_offset_bili_cc_subtitle">B 站 CC 字幕默认歌词偏移</string>
-    <string name="settings_lyrics_offset_bili_cc_subtitle_desc">设置加载 B 站 CC 字幕歌词时的基础偏移</string>
+    <string name="settings_lyrics_offset_bili_cc_subtitle">哔哩哔哩 CC 字幕默认歌词偏移</string>
+    <string name="settings_lyrics_offset_bili_cc_subtitle_desc">设置加载哔哩哔哩 CC 字幕歌词时的基础偏移</string>
     <string name="settings_lyrics_offset_reset">重置</string>
     <string name="settings_lyrics_offset_reset_all">全部重置</string>
-    <string name="settings_lyrics_offset_value">当前偏移：%1$s ms</string>
     <string name="settings_live_update_lyric_enabled">Live 通知歌词</string>
     <string name="settings_live_update_lyric_enabled_desc">在 Android 16 的 Live Update 通知中显示当前歌词</string>
     <string name="settings_status_bar_lyrics_title">状态栏歌词</string>
