@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.local.database.store.expectFailure
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -13,11 +14,16 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import java.io.File
 import java.io.IOException
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LocalMediaCompanionTransactionLifecycleTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
@@ -90,11 +96,12 @@ class LocalMediaCompanionTransactionLifecycleTest {
     }
 
     @Test
-    fun `a failed audio verification keeps the journal so rollback can restore the original`() {
+    fun `a failed audio verification keeps the journal so rollback can restore the original`() = withMetadataRecoveryDescriptors {
         val target = File(music, "song.flac").apply { writeText("original audio") }
         val transaction = LocalMediaCompanionTransaction(context, target.absolutePath)
         transaction.initialize(stagedCopy("source", "original audio"), stagedCopy("updated", "updated audio"), MODIFIED_AT)
-        target.writeText("externally changed")
+        transaction.prepareUpdatedAudio()
+        target.writeText("updated")
 
         val error = expectFailure<IOException> { transaction.commit() }
         assertEquals("伴随事务音频完整性未确认", error.message)
@@ -105,6 +112,21 @@ class LocalMediaCompanionTransactionLifecycleTest {
         assertEquals("original audio", target.readText())
         assertEquals(MODIFIED_AT, target.lastModified())
         assertEquals(emptyList<String>(), staging.list()!!.toList())
+    }
+
+    @Test
+    fun `audio rollback preserves an external edit and the recovery copies`() {
+        val target = File(music, "song.flac").apply { writeText("original audio") }
+        val transaction = LocalMediaCompanionTransaction(context, target.absolutePath)
+        val record = transaction.initialize(stagedCopy("source", "original audio"), stagedCopy("updated", "updated audio"), MODIFIED_AT)
+        target.writeText("externally changed")
+
+        expectFailure<IOException> { transaction.commit() }
+        assertFalse(transaction.rollback())
+        assertEquals("externally changed", target.readText())
+        assertTrue(record.journalFile.exists())
+        assertEquals("original audio", record.backupFile.readText())
+        assertEquals("updated audio", record.updatedFile.readText())
     }
 
     @Test

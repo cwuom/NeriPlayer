@@ -71,7 +71,10 @@ Local import cache cleanup removes extracted covers with no remaining references
 | Android 11+ 授权 | 对尚不可写的 MediaStore 条目分批请求系统写入同意 |
 | Android 10 授权 | 对其他应用创建的文件引导授予所在文件夹权限 |
 | 恢复日志与提交 | 日志记录写入意图、原始备份与对象身份，写入后经读回校验确认才提交 |
-| 冲突保护 | 恢复时若检测到对象被替换或内容冲突，保留恢复日志并中止覆盖，避免破坏外部更改 |
+| 冲突保护 | 覆盖前同时校验完整对象身份与内容；哈希相同不能证明对象归属，检测到对象被替换或内容冲突时保留恢复日志并中止覆盖 |
+| 中断写入 | 空文件或不完整音频须匹配原对象身份及已校验原始或更新副本的内容前缀；缺少身份的旧日志只允许清理已完成的操作，不授权覆盖 |
+| 描述符写入 | 直接文件和 URI 都在同一可读写描述符上校验、截断、写入与同步，直接文件的修改时间也绑定该描述符；目标不可写或 Provider 不支持非截断打开时保留文件与恢复日志 |
+| 写入可见性 | 音频原地更新，不依赖路径替换；其他读取者可能看到写入中的内容，中断后依靠恢复日志及已校验副本重试 |
 
 `LocalMediaWriteAccess` plans storage authorization before writing. Recovery journals manage audio and lyric/artwork companion updates:
 
@@ -80,7 +83,10 @@ Local import cache cleanup removes extracted covers with no remaining references
 | Android 11+ Authorization | Requests system write consent in batches for MediaStore items that are not yet writable |
 | Android 10 Authorization | Prompts for folder grants when modifying files created by other apps |
 | Recovery Journal & Commit | Tracks write intent, original backups, and object identity; commits only after read-back verification |
-| Conflict Protection | Retains the journal instead of overwriting when object replacement or content conflicts are detected during recovery |
+| Conflict Protection | Verifies full instance identity and content before overwriting; an equal hash does not establish ownership, and object replacement or content conflicts retain the journal and stop the write |
+| Interrupted Writes | Empty or incomplete audio must match the recorded instance and a prefix of a verified original or updated copy; legacy journals without identity may only clean up completed operations and cannot authorize overwrites |
+| Descriptor Writes | Direct files and URIs use the same read/write descriptor for verification, truncation, writing, and sync; direct-file timestamps are also bound to that descriptor. Unwritable targets or providers without non-truncating access retain files and journals |
+| Write Visibility | Updates audio in place without replacing its path; other readers may observe a write in progress, and interrupted writes retry using the journal and verified copies |
 
 ## 数据加载与统计 / Data loading and statistics
 

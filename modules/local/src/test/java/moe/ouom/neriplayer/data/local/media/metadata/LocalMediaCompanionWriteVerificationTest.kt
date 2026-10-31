@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.provider.DocumentsContract
 import android.system.Os
 import android.system.OsConstants
 import android.system.StructStat
@@ -11,6 +12,7 @@ import moe.ouom.neriplayer.data.local.database.store.expectFailure
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -30,6 +32,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockConstruction
 import org.mockito.Mockito.mockStatic
 import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -56,6 +59,8 @@ class LocalMediaCompanionWriteVerificationTest {
     private val readDescriptor = descriptor { document }
     private val writeDescriptor = mock(ParcelFileDescriptor::class.java).also { descriptor ->
         doReturn(descriptor).`when`(descriptor).dup()
+        doReturn(FileDescriptor()).`when`(descriptor).fileDescriptor
+        sources[descriptor] = { document }
         sinks[descriptor] = { bytes -> if (!providerDropsWrites) document = bytes }
     }
     private lateinit var context: Context
@@ -124,15 +129,227 @@ class LocalMediaCompanionWriteVerificationTest {
     }
 
     @Test
-    fun `providers without direct rw access still receive the companion through rwt`() {
+    fun `providers without non truncating write access preserve the companion`() {
         doThrow(FileNotFoundException("no rw")).`when`(resolver).openFileDescriptor(documentUri, "rw")
-        doReturn(writeDescriptor).`when`(resolver).openFileDescriptor(documentUri, "rwt")
+        doAnswer {
+            document = ByteArray(0)
+            writeDescriptor
+        }.`when`(resolver).openFileDescriptor(documentUri, "rwt")
         val transaction = transaction()
 
-        val written = withDescriptors { transaction.write(DOCUMENT, "updated lyric".toByteArray()) }
+        withDescriptors {
+            expectFailure<IOException> { transaction.write(DOCUMENT, "updated lyric".toByteArray()) }
+        }
 
-        assertTrue(written)
-        assertEquals("updated lyric", String(document))
+        assertEquals("original lyric", String(document))
+        verify(resolver, never()).openFileDescriptor(documentUri, "rwt")
+    }
+
+    @Test
+    fun `legacy companion rollback never opens a truncating stream when rw is unavailable`() {
+        val transaction = transaction()
+        withDescriptors {
+            transaction.write(DOCUMENT, "updated lyric".toByteArray())
+            val written = requireNotNull(transaction.record)
+            val legacy = written.copy(companions = written.companions.map { entry ->
+                entry.copy(phase = null, intendedFile = null, previousSha256 = null, previousIdentity = null, writableFileIdentity = null)
+            })
+            doAnswer { ByteArrayInputStream(document) }.`when`(resolver).openInputStream(documentUri)
+            assertTrue(LocalMediaMetadataRecoveryStore.targetMatches(
+                context, DOCUMENT, requireNotNull(legacy.companions.single().expectedSha256)
+            ))
+            val backup = requireNotNull(legacy.companions.single().backupFile)
+            assertEquals("original lyric", backup.readText())
+            doThrow(FileNotFoundException("no rw")).`when`(resolver).openFileDescriptor(documentUri, "rw")
+            doAnswer {
+                document = ByteArray(0)
+                ByteArrayOutputStream()
+            }.`when`(resolver).openOutputStream(documentUri, "rwt")
+
+            assertFalse(LocalMediaMetadataRecoveryStore.rollback(context, legacy))
+            assertEquals("updated lyric", String(document))
+            assertEquals("original lyric", backup.readText())
+            assertTrue(legacy.journalFile.exists())
+            verify(resolver, never()).openOutputStream(eq(documentUri), anyString())
+        }
+    }
+
+    @Test
+    fun `legacy companion rollback restores verified backup through non truncating rw access`() {
+        val transaction = transaction()
+        withDescriptors {
+            transaction.write(DOCUMENT, "updated lyric".toByteArray())
+            val written = requireNotNull(transaction.record)
+            val legacy = written.copy(companions = written.companions.map { entry ->
+                entry.copy(phase = null, intendedFile = null, previousSha256 = null, previousIdentity = null, writableFileIdentity = null)
+            })
+            doAnswer { ByteArrayInputStream(document) }.`when`(resolver).openInputStream(documentUri)
+            assertEquals("original lyric", requireNotNull(legacy.companions.single().backupFile).readText())
+
+            assertTrue(LocalMediaMetadataRecoveryStore.rollback(context, legacy))
+            assertEquals("original lyric", String(document))
+            assertFalse(legacy.journalFile.exists())
+            verify(resolver, never()).openOutputStream(eq(documentUri), anyString())
+        }
+    }
+
+    @Test
+    fun `same inode on a different device cannot authorize a document write`() {
+        var remapped = "another user's lyric".toByteArray()
+        val remappedDescriptor = descriptor { remapped }.also { descriptor ->
+            sinks[descriptor] = { bytes -> remapped = bytes }
+        }
+        doReturn(remappedDescriptor).`when`(resolver).openFileDescriptor(documentUri, "rw")
+        val transaction = transaction()
+
+        withDescriptors { os ->
+            os.`when`<StructStat> { Os.fstat(readDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 1L))
+            os.`when`<StructStat> { Os.fstat(remappedDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 2L))
+
+            expectFailure<Exception> { transaction.write(DOCUMENT, "updated lyric".toByteArray()) }
+
+            assertEquals("another user's lyric", String(remapped))
+            assertEquals("original lyric", String(document))
+            os.verify({ Os.ftruncate(any(), anyLong()) }, never())
+        }
+    }
+
+    @Test
+    fun `same inode on a different device cannot authorize legacy rollback`() {
+        var remapped = "updated lyric".toByteArray()
+        val remappedDescriptor = descriptor { remapped }.also { descriptor ->
+            sinks[descriptor] = { bytes -> remapped = bytes }
+        }
+        val transaction = transaction()
+        withDescriptors { os ->
+            os.`when`<StructStat> { Os.fstat(readDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 1L))
+            os.`when`<StructStat> { Os.fstat(writeDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 1L))
+            transaction.write(DOCUMENT, "updated lyric".toByteArray())
+            val written = requireNotNull(transaction.record)
+            val legacy = written.copy(companions = written.companions.map { entry ->
+                entry.copy(phase = null, intendedFile = null, previousSha256 = null, previousIdentity = null, writableFileIdentity = null)
+            })
+            doAnswer { ByteArrayInputStream(document) }.`when`(resolver).openInputStream(documentUri)
+            doReturn(remappedDescriptor).`when`(resolver).openFileDescriptor(documentUri, "rw")
+            os.`when`<StructStat> { Os.fstat(remappedDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 2L))
+            val backup = requireNotNull(legacy.companions.single().backupFile)
+            assertEquals("original lyric", backup.readText())
+
+            assertFalse(LocalMediaMetadataRecoveryStore.rollback(context, legacy))
+
+            assertEquals("updated lyric", String(remapped))
+            assertEquals("updated lyric", String(document))
+            assertEquals("original lyric", backup.readText())
+            assertTrue(legacy.journalFile.exists())
+            os.verify({ Os.ftruncate(eq(remappedDescriptor.fileDescriptor), anyLong()) }, never())
+        }
+    }
+
+    @Test
+    fun `verified fuse read and write views support writes and rollback`() {
+        val transaction = transaction()
+        withDescriptors { os ->
+            os.`when`<StructStat> { Os.fstat(readDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 1L))
+            os.`when`<StructStat> { Os.fstat(writeDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 2L))
+            doAnswer { ByteArrayInputStream(document) }.`when`(resolver).openInputStream(documentUri)
+
+            assertTrue(transaction.write(DOCUMENT, "updated lyric".toByteArray()))
+            assertEquals("updated lyric", String(document))
+            assertTrue(transaction.rollback())
+            assertEquals("original lyric", String(document))
+        }
+    }
+
+    @Test
+    fun `atomic file publication keeps read and path identities in their own views`() {
+        val lyric = File(music, "song.lrc").apply { writeText("original lyric") }
+        val transaction = transaction()
+        withDescriptors(lyric) { os ->
+            os.`when`<StructStat> { Os.fstat(any()) }.thenReturn(statWithInode(7L, 1L))
+            os.`when`<StructStat> { Os.stat(anyString()) }.thenReturn(statWithInode(7L, 2L))
+
+            assertTrue(transaction.write(lyric.absolutePath, "updated lyric".toByteArray()))
+
+            val entry = requireNotNull(transaction.record).companions.single()
+            assertEquals("1:7", entry.fileIdentity)
+            assertEquals("2:7", entry.stagedIdentity)
+            assertEquals("updated lyric", lyric.readText())
+            assertTrue(transaction.rollback())
+            assertEquals("original lyric", lyric.readText())
+        }
+    }
+
+    @Test
+    fun `repeated writes cannot authorize another write view with identical content`() {
+        var remapped = "updated lyric".toByteArray()
+        val remappedDescriptor = descriptor { remapped }.also { descriptor ->
+            sinks[descriptor] = { bytes -> remapped = bytes }
+        }
+        val transaction = transaction()
+        withDescriptors { os ->
+            os.`when`<StructStat> { Os.fstat(readDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 1L))
+            os.`when`<StructStat> { Os.fstat(writeDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 2L))
+            transaction.write(DOCUMENT, "updated lyric".toByteArray())
+            doReturn(remappedDescriptor).`when`(resolver).openFileDescriptor(documentUri, "rw")
+            os.`when`<StructStat> { Os.fstat(remappedDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 3L))
+
+            expectFailure<Exception> { transaction.write(DOCUMENT, "second lyric".toByteArray()) }
+
+            assertEquals("updated lyric", String(remapped))
+            assertEquals("updated lyric", String(document))
+            assertEquals("original lyric", requireNotNull(transaction.record).companions.single().backupFile?.readText())
+            os.verify({ Os.ftruncate(eq(remappedDescriptor.fileDescriptor), anyLong()) }, never())
+        }
+    }
+
+    @Test
+    fun `legacy created companion cannot delete a remapped read view with identical content`() {
+        val transaction = transaction()
+        withDescriptors { os ->
+            os.`when`<StructStat> { Os.fstat(readDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 1L))
+            os.`when`<StructStat> { Os.fstat(writeDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 1L))
+            transaction.write(DOCUMENT, "original lyric".toByteArray(), created = true)
+            val written = requireNotNull(transaction.record)
+            val legacy = written.copy(companions = written.companions.map { entry ->
+                entry.copy(phase = null, intendedFile = null, previousSha256 = null, previousIdentity = null, writableFileIdentity = null)
+            })
+            doAnswer { ByteArrayInputStream(document) }.`when`(resolver).openInputStream(documentUri)
+            os.`when`<StructStat> { Os.fstat(readDescriptor.fileDescriptor) }.thenReturn(statWithInode(7L, 2L))
+            mockStatic(DocumentsContract::class.java).use { documents ->
+                documents.`when`<Boolean> { DocumentsContract.deleteDocument(resolver, documentUri) }.thenReturn(true)
+
+                assertFalse(LocalMediaMetadataRecoveryStore.rollback(context, legacy))
+
+                assertEquals("original lyric", String(document))
+                assertTrue(legacy.journalFile.exists())
+                documents.verify({ DocumentsContract.deleteDocument(resolver, documentUri) }, never())
+            }
+        }
+    }
+
+    @Test
+    fun `legacy created companion without a read identity is retained`() {
+        val transaction = transaction()
+        withDescriptors {
+            transaction.write(DOCUMENT, "original lyric".toByteArray(), created = true)
+            val written = requireNotNull(transaction.record)
+            val legacy = written.copy(companions = written.companions.map { entry ->
+                entry.copy(
+                    phase = null, intendedFile = null, previousSha256 = null,
+                    previousIdentity = null, fileIdentity = null, writableFileIdentity = null
+                )
+            })
+            doAnswer { ByteArrayInputStream(document) }.`when`(resolver).openInputStream(documentUri)
+            mockStatic(DocumentsContract::class.java).use { documents ->
+                documents.`when`<Boolean> { DocumentsContract.deleteDocument(resolver, documentUri) }.thenReturn(true)
+
+                assertFalse(LocalMediaMetadataRecoveryStore.rollback(context, legacy))
+
+                assertEquals("original lyric", String(document))
+                assertTrue(legacy.journalFile.exists())
+                documents.verify({ DocumentsContract.deleteDocument(resolver, documentUri) }, never())
+            }
+        }
     }
 
     @Test
@@ -173,6 +390,7 @@ class LocalMediaCompanionWriteVerificationTest {
         val remappedDescriptor = mock(ParcelFileDescriptor::class.java).also { descriptor ->
             doReturn(descriptor).`when`(descriptor).dup()
             doReturn(remappedHandle).`when`(descriptor).fileDescriptor
+            sources[descriptor] = { remapped }
             sinks[descriptor] = { bytes -> remapped = bytes }
         }
         // provider 已把稳定 URI 指向另一个普通文件，与真实 provider 一样，带 t 的模式在打开时就截断该文件
@@ -209,14 +427,15 @@ class LocalMediaCompanionWriteVerificationTest {
     private fun transaction() = LocalMediaCompanionTransaction(context, File(music, "song.flac").absolutePath)
 
     private fun <T> withDescriptors(vararg files: File, block: (MockedStatic<Os>) -> T): T {
-        val fileDescriptors = files.associateWith { file -> descriptor { file.readBytes() } }
+        val fileDescriptors = files.associateWith { file -> descriptor { file.readBytes() } }.toMutableMap()
         return mockStatic(Uri::class.java, CALLS_REAL_METHODS).use { uris ->
             uris.`when`<Uri> { Uri.parse(DOCUMENT) }.thenReturn(documentUri)
             mockStatic(ParcelFileDescriptor::class.java).use { descriptors ->
-                fileDescriptors.forEach { (file, descriptor) ->
-                    descriptors.`when`<ParcelFileDescriptor> {
-                        ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-                    }.thenReturn(descriptor)
+                descriptors.`when`<ParcelFileDescriptor> {
+                    ParcelFileDescriptor.open(any(File::class.java), eq(ParcelFileDescriptor.MODE_READ_ONLY))
+                }.thenAnswer { invocation ->
+                    val file = invocation.getArgument<File>(0)
+                    fileDescriptors.getOrPut(file) { descriptor { file.readBytes() } }
                 }
                 mockStatic(Os::class.java).use { os ->
                     os.`when`<StructStat> { Os.stat(anyString()) }.thenReturn(stat)
@@ -239,11 +458,13 @@ class LocalMediaCompanionWriteVerificationTest {
     private fun descriptor(source: () -> ByteArray): ParcelFileDescriptor =
         mock(ParcelFileDescriptor::class.java).also { descriptor ->
             doReturn(descriptor).`when`(descriptor).dup()
+            doReturn(FileDescriptor()).`when`(descriptor).fileDescriptor
             sources[descriptor] = source
         }
 
-    private fun statWithInode(inode: Long): StructStat = mock(StructStat::class.java).also { remappedStat ->
+    private fun statWithInode(inode: Long, device: Long = 0L): StructStat = mock(StructStat::class.java).also { remappedStat ->
         StructStat::class.java.getField("st_ino").apply { isAccessible = true }.setLong(remappedStat, inode)
+        StructStat::class.java.getField("st_dev").apply { isAccessible = true }.setLong(remappedStat, device)
     }
 
     private fun serve(stream: InputStream, bytes: ByteArray) {

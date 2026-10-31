@@ -57,12 +57,6 @@ private data class EnhancedLrcWord(
     val endTimeMs: Long?
 )
 
-private data class EnhancedLrcTimelineEntry(
-    val startTimeMs: Long,
-    val text: String,
-    val words: List<EnhancedLrcWord>
-)
-
 fun isNeteaseYrc(content: String): Boolean = content.contains(NeteaseYrcLineRegex)
 
 fun isTtmlLyrics(content: String): Boolean = TtmlTagRegex.containsMatchIn(content)
@@ -71,7 +65,6 @@ fun parseNeteaseLyricsAuto(content: String): List<LyricEntry> {
     return when {
         isTtmlLyrics(content) -> parseTtmlLyrics(content)
         isNeteaseYrc(content) -> runCatching { parseNeteaseYrc(content) }.getOrDefault(emptyList())
-        isEnhancedLrc(content) -> parseEnhancedLrc(content).withoutLyricCredits()
         else -> parseNeteaseLrc(content)
     }
 }
@@ -236,53 +229,7 @@ private fun Long.saturatingAdd(other: Long): Long {
     }
 }
 
-private fun isEnhancedLrc(content: String): Boolean {
-    return content.lineSequence().any { rawLine ->
-        val line = rawLine.trimStart()
-        val lineTimestamp = EnhancedLrcLineTimestampRegex.find(line)
-            ?.takeIf { it.range.first == 0 }
-            ?: return@any false
-        EnhancedLrcWordTimestampRegex.find(line.substring(lineTimestamp.range.last + 1)) != null
-    }
-}
-
-private fun parseEnhancedLrc(lrc: String): List<LyricEntry> {
-    val timeline = lrc.lineSequence()
-        .mapNotNull(::parseEnhancedLrcTimelineEntry)
-        .sortedBy(EnhancedLrcTimelineEntry::startTimeMs)
-        .toList()
-
-    return timeline.mapIndexed { index, line ->
-        val nextLineStartMs = timeline.getOrNull(index + 1)?.startTimeMs
-        val words = line.words.mapIndexed { wordIndex, word ->
-            val fallbackEndMs = line.words.getOrNull(wordIndex + 1)?.startTimeMs
-                ?: nextLineStartMs
-                ?: line.startTimeMs.saturatingAdd(5_000L)
-            WordTiming(
-                startTimeMs = word.startTimeMs,
-                endTimeMs = (word.endTimeMs ?: fallbackEndMs).coerceAtLeast(word.startTimeMs),
-                charCount = word.text.length
-            )
-        }
-        val endTimeMs = words.maxOfOrNull { it.endTimeMs }
-            ?: nextLineStartMs
-            ?: line.startTimeMs.saturatingAdd(5_000L)
-        LyricEntry(
-            text = line.text,
-            startTimeMs = line.startTimeMs,
-            endTimeMs = endTimeMs.coerceAtLeast(line.startTimeMs),
-            words = words
-        )
-    }
-}
-
-private fun parseEnhancedLrcTimelineEntry(rawLine: String): EnhancedLrcTimelineEntry? {
-    val line = rawLine.trim()
-    val lineTimestamp = EnhancedLrcLineTimestampRegex.find(line)
-        ?.takeIf { it.range.first == 0 }
-        ?: return null
-    val startTimeMs = parseLrcTimestampMs(lineTimestamp) ?: return null
-    val content = line.substring(lineTimestamp.range.last + 1)
+private fun parseEnhancedLrcWords(content: String, startTimeMs: Long): List<EnhancedLrcWord>? {
     val wordTimestamps = EnhancedLrcWordTimestampRegex.findAll(content).toList()
     if (wordTimestamps.isEmpty()) {
         return null
@@ -315,14 +262,7 @@ private fun parseEnhancedLrcTimelineEntry(rawLine: String): EnhancedLrcTimelineE
             }
         }
     }
-    if (words.isEmpty()) {
-        return null
-    }
-    return EnhancedLrcTimelineEntry(
-        startTimeMs = startTimeMs,
-        text = words.joinToString(separator = "") { it.text },
-        words = words
-    )
+    return words.takeIf { it.isNotEmpty() }
 }
 
 private fun parseLrcTimestampMs(timestamp: MatchResult): Long? {
@@ -338,7 +278,7 @@ private fun parseLrcTimestampMs(timestamp: MatchResult): Long? {
     return minutes * 60_000L + seconds * 1_000L + milliseconds
 }
 
-private fun parseSquareBracketLrcTimelineEntries(
+private fun parseLrcTimelineEntries(
     rawLine: String,
     sourceLineIndex: Int
 ): List<LrcTimelineEntry> {
@@ -356,6 +296,30 @@ private fun parseSquareBracketLrcTimelineEntries(
     ) {
         nextExpectedStart = timestamps[leadingTimestampCount].range.last + 1
         leadingTimestampCount++
+    }
+
+    val leadingTimestamps = timestamps.take(leadingTimestampCount)
+    val firstStartTimeMs = parseLrcTimestampMs(leadingTimestamps.first()) ?: return emptyList()
+    val content = line.substring(nextExpectedStart)
+    val enhancedWords = parseEnhancedLrcWords(content, firstStartTimeMs)
+    if (enhancedWords != null) {
+        val text = enhancedWords.joinToString(separator = "") { it.text }
+        return leadingTimestamps.mapIndexedNotNull { timestampIndex, timestamp ->
+            val startTimeMs = parseLrcTimestampMs(timestamp) ?: return@mapIndexedNotNull null
+            val shiftMs = startTimeMs - firstStartTimeMs
+            LrcTimelineEntry(
+                startTimeMs = startTimeMs,
+                text = text,
+                words = enhancedWords.map { word ->
+                    word.copy(
+                        startTimeMs = (word.startTimeMs + shiftMs).coerceAtLeast(0L),
+                        endTimeMs = word.endTimeMs?.let { (it + shiftMs).coerceAtLeast(0L) }
+                    )
+                },
+                sourceLineIndex = sourceLineIndex,
+                timestampIndex = timestampIndex
+            )
+        }
     }
 
     val primaryTimestampIndex = leadingTimestampCount - 1
@@ -415,7 +379,7 @@ private fun parseSquareBracketLrcTimelineEntries(
     }
 }
 
-private fun foldAdjacentSquareBracketTranslations(
+private fun foldAdjacentLrcTranslations(
     entries: List<LyricEntry>
 ): List<LyricEntry> {
     val foldedEntries = mutableListOf<LyricEntry>()
@@ -445,9 +409,6 @@ private fun foldAdjacentSquareBracketTranslations(
 fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
 //    NPLogger.d("parseLyc-N", lrc)
     val normalizedLrc = normalizeLegacyLrcTimestamps(lrc)
-    if (isEnhancedLrc(normalizedLrc)) {
-        return parseEnhancedLrc(normalizedLrc).withoutLyricCredits()
-    }
     val timeline = mutableListOf<LrcTimelineEntry>()
 
     normalizedLrc.lineSequence().forEachIndexed { sourceLineIndex, raw ->
@@ -455,7 +416,7 @@ fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
         if (line.isEmpty()) return@forEachIndexed
         if (line.startsWith("{") || line.startsWith("}")) return@forEachIndexed // 过滤 JSON 段
 
-        timeline += parseSquareBracketLrcTimelineEntries(
+        timeline += parseLrcTimelineEntries(
             rawLine = line,
             sourceLineIndex = sourceLineIndex
         )
@@ -491,14 +452,13 @@ fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
     } ?: timeline
     val out = mutableListOf<LyricEntry>()
     var nextTimestampMs: Long? = null
+    var nextDistinctTimestampMs: Long? = null
     for (index in effectiveTimeline.lastIndex downTo 0) {
         val entry = effectiveTimeline[index]
+        if (nextTimestampMs != null && nextTimestampMs > entry.startTimeMs) {
+            nextDistinctTimestampMs = nextTimestampMs
+        }
         if (entry.text.isNotBlank()) {
-            val nextDistinctTimestampMs = effectiveTimeline
-                .asSequence()
-                .drop(index + 1)
-                .firstOrNull { it.startTimeMs > entry.startTimeMs }
-                ?.startTimeMs
             val words = entry.words?.let { sourceWords ->
                 sourceWords.mapIndexed { wordIndex, word ->
                     val fallbackEndTimeMs = sourceWords.getOrNull(wordIndex + 1)?.startTimeMs
@@ -528,5 +488,5 @@ fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
         nextTimestampMs = entry.startTimeMs
     }
     out.reverse()
-    return foldAdjacentSquareBracketTranslations(out).withoutLyricCredits()
+    return foldAdjacentLrcTranslations(out).withoutLyricCredits()
 }

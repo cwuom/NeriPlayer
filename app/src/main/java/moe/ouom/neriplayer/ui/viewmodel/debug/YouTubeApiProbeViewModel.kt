@@ -42,8 +42,6 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicDebugProbeResult
 import moe.ouom.neriplayer.platform.youtube.api.protocol.YouTubeMusicLocaleResolver
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
-import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
 import moe.ouom.neriplayer.R as AppR
 
@@ -194,16 +192,12 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     fun clearAuth() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                authRepo.clear()
+                AppContainer.changeYouTubeAuth { authRepo.clear() }
             } catch (_: IOException) {
                 _ui.value = _ui.value.copy(status = string(CoreCommonR.string.auth_storage_clear_failed))
                 return@launch
             }
             client.clearBootstrapCache()
-            clearWebViewLoginState(
-                context = getApplication(),
-                platform = WebLoginPlatform.YOUTUBE
-            )
             _ui.value = _ui.value.copy(
                 running = false,
                 authSummary = buildAuthSummary(),

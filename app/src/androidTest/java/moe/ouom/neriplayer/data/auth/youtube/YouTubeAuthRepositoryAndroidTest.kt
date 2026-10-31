@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.auth.youtube
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
 import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthRepository
+import moe.ouom.neriplayer.platform.youtube.auth.mergeYouTubeAuthCookieUpdates
 
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -10,6 +11,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -87,15 +89,18 @@ class YouTubeAuthRepositoryAndroidTest {
             )
         )
 
-        assertTrue(
-            repository.mergeCookieUpdates(
-                listOf(
-                    "SAPISID=new-sapisid; Path=/; Secure; HttpOnly",
-                    "LOGIN_INFO=; Max-Age=0; Path=/; Secure",
-                    "VISITOR_INFO1_LIVE=; Max-Age=0; Path=/; Secure",
-                    "__Secure-1PAPISID=papisid-token; Path=/; Secure"
+        assertNotNull(
+            repository.updateAuthIfCurrent(repository.captureAuthSnapshot()) { current ->
+                mergeYouTubeAuthCookieUpdates(
+                    current,
+                    listOf(
+                        "SAPISID=new-sapisid; Path=/; Secure; HttpOnly",
+                        "LOGIN_INFO=; Max-Age=0; Path=/; Secure",
+                        "VISITOR_INFO1_LIVE=; Max-Age=0; Path=/; Secure",
+                        "__Secure-1PAPISID=papisid-token; Path=/; Secure"
+                    )
                 )
-            )
+            }
         )
 
         val recreatedRepository = YouTubeAuthRepository(context)

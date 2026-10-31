@@ -18,6 +18,45 @@ import java.io.IOException
 
 class AudioDownloadTransferPolicyTest {
     @Test
+    fun `matching strong etags never authorize joining different resources`() {
+        val original = ManagedDownloadStorage.WorkingResumeFingerprint(
+            sourceUrl = "https://cdn.example/audio.m4a?quality=high", etag = "\"1\"",
+            expectedContentLength = 4_096L
+        )
+        for (url in listOf(
+            "https://cdn.example/other.m4a?quality=high",
+            "https://other.example/audio.m4a?quality=high",
+            "https://cdn.example/audio.m4a?quality=low"
+        )) {
+            assertTrue(url, AudioDownloadTransferPolicy.shouldDiscardWorkingFileForResume(url, original))
+        }
+    }
+
+    @Test
+    fun `unknown hosts cannot treat generic token query as renewable authentication`() {
+        val original = ManagedDownloadStorage.WorkingResumeFingerprint(
+            sourceUrl = "https://library.example/audio?token=song-a", etag = "\"1\""
+        )
+        assertTrue(AudioDownloadTransferPolicy.shouldDiscardWorkingFileForResume(
+            "https://library.example/audio?token=song-b", original
+        ))
+    }
+
+    @Test
+    fun `known signed youtube urls retain the same representation on credential renewal`() {
+        val original = ManagedDownloadStorage.WorkingResumeFingerprint(
+            sourceUrl = "https://rr1.googlevideo.com/videoplayback?id=track&itag=140&expire=1&sig=old",
+            etag = "\"1\""
+        )
+        assertFalse(AudioDownloadTransferPolicy.shouldDiscardWorkingFileForResume(
+            "https://rr1.googlevideo.com/videoplayback?sig=new&itag=140&id=track&expire=2", original
+        ))
+        assertTrue(AudioDownloadTransferPolicy.shouldDiscardWorkingFileForResume(
+            "https://rr1.googlevideo.com/videoplayback?sig=new&itag=251&id=track&expire=2", original
+        ))
+    }
+
+    @Test
     fun `typed server failures preserve transient retry and reject permanent failures`() {
         for (kind in SubsonicFailureKind.entries) {
             val error = SubsonicException(-1, "safe failure", kind)

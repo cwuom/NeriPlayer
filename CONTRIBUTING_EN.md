@@ -50,7 +50,7 @@ If it affects extension paths, tests, or module boundaries, update CONTRIBUTING.
 | Component | Requirement |
 | --- | --- |
 | Android Studio | latest stable version |
-| JDK | 17 for builds; 21 additionally for `:playback:runtime` JVM tests |
+| JDK | Compilation targets 17; Android 16 JVM tests in `:app` and `:playback:runtime` require 21 |
 | Kotlin | 2.4.10, JVM target 17 |
 | AGP | 9.4.1 |
 | Gradle | 9.6.1 |
@@ -66,11 +66,11 @@ Additional notes:
 - The repository uses Git submodules. Clone with `--recursive`, or run
   `git submodule update --init --recursive`.
 - `build-logic` targets Java/Kotlin 17; `ksp-annotations` and `ksp-processor` use JDK 17 toolchains.
-  Install JDK 17; point the Android Studio Gradle JDK and command-line
-  `JAVA_HOME` to it when possible.
-- `:playback:runtime` JVM tests use a Java toolchain with JDK 21 for the Android 16
-  Robolectric sandbox. Install a Gradle-discoverable JDK 21 before running those tests
-  or `verifyModularization`; production bytecode still targets Java 17.
+  Keep JDK 17 installed for those toolchains.
+- Android 16 Robolectric sandboxes in `:app` and `:playback:runtime` require JDK 21.
+  Use JDK 21 for the Gradle JDK / `JAVA_HOME` when running the full tests or
+  `verifyModularization`, and retain a Gradle-discoverable JDK 17 toolchain;
+  production bytecode still targets Java 17.
 - The build script reads the Git short commit hash to generate the version name,
   so Git must be installed locally.
 - Dependency versions are managed by `gradle/libs.versions.toml` and module
@@ -501,8 +501,8 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   Large seeks in long audio use an expedited startup-recovery window and still
   need real-network qualification.
 - Status-bar lyrics depend on private vendor support and only work on select devices.
-- The RuntimeShader fluid/audio-reactive background is enabled only on Android 13+.
-  Cover blur and advanced blur require Android 12+, so animation changes must
+- The RuntimeShader fluid/audio-reactive background and advanced blur require Android 13+.
+  Cover blur supports Android 9+, so animation changes must
   preserve the fallback path for older versions.
 - Phonetic lyric display depends on phonetic lyrics returned by the platform or
   phonetic fields embedded in word-level lyrics. When no phonetic data exists,
@@ -1000,7 +1000,7 @@ adb logcat | grep NeriPlayer
 
 ### Testing & PR
 
-Automatic APK packaging waits for existing JVM, lint, Worker, and emulator jobs and runs the Native Release host check before building. Manual Release verifies the actual `target_ref` checkout with JVM tests, lint, available module-boundary checks, and the Native Release host check, naming verification reports after the target commit SHA. `test_release` defaults to `true` (building unsigned test APKs for a draft pre-release); setting it to `false` builds signed APKs for a formal release. Historical refs use their own native test layout, and missing configurations in an existing test facility fail the release. Additional emulator, sanitizer, and physical DAC validation follows the risk of the change; physical hardware is not a prerequisite for every release.
+Automatic CI may build candidate APKs alongside tests and runs the Native Release host check before packaging. Final publication waits for JVM, lint, Worker, and emulator jobs, then verifies candidate identity and test reports. Manual Release verifies the actual `target_ref` checkout with JVM tests, lint, available module-boundary checks, and the Native Release host check, naming verification reports after the target commit SHA. `test_release` defaults to `true` (building unsigned test APKs for a draft pre-release); setting it to `false` builds signed APKs for a formal release. The manual flow does not include the full main CI emulator, Worker, and CRAP matrix. Historical refs use their own native test layout, and missing configurations in an existing test facility fail the release. Additional emulator, sanitizer, and physical DAC validation follows the risk of the change; physical hardware is not a prerequisite for every release.
 
 Before submitting, consider at least these checks:
 

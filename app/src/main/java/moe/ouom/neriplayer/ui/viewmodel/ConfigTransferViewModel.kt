@@ -47,7 +47,8 @@ class ConfigTransferViewModel : ViewModel() {
                 listenTogetherPreferences = AppContainer.listenTogetherPreferences,
                 neteaseCookieRepo = AppContainer.neteaseCookieRepo,
                 biliCookieRepo = AppContainer.biliCookieRepo,
-                youTubeAuthRepo = AppContainer.youtubeAuthRepo
+                youTubeAuthRepo = AppContainer.youtubeAuthRepo,
+                withYouTubeAuthChange = AppContainer::changeYouTubeAuth
             )
         }
     }

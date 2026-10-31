@@ -85,6 +85,9 @@ internal fun LocalPlaylistRepository.loadFromDisk() {
     }
 
     val loadResult = readStoredPlaylists()
+    if (roomStorageEnabled && roomStore != null && !loadResult.allowRoomPromotion) {
+        throw IOException("Legacy playlist storage could not be verified for Room migration")
+    }
     val committedPlaylists = loadResult.playlists
     val committedDomainDigest = LocalPlaylistRoomStore.domainDigest(committedPlaylists)
     recoverPendingSyncMutation(committedDomainDigest)
@@ -150,7 +153,7 @@ internal fun LocalPlaylistRepository.readStoredPlaylists(): PlaylistLoadResult {
     val primaryText = runCatching(storage::readPrimary).getOrElse { error ->
         NPLogger.e("LocalPlaylistRepo", "Failed to read primary playlist storage", error)
         preserveBackupOnNextWrite = true
-        return recoverFromBackupOrEmpty(primaryWasCorrupt = false, allowEmptyMigrationWrite = false)
+        throw IOException("Legacy playlist primary storage is unreadable", error)
     }
     if (primaryText == null) {
         return recoverFromBackupOrEmpty(primaryWasCorrupt = false, allowEmptyMigrationWrite = true)
@@ -164,7 +167,12 @@ private fun LocalPlaylistRepository.recoverFromBackupOrEmpty(
     primaryWasCorrupt: Boolean,
     allowEmptyMigrationWrite: Boolean
 ): PlaylistLoadResult {
-    return recoverFromBackup(primaryWasCorrupt) ?: emptyPlaylistLoadResult(allowEmptyMigrationWrite)
+    val recovered = recoverFromBackup(primaryWasCorrupt)
+    if (recovered != null) return recovered
+    val corruptPrimaryPreserved = primaryWasCorrupt && !corruptPrimaryNeedsQuarantine
+    return emptyPlaylistLoadResult(allowEmptyMigrationWrite).copy(
+        allowRoomPromotion = allowEmptyMigrationWrite || corruptPrimaryPreserved
+    )
 }
 
 private fun LocalPlaylistRepository.ParsedPlaylistCandidate.toLoadResult(
@@ -203,7 +211,7 @@ internal fun LocalPlaylistRepository.recoverFromBackup(primaryWasCorrupt: Boolea
 private fun LocalPlaylistRepository.readPlaylistBackupText(): String? {
     return runCatching(storage::readBackup)
         .onFailure { error -> NPLogger.e("LocalPlaylistRepo", "Failed to read playlist backup", error) }
-        .getOrNull()
+        .getOrThrow()
 }
 
 private fun LocalPlaylistRepository.quarantineCorruptPrimaryForRestore(): Boolean {

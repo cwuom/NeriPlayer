@@ -1,15 +1,22 @@
 package moe.ouom.neriplayer.data.local.media
 
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaCompanionTransaction
+import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaCompanionRecoveryEntry
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
+import moe.ouom.neriplayer.data.local.media.metadata.LocalMetadataRecoveryRecord
 
 import android.content.Context
 import android.content.ContextWrapper
 import android.os.Process
+import android.os.ParcelFileDescriptor
+import android.system.Os
+import android.system.OsConstants
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.testing.awaitProcessDeathAtSeedCheckpoint
 import java.io.File
+import java.security.MessageDigest
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -152,17 +159,12 @@ class CompanionRecoveryProtocolTest {
     @Test fun legacyPartialAndCorruptIntentKeepBackup() = runBlocking {
         for (legacy in listOf(true, false)) fixture { context, directory ->
             put(context, original)
-            val transaction = transaction(context, directory)
-            transaction.beforeWrite(provider.toString(), intended)
+            val record = if (legacy) seedLegacyJournal(context, directory) else {
+                val transaction = transaction(context, directory)
+                transaction.beforeWrite(provider.toString(), intended)
+                requireNotNull(transaction.record).also { it.companions.single().intendedFile!!.writeText("corrupt") }
+            }
             put(context, intended.copyOf(3))
-            val record = requireNotNull(transaction.record)
-            if (legacy) {
-                val body = JSONObject(record.journalFile.readText())
-                val entry = body.getJSONArray("companions").getJSONObject(0)
-                entry.remove("phase")
-                entry.remove("intendedPath")
-                record.journalFile.writeText(body.toString())
-            } else record.companions.single().intendedFile!!.writeText("corrupt")
             LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
             assertEquals(0, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
             assertArrayEquals(intended.copyOf(3), get(context))
@@ -185,16 +187,25 @@ class CompanionRecoveryProtocolTest {
     @Test fun legacyCompleteWriteKeepsExactHashRecovery() = runBlocking {
         fixture { context, directory ->
             put(context, original)
-            val transaction = transaction(context, directory)
-            transaction.beforeWrite(provider.toString(), intended)
+            seedLegacyJournal(context, directory)
             put(context, intended)
-            val record = requireNotNull(transaction.record)
-            val body = JSONObject(record.journalFile.readText())
-            val entry = body.getJSONArray("companions").getJSONObject(0)
-            entry.remove("phase")
-            entry.remove("intendedPath")
-            record.journalFile.writeText(body.toString())
             recover(context, original)
+        }
+    }
+
+    @Test fun legacyCompleteHashDoesNotAuthorizeReplacementObject() = runBlocking {
+        fixture { context, directory ->
+            put(context, original)
+            val record = seedLegacyJournal(context, directory)
+            put(context, intended)
+            context.contentResolver.call(provider, "replaceWithSameBytes", null, null)
+
+            LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+
+            assertEquals(0, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
+            assertArrayEquals(intended, get(context))
+            assertArrayEquals(original, requireNotNull(record.companions.single().backupFile).readBytes())
+            assertTrue(record.journalFile.exists())
         }
     }
 
@@ -339,6 +350,36 @@ class CompanionRecoveryProtocolTest {
 
     private fun transaction(context: Context, directory: File): LocalMediaCompanionTransaction =
         LocalMediaCompanionTransaction(context, File(directory, "unchanged.wav").absolutePath).apply { initializeSidecarsOnly() }
+
+    private fun seedLegacyJournal(context: Context, directory: File): LocalMetadataRecoveryRecord {
+        val record = requireNotNull(transaction(context, directory).record)
+        val identity = requireNotNull(context.contentResolver.openFileDescriptor(provider, "r")).use { descriptor ->
+            val stat = Os.fstat(descriptor.fileDescriptor)
+            assertTrue(OsConstants.S_ISREG(stat.st_mode))
+            assertArrayEquals(original, ParcelFileDescriptor.AutoCloseInputStream(descriptor.dup()).use { it.readBytes() })
+            "${stat.st_dev}:${stat.st_ino}"
+        }
+        val backup = File.createTempFile("legacy-companion-", ".lrc", record.journalFile.parentFile).apply { writeBytes(original) }
+        val entry = JSONObject().apply {
+            put("reference", provider.toString())
+            put("backupPath", backup.absolutePath)
+            put("originalSha256", digest(original))
+            put("expectedSha256", digest(intended))
+            put("createdByTransaction", false)
+            put("fileIdentity", identity)
+            put("writeIdentityVerified", false)
+        }
+        val body = JSONObject(record.journalFile.readText()).put("companions", JSONArray().put(entry))
+        body.remove("originalFileIdentity")
+        body.remove("originalWritableFileIdentity")
+        record.journalFile.writeText(body.toString())
+        return record.copy(companions = listOf(
+            LocalMediaCompanionRecoveryEntry.fromJson(entry, record.journalFile.parentFile!!.canonicalFile)
+        ))
+    }
+
+    private fun digest(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
+        .joinToString("") { "%02x".format(it) }
 
     private suspend fun recover(context: Context, expected: ByteArray) {
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
