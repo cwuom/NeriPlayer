@@ -17,6 +17,8 @@ internal fun lanPlaybackControls(state: LanSessionState): LanPermissions = when 
 
 @Composable
 internal fun rememberLanPlaybackControls(): LanPermissions {
+    // AppContainer.initialize 之前（如纯 UI 测试）没有 LAN 会话，直接返回全允许的默认态
+    if (!AppContainer.isInitialized()) return lanPlaybackControls(LanSessionState())
     val state by AppContainer.lanListenTogether.state.collectAsStateWithLifecycle()
     return lanPlaybackControls(state)
 }
