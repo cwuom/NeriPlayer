@@ -21,11 +21,12 @@ class ThemeColorPickerColorTest {
     }
 
     @Test
-    fun `normalize expands shorthand lengths and uppercases`() {
-        assertEquals("FFFFFF", ThemeColorPickerColor.normalizeHex("f"))
-        assertEquals("00AA00", ThemeColorPickerColor.normalizeHex("0a0"))
+    fun `normalize only accepts full six digit hex and uppercases`() {
         assertEquals("0061A4", ThemeColorPickerColor.normalizeHex("#0061a4"))
+        assertEquals("FF0000", ThemeColorPickerColor.normalizeHex("ff0000"))
         assertNull(ThemeColorPickerColor.normalizeHex(""))
+        assertNull(ThemeColorPickerColor.normalizeHex("f"))
+        assertNull(ThemeColorPickerColor.normalizeHex("0a0"))
         assertNull(ThemeColorPickerColor.normalizeHex("ab"))
         assertNull(ThemeColorPickerColor.normalizeHex("abcd"))
         assertNull(ThemeColorPickerColor.normalizeHex("abcde"))

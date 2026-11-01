@@ -99,11 +99,11 @@ class ThemeColorPickerComposeTest {
     }
 
     @Test
-    fun `shorthand initial hex expands before rendering`() {
+    fun `non six digit initial hex falls back to the default seed`() {
         showPicker("0A0")
 
-        assertEquals(listOf("00AA00"), reportedHex)
-        assertEquals("00AA00", hexInputText())
+        assertEquals(listOf("0061A4"), reportedHex)
+        assertEquals("0061A4", hexInputText())
     }
 
     @Test
@@ -161,7 +161,7 @@ class ThemeColorPickerComposeTest {
     @Test
     fun `committing an unchanged color rewrites the field with the normalized hex`() {
         showPicker("AABBCC")
-        typeHex("abc")
+        typeHex("aabbcc")
         commitHex()
 
         assertEquals("AABBCC", reportedHex.last())
@@ -178,13 +178,13 @@ class ThemeColorPickerComposeTest {
     }
 
     @Test
-    fun `typing a shorthand hex expands when committed`() {
+    fun `typing a short hex is rejected when committed`() {
         showPicker("0061A4")
         typeHex("F")
         commitHex()
 
-        assertEquals("FFFFFF", reportedHex.last())
-        assertEquals("FFFFFF", hexInputText())
+        assertEquals("0061A4", reportedHex.last())
+        assertEquals("0061A4", hexInputText())
     }
 
     @Test
@@ -193,12 +193,13 @@ class ThemeColorPickerComposeTest {
         typeHex("ABC")
         commitHex()
 
-        assertEquals("AABBCC", reportedHex.last())
+        assertEquals("0061A4", reportedHex.last())
+        assertEquals("0061A4", hexInputText())
 
         typeHex("ABCD")
         commitHex()
-        assertEquals("AABBCC", reportedHex.last())
-        assertEquals("AABBCC", hexInputText())
+        assertEquals("0061A4", reportedHex.last())
+        assertEquals("0061A4", hexInputText())
     }
 
     @Test
@@ -218,6 +219,87 @@ class ThemeColorPickerComposeTest {
 
         assertEquals("0061A4", hexInputText())
         assertEquals(listOf("0061A4"), reportedHex)
+    }
+
+    @Test
+    fun `pending full hex commits through the state before reading the color`() {
+        val state = ThemeColorPickerState()
+        composeRule.setContent {
+            NeriTheme(
+                followSystemDark = false,
+                forceDark = false,
+                dynamicColor = false,
+                seedColorHex = "0061A4",
+                uiStyle = UiStyle.Clean,
+                animateColors = false
+            ) {
+                ThemeColorPicker(
+                    initialHex = "0061A4",
+                    state = state,
+                    onColorChanged = { reportedHex += it }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        typeHex("FF0000")
+        // 6 位输满即已提交, 这里只验证入口可安全重复调用
+        val committed = composeRule.runOnIdle { state.commitPendingInput() }
+        assertEquals("FF0000", committed)
+        assertEquals("FF0000", reportedHex.last())
+        assertEquals("FF0000", hexInputText())
+    }
+
+    @Test
+    fun `pending illegal input rolls back through the state`() {
+        val state = ThemeColorPickerState()
+        composeRule.setContent {
+            NeriTheme(
+                followSystemDark = false,
+                forceDark = false,
+                dynamicColor = false,
+                seedColorHex = "0061A4",
+                uiStyle = UiStyle.Clean,
+                animateColors = false
+            ) {
+                ThemeColorPicker(
+                    initialHex = "0061A4",
+                    state = state,
+                    onColorChanged = { reportedHex += it }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        typeHex("AB")
+        val committed = composeRule.runOnIdle { state.commitPendingInput() }
+        assertEquals("0061A4", committed)
+        assertEquals(listOf("0061A4"), reportedHex)
+        assertEquals("0061A4", hexInputText())
+    }
+
+    @Test
+    fun `draft hex exposes the raw input for button availability checks`() {        val state = ThemeColorPickerState()
+        composeRule.setContent {
+            NeriTheme(
+                followSystemDark = false,
+                forceDark = false,
+                dynamicColor = false,
+                seedColorHex = "0061A4",
+                uiStyle = UiStyle.Clean,
+                animateColors = false
+            ) {
+                ThemeColorPicker(
+                    initialHex = "0061A4",
+                    state = state,
+                    onColorChanged = { reportedHex += it }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        typeHex("ABC")
+        assertEquals("ABC", composeRule.runOnIdle { state.draftHex })
     }
 
     @Test

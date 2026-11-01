@@ -32,7 +32,6 @@ import android.graphics.Color as AndroidColor
 internal object ThemeColorPickerColor {
     private const val HEX_DIGITS = "0123456789ABCDEF"
     private const val FULL_LENGTH = 6
-    private const val SHORTHAND_TRIPLE_LENGTH = 3
 
     /** 输入框实时过滤: 去掉 # 前缀后只接受最多 6 位 hex 字符, 非法输入返回 null */
     fun sanitizeHexInput(input: String): String? {
@@ -42,18 +41,11 @@ internal object ThemeColorPickerColor {
         return candidate
     }
 
-    /** 允许 CSS 风格 1/3/6 位简写, 归一成大写 6 位 HEX; 其他长度返回 null */
+    /** 只接受完整的 6 位 HEX, 归一成大写; 其他长度返回 null */
     fun normalizeHex(input: String): String? {
-        val candidate = sanitizeHexInput(input)?.takeIf { it.isNotEmpty() } ?: return null
-        val expanded = when (candidate.length) {
-            1 -> candidate.repeat(FULL_LENGTH)
-            SHORTHAND_TRIPLE_LENGTH -> buildString {
-                candidate.forEach { append(it).append(it) }
-            }
-            FULL_LENGTH -> candidate
-            else -> return null
-        }
-        return expanded.uppercase(Locale.ROOT)
+        val candidate = sanitizeHexInput(input) ?: return null
+        if (candidate.length != FULL_LENGTH) return null
+        return candidate.uppercase(Locale.ROOT)
     }
 
     /** 6 位 HEX 转 RGB, 非法输入返回 null, 不依赖异常控制流程 */
