@@ -51,9 +51,14 @@
     <string name="common_coming_soon">Coming Soon</string>
     <string name="common_drag_handle">Drag Handle</string>
     <string name="common_album_detail">Album Details</string>
+    <string name="color_picker_hsv">HSV</string>
+    <string name="color_picker_rgb">RGB</string>
     <string name="color_hue">Hue</string>
     <string name="color_saturation">Saturation</string>
     <string name="color_value">Value</string>
+    <string name="color_red">Red</string>
+    <string name="color_green">Green</string>
+    <string name="color_blue">Blue</string>
     <string name="time_just_now">Just now</string>
     <string name="time_zero_minutes">0 minutes</string>
     <string name="number_hundred_million">%.1fM</string>
