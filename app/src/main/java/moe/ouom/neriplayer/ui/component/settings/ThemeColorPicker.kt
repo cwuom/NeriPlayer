@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.component.settings
  * Updated: 2026/3/23
  */
 
-import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +32,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -48,11 +50,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
-import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
+import android.graphics.Color as AndroidColor
+import moe.ouom.neriplayer.common.R as CoreCommonR
 
 @Composable
 fun ThemeColorPicker(
@@ -84,6 +90,23 @@ fun ThemeColorPicker(
         return hsv
     }
 
+    fun normalizeColorHex(hex: String): String? {
+        if (hex.isEmpty() || hex.length > 6 || !hex.all { it in "0123456789ABCDEFabcdef" }) {
+            return null
+        }
+
+        val normalized = when (hex.length) {
+            1 -> hex.repeat(6)
+            2 -> hex.repeat(3)
+            3 -> hex.map { "$it$it" }.joinToString("")
+            6 -> hex
+            else -> return null
+        }
+
+        return normalized.uppercase()
+    }
+
+    var hexInput by remember(initialHex) { mutableStateOf(initialHex) }
     var rgb by remember(initialHex) { mutableStateOf(hexToRgb(initialHex)) }
     var hsv by remember(initialHex) { mutableStateOf(hexToHsv(initialHex)) }
     val previewColor = remember(hsv) {
@@ -118,6 +141,14 @@ fun ThemeColorPicker(
         )
     }
 
+    fun updateHex(hex: String) {
+        val normalizedHex = normalizeColorHex(hex)
+        if (normalizedHex != null) {
+            val rgb = hexToRgb(normalizedHex)
+            updateRgb(rgb[0], rgb[1], rgb[2])
+        }
+    }
+
     LaunchedEffect(hex) { onColorChanged(hex) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -131,7 +162,33 @@ fun ThemeColorPicker(
                     .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), CircleShape)
             )
             Spacer(Modifier.size(12.dp))
-            Text("#$hex", fontFamily = FontFamily.Monospace)
+            Text("#", fontFamily = FontFamily.Monospace)
+            BasicTextField(
+                value = hexInput,
+                singleLine = true,
+                textStyle = TextStyle(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontFamily = FontFamily.Monospace
+                ),
+                onValueChange = {
+                    if (it.length <= 6 &&
+                        it.all { c ->
+                            c in "0123456789ABCDEFabcdef"
+                        }
+                    ) {
+                        hexInput = it
+                    }
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Ascii,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        updateHex(hexInput)
+                    }
+                )
+            )
         }
 
         // HSV 与 RGB 颜色选择器切换
