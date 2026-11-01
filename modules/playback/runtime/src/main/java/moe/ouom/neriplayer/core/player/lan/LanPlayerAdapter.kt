@@ -25,6 +25,7 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
     private var savedSpeed = 1f
     private var originalQueue = emptyList<moe.ouom.neriplayer.data.model.SongItem>()
     private var originalIndex = -1
+    private var originalPositionMs = 0L
     private var begun = false
     private var engine: LanWebAudioEngine? = null
     private var sourceKey: String? = null
@@ -87,7 +88,7 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
     override suspend fun prepare(track: ListenTogetherTrack, positionSeconds: Double): Boolean {
         main()
         if (!supported()) return false
-        if (ready(track)) return true
+        if (ready(track)) { checkNotNull(engine).position(positionSeconds); return true }
         preparedKey = null; preparedContentDigest = null; engine?.invalidateMedia(); engine?.pause(); pauseNative()
         if (track.channelId == "local") return prepareLocal(track, positionSeconds)
         local.clearReceived()
@@ -185,6 +186,7 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         check(moe.ouom.neriplayer.core.player.service.AudioPlayerService.startSyncService(
             PlayerManager.application, "lan_listen", forceForeground = true)) { "SERVICE_STOPPED" }
         originalQueue = PlayerManager.currentQueueFlow.value.toList(); originalIndex = PlayerManager.currentIndex
+        originalPositionMs = PlayerManager.playbackPositionFlow.value
         files.clearAbandoned(); local.clearAbandoned()
         begun = true; savedSpeed = PlayerManager.player.playbackParameters.speed
         PlayerManager.setPlaybackSpeed(1f, persist = false)
@@ -203,6 +205,7 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         if (PlayerManager.currentSongFlow.value?.sourceStableKey?.startsWith("lan-session:") == true) {
             val queue = PlayerManager.currentQueueFlow.value
             if (queue.any { it.sourceStableKey?.startsWith("lan-session:") == true }) {
+                PlayerManager._playbackPositionMs.value = originalPositionMs
                 PlayerManager.applyRemoteQueueUpdate(originalQueue, originalIndex)
                 PlayerManager.setCurrentSongForPlayback(originalQueue.getOrNull(originalIndex))
             } else PlayerManager.setCurrentSongForPlayback(queue.getOrNull(PlayerManager.currentIndex))

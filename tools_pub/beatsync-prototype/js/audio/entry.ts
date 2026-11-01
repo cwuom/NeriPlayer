@@ -63,7 +63,7 @@ function schedule(d:any){
  synchronizeClock();if(!audioContextManager.isReady())throw Error('AUDIO_SUSPENDED');
  revision=d.revision;state.offsetEstimate=d.offsetMs;state.nudgeOffsetMs=d.nudgeMs;
  if(d.type==='PLAY'){
-  const position=Math.max(0,d.positionSeconds);if(position>=buffer.duration)throw Error('POSITION');stopAt=null;
+  const position=Math.min(Math.max(0,d.positionSeconds),Math.max(0,buffer.duration-0.05));stopAt=null;
   actions.schedulePlay({audioSource:d.key,trackTimeSeconds:position,targetServerTime:d.serverTimeMs});
  }else{
   if(!state.isPlaying&&stopAt===null){state.currentTime=d.positionSeconds;return {accepted:true,...snapshot()};}
