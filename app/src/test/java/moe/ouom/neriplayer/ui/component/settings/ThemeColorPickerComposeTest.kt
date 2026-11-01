@@ -14,7 +14,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -151,12 +150,28 @@ class ThemeColorPickerComposeTest {
     }
 
     @Test
-    fun `typing a full hex commits on the ime done action`() {
+    fun `typing a full hex commits as soon as six characters are entered`() {
         showPicker("0061A4")
         typeHex("FF0000")
-        assertEquals("0061A4", reportedHex.last())
 
+        assertEquals("FF0000", reportedHex.last())
+        assertEquals("FF0000", hexInputText())
+    }
+
+    @Test
+    fun `committing an unchanged color rewrites the field with the normalized hex`() {
+        showPicker("AABBCC")
+        typeHex("abc")
         commitHex()
+
+        assertEquals("AABBCC", reportedHex.last())
+        assertEquals("AABBCC", hexInputText())
+    }
+
+    @Test
+    fun `lowercase full hex is normalized in the field`() {
+        showPicker("0061A4")
+        typeHex("ff0000")
 
         assertEquals("FF0000", reportedHex.last())
         assertEquals("FF0000", hexInputText())
@@ -189,7 +204,17 @@ class ThemeColorPickerComposeTest {
     @Test
     fun `non hex characters are rejected by the input filter`() {
         showPicker("0061A4")
-        composeRule.onNodeWithTag(HEX_INPUT_TEST_TAG).performTextInput("Z9")
+        // 用短文本定位字符过滤, 避免长度上限先于字符校验生效
+        typeHex("Z9")
+
+        assertEquals("0061A4", hexInputText())
+        assertEquals(listOf("0061A4"), reportedHex)
+    }
+
+    @Test
+    fun `single illegal character is rejected by the input filter`() {
+        showPicker("0061A4")
+        typeHex("G")
 
         assertEquals("0061A4", hexInputText())
         assertEquals(listOf("0061A4"), reportedHex)

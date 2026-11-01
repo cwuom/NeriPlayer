@@ -114,6 +114,8 @@ fun ThemeColorPicker(
             hexInput = hex
             return
         }
+        // 颜色未变化时 hex 不变, LaunchedEffect 不会重跑, 这里直接写回归一值
+        hexInput = ThemeColorPickerColor.rgbToHex(parsed)
         updateRgb(parsed[0], parsed[1], parsed[2])
     }
 
@@ -144,7 +146,11 @@ fun ThemeColorPicker(
                     fontFamily = FontFamily.Monospace
                 ),
                 onValueChange = { input ->
-                    ThemeColorPickerColor.sanitizeHexInput(input)?.let { hexInput = it }
+                    // 6 位输满即提交, 避免用户直接点"应用颜色"时丢掉未按 Done 的输入
+                    ThemeColorPickerColor.sanitizeHexInput(input)?.let { sanitized ->
+                        hexInput = sanitized
+                        if (sanitized.length == 6) commitHexInput(sanitized)
+                    }
                 },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Ascii,
