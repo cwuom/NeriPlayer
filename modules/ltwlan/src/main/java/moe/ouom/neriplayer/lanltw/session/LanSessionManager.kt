@@ -35,7 +35,7 @@ class LanSessionManager(
     private val sourceRequests = RequestGeneration()
     private var sourceJob: Job? = null
     private val clock = LanClock { SystemClock.elapsedRealtimeNanos() / 1_000_000.0 }
-    private val clientHttp = http.newBuilder().connectTimeout(5, TimeUnit.SECONDS).readTimeout(0, TimeUnit.MILLISECONDS)
+    private val clientHttp = http.newBuilder().proxy(java.net.Proxy.NO_PROXY).connectTimeout(5, TimeUnit.SECONDS).readTimeout(0, TimeUnit.MILLISECONDS)
         .callTimeout(0, TimeUnit.MILLISECONDS).pingInterval(15, TimeUnit.SECONDS).build()
     private val keepAlive = LanKeepAlive(context)
     val discovery = LanDiscovery(context)
@@ -143,6 +143,8 @@ class LanSessionManager(
                     keepAlive.acquire()
                     scheduler = LanPlaybackScheduler(checkNotNull(sessionScope), playback, clock, { offset }, { state.value.nudgeMs }, { state.value.synced }, ::send, ::reportError, ::clearError)
                     block()
+                } catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
+                    stopResources(); mutable.value = state.value.copy(phase = "IDLE", error = "NETWORK")
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) { stopResources(); mutable.value = state.value.copy(phase = "IDLE", error = error.message?.takeIf { it in ERRORS } ?: "NETWORK") }
             }

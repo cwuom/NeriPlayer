@@ -1333,7 +1333,7 @@ class AudioPlayerService : Service() {
             }
 
             ACTION_SYNC -> {
-                if (!hasPlaybackSurfaceContent()) {
+                if (!hasPlaybackSurfaceContent() && startSource != "lan_listen") {
                     allowServiceRestart = false
                     NPLogger.w("NERI-APS", "Ignoring ACTION_SYNC because playback content is empty, source=$startSource")
                     stopForegroundIfStarted("sync_without_items")
@@ -1957,7 +1957,8 @@ class AudioPlayerService : Service() {
     }
 
     private fun isListenTogetherSessionActive(): Boolean {
-        return !PlayerDependencies.listenTogether.sessionState.value.roomId.isNullOrBlank()
+        return moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.active ||
+            !PlayerDependencies.listenTogether.sessionState.value.roomId.isNullOrBlank()
     }
 
     private fun isListenTogetherRemotePlaying(): Boolean {
