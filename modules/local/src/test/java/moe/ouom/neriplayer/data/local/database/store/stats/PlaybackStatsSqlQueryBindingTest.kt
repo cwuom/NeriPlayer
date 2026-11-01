@@ -76,8 +76,12 @@ class PlaybackStatsSqlQueryBindingTest {
         assertEquals(listOf<Any?>(1L, 11L), first.boundValues())
 
         val oldest = PlaybackStatsSqlQuery(PlaybackStatsQuery(sort = PlaybackStatsSort.FIRST_PLAYED, nowMillis = NOW), hasBuckets = false)
-        assertTrue(oldest.page(cursor, limit = 2).sql.endsWith("AND (first_played_at > ? OR (first_played_at = ? AND identity_key > ?)) ORDER BY first_played_at ASC, identity_key ASC LIMIT ?"))
-        assertTrue(oldest.page(cursor, limit = 2, before = true).sql.endsWith("ORDER BY first_played_at DESC, identity_key DESC LIMIT ?"))
+        val oldestNext = oldest.page(cursor, limit = 2)
+        val oldestPrevious = oldest.page(cursor, limit = 2, before = true)
+        assertTrue(oldestNext.sql.endsWith("AND (first_played_at, identity_key) > (?, ?) ORDER BY first_played_at ASC, identity_key ASC LIMIT ?"))
+        assertEquals(listOf<Any?>(0L, 300L, "k", 2L), oldestNext.boundValues())
+        assertTrue(oldestPrevious.sql.endsWith("AND (first_played_at, identity_key) < (?, ?) ORDER BY first_played_at DESC, identity_key DESC LIMIT ?"))
+        assertEquals(listOf<Any?>(0L, 300L, "k", 2L), oldestPrevious.boundValues())
     }
 
     @Test

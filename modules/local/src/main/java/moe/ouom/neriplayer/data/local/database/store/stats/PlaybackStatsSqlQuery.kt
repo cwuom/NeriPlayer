@@ -43,6 +43,11 @@ internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasB
     }
 
     private fun sortedCursorClause(after: PlaybackStatsCursor, before: Boolean, params: MutableList<Any>): String {
+        // Row values need one direction for every key; only FIRST_PLAYED sorts identity_key the same way.
+        if (ascending) {
+            params.addAll(listOf(after.sortValue, after.identityKey))
+            return " AND ($sortColumn, identity_key) ${if (before) "<" else ">"} (?, ?)"
+        }
         params.addAll(listOf(after.sortValue, after.sortValue, after.identityKey))
         return " AND ($sortColumn ${if (ascending != before) ">" else "<"} ? OR ($sortColumn = ? AND identity_key ${if (before) "<" else ">"} ?))"
     }
@@ -96,7 +101,7 @@ internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasB
             "WHERE b.day_start_at >= ? AND b.day_start_at < ? AND NOT EXISTS " +
             "(SELECT 1 FROM playback_stat_bucket newer WHERE newer.identity_key = b.identity_key " +
             "AND newer.day_start_at >= ? AND newer.day_start_at < ? AND " +
-            "(newer.last_played_at > b.last_played_at OR (newer.last_played_at = b.last_played_at AND newer.day_start_at > b.day_start_at)))"
+            "(newer.last_played_at, newer.day_start_at) > (b.last_played_at, b.day_start_at))"
     }
 }
 
