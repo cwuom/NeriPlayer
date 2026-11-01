@@ -20,7 +20,7 @@ package moe.ouom.neriplayer.ui.component.settings
  * If not, see <https://www.gnu.org/licenses/>.
  *
  * File: moe.ouom.neriplayer.ui.component/ThemeColorPicker
- * Updated: 2026/3/23
+ * Updated: 2026/11/1
  */
 
 import androidx.compose.foundation.background
@@ -49,107 +49,72 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.toColorInt
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
-import android.graphics.Color as AndroidColor
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
+
+private val FALLBACK_RGB = intArrayOf(0x00, 0x61, 0xA4)
+
+// 让测试和辅助功能能定位 hex 输入框
+internal const val HEX_INPUT_TEST_TAG = "themeColorPickerHexInput"
 
 @Composable
 fun ThemeColorPicker(
     onColorChanged: (String) -> Unit, // 回调返回 6 位 HEX (不含#)
-    initialHex: String = "0061A4"
+    initialHex: String = ThemeDefaults.DEFAULT_SEED_COLOR_HEX
 ) {
     var isRgbPicker by remember { mutableStateOf(false) }
     val selectedIndex = if (isRgbPicker) 1 else 0
 
-    // 把 HEX 转为 RGB
-    fun hexToRgb(hex: String): IntArray {
-        val c = try {
-            Color(("#$hex").toColorInt())
-        } catch (_: Throwable) {
-            Color(0xFF0061A4)
-        }
-        val argb = c.toArgb()
-        val r = (argb shr 16) and 0xFF
-        val g = (argb shr 8) and 0xFF
-        val b = argb and 0xFF
-        return intArrayOf(r, g, b)
+    // 初始值先归一, 让 3 位简写或大写/小写输入都落到同一个 6 位 HEX
+    val initialRgb = remember(initialHex) {
+        ThemeColorPickerColor.normalizeHex(initialHex)
+            ?.let(ThemeColorPickerColor::hexToRgb)
+            ?: FALLBACK_RGB
     }
+    var rgb by remember(initialHex) { mutableStateOf(initialRgb) }
+    var hsv by remember(initialHex) { mutableStateOf(ThemeColorPickerColor.rgbToHsv(initialRgb)) }
+    // 输入框始终显示已生效的颜色, 简写或非法初始值都以归一后的 6 位 HEX 呈现
+    var hexInput by remember(initialHex) { mutableStateOf(ThemeColorPickerColor.rgbToHex(initialRgb)) }
 
-    // 把 HEX 转为 HSV
-    fun hexToHsv(hex: String): FloatArray {
-        val rgb = hexToRgb(hex)
-        val hsv = FloatArray(3)
-        AndroidColor.RGBToHSV(rgb[0], rgb[1], rgb[2], hsv)
-        return hsv
-    }
-
-    fun normalizeColorHex(hex: String): String? {
-        if (hex.isEmpty() || hex.length > 6 || !hex.all { it in "0123456789ABCDEFabcdef" }) {
-            return null
-        }
-
-        val normalized = when (hex.length) {
-            1 -> hex.repeat(6)
-            2 -> hex.repeat(3)
-            3 -> hex.map { "$it$it" }.joinToString("")
-            6 -> hex
-            else -> return null
-        }
-
-        return normalized.uppercase()
-    }
-
-    var hexInput by remember(initialHex) { mutableStateOf(initialHex) }
-    var rgb by remember(initialHex) { mutableStateOf(hexToRgb(initialHex)) }
-    var hsv by remember(initialHex) { mutableStateOf(hexToHsv(initialHex)) }
-    val previewColor = remember(hsv) {
-        val argb = AndroidColor.HSVToColor(hsv)
-        Color(argb)
-    }
-    val hex = remember(previewColor) {
-        // 转 6 位 HEX (不含 #)
-        val a = previewColor.toArgb()
-        val r = (a shr 16) and 0xFF
-        val g = (a shr 8) and 0xFF
-        val b = a and 0xFF
-        String.format("%02X%02X%02X", r, g, b)
-    }
+    val previewColor = remember(hsv) { Color(ThemeColorPickerColor.hsvToArgb(hsv)) }
+    val hex = remember(previewColor) { ThemeColorPickerColor.argbToHex(previewColor.toArgb()) }
 
     // RGB 滑动条颜色同步到 HSV
     fun updateRgb(r: Int, g: Int, b: Int) {
         rgb = intArrayOf(r, g, b)
-        val convertedHsv = FloatArray(3)
-        AndroidColor.RGBToHSV(r, g, b, convertedHsv)
-        hsv = convertedHsv
+        hsv = ThemeColorPickerColor.rgbToHsv(rgb)
     }
 
     // HSV 滑动条颜色同步到 RGB
     fun updateHsv(h: Float, s: Float, v: Float) {
         hsv = floatArrayOf(h, s, v)
-        val c = AndroidColor.HSVToColor(hsv)
-        rgb = intArrayOf(
-            AndroidColor.red(c),
-            AndroidColor.green(c),
-            AndroidColor.blue(c)
-        )
+        rgb = ThemeColorPickerColor.hsvToRgb(hsv)
     }
 
-    fun updateHex(hex: String) {
-        val normalizedHex = normalizeColorHex(hex)
-        if (normalizedHex != null) {
-            val rgb = hexToRgb(normalizedHex)
-            updateRgb(rgb[0], rgb[1], rgb[2])
+    fun commitHexInput(input: String) {
+        val parsed = ThemeColorPickerColor.normalizeHex(input)
+            ?.let(ThemeColorPickerColor::hexToRgb)
+        if (parsed == null) {
+            // 无法归一或位数不足时回退到当前生效颜色, 不留下无效文本
+            hexInput = hex
+            return
         }
+        updateRgb(parsed[0], parsed[1], parsed[2])
     }
 
-    LaunchedEffect(hex) { onColorChanged(hex) }
+    LaunchedEffect(hex) {
+        // 滑动条或提交后的新颜色回写输入框, 避免输入框停在旧值
+        hexInput = hex
+        onColorChanged(hex)
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // 预览
@@ -166,27 +131,20 @@ fun ThemeColorPicker(
             BasicTextField(
                 value = hexInput,
                 singleLine = true,
+                modifier = Modifier.testTag(HEX_INPUT_TEST_TAG),
                 textStyle = TextStyle(
                     color = MaterialTheme.colorScheme.onSurface,
                     fontFamily = FontFamily.Monospace
                 ),
-                onValueChange = {
-                    if (it.length <= 6 &&
-                        it.all { c ->
-                            c in "0123456789ABCDEFabcdef"
-                        }
-                    ) {
-                        hexInput = it
-                    }
+                onValueChange = { input ->
+                    ThemeColorPickerColor.sanitizeHexInput(input)?.let { hexInput = it }
                 },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Ascii,
                     imeAction = ImeAction.Done
                 ),
                 keyboardActions = KeyboardActions(
-                    onDone = {
-                        updateHex(hexInput)
-                    }
+                    onDone = { commitHexInput(hexInput) }
                 )
             )
         }
