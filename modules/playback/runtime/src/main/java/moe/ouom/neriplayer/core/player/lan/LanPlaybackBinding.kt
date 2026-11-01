@@ -28,6 +28,12 @@ internal object LanPlaybackBinding {
         interrupt() || fallback()
     /** 变速属房间级控制：LAN 会话中由主控统一下发，本机不单独改。 */
     fun blockSpeedChange(persist: Boolean): Boolean = persist && active
+    /** 音频路由失效时优先中断 LAN 外部音频；无 LAN 会话时执行原回退动作。 */
+    fun interruptOrRun(fallback: () -> Unit): Boolean {
+        if (interrupt()) return true
+        fallback()
+        return false
+    }
     /** 服务销毁回调转发，保持 LanPlaybackBinding 与服务生命周期的单向依赖。 */
     fun notifyServiceStopped() { stopped?.invoke() }
     fun toggle(): Boolean = externalAudio && route(

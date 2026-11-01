@@ -1136,9 +1136,11 @@ class AudioPlayerService : Service() {
                                 "name=${detachedDevice?.deviceName}"
                         )
                         if (PlayerManager.shouldMuteListenTogetherListenerForAudioRouteLoss()) {
-                            PlayerManager.suppressPlaybackForAudioRouteLoss(
-                                reason = "listen_together_usb_output_disconnect"
-                            )
+                            moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.interruptOrRun {
+                                PlayerManager.suppressPlaybackForAudioRouteLoss(
+                                    reason = "listen_together_usb_output_disconnect"
+                                )
+                            }
                         }
                         StartupAudioFocusController.forceRelease("usb_device_detached")
                         PlayerManager.stopPlaybackAfterUsbExclusiveNativeFailure(
