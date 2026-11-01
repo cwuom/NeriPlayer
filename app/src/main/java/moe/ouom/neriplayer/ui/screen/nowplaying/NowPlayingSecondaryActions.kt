@@ -822,13 +822,18 @@ private fun MoreOptionsListenTogetherPage(
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .windowInsetsPadding(WindowInsets.navigationBars)
     ) {
-        if (targetState == MoreOptionsPage.LAN_LISTEN_TOGETHER) {
-            moe.ouom.neriplayer.ui.component.playback.lan.LanRoomPanel()
-        } else ListenTogetherRoomPanel(
-            modifier = Modifier.fillMaxWidth(),
-            showBaseUrlEditor = false
-        )
+        MoreOptionsListenTogetherPanel(targetState)
     }
+}
+
+@Composable
+private fun MoreOptionsListenTogetherPanel(targetState: MoreOptionsPage) {
+    if (targetState == MoreOptionsPage.LAN_LISTEN_TOGETHER) {
+        moe.ouom.neriplayer.ui.component.playback.lan.LanRoomPanel()
+    } else ListenTogetherRoomPanel(
+        modifier = Modifier.fillMaxWidth(),
+        showBaseUrlEditor = false
+    )
 }
 
 @Composable
