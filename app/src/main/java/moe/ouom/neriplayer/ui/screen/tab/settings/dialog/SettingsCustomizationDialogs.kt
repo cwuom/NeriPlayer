@@ -82,6 +82,10 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import java.util.Locale
 
+/**
+ * 主题色取色对话框：预设色板、自定义色板与 HSV/RGB/HEX 取色器
+ * 色板内的非预设色支持长按或角标删除，取色结果需点确认按钮才写入
+ */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun ColorPickerDialog(

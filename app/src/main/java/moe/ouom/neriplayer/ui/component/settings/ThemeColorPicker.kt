@@ -65,6 +65,13 @@ private val FALLBACK_RGB = intArrayOf(0x00, 0x61, 0xA4)
 // 让测试和辅助功能能定位 hex 输入框
 internal const val HEX_INPUT_TEST_TAG = "themeColorPickerHexInput"
 
+/**
+ * 主题色取色器：HSV 三滑块与 RGB 三通道可切换, 预览色旁的 HEX 输入框支持 1/3/6 位简写
+ * 三条路径共享 rgb/hsv/hexInput 状态, 每次生效颜色变化都会回调 [onColorChanged]
+ *
+ * @param onColorChanged 生效颜色变化回调, 参数为不含 # 的 6 位大写 HEX
+ * @param initialHex 初始颜色, 非法或简写值会先归一, 无法归一则回退到主题默认种子色
+ */
 @Composable
 fun ThemeColorPicker(
     onColorChanged: (String) -> Unit, // 回调返回 6 位 HEX (不含#)
