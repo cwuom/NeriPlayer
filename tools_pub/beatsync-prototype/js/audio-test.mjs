@@ -36,7 +36,8 @@ const loading=command('load',{key:'stale',url:'https://local/test'}).then(()=>fa
 await Promise.resolve();await Promise.resolve();await command('pause');release();assert.equal(await loading,'STALE');checks++;
 pendingDecode=null;await assert.rejects(command('load',{key:'song',url:'https://local/test',expectedDurationMs:30000}),/AUDIO_DURATION/);checks++;
 await command('load',{key:'song',url:'https://local/test',expectedDurationMs:120000});
-await assert.rejects(command('schedule',action({revision:8,positionSeconds:999})),/POSITION/);checks++;
+// 终点/越界 seek 不再拒绝：收敛到最后可播放帧后照常调度（Codex 评审修复）
+await command('schedule',action({revision:8,positionSeconds:999}));near(starts.at(-1).offset,120-0.05);checks++;
 await command('resetNtp');
 for(let group=0;group<16;group++){
  const t0=1000+group*50;
