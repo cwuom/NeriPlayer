@@ -783,11 +783,15 @@ object PlayerManager {
     var sleepTimerManager: SleepTimerManager = createSleepTimerManager()
         internal set
 
+    /** 休眠到时只停本机发声：LAN 中断本机 Web Audio，不把休眠升级为房间暂停指令 */
+    internal fun pauseForSleepTimer() =
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.interrupt()) Unit else pause()
+
     internal fun createSleepTimerManager(): SleepTimerManager {
         return SleepTimerManager(
             scope = mainScope,
             onTimerExpired = {
-                pause()
+                pauseForSleepTimer()
                 sleepTimerManager.cancel()
             },
             onTimerStateChanged = {

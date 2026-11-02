@@ -93,6 +93,12 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         if (track.channelId == "local") return prepareLocal(track, positionSeconds)
         local.clearReceived()
         if (sourceKey != track.stableKey || sharedUrls.isEmpty()) { preparationError = "FULL_AUDIO_REQUIRED"; return false }
+        // 主控共享的在线直链会过期（如 YouTube 约 8 分钟）：全部失效时用本机账号自解析兜底一轮
+        val urlAttempts = mutableListOf(sharedUrls)
+        if (track.channelId != "local") {
+            runCatching { resolveSharedAudioSources(track) }.getOrNull()
+                ?.takeIf { it.isNotEmpty() && it != sharedUrls }?.let { urlAttempts.add(it) }
+        }
         // Resolve metadata only. Listeners must not ask their own account for a possibly truncated preview URL.
         val offered = LanPlaybackBinding.offeredQueue
         val existing = PlayerManager.currentQueueFlow.value
@@ -108,7 +114,7 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         PlayerManager.player.stop(); PlayerManager.player.clearMediaItems()
         PlayerManager.updateResumePlaybackRequested(false)
         PlayerManager.playbackProgressOwner.setDuration(track.durationMs)
-        for (url in sharedUrls) {
+        for (url in urlAttempts.flatten()) {
             try {
                 return withTimeout(90_000) {
                     files.clear(currentFile); currentFile = null

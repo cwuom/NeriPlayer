@@ -12,7 +12,7 @@ import okhttp3.Request
 
 /** Endpoint host is supplied by the connected control session, never by track metadata. */
 class LanMediaDownload(http: OkHttpClient) {
-    private val client = http.newBuilder().followRedirects(false).followSslRedirects(false)
+    private val client = http.newBuilder().proxy(java.net.Proxy.NO_PROXY).followRedirects(false).followSslRedirects(false)
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
         .callTimeout(0, TimeUnit.MILLISECONDS).build()
 

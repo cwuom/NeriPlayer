@@ -23,7 +23,7 @@ import kotlin.random.Random
 
 /** App-owned facade; all room/session mutations are serialized on Dispatchers.Main. */
 class LanSessionManager(
-    context: Context, http: OkHttpClient, private val playback: LanPlaybackPort,
+    private val context: Context, http: OkHttpClient, private val playback: LanPlaybackPort,
     private val cloudActive: () -> Boolean, private val saveNudge: (Int) -> Unit,
     private val loadPermissions: suspend () -> LanPermissions = { LanPermissions() },
     private val savePermissions: (LanPermissions) -> Unit = {}
@@ -310,7 +310,23 @@ class LanSessionManager(
         withContext(NonCancellable) { withContext(Dispatchers.IO) { oldServer?.stop(1500); oldMediaServer?.stop() }; oldEstimator?.close() }
     }
     private fun Double?.orZero(): Double = this ?: 0.0
-    private fun localAddress(): String = NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
-        .firstOrNull { it is Inet4Address && it.isSiteLocalAddress && !it.isLoopbackAddress }?.hostAddress ?: "127.0.0.1"
+    private fun localAddress(): String {
+        // 多网卡（Wi-Fi + 蜂窝/VPN）下 NetworkInterface 枚举顺序不可靠：优先取有互联网能力的活动网络的站点内 IPv4
+        runCatching {
+            val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
+            val best = cm?.allNetworks?.mapNotNull { net ->
+                val caps = cm.getNetworkCapabilities(net) ?: return@mapNotNull null
+                if (!caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)) return@mapNotNull null
+                if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) return@mapNotNull null
+                val links = cm.getLinkProperties(net) ?: return@mapNotNull null
+                val addr = links.linkAddresses.mapNotNull { it.address as? java.net.Inet4Address }
+                    .firstOrNull { it.isSiteLocalAddress && !it.isLoopbackAddress } ?: return@mapNotNull null
+                (if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) 0 else 1) to addr
+            }?.minByOrNull { it.first }?.second
+            if (best != null) return best.hostAddress
+        }
+        return NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
+            .firstOrNull { it is Inet4Address && it.isSiteLocalAddress && !it.isLoopbackAddress }?.hostAddress ?: "127.0.0.1"
+    }
     companion object { private val ERRORS = setOf("SERVICE_STOPPED", "NAME", "ADDRESS", "SOURCE", "OUTPUT", "CLOUD_ACTIVE", "AUDIO_SUSPENDED", "AUDIO_ENGINE", "MEMORY_LIMIT", "AUDIO_FORMAT") }
 }
