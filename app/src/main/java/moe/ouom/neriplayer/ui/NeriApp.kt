@@ -115,6 +115,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.navigation.StartDestinationSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
@@ -274,6 +275,7 @@ internal fun localPlaylistIdFromSourceRoute(sourceRoute: String?): Long? {
 @Composable
 fun NeriApp(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
+    initialStartDestinationSnapshot: StartDestinationSnapshot? = null,
     launcherShortcutRequestFlow: StateFlow<LauncherShortcutRequest?> =
         EmptyLauncherShortcutRequestFlow,
     onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
@@ -295,6 +297,7 @@ fun NeriApp(
         ) {
             NeriAppContent(
                 initialThemeSnapshot = initialThemeSnapshot,
+                initialStartDestinationSnapshot = initialStartDestinationSnapshot,
                 launcherShortcutRequestFlow = launcherShortcutRequestFlow,
                 onLauncherShortcutRequestConsumed = onLauncherShortcutRequestConsumed,
                 onIsDarkChanged = onIsDarkChanged,
@@ -338,6 +341,7 @@ internal fun AppUnderlayBackScope(
 @Composable
 private fun NeriAppContent(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
+    initialStartDestinationSnapshot: StartDestinationSnapshot? = null,
     launcherShortcutRequestFlow: StateFlow<LauncherShortcutRequest?> =
         EmptyLauncherShortcutRequestFlow,
     onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
@@ -858,7 +862,8 @@ private fun NeriAppContent(
         systemDark = systemDark
     )
     val initialMainStartDestination = resolveMainStartDestination(
-        preferredRoute = defaultStartDestination,
+        preferredRoute = defaultStartDestination
+            ?: initialStartDestinationSnapshot?.startDestination,
         showHomeTab = showHomeTab,
         devModeEnabled = devModeEnabled
     )

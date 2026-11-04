@@ -148,6 +148,7 @@ import moe.ouom.neriplayer.core.startup.sync.StartupSyncWarningRepository
 import moe.ouom.neriplayer.core.startup.theme.StartupNightModeSyncPlanner
 import moe.ouom.neriplayer.core.startup.theme.StartupResourceNightMode
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
+import moe.ouom.neriplayer.core.startup.navigation.StartDestinationSnapshotProvider
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeSnapshotProvider
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherInvite
 import moe.ouom.neriplayer.api.ltw.reconnect.LISTEN_TOGETHER_RECONNECT_EXHAUSTED_REASON
@@ -371,6 +372,10 @@ class MainActivity : ComponentActivity() {
         val startupLoadingStartedAtMs = SystemClock.elapsedRealtime()
         val startupSettingsSnapshot = readBootstrapSettingsSnapshotSync(this)
         val startupThemeSnapshot = StartupThemeSnapshotProvider.read(
+            context = this,
+            safeModeActive = safeModeActive
+        )
+        val startupStartDestinationSnapshot = StartDestinationSnapshotProvider.read(
             context = this,
             safeModeActive = safeModeActive
         )
@@ -1153,6 +1158,8 @@ class MainActivity : ComponentActivity() {
                                         var appGlobalDialogVisible by remember { mutableStateOf(true) }
                                         NeriApp(
                                             initialThemeSnapshot = startupThemeSnapshot,
+                                            initialStartDestinationSnapshot =
+                                                startupStartDestinationSnapshot,
                                             launcherShortcutRequestFlow = launcherShortcutRequestFlow,
                                             onLauncherShortcutRequestConsumed =
                                                 ::clearLauncherShortcutRequest,

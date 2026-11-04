@@ -15,6 +15,8 @@ import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.playback.persistPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.persistThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.navigation.StartDestinationSnapshot
+import moe.ouom.neriplayer.data.settings.navigation.persistStartDestinationSnapshot
 
 internal class SafeModeResetActions(
     context: Context
@@ -38,6 +40,7 @@ internal class SafeModeResetActions(
             persistThemePreferenceSnapshot(appContext, ThemePreferenceSnapshot())
             persistBootstrapSettingsSnapshot(appContext, BootstrapSettingsSnapshot())
             persistPlaybackPreferenceSnapshot(appContext, PlaybackPreferenceSnapshot())
+            persistStartDestinationSnapshot(appContext, StartDestinationSnapshot())
         }
     }
 }

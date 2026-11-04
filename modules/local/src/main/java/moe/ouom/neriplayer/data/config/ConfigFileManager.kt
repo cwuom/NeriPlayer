@@ -37,6 +37,8 @@ import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.playback.persistPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.navigation.persistStartDestinationSnapshot
+import moe.ouom.neriplayer.data.settings.navigation.toStartDestinationSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.persistThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.bootstrap.toBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.playback.toPlaybackPreferenceSnapshot
@@ -324,6 +326,7 @@ class ConfigFileManager(
         persistThemePreferenceSnapshot(context, restoredPrefs.toThemePreferenceSnapshot())
         persistBootstrapSettingsSnapshot(context, restoredPrefs.toBootstrapSettingsSnapshot())
         persistPlaybackPreferenceSnapshot(context, restoredPrefs.toPlaybackPreferenceSnapshot())
+        persistStartDestinationSnapshot(context, restoredPrefs.toStartDestinationSnapshot())
     }
 
     private suspend fun restoreAuth(

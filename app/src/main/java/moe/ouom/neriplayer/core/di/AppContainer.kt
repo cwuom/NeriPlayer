@@ -97,6 +97,8 @@ import moe.ouom.neriplayer.api.ltw.ws.ListenTogetherWebSocketClient
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.playback.persistPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.navigation.persistStartDestinationSnapshot
+import moe.ouom.neriplayer.data.settings.navigation.toStartDestinationSnapshot
 import moe.ouom.neriplayer.data.settings.bootstrap.readBootstrapSettingsSnapshotSync
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.bootstrap.toBootstrapSettingsSnapshot
@@ -682,6 +684,10 @@ object AppContainer {
                 persistPlaybackPreferenceSnapshot(
                     application,
                     preferences.toPlaybackPreferenceSnapshot()
+                )
+                persistStartDestinationSnapshot(
+                    application,
+                    preferences.toStartDestinationSnapshot()
                 )
             }
             .launchIn(scope)
