@@ -272,6 +272,13 @@ internal fun localPlaylistIdFromSourceRoute(sourceRoute: String?): Long? {
         ?.toLongOrNull()
 }
 
+/**
+ * 应用主界面入口.
+ *
+ * @param initialThemeSnapshot 启动时同步读到的主题偏好, 让首帧就用正确的明暗与样式.
+ * @param initialStartDestinationSnapshot 启动时同步读到的启动页偏好.
+ *   `null` 表示缓存尚未就绪, 此时沿用"先落在兜底路由, 真值到达后再纠正"的原有路径.
+ */
 @Composable
 fun NeriApp(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),

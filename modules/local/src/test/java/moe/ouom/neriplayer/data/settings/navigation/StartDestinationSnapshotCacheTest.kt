@@ -12,6 +12,13 @@ import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockStatic
 
+/**
+ * 覆盖启动页快照的缓存语义: 命中即读、部分缓存视为缺失、未知态不被当成默认值,
+ * 以及 DataStore 偏好到快照的投影与写透.
+ *
+ * 刻意不触发 `dataStore.edit`: 共享的 settings DataStore 在宿主测试里可能因临时文件
+ * 重命名冲突而失败, 而快照逻辑本身不需要写入 DataStore 即可验证.
+ */
 class StartDestinationSnapshotCacheTest {
     private val preferences = InMemorySharedPreferencesRegistry()
     private val context = IsolatedSettingsDataStore.context(preferences)
