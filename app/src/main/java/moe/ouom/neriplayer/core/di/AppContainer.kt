@@ -688,13 +688,19 @@ object AppContainer {
 
         settingsRepo.bypassProxyFlow
             .onEach { enabled ->
-                DynamicProxySelector.bypassProxy = enabled
-                sharedOkHttpClient.connectionPool.evictAll()
-                if (youtubeAccountProfileHttpClientDelegate.isInitialized()) {
-                    youtubeAccountProfileHttpClientDelegate.value.connectionPool.evictAll()
-                }
-                neteaseClient.evictConnections()
-                AudioDownloadManager.notifyRecoveryOpportunity("proxy_changed")
+                applyBypassProxyChange(
+                    enabled = enabled,
+                    currentValue = DynamicProxySelector.bypassProxy,
+                    applyValue = { DynamicProxySelector.bypassProxy = it },
+                    onChanged = {
+                        sharedOkHttpClient.connectionPool.evictAll()
+                        if (youtubeAccountProfileHttpClientDelegate.isInitialized()) {
+                            youtubeAccountProfileHttpClientDelegate.value.connectionPool.evictAll()
+                        }
+                        neteaseClient.evictConnections()
+                        AudioDownloadManager.notifyRecoveryOpportunity("proxy_changed")
+                    }
+                )
             }
             .launchIn(scope)
 
@@ -741,13 +747,19 @@ object AppContainer {
             .launchIn(scope)
     }
 
-    private fun warmYouTubePlaybackOnAppStart() {
+    internal fun warmYouTubePlaybackOnAppStart(
+        backgroundWarmupAllowed: () -> Boolean = { !InstrumentationTestRuntime.isActive },
+        loadWarmBootstrap: () -> (() -> Unit) = {
+            youtubeMusicPlaybackRepository::warmBootstrapAsync
+        }
+    ) {
         if (!YouTubeFeatureGate.isEnabled()) {
             return
         }
         warmYouTubePlaybackIfEnabled(
             youtubeEnabled = YouTubeFeatureGate.isEnabled(),
-            warmBootstrapAsync = youtubeMusicPlaybackRepository::warmBootstrapAsync
+            backgroundWarmupAllowed = backgroundWarmupAllowed(),
+            warmBootstrapAsync = { loadWarmBootstrap().invoke() }
         )
     }
 

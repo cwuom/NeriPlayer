@@ -105,7 +105,7 @@ internal class NowPlayingProgressOwner(initialPositionMs: Long) {
 
     fun previewPositionMs(playbackPositionMs: Long): Long = resolveLyricPreviewTimeMs(
         isDraggingSlider = isDragging,
-        sliderPreviewPositionMs = sliderPosition.toLong(),
+        sliderPreviewPositionMs = if (isDragging) sliderPosition.toLong() else playbackPositionMs,
         pendingSeekPreviewPositionMs = pendingSeekPreviewPositionMs,
         playbackPositionMs = playbackPositionMs
     )

@@ -24,10 +24,10 @@ package moe.ouom.neriplayer.ui
  */
 
 import moe.ouom.neriplayer.data.identity.stableKey
-import android.app.Activity
 import android.app.Application
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -350,6 +350,7 @@ private fun NeriAppContent(
     canShowGlobalDialogs: Boolean = true
 ) {
     val context = LocalContext.current
+    val activity = LocalActivity.current
     val composeResources = LocalResources.current
     val latestOnNowPlayingVisibilityChanged by rememberUpdatedState(
         onNowPlayingVisibilityChanged
@@ -951,7 +952,6 @@ private fun NeriAppContent(
             return
         }
 
-        val activity = context as? Activity
         val captureView = activity?.window?.decorView?.rootView ?: rootView.rootView
         val captureToken = themeRevealCaptureToken + 1
         themeRevealCaptureToken = captureToken

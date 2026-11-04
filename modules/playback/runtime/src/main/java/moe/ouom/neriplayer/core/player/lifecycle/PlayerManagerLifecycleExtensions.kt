@@ -73,8 +73,9 @@ import moe.ouom.neriplayer.core.player.network.PlaybackNetworkResumeOwner
 import moe.ouom.neriplayer.core.player.service.notification.FlymeStatusBarLyricSupport
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.PlayerEvent
-import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStatePreload
 import moe.ouom.neriplayer.core.player.persistence.applyRestoredStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.completeInitialRestoration
 import moe.ouom.neriplayer.core.player.persistence.applyCommittedLyricOverrides
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.core.player.persistence.restoreState
@@ -290,7 +291,7 @@ internal fun PlayerManager.initializeImpl(
     app: Application,
     maxCacheSize: Long = 1024L * 1024 * 1024,
     startupPlaybackPreferences: PlaybackPreferenceSnapshot? = null,
-    restoredStateSnapshot: RestoredPlayerStateSnapshot? = null
+    restorationPreload: RestoredPlayerStatePreload = RestoredPlayerStatePreload.NeedsFallback
 ) {
     if (!beginInitialization()) return
     val effectiveMaxCacheSize = CacheSizePolicy.normalizeCacheSizeBytes(maxCacheSize)
@@ -300,7 +301,7 @@ internal fun PlayerManager.initializeImpl(
             applyInitialPlaybackPreferences(app, startupPlaybackPreferences)
             initializePlaybackEngine(app, effectiveMaxCacheSize)
             observePlaybackSettings()
-            completeInitialization(restoredStateSnapshot, effectiveMaxCacheSize)
+            completeInitialization(restorationPreload, effectiveMaxCacheSize)
             observeCommittedLyricOverrides()
         } catch (error: Throwable) {
             rollbackInitialization(error, effectiveMaxCacheSize)
@@ -1549,15 +1550,15 @@ private fun PlayerManager.observeCommittedLyricOverrides() {
 }
 
 private fun PlayerManager.completeInitialization(
-    restoredStateSnapshot: RestoredPlayerStateSnapshot?,
+    restorationPreload: RestoredPlayerStatePreload,
     effectiveMaxCacheSize: Long
 ) {
     audioDeviceRouteOwner.register()
-    if (restoredStateSnapshot != null) {
-        applyRestoredStateSnapshot(restoredStateSnapshot)
-    } else {
-        restoreState()
-    }
+    completeInitialRestoration(
+        restorationPreload = restorationPreload,
+        applySnapshot = { applyRestoredStateSnapshot(it) },
+        restoreState = { restoreState() }
+    )
 
     sleepTimerManager = createSleepTimerManager()
 
