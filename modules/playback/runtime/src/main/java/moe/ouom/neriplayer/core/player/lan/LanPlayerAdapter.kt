@@ -72,10 +72,21 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         if (media == null) local.clearHosted()
     }
     override suspend fun prepareSharedSource(track: ListenTogetherTrack, refresh: Boolean): moe.ouom.neriplayer.lanltw.playback.LanPreparedSource {
-        if (track.channelId != "local") return moe.ouom.neriplayer.lanltw.playback.LanPreparedSource(track, resolveSharedAudioSources(track))
+        if (track.channelId != "local") {
+            // 在线曲目：歌词/元数据由主控解析下发（B 站字幕等依赖登录态，成员未必登录）
+            val presentation = runCatching {
+                val song = LanPlaybackBinding.offeredQueue ?: PlayerManager.currentQueueFlow.value
+                val hosted = song.find { LanPlaybackBinding.track(it)?.stableKey == track.stableKey }
+                hosted?.let { moe.ouom.neriplayer.core.player.lan.resolveLanSharedLyrics(it) }
+            }.getOrNull()
+            return moe.ouom.neriplayer.lanltw.playback.LanPreparedSource(track, resolveSharedAudioSources(track), presentation = presentation)
+        }
         val queue = LanPlaybackBinding.offeredQueue ?: PlayerManager.currentQueueFlow.value
         val song = queue.find { LanPlaybackBinding.track(it)?.stableKey == track.stableKey } ?: error("SOURCE")
         return local.offer(song, checkNotNull(engine).state.sampleRate, refresh)
+    }
+    override fun sharedPresentation(track: ListenTogetherTrack, presentation: moe.ouom.neriplayer.data.model.lan.LanSharedPresentation?) {
+        presentation?.let { LanSharedPresentationStore.publish(track.stableKey, it) }
     }
     override fun sharedAudioSources(track: ListenTogetherTrack, urls: List<String>) {
         main()

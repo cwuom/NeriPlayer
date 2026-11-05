@@ -2,9 +2,11 @@ package moe.ouom.neriplayer.lanltw.playback
 
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 import moe.ouom.neriplayer.data.model.lan.LanLocalMedia
+import moe.ouom.neriplayer.data.model.lan.LanSharedPresentation
 import moe.ouom.neriplayer.lanltw.media.LanMediaServer
 
-data class LanPreparedSource(val track: ListenTogetherTrack, val urls: List<String> = emptyList(), val localMedia: LanLocalMedia? = null)
+data class LanPreparedSource(val track: ListenTogetherTrack, val urls: List<String> = emptyList(), val localMedia: LanLocalMedia? = null,
+    val presentation: LanSharedPresentation? = null)
 
 /** All calls occur on the player's application thread. Preparation must not start playback. */
 interface LanPlaybackPort {
@@ -14,6 +16,7 @@ interface LanPlaybackPort {
     fun watchTransferProgress(handler: (Long, Long) -> Unit) = Unit
     fun watchAudioFailure(handler: (String) -> Unit) = Unit
     suspend fun resolveSharedAudioSources(track: ListenTogetherTrack): List<String> = emptyList()
+    fun sharedPresentation(track: ListenTogetherTrack, presentation: LanSharedPresentation?) = Unit
     suspend fun prepareSharedSource(track: ListenTogetherTrack, refresh: Boolean = false): LanPreparedSource =
         LanPreparedSource(track, resolveSharedAudioSources(track))
     fun hostMediaServer(server: LanMediaServer) = Unit

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.lan
 
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.ltw.PlayerListenTogetherSongMapper
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayAlbum
@@ -32,7 +33,15 @@ object LanSharedPresentationStore {
     private var key: String? = null
     private var presentation: LanSharedPresentation? = null
     fun publish(trackKey: String, value: LanSharedPresentation) { key = trackKey; presentation = value }
-    fun forSong(song: SongItem?): LanSharedPresentation? =
-        presentation.takeIf { song?.channelId == "local" && "local:${song.audioId}" == key }
+    fun forSong(song: SongItem?): LanSharedPresentation? {
+        if (song == null || presentation == null) return null
+        // 本地歌：键 = local:<audioId>
+        if (song.channelId == "local") return presentation.takeIf { "local:${song.audioId}" == key }
+        // 在线歌（网易云/B 站/YouTube 等）：歌词由主控解析下发，按曲目 stableKey 匹配
+        val trackKey = with(PlayerListenTogetherSongMapper) {
+            song.toListenTogetherTrackOrNull(includeLocal = false)?.stableKey
+        }
+        return presentation.takeIf { trackKey != null && trackKey == key }
+    }
     fun clear() { key = null; presentation = null }
 }

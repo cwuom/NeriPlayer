@@ -19,6 +19,7 @@ class LanRoomEngine(
     private var revision = 0L
     private var currentSources = emptyList<String>()
     private var currentLocalMedia: LanLocalMedia? = null
+    private var currentPresentation: LanSharedPresentation? = null
     private var sourceFailure: String? = null
     fun snapshot() = LanRoom(roomId, roomName, peers.values.map { it.member }, permissions, globalVolume, playback)
     fun join(id: String, name: String, host: Boolean, initialVolume: Float = 1f): Boolean {
@@ -83,6 +84,7 @@ class LanRoomEngine(
         }
         if (!validMedia(track, m)) return reject(id, "FULL_AUDIO_REQUIRED")
         currentLocalMedia = m.localMedia
+        currentPresentation = if (m.localMedia == null) m.presentation else null
         currentSources = if (m.localMedia == null) m.sourceUrls.distinct().take(3) else emptyList()
         sourceFailure = null
         loading = Loading(track, decision.position, ++revision, clock.nowMs() + if (currentLocalMedia == null) 90_000 else 300_000)
@@ -164,7 +166,8 @@ class LanRoomEngine(
         val at = executeAt()
         playback = LanPlayback(pending.track, pending.position, true, at, pending.generation)
         broadcast(LanMessage("SCHEDULED_ACTION", scheduledAction = LanAction("PLAY", pending.track.stableKey, pending.position, pending.track),
-            serverTimeToExecute = at, revision = pending.generation, sourceUrls = currentSources, localMedia = currentLocalMedia))
+            serverTimeToExecute = at, revision = pending.generation, sourceUrls = currentSources, localMedia = currentLocalMedia,
+            presentation = currentPresentation))
         broadcastState()
     }
     private fun sync(id: String) {
@@ -173,17 +176,18 @@ class LanRoomEngine(
             send(id, LanMessage("ROOM_EVENT", event = LanRoomEvent("LOAD_AUDIO_SOURCE",
                 audioSourceToPlay = LanSource(pending.track.stableKey), track = pending.track,
                 trackTimeSeconds = pending.position, loadGeneration = pending.generation,
-                revision = pending.generation, sourceUrls = currentSources, localMedia = currentLocalMedia)))
+                revision = pending.generation, sourceUrls = currentSources, localMedia = currentLocalMedia),
+                presentation = currentPresentation))
             return
         }
         val track = playback.track ?: return
         if (!playback.playing) {
-            send(id, LanMessage("LAN_PAUSED_STATE", track = track, trackTimeSeconds = playback.positionSeconds, revision = playback.revision, sourceUrls = currentSources, localMedia = currentLocalMedia))
+            send(id, LanMessage("LAN_PAUSED_STATE", track = track, trackTimeSeconds = playback.positionSeconds, revision = playback.revision, sourceUrls = currentSources, localMedia = currentLocalMedia, presentation = currentPresentation))
             return
         }
         val at = executeAt(1500.0)
         send(id, LanMessage("SCHEDULED_ACTION", scheduledAction = LanAction("PLAY", track.stableKey,
-            LanSchedule.position(playback.positionSeconds, playback.executeAtMs, at), track), serverTimeToExecute = at, revision = playback.revision, sourceUrls = currentSources, localMedia = currentLocalMedia))
+            LanSchedule.position(playback.positionSeconds, playback.executeAtMs, at), track), serverTimeToExecute = at, revision = playback.revision, sourceUrls = currentSources, localMedia = currentLocalMedia, presentation = currentPresentation))
     }
     private fun configure(id: String, host: Boolean, m: LanMessage) {
         if (m.type == "LIVENESS_PONG") return

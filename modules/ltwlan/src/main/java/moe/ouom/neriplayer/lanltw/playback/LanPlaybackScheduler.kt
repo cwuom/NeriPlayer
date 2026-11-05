@@ -30,6 +30,7 @@ class LanPlaybackScheduler(
         val track = m.track ?: return
         port.sharedLocalMedia(track, m.localMedia)
         port.sharedAudioSources(track, m.sourceUrls)
+        port.sharedPresentation(track, m.presentation)
         action?.cancel(); scheduledAudio?.cancelAudioSchedule(); pending = null; loading?.cancel(); retry?.cancel()
         loading = scope.launch {
             val ready = port.prepare(track, m.trackTimeSeconds ?: 0.0)
@@ -47,6 +48,7 @@ class LanPlaybackScheduler(
         val at = m.serverTimeToExecute ?: return
         port.sharedLocalMedia(track, m.localMedia)
         port.sharedAudioSources(track, m.sourceUrls)
+        port.sharedPresentation(track, m.presentation)
         action?.cancel(); retry?.cancel(); pending = m
         action = scope.launch {
             if (!synced()) { recover(); return@launch }
@@ -89,6 +91,7 @@ class LanPlaybackScheduler(
         val track = m.track ?: return
         port.sharedLocalMedia(track, m.localMedia)
         port.sharedAudioSources(track, m.sourceUrls)
+        port.sharedPresentation(track, m.presentation)
         action?.cancel(); loading?.cancel(); pending = null
         action = scope.launch { if (port.prepare(track, m.trackTimeSeconds ?: 0.0)) port.pause() else error("SOURCE") }
     }

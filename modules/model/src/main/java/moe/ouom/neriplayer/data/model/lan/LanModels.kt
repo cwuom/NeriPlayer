@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
     val permissions: LanPermissions? = null,
     val volume: Float? = null,
     val code: String? = null,
+    val presentation: LanSharedPresentation? = null,
     val t0: Double? = null, val t1: Double? = null, val t2: Double? = null,
     val probeGroupId: Int? = null, val probeGroupIndex: Int? = null,
     val clientRTT: Double? = null, val clientCompensationMs: Double? = null, val clientNudgeMs: Double? = null

@@ -275,7 +275,8 @@ class LanSessionManager(
                 if (!ticket.isCurrent) return@launch
                 if (source.urls.isEmpty() && source.localMedia == null) { reportError("FULL_AUDIO_REQUIRED"); return@launch }
                 send(LanMessage("PLAY", audioSource = source.track.stableKey, intent = intent, track = source.track,
-                    trackTimeSeconds = position, sourceUrls = source.urls, localMedia = source.localMedia))
+                    trackTimeSeconds = position, sourceUrls = source.urls, localMedia = source.localMedia,
+                    presentation = source.presentation))
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { reportError(error.message?.takeIf { it in setOf("SOURCE_CHANGED", "FULL_AUDIO_REQUIRED", "LOCAL_READ", "LOCAL_STORAGE", "LOCAL_COVER", "METADATA_LIMIT", "MEMORY_LIMIT", "AUDIO_FORMAT", "AUDIO_DURATION") } ?: "SOURCE") }
         }
