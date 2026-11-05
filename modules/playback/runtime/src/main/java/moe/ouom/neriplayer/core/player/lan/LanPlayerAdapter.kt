@@ -107,7 +107,8 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         // 主控共享的在线直链会过期（如 YouTube 约 8 分钟）：全部失效时用本机账号自解析兜底一轮
         val urlAttempts = mutableListOf(sharedUrls)
         if (track.channelId != "local") {
-            runCatching { resolveSharedAudioSources(track) }.getOrNull()
+            // 自解析兜底限时 15s，避免无网/慢网环境下阻塞整个装载流程
+            runCatching { withTimeout(15_000) { resolveSharedAudioSources(track) } }.getOrNull()
                 ?.takeIf { it.isNotEmpty() && it != sharedUrls }?.let { urlAttempts.add(it) }
         }
         // Resolve metadata only. Listeners must not ask their own account for a possibly truncated preview URL.
