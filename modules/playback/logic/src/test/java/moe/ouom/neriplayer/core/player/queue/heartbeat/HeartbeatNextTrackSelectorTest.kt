@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.player.queue.heartbeat
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
@@ -152,10 +155,52 @@ class HeartbeatNextTrackSelectorTest {
         assertNotNull(resultForOtherSong)
     }
 
+    @Test
+    fun `a result arriving after reset cannot trip the new session`() = runTest {
+        // 重置只会清状态，打断不了已经在途的选歌请求。若那个请求回来后照旧写回，
+        // 刚重置好的新会话会被上一轮的失败重新标成熔断。
+        val gate = CompletableDeferred<Unit>()
+        val officialSource = GatedSelector(gate, suspendAtCall = 3, results = listOf(null))
+        val coordinator = HeartbeatNextTrackCoordinator(
+            officialSource = officialSource,
+            localSource = RecordingSelector(listOf(null)),
+        )
+
+        repeat(2) { coordinator.selectNext(current, emptyList()) }
+        assertFalse(coordinator.isOfficialCircuitOpen())
+
+        val inFlight = launch { coordinator.selectNext(current, emptyList()) }
+        runCurrent()
+        coordinator.reset()
+        gate.complete(Unit)
+        inFlight.join()
+
+        assertFalse("重置前发出的请求不得把新会话标成熔断", coordinator.isOfficialCircuitOpen())
+        assertEquals(3, officialSource.callCount)
+    }
+
     // ---- 测试替身 ----
 
-    private class RecordingSelector(
+    private class GatedSelector(
+        private val gate: CompletableDeferred<Unit>,
+        private val suspendAtCall: Int,
         private val results: List<SongItem?>,
+    ) : HeartbeatNextTrackSelector {
+        var callCount: Int = 0
+            private set
+
+        override suspend fun selectNext(
+            currentSong: SongItem,
+            currentQueue: List<SongItem>,
+        ): SongItem? {
+            val index = callCount.coerceAtMost(results.lastIndex)
+            callCount++
+            if (callCount == suspendAtCall) gate.await()
+            return results[index]
+        }
+    }
+
+    private class RecordingSelector(        private val results: List<SongItem?>,
     ) : HeartbeatNextTrackSelector {
         var callCount: Int = 0
             private set

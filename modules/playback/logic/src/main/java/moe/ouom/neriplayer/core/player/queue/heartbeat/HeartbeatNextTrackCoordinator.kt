@@ -28,25 +28,39 @@ class HeartbeatNextTrackCoordinator(
     @Volatile
     private var officialCircuitOpen: Boolean = false
 
+    /**
+     * 会话代次：每次 [reset] 递增。
+     *
+     * [reset] 只清状态、打断不了已经在途的选歌请求。那些请求回来后如果照旧写回
+     * `failureCounts` / `officialCircuitOpen` / [lastResultFromOfficial]，
+     * 就会把「刚重置好的新会话」重新标成熔断。所以写回前一律比对代次，过期就丢弃。
+     */
+    @Volatile
+    private var sessionGeneration: Int = 0
+
     /** 最近一次成功从官方源取到结果，用于 UI 区分「官方」与「本地推荐」文案 */
     @Volatile
     var lastResultFromOfficial: Boolean = false
         private set
 
     override suspend fun selectNext(currentSong: SongItem, currentQueue: List<SongItem>): SongItem? {
-        val official = selectFromOfficial(currentSong, currentQueue)
-        if (official != null) {
-            lastResultFromOfficial = true
-            synchronized(lock) { failureCounts.remove(HeartbeatScorer.identityKey(currentSong)) }
-            return official
+        val generation = sessionGeneration
+        val official = selectFromOfficial(currentSong, currentQueue, generation)
+        if (generation == sessionGeneration) {
+            if (official != null) {
+                lastResultFromOfficial = true
+                synchronized(lock) { failureCounts.remove(HeartbeatScorer.identityKey(currentSong)) }
+            } else {
+                lastResultFromOfficial = false
+            }
         }
-        lastResultFromOfficial = false
-        return localSource?.selectNext(currentSong, currentQueue)
+        return official ?: localSource?.selectNext(currentSong, currentQueue)
     }
 
     /** 用户重新开启心动模式时调用，重置熔断与失败计数 */
     fun reset() {
         synchronized(lock) {
+            sessionGeneration++
             failureCounts.clear()
             officialCircuitOpen = false
         }
@@ -75,6 +89,7 @@ class HeartbeatNextTrackCoordinator(
     private suspend fun selectFromOfficial(
         currentSong: SongItem,
         currentQueue: List<SongItem>,
+        generation: Int,
     ): SongItem? {
         val source = officialSource ?: return null
         if (officialCircuitOpen) return null
@@ -91,9 +106,12 @@ class HeartbeatNextTrackCoordinator(
         }
         if (result == null) {
             synchronized(lock) {
-                val next = (failureCounts[key] ?: 0) + 1
-                failureCounts[key] = next
-                if (next >= MAX_CONSECUTIVE_FAILURES) officialCircuitOpen = true
+                // 期间会话已重置：这次失败属于上一轮，不能算到新会话头上
+                if (generation == sessionGeneration) {
+                    val next = (failureCounts[key] ?: 0) + 1
+                    failureCounts[key] = next
+                    if (next >= MAX_CONSECUTIVE_FAILURES) officialCircuitOpen = true
+                }
             }
         }
         return result
