@@ -462,6 +462,30 @@ internal class DownloadTaskStore(
         return preparedAttemptIds
     }
 
+    /** 恢复检查和建卡共用锁，旧 operation 不能覆盖已取消、完成或替代的任务 */
+    fun ensureDownloadTaskForRecovery(
+        song: SongItem,
+        status: DownloadStatus,
+        durableAttemptId: Long?,
+        operationId: String
+    ): Long? = synchronized(mutationLock) {
+        val songKey = song.stableKey()
+        val task = findTask(songKey)
+        val taskOperationId = task?.progress?.operationId
+        if (task != null && (
+                task.status == DownloadStatus.CANCELLED || task.status == DownloadStatus.COMPLETED ||
+                    (durableAttemptId != null && task.attemptId != durableAttemptId) ||
+                    (taskOperationId != null && taskOperationId != operationId) ||
+                    (durableAttemptId == null && taskOperationId != operationId)
+                )
+        ) return@synchronized null
+        ensureDownloadTasks(
+            songs = listOf(song),
+            status = status,
+            durableAttemptIds = durableAttemptId?.let { mapOf(songKey to it) }.orEmpty()
+        )[songKey]
+    }
+
     fun ensureDownloadTasks(
         songs: List<SongItem>,
         status: DownloadStatus = DownloadStatus.QUEUED,

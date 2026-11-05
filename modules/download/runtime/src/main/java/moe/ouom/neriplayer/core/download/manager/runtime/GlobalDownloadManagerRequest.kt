@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.persistence.PostCoreRecoveryReadStore
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
@@ -152,6 +153,9 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
                     context = appContext,
                     operationId = existingInFlightRequest.operationId
                 )
+                if (requiresDownloadFinalizationRecovery(inFlightStateToRecover)) {
+                    restorePostCoreDownloadTask(appContext, existingInFlightRequest, admissionTicket)
+                }
                 operationPersisted = true
                 NPLogger.d(
                     TAG,
@@ -215,6 +219,9 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
             }
             if (operationState in DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES) {
                 inFlightRequestToRecover = persistedRequest
+                if (requiresDownloadFinalizationRecovery(operationState)) {
+                    restorePostCoreDownloadTask(appContext, persistedRequest, admissionTicket)
+                }
                 NPLogger.d(
                     TAG,
                     "单曲下载复用并检查执行中的 operation: " +
@@ -339,6 +346,81 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
     }
 }
 
+internal suspend fun GlobalDownloadManager.restorePostCoreDownloadTask(
+    context: Context,
+    request: DownloadExecutionRequest,
+    admissionTicket: Long
+): Long? {
+    val songKey = request.song.stableKey()
+    val entry = PostCoreRecoveryReadStore.entries(context, listOf(request.operationId))
+        .singleOrNull { entry ->
+            entry.request.song.stableKey() == songKey &&
+                entry.request.attemptId == request.attemptId
+        }
+        ?: return null
+    val persistedRequest = entry.request
+    val song = persistedRequest.song
+    val operationId = persistedRequest.operationId
+    if (!isDownloadAdmissionTicketCurrent(context, admissionTicket, songKey, operationId) ||
+        isSongCancelled(songKey) ||
+        !DownloadExecutionRoomStore.isArtifactRecoveryAllowed(
+            context, operationId, respectRetryDeadline = false
+        )
+    ) return null
+    val activeEnrichment = assetEnrichmentCoordinator.isActive(operationId)
+    val networkEligible = isPostCoreRecoveryNetworkEligible(
+        persistedRequest.requiresWifiNetwork,
+        context.currentDownloadNetworkTypeOrNull(),
+        mobileDataDownloadOverrideAllowed
+    )
+    val status = if (activeEnrichment || networkEligible) {
+        DownloadStatus.QUEUED
+    } else {
+        DownloadStatus.WAITING_NETWORK
+    }
+    // 收尾绕过传输入口，必须自行恢复进度身份，用户才能看到并取消复用的任务
+    val attemptId = taskStore.ensureDownloadTaskForRecovery(
+        song = song,
+        status = status,
+        durableAttemptId = persistedRequest.attemptId,
+        operationId = operationId
+    ) ?: return null
+    if (persistedRequest.attemptId == null && !DownloadExecutionRoomStore.ensureAttemptId(
+            context, operationId, songKey, attemptId
+        )) {
+        taskStore.removeDownloadTask(songKey, attemptId)
+        return null
+    }
+    val currentEntry = PostCoreRecoveryReadStore.entries(context, listOf(operationId))
+        .singleOrNull { entry ->
+            entry.request.song.stableKey() == songKey && entry.request.attemptId == attemptId
+        }
+    if (!isDownloadAdmissionTicketCurrent(context, admissionTicket, songKey, operationId) ||
+        isSongCancelled(songKey) || currentEntry == null
+    ) {
+        taskStore.removeDownloadTask(songKey, attemptId)
+        return null
+    }
+    val checkpoint = DownloadExecutionRoomStore.readProgressCheckpoint(
+        context, operationId, songKey, attemptId
+    )
+    val waitingForRetry = !activeEnrichment &&
+        currentEntry.nextRetryAtMs?.let { it > System.currentTimeMillis() } == true
+    publishDownloadStage(
+        song = song,
+        stage = if (waitingForRetry) {
+            DownloadStage.WAITING_RETRY
+        } else {
+            DownloadStage.ASSETS_ENRICHING
+        },
+        operationId = operationId,
+        attemptId = attemptId,
+        bytesRead = checkpoint?.bytesWritten ?: 0L,
+        totalBytes = checkpoint?.totalBytes ?: 0L
+    )
+    return attemptId
+}
+
 internal suspend fun GlobalDownloadManager.reopenMissingPostCoreArtifactForFreshTransfer(
     context: Context,
     song: SongItem,
@@ -454,6 +536,13 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
 ): Boolean {
     var finalized = false
     withSongExecutionLock(song.stableKey()) {
+        val pendingRequest = DownloadExecutionRoomStore.read(context, operationId)
+            ?.takeIf { request ->
+                request.song.stableKey() == song.stableKey() &&
+                    (expectedAttemptId == null || request.attemptId == expectedAttemptId)
+            } ?: return@withSongExecutionLock
+        val restoredAttemptId = restorePostCoreDownloadTask(context, pendingRequest, admissionTicket)
+            ?: return@withSongExecutionLock
         // Worker 可能在原下载登记增强协程之前选中同一 operation，拿到歌曲锁后
         // 必须重新检查进程内 owner，避免用恢复 lease 抢走仍在执行的原收尾任务
         if (assetEnrichmentCoordinator.isActive(operationId)) {
@@ -464,11 +553,6 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
             )
             return@withSongExecutionLock
         }
-        val pendingRequest = DownloadExecutionRoomStore.read(context, operationId)
-            ?.takeIf { request ->
-                request.song.stableKey() == song.stableKey() &&
-                    (expectedAttemptId == null || request.attemptId == expectedAttemptId)
-            } ?: return@withSongExecutionLock
         if (!DownloadExecutionRoomStore.isArtifactRecoveryAllowed(context, operationId)) {
             return@withSongExecutionLock
         }
@@ -509,6 +593,9 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
             return@withSongExecutionLock
         }
         val request = recoveryClaim.request
+        if (request?.attemptId != restoredAttemptId) {
+            return@withSongExecutionLock
+        }
         val artifact = recoveryClaim.artifact
         // 恢复使用独立且跨进程稳定的 owner，迟到的原下载回调仍携带 request lease
         // 因而不能再把当前恢复租约清成 FAILED_RETRYABLE
@@ -548,7 +635,7 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
             )
             scheduleStartupArtifactRecovery(context)
         } else {
-            val finalizationAttemptId = expectedAttemptId ?: request?.attemptId
+            val finalizationAttemptId = restoredAttemptId
             try {
                 finalizeCompletedDownload(
                     context = context,
@@ -581,8 +668,7 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
             val currentTask = taskStore.findTask(song.stableKey())
             val matchingCompletedTask = currentTask?.takeIf { task ->
                 task.status == DownloadStatus.COMPLETED &&
-                    (finalizationAttemptId == null ||
-                        task.attemptId == finalizationAttemptId)
+                    task.attemptId == finalizationAttemptId
             }
             val operationState = runCatching {
                 DownloadExecutionRoomStore.state(context, operationId)
@@ -615,18 +701,12 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
                         "expectedAttemptId=$finalizationAttemptId"
                 )
             } else {
-                (
-                    settledTaskAttemptId ?:
-                        matchingCompletedTask?.attemptId ?:
-                        finalizationAttemptId
-                    )?.let { attemptId ->
-                    markBatchDownloadPresentationTerminal(
-                        songKey = song.stableKey(),
-                        attemptId = attemptId,
-                        terminalState = BatchDownloadTerminalState.COMPLETED,
-                        operationId = operationId
-                    )
-                }
+                markBatchDownloadPresentationTerminal(
+                    songKey = song.stableKey(),
+                    attemptId = settledTaskAttemptId ?: matchingCompletedTask?.attemptId ?: finalizationAttemptId,
+                    terminalState = BatchDownloadTerminalState.COMPLETED,
+                    operationId = operationId
+                )
             }
         }
     }
