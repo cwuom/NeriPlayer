@@ -3,6 +3,7 @@
 package moe.ouom.neriplayer.core.player.heartbeat
 
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -77,6 +78,10 @@ private var heartbeatOfficialRepository: NeteasePlaymodeIntelligenceRepository? 
 @Volatile
 private var heartbeatSelectorHolder: HeartbeatNextTrackSelector? = null
 
+/** 最近一次已发起预取的歌曲身份键：同一首歌会被多次发布（改歌词偏移、改标题），
+ *  没有它就会为一首歌反复请求接口。 */
+private val heartbeatLastPrefetchAnchor = AtomicReference<String?>(null)
+
 /** 预取的下一首就绪快照，用于把挂起的官方接口桥接到同步推进链路。 */
 private val heartbeatPending = HeartbeatPendingNextStore()
 
@@ -111,10 +116,8 @@ private fun PlayerManager.heartbeatPendingAnchor(): String? =
     _currentSongFlow.value?.let { HeartbeatScorer.identityKey(it) }
 
 /** 心动模式只对网易云音源生效：外部音源（B 站 / YouTube）既不预取也不接管推进。 */
-internal fun PlayerManager.isHeartbeatSourceSupported(): Boolean {
-    val song = _currentSongFlow.value ?: return false
-    return !isBiliTrack(song) && !isYouTubeMusicTrack(song)
-}
+internal fun PlayerManager.isHeartbeatSourceSupported(): Boolean =
+    _currentSongFlow.value?.isNeteaseSource() == true
 
 /** 预取到的下一首；没有、或不是为当前歌预取的，则返回 null。仅供推进链路读取。 */
 internal val PlayerManager.heartbeatReadyNextSong: SongItem?
@@ -264,6 +267,9 @@ fun PlayerManager.setHeartbeatMode(
     if (changed) {
         // 代次先 +1：上一轮会话在途的预取请求回来后会被判定为过期，不会串到新会话里
         heartbeatSessionGeneration.incrementAndGet()
+        // 暂停状态下切开关不会有任何播放操作，不主动落盘就得等下一次播放才写，
+        // 中途进程被杀会让重启后的开关回退到旧值。
+        scheduleStatePersist()
         NPLogger.d(TAG, "setHeartbeatMode: $normalized, source=$commandSource")
         if (normalized == HeartbeatMode.OFF) {
             heartbeatPending.clear()
@@ -358,6 +364,22 @@ fun PlayerManager.disableHeartbeatForListenTogetherRoom() {
 internal fun PlayerManager.restoreHeartbeatModeFromState(mode: Int) {
     setHeartbeatMode(HeartbeatMode.normalized(mode), userInitiated = false)
 }
+
+/**
+ * 当前歌变化后的预取入口，由 [PlayerManager.publishCurrentSong] 调用。
+ *
+ * 用户点队列里别的歌、换一张歌单播放时，上一首的预取结果锚点对不上而被判为过期；
+ * 若只在心动自己追加后预取，下一次播完就会先播一首普通队列歌，心动流被截断一次。
+ */
+internal fun PlayerManager.heartbeatOnCurrentSongChanged(song: SongItem?) {
+    val anchor = song?.let { HeartbeatScorer.identityKey(it) } ?: return
+    if (!claimHeartbeatPrefetchAnchor(anchor)) return
+    requestHeartbeatSelectionAsync("songChanged")
+}
+
+/** 返回 true 表示这首歌还没预取过；已经请求过（在途或已就绪）就不再重复请求。 */
+private fun PlayerManager.claimHeartbeatPrefetchAnchor(anchor: String): Boolean =
+    heartbeatLastPrefetchAnchor.getAndSet(anchor) != anchor
 
 /**
  * 异步预取一次心动候选。
@@ -507,7 +529,4 @@ internal fun PlayerManager.appendHeartbeatSongAndPlay(
         TAG,
         "appendHeartbeatSongAndPlay: song=${song.name}/${song.id}, appendIndex=$appendedIndex, queueSize=${updatedQueue.playlist.size}",
     )
-    // 立刻为「下一次切歌」预取，否则用户连续点两次下一首时第二次会命中空池
-    // 而回退到原有队列（真机表现为「第一次正确、第二次又播原队列下一首」）。
-    requestHeartbeatSelectionAsync("afterAppend")
 }

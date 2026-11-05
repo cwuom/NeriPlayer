@@ -230,12 +230,7 @@ class LocalHeartbeatCandidateSource(
      * 一播到它，播放侧的 `isHeartbeatSourceSupported()` 就拒绝继续预取，
      * 界面又把心动入口藏起来，用户只会看到「模式还开着，但再也换不了歌」。
      */
-    private fun isSupportedSource(song: SongItem): Boolean {
-        return when (song.playbackSourceKey()) {
-            "bili", "youtube" -> false
-            else -> true
-        }
-    }
+    private fun isSupportedSource(song: SongItem): Boolean = song.isNeteaseSource()
 
     private companion object {
         /** 历史权重随位置线性衰减的步长 */

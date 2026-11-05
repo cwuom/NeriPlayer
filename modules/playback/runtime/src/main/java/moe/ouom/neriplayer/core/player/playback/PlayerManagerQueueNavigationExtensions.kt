@@ -123,11 +123,25 @@ private fun PlayerManager.dispatchTrackCompletion() {
         repeatMode = repeatModeSetting,
     )
     if (action == QueueTrackCompletion.STOP) {
-        stopPlaybackPreservingQueue()
+        stopAtQueueEndOrAdvanceHeartbeat()
         return
     }
     markAutoTrackAdvance()
     playAfterTrackCompletion(action)
+}
+
+/**
+ * 队列播到最后一首时的收尾。
+ *
+ * 心动模式把候选追加在队尾并选中，于是「最后一首播完」正是它需要继续接力的时刻；
+ * 若直接停止，第一首推荐播完就再也不会自动换歌，预取到的下一首永远用不上。
+ * 没有候选或模式没开时，[heartbeatAdvanceOrFallback] 会走 fallback 照常停下。
+ */
+private fun PlayerManager.stopAtQueueEndOrAdvanceHeartbeat() {
+    heartbeatAdvanceOrFallback(
+        reason = "trackCompletion:STOP",
+        fallback = { stopPlaybackPreservingQueue() },
+    )
 }
 
 private fun PlayerManager.playAfterTrackCompletion(action: QueueTrackCompletion) {

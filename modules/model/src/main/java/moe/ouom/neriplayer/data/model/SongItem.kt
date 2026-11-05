@@ -92,4 +92,13 @@ data class SongItem(
             .orEmpty()
         return if (fromSummary.isNotEmpty()) fromSummary else artist.trim().lowercase()
     }
+
+    /**
+     * 是否确认是网易云音源。
+     *
+     * 与 [playbackSourceKey] 同口径的「肯定式」判断：本地文件、服务器歌曲、B 站、
+     * YouTube 一律为 false。那些服务没有网易云的歌曲 id，拿它们去请求网易云接口
+     * 只会返回别人的歌。
+     */
+    fun isNeteaseSource(): Boolean = playbackSourceKey() == ListenTogetherChannels.NETEASE
 }

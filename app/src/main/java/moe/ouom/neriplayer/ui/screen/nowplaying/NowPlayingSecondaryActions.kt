@@ -243,11 +243,8 @@ internal fun isNeteaseExclusiveFeatureAvailable(song: SongItem?): Boolean {
     return isNeteaseExclusiveSource(song)
 }
 
-/** 非 B 站且非 YouTube 音源。拆成单层判断，避免 `&&` 在质量门禁里被算成两条独立路径。 */
-private fun isNeteaseExclusiveSource(song: SongItem): Boolean {
-    if (PlayerManager.isBiliTrack(song)) return false
-    return !isYouTubeMusicSource(song)
-}
+/** 确认是网易云音源才显示：本地文件、服务器歌曲、B 站、YouTube 都没有网易云数据可查。 */
+private fun isNeteaseExclusiveSource(song: SongItem): Boolean = song.isNeteaseSource()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

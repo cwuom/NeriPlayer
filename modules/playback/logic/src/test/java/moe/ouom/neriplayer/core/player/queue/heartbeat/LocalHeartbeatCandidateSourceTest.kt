@@ -73,7 +73,8 @@ class LocalHeartbeatCandidateSourceTest {
             favorites = listOf(
                 song(30, "B站曲").copy(channelId = "bilibili"),
                 song(31, "YouTube曲").copy(channelId = "youtubeMusic"),
-                song(32, "历史标记的B站曲").copy(album = "Bilibili|123"),
+                song(32, "历史标记的B站曲").copy(channelId = null, album = "Bilibili|123"),
+                song(34, "本地文件曲").copy(channelId = "local"),
             ),
             history = listOf(song(33, "正常曲")),
         )
@@ -418,6 +419,7 @@ class LocalHeartbeatCandidateSourceTest {
         albumId = id,
         durationMs = 180_000L,
         coverUrl = null,
+        channelId = "netease",
         sourceStableKey = "netease:$id",
     )
 }
