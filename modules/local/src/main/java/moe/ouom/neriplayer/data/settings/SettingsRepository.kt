@@ -38,8 +38,7 @@ import moe.ouom.neriplayer.data.settings.appearance.persistThemeFollowSystemDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeForceDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeModeSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeUiStyle
-import moe.ouom.neriplayer.data.model.settings.navigation.StartDestinationSnapshot
-import moe.ouom.neriplayer.data.settings.navigation.persistStartDestinationSnapshot
+import moe.ouom.neriplayer.data.settings.navigation.synchronizeStartDestinationSnapshot
 import moe.ouom.neriplayer.data.settings.bootstrap.updateBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
@@ -1313,12 +1312,11 @@ class SettingsRepository(private val context: Context) {
         autoSettingsRepository.setLyricTranslationUsePhonetic(enabled)
     }
 
+    /** 将设置更新与启动缓存发布串行化，避免旧观察事件覆盖新选择 */
     suspend fun setDefaultStartDestination(route: String) {
-        autoSettingsRepository.setDefaultStartDestination(route)
-        persistStartDestinationSnapshot(
-            context,
-            StartDestinationSnapshot(startDestination = route)
-        )
+        synchronizeStartDestinationSnapshot(context) {
+            autoSettingsRepository.setDefaultStartDestination(route)
+        }
     }
 
     suspend fun setAutoShowKeyboard(enabled: Boolean) {

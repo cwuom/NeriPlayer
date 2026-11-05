@@ -30,10 +30,16 @@ import androidx.core.content.edit
 import androidx.datastore.preferences.core.Preferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.settings.navigation.DEFAULT_START_DESTINATION
 import moe.ouom.neriplayer.data.model.settings.navigation.StartDestinationSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsKeys
@@ -44,6 +50,39 @@ private const val START_DESTINATION_KEY = "start_destination"
 private val startDestinationSnapshotWarmupScope =
     CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val startDestinationSnapshotLock = Any()
+private val startDestinationSettingsMutex = Mutex()
+
+/**
+ * 串行执行设置变更和真值刷新，避免旧观察结果覆盖更新后的缓存
+ * 等待和变更可取消，变更结束后仍完成缓存对账，刷新失败时保留缓存并向外抛错
+ * updateSettings 只能执行底层设置写入，不能重入此函数；已有变更异常优先于刷新异常
+ */
+suspend fun synchronizeStartDestinationSnapshot(
+    context: Context,
+    updateSettings: suspend () -> Unit = {}
+) {
+    startDestinationSettingsMutex.withLock {
+        currentCoroutineContext().ensureActive()
+        var updateFailure: Throwable? = null
+        try {
+            updateSettings()
+        } catch (failure: Throwable) {
+            updateFailure = failure
+            throw failure
+        } finally {
+            try {
+                withContext(NonCancellable) {
+                    val snapshot = context.dataStore.data.first().toStartDestinationSnapshot()
+                    persistStartDestinationSnapshot(context, snapshot)
+                }
+            } catch (refreshFailure: Exception) {
+                val originalFailure = updateFailure
+                if (originalFailure == null) throw refreshFailure
+                if (refreshFailure !== originalFailure) originalFailure.addSuppressed(refreshFailure)
+            }
+        }
+    }
+}
 
 /**
  * 读取启动页偏好的同步快照.
@@ -111,9 +150,8 @@ fun Preferences.toStartDestinationSnapshot(): StartDestinationSnapshot {
 }
 
 /**
- * 写入启动页快照.
- *
- * 所有改动 `default_start_destination` 的入口都必须调用它, 否则下一次冷启动会读到过期值.
+ * 发布已确认的启动页快照，只负责短缓存临界区
+ * 设置写入和观察入口须通过 [synchronizeStartDestinationSnapshot] 协调真值读取顺序
  */
 fun persistStartDestinationSnapshot(
     context: Context,

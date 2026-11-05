@@ -15,8 +15,7 @@ import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.playback.persistPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.persistThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.model.settings.navigation.StartDestinationSnapshot
-import moe.ouom.neriplayer.data.settings.navigation.persistStartDestinationSnapshot
+import moe.ouom.neriplayer.data.settings.navigation.synchronizeStartDestinationSnapshot
 
 internal class SafeModeResetActions(
     context: Context
@@ -32,15 +31,17 @@ internal class SafeModeResetActions(
         clearAllWebViewLoginState(appContext)
     }
 
+    /** 清空设置后同步启动页缓存，安全模式下也不依赖普通观察器完成写透 */
     suspend fun resetAppSettings() {
         withContext(Dispatchers.IO) {
-            appContext.dataStore.edit { prefs ->
-                prefs.clear()
+            synchronizeStartDestinationSnapshot(appContext) {
+                appContext.dataStore.edit { prefs ->
+                    prefs.clear()
+                }
             }
             persistThemePreferenceSnapshot(appContext, ThemePreferenceSnapshot())
             persistBootstrapSettingsSnapshot(appContext, BootstrapSettingsSnapshot())
             persistPlaybackPreferenceSnapshot(appContext, PlaybackPreferenceSnapshot())
-            persistStartDestinationSnapshot(appContext, StartDestinationSnapshot())
         }
     }
 }

@@ -68,6 +68,9 @@ class MainActivityStartDestinationRestorationTest {
             pressBackTo(Destinations.Library)
         }
 
+    /**
+     * 不提前访问 Library，确保错误更换的 graph 起点在恢复栈里没有可命中的条目
+     */
     private fun verifyRestoredTabBackStack(changeStartDestination: Boolean) =
         withPreparedActivity(Destinations.Home) { scenario ->
             selectTab(Destinations.Settings)
@@ -86,6 +89,7 @@ class MainActivityStartDestinationRestorationTest {
         waitForSelected(destination)
     }
 
+    /** 等导航提交后发送真实返回事件，避免 pending route 尚未清理导致返回处理器未启用 */
     private fun pressBackTo(destination: Destinations) {
         // 标签已选中后再等待提交，避免返回早于 pending route 清理
         composeRule.waitForIdle()
@@ -94,6 +98,7 @@ class MainActivityStartDestinationRestorationTest {
         composeRule.onNode(tabMatcher(destination)).assertIsSelected()
     }
 
+    /** 同时等待选中语义和组合提交，避免把导航过渡中的状态当成稳定页面 */
     private fun waitForSelected(destination: Destinations) {
         composeRule.waitUntil(UiTimeoutMs) {
             composeRule.onAllNodes(tabMatcher(destination)).fetchSemanticsNodes()
@@ -102,6 +107,7 @@ class MainActivityStartDestinationRestorationTest {
         composeRule.waitForIdle()
     }
 
+    /** 选中标签可能只保留文本语义，因此同时兼容侧栏和底栏的文本与图标描述 */
     private fun tabMatcher(destination: Destinations): SemanticsMatcher {
         val navigationHost = hasAnyAncestor(hasTestTag("appNavigationRail")) or
             hasAnyAncestor(hasTestTag("appBottomNavigation"))
@@ -111,6 +117,10 @@ class MainActivityStartDestinationRestorationTest {
             SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected) and navigationHost
     }
 
+    /**
+     * 隔离启动门禁、设置和缓存，清理时先等待 observer 完成设置对账再恢复原缓存
+     * 两次不同路由的确认排除旧缓存误命中，防止延迟写入污染后续用例
+     */
     private fun withPreparedActivity(
         startDestination: Destinations,
         verify: (ActivityScenario<MainActivity>) -> Unit
@@ -213,6 +223,7 @@ class MainActivityStartDestinationRestorationTest {
     }
 
     private data class SavedCache(val name: String, val values: Map<String, Any>) {
+        /** 先清空再按原键恢复，保留缺失键与已保存默认值之间的区别 */
         fun restore(context: Context) {
             val preferences = context.getSharedPreferences(name, Context.MODE_PRIVATE)
             val editor = preferences.edit().clear()
@@ -232,9 +243,11 @@ class MainActivityStartDestinationRestorationTest {
         }
 
         companion object {
+            /** 在测试改动设置前保存独立快照，避免后续缓存更新改变清理时的还原依据 */
             fun read(context: Context, name: String) = SavedCache(name,
                 copyValues(context.getSharedPreferences(name, Context.MODE_PRIVATE)))
 
+            /** 只复制实际存在的键，并复制可变集合，避免默认值补键或共享集合改变原快照 */
             private fun copyValues(preferences: SharedPreferences): Map<String, Any> =
                 preferences.all.mapValues { (key, value) ->
                     when (value) {
@@ -244,6 +257,7 @@ class MainActivityStartDestinationRestorationTest {
                     }
                 }
 
+            /** 逐项确认字符串类型并建立副本，避免不安全转换和修改 SharedPreferences 返回的集合 */
             private fun stringSet(value: Set<*>): Set<String> = value.map { entry ->
                 check(entry is String) { "同步缓存集合必须只包含字符串" }
                 entry
