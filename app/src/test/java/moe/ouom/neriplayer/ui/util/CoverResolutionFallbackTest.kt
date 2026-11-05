@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.util
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,6 +23,17 @@ class CoverResolutionFallbackTest {
             shouldProbeFastLocalCoverCandidate(
                 isLocalSong = false,
                 immediateCover = "content://covers/remote.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `remote songs with a downloaded cover probe it even when a remote cover is present`() {
+        assertTrue(
+            shouldProbeFastLocalCoverCandidate(
+                isLocalSong = false,
+                immediateCover = "https://example.com/remote-cover.jpg",
+                hasDownloadedCover = true
             )
         )
     }
@@ -151,4 +163,34 @@ class CoverResolutionFallbackTest {
         )
         assertNull(resolveImmediateCoverCandidate(primaryCoverUrl = null, fallbackCoverUrl = " "))
     }
+
+    @Test
+    fun `fast probe cache key changes when the downloaded cover reference changes`() {
+        val song = testSong()
+
+        assertNotEquals(
+            fastCoverProbeCacheKey(
+                song = song,
+                probeGeneration = 1,
+                allowRemoteCoverFallback = false,
+                localCoverReference = "content://covers/old.jpg"
+            ),
+            fastCoverProbeCacheKey(
+                song = song,
+                probeGeneration = 1,
+                allowRemoteCoverFallback = false,
+                localCoverReference = "content://covers/new.jpg"
+            )
+        )
+    }
+
+    private fun testSong() = moe.ouom.neriplayer.data.model.SongItem(
+        id = 1L,
+        name = "Track",
+        artist = "Artist",
+        album = "Album",
+        albumId = 1L,
+        durationMs = 1_000L,
+        coverUrl = null
+    )
 }

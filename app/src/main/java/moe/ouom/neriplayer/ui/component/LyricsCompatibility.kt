@@ -24,7 +24,7 @@ internal typealias HeadGlowTarget = moe.ouom.neriplayer.ui.component.lyrics.Head
 @Deprecated(
     message = "Use SyncedLyricsView from ui.component.lyrics",
     replaceWith = ReplaceWith(
-        "SyncedLyricsView(lyrics, currentTimeMs, modifier, textColor, inactiveAlphaNear, inactiveAlphaFar, blurInactiveAlphaNear, blurInactiveAlphaFar, fontSize, centerPadding, visualSpec, lyricOffsetMs, lyricBlurEnabled, lyricBlurAmount, onLyricClick, onLyricLongClick, translatedLyrics, translationFontSize, isPlaying, playbackSpeed, interpolatePlaybackPosition, visualEffectsEnabled, smoothActiveLineProgress)",
+        "SyncedLyricsView(lyrics, currentTimeMs, modifier, textColor, inactiveAlphaNear, inactiveAlphaFar, blurInactiveAlphaNear, blurInactiveAlphaFar, fontSize, centerPadding, visualSpec, lyricOffsetMs, lyricBlurEnabled, lyricBlurAmount, onLyricClick, onLyricLongClick, translatedLyrics, translationFontSize, isPlaying, playbackSpeed, interpolatePlaybackPosition, visualEffectsEnabled, smoothActiveLineProgress, bilingualDisplayEnabled = bilingualDisplayEnabled)",
         "moe.ouom.neriplayer.ui.component.lyrics.SyncedLyricsView"
     )
 )
@@ -52,7 +52,8 @@ fun AppleMusicLyric(
     playbackSpeed: Float = 1f,
     interpolatePlaybackPosition: Boolean = false,
     visualEffectsEnabled: Boolean = true,
-    smoothActiveLineProgress: Boolean = true
+    smoothActiveLineProgress: Boolean = true,
+    bilingualDisplayEnabled: Boolean = true
 ) {
     moe.ouom.neriplayer.ui.component.lyrics.SyncedLyricsView(
         lyrics = lyrics,
@@ -77,7 +78,8 @@ fun AppleMusicLyric(
         playbackSpeed = playbackSpeed,
         interpolatePlaybackPosition = interpolatePlaybackPosition,
         visualEffectsEnabled = visualEffectsEnabled,
-        smoothActiveLineProgress = smoothActiveLineProgress
+        smoothActiveLineProgress = smoothActiveLineProgress,
+        bilingualDisplayEnabled = bilingualDisplayEnabled
     )
 }
 
@@ -105,7 +107,8 @@ fun SyncedLyricsView(
     playbackSpeed: Float = 1f,
     interpolatePlaybackPosition: Boolean = false,
     visualEffectsEnabled: Boolean = true,
-    smoothActiveLineProgress: Boolean = true
+    smoothActiveLineProgress: Boolean = true,
+    bilingualDisplayEnabled: Boolean = true
 ) {
     moe.ouom.neriplayer.ui.component.lyrics.SyncedLyricsView(
         lyrics = lyrics,
@@ -130,7 +133,8 @@ fun SyncedLyricsView(
         playbackSpeed = playbackSpeed,
         interpolatePlaybackPosition = interpolatePlaybackPosition,
         visualEffectsEnabled = visualEffectsEnabled,
-        smoothActiveLineProgress = smoothActiveLineProgress
+        smoothActiveLineProgress = smoothActiveLineProgress,
+        bilingualDisplayEnabled = bilingualDisplayEnabled
     )
 }
 

@@ -558,6 +558,7 @@ private fun StorageUsageItemKind.toStorageIcon(): ImageVector {
         StorageUsageItemKind.BiliFavoriteCache -> StorageGlyphs.Favorite
         StorageUsageItemKind.BiliArchiveCache -> StorageGlyphs.Archive
         StorageUsageItemKind.YouTubePlaylistCache -> StorageGlyphs.VideoPlaylist
+        StorageUsageItemKind.ServerBrowseCache -> StorageGlyphs.Playlist
         StorageUsageItemKind.OtherCache -> StorageGlyphs.Layers
         StorageUsageItemKind.ProtectedCache -> StorageGlyphs.Protected
         StorageUsageItemKind.DownloadedMusic -> StorageGlyphs.DownloadedMusic
@@ -567,6 +568,7 @@ private fun StorageUsageItemKind.toStorageIcon(): ImageVector {
         StorageUsageItemKind.LogFiles -> StorageGlyphs.Logs
         StorageUsageItemKind.CrashLogs -> StorageGlyphs.Crash
         StorageUsageItemKind.LocalCovers -> StorageGlyphs.LocalCovers
+        StorageUsageItemKind.LocalImportCache -> StorageGlyphs.LocalCovers
         StorageUsageItemKind.CustomBackground -> StorageGlyphs.Background
         StorageUsageItemKind.LegacyMigrationFiles -> StorageGlyphs.Migration
         StorageUsageItemKind.Database -> StorageGlyphs.Database

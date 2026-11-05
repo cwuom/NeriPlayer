@@ -31,7 +31,9 @@ import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackCursor
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackBucketOrder
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDataset
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
+import moe.ouom.neriplayer.data.sync.policy.SyncCoverUrlProjection
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.runtime.SyncLocalDataApplier
 import org.junit.After
@@ -114,6 +116,45 @@ class SyncLocalHostTest {
         }
         assertEquals(300L, liveClear)
         verify(fixture.stats, times(1)).borrowSyncCapture(anyPlaybackStore())
+    }
+
+    @Test
+    fun `snapshot prepares portable covers before borrowing playback and entering the playlist boundary`() = runTest {
+        val fixture = Fixture()
+        fixture.configureReady()
+        var prepared = false
+        SyncCoverUrlProjection.bind(prepare = { yield(); prepared = true })
+        doAnswer { invocation ->
+            assertTrue(prepared)
+            runBlocking { invocation.getArgument<FileSyncPlaybackDatasetStore>(0).newOrderedSink().use { sink ->
+                PlaybackStatsSyncCapture(PlaybackStatsCapturedState(3L, 0L), sink.seal())
+            } }
+        }.`when`(fixture.stats).borrowSyncCapture(anyPlaybackStore())
+        doAnswer { invocation ->
+            assertTrue(prepared)
+            invocation.getArgument<() -> SyncData>(0).invoke()
+        }.`when`(fixture.playlist).withCommittedSyncSnapshot(anySnapshotReader())
+        try {
+            fixture.store.snapshot().use { assertEquals(3L, it.capturedPlaybackRevision) }
+        } finally {
+            SyncCoverUrlProjection.bind()
+        }
+    }
+
+    @Test
+    fun `failed cover preparation leaves no borrowed playback source or playlist capture`() = runTest {
+        val fixture = Fixture()
+        fixture.configureReady()
+        val cancellation = CancellationException("cover preparation cancelled")
+        SyncCoverUrlProjection.bind(prepare = { yield(); throw cancellation })
+        try {
+            assertSame(cancellation, runCatching { fixture.store.snapshot() }.exceptionOrNull())
+            verify(fixture.stats, never()).borrowSyncCapture(anyPlaybackStore())
+            verify(fixture.playlist, never()).withCommittedSyncSnapshot(anySnapshotReader())
+            assertFalse(java.io.File(fixture.directory, "sync-v3/playback-staging").exists())
+        } finally {
+            SyncCoverUrlProjection.bind()
+        }
     }
 
     @Test

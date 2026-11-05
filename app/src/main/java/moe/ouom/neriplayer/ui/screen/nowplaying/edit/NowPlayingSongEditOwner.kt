@@ -220,8 +220,7 @@ internal class NowPlayingSongEditOwner(
     }
 
     fun syncUneditedSong(song: SongItem, resolvedCoverUrl: String?) {
-        isOriginalInfoRestoring = false
-        if (userHasEdited) return
+        if (userHasEdited || savingInProgress || isOriginalInfoRestoring) return
         coverUrl = resolveEditSongInitialCoverUrl(song, resolvedCoverUrl)
         coverWasManuallyChanged = false
         songName = song.customName ?: song.name
@@ -247,6 +246,7 @@ internal class NowPlayingSongEditOwner(
     }
 
     fun applyResolvedCover(song: SongItem, resolvedCoverUrl: String?) {
+        if (song.hasKnownEmptyEditSongCover()) return
         if (!userHasEdited) refreshBaselineCover(song, resolvedCoverUrl)
         if (shouldApplyResolvedEditSongCover(userHasEdited, coverUrl, resolvedCoverUrl)) {
             coverUrl = resolvedCoverUrl.orEmpty()
@@ -254,6 +254,7 @@ internal class NowPlayingSongEditOwner(
     }
 
     private fun refreshBaselineCover(song: SongItem, resolvedCoverUrl: String?) {
+        if (song.originalCoverUrl == "" || song.customCoverUrl != null) return
         val refreshed = refreshedEditSongBaselineCover(
             editBaseline.coverUrl,
             resolveEditSongInitialCoverUrl(song, resolvedCoverUrl)
@@ -427,7 +428,7 @@ internal class NowPlayingSongEditOwner(
         saveInAppOnly: () -> Unit
     ) {
         if (!canStartEditAction()) return
-        dispatchSaveDestination(song, onConfirmationNeeded, saveInAppOnly)
+        dispatchSaveDestination(latestSong(song), onConfirmationNeeded, saveInAppOnly)
     }
 
     private fun dispatchSaveDestination(
@@ -435,22 +436,13 @@ internal class NowPlayingSongEditOwner(
         onConfirmationNeeded: () -> Unit,
         saveInAppOnly: () -> Unit
     ) {
-        if (shouldConfirmLocalMetadataWriteBack(
-                song = song,
-                title = songName,
-                artist = artistName,
-                coverUrl = coverUrl,
-                hasPendingLyricsChange = hasPendingLyricsChange()
-            )
-        ) {
+        if (shouldConfirmLocalMetadataWriteBack(song)) {
             onConfirmationNeeded()
             showLocalMetadataWriteBackConfirmState.value = true
         } else {
             saveInAppOnly()
         }
     }
-
-    private fun hasPendingLyricsChange(): Boolean = shouldClearLyrics || shouldRestoreLyrics
 
     fun saveEditedSongInfo(
         song: SongItem,
@@ -609,7 +601,7 @@ internal class NowPlayingSongEditOwner(
         restoreBaseArtist = shouldRestoreArtistBase,
         clearMatchedMetadata = shouldClearMatchedMetadata,
         writeLocalMetadata = writeLocalMetadata,
-        writeLyrics = plan.writeLyricsWithSongMetadata,
+        writeLyrics = shouldWriteEditSongLyrics(song, plan, writeLocalMetadata),
         persistManualRemoteCover = shouldPersistManualCover(),
         restoreBaseLyrics = shouldRestoreLyrics
     )

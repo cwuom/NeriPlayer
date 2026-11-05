@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_bili_cc_subtitle_lyrics">B 站 CC 字幕歌词</string>
-    <string name="settings_bili_cc_subtitle_lyrics_desc">用视频自带的 CC 字幕作为歌词来源；需要登录 B 站账号</string>
+    <string name="settings_bili_cc_subtitle_lyrics">哔哩哔哩 CC 字幕歌词</string>
+    <string name="settings_bili_cc_subtitle_lyrics_desc">用视频自带的 CC 字幕作为歌词来源；需要登录哔哩哔哩账号</string>
     <string name="settings_bili_cc_subtitle_language">CC 字幕轨道</string>
     <string name="settings_bili_cc_subtitle_language_desc">当前选择；可以进入播放页的更多选项随时调整</string>
     <string name="settings_bili_cc_subtitle_ai_only">AI 字幕后备</string>

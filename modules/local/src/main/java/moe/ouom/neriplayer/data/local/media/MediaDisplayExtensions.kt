@@ -65,7 +65,7 @@ private fun SongItem.localFallbackCover(
     else -> LocalMediaHostAccess.covers.getLocalCoverUri(
         context = context,
         song = this,
-        resolveLocalMediaFallback = false
+        resolveLocalMediaFallback = !onMainThread
     )
 }
 

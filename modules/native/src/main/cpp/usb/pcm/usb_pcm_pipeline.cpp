@@ -6,6 +6,8 @@
 #include <cstring>
 #include <limits>
 #include <new>
+#include <type_traits>
+#include <utility>
 
 namespace neri::usb {
 namespace {
@@ -13,6 +15,8 @@ namespace {
 constexpr int kGainRampDurationMs = 80;
 constexpr int kUnderrunEdgeRampMs = 5;
 constexpr int64_t kMaximumRingBufferBytes = 64LL * 1024LL * 1024LL;
+
+static_assert(std::is_nothrow_swappable_v<PcmResampler>);
 
 bool calculateRingBytes(
     const PcmOutputFormat& output,
@@ -434,10 +438,9 @@ size_t PcmPipeline::writeResampled(
         return 0;
     }
     const int outputChannels = outputFormat_.channelCount;
-    PcmResampler rollback;
     size_t produced = 0;
     try {
-        rollback = resampler_;
+        pendingResampler_ = resampler_;
         resampleInput_.resize(static_cast<size_t>(frames) * static_cast<size_t>(outputChannels));
         for (int frame = 0; frame < frames; ++frame) {
             const uint8_t* source = input + static_cast<size_t>(frame) * static_cast<size_t>(inputFrameBytes);
@@ -447,10 +450,9 @@ size_t PcmPipeline::writeResampled(
             }
         }
         resampleOutput_.clear();
-        produced = resampler_.process(resampleInput_.data(), frames, &resampleOutput_);
+        produced = pendingResampler_.process(resampleInput_.data(), frames, &resampleOutput_);
         conversionBuffer_.assign(produced * static_cast<size_t>(outputFormat_.frameBytes), 0);
     } catch (const std::bad_alloc&) {
-        resampler_ = std::move(rollback);
         if (error != nullptr) {
             *error = "pcm_conversion_allocation_failed";
         }
@@ -459,9 +461,9 @@ size_t PcmPipeline::writeResampled(
     encodeResampledOutput(produced);
     const size_t consumedBytes = static_cast<size_t>(frames) * static_cast<size_t>(inputFrameBytes);
     if (!commitConverted(consumedBytes)) {
-        resampler_ = std::move(rollback);
         return 0;
     }
+    std::swap(resampler_, pendingResampler_);
     return consumedBytes;
 }
 
@@ -473,28 +475,27 @@ bool PcmPipeline::drainResampler(std::string* error) {
     if (!resampler_.configured() || outputFormat_.frameBytes <= 0) {
         return true;
     }
-    PcmResampler rollback;
     size_t produced = 0;
     try {
-        rollback = resampler_;
+        pendingResampler_ = resampler_;
         resampleOutput_.clear();
-        produced = resampler_.drain(&resampleOutput_);
+        produced = pendingResampler_.drain(&resampleOutput_);
         conversionBuffer_.assign(produced * static_cast<size_t>(outputFormat_.frameBytes), 0);
     } catch (const std::bad_alloc&) {
-        resampler_ = std::move(rollback);
         if (error != nullptr) {
             *error = "pcm_conversion_allocation_failed";
         }
         return false;
     }
     if (produced == 0) {
+        std::swap(resampler_, pendingResampler_);
         return true;
     }
     encodeResampledOutput(produced);
     if (!commitConverted(0)) {
-        resampler_ = std::move(rollback);
         return false;
     }
+    std::swap(resampler_, pendingResampler_);
     return true;
 }
 

@@ -56,6 +56,6 @@ Host gate 使用 Ninja，每次创建独立构建目录，并检查断言、编�
 
 The host gate uses Ninja and a fresh build directory for each attempt. It checks assertions, compiler warnings, test results, source fingerprints, and resources created by the attempt. All three profiles use the same inventory; see the [host gate contract](src/main/cpp/tests/usb/config/host-gate-contract.md). Host model tests and ABI compilation do not establish real-DAC playback, disconnect, or recovery behavior; those require separate validation.
 
-USB host gate 运行 31 个 Native 测试及 5 个 runner 自检/失败关闭检查，每项超时 60 秒；DSP host 测试由独立的 CMake 工程运行，超时 120 秒。目前 Native CI 自动执行 USB 三组 profile 和 Android ABI 编译，上面的 DSP 命令需要单独执行。
+USB host gate 运行 32 个 Native 测试及 5 个 runner 自检/失败关闭检查，每项超时 60 秒；DSP host 测试由独立的 CMake 工程运行，超时 120 秒。目前 Native CI 自动执行 USB 三组 profile 和 Android ABI 编译，上面的 DSP 命令需要单独执行。
 
-The USB host gate runs 31 native tests and 5 runner self-check/fail-closed checks, each with a 60-second timeout. DSP host tests use a separate CMake project and a 120-second timeout. Native CI currently runs the three USB profiles and Android ABI compilation; run the DSP commands above separately.
+The USB host gate runs 32 native tests and 5 runner self-check/fail-closed checks, each with a 60-second timeout. DSP host tests use a separate CMake project and a 120-second timeout. Native CI currently runs the three USB profiles and Android ABI compilation; run the DSP commands above separately.

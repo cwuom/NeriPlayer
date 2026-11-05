@@ -34,9 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -51,7 +49,6 @@ import moe.ouom.neriplayer.ui.settings.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
-import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
@@ -695,8 +692,6 @@ private fun CoverLyricsScaleControls(
         currentScale = lyricFontScales.coverLyric,
         target = LyricFontScaleTarget.COVER_LYRIC,
         onLyricFontScaleChange = onLyricFontScaleChange,
-        sampleText = stringResource(CoreCommonR.string.settings_lyrics_sample),
-        sampleBaseSizeSp = 18f,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished
@@ -708,8 +703,6 @@ private fun CoverLyricsScaleControls(
         currentScale = lyricFontScales.coverTranslation,
         target = LyricFontScaleTarget.COVER_TRANSLATION,
         onLyricFontScaleChange = onLyricFontScaleChange,
-        sampleText = stringResource(CoreCommonR.string.settings_lyrics_translation_sample),
-        sampleBaseSizeSp = 14f,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished
@@ -733,8 +726,6 @@ private fun LyricsPageScaleControls(
         currentScale = lyricFontScales.lyricsPageLyric,
         target = LyricFontScaleTarget.LYRICS_PAGE_LYRIC,
         onLyricFontScaleChange = onLyricFontScaleChange,
-        sampleText = stringResource(CoreCommonR.string.settings_lyrics_sample),
-        sampleBaseSizeSp = 20f,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished
@@ -746,8 +737,6 @@ private fun LyricsPageScaleControls(
         currentScale = lyricFontScales.lyricsPageTranslation,
         target = LyricFontScaleTarget.LYRICS_PAGE_TRANSLATION,
         onLyricFontScaleChange = onLyricFontScaleChange,
-        sampleText = stringResource(CoreCommonR.string.settings_lyrics_translation_sample),
-        sampleBaseSizeSp = 16f,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished
@@ -760,8 +749,6 @@ private fun LyricScaleRow(
     currentScale: Float,
     target: LyricFontScaleTarget,
     onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
-    sampleText: String,
-    sampleBaseSizeSp: Float,
     highlightTargetId: String?,
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
@@ -770,8 +757,6 @@ private fun LyricScaleRow(
         setting = setting,
         currentScale = currentScale,
         onScaleCommit = lyricScaleCommitAction(target, onLyricFontScaleChange),
-        sampleText = sampleText,
-        sampleBaseSizeSp = sampleBaseSizeSp,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished
@@ -862,8 +847,6 @@ private fun LyricFontScaleSettingsItem(
     setting: AutoSettingInfo,
     currentScale: Float,
     onScaleCommit: (Float) -> Unit,
-    sampleText: String,
-    sampleBaseSizeSp: Float,
     highlightTargetId: String?,
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
@@ -900,14 +883,6 @@ private fun LyricFontScaleSettingsItem(
                     },
                     valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
                     steps = 10
-                )
-                Text(
-                    text = sampleText,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    textAlign = TextAlign.Center,
-                    fontSize = scaledLyricFontSize(sampleBaseSizeSp, pendingScale).sp
                 )
             }
         },

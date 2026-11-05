@@ -2,6 +2,8 @@
 
 package moe.ouom.neriplayer.core.player.url
 
+import moe.ouom.neriplayer.data.model.server.isServerSong
+
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.network.holdPlaybackForNetworkIfOffline
 import moe.ouom.neriplayer.core.player.network.isPlaybackNetworkUsable
@@ -18,7 +20,6 @@ import android.os.SystemClock
 import androidx.core.net.toUri
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.StuckPlayerException
-import androidx.media3.datasource.cache.CacheSpan
 import androidx.media3.datasource.cache.ContentMetadata
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
@@ -93,75 +94,6 @@ private const val LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT = 6
 private const val LOCAL_PLAYBACK_RESOLUTION_RETRY_DELAY_MS = 50L
 private const val LOCAL_PLAYBACK_RESOLUTION_RETRY_MAX_DELAY_MS = 250L
 
-internal data class CachedResourceIntegrity(
-    val isComplete: Boolean,
-    val requiresRepair: Boolean,
-    val coveredLength: Long
-)
-
-internal enum class CachePrefetchReadiness {
-    COMPLETE,
-    READY_FOR_PREFETCH,
-    UNAVAILABLE
-}
-
-internal fun inspectCachedResourceSpans(
-    spans: Collection<CacheSpan>,
-    contentLength: Long
-): CachedResourceIntegrity {
-    if (contentLength <= 0L || spans.isEmpty()) {
-        return CachedResourceIntegrity(
-            isComplete = false,
-            requiresRepair = false,
-            coveredLength = 0L
-        )
-    }
-
-    var coveredUntil = 0L
-    var requiresRepair = false
-    var hasGap = false
-    for (span in spans.sortedBy { it.position }) {
-        val file = span.file
-        val hasValidFile = span.isCached &&
-            span.position >= 0L &&
-            span.length > 0L &&
-            file?.isFile == true &&
-            file.length() == span.length
-        if (!hasValidFile) {
-            requiresRepair = true
-            continue
-        }
-
-        val endPosition = span.position + span.length
-        if (endPosition < span.position) {
-            requiresRepair = true
-            continue
-        }
-        if (
-            span.position >= contentLength ||
-            endPosition > contentLength
-        ) {
-            requiresRepair = true
-            continue
-        }
-        if (span.position > coveredUntil) {
-            hasGap = true
-            continue
-        }
-        if (span.position < coveredUntil) {
-            requiresRepair = true
-            continue
-        }
-        coveredUntil = maxOf(coveredUntil, endPosition)
-    }
-
-    return CachedResourceIntegrity(
-        isComplete = coveredUntil >= contentLength && !requiresRepair && !hasGap,
-        requiresRepair = requiresRepair,
-        coveredLength = coveredUntil
-    )
-}
-
 internal suspend fun PlayerManager.resolveSongUrl(
     song: SongItem,
     forceRefresh: Boolean = false,
@@ -171,6 +103,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
     playbackRequestTokenOverride: Long? = null,
     shouldApplyCacheMutation: () -> Boolean = { true }
 ): SongUrlResult {
+    val serverSong = song.isServerSong()
     logSongUrlResolutionRequest(
         song, forceRefresh, _currentMediaUrl.value,
         playbackRequestTokenOverride ?: playbackRequestToken, debugStackHint()
@@ -250,7 +183,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
         )
     }
     if (
-        shouldUseDirectStreamShortcut(
+        !serverSong && shouldUseDirectStreamShortcut(
             forceRefresh = forceRefresh,
             hasListenTogetherFallback = initialListenTogetherFallback != null
         ) && isDirectStreamUrl(song.streamUrl)
@@ -348,6 +281,10 @@ internal suspend fun PlayerManager.resolveSongUrl(
                 preferredQualityKey = listenTogetherPreferredQualityKey(song)
             )
         }
+    }
+    if (serverSong) {
+        if (!hasUsableServerProfile(song, sideEffects)) return SongUrlResult.Failure
+        return resolveServerSongUrl(song, forceRefresh, sideEffects)
     }
     val resolverSideEffects = if (
         initialListenTogetherFallback != null || suppressListenTogetherResolverErrors

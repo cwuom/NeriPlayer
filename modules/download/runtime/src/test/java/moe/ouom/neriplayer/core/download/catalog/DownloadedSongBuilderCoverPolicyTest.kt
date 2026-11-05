@@ -230,6 +230,9 @@ class DownloadedSongBuilderCoverPolicyTest {
         val currentReference = "content://downloads-new/Covers/song.jpg"
         val snapshot = emptySnapshot(knownReferences = setOf(currentReference))
 
+        assertNull(sanitizeDownloadedCoverMetadataReference("", snapshot))
+        assertNull(sanitizeDownloadedCoverMetadataReference(" \t ", snapshot))
+
         assertNull(
             sanitizeDownloadedCoverMetadataReference(
                 "content://downloads-old/Covers/song.jpg",

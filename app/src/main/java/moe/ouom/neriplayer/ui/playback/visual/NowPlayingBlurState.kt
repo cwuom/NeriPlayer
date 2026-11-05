@@ -9,6 +9,7 @@ import kotlin.time.Duration.Companion.milliseconds
 internal class NowPlayingBlurState {
     private var latestSongKey: String? = null
     private var latestCoverUrl: String? = null
+    private var rejectImageResults = false
     var stableCoverUrl by mutableStateOf<String?>(null)
         private set
     var stableBlurStrength by mutableStateOf<Float?>(null)
@@ -16,9 +17,11 @@ internal class NowPlayingBlurState {
     var loadFailed by mutableStateOf(false)
         private set
 
-    fun observeRequest(songKey: String?, coverUrl: String?) {
+    fun observeRequest(songKey: String?, coverUrl: String?, clearCover: Boolean = false) {
         latestSongKey = songKey
         latestCoverUrl = coverUrl
+        rejectImageResults = clearCover
+        if (clearCover) clear()
     }
 
     fun clear() {
@@ -33,13 +36,14 @@ internal class NowPlayingBlurState {
         coverUrl: String?,
         blurStrength: Float
     ) {
-        if (latestRequestKey != expectedRequestKey) return
+        if (rejectImageResults || latestRequestKey != expectedRequestKey) return
         stableCoverUrl = coverUrl
         stableBlurStrength = blurStrength
         loadFailed = false
     }
 
     fun onImageError(latestRequestKey: String?, expectedRequestKey: String?) {
+        if (rejectImageResults) return
         loadFailed = resolveNowPlayingBlurLoadFailure(
             latestRequestKey,
             expectedRequestKey,
@@ -49,7 +53,7 @@ internal class NowPlayingBlurState {
     }
 
     suspend fun reconcileRetention(request: NowPlayingBlurRetentionRequest) {
-        if (!request.blurAvailable || !request.blurEnabled) {
+        if (request.clearCover || !request.blurAvailable || !request.blurEnabled) {
             clear()
             return
         }
@@ -71,5 +75,6 @@ internal data class NowPlayingBlurRetentionRequest(
     val blurAvailable: Boolean,
     val blurEnabled: Boolean,
     val songKey: String?,
-    val coverUrl: String?
+    val coverUrl: String?,
+    val clearCover: Boolean = false
 )

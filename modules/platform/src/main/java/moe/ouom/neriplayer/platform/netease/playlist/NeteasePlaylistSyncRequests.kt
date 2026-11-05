@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.platform.netease.playlist
 
+import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
 import moe.ouom.neriplayer.common.logging.NPLogger
 import java.util.LinkedHashSet
@@ -19,10 +20,12 @@ internal class NeteasePlaylistAddSession(
 ) {
     private var likedPlaylistIdentity: ParsedNeteasePlaylistId? = null
     private val likeSong = client.createSongLiker()
+    private val verifiedAdd = client.createVerifiedPlaylistAdder(playlistId)
+    private var useVerifiedRequests = false
     private var likeTransientRetries = 0
 
-    fun add(ids: List<Long>): NeteasePlaylistAddOutcome {
-        val outcome = addNeteasePlaylistSongIdsBatch(client, playlistId, ids)
+    suspend fun add(ids: List<Long>): NeteasePlaylistAddOutcome {
+        val outcome = addBatch(ids)
         if (ids.size != 1 || outcome !is NeteasePlaylistAddOutcome.Rejected || outcome.code != 524) {
             return outcome
         }
@@ -30,6 +33,31 @@ internal class NeteasePlaylistAddSession(
             if (it.success) likedPlaylistIdentity = it
         }
         return if (identity.playlistId == playlistId) addLikedSong(ids.single(), outcome) else outcome
+    }
+
+    private suspend fun addBatch(ids: List<Long>): NeteasePlaylistAddOutcome {
+        if (useVerifiedRequests) {
+            addVerifiedBatch(ids)?.let { return it }
+        }
+        val outcome = addNeteasePlaylistSongIdsBatch(client, playlistId, ids)
+        if (outcome is NeteasePlaylistAddOutcome.Rejected && outcome.code == 524) {
+            // 先完成云端校验，避免将需要令牌的整批歌曲反复拆分提交
+            val verified = addVerifiedBatch(ids) ?: return outcome
+            if (verified == NeteasePlaylistAddOutcome.Ok) useVerifiedRequests = true
+            return verified
+        }
+        return outcome
+    }
+
+    private suspend fun addVerifiedBatch(ids: List<Long>): NeteasePlaylistAddOutcome? {
+        return try {
+            verifiedAdd?.invoke(ids)?.let(::parseNeteasePlaylistAddOutcome)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            NPLogger.w("LocalPlaylistRepo", "Verified playlist add failed for playlistId=$playlistId")
+            NeteasePlaylistAddOutcome.Transient(-1, error.message)
+        }
     }
 
     private fun addLikedSong(

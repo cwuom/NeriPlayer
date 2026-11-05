@@ -170,12 +170,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
                 throw new FileNotFoundException("Missing file for " + uri);
             }
             try {
-                int flags = mode.contains("w")
-                    ? ParcelFileDescriptor.MODE_READ_WRITE
-                        | ParcelFileDescriptor.MODE_CREATE
-                        | ParcelFileDescriptor.MODE_TRUNCATE
-                    : ParcelFileDescriptor.MODE_READ_ONLY;
-                return ParcelFileDescriptor.open(file, flags);
+                return ParcelFileDescriptor.open(file, ParcelFileDescriptor.parseMode(mode));
             } catch (IOException error) {
                 FileNotFoundException failure = new FileNotFoundException(
                     "Unable to open Issue #339 metadata: " + uri

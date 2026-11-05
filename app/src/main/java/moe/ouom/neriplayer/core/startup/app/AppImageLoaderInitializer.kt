@@ -22,7 +22,8 @@ internal object AppImageLoaderInitializer {
                         .directory(app.cacheDir.resolve("image_cache"))
                         .maxSizePercent(0.02)
                         .build(),
-                    registryFile = app.cacheDir.resolve("image_cache_keys")
+                    registryFile = app.cacheDir.resolve("image_cache_keys"),
+                    fallbackKeys = { key -> serverCoverCacheAliases(key, AppContainer.subsonicAccounts.profiles.value) }
                 )
             }
             .memoryCache {

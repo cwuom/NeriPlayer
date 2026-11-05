@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.core.download.policy.toPlaybackSongItem
 
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.data.model.SongItem
@@ -13,6 +14,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadedSongCatalogProjectionTest {
+
+    @Test
+    fun `legacy catalog round trip preserves an explicitly absent original cover for playback`() {
+        val song = downloadedSong(
+            coverPath = "content://downloads/Covers/custom.jpg",
+            customCoverUrl = "file:///data/user/0/app/custom.jpg"
+        ).copy(originalCoverUrl = "")
+
+        val restored = deserializeDownloadedSongsCatalog(
+            serializeDownloadedSongsCatalog("root", listOf(song)),
+            expectedCacheKey = "root"
+        )?.single()
+
+        assertEquals("", restored?.originalCoverUrl)
+        assertEquals("", restored?.toPlaybackSongItem()?.originalCoverUrl)
+        assertEquals(song.customCoverUrl, restored?.customCoverUrl)
+    }
 
     @Test
     fun `restoring a remote original cover clears the stale downloaded sidecar`() {

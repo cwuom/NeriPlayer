@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.model.storage.StorageCacheKind
 import moe.ouom.neriplayer.data.local.storage.policy.storageScanOrDefault
 import moe.ouom.neriplayer.data.local.storage.source.StorageCacheFileAccess
+import moe.ouom.neriplayer.data.local.storage.source.LocalImportCacheAccess
 import moe.ouom.neriplayer.data.local.storage.source.StorageLocations
 import moe.ouom.neriplayer.data.local.storage.source.StoragePlatformCacheAccess
 import moe.ouom.neriplayer.data.local.storage.source.storagePlatformCaches
@@ -16,7 +17,8 @@ import moe.ouom.neriplayer.data.local.storage.source.storagePlatformCaches
 class StorageCacheCleaner(
     private val locations: StorageLocations,
     private val files: StorageCacheFileAccess,
-    private val platforms: StoragePlatformCacheAccess
+    private val platforms: StoragePlatformCacheAccess,
+    private val localImport: LocalImportCacheAccess? = null
 ) {
     suspend fun clear(options: StorageCacheClearOptions): ExtraCacheClearResult {
         val selected = selectedExtraCaches(options)
@@ -26,6 +28,9 @@ class StorageCacheCleaner(
     }
 
     private suspend fun clearFiles(kind: StorageCacheKind): ExtraCacheClearResult {
+        if (kind == StorageCacheKind.LocalImport) return storageScanOrDefault(emptyResult(success = false)) {
+            localImport?.clear() ?: emptyResult(success = false)
+        }
         // 下载暂存包含活动任务和待恢复凭据，普通缓存清理不能判定其所有权
         if (kind == StorageCacheKind.DownloadStaging) return emptyResult(success = false)
         return locations.cacheFiles.getValue(kind).fold(emptyResult()) { total, file -> total + clearFile(file, kind) }
@@ -73,9 +78,11 @@ private fun selectedExtraCaches(options: StorageCacheClearOptions): List<Storage
     StorageCacheKind.Lyrics to options.lyricsCache,
     StorageCacheKind.LogFiles to options.logFiles,
     StorageCacheKind.CrashLogs to options.crashLogs,
+    StorageCacheKind.LocalImport to options.localImportCache,
     StorageCacheKind.NeteasePlaylist to options.neteasePlaylistCache,
     StorageCacheKind.BiliFavorite to options.biliFavoriteCache,
     StorageCacheKind.BiliArchive to options.biliArchiveCache,
     StorageCacheKind.YouTubePlaylist to options.youtubePlaylistCache,
+    StorageCacheKind.ServerBrowse to options.serverBrowseCache,
     StorageCacheKind.Other to options.otherCache
 ).filter { it.second }.map { it.first }

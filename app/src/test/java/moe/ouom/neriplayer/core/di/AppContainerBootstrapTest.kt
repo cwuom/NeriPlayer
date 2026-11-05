@@ -1,9 +1,12 @@
 package moe.ouom.neriplayer.core.di
 
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.network.weblogin.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -176,5 +179,120 @@ class AppContainerBootstrapTest {
         )
 
         assertTrue(steps.isEmpty())
+    }
+
+    @Test
+    fun `startup guard skips repository construction during foreground login`() {
+        withStartupYouTubeFeature(enabled = true) {
+            val probe = GuardOnlyWarmupProbe()
+
+            ForegroundWebLoginGuard.enter("startup-guard-only-test").use {
+                AppContainer.warmYouTubePlaybackOnAppStart(
+                    backgroundWarmupAllowed = { true },
+                    loadWarmBootstrap = probe::loadWarmBootstrap
+                )
+            }
+
+            assertFalse(probe.repository.isInitialized())
+            assertEquals(0, probe.warmCalls)
+        }
+    }
+
+    @Test
+    fun `startup guard skips repository construction when runtime blocks background warmup`() {
+        withStartupYouTubeFeature(enabled = true) {
+            val probe = GuardOnlyWarmupProbe()
+
+            AppContainer.warmYouTubePlaybackOnAppStart(
+                backgroundWarmupAllowed = { false },
+                loadWarmBootstrap = probe::loadWarmBootstrap
+            )
+
+            assertFalse(probe.repository.isInitialized())
+            assertEquals(0, probe.warmCalls)
+        }
+    }
+
+    @Test
+    fun `disabled startup guard never constructs the repository`() {
+        withStartupYouTubeFeature(enabled = false) {
+            val probe = GuardOnlyWarmupProbe()
+
+            AppContainer.warmYouTubePlaybackOnAppStart(
+                backgroundWarmupAllowed = { error("runtime must remain lazy when disabled") },
+                loadWarmBootstrap = probe::loadWarmBootstrap
+            )
+
+            assertFalse(probe.repository.isInitialized())
+            assertEquals(0, probe.warmCalls)
+        }
+    }
+
+    @Test
+    fun `allowed anonymous startup warmup constructs and warms once on the caller thread`() {
+        withStartupYouTubeFeature(enabled = true) {
+            val probe = GuardOnlyWarmupProbe()
+            val callerThread = Thread.currentThread()
+
+            AppContainer.warmYouTubePlaybackOnAppStart(
+                backgroundWarmupAllowed = { true },
+                loadWarmBootstrap = probe::loadWarmBootstrap
+            )
+
+            assertTrue(probe.repository.isInitialized())
+            assertEquals(1, probe.constructionCalls)
+            assertEquals(1, probe.warmCalls)
+            assertSame(callerThread, probe.constructionThread)
+            assertSame(callerThread, probe.warmThread)
+        }
+    }
+
+    @Test
+    fun `allowed startup constructor failure still reaches the caller synchronously`() {
+        withStartupYouTubeFeature(enabled = true) {
+            val failure = IllegalStateException("synthetic repository constructor failure")
+
+            val thrown = runCatching {
+                AppContainer.warmYouTubePlaybackOnAppStart(
+                    backgroundWarmupAllowed = { true },
+                    loadWarmBootstrap = { throw failure }
+                )
+            }.exceptionOrNull()
+
+            assertSame(failure, thrown)
+        }
+    }
+
+    private inline fun withStartupYouTubeFeature(enabled: Boolean, block: () -> Unit) {
+        val previous = YouTubeFeatureGate.isEnabled()
+        YouTubeFeatureGate.update(enabled)
+        try {
+            block()
+        } finally {
+            YouTubeFeatureGate.update(previous)
+        }
+    }
+
+    private class GuardOnlyWarmupProbe {
+        var constructionCalls = 0
+        var warmCalls = 0
+        var constructionThread: Thread? = null
+        var warmThread: Thread? = null
+        val repository = lazy {
+            constructionCalls += 1
+            constructionThread = Thread.currentThread()
+            GuardOnlyWarmRepository {
+                warmCalls += 1
+                warmThread = Thread.currentThread()
+            }
+        }
+
+        fun loadWarmBootstrap(): () -> Unit = repository.value::warmBootstrapAsync
+    }
+
+    private class GuardOnlyWarmRepository(private val onWarm: () -> Unit) {
+        fun warmBootstrapAsync() {
+            onWarm()
+        }
     }
 }

@@ -10,6 +10,9 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
 
 @Dao
 interface PlatformPlaylistCacheDao {
+    @Query("SELECT * FROM platform_playlist_cache WHERE platform = :platform ORDER BY saved_at_ms DESC, cache_key ASC")
+    suspend fun listCaches(platform: String): List<PlatformPlaylistCacheEntity>
+
     @Query(
         "SELECT * FROM platform_playlist_cache " +
             "WHERE platform = :platform AND cache_key = :cacheKey"

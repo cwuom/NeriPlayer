@@ -7,6 +7,8 @@ import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSeed
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongMetadataSnapshot
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongBaseline
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsSavePlan
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.canChooseEmbeddedLyricsSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongCoverForSave
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongLyricsLoadErrorMessage
@@ -28,6 +30,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldHandleEditLyricsPermi
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldOfferFilledLyricsWriteBack
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldOpenEditLyricsSeedImmediately
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldPersistEditSongManualCover
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldWriteEditSongLyrics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -35,6 +38,49 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NowPlayingSongEditPolicyTest {
+    @Test
+    fun `explicit metadata write includes every known lyric track including cleared originals`() {
+        val song = SongItem(
+            8L, "Title", "Artist", "Album", 2L, 60_000L, null,
+            mediaUri = "content://media/external/audio/media/8"
+        )
+        val plan = EditSongLyricsSavePlan(null, false, false, false)
+        listOf("Known lyric", "").forEach { text ->
+            val knownTracks = listOf(
+                song.copy(matchedLyric = text),
+                song.copy(matchedTranslatedLyric = text),
+                song.copy(matchedRomanizedLyric = text),
+                song.copy(originalLyric = text),
+                song.copy(originalTranslatedLyric = text),
+                song.copy(originalRomanizedLyric = text)
+            )
+            knownTracks.forEach { known ->
+                assertTrue(shouldWriteEditSongLyrics(known, plan, writeLocalMetadata = true))
+            }
+        }
+        assertFalse(shouldWriteEditSongLyrics(song, plan, writeLocalMetadata = true))
+    }
+
+    @Test
+    fun `metadata lyric plan keeps app-only remote and already embedded drafts separate`() {
+        val song = SongItem(
+            8L, "Title", "Artist", "Album", 2L, 60_000L, null,
+            mediaUri = "content://media/external/audio/media/8",
+            matchedLyric = "Known lyric"
+        )
+        val plan = EditSongLyricsSavePlan(null, false, false, false)
+        val draft = EditSongLyricsDraft("New lyric", "", "", true)
+
+        assertFalse(shouldWriteEditSongLyrics(song, plan, writeLocalMetadata = false))
+        assertFalse(shouldWriteEditSongLyrics(song.copy(mediaUri = null), plan, writeLocalMetadata = true))
+        assertFalse(shouldWriteEditSongLyrics(song, plan.copy(draft = draft), writeLocalMetadata = true))
+        assertTrue(shouldWriteEditSongLyrics(
+            song,
+            plan.copy(draft = draft, writeLyricsWithSongMetadata = true),
+            writeLocalMetadata = true
+        ))
+    }
+
     @Test
     fun `baseline cover only adopts a nonblank initial reference for missing or remote covers`() {
         assertNull(refreshedEditSongBaselineCover("content://cover/local", "content://cover/new"))
@@ -304,6 +350,21 @@ class NowPlayingSongEditPolicyTest {
             resolveManagedEditSongBaseline(
                 current, metadata.copy(baseline = metadata.baseline.copy(coverReference = "")), null
             ).coverUrl
+        )
+    }
+
+    @Test
+    fun `explicitly absent managed baseline cover wins over stale resolved assets`() {
+        val current = EditSongBaseline("Title", "Artist", "content://cover/current", null, null, null)
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "stable",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(coverReference = ""),
+            overrides = ManagedDownloadRestorableMetadata.Overrides()
+        )
+
+        assertEquals(
+            "",
+            resolveManagedEditSongBaseline(current, metadata, "content://cover/stale-asset").coverUrl
         )
     }
 

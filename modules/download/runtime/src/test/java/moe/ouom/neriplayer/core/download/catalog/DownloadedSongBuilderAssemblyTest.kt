@@ -5,6 +5,7 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
+import moe.ouom.neriplayer.core.download.policy.toPlaybackSongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,6 +16,33 @@ import org.mockito.Mockito.`when`
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class DownloadedSongBuilderAssemblyTest {
+    @Test
+    fun `snapshot hydration keeps an explicitly absent original cover through playback projection`() = runTest {
+        val context = mock(Context::class.java)
+        val store = mock(DownloadedAudioMetadataStore::class.java)
+        val audio = entry("Artist - Song.flac", "/downloads/Artist - Song.flac")
+        val metadata = DownloadedAudioMetadata(
+            songId = 123L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            coverUrl = "https://example.com/current.jpg",
+            customCoverUrl = "https://example.com/current.jpg",
+            originalCoverUrl = ""
+        )
+        val snapshot = emptySnapshot(audio).copy(metadataByAudioName = mapOf(audio.name to metadata))
+
+        val song = DownloadedSongBuilder(store, "test").build(
+            context, audio, snapshot, allowSlowLocalInspection = false,
+            verifySnapshotReferences = false
+        )
+
+        assertEquals("", song.originalCoverUrl)
+        assertEquals("", song.toPlaybackSongItem().originalCoverUrl)
+        assertEquals(metadata.customCoverUrl, song.customCoverUrl)
+        verifyNoInteractions(context, store)
+    }
+
     @Test
     fun `missing snapshot metadata reads the sidecar and retains its logical download time`() = runTest {
         val context = mock(Context::class.java)

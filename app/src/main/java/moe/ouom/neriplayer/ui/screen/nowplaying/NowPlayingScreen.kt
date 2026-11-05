@@ -35,7 +35,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -157,6 +156,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricSeekPosition
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
@@ -383,6 +383,7 @@ internal fun resolveNowPlayingPlaybackSourceType(
     if (isLocalSong || isNeteaseLocalFallback) return PlaybackSourceType.LOCAL
 
     when (playbackAudioSource) {
+        PlaybackAudioSource.SUBSONIC -> return PlaybackSourceType.SUBSONIC
         PlaybackAudioSource.NETEASE -> return PlaybackSourceType.NETEASE
         PlaybackAudioSource.BILIBILI -> return PlaybackSourceType.BILIBILI
         PlaybackAudioSource.YOUTUBE_MUSIC -> return PlaybackSourceType.YOUTUBE_MUSIC
@@ -627,7 +628,7 @@ fun NowPlayingScreen(
     } else {
         playbackSongKeyAliases
     }
-    val currentCoverUrl = resolveNowPlayingCoverRequestUrl(
+    val currentCoverUrl = if (currentSong.hasKnownEmptyLocalCover()) null else resolveNowPlayingCoverRequestUrl(
         resolvedCoverUrl = resolvedCoverUrl,
         resolvedCoverSongKey = playbackSongKey,
         resolvedCoverOwnerRequired = playbackSongKey == null && currentSongVisualKey != null,
@@ -781,6 +782,15 @@ fun NowPlayingScreen(
     )
     val loadedLyricsState = lyricsLoadOwner.state
     val secondaryLyricsResolved = lyricsLoadOwner.secondaryResolved
+    LaunchedEffect(lyricsLoadOwner, lyricsLoadOwner.errorMessage) {
+        val message = lyricsLoadOwner.errorMessage ?: return@LaunchedEffect
+        val result = snackbarHostState.showNeriSnackbar(
+            message = composeResources.getString(CoreCommonR.string.server_lyrics_error, message),
+            actionLabel = composeResources.getString(CoreCommonR.string.server_retry),
+            withDismissAction = true
+        )
+        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) lyricsLoadOwner.retry()
+    }
     val lyrics = loadedLyricsState.lyrics
     val translatedLyrics = loadedLyricsState.translatedLyrics
     val rawLyricsText = loadedLyricsState.rawLyrics
@@ -1136,8 +1146,6 @@ fun NowPlayingScreen(
                     if (useWideLandscapeLayout) onNavigateUp() else onShowLyricsScreenChange(false)
                 },
                 label = "lyrics_transition",
-                previewEasing = NowPlayingLyricsBackPreviewEasing,
-                previewSettleEasing = EaseOut,
                 cancelMinimumDurationMillis = LyricsBackCancelMinimumDurationMs,
                 onPreviewAnimationActiveChanged = { lyricsPredictiveBackPreviewActive = it },
                 primePreviewAtZero = true
@@ -1211,7 +1219,8 @@ fun NowPlayingScreen(
                                         coverCacheKey = coverSource.cacheKey,
                                         contentDescription = coverSource.contentDescription,
                                         modifier = modifier,
-                                        songKeyAliases = coverSource.songKeyAliases
+                                        songKeyAliases = coverSource.songKeyAliases,
+                                        clearCover = coverSource.clearCover
                                     )
                                 }
                             )
@@ -1625,7 +1634,7 @@ fun NowPlayingScreen(
                                 useWideLandscapeLayout, showCoverPageLyrics && !immersiveMode, coverLyricsAvailable
                             )
                             val embeddedLyricContent = buildNowPlayingSyncedLyricContent(
-                                plainLyrics, secondaryPlainLyrics, showSecondaryLyrics,
+                                lyrics, secondaryPlainLyrics, showSecondaryLyrics,
                                 usePhoneticTranslation, currentSong, totalOffset
                             )
                             val embeddedLyricStyle = NowPlayingEmbeddedLyricStyle(
@@ -1972,19 +1981,12 @@ fun NowPlayingScreen(
                             )
                         }
                     }
-                    // 播放页自己的 Snackbar 挂载点。
-                    // 此前本页没有任何 host，`snackbarHostState` 只被「更多选项」面板里的
-                    // overlay host 渲染，导致本页的提示必须打开右上角菜单才看得到。
-                    // 更多面板打开时由它自己的 host 渲染，避免同一 hostState 被两处同时画出。
+                    // 本页自己的 Snackbar 挂载点：更多面板打开时由面板的 host 渲染，避免同一 hostState 两处同画。
                     if (!showMoreOptions) {
                         NeriOverlaySnackbarHost(hostState = snackbarHostState)
                     }
-                    // 心动模式的失败与切换提示（成功切歌不提示）。走上面这个 host 渲染成项目原有的
-                    // 底部 Snackbar 样式，停留 3 秒。
-                    NowPlayingHeartbeatFeedback(
-                        snackbarHostState = snackbarHostState,
-                        scope = screenScope
-                    )
+                    // 心动模式的失败与切换提示（成功切歌不提示），停留 3 秒。
+                    NowPlayingHeartbeatFeedback(snackbarHostState, screenScope)
                     if (coverFlight != null) {
                         NowPlayingLyricsCoverFlightLayer(coverFlight) { modifier ->
                             PassiveNowPlayingCoverImage(coverOwner, coverSource, modifier)

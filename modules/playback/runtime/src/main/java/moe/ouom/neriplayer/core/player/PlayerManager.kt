@@ -153,6 +153,7 @@ import moe.ouom.neriplayer.core.player.playback.togglePlayPauseImpl
 import moe.ouom.neriplayer.core.player.runtime.stats.trackEndDeduplicationKey
 import moe.ouom.neriplayer.core.player.persistence.LocalSongAssetEmbedding
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStatePreload
 import moe.ouom.neriplayer.core.player.persistence.embedLocalSongAssetsImpl
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.core.player.persistence.addCurrentToFavoritesImpl
@@ -184,6 +185,8 @@ import moe.ouom.neriplayer.core.player.persistence.removeQueueItemImpl
 import moe.ouom.neriplayer.core.player.persistence.removeQueueItemsImpl
 import moe.ouom.neriplayer.core.player.persistence.replaceCurrentInQueueAndPlayImpl
 import moe.ouom.neriplayer.core.player.persistence.replaceMetadataFromSearchImpl
+import moe.ouom.neriplayer.core.player.metadata.SongMetadataApplyOptions
+import moe.ouom.neriplayer.core.player.metadata.SongMetadataApplyStage
 import moe.ouom.neriplayer.core.player.persistence.resumeRestoredPlaybackIfNeededImpl
 import moe.ouom.neriplayer.core.player.persistence.moveQueueItemImpl
 import moe.ouom.neriplayer.core.player.persistence.reorderQueueImpl
@@ -572,6 +575,8 @@ object PlayerManager {
     internal var lastUrlRefreshAtMs: Long = 0L
     internal var currentMediaUrlResolvedAtMs: Long = 0L
     internal var currentPlaybackDemandCacheKey: String? = null
+    // One-shot retry position for the current server track, independent of restart preferences.
+    internal var serverRecoveryPosition: Pair<String, Long>? = null
     private val restoredPlayback = AtomicReference<RestoredPlaybackState>(RestoredPlaybackState.None)
     internal val restoredResumePositionMs: Long
         get() = restoredPlayback.get().positionMs
@@ -1644,7 +1649,8 @@ object PlayerManager {
         app = app,
         maxCacheSize = startupPlaybackPreferences.maxCacheSizeBytes,
         startupPlaybackPreferences = startupPlaybackPreferences,
-        restoredStateSnapshot = restoredStateSnapshot
+        restorationPreload = restoredStateSnapshot?.let { RestoredPlayerStatePreload.Completed(it) }
+            ?: RestoredPlayerStatePreload.NeedsFallback
     )
 
     suspend fun clearCache(
@@ -1764,11 +1770,8 @@ object PlayerManager {
         force: Boolean = false,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
     ) {
-        // 任务书 §七 第三阶段：用户主动跳过要计入心动模式的负反馈。
-        // 放在这个公开入口而不是 nextImpl：nextImpl 会被 USB 音量确认等内部路径
-        // 递归调用，放里面会把一次点击记成多次跳过。
-        // 必须在切歌之前取当前歌——切完之后 _currentSongFlow 已指向新歌。
-        // 自动播完推进不走这里，所以「听完」不会被误记成「跳过」。
+        // 用户主动跳过计入心动模式负反馈：放公开入口而非 nextImpl，避免内部递归重复计数；
+        // 必须在切歌前取当前歌。自动播完推进不走这里，所以「听完」不算跳过。
         _currentSongFlow.value?.let { recordHeartbeatSkip(it) }
         this.nextImpl(force, commandSource)
     }
@@ -1856,6 +1859,13 @@ object PlayerManager {
         preference: LyricSourcePreference
     ): PreferredLyricSourceResult? = getPreferredLyricSourceResultImpl(song, preference)
 
+    fun getCachedOriginalLyrics(song: SongItem): List<LyricEntry>? {
+        if (song.channelId != moe.ouom.neriplayer.data.model.server.ServerSongRef.CHANNEL &&
+            song.mediaUri?.startsWith("neri-server://") != true) return null
+        if (!PlayerDependencies.isInitialized()) return null
+        return PlayerDependencies.repositories.subsonicRepository?.cachedLyrics(song)
+    }
+
     fun getCachedPreferredLyricSourceResult(
         song: SongItem,
         preference: LyricSourcePreference,
@@ -1901,8 +1911,10 @@ object PlayerManager {
         originalSong: SongItem,
         selectedSong: SongSearchInfo,
         isAuto: Boolean = false,
-        onComplete: ((Boolean) -> Unit)? = null
-    ) = replaceMetadataFromSearchImpl(originalSong, selectedSong, isAuto, onComplete)
+        onComplete: ((Boolean) -> Unit)? = null,
+        options: SongMetadataApplyOptions? = null,
+        onProgress: ((SongMetadataApplyStage) -> Unit)? = null
+    ): Job? = replaceMetadataFromSearchImpl(originalSong, selectedSong, isAuto, onComplete, options, onProgress)
 
     suspend fun updateSongCustomInfo(
         originalSong: SongItem,

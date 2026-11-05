@@ -8,8 +8,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
+import org.junit.Before
+import org.junit.After
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.mockito.Mockito.CALLS_REAL_METHODS
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.doThrow
@@ -18,22 +23,36 @@ import org.mockito.Mockito.mockStatic
 import org.mockito.Mockito.verify
 import java.io.File
 import java.io.FileNotFoundException
-import java.io.FileOutputStream
+import org.mockito.Mockito.never
+import org.mockito.Mockito.clearInvocations
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LocalMediaMetadataTargetReplacementTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
 
     private val context: Context = mock(Context::class.java)
 
+    @Before
+    fun setUp() {
+        LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+        doReturn(temporaryFolder.newFolder("no-backup")).`when`(context).noBackupFilesDir
+    }
+
+    @After
+    fun tearDown() {
+        LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
+    }
+
     @Test
-    fun `direct targets are replaced inside newly created parents`() {
+    fun `direct targets are replaced and preserve the original modification time`() = withMetadataRecoveryDescriptors {
         val source = temporaryFolder.newFile("updated.flac").apply { writeText("tagged audio") }
-        val target = File(temporaryFolder.root, "albums/new/song.flac")
+        val target = File(temporaryFolder.newFolder("albums"), "song.flac").apply { writeText("original audio") }
 
         assertTrue(
             LocalMediaMetadataRecoveryStore.replaceTargetFromFile(
-                context, target.absolutePath, source, lastModifiedMs = MODIFIED_AT
+                context, target.absolutePath, source, record(target.absolutePath, source), lastModifiedMs = MODIFIED_AT
             )
         )
 
@@ -43,7 +62,7 @@ class LocalMediaMetadataTargetReplacementTest {
     }
 
     @Test
-    fun `direct replacement reports blocked parents, occupied targets and unusable sources`() {
+    fun `direct replacement reports blocked parents, occupied targets and unusable sources`() = withMetadataRecoveryDescriptors {
         val source = temporaryFolder.newFile("updated.flac").apply { writeText("tagged audio") }
         val blocker = temporaryFolder.newFile("blocker").apply { writeText("plain file") }
         val album = temporaryFolder.newFolder("album")
@@ -61,25 +80,26 @@ class LocalMediaMetadataTargetReplacementTest {
     }
 
     @Test
-    fun `content targets fall back to truncating write mode`() {
+    fun `content providers requiring a truncating open cannot replace the target`() {
         val source = temporaryFolder.newFile("updated.flac").apply { writeText("tagged audio") }
-        val document = temporaryFolder.newFile("document.flac")
         val uri = contentUri()
         val resolver = mock(ContentResolver::class.java)
         val descriptor = mock(ParcelFileDescriptor::class.java)
         doReturn(resolver).`when`(context).contentResolver
-        doThrow(FileNotFoundException("rwt unsupported")).`when`(resolver).openFileDescriptor(uri, "rwt")
-        doReturn(descriptor).`when`(resolver).openFileDescriptor(uri, "wt")
+        doThrow(FileNotFoundException("rw unsupported")).`when`(resolver).openFileDescriptor(uri, "rw")
+        doReturn(descriptor).`when`(resolver).openFileDescriptor(uri, "rwt")
 
-        FileOutputStream(document).use { stream ->
-            doReturn(stream.fd).`when`(descriptor).fileDescriptor
-            withParsedUri(uri) {
-                assertTrue(LocalMediaMetadataRecoveryStore.replaceTargetFromFile(context, CONTENT_REFERENCE, source))
-            }
+        withParsedUri(uri) {
+            val prepared = record(CONTENT_REFERENCE, source)
+            clearInvocations(resolver)
+            assertFalse(LocalMediaMetadataRecoveryStore.replaceTargetFromFile(
+                context, CONTENT_REFERENCE, source, prepared
+            ))
         }
 
-        assertEquals("tagged audio", document.readText())
-        verify(descriptor).close()
+        verify(resolver).openFileDescriptor(uri, "rw")
+        verify(resolver, never()).openFileDescriptor(uri, "rwt")
+        verify(resolver, never()).openFileDescriptor(uri, "wt")
     }
 
     @Test
@@ -90,15 +110,34 @@ class LocalMediaMetadataTargetReplacementTest {
         doReturn(resolver).`when`(context).contentResolver
 
         withParsedUri(uri) {
-            assertFalse(LocalMediaMetadataRecoveryStore.replaceTargetFromFile(context, CONTENT_REFERENCE, source))
+            val prepared = record(CONTENT_REFERENCE, source)
+            clearInvocations(resolver)
+            assertFalse(LocalMediaMetadataRecoveryStore.replaceTargetFromFile(
+                context, CONTENT_REFERENCE, source, prepared
+            ))
         }
 
-        verify(resolver).openFileDescriptor(uri, "rwt")
-        verify(resolver).openFileDescriptor(uri, "wt")
+        verify(resolver).openFileDescriptor(uri, "rw")
+        verify(resolver, never()).openFileDescriptor(uri, "rwt")
+        verify(resolver, never()).openFileDescriptor(uri, "wt")
     }
 
     private fun replace(target: File, source: File): Boolean =
-        LocalMediaMetadataRecoveryStore.replaceTargetFromFile(context, target.absolutePath, source)
+        LocalMediaMetadataRecoveryStore.replaceTargetFromFile(context, target.absolutePath, source, record(target.absolutePath, source))
+
+    private fun record(reference: String, source: File): LocalMetadataRecoveryRecord {
+        val staging = LocalMediaMetadataRecoveryStore.stagingDirectory(context).apply { mkdirs() }
+        val backup = File.createTempFile("source-", ".flac", staging).apply {
+            val target = File(reference)
+            writeText(if (target.isFile) target.readText() else "original audio")
+        }
+        val updated = File.createTempFile("updated-", ".flac", staging).apply {
+            writeText(if (source.isFile && source.length() > 0L) source.readText() else "updated audio")
+        }
+        return LocalMediaMetadataRecoveryStore.markReplacing(
+            LocalMediaMetadataRecoveryStore.begin(context, reference, backup, updated, null)
+        )
+    }
 
     private fun contentUri(): Uri = mock(Uri::class.java).also { uri ->
         doReturn("content").`when`(uri).scheme

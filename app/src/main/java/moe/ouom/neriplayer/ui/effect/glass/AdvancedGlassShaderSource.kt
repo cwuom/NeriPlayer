@@ -7,6 +7,9 @@ import java.io.InputStream
 internal const val ADVANCED_GLASS_REGION_MASK_SHADER_ASSET_PATH =
     "shaders/advanced_glass_region_mask.agsl"
 
+internal const val ADVANCED_GLASS_REGION_INVERSE_MASK_SHADER_ASSET_PATH =
+    "shaders/advanced_glass_region_inverse_mask.agsl"
+
 internal class AdvancedGlassShaderSource(
     private val assetManager: AssetManager
 ) {
@@ -16,7 +19,15 @@ internal class AdvancedGlassShaderSource(
         }
     }
 
+    private val inverseSource by lazy {
+        readShaderSource(ADVANCED_GLASS_REGION_INVERSE_MASK_SHADER_ASSET_PATH) { path ->
+            assetManager.open(path)
+        }
+    }
+
     fun load(): String = source
+
+    fun loadInverse(): String = inverseSource
 }
 
 internal fun readShaderSource(

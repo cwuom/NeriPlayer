@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.sync.store.state
 
 import android.content.Context
+import java.io.IOException
 import moe.ouom.neriplayer.data.model.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.config.SyncPreferencesConfigSnapshot
 import moe.ouom.neriplayer.data.model.config.WebDavSyncConfigSnapshot
@@ -11,12 +12,98 @@ import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 
 class SyncConfigurationStorageTest {
+    @Test
+    fun `github token save reports a failed durable commit and retries with a new configuration generation`() {
+        val prefs = MemorySyncPreferences(mapOf("github_token" to "original", "sync_configuration_generation" to 7L))
+        val store = SecureTokenStorage(prefs.preferences)
+        val previousSession = store.captureSyncMetadataGuard()
+        prefs.failNextCommit = true
+
+        assertThrows(IOException::class.java) { store.saveToken("replacement") }
+
+        assertEquals("original", SecureTokenStorage(prefs.restart().preferences).getToken())
+        assertFalse(previousSession { store.saveLastCompletedSyncTime(99L) })
+        store.saveToken("replacement")
+        val restarted = SecureTokenStorage(prefs.restart().preferences)
+        assertEquals("replacement", restarted.getToken())
+        assertEquals(9L, prefs.durableValues["sync_configuration_generation"])
+        val currentSession = restarted.captureSyncMetadataGuard()
+        assertTrue(currentSession { restarted.saveLastCompletedSyncTime(100L) })
+        assertEquals(100L, restarted.getLastCompletedSyncTime())
+    }
+
+    @Test
+    fun `github repository save reports failed persistence without losing the durable target checkpoint`() {
+        val prefs = MemorySyncPreferences()
+        val store = SecureTokenStorage(prefs.preferences)
+        store.saveToken("token")
+        store.saveRepository("owner", "original")
+        store.saveLastRemoteSha("original-sha")
+        store.saveLastSyncTime(50L)
+        store.saveLastCompletedSyncTime(70L)
+        val previousSession = store.captureSyncMetadataGuard()
+        prefs.failNextCommit = true
+
+        assertThrows(IOException::class.java) { store.saveRepository("owner", "replacement") }
+
+        val original = SecureTokenStorage(prefs.restart().preferences)
+        assertEquals("original", original.getRepoName())
+        assertEquals("original-sha", original.getLastRemoteSha())
+        assertEquals(50L, original.getLastSyncTime())
+        assertEquals(70L, original.getLastCompletedSyncTime())
+        assertFalse(previousSession { store.saveLastCompletedSyncTime(99L) })
+        store.saveRepository("owner", "replacement")
+        val restarted = SecureTokenStorage(prefs.restart().preferences)
+        assertEquals("replacement", restarted.getRepoName())
+        assertNull(restarted.getLastRemoteSha())
+        assertEquals(0L, restarted.getLastSyncTime())
+        assertEquals(0L, restarted.getLastCompletedSyncTime())
+        assertEquals(4L, prefs.durableValues["sync_configuration_generation"])
+    }
+
+    @Test
+    fun `webdav configuration save reports failed persistence and can durably retry`() {
+        val prefs = MemorySyncPreferences()
+        val store = WebDavStorage(prefs.preferences)
+        store.saveConfiguration("https://original.example/dav", "user", "original-password", "original")
+        store.saveLastRemoteFingerprint("original-fingerprint")
+        store.saveLastSyncTime(50L)
+        store.saveLastCompletedSyncTime(70L)
+        val original = store.snapshot()
+        val previousSession = store.captureSyncMetadataGuard()
+        prefs.failNextCommit = true
+
+        assertThrows(IOException::class.java) {
+            store.saveConfiguration("https://replacement.example/dav", "new-user", "replacement-password", "replacement")
+        }
+
+        val retained = WebDavStorage(prefs.restart().preferences)
+        assertEquals(original, retained.snapshot())
+        assertEquals("original-fingerprint", retained.getLastRemoteFingerprint())
+        assertEquals(50L, retained.getLastSyncTime())
+        assertEquals(70L, retained.getLastCompletedSyncTime())
+        assertFalse(previousSession { store.saveLastCompletedSyncTime(99L) })
+
+        store.saveConfiguration("https://replacement.example/dav", "new-user", "replacement-password", "replacement")
+        val restarted = WebDavStorage(prefs.restart().preferences)
+        assertEquals(WebDavSyncConfigSnapshot(
+            "https://replacement.example/dav", "replacement", "new-user", "replacement-password", true
+        ), restarted.snapshot())
+        assertNull(restarted.getLastRemoteFingerprint())
+        assertEquals(0L, restarted.getLastSyncTime())
+        assertEquals(0L, restarted.getLastCompletedSyncTime())
+        val currentSession = restarted.captureSyncMetadataGuard()
+        assertTrue(currentSession { restarted.saveLastCompletedSyncTime(100L) })
+        assertEquals(100L, restarted.getLastCompletedSyncTime())
+    }
+
     @Test
     fun `configuration requires each credential and repository field`() {
         val prefs = MemorySyncPreferences()

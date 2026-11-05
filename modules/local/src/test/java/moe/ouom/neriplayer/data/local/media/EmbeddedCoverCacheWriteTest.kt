@@ -8,7 +8,10 @@ import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.URI
+import kotlinx.coroutines.runBlocking
 import javax.imageio.ImageIO
+import moe.ouom.neriplayer.data.local.storage.cleanup.LocalImportCache
+import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -48,6 +51,20 @@ class EmbeddedCoverCacheWriteTest {
         assertEquals(LocalMediaSupport.embeddedCoverFile(context, "song"), cached)
         assertArrayEquals(picture, cached.readBytes())
         assertFalse(File(coverDirectory, ".${cached.name}.tmp").exists())
+    }
+
+    @Test
+    fun `a newly extracted cover remains owned before its song is published`() = runBlocking {
+        val cached = File(URI(LocalMediaSupport.saveEmbeddedCover(context, "unpublished-song", png(4, 3))!!))
+        val cache = LocalImportCache(
+            coverDirectory,
+            { emptySet() },
+            fileAccessLock = LocalMediaSupport.embeddedCoverCacheLock,
+            isCoverInUse = LocalMediaSupport::isEmbeddedCoverInUse
+        ) { LocalMediaSupport.clearCoverLookupCache() }
+
+        assertEquals(ExtraCacheClearResult(true, 0, 0, 0), cache.clear())
+        assertTrue(cached.exists())
     }
 
     @Test

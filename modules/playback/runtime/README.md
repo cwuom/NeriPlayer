@@ -18,13 +18,47 @@ The app installs `PlayerDependencies` in `core/di/player`; `isInitialized()` che
 
 `audio/effects` connects shared effect models to the Media3 AudioSink and native DSP; `AudioEffectsOwner` updates parameters with output-route changes. `AudioEffectsAudioSink` processes PCM before the system-output or USB-exclusive sink. Native USB output respects the USB effects setting and bit-perfect bypass rules. `:native` owns the C/C++ DSP and parameter layout.
 
-播放统计通过独立的磁盘 FIFO 暂存增量，磁盘写入和数据库重放各只有一个 IO worker。回调先交接最多 32 个统计专用快照，停止采样前还保留最多两个已采事件；歌词不进入该队列。每个持久帧保留原事件 ID、播放时间、清除栅栏和歌单归属，两份统计都确认后才推进持久游标。同步和备份在读取主存前等待该队列；手动覆盖恢复从排空旧事件到发布新清除栅栏期间暂停采样，回调继续更新播放上下文，防止旧栅栏的事件覆盖刚恢复的数据。
+## 播放统计 / Playback statistics
 
-磁盘也不可写或交接容量耗尽时，已有事件保留，统计停止采样并明确记录错误，播放继续。恢复后沿用当前播放周期的计数状态，从恢复时刻重新计时，停采区间不补造统计。单帧元数据最多 1 MiB，超预算会进入同一停采流程。进程退出前尚未落盘的交接事件无法保证恢复；已发布持久帧会按原 ID 重试，残临时帧不会阻塞已确认的前缀。
+| 环节 | 行为 |
+| --- | --- |
+| 队列与工作线程 | 播放统计通过独立磁盘 FIFO 暂存增量，磁盘写入与数据库重放各使用单一 IO worker |
+| 回调交接上限 | 回调最多交接 32 个统计专用快照，停止采样前额外保留最多 2 个已采事件；歌词数据不进入该队列 |
+| 持久帧与游标推进 | 每个持久帧记录原事件 ID、播放时间戳、清除栅栏（clear epoch）与歌单归属；待两份统计存储均确认后才推进持久游标 |
+| 同步与覆盖恢复栅栏 | 同步与备份在读取主存前先排空该队列；手动覆盖恢复从排空旧事件到发布新清除栅栏期间暂停采样，但回调继续更新播放上下文，防止旧栅栏事件覆盖新恢复的数据 |
 
-Playback statistics stage deltas in a separate disk FIFO, with one IO worker each for disk writes and database replay. Callbacks hand off at most 32 statistics-only snapshots, retaining at most two additional sampled events before sampling stops; lyrics never enter this queue. Durable frames preserve event IDs, timestamps, clear epochs, and playlist attribution. The durable cursor advances only after both statistics stores acknowledge the event. Sync and backups wait for the queue before reading primary stores. An overwrite restore pauses sampling from draining old events until publishing the new clear epoch, while callbacks continue updating playback context.
+| 异常或恢复场景 | 行为与边界 |
+| --- | --- |
+| 写盘失败 / 交接耗尽 / 超限 | 磁盘不可写、交接容量耗尽或单帧元数据超过 1 MiB 上限时，保留队列内已有事件，停止统计采样并记录明确错误，音频播放继续 |
+| 恢复计时规则 | 恢复后沿用当前播放周期的已计数状态，从恢复时刻重新计时，停采区间不补造统计 |
+| 进程退出与重试恢复 | 进程退出前尚未落盘的交接事件可能丢失；已发布的持久帧按原事件 ID 重试，残留临时帧不会阻塞已确认的前缀 |
 
-If disk writes fail or handoff capacity is exhausted, existing events remain queued, statistics sampling stops with an explicit error, and playback continues. Recovery preserves the current playback cycle's counted state and restarts timing from recovery without inventing statistics for the paused interval. Frame metadata is limited to 1 MiB; exceeding it also stops sampling. Handoff events not persisted before process exit cannot be guaranteed recoverable. Published durable frames retry with their original IDs, and abandoned temporary frames do not block the confirmed prefix.
+| Stage | Behavior |
+| --- | --- |
+| Queue & Workers | Stages playback statistics deltas in a dedicated disk FIFO with one IO worker for disk writes and one for database replay |
+| Handoff Capacity | Callbacks hand off up to 32 statistics-only snapshots plus at most 2 extra sampled events before stopping; lyrics never enter this queue |
+| Durable Frames & Cursor | Each durable frame preserves the event ID, timestamp, clear epoch, and playlist attribution; the durable cursor advances only after both statistics stores acknowledge the event |
+| Sync & Overwrite Restore | Sync and backups wait for the queue before reading primary stores; manual overwrite restores pause sampling from queue drain until the new clear epoch is published while callbacks keep updating playback context |
+
+| Failure or Recovery Case | Behavior and Boundaries |
+| --- | --- |
+| Write Failure / Exhaustion / Oversize | When disk writes fail, handoff capacity is exhausted, or frame metadata exceeds the 1 MiB limit, queued events remain intact, sampling stops with an explicit error, and playback continues |
+| Recovery Timing | Resuming retains the current playback cycle's counted state and restarts timing from the recovery point without fabricating data for the paused interval |
+| Process Exit & Frame Replay | Unpersisted handoff events may be lost on process exit; published durable frames retry with their original IDs, and leftover temporary frames never block the confirmed prefix |
+
+## 歌曲信息获取 / Song information acquisition
+
+手动获取歌曲信息时可选择歌词来源、原文、翻译、音译及逐词偏好；未选择或未获取到的歌词内容会保留原值。本地歌曲可选择回写音频或仅应用内保存。界面显示歌曲信息、歌词、封面和保存进度，准备期间可取消；开始保存校验后等待本轮提交完成，进度走完并显示完成状态后才关闭。选项与保存位置分组排列，小屏和大字体下可滚动选择，底部操作保持可见。
+
+Manual song information acquisition supports lyric sources, original, translated and romanized lyrics, and word-timing preference. Unselected or unavailable lyric content retains its current value. Local songs offer audio write-back or app-only persistence. The UI shows song information, lyric, artwork and save progress. Preparation can be cancelled; once saving and verification start, the current commit finishes before the progress reaches the end and the completed state is shown, then the sheet closes. Options and save destinations are grouped, with scrollable choices and visible actions on small screens or with larger text.
+
+播放中的本地信息补全在提交时校验播放请求及歌曲快照，并与手动保存共用元数据锁，防止旧读取覆盖刚保存或恢复的信息。明确恢复为无封面时，媒体会话和通知清除旧图及未完成的图片请求；暂时未解析到封面时仍保留当前画面。
+
+Local playback hydration validates the playback request and song snapshots when publishing, using the same metadata lock as manual saves so an older read cannot overwrite saved or restored values. A confirmed restoration to no artwork clears media-session and notification images and pending image requests; temporarily unresolved artwork retains the current frame.
+
+媒体通知合并密集更新并确认实际发布的最后一条内容，系统静默丢弃时有限重试。退出前台或销毁服务时取消待发通知与确认任务，初次前台提升仍立即执行。
+
+Media notifications coalesce rapid updates and confirm the latest publication, retrying a silent system drop within a fixed limit. Leaving foreground or destroying the service cancels pending publications and confirmations; initial foreground promotion remains immediate.
 
 ## 兼容 / Compatibility
 

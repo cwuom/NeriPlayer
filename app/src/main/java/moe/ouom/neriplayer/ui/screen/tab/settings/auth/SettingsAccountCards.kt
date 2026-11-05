@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -114,14 +115,62 @@ private fun SettingsAccountCard(
 ) {
     val supported = account.platform != SettingsAccountPlatform.QqMusic
     val key = account.platform.key
+    val highlightModifier = if (targetId != null) {
+        Modifier.settingsHighlightTarget(targetId, highlightTargetId, highlightPulse, onHighlightFinished)
+    } else Modifier
+    SettingsAccountCardSurface(
+        modifier = Modifier.testTag("settingsAccountCard:$key"),
+        contentModifier = highlightModifier,
+        onClick = if (supported) {
+            SettingsAccountEntryAction(account.hasSavedAuthorization, onManageSaved, onLogin).onClick
+        } else null,
+        suppressInactiveNavigationSurface = suppressInactiveNavigationSurface,
+        fallbackColor = fallbackColor
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val inlineActions = maxWidth >= (560f * LocalDensity.current.fontScale.coerceAtLeast(1f)).dp
+            if (inlineActions && supported) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().testTag("settingsAccountInline:$key"),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SettingsAccountIdentity(
+                        account = account,
+                        modifier = Modifier.weight(1f)
+                    )
+                    SettingsAccountActions(account, onLogin, onManageSaved)
+                }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth().testTag("settingsAccountStacked:$key"),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    SettingsAccountIdentity(account = account)
+                    if (supported) {
+                        SettingsAccountActions(account, onLogin, onManageSaved, Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SettingsAccountCardSurface(
+    modifier: Modifier = Modifier,
+    contentModifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    suppressInactiveNavigationSurface: Boolean = false,
+    fallbackColor: Color? = null,
+    content: @Composable BoxScope.() -> Unit
+) {
     val cardShape = RoundedCornerShape(24.dp)
-    val interactionModifier = if (supported) {
-        Modifier.clip(cardShape).clickable(
-            onClick = SettingsAccountEntryAction(account.hasSavedAuthorization, onManageSaved, onLogin).onClick
-        )
+    val interactionModifier = if (onClick != null) {
+        Modifier.clip(cardShape).clickable(onClick = onClick)
     } else Modifier
     Surface(
-        modifier = Modifier.fillMaxWidth().testTag("settingsAccountCard:$key").then(interactionModifier),
+        modifier = modifier.fillMaxWidth().then(interactionModifier),
         shape = cardShape,
         color = Color.Transparent
     ) {
@@ -133,35 +182,10 @@ private fun SettingsAccountCard(
             tintColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             suppressInactiveNavigationSurface = suppressInactiveNavigationSurface
         ) {
-            val highlightModifier = if (targetId != null) {
-                Modifier.settingsHighlightTarget(targetId, highlightTargetId, highlightPulse, onHighlightFinished)
-            } else Modifier
-            BoxWithConstraints(Modifier.fillMaxWidth().then(highlightModifier).padding(20.dp)) {
-                val inlineActions = maxWidth >= (560f * LocalDensity.current.fontScale.coerceAtLeast(1f)).dp
-                if (inlineActions && supported) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().testTag("settingsAccountInline:$key"),
-                        horizontalArrangement = Arrangement.spacedBy(20.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SettingsAccountIdentity(
-                            account = account,
-                            modifier = Modifier.weight(1f)
-                        )
-                        SettingsAccountActions(account, onLogin, onManageSaved)
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().testTag("settingsAccountStacked:$key"),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        SettingsAccountIdentity(account = account)
-                        if (supported) {
-                            SettingsAccountActions(account, onLogin, onManageSaved, Modifier.fillMaxWidth())
-                        }
-                    }
-                }
-            }
+            Box(
+                modifier = Modifier.fillMaxWidth().then(contentModifier).padding(20.dp),
+                content = content
+            )
         }
     }
 }

@@ -10,10 +10,19 @@ import moe.ouom.neriplayer.data.model.sync.nextLyricSyncRevision
 internal fun shouldSkipSongMetadataMutation(
     currentSong: SongItem,
     updatedSong: SongItem,
-    writeLyrics: Boolean
+    writeLyrics: Boolean,
+    writeLocalMetadata: Boolean = false
 ): Boolean {
-    return !writeLyrics && currentSong == updatedSong
+    return !writeLyrics && !writeLocalMetadata && currentSong == updatedSong
 }
+
+internal fun firstUsableLocalCoverReference(vararg candidates: () -> String?): String? =
+    candidates.asSequence().map { it() }.firstOrNull { reference ->
+        !reference.isNullOrBlank() &&
+            !reference.startsWith("http://", ignoreCase = true) &&
+            !reference.startsWith("https://", ignoreCase = true) &&
+            !isMediaStoreCoverReference(reference)
+    }
 
 internal fun SongItem.withUpdatedLyricsPreservingOriginal(
     newLyrics: String? = matchedLyric,

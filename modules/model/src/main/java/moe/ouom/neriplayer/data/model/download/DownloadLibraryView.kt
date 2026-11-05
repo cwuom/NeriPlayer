@@ -27,6 +27,7 @@ interface DownloadLibrarySnapshot {
     val knownReferences: Set<String>
     val rootEntriesComplete: Boolean
     val sidecarEntriesComplete: Boolean
+    val rootEmptyConfirmationPending: Boolean get() = false
     val pendingAudioEntries: List<DownloadLibraryEntry>
     val pendingMetadataByAudioName: Map<String, DownloadedAudioMetadata>
     val metadataEntriesByCanonicalAudioName: Map<String, DownloadLibraryEntry>

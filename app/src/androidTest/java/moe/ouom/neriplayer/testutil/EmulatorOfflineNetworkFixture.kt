@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.testutil
 
 import android.content.Context
+import android.content.IntentFilter
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Looper
 import android.os.ParcelFileDescriptor
@@ -32,6 +34,10 @@ internal class EmulatorOfflineNetworkFixture private constructor(
         shell("cmd wifi set-wifi-enabled disabled")
         awaitState("模拟器网络未进入离线状态") {
             !wifiEnabled() &&
+                // shell 状态会把关闭中的 Wi-Fi 也视为 disabled，必须等待网络完成拆除
+                context.registerReceiver(null, IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION))
+                    ?.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN) ==
+                    WifiManager.WIFI_STATE_DISABLED &&
                 context.currentLikelyNetworkTransportAvailability() == LikelyNetworkTransportAvailability.OFFLINE
         }
         Log.i("EmulatorOfflineNetwork", "offline confirmed: originalAirplaneMode=$originalAirplaneMode, " +

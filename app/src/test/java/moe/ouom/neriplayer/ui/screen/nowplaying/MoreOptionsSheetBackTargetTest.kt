@@ -85,6 +85,26 @@ class MoreOptionsSheetBackTargetTest {
     }
 
     @Test
+    fun `metadata application keeps the search visible until completion`() {
+        val owner = owner()
+        owner.open(MoreOptionsPage.SEARCH)
+        owner.setMetadataApplying(true)
+
+        owner.back()
+        owner.dismiss()
+
+        assertEquals(MoreOptionsPage.SEARCH, owner.page)
+        assertFalse(owner.isDismissing)
+        assertFalse(owner.canGoBackToMainPage)
+        assertFalse(owner.canPredictiveDismiss)
+        assertFalse(owner.sheetGesturesEnabled)
+
+        owner.setMetadataApplying(false)
+        assertTrue(owner.canGoBackToMainPage)
+        assertTrue(owner.sheetGesturesEnabled)
+    }
+
+    @Test
     fun `an in flight dismissal owns back until the sheet is hidden`() {
         val scope = CoroutineScope(Dispatchers.Unconfined)
         val hidden = CompletableDeferred<Unit>()

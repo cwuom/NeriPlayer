@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadReque
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadStages
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito
@@ -23,6 +24,69 @@ class NowPlayingLyricsFastStageTest {
         5L, "Local", "Artist", "__local_files__", 0L, 90_000L, null,
         mediaUri = "content://media/audio/5", localFileName = "track.mp3"
     )
+
+    @Test
+    fun `original cache hydrates initial and fast frames without requiring a network read`() = runTest {
+        val server = localSong.copy(channelId = "subsonic", mediaUri = "neri-server://server/song/id", localFileName = null)
+        val cached = listOf(LyricEntry("cached original", 1000, 2000))
+        for (value in listOf(cached, emptyList(), null)) {
+            val sources = object : FakeNowPlayingLyricsSources() {
+                override fun cachedOriginal(song: SongItem) = value
+            }
+            val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+            val input = request(server)
+            val expected = value.orEmpty()
+            assertEquals(expected, stages.readInitial(input).state.lyrics)
+            assertEquals(expected, stages.readFast(input).state.lyrics)
+            assertTrue(stages.readInitial(input.copy(song = null)).state.lyrics.isEmpty())
+        }
+    }
+
+    @Test
+    fun `cached original cannot replace confirmed clear or chosen lyric source`() = runTest {
+        var cacheReads = 0
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override fun cachedOriginal(song: SongItem): List<LyricEntry> {
+                cacheReads++
+                return listOf(LyricEntry("server cache", 1000, 2000))
+            }
+        }
+        val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        val server = localSong.copy(channelId = "subsonic", mediaUri = "neri-server://server/song/id", localFileName = null)
+        for (song in listOf(localSong, server)) {
+            for (text in listOf("", "[00:01.00]user edit")) {
+                val input = request(song.copy(lyricSyncEdited = true, matchedLyric = text))
+                val initial = stages.readInitial(input).state
+                assertTrue(initial.lyrics.isEmpty())
+                assertNull(initial.rawLyrics)
+                assertEquals(text, stages.readFast(input).state.rawLyrics)
+            }
+        }
+        val preferred = PreferredLyricSourceResult(emptyList(), emptyList(), emptyList(), LyricSourcePreference.Kugou)
+        val automatic = request(server).copy(cachedPreferredLyrics = preferred)
+        assertEquals(LyricSourcePreference.Kugou, stages.readInitial(automatic).state.preferredSource)
+        assertTrue(stages.readFast(automatic).state.lyrics.isEmpty())
+        val explicit = automatic.copy(defaultLyricSource = LyricSourcePreference.Kugou)
+        assertTrue(stages.readInitial(explicit).state.lyrics.isEmpty())
+        assertEquals(0, cacheReads)
+    }
+
+    @Test
+    fun `server original cache retains translated edit while initial frame defers parsing`() = runTest {
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override fun cachedOriginal(song: SongItem) = listOf(LyricEntry("cached original", 1000, 2000))
+        }
+        val server = localSong.copy(channelId = "subsonic", mediaUri = "neri-server://server/song/id",
+            localFileName = null, lyricSyncEdited = true, matchedTranslatedLyric = "[00:01.00]user translation")
+        val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        val input = request(server)
+        val initial = stages.readInitial(input).state
+        assertTrue(initial.lyrics.isEmpty())
+        assertTrue(initial.translatedLyrics.isEmpty())
+        val fast = stages.readFast(input).state
+        assertEquals("cached original", fast.lyrics.single().text)
+        assertEquals("user translation", fast.translatedLyrics.single().text)
+    }
 
     @Test
     fun `confirmed edits overlay stale preferred local and downloaded first frames per variant`() = runTest {

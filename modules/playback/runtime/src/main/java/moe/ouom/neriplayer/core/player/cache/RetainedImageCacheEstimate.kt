@@ -24,7 +24,7 @@ internal suspend fun estimateRetainingImageCache(
         var bytes = 0L
         for (key in disk.knownKeys()) {
             currentCoroutineContext().ensureActive()
-            if (retainedCoverUrls.any { url -> imageCacheKeyMatchesCover(key, url) }) continue
+            if (retainedCoverUrls.any { url -> disk.matchesCover(key, url) }) continue
             disk.snapshotForEstimate(key)?.use { snapshot ->
                 bytes += disk.snapshotBytes(snapshot)
             }

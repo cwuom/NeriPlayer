@@ -10,6 +10,14 @@ import org.junit.Test
 
 class AudioDownloadSourceResolverQualityTest {
     @Test
+    fun `raw server audio MIME types retain their actual containers`() {
+        assertEquals("wav", AudioDownloadSourceResolver.mimeToExt("audio/wav"))
+        assertEquals("wav", AudioDownloadSourceResolver.mimeToExt("audio/x-wav"))
+        assertEquals("aiff", AudioDownloadSourceResolver.mimeToExt("audio/aiff"))
+        assertEquals("m4a", AudioDownloadSourceResolver.mimeToExt("audio/mp4"))
+    }
+
+    @Test
     fun `netease download tries lower quality before declaring source unavailable`() = runBlocking {
         val requested = mutableListOf<String>()
         val source = AudioDownloadManager.ResolvedDownloadSource(url = "https://example.com/song.mp3")

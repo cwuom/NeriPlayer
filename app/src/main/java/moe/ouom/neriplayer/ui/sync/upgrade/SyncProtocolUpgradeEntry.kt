@@ -175,7 +175,7 @@ internal fun syncProtocolStartupConfigurationGate(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(CoreCommonR.string.sync_database_version_title)) },
         text = {
-            if (state.hasError) Text(stringResource(CoreCommonR.string.sync_upgrade_failed))
+            if (state.hasError) Text(stringResource(state.errorDetail?.messageRes ?: CoreCommonR.string.sync_upgrade_failed))
             else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 Text(stringResource(CoreCommonR.string.sync_upgrade_status_loading))

@@ -8,7 +8,9 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -21,8 +23,13 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomStore
 import moe.ouom.neriplayer.data.local.database.store.mockPlayHistoryRoomStore
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
+import moe.ouom.neriplayer.data.model.SongIdentity
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -32,6 +39,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.ArgumentMatchers.anyList
 import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
@@ -40,6 +48,126 @@ import org.mockito.Mockito.`when`
 
 class PlayHistoryRepositoryPersistenceTest {
     @get:Rule val temporary = TemporaryFolder()
+
+    @Test
+    fun `record keeps saved history and old deletion when secure cleanup is unavailable and retries after recovery`() = runTest {
+        assertSavedHistoryOnCleanupFailure { repository, song, now -> repository.record(song, now) }
+    }
+
+    @Test
+    fun `remembered position keeps saved history and old deletion when secure cleanup is unavailable and retries after recovery`() = runTest {
+        assertSavedHistoryOnCleanupFailure(expectedPosition = 50L) { repository, song, now ->
+            repository.updateRememberedPlaybackPosition(song, now / 2L, now)
+        }
+    }
+
+    @Test
+    fun `unrelated deletion cleanup errors remain visible instead of being treated as a keystore outage`() = runTest {
+        assertSavedHistoryOnCleanupFailure(failure = IllegalStateException("unexpected cleanup failure")) { repository, song, now ->
+            repository.record(song, now)
+        }
+    }
+
+    @Test
+    fun `history clear preserves local rows and deletion records when secure device identity cannot be read`() = runTest {
+        assertRejectedSecureHistoryChange(
+            fail = { storage -> doAnswer { throw SyncStorageUnavailableException() }.`when`(storage).getOrCreateDeviceId() },
+            change = PlayHistoryRepository::clear
+        )
+    }
+
+    @Test
+    fun `history removal preserves local rows and prior deletion records when a new deletion cannot be stored`() = runTest {
+        assertRejectedSecureHistoryChange(
+            fail = { storage -> doAnswer { throw SyncStorageUnavailableException() }.`when`(storage).addRecentPlayDeletions(anyList()) },
+            change = { repository -> repository.removeSongs(listOf(entry(1).toSongItem())) }
+        )
+    }
+
+    @Test
+    fun `history metadata remains unchanged when its durable lyric override cannot be recorded`() = runTest {
+        CoverUrlMapper.installForTest(CoverUrlMapper.createForTest())
+        try {
+            val storage = assertRejectedSecureHistoryChange(
+                fail = { storage ->
+                    doAnswer { throw SyncStorageUnavailableException() }.`when`(storage)
+                        .recordLyricOverride(any(SyncSong::class.java) ?: SyncSong())
+                },
+                change = { repository ->
+                    val song = entry(1).toSongItem()
+                    repository.updateSongMetadata(song, song.copy(name = "edited", lyricSyncEdited = true,
+                        lyricSyncRevision = 10L, matchedLyric = "edited lyric"), triggerSync = false)
+                }
+            )
+            verify(storage).recordLyricOverride(any(SyncSong::class.java) ?: SyncSong())
+        } finally {
+            CoverUrlMapper.installForTest(null)
+        }
+    }
+
+    private suspend fun TestScope.assertSavedHistoryOnCleanupFailure(
+        expectedPosition: Long = 0L,
+        failure: Exception = SyncStorageUnavailableException(),
+        change: (PlayHistoryRepository, SongItem, Long) -> Unit
+    ) {
+        val room = mockPlayHistoryRoomStore()
+        var primary = emptyList<PlayedEntry>()
+        `when`(room.readIfRoomPrimary()).thenAnswer { primary }
+        doAnswer { primary = it.getArgument(1); Unit }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+        var unavailable = true
+        val storage = historyStorageWithDurableDeletions { failure.takeIf { unavailable } }
+        val deletion = SyncRecentPlayDeletion(3L, "netease", deletedAt = 2L, deviceId = "other-device")
+        storage.addRecentPlayDeletions(listOf(deletion))
+        val failures = mutableListOf<Throwable>()
+        Fixture(room, this, storage, uncaughtFailures = failures).use { fixture ->
+            val song = entry(3).toSongItem()
+            change(fixture.repository, song, 100L)
+            runCurrent()
+
+            assertEquals(expectedPosition, primary.single().resumePositionMs)
+            assertEquals(100L, primary.single().playedAt)
+            assertEquals(primary, fixture.repository.syncSnapshot())
+            assertEquals(listOf(deletion), storage.getRecentPlayDeletions())
+            assertEquals(if (failure is SyncStorageUnavailableException) emptyList() else listOf(failure), failures)
+            Fixture(room, storageOverride = storage).use { restarted ->
+                assertEquals(primary, restarted.repository.syncSnapshot())
+                assertEquals(listOf(deletion), restarted.storage.getRecentPlayDeletions())
+            }
+
+            unavailable = false
+            change(fixture.repository, song, 200L)
+            runCurrent()
+            assertTrue(storage.getRecentPlayDeletions().isEmpty())
+            assertEquals(200L, primary.single().playedAt)
+            assertEquals(primary, fixture.repository.syncSnapshot())
+        }
+    }
+
+    private suspend fun TestScope.assertRejectedSecureHistoryChange(
+        fail: (SecureTokenStorage) -> Unit,
+        change: (PlayHistoryRepository) -> Unit
+    ): SecureTokenStorage {
+        val original = listOf(entry(2), entry(1))
+        val room = mockPlayHistoryRoomStore()
+        var primary = original
+        `when`(room.readIfRoomPrimary()).thenAnswer { primary }
+        doAnswer { primary = it.getArgument(1); Unit }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+        val storage = historyStorageWithDurableDeletions()
+        val priorDeletion = SyncRecentPlayDeletion(9L, "netease", deletedAt = 2L, deviceId = "other-device")
+        storage.addRecentPlayDeletions(listOf(priorDeletion))
+        val failures = mutableListOf<Throwable>()
+        Fixture(room, this, storage, uncaughtFailures = failures).use { fixture ->
+            fail(storage)
+            change(fixture.repository)
+            runCurrent()
+
+            assertEquals(original, primary)
+            assertEquals(original, fixture.repository.syncSnapshot())
+            assertEquals(listOf(priorDeletion), storage.getRecentPlayDeletions())
+            assertEquals(emptyList<Throwable>(), failures)
+        }
+        return storage
+    }
 
     @Test
     fun `recording and updating scanned history keeps its selected source after Room reload`() = runTest {
@@ -570,7 +698,7 @@ class PlayHistoryRepositoryPersistenceTest {
         assertEquals(expected.message, actual?.message)
     }
 
-    private fun historyStorageWithDurableDeletions(): SecureTokenStorage {
+    private fun historyStorageWithDurableDeletions(removeFailure: () -> Exception? = { null }): SecureTokenStorage {
         val storage = mock(SecureTokenStorage::class.java)
         var deletions = emptyList<SyncRecentPlayDeletion>()
         `when`(storage.getRecentPlayDeletions()).thenAnswer { deletions }
@@ -579,6 +707,15 @@ class PlayHistoryRepositoryPersistenceTest {
                 .distinctBy { deletion -> deletion.songId }
             Unit
         }.`when`(storage).addRecentPlayDeletions(anyList())
+        doAnswer {
+            removeFailure()?.let { error -> throw error }
+            val identity = it.getArgument<SongIdentity>(0)
+            deletions = deletions.filterNot { deletion ->
+                SongIdentity(deletion.songId, deletion.album, deletion.mediaUri) == identity
+            }
+            Unit
+        }.`when`(storage).removeRecentPlayDeletion(any(SongIdentity::class.java) ?: SongIdentity(0L, "", null))
+        doAnswer { deletions = emptyList(); Unit }.`when`(storage).clearAll()
         return storage
     }
 
@@ -596,7 +733,8 @@ class PlayHistoryRepositoryPersistenceTest {
         room: PlayHistoryRoomStore,
         testScope: TestScope? = null,
         storageOverride: SecureTokenStorage? = null,
-        awaitInitialLoad: Boolean = true
+        awaitInitialLoad: Boolean = true,
+        uncaughtFailures: MutableList<Throwable>? = null
     ) : Closeable {
         val storage = storageOverride ?: mock(SecureTokenStorage::class.java)
         val repository: PlayHistoryRepository
@@ -615,7 +753,8 @@ class PlayHistoryRepositoryPersistenceTest {
                 val field = PlayHistoryRepository::class.java.getDeclaredField("scope").also { it.isAccessible = true }
                 (field.get(repository) as CoroutineScope).cancel()
                 field.set(repository, CoroutineScope(
-                    SupervisorJob(testScope.backgroundScope.coroutineContext[Job]) + StandardTestDispatcher(testScope.testScheduler)
+                    SupervisorJob(testScope.backgroundScope.coroutineContext[Job]) + StandardTestDispatcher(testScope.testScheduler) +
+                        if (uncaughtFailures == null) EmptyCoroutineContext else CoroutineExceptionHandler { _, error -> uncaughtFailures += error }
                 ))
             }
         }

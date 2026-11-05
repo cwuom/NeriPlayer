@@ -41,8 +41,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
-import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthHealth
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
@@ -108,15 +106,11 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun clearAuth() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                repo.clear()
+                AppContainer.changeYouTubeAuth { repo.clear() }
             } catch (_: IOException) {
                 emitSnack(UiText.Resource(CoreCommonR.string.auth_storage_clear_failed))
                 return@launch
             }
-            clearWebViewLoginState(
-                context = getApplication(),
-                platform = WebLoginPlatform.YOUTUBE
-            )
             _events.send(
                 YouTubeAuthEvent.ShowSnack(
                     UiText.Resource(CoreCommonR.string.auth_cookie_cleared)
@@ -163,7 +157,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             try {
-                repo.saveAuth(normalized)
+                AppContainer.changeYouTubeAuth { repo.saveAuth(normalized) }
             } catch (_: IOException) {
                 emitSnack(UiText.Resource(CoreCommonR.string.auth_storage_save_failed))
                 return@launch

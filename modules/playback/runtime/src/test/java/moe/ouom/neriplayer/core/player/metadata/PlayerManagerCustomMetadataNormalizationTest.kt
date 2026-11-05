@@ -357,6 +357,34 @@ class PlayerManagerCustomMetadataNormalizationTest {
 
         assertTrue(shouldSkipSongMetadataMutation(song, song, writeLyrics = false))
         assertFalse(shouldSkipSongMetadataMutation(song, song, writeLyrics = true))
+        assertFalse(shouldSkipSongMetadataMutation(song, song, writeLyrics = false, writeLocalMetadata = true))
+    }
+
+    @Test
+    fun `local cover lookup stops before later audio probes after a usable source`() {
+        var laterProbeCount = 0
+
+        val cover = firstUsableLocalCoverReference(
+            { "file:///selected-cover.png" },
+            { laterProbeCount++; null }
+        )
+
+        assertEquals("file:///selected-cover.png", cover)
+        assertEquals(0, laterProbeCount)
+    }
+
+    @Test
+    fun `local cover lookup skips remote and media store album artwork`() {
+        var acceptedProbeCount = 0
+
+        val cover = firstUsableLocalCoverReference(
+            { "https://example.com/remote.jpg" },
+            { "content://media/external/audio/albumart/7" },
+            { acceptedProbeCount++; "file:///original.png" }
+        )
+
+        assertEquals("file:///original.png", cover)
+        assertEquals(1, acceptedProbeCount)
     }
 
     @Test

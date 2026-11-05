@@ -76,7 +76,7 @@ private suspend fun removeUnretainedImages(disk: RetainingImageDiskCache, urls: 
     try {
         disk.knownKeys().forEach { key ->
             currentCoroutineContext().ensureActive()
-            if (urls.any { url -> imageCacheKeyMatchesCover(key, url) }) return@forEach
+            if (urls.any { url -> disk.matchesCover(key, url) }) return@forEach
             try {
                 val snapshot = disk.openSnapshot(key)
                 if (snapshot == null) {

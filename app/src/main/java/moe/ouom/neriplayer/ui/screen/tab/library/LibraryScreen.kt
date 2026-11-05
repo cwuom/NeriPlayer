@@ -52,6 +52,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -98,10 +99,13 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.platform.subsonic.repository.ServerAlbum
+import moe.ouom.neriplayer.platform.subsonic.repository.ServerArtist
 
 enum class LibraryTab(val labelResId: Int) {
     LOCAL(CoreCommonR.string.library_tab_local),
     FAVORITE(CoreCommonR.string.library_tab_favorite),
+    MY_MUSIC(CoreCommonR.string.server_my_music),
     YTMUSIC(CoreCommonR.string.library_tab_youtube_music),
     NETEASE(CoreCommonR.string.library_tab_netease),
     NETEASEALBUM(CoreCommonR.string.library_tab_netease_album),
@@ -198,7 +202,7 @@ internal fun libraryTabDisplayOrder(
             LibraryTab.YTMUSIC,
             LibraryTab.NETEASE,
             LibraryTab.BILI,
-            LibraryTab.QQMUSIC
+            LibraryTab.MY_MUSIC
         )
     } else {
         listOf(
@@ -207,7 +211,7 @@ internal fun libraryTabDisplayOrder(
             LibraryTab.NETEASE,
             LibraryTab.YTMUSIC,
             LibraryTab.BILI,
-            LibraryTab.QQMUSIC
+            LibraryTab.MY_MUSIC
         )
     }
     return if (youtubeEnabled) orderedTabs else orderedTabs - LibraryTab.YTMUSIC
@@ -240,6 +244,8 @@ fun LibraryScreen(
     qqMusicListState: LazyListState,
     topAppBarState: TopAppBarState,
     onLocalPlaylistClick: (LocalPlaylist) -> Unit = {},
+    onServerAlbumClick: (ServerAlbum) -> Unit = {},
+    onServerArtistClick: (ServerArtist) -> Unit = {},
     onLocalArtistClick: (LocalArtistSummary) -> Unit = {},
     onHotPlaylistClick: (PlaybackStatsPeriod) -> Unit = {},
     onNeteasePlaylistClick: (PlaylistSummary) -> Unit = {},
@@ -279,6 +285,7 @@ fun LibraryScreen(
         mutableIntStateOf(NETEASE_CATEGORY_PLAYLIST)
     }
     val pullGate = remember { LibraryPullGate() }
+    var serverListState by remember { mutableStateOf<LazyListState?>(null) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
         // follow the finger and stay put; a release snap reads as an unwanted bounce
@@ -326,6 +333,11 @@ fun LibraryScreen(
                     qqMusicListState.canScrollForward,
                     qqMusicListState.canScrollBackward,
                     topAppBarState.collapsedFraction
+                )
+                LibraryTab.MY_MUSIC -> shouldAllowCollapsingTopAppBar(
+                    canScrollForward = serverListState?.canScrollForward == true,
+                    canScrollBackward = serverListState?.canScrollBackward == true,
+                    collapsedFraction = topAppBarState.collapsedFraction
                 )
                 null -> shouldAllowCollapsingTopAppBar(
                     canScrollForward = false,
@@ -414,6 +426,13 @@ fun LibraryScreen(
                     pageSpacing = 0.dp
                 ) { page ->
                     when (orderedTabs[page]) {
+                        LibraryTab.MY_MUSIC -> moe.ouom.neriplayer.ui.screen.server.MusicServerScreen(
+                            onAlbumClick = onServerAlbumClick,
+                            onArtistClick = onServerArtistClick,
+                            showTitle = false,
+                            onListStateAvailable = { serverListState = it },
+                            offlineMode = offlineMode
+                        )
                         LibraryTab.LOCAL -> LocalPlaylistList(
                             playlists = ui.localPlaylists,
                             listState = localListState,

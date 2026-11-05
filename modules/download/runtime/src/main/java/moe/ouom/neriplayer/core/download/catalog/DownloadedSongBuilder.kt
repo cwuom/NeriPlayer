@@ -135,7 +135,9 @@ internal class DownloadedSongBuilder(
             ),
             coverUrl = sanitizeDownloadedCoverMetadataReference(values.coverUrl, snapshot),
             customCoverUrl = sanitizeDownloadedCoverMetadataReference(values.customCoverUrl, snapshot),
-            originalCoverUrl = sanitizeDownloadedCoverMetadataReference(values.originalCoverUrl, snapshot)
+            originalCoverUrl = if (values.originalCoverUrl == "") "" else {
+                sanitizeDownloadedCoverMetadataReference(values.originalCoverUrl, snapshot)
+            }
         )
     }
 

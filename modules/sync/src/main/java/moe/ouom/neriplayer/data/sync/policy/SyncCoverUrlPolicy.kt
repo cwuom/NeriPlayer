@@ -20,8 +20,13 @@ private fun localMediaUriScheme(mediaUri: String): String =
     runCatching { mediaUri.toUri().scheme.orEmpty().lowercase() }.getOrDefault("")
 
 fun sanitizeCoverUrlForSync(coverUrl: String?): String? {
-    val normalizedUrl = coverUrl?.trim()?.takeIf { it.isNotBlank() } ?: return null
-    return normalizedUrl.takeUnless(::isLocalMediaUri)
+    val remoteUrl = normalizedRemoteCoverUrl(coverUrl) ?: return null
+    return normalizedRemoteCoverUrl(SyncCoverUrlProjection.project(remoteUrl))
+}
+
+private fun normalizedRemoteCoverUrl(raw: String?): String? {
+    val normalized = raw?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    return normalized.takeUnless(::isLocalMediaUri)
 }
 
 fun SyncSong.sanitizeCoverUrlsForSync(): SyncSong {

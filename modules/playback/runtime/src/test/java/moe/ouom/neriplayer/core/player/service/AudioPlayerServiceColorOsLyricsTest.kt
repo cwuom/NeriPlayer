@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -58,6 +59,7 @@ class AudioPlayerServiceColorOsLyricsTest {
                 val bluetoothPayload = PlayerManager.externalBluetoothLyricPayloadFlow.value
 
                 fixture.publish("first")
+                advanceTimeBy(500L)
                 runCurrent()
 
                 assertEquals("[00:01.000]first\n", JSONObject(requireNotNull(fixture.metadata.last().getString("lyricInfo"))).getString("lyric"))
@@ -65,6 +67,7 @@ class AudioPlayerServiceColorOsLyricsTest {
                 assertEquals(initialNotifications + 1, fixture.notifications)
 
                 PlayerManager.colorOsLockscreenLyricsEnabled = false
+                advanceTimeBy(500L)
                 runCurrent()
                 assertNull(fixture.metadata.last().getString("lyricInfo"))
                 assertEquals(initialNotifications + 2, fixture.notifications)
@@ -91,6 +94,8 @@ class AudioPlayerServiceColorOsLyricsTest {
                 assertEquals(initialNotifications, fixture.notifications)
                 fixture.screenInteractive(true)
                 fixture.screenInteractive(true)
+                advanceTimeBy(500L)
+                runCurrent()
 
                 assertEquals("[00:01.000]second\n", JSONObject(requireNotNull(fixture.metadata.last().getString("lyricInfo"))).getString("lyric"))
                 assertEquals(initialNotifications + 1, fixture.notifications)

@@ -26,7 +26,8 @@ fun NeriMiniPlayer(
     coverIdentityKey: String? = null,
     visualCoverIdentityKey: String? = null,
     hasCurrentSong: Boolean = true,
-    tabletControls: moe.ouom.neriplayer.ui.component.playback.MiniPlayerTabletControls? = null
+    tabletControls: moe.ouom.neriplayer.ui.component.playback.MiniPlayerTabletControls? = null,
+    clearCover: Boolean = false
 ) {
     moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer(
         title = title,
@@ -47,7 +48,8 @@ fun NeriMiniPlayer(
         coverIdentityKey = coverIdentityKey,
         visualCoverIdentityKey = visualCoverIdentityKey,
         hasCurrentSong = hasCurrentSong,
-        tabletControls = tabletControls
+        tabletControls = tabletControls,
+        clearCover = clearCover
     )
 }
 

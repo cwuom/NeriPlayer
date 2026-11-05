@@ -21,7 +21,7 @@ import org.robolectric.annotation.Config
 @RunWith(AndroidJUnit4::class)
 class WindowSystemBarPolicyTest {
     @Test
-    @Config(sdk = [29, 35])
+    @Config(sdk = [29, 31, 35])
     fun configurationChangesKeepSystemBarContrastScrimsDisabled() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         activity.enableNeriEdgeToEdge()
@@ -40,19 +40,19 @@ class WindowSystemBarPolicyTest {
     }
 
     @Test
-    @Config(sdk = [28, 29, 35], qualifiers = "notnight")
+    @Config(sdk = [28, 29, 31, 35], qualifiers = "notnight")
     fun lightActivityKeepsDarkIconsAndItsExistingBackground() {
         assertActivityAppearance(isDark = false)
     }
 
     @Test
-    @Config(sdk = [28, 29, 35], qualifiers = "night")
+    @Config(sdk = [28, 29, 31, 35], qualifiers = "night")
     fun darkActivityKeepsLightIconsAndItsExistingBackground() {
         assertActivityAppearance(isDark = true)
     }
 
     @Test
-    @Config(sdk = [28, 29, 35])
+    @Config(sdk = [28, 29, 31, 35])
     @Suppress("DEPRECATION")
     fun overlayTransparencyPreservesLayoutFlagsBackgroundAndIconAppearance() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()

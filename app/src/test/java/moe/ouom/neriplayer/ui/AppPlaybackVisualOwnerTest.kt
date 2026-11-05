@@ -29,6 +29,47 @@ import org.mockito.Mockito.mock
 
 class AppPlaybackVisualOwnerTest {
     @Test
+    fun restoredKnownEmptyArtworkClearsTheVisualCoverWithoutChangingOrdinaryNullRetention() {
+        val previous = PlaybackVisualCoverState("edited-cover", "same-song")
+        assertEquals(previous, resolvePlaybackVisualCoverState(null, previous, "same-song", true))
+
+        val restored = playbackVisualCoverRequest("stale-parent-cover", "same-song", clearCover = true)
+        assertNull(restored.coverUrl)
+        assertEquals(
+            PlaybackVisualCoverState(null, "same-song"),
+            resolvePlaybackVisualCoverState(
+                currentCoverUrl = restored.coverUrl,
+                previousState = previous,
+                currentSongKey = restored.songKey,
+                hasCurrentSong = true,
+                clearCover = restored.clearCover
+            )
+        )
+    }
+
+    @Test
+    fun explicitClearDropsInactiveRetainedArtworkEvenWhenAStaleCoverIsSupplied() {
+        val previous = PlaybackVisualCoverState("edited-cover", "old-song")
+        assertEquals(
+            PlaybackVisualCoverState(null, null),
+            resolvePlaybackVisualCoverState("stale-cover", previous, null, false, clearCover = true)
+        )
+        assertEquals(
+            PlaybackVisualCoverState(null, null),
+            resolvePlaybackVisualCoverState(null, previous, null, false)
+        )
+        assertEquals(previous, resolvePlaybackVisualCoverState(null, previous, "old-song", true))
+        assertEquals(
+            PlaybackVisualCoverState(null, "restored-song"),
+            resolvePlaybackVisualCoverState(null, previous, "restored-song", false, clearCover = true)
+        )
+        assertEquals(
+            PlaybackVisualCoverState(null, null),
+            resolvePlaybackVisualCoverState("   ", null, null, false)
+        )
+    }
+
+    @Test
     fun accentLoadingEmitsCachedAndFreshSamplesButDropsStaleRequests() = runTest {
         val cached = CoverArtColorSample("#111111", 0xFF111111.toInt())
         val loaded = CoverArtColorSample("#222222", 0xFF222222.toInt())

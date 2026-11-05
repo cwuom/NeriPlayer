@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.lyrics.parser.isTtmlLyrics
 import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
 import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLrc
 import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.lyrics.parser.prepareBilingualLyricsForDisplay
 import moe.ouom.neriplayer.lyrics.parser.withoutLyricCredits
 
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -264,20 +265,25 @@ internal fun buildAdvancedSyncedLyrics(
         rawLyrics = rawLyrics,
         lyrics = lyrics
     )
-    if (rawTranslatedLyrics != null) {
-        return baseLyrics.withoutEmbeddedTranslations().attachTranslations(
+    val translatedBase = when {
+        rawTranslatedLyrics != null -> baseLyrics.withoutEmbeddedTranslations().attachTranslations(
             parseNeteaseLyricsAuto(rawTranslatedLyrics), replaceExisting = true
         )
-    }
-    if (showPhoneticAsTranslation) {
-        val phoneticBase = baseLyrics.withoutEmbeddedTranslations()
-        return if (translatedLyrics.isNotEmpty()) {
-            phoneticBase.attachTranslations(translatedLyrics, replaceExisting = true)
-        } else {
-            phoneticBase.withPhoneticsAsTranslations()
+        showPhoneticAsTranslation -> {
+            val phoneticBase = baseLyrics.withoutEmbeddedTranslations()
+            if (translatedLyrics.isNotEmpty()) {
+                phoneticBase.attachTranslations(translatedLyrics, replaceExisting = true)
+            } else {
+                phoneticBase.withPhoneticsAsTranslations()
+            }
         }
+        else -> baseLyrics.attachTranslations(translatedLyrics)
     }
-    return baseLyrics.attachTranslations(translatedLyrics)
+    return if (rawLyrics != null && (isTtmlLyrics(rawLyrics) || isNeteaseYrc(rawLyrics))) {
+        translatedBase
+    } else {
+        translatedBase.withBilingualDisplayLines()
+    }
 }
 
 fun buildPhoneticLyricEntries(
@@ -330,6 +336,34 @@ private fun List<LyricEntry>.toSyncedLyrics(): SyncedLyrics {
         return SyncedLyrics(emptyList())
     }
     return SyncedLyrics(lines = map { it.toSyncedLine() })
+}
+
+private fun SyncedLyrics.withBilingualDisplayLines(): SyncedLyrics {
+    val displayed = mutableListOf<ISyncedLine>()
+    var index = 0
+    while (index < lines.size) {
+        val line = lines[index]
+        if (line !is SyncedLine) {
+            displayed += line
+            index++
+            continue
+        }
+        val ordinaryLines = buildList {
+            while (index < lines.size) {
+                val ordinaryLine = lines[index] as? SyncedLine ?: break
+                add(LyricEntry(
+                    text = ordinaryLine.content,
+                    startTimeMs = ordinaryLine.start.toLong(),
+                    endTimeMs = ordinaryLine.end.toLong(),
+                    translation = ordinaryLine.translation
+                ))
+                index++
+            }
+        }
+        // 先按原始行数完成翻译配对，再合并显示，避免同时间戳的多条译文丢失
+        displayed += prepareBilingualLyricsForDisplay(ordinaryLines).map { it.toSyncedLine() }
+    }
+    return copy(lines = displayed)
 }
 
 private fun LyricEntry.toSyncedLine(): ISyncedLine {

@@ -18,6 +18,8 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
+import moe.ouom.neriplayer.lyrics.parser.hasWordTimedEntries
 import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.lyrics.SyncedLyricsView
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricEdgeFadeHeight
@@ -27,7 +29,8 @@ internal data class NowPlayingSyncedLyricContent(
     val translatedLines: List<LyricEntry>?,
     val showTranslatedLines: Boolean,
     val playbackSessionKey: String?,
-    val offsetMs: Long
+    val offsetMs: Long,
+    val bilingualDisplayEnabled: Boolean = true
 )
 
 internal fun buildNowPlayingSyncedLyricContent(
@@ -38,11 +41,13 @@ internal fun buildNowPlayingSyncedLyricContent(
     song: SongItem?,
     offsetMs: Long
 ): NowPlayingSyncedLyricContent = NowPlayingSyncedLyricContent(
-    lines = lines,
+    // 展平后无法辨认逐词来源，需要同时保留普通显示的双语处理开关
+    lines = lines.flattenWordTimedEntries(),
     translatedLines = nowPlayingSecondaryLyrics(showSecondary, secondaryLines),
     showTranslatedLines = showSecondary && !usePhonetic,
     playbackSessionKey = song?.stableKey(),
-    offsetMs = offsetMs
+    offsetMs = offsetMs,
+    bilingualDisplayEnabled = !lines.hasWordTimedEntries()
 )
 
 internal data class NowPlayingEmbeddedLyricStyle(
@@ -152,6 +157,7 @@ internal fun NowPlayingLyricsPane(
     val currentPosition by playback.positionFlow.collectAsStateWithLifecycle()
     SyncedLyricsView(
         lyrics = content.lines,
+        bilingualDisplayEnabled = content.bilingualDisplayEnabled,
         currentTimeMs = resolveNowPlayingLyricsPosition(playback.previewPositionMs, currentPosition),
         modifier = modifier,
         textColor = style.textColor,

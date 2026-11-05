@@ -27,25 +27,18 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsFloatingLyricsSection
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Subtitles
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
@@ -57,25 +50,14 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.lyrics.offset.LYRIC_DEFAULT_OFFSET_STEP_MS
-import moe.ouom.neriplayer.lyrics.offset.MAX_LYRIC_DEFAULT_OFFSET_MS
-import moe.ouom.neriplayer.lyrics.offset.MIN_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.XiaomiSuperIslandLyricsSetting
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.lyrics.coloros.ColorOsLockscreenLyricsSetting
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
-import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
-import kotlin.math.roundToLong
-
-private val LYRIC_OFFSET_SLIDER_STEPS =
-    ((MAX_LYRIC_DEFAULT_OFFSET_MS - MIN_LYRIC_DEFAULT_OFFSET_MS) / LYRIC_DEFAULT_OFFSET_STEP_MS)
-        .toInt() - 1
-private val LYRIC_OFFSET_STEP_MS_FLOAT = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
 @Composable
 internal fun SettingsLyricsSection(
@@ -211,12 +193,18 @@ internal fun SettingsLyricsSection(
                 showCard = !showHeader,
                 highlightPulse = highlightPulse,
             ) {
-                MiuixSettingsSectionIntro(
-                    title = stringResource(CoreCommonR.string.settings_lyrics_offset_section),
-                    description = stringResource(CoreCommonR.string.settings_lyrics_offset_section_desc)
-                )
-                TextButton(onClick = onResetAllLyricDefaultOffsets) {
-                    Text(stringResource(CoreCommonR.string.settings_lyrics_offset_reset_all))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MiuixSettingsSectionIntro(
+                        title = stringResource(CoreCommonR.string.settings_lyrics_offset_section),
+                        description = stringResource(CoreCommonR.string.settings_lyrics_offset_section_desc),
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onResetAllLyricDefaultOffsets) {
+                        Text(stringResource(CoreCommonR.string.settings_lyrics_offset_reset_all))
+                    }
                 }
                 LyricsOffsetSliderListItem(
                     targetId = "setting:cloud_music_lyric_default_offset_ms",
@@ -289,6 +277,7 @@ internal fun SettingsLyricsSection(
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
                 )
+                Spacer(Modifier.height(12.dp))
             }
             if (cardIndex == null) LyricsDetailGap(showHeader)
             if (shouldShowCard(4)) LyricsDetailCard(
@@ -324,80 +313,4 @@ private fun LyricsDetailGap(showHeader: Boolean) {
     if (!showHeader) {
         Spacer(Modifier.height(12.dp))
     }
-}
-
-@Composable
-private fun LyricsOffsetSliderListItem(
-    targetId: String,
-    title: String,
-    description: String,
-    offsetMs: Long,
-    defaultOffsetMs: Long,
-    onOffsetChange: (Long) -> Unit,
-    highlightTargetId: String?,
-    highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?
-) {
-    var pendingOffset by remember { mutableLongStateOf(offsetMs) }
-
-    LaunchedEffect(offsetMs) {
-        if (pendingOffset != offsetMs) {
-            pendingOffset = offsetMs
-        }
-    }
-
-    ListItem(
-        modifier = Modifier.settingsHighlightTarget(
-            targetId = targetId,
-            highlightTargetId = highlightTargetId,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        ),
-        headlineContent = { Text(title) },
-        supportingContent = {
-            Column(Modifier.fillMaxWidth()) {
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = stringResource(
-                        CoreCommonR.string.settings_lyrics_offset_value,
-                        formatLyricOffsetValue(pendingOffset)
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                TextButton(
-                    enabled = pendingOffset != defaultOffsetMs,
-                    onClick = {
-                        pendingOffset = defaultOffsetMs
-                        onOffsetChange(defaultOffsetMs)
-                    }
-                ) {
-                    Text(stringResource(CoreCommonR.string.settings_lyrics_offset_reset))
-                }
-                Spacer(Modifier.height(4.dp))
-                MiuixSettingsSlider(
-                    value = pendingOffset.toFloat(),
-                    onValueChange = { candidate ->
-                        pendingOffset = ((candidate / LYRIC_OFFSET_STEP_MS_FLOAT).roundToLong()
-                            * LYRIC_DEFAULT_OFFSET_STEP_MS)
-                            .coerceIn(MIN_LYRIC_DEFAULT_OFFSET_MS, MAX_LYRIC_DEFAULT_OFFSET_MS)
-                    },
-                    onValueChangeFinished = { onOffsetChange(pendingOffset) },
-                    valueRange = MIN_LYRIC_DEFAULT_OFFSET_MS.toFloat()..MAX_LYRIC_DEFAULT_OFFSET_MS.toFloat(),
-                    steps = LYRIC_OFFSET_SLIDER_STEPS
-                )
-            }
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
-}
-
-private fun formatLyricOffsetValue(offsetMs: Long): String {
-    val sign = if (offsetMs > 0) "+" else ""
-    return "$sign$offsetMs"
 }

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.platform.netease.playlist
 
+import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
@@ -135,7 +136,7 @@ class NeteasePlaylistSyncRequestsTest {
     }
 
     @Test
-    fun `malformed liked identity is not cached as a confirmed mismatch`() {
+    fun `malformed liked identity is not cached as a confirmed mismatch`() = runTest {
         val client = loggedInClient()
         `when`(client.createSongLiker()).thenReturn { """{"code":200}""" }
         `when`(client.addSongsToPlaylist(91L, listOf(1L))).thenReturn("""{"code":524}""")
@@ -148,7 +149,7 @@ class NeteasePlaylistSyncRequestsTest {
     }
 
     @Test
-    fun `exceptional liked identity lookup can recover within the same add session`() {
+    fun `exceptional liked identity lookup can recover within the same add session`() = runTest {
         val client = loggedInClient()
         `when`(client.createSongLiker()).thenReturn { """{"code":200}""" }
         `when`(client.addSongsToPlaylist(91L, listOf(1L))).thenReturn("""{"code":524}""")

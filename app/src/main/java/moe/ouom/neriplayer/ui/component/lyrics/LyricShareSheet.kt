@@ -197,6 +197,7 @@ fun LyricShareSheet(
                 state = lyricsListState,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f, fill = false)
                     .heightIn(max = 430.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {

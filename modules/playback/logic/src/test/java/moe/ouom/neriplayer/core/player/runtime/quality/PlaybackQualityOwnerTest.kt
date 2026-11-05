@@ -12,6 +12,24 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackQualityOwnerTest {
     @Test
+    fun `local server and absent sources never persist or refresh platform quality`() = runTest {
+        for (source in listOf(null, PlaybackAudioSource.LOCAL, PlaybackAudioSource.SUBSONIC)) {
+            val port = RecordingPort(source)
+            val owner = PlaybackQualityOwner(backgroundScope, port)
+            owner.changeCurrentPlaybackQuality("  ")
+            owner.changeCurrentPlaybackQuality(" HIRES ")
+            if (source != null) {
+                owner.setPreferredQuality(source, "hires")
+                owner.scheduleRefresh(source, "ignored")
+            }
+            runCurrent()
+            assertTrue(port.persisted.isEmpty())
+            assertTrue(port.refreshed.isEmpty())
+            assertEquals("exhigh", owner.preferredKeys.value.netease)
+        }
+    }
+
+    @Test
     fun `quality picker compares preference rather than measured stream`() = runTest {
         val port = RecordingPort(PlaybackAudioSource.NETEASE)
         val owner = PlaybackQualityOwner(backgroundScope, port)

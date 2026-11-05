@@ -20,21 +20,20 @@ import moe.ouom.neriplayer.data.sync.store.state.*
 import moe.ouom.neriplayer.data.sync.store.state.lyrics.SyncLyricOverrideStore
 import moe.ouom.neriplayer.data.sync.store.state.lyrics.SyncLyricOverrideLookup
 import moe.ouom.neriplayer.data.sync.store.secure.EncryptedSyncPreferences
+import moe.ouom.neriplayer.data.sync.store.secure.RecoverableSyncPreferences
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import moe.ouom.neriplayer.common.storage.SecurePreferencesOpener
 import java.util.UUID
 
 private val volatileDeletionSession = UUID.randomUUID().toString()
 
-/**
- * 删除记录会清理偏好未引用的代际文件，降级到内存偏好时必须使用独立的临时目录，
- * 否则空偏好会把持久目录里的代际文件当成孤儿删除
- */
+/** 内存偏好使用隔离目录，可恢复句柄只在原始持久存储可用后才允许提交和清理 */
 internal fun syncDeletionDirectory(preferences: SharedPreferences, persistentRoot: File, cacheRoot: File): File =
-    if (SecurePreferencesOpener.isPersistent(preferences)) File(persistentRoot, "sync-deletions")
+    if (preferences is RecoverableSyncPreferences || SecurePreferencesOpener.isPersistent(preferences)) File(persistentRoot, "sync-deletions")
     else File(cacheRoot, "sync-deletions-volatile/$volatileDeletionSession")
 
 class SecureTokenStorage internal constructor(
-    encryptedPrefs: SharedPreferences,
+    private val encryptedPrefs: SharedPreferences,
     directory: File? = null,
     syncDirectory: ((File) -> Unit)? = null
 ) {
@@ -45,11 +44,15 @@ class SecureTokenStorage internal constructor(
 
     companion object {
         // 旧同步间隔不包含凭据，迁移时无需初始化账号和删除记录存储
-        fun readLegacyPlayHistoryUpdateModeName(context: Context): String? =
+        fun readLegacyPlayHistoryUpdateModeName(context: Context): String? = try {
             openPreferences(context).getString(KEY_PLAY_HISTORY_UPDATE_MODE, null)
+        } catch (_: SyncStorageUnavailableException) {
+            // 可选迁移来源暂不可读时保留原值，密钥恢复后仍能迁移
+            null
+        }
 
         private fun openPreferences(context: Context): SharedPreferences =
-            EncryptedSyncPreferences.open(context, GITHUB_PREFS_NAME, "NERI-SecureTokenStorage", recoverOnFailure = false)
+            EncryptedSyncPreferences.open(context, GITHUB_PREFS_NAME, "NERI-SecureTokenStorage")
     }
 
     private constructor(encryptedPrefs: SharedPreferences, context: Context) : this(
@@ -61,8 +64,8 @@ class SecureTokenStorage internal constructor(
         }
     )
 
-    /** Keystore 不可用时同步元数据只在本进程内存中，不能据此做持久决策 */
-    val isPersistent: Boolean = SecurePreferencesOpener.isPersistent(encryptedPrefs)
+    val isPersistent: Boolean
+        get() = EncryptedSyncPreferences.isPersistent(encryptedPrefs)
 
     private val deletionFiles = if (syncDirectory == null) SyncDeletionStateStorage(encryptedPrefs, directory)
         else SyncDeletionStateStorage(encryptedPrefs, directory, syncDirectory)
@@ -76,7 +79,7 @@ class SecureTokenStorage internal constructor(
     private val songs = SyncPlaylistSongDeletionStore(encryptedPrefs, deletionFiles)
     private val playlistMutation = SyncPlaylistMutationStore(encryptedPrefs, playlists, songs, deletionFiles)
     private val deletionState = SyncDeletionStateCommitter(encryptedPrefs, deletionFiles)
-    private val lyricOverrides = SyncLyricOverrideStore(encryptedPrefs, deletionFiles, directory)
+    private val lyricOverrides by lazy { SyncLyricOverrideStore(encryptedPrefs, deletionFiles, directory) }
     private val lyricLookup = SyncLyricOverrideLookup(deletionFiles)
     private val legacyLyricArchiveReceipts = SyncLegacyLyricArchiveReceiptStore(encryptedPrefs, deletionFiles)
     private val legacyLyricOptimization = SyncLegacyLyricOptimizationStore(encryptedPrefs, deletionFiles)
@@ -221,7 +224,8 @@ class SecureTokenStorage internal constructor(
     fun getLyricOverridesForIdentityKeys(identityKeys: Set<String>, checkActive: () -> Unit = {}): List<SyncSong> =
         lyricLookup.read(identityKeys, checkActive)
 
-    val lyricOverridesVersion: StateFlow<Long> = lyricOverrides.version
+    val lyricOverridesVersion: StateFlow<Long>
+        get() = lyricOverrides.version
 
     fun recordLyricOverride(song: SyncSong) = lyricOverrides.recordLyricOverride(song)
 

@@ -136,6 +136,11 @@ fun persistBootstrapSettingsSnapshot(
 ) {
     synchronized(bootstrapSnapshotPersistenceLock) {
         val normalizedSnapshot = snapshot.sanitized()
+        val matchesCache = runCatching {
+            hasCompleteBootstrapSettingsSnapshot(context) &&
+                readCachedBootstrapSettingsSnapshot(context) == normalizedSnapshot
+        }.getOrDefault(false)
+        if (matchesCache) return@synchronized
         context.getSharedPreferences(BOOTSTRAP_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
             .edit {
                 putBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, true)

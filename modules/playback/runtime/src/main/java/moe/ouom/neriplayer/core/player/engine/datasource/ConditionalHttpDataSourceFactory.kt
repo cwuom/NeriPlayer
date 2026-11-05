@@ -61,8 +61,8 @@ internal fun removeExplicitRangeHeader(headers: Map<String, String>): Map<String
 @UnstableApi
 class ConditionalHttpDataSourceFactory(
     private val baseFactory: HttpDataSource.Factory,
-    cookieRepo: BiliCookieRepository,
-    youtubeAuthRepo: YouTubeAuthRepository,
+    private val cookieRepo: BiliCookieRepository,
+    private val youtubeAuthRepo: YouTubeAuthRepository,
     private val trafficStatsRepository: TrafficStatsRepository? = null
 ) : HttpDataSource.Factory {
 
@@ -92,12 +92,15 @@ class ConditionalHttpDataSourceFactory(
     }
 
     override fun createDataSource(): HttpDataSource {
-        val dataSource = ResumableChunkedHttpDataSource(
+        val dataSource = ServerAwareHttpDataSource(ResumableChunkedHttpDataSource(
             upstreamFactory = baseFactory,
             transformDataSpec = { dataSpec ->
                 when {
                     shouldInjectBiliHeaders(dataSpec.uri) -> {
-                        val headers = buildBiliHeaders(dataSpec.httpRequestHeaders)
+                        val headers = buildBiliHeaders(
+                            dataSpec.httpRequestHeaders,
+                            allowCookies = dataSpec.uri.scheme.equals("https", ignoreCase = true)
+                        )
                         dataSpec.buildUpon()
                             .setHttpRequestHeaders(headers)
                             .build()
@@ -108,7 +111,7 @@ class ConditionalHttpDataSourceFactory(
                     else -> dataSpec
                 }
             }
-        )
+        ))
         val statsRepository = trafficStatsRepository
         return if (statsRepository != null) {
             TrafficCountingHttpDataSource(
@@ -125,6 +128,11 @@ class ConditionalHttpDataSourceFactory(
         return this
     }
 
+    /** Server prefetch keeps the same resource/auth/traffic adapters with individually cancellable calls. */
+    internal fun forServerPrefetch(calls: okhttp3.Call.Factory): ConditionalHttpDataSourceFactory =
+        ConditionalHttpDataSourceFactory(androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(calls),
+            cookieRepo, youtubeAuthRepo, trafficStatsRepository)
+
     fun close() {
         scope.cancel()
     }
@@ -133,8 +141,8 @@ class ConditionalHttpDataSourceFactory(
      * 是否需要为该 URI 注入 B 站拉流所需的请求头
      */
     private fun shouldInjectBiliHeaders(uri: Uri): Boolean {
-        val host = uri.host.orEmpty()
-        return isBiliStreamHost(host) || isBiliStreamUrl(uri.toString())
+        return (uri.scheme.equals("https", ignoreCase = true) || uri.scheme.equals("http", ignoreCase = true)) &&
+            (isBiliStreamHost(uri.host.orEmpty()) || isBiliStreamUrl(uri.toString()))
     }
 
     private fun shouldInjectYouTubeHeaders(uri: Uri): Boolean {
@@ -152,11 +160,15 @@ class ConditionalHttpDataSourceFactory(
     /**
      * 基于原始请求头构建 B 站拉流所需的头部 (Referer/UA/Cookie)
      */
-    private fun buildBiliHeaders(original: Map<String, String>): Map<String, String> {
+    private fun buildBiliHeaders(original: Map<String, String>, allowCookies: Boolean): Map<String, String> {
         val newHeaders = LinkedHashMap<String, String>(original)
         newHeaders["Referer"] = "https://www.bilibili.com"
         newHeaders["User-Agent"] = BILI_USER_AGENT
-        if (latestCookieHeader.isNotBlank()) newHeaders["Cookie"] = latestCookieHeader
+        if (!allowCookies) {
+            newHeaders.keys.removeAll { it.equals("Cookie", ignoreCase = true) }
+        } else if (latestCookieHeader.isNotBlank()) {
+            newHeaders["Cookie"] = latestCookieHeader
+        }
         return newHeaders
     }
 

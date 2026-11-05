@@ -11,6 +11,8 @@ import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAs
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.server.isServerSong
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 import moe.ouom.neriplayer.common.io.readBytesLimited
 import okhttp3.Request
 import okhttp3.Response
@@ -200,6 +202,9 @@ internal class AudioDownloadCoverCoordinator(
                         if (error is java.util.concurrent.CancellationException) {
                             throw error
                         }
+                        if (song.isServerSong()) {
+                            SubsonicException.find(error)?.let { throw it }
+                        }
                         NPLogger.w(
                             tag,
                             "封面下载重试失败: song=${song.name}, candidate=${index + 1}/" +
@@ -231,6 +236,9 @@ internal class AudioDownloadCoverCoordinator(
             NPLogger.d(tag, "封面整理阶段收到取消: ${song.name}")
             throw cancellation
         } catch (error: Exception) {
+            if (song.isServerSong()) {
+                SubsonicException.find(error)?.let { throw it }
+            }
             NPLogger.w(
                 tag,
                 "封面后台下载失败: ${song.name} - " +

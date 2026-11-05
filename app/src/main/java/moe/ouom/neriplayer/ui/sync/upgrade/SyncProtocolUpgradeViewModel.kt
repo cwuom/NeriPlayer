@@ -36,6 +36,7 @@ import moe.ouom.neriplayer.api.sync.webdav.WebDavDirectoryNotFoundException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavNotDirectoryException
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R as AppR
 
@@ -360,6 +361,7 @@ internal class SyncProtocolUpgradeViewModel(
 
     private companion object {
         val FailureMessages = mapOf<Class<out Exception>, Int>(
+            SyncStorageUnavailableException::class.java to CoreCommonR.string.sync_secure_storage_unavailable,
             WebDavAuthException::class.java to CoreCommonR.string.webdav_auth_failed,
             TokenExpiredException::class.java to CoreCommonR.string.github_token_expired_message,
             WebDavDirectoryNotFoundException::class.java to CoreCommonR.string.webdav_directory_missing,

@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.local.media
 
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMetadataRecoveryRecord
+import moe.ouom.neriplayer.data.local.media.metadata.withMetadataRecoveryDescriptors
 
 import android.content.Context
 import java.io.File
@@ -21,10 +22,15 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import kotlin.time.Duration.Companion.milliseconds
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class LocalMediaTargetedRecoveryTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
@@ -43,16 +49,16 @@ class LocalMediaTargetedRecoveryTest {
     }
 
     @Test
-    fun `editing one target does not recover unrelated audio and global recovery remains available`() = runBlocking {
+    fun `editing one target does not recover unrelated audio and global recovery remains available`() = withMetadataRecoveryDescriptors {
         val unrelated = temporaryFolder.newFile("unrelated.mp3").apply { writeText("original") }
         val record = record(unrelated)
         LocalMediaMetadataRecoveryStore.markReplacing(record)
-        unrelated.writeText("interrupted")
+        unrelated.writeText("up")
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
         val target = temporaryFolder.newFile("selected.mp3")
 
         assertEquals("written", write(target) { "written" })
-        assertEquals("interrupted", unrelated.readText())
+        assertEquals("up", unrelated.readText())
         assertTrue(record.journalFile.exists())
         assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
         assertEquals("updated", unrelated.readText())
@@ -163,11 +169,11 @@ class LocalMediaTargetedRecoveryTest {
     }
 
     @Test
-    fun `same target recovery finishes before new edit and cannot overwrite it later`() = runBlocking {
+    fun `same target recovery finishes before new edit and cannot overwrite it later`() = withMetadataRecoveryDescriptors {
         val target = temporaryFolder.newFile("recoverable.mp3").apply { writeText("original") }
         val record = record(target)
         LocalMediaMetadataRecoveryStore.markReplacing(record)
-        target.writeText("interrupted")
+        target.writeText("up")
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
         assertEquals("written", write(target) {
             assertEquals("updated", target.readText())
@@ -227,7 +233,7 @@ class LocalMediaTargetedRecoveryTest {
         assertTrue(obstruction.exists())
         assertTrue(obstruction.delete())
         assertTrue(target.delete())
-        target.writeText("interrupted")
+        target.writeText("original")
         assertEquals("written", write(target) {
             assertEquals("original", target.readText())
             target.writeText("new edit")
@@ -293,7 +299,7 @@ class LocalMediaTargetedRecoveryTest {
     }
 
     @Test
-    fun `already restored bytes still restore the original file modification time`() {
+    fun `already restored bytes still restore the original file modification time`() = withMetadataRecoveryDescriptors {
         val target = temporaryFolder.newFile("timestamp.mp3").apply { writeText("original") }
         val originalTime = 1_600_000_000_000L
         assertTrue(target.setLastModified(originalTime))
@@ -306,20 +312,20 @@ class LocalMediaTargetedRecoveryTest {
     }
 
     @Test
-    fun `completed recovery cache belongs to its own staging directory`() = runBlocking {
+    fun `completed recovery cache belongs to its own staging directory`() = withMetadataRecoveryDescriptors {
         val otherContext = mock(Context::class.java)
         `when`(otherContext.noBackupFilesDir).thenReturn(temporaryFolder.newFolder("other-no-backup"))
         val firstTarget = temporaryFolder.newFile("first-context.mp3").apply { writeText("original") }
         val secondTarget = temporaryFolder.newFile("second-context.mp3").apply { writeText("original") }
         val first = LocalMediaMetadataRecoveryStore.markReplacing(record(firstTarget))
         val second = LocalMediaMetadataRecoveryStore.markReplacing(record(secondTarget, otherContext))
-        firstTarget.writeText("first interrupted")
-        secondTarget.writeText("second interrupted")
+        firstTarget.writeText("up")
+        secondTarget.writeText("upd")
         LocalMediaMetadataRecoveryStore.resetRecoveryForTest()
 
         assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(context))
         assertEquals("updated", firstTarget.readText())
-        assertEquals("second interrupted", secondTarget.readText())
+        assertEquals("upd", secondTarget.readText())
         assertEquals(1, LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(otherContext))
         assertEquals("updated", secondTarget.readText())
         assertFalse(first.journalFile.exists())

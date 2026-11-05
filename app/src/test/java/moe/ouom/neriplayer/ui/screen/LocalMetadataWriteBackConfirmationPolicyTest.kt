@@ -10,53 +10,60 @@ class LocalMetadataWriteBackConfirmationPolicyTest {
 
     @Test
     fun `asks before writing changed local metadata`() {
-        val song = localSong()
+        val song = localSong().copy(customName = "Updated title")
 
-        assertTrue(
-            shouldConfirmLocalMetadataWriteBack(
-                song = song,
-                title = "Updated title",
-                artist = song.artist,
-                coverUrl = song.coverUrl.orEmpty()
-            )
-        )
+        assertTrue(shouldConfirmLocalMetadataWriteBack(song))
     }
 
     @Test
     fun `asks before writing changed local cover`() {
-        val song = localSong().copy(coverUrl = "file:///old-cover.jpg")
+        val song = localSong().copy(customCoverUrl = "file:///new-cover.jpg")
 
-        assertTrue(
-            shouldConfirmLocalMetadataWriteBack(
-                song = song,
-                title = song.name,
-                artist = song.artist,
-                coverUrl = "file:///new-cover.jpg"
-            )
-        )
+        assertTrue(shouldConfirmLocalMetadataWriteBack(song))
     }
 
     @Test
-    fun `does not ask for unchanged or remote song metadata`() {
+    fun `reopened local edits ask again for existing app metadata overrides`() {
+        val song = localSong()
+        val overrides = listOf(
+            song.copy(customName = "App title"),
+            song.copy(customArtist = "App artist"),
+            song.copy(customCoverUrl = "file:///app-cover.jpg"),
+            song.copy(matchedLyric = "App lyric", lyricSyncEdited = true),
+            song.copy(matchedTranslatedLyric = "App translation", lyricSyncEdited = true),
+            song.copy(matchedRomanizedLyric = "App romanization", lyricSyncEdited = true),
+            song.copy(matchedLyric = "", lyricSyncEdited = true)
+        )
+
+        overrides.forEach { edited ->
+            assertTrue(
+                "existing app overrides must still offer file writeback: $edited",
+                shouldConfirmLocalMetadataWriteBack(edited)
+            )
+        }
+    }
+
+    @Test
+    fun `local saves ask for a destination even when scanned lyrics are unchanged`() {
+        val song = localSong().copy(
+            matchedLyric = "Embedded lyric",
+            originalLyric = "Embedded lyric",
+            matchedTranslatedLyric = "Embedded translation",
+            originalTranslatedLyric = "Embedded translation",
+            matchedRomanizedLyric = "Embedded romanization",
+            originalRomanizedLyric = "Embedded romanization"
+        )
+
+        assertTrue(shouldConfirmLocalMetadataWriteBack(song))
+    }
+
+    @Test
+    fun `local saves always ask while remote metadata saves continue in app`() {
         val localSong = localSong()
         val remoteSong = localSong.copy(mediaUri = null, localFilePath = null, channelId = "netease")
 
-        assertFalse(
-            shouldConfirmLocalMetadataWriteBack(
-                song = localSong,
-                title = localSong.name,
-                artist = localSong.artist,
-                coverUrl = localSong.coverUrl.orEmpty()
-            )
-        )
-        assertFalse(
-            shouldConfirmLocalMetadataWriteBack(
-                song = remoteSong,
-                title = "Updated title",
-                artist = remoteSong.artist,
-                coverUrl = remoteSong.coverUrl.orEmpty()
-            )
-        )
+        assertTrue(shouldConfirmLocalMetadataWriteBack(localSong))
+        assertFalse(shouldConfirmLocalMetadataWriteBack(remoteSong))
     }
 
     private fun localSong(): SongItem {

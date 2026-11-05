@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome.NOT_W
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome.SIDECAR_ONLY
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome.SUCCESS
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE
+import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -14,6 +15,8 @@ class LocalMediaMetadataWriteFallbackTest {
         val expectations = listOf(
             Triple(SUCCESS, SIDECAR_ONLY, SIDECAR_ONLY),
             Triple(SIDECAR_ONLY, FAILED, SIDECAR_ONLY),
+            Triple(NOT_WRITABLE, UNSUPPORTED_EMBEDDED_COVER, UNSUPPORTED_EMBEDDED_COVER),
+            Triple(UNSUPPORTED_EMBEDDED_COVER, FAILED, FAILED),
             Triple(FAILED, NOT_WRITABLE, FAILED),
             Triple(UNSUPPORTED_OR_UNREADABLE, FAILED, FAILED),
             Triple(UNSUPPORTED_OR_UNREADABLE, SUCCESS, UNSUPPORTED_OR_UNREADABLE),

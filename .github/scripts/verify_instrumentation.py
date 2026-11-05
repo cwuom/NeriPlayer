@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 
 LYRICS_CLASS = "moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest"
 ROTATION_CLASS = "moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest"
+GLASS_CLASS = "moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassInverseMaskParityTest"
 LYRICS_CASES = {
     "cleanExternalLyricsPageBottomRowsReceiveNativeTouchesWithMiniPlayer",
     "cleanExternalLyricsPageBottomRowsReceiveNativeTouchesAtExpandedUiDensity",
@@ -16,6 +17,11 @@ LYRICS_CASES = {
 ROTATION_CASES = {
     "cleanPlayerRotationPreservesSettingsDraftScrollAndBackDepth",
     "materialPlayerRotationPreservesSettingsDraftScrollAndBackDepth",
+}
+GLASS_CASES = {
+    "productionGraphMatchesFrozenGraphForOpaqueAndTransparentInputs",
+    "sameSessionUpdatesDoNotPollutePreviouslyBoundEffects",
+    "frozenOracleRespondsToCoverageBlurAndLiquidTieOrder",
 }
 LIBRARY_MODULES = {"modules/database", "modules/local", "modules/playback/runtime"}
 ASSUMPTION_TYPES = {
@@ -45,7 +51,12 @@ def case_is_skipped(case: ET.Element, allow_skipped: bool) -> bool:
 
 def validate_reports(root: Path, shared_shards: int = 4) -> dict[str, set[str]]:
     inventory = {"app": set(), "libraries": set(), "skipped": set()}
-    for shard in range(shared_shards + 2):
+    dedicated_hosts = [
+        (LYRICS_CLASS, LYRICS_CASES),
+        (ROTATION_CLASS, ROTATION_CASES),
+        (GLASS_CLASS, GLASS_CASES),
+    ]
+    for shard in range(shared_shards + len(dedicated_hosts)):
         lane = root / f"android-instrumented-test-reports-{shard}"
         app_cases = []
         library_modules = set()
@@ -74,10 +85,7 @@ def validate_reports(root: Path, shared_shards: int = 4) -> dict[str, set[str]]:
         if shard == 0 and library_modules != LIBRARY_MODULES:
             raise ValueError(f"Missing library tests: {LIBRARY_MODULES - library_modules}")
         if shard >= shared_shards:
-            expected_class, expected_names = (
-                (LYRICS_CLASS, LYRICS_CASES)
-                if shard == shared_shards else (ROTATION_CLASS, ROTATION_CASES)
-            )
+            expected_class, expected_names = dedicated_hosts[shard - shared_shards]
             if len(app_cases) != len(expected_names) or {
                 case.get("name") for case in app_cases
             } != expected_names or any(case.get("classname") != expected_class for case in app_cases):
@@ -87,7 +95,7 @@ def validate_reports(root: Path, shared_shards: int = 4) -> dict[str, set[str]]:
             class_name, name = case.get("classname"), case.get("name")
             if not class_name or not name:
                 raise ValueError(f"Incomplete testcase identity in shard {shard}")
-            if shard < shared_shards and class_name in {LYRICS_CLASS, ROTATION_CLASS}:
+            if shard < shared_shards and class_name in {LYRICS_CLASS, ROTATION_CLASS, GLASS_CLASS}:
                 raise ValueError(f"Unexpected dedicated host test in shard {shard}")
             key = f"{class_name}#{name}"
             if key in inventory["app"]:

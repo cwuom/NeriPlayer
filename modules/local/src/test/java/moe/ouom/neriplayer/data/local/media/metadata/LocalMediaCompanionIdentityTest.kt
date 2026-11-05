@@ -7,9 +7,8 @@ import org.junit.Test
 class LocalMediaCompanionIdentityTest {
 
     @Test
-    fun `fuse passthrough device ids do not hide the same inode`() {
-        // 真机与模拟器上实测：只读打开走底层文件系统，读写打开走 FUSE，设备号不同
-        assertTrue(sameCompanionFileIdentity("65029:106579", "82:106579"))
+    fun `same inode on different devices does not prove the same file`() {
+        assertFalse(sameCompanionFileIdentity("65029:106579", "82:106579"))
         assertTrue(sameCompanionFileIdentity("82:106579", "82:106579"))
     }
 

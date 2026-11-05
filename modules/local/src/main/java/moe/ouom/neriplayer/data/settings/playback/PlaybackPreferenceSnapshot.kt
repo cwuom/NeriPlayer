@@ -146,6 +146,7 @@ private const val PLAYBACK_PREFER_WORD_TIMED_LYRICS_KEY = "prefer_word_timed_lyr
 private const val PLAYBACK_DEFAULT_LYRIC_SOURCE_KEY = "default_lyric_source"
 private val playbackPreferenceSnapshotWarmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val playbackPreferenceSnapshotWarmLock = Any()
+private val playbackPreferenceSnapshotPersistenceLock = Any()
 
 @Volatile
 private var playbackPreferenceSnapshotWarmScheduled = false
@@ -208,7 +209,20 @@ fun persistPlaybackPreferenceSnapshot(
     context: Context,
     snapshot: PlaybackPreferenceSnapshot
 ) {
-    val normalizedSnapshot = snapshot.sanitized()
+    synchronized(playbackPreferenceSnapshotPersistenceLock) {
+        val normalizedSnapshot = snapshot.sanitized()
+        val matchesCache = runCatching {
+            readCachedPlaybackPreferenceSnapshot(context) == normalizedSnapshot
+        }.getOrDefault(false)
+        if (matchesCache) return@synchronized
+        persistNormalizedPlaybackPreferenceSnapshot(context, normalizedSnapshot)
+    }
+}
+
+private fun persistNormalizedPlaybackPreferenceSnapshot(
+    context: Context,
+    normalizedSnapshot: PlaybackPreferenceSnapshot
+) {
     val encodedBandLevels = encodePlaybackEqualizerBandLevels(
         normalizedSnapshot.playbackEqualizerCustomBandLevels
     )
@@ -357,7 +371,7 @@ fun persistPlaybackPreferenceSnapshot(
                 )
                 .putLong(PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY, normalizedSnapshot.maxCacheSizeBytes)
         }
-    }
+}
 
 fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnapshot {
     val legacyMobileDataQuality = this[SettingsKeys.MOBILE_DATA_DOWNGRADE_QUALITY]

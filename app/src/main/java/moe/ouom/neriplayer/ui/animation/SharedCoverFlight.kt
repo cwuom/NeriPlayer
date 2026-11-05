@@ -127,6 +127,12 @@ class SharedCoverFlightState {
         }
     }
 
+    internal fun clearArtwork() {
+        sourceBitmap = null
+        linkedBitmap = null
+        flightBitmap = null
+    }
+
     internal fun reportTarget(bounds: Rect, cornerPx: Float) {
         if (bounds.isEmpty) return
         targetBounds = bounds
@@ -221,7 +227,7 @@ class SharedCoverFlightState {
 
     /** 替代封面的位图和两端坐标齐备后才隐藏真实封面 */
     val hidesCovers: Boolean
-        get() = flying || (linked && linkedBitmap != null && sourceBounds != null &&
+        get() = (flying && flightBitmap != null) || (linked && linkedBitmap != null && sourceBounds != null &&
             (hasVisualTarget() || targetCoordinates?.isAttached == true))
 
     fun beginLinked(

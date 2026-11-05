@@ -27,11 +27,12 @@ internal data class NowPlayingBackdropFrame(
 
 @Composable
 internal fun NowPlayingBackdropLayers(frame: NowPlayingBackdropFrame) {
-    val useBlur = shouldUseNowPlayingBlur(frame.hasCoverBlur, frame.blurState.loadFailed)
+    val useBlur = !frame.cover.clearCover &&
+        shouldUseNowPlayingBlur(frame.hasCoverBlur, frame.blurState.loadFailed)
     val accentCoverUrl = selectNowPlayingAccentCoverUrl(
         useBlur,
-        frame.blurState.stableCoverUrl,
-        frame.cover.url
+        frame.blurState.stableCoverUrl.takeUnless { frame.cover.clearCover },
+        frame.cover.url.takeUnless { frame.cover.clearCover }
     )
     NowPlayingAccentBackdrop(
         request = backdropAccentRequest(
@@ -130,7 +131,7 @@ private fun NowPlayingBlurDarkenLayer(darken: Float) {
 
 @Composable
 private fun NowPlayingDynamicBackdrop(frame: NowPlayingBackdropFrame) {
-    if (!frame.background.dynamicEnabled) return
+    if (!frame.background.dynamicEnabled || frame.cover.clearCover) return
     HyperBackground(
         modifier = Modifier
             .fillMaxSize()

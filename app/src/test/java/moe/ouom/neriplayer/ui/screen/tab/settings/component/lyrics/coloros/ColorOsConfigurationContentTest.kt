@@ -62,7 +62,7 @@ class ColorOsConfigurationContentTest {
                 )
             }
         }
-        composeRule.onNodeWithText("丢弃恢复记录").assertIsNotEnabled()
+        composeRule.onNodeWithText("删除配置备份").assertIsNotEnabled()
     }
 
     @Test
@@ -79,7 +79,7 @@ class ColorOsConfigurationContentTest {
                 )
             }
         }
-        listOf("Root", "Shizuku", "应用配置", "恢复原策略", "检查配置", "丢弃恢复记录").forEach {
+        listOf("Root", "Shizuku", "应用配置", "恢复原配置", "检查配置", "删除配置备份").forEach {
             composeRule.onNodeWithText(it).assertIsNotEnabled()
         }
     }
@@ -98,12 +98,12 @@ class ColorOsConfigurationContentTest {
                 )
             }
         }
-        composeRule.onNodeWithText("丢弃恢复记录").performScrollTo().performClick()
+        composeRule.onNodeWithText("删除配置备份").performScrollTo().performClick()
         composeRule.runOnIdle { assertTrue(requests.isEmpty()) }
         composeRule.onNodeWithText("取消").performClick()
         composeRule.runOnIdle { assertTrue(requests.isEmpty()) }
-        composeRule.onNodeWithText("丢弃恢复记录").performScrollTo().performClick()
-        composeRule.onNodeWithText("确认丢弃").performClick()
+        composeRule.onNodeWithText("删除配置备份").performScrollTo().performClick()
+        composeRule.onNodeWithText("删除备份").performClick()
         composeRule.runOnIdle { assertEquals(listOf(ColorOsConfigurationAction.DISCARD), requests) }
     }
 
@@ -128,7 +128,7 @@ class ColorOsConfigurationContentTest {
         composeRule.onNodeWithText("应用配置").performScrollTo().performClick()
         composeRule.onNodeWithText("Shizuku").performScrollTo().performClick()
         composeRule.onNodeWithText("检查配置").performScrollTo().performClick()
-        composeRule.onNodeWithText("恢复原策略").performScrollTo().performClick()
+        composeRule.onNodeWithText("恢复原配置").performScrollTo().performClick()
         composeRule.runOnIdle {
             assertEquals(
                 listOf(

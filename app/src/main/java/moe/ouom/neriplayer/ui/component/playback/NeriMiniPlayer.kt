@@ -488,7 +488,8 @@ fun NeriMiniPlayer(
     coverIdentityKey: String? = null,
     visualCoverIdentityKey: String? = null,
     hasCurrentSong: Boolean = true,
-    tabletControls: MiniPlayerTabletControls? = null
+    tabletControls: MiniPlayerTabletControls? = null,
+    clearCover: Boolean = false
 ) {
     val context = LocalContext.current
     val smallestScreenWidthDp = LocalConfiguration.current.smallestScreenWidthDp
@@ -507,8 +508,8 @@ fun NeriMiniPlayer(
         cleanStyle -> NeriDesign.tokens.miniPlayerShape
         else -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     }
-    val requestedCoverUrl = coverUrl.trimmedNonEmptyOrNull()
-    val retainedCoverUrl = visualCoverUrl.trimmedNonEmptyOrNull()
+    val requestedCoverUrl = coverUrl.trimmedNonEmptyOrNull().takeUnless { clearCover }
+    val retainedCoverUrl = visualCoverUrl.trimmedNonEmptyOrNull().takeUnless { clearCover }
     val requestedIdentityKey = miniPlayerCoverIdentityKey(
         identityKey = coverIdentityKey,
         coverUrl = requestedCoverUrl
@@ -547,16 +548,17 @@ fun NeriMiniPlayer(
     } else {
         retainedFrame
     }
-    var displayedFrame by remember { mutableStateOf<MiniPlayerCoverFrame?>(null) }
+    var displayedFrame by remember(clearCover) { mutableStateOf<MiniPlayerCoverFrame?>(null) }
     var failedCoverFrame by remember(requestedFrame, effectiveRetainedFrame) {
         mutableStateOf<MiniPlayerCoverFrame?>(null)
     }
     var clearRetainedFrame by remember(requestedFrame, effectiveRetainedFrame) {
         mutableStateOf(false)
     }
-    val decodedFramesByIdentity = remember {
+    val decodedFramesByIdentity = remember(clearCover) {
         mutableStateMapOf<String, MiniPlayerCoverFrame>()
     }
+    val latestClearCover by rememberUpdatedState(clearCover)
     val latestRequestedFrame by rememberUpdatedState(requestedFrame)
     val latestRetainedFrame by rememberUpdatedState(effectiveRetainedFrame)
     val failedFrameForVisibleState = failedCoverFrame?.takeIf { failed ->
@@ -640,15 +642,18 @@ fun NeriMiniPlayer(
         cachedFrame = effectiveCachedRequestedFrame ?: sharedFrameForCurrentIdentity,
         retainedFrame = cachedRetainedFrame ?: effectiveRetainedFrame,
         failedFrame = failedFrameForVisibleState,
-        clearRetainedFrame = clearRetainedFrame
+        clearRetainedFrame = clearRetainedFrame || clearCover
     )
+    SideEffect {
+        if (clearCover) sharedCoverFlight?.clearArtwork()
+    }
 
     fun publishDecodedFrame(
         completedFrame: MiniPlayerCoverFrame,
         decodedBitmap: ImageBitmap?
     ) {
         if (
-            decodedBitmap == null ||
+            latestClearCover || decodedBitmap == null ||
                 !shouldCommitMiniPlayerCoverFrame(
                     completedFrame = completedFrame,
                     latestRequestedFrame = latestRequestedFrame,

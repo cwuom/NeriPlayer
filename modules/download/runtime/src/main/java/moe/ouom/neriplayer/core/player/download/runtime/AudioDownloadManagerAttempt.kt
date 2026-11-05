@@ -49,6 +49,8 @@ import moe.ouom.neriplayer.core.download.policy.commit.shouldRollbackCancelledAu
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.server.isServerSong
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
@@ -382,6 +384,7 @@ internal suspend fun AudioDownloadManager.resolveDownloadSourceForAttempt(
 ): ResolvedDownloadSource? {
     return sourceResolveSemaphore.withPermit {
         when {
+            song.isServerSong() -> AudioDownloadSourceResolver.resolveServer(song)
             isYouTubeMusic -> resolveYouTubeMusic(
                 song = song,
                 preferredQuality = downloadAudioQuality.youtubeQuality,
@@ -423,6 +426,7 @@ internal suspend fun AudioDownloadManager.prepareDownloadAttempt(
     val mime = resolved.mimeType
     val extGuess = resolved.fileExtensionHint
     val ext = when {
+        song.isServerSong() && !extGuess.isNullOrBlank() -> extGuess
         resolved.streamType == YouTubePlayableStreamType.HLS ->
             resolved.fileExtensionHint ?: "aac"
         !mime.isNullOrBlank() -> mimeToExt(mime)
@@ -438,27 +442,21 @@ internal suspend fun AudioDownloadManager.prepareDownloadAttempt(
             "下载来源长度提示: file=$fileName, sourceExpected=$sourceExpectedBytes"
         )
     }
-    val requestBuilder = Request.Builder().url(url)
-    if (AudioDownloadSourceResolver.isBiliSource(song)) {
-        val cookieMap = DownloadHosts.credentials.biliCookies()
-        val cookieHeader = cookieMap.entries.joinToString("; ") { (key, value) ->
-            "$key=$value"
+    val request = when {
+        AudioDownloadSourceResolver.isBiliSource(song) -> {
+            buildBiliAudioDownloadRequest(url, DownloadHosts.credentials.biliCookies())
         }
-        requestBuilder
-            .header("User-Agent", BILI_UA)
-            .header("Referer", BILI_REFERER)
-            .apply {
-                if (cookieHeader.isNotBlank()) header("Cookie", cookieHeader)
-            }
-    } else if (isYouTubeMusicSong(song)) {
-        val auth = DownloadHosts.credentials.youtubeAuth().normalized()
-        auth.buildYouTubeStreamRequestHeaders(
-            refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
-            streamUrl = url
-        ).forEach { (name, value) -> requestBuilder.header(name, value) }
-        // 直链统一交给分块传输，避免整档 Range 触发 googlevideo 风控
+        isYouTubeMusicSong(song) -> {
+            val auth = DownloadHosts.credentials.youtubeAuth().normalized()
+            Request.Builder().url(url).apply {
+                auth.buildYouTubeStreamRequestHeaders(
+                    refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
+                    streamUrl = url
+                ).forEach { (name, value) -> header(name, value) }
+            }.build()
+        }
+        else -> Request.Builder().url(url).build()
     }
-    val request = requestBuilder.build()
     val transportKind = resolveDownloadTransportKind(
         streamType = resolved.streamType,
         request = request
@@ -939,7 +937,9 @@ internal suspend fun AudioDownloadManager.handleDownloadAttemptFailure(
     clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
     val retryableFailure = state.storedAudio == null &&
         shouldRetryDownloadFailureForSource(error, isYouTubeMusic)
-    if (retryableFailure && state.attemptNumber < TRANSIENT_DOWNLOAD_MAX_ATTEMPTS) {
+    val retryAfterMs = SubsonicException.find(error)?.takeIf { it.retryable }
+        ?.retryAfterMs?.takeIf { it > 0L }
+    if (retryableFailure && retryAfterMs == null && state.attemptNumber < TRANSIENT_DOWNLOAD_MAX_ATTEMPTS) {
         val partialBytes = resolveWorkingFileBytes(state.tempFile)
         val preservePartial = shouldPreservePartialDownloadForRetry(
             transportKind = state.activeTransportKind,
@@ -1006,7 +1006,8 @@ internal suspend fun AudioDownloadManager.handleDownloadAttemptFailure(
         throw RetryableDownloadFailureException(
             message = "download retry budget exhausted: ${song.name}",
             networkUnavailable = !context.hasConfirmedInternetAccess(),
-            cause = error
+            cause = error,
+            retryAfterMs = retryAfterMs
         )
     }
     if (deleteWorkingFileUnlessNetworkPolicyPaused(songKey, state.tempFile)) {

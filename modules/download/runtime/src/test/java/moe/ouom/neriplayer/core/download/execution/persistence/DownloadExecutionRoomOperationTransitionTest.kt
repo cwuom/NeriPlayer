@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecution
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -25,6 +26,71 @@ class DownloadExecutionRoomOperationTransitionTest {
     @After
     fun tearDown() {
         fixture.close()
+    }
+
+    @Test
+    fun `server retry after deadline persists and blocks recovery until due without bypassing attempt guards`() = runTest {
+        val song = testSong(17L)
+        fixture.upsert(request(song, operationId = "server-retry", attemptId = 4L), "RUNNING")
+        val now = 1_000L
+        val notBefore = now + checkNotNull(SubsonicException.http(429, "120").retryAfterMs)
+        assertFalse(store.updateState(context, "server-retry", "RETRYABLE", "DOWNLOAD_SERVER_RETRY_AFTER",
+            database, nowMs = now, expectedAttemptId = 5L, retryNotBeforeMs = notBefore))
+        assertEquals("RUNNING", fixture.row("server-retry").state)
+        assertTrue(store.updateState(context, "server-retry", "RETRYABLE", "DOWNLOAD_SERVER_RETRY_AFTER",
+            database, nowMs = now, expectedAttemptId = 4L, retryNotBeforeMs = notBefore))
+
+        assertEquals(notBefore, fixture.row("server-retry").nextRetryAtMs)
+        assertEquals(0, fixture.operationDao.clearRetryDeadlinesForImmediateRecovery(now + 1L))
+        assertEquals(notBefore, fixture.row("server-retry").nextRetryAtMs)
+        val waiting = DownloadExecutionRoomReadStore.listSchedulableForPumpPage(context, null,
+            limit = 10, database = database, nowMs = notBefore - 1L)
+        assertTrue(waiting.requests.isEmpty())
+        assertEquals(notBefore, waiting.nextRetryAtMs)
+        val resumed = DownloadExecutionRoomReadStore.listSchedulableForPumpPage(context, null,
+            limit = 10, database = database, nowMs = notBefore)
+        assertEquals(listOf("server-retry"), resumed.requests.map { it.operationId })
+    }
+
+    @Test
+    fun `server retry after survives process restart while ordinary retries rearm and explicit resume clears it`() = runTest {
+        val server = testSong(17L)
+        val ordinary = testSong(18L)
+        val orphan = testSong(19L)
+        val now = 1_000L
+        val deadline = 121_000L
+        fixture.upsert(request(server, operationId = "server-restart"), "RUNNING")
+        assertTrue(store.updateState(context, "server-restart", "RETRYABLE", "DOWNLOAD_SERVER_RETRY_AFTER",
+            database, nowMs = now, retryNotBeforeMs = deadline))
+        fixture.rewrite("server-restart") { it.copy(hostProcessToken = "previous-process", hostAdmittedAtMs = now) }
+        fixture.upsert(request(ordinary, operationId = "ordinary-restart"), "RETRYABLE")
+        fixture.rewrite("ordinary-restart") { it.copy(nextRetryAtMs = Long.MAX_VALUE, lastErrorCode = null,
+            hostProcessToken = "previous-process", hostAdmittedAtMs = now) }
+        fixture.upsert(request(orphan, operationId = "orphan-restart"), "RUNNING")
+        fixture.rewrite("orphan-restart") { it.copy(hostProcessToken = "previous-process", hostAdmittedAtMs = now) }
+
+        assertEquals(setOf(orphan.stableKey()), store.requeueOrphanedRunningOperations(context, database))
+        assertEquals(deadline, fixture.row("server-restart").nextRetryAtMs)
+        assertEquals(setOf(server.stableKey(), ordinary.stableKey(), orphan.stableKey()),
+            store.rearmRetryableOperationsAfterProcessRestart(context, database))
+        val serverRow = fixture.row("server-restart")
+        assertEquals("RETRYABLE", serverRow.state)
+        assertEquals(deadline, serverRow.nextRetryAtMs)
+        assertNull(serverRow.hostProcessToken)
+        assertNull(serverRow.hostAdmittedAtMs)
+        assertEquals("QUEUED", fixture.row("ordinary-restart").state)
+        assertNull(fixture.row("ordinary-restart").nextRetryAtMs)
+        assertEquals("QUEUED", fixture.row("orphan-restart").state)
+        val waiting = DownloadExecutionRoomReadStore.listSchedulableForPumpPage(context, null,
+            limit = 10, database = database, nowMs = deadline - 1L)
+        assertFalse(waiting.requests.any { it.operationId == "server-restart" })
+        val due = DownloadExecutionRoomReadStore.listSchedulableForPumpPage(context, null,
+            limit = 10, database = database, nowMs = deadline)
+        assertTrue(due.requests.any { it.operationId == "server-restart" })
+
+        assertTrue(store.prepareExplicitResume(context, "server-restart", server.stableKey(), database))
+        assertEquals("RETRYABLE", fixture.row("server-restart").state)
+        assertNull(fixture.row("server-restart").nextRetryAtMs)
     }
 
     @Test

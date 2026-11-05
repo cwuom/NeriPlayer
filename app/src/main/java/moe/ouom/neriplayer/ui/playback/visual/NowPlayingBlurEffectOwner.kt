@@ -58,7 +58,7 @@ internal class NowPlayingBlurEffectOwner(
     }
 
     fun updateRetention(request: NowPlayingBlurRetentionRequest) {
-        blurState.observeRequest(request.songKey, request.coverUrl)
+        blurState.observeRequest(request.songKey, request.coverUrl, request.clearCover)
         if (retentionRequest == request) return
         retentionRequest = request
         retentionJob?.cancel()

@@ -159,6 +159,9 @@ internal object DownloadedAudioTagWriter {
             )
             null
         }
+        if (outcome == LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER) {
+            return@withContext DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER
+        }
         if (outcome != LocalMediaMetadataWriteOutcome.SUCCESS) {
             return@withContext DownloadedAudioTagWriteOutcome.FAILED
         }

@@ -21,7 +21,8 @@ internal suspend fun DownloadExecutionRoomStore.recordPostCoreRetryFailureImpl(
     expectedAttemptId: Long?,
     errorCode: String,
     database: NeriUserDataDatabase,
-    nowMs: Long
+    nowMs: Long,
+    retryNotBeforeMs: Long? = null
 ): DownloadExecutionRoomStore.PostCoreRetryRecord? {
     val normalizedOperationId = operationId.trim().takeIf(String::isNotBlank) ?: return null
     val normalizedStableKey = stableKey.trim().takeIf(String::isNotBlank) ?: return null
@@ -47,13 +48,24 @@ internal suspend fun DownloadExecutionRoomStore.recordPostCoreRetryFailureImpl(
         ) {
             return@withTransaction null
         }
+        val recordedServerDeadline = header.nextRetryAtMs?.takeIf { deadline ->
+            header.lastErrorCode == "DOWNLOAD_SERVER_RETRY_AFTER" && deadline > nowMs
+        }
+        if (retryNotBeforeMs == null && recordedServerDeadline != null) {
+            return@withTransaction DownloadExecutionRoomStore.PostCoreRetryRecord(
+                retryCount = header.retryCount,
+                nextRetryAtMs = recordedServerDeadline,
+                updatedAtMs = header.updatedAtMs
+            )
+        }
         // core 提交会清除传输期限，但不代表整条下载已经成功，不能因此重新给予完整重试预算
         val retryPlan = planDownloadRetry(
             currentRetryCount = header.retryCount,
             errorCode = normalizedErrorCode,
             nowMs = nowMs
         )
-        val nextRetryAtMs = retryPlan.nextRetryAtMs ?: nowMs
+        val nextRetryAtMs = maxOf(retryPlan.nextRetryAtMs ?: nowMs,
+            retryNotBeforeMs ?: nowMs, recordedServerDeadline ?: nowMs)
         val changed = dao.recordPostCoreRetryFailure(
             operationId = normalizedOperationId,
             expectedState = header.state,

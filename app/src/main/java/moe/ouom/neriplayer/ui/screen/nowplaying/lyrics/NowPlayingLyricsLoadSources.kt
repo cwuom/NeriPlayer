@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.hasCachedLocalDownload
 
 internal interface NowPlayingLyricsSources {
     val cacheGeneration: Long get() = 0L
+    fun cachedOriginal(song: SongItem): List<LyricEntry>? = null
 
     fun cachedPreferred(song: SongItem, source: LyricSourcePreference,
         preferWordTimedLyrics: Boolean): PreferredLyricSourceResult? = null
@@ -36,6 +37,9 @@ internal interface NowPlayingLyricsSources {
 
 internal object PlatformNowPlayingLyricsSources : NowPlayingLyricsSources {
     override val cacheGeneration: Long get() = PlayerLyricsProvider.currentLyricsCacheGeneration()
+
+    override fun cachedOriginal(song: SongItem): List<LyricEntry>? =
+        PlayerManager.getCachedOriginalLyrics(song)
 
     override fun cachedPreferred(song: SongItem, source: LyricSourcePreference,
         preferWordTimedLyrics: Boolean): PreferredLyricSourceResult? =

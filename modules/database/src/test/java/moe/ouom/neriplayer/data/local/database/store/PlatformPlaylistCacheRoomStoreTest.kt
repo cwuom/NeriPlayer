@@ -60,6 +60,17 @@ class PlatformPlaylistCacheRoomStoreTest {
         assertNull(store.read("netease", "missing"))
     }
 
+    @Test fun `read headers lists metadata once without loading any track or track artist rows`() = runTest {
+        val header = record.copy(platform = "subsonic", cacheKey = "artist", kind = "artist", title = "Artist",
+            coverUrl = "https://images.example.test/artist.jpg", signaturePrimary = "profile", signatureSecondary = "2")
+        store.replace(header)
+        store.replace(record)
+        assertEquals(listOf(header.copy(tracks = emptyList())), store.readHeaders("subsonic"))
+        assertEquals(1, dao.headerReads)
+        assertEquals(0, dao.trackReads)
+        assertEquals(0, dao.artistReads)
+    }
+
     @Test fun `replace if newer keeps a cache saved later than the incoming copy`() = runTest {
         store.replace(record)
 
@@ -72,6 +83,32 @@ class PlatformPlaylistCacheRoomStoreTest {
 
         store.replaceIfNewer(record.copy(cacheKey = "new", savedAtMs = 1L))
         assertEquals(1L, store.read("netease", "new")?.savedAtMs)
+    }
+
+    @Test fun `bounded detail pages never count or evict protected complete catalogs`() = runTest {
+        val catalog = record.copy(platform = "subsonic", cacheKey = "all", kind = "catalog-songs",
+            savedAtMs = 1L, trackCount = 2)
+        store.replace(catalog)
+        val detail = record.copy(platform = "subsonic", cacheKey = "detail", kind = "album",
+            savedAtMs = 2L, tracks = record.tracks.take(1), trackCount = 1)
+        store.replaceBounded(detail, maxRecords = 1, maxTracks = 1, protectedKinds = setOf("catalog-songs"))
+        assertEquals(catalog, store.read("subsonic", "all"))
+        assertEquals(detail, store.read("subsonic", "detail"))
+
+        val latest = detail.copy(cacheKey = "latest", savedAtMs = 3L)
+        store.replaceBounded(latest, maxRecords = 1, maxTracks = 1, protectedKinds = setOf("catalog-songs"))
+        assertEquals(catalog, store.read("subsonic", "all"))
+        assertNull(store.read("subsonic", "detail"))
+        assertEquals(latest, store.read("subsonic", "latest"))
+    }
+
+    @Test fun `default bounded writes retain the existing record and track budget behavior`() = runTest {
+        store.replace(record.copy(trackCount = 2))
+        val latest = record.copy(cacheKey = "latest", savedAtMs = 101L,
+            tracks = record.tracks.take(1), trackCount = 1)
+        store.replaceBounded(latest, maxRecords = 1, maxTracks = 1)
+        assertNull(store.read("netease", "daily"))
+        assertEquals(latest, store.read("netease", "latest"))
     }
 
     @Test fun `storage stats split measured pages by payload share`() {
@@ -148,13 +185,25 @@ class PlatformPlaylistCacheRoomStoreTest {
         val caches = linkedMapOf<Pair<String, String>, PlatformPlaylistCacheEntity>()
         val tracks = mutableListOf<PlatformPlaylistCacheTrackEntity>()
         val artists = mutableListOf<PlatformPlaylistCacheTrackArtistEntity>()
+        var headerReads = 0
+        var trackReads = 0
+        var artistReads = 0
 
+        override suspend fun listCaches(platform: String): List<PlatformPlaylistCacheEntity> {
+            headerReads++
+            return caches.values.filter { it.platform == platform }
+                .sortedWith(compareByDescending<PlatformPlaylistCacheEntity> { it.savedAtMs }.thenBy { it.cacheKey })
+        }
         override suspend fun getCache(platform: String, cacheKey: String) = caches[platform to cacheKey]
-        override suspend fun getTracks(platform: String, cacheKey: String) =
-            tracks.filter { it.platform == platform && it.cacheKey == cacheKey }.sortedBy { it.position }
-        override suspend fun getArtists(platform: String, cacheKey: String) =
-            artists.filter { it.platform == platform && it.cacheKey == cacheKey }
+        override suspend fun getTracks(platform: String, cacheKey: String): List<PlatformPlaylistCacheTrackEntity> {
+            trackReads++
+            return tracks.filter { it.platform == platform && it.cacheKey == cacheKey }.sortedBy { it.position }
+        }
+        override suspend fun getArtists(platform: String, cacheKey: String): List<PlatformPlaylistCacheTrackArtistEntity> {
+            artistReads++
+            return artists.filter { it.platform == platform && it.cacheKey == cacheKey }
                 .sortedWith(compareBy({ it.trackPosition }, { it.artistPosition }))
+        }
         override suspend fun upsertCache(cache: PlatformPlaylistCacheEntity) { caches[cache.platform to cache.cacheKey] = cache }
         override suspend fun insertTracks(tracks: List<PlatformPlaylistCacheTrackEntity>) { this.tracks += tracks }
         override suspend fun insertArtists(artists: List<PlatformPlaylistCacheTrackArtistEntity>) { this.artists += artists }

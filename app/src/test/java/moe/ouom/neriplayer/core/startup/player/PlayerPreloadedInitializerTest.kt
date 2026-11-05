@@ -1,13 +1,16 @@
 package moe.ouom.neriplayer.core.startup.player
 
 import android.app.Application
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStatePreload
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
 import kotlin.coroutines.ContinuationInterceptor
@@ -23,9 +26,9 @@ class PlayerPreloadedInitializerTest {
             keepLastPlaybackProgress = false,
             keepPlaybackModeState = true
         )
-        val restored = restoredSnapshot()
+        val restored = RestoredPlayerStatePreload.Completed(restoredSnapshot())
         val events = mutableListOf<String>()
-        var initializedWith: Triple<Application, PlaybackPreferenceSnapshot, RestoredPlayerStateSnapshot?>? = null
+        var initializedWith: Triple<Application, PlaybackPreferenceSnapshot, RestoredPlayerStatePreload>? = null
         val initializer = PlayerPreloadedInitializer(
             app = app,
             ioDispatcher = ioDispatcher,
@@ -58,15 +61,16 @@ class PlayerPreloadedInitializerTest {
     }
 
     @Test
-    fun `missing restored state still initializes the player`() = runTest {
+    fun `completed empty restoration still initializes the player`() = runTest {
         val app = mock(Application::class.java)
-        var initializedState: RestoredPlayerStateSnapshot? = restoredSnapshot()
+        val completedEmpty = RestoredPlayerStatePreload.Completed(null)
+        var initializedState: RestoredPlayerStatePreload? = null
         var initCalls = 0
         val initializer = PlayerPreloadedInitializer(
             app = app,
             ioDispatcher = StandardTestDispatcher(testScheduler),
             readPreferences = { PlaybackPreferenceSnapshot() },
-            preloadState = { _, _ -> null },
+            preloadState = { _, _ -> completedEmpty },
             initializePlayer = { _, _, restoredState ->
                 initCalls += 1
                 initializedState = restoredState
@@ -76,7 +80,45 @@ class PlayerPreloadedInitializerTest {
         initializer.initialize()
 
         assertEquals(1, initCalls)
-        assertEquals(null, initializedState)
+        assertSame(completedEmpty, initializedState)
+    }
+
+    @Test
+    fun `failed preload result reaches runtime without changing its fallback meaning`() = runTest {
+        val app = mock(Application::class.java)
+        var initializedState: RestoredPlayerStatePreload? = null
+        val initializer = PlayerPreloadedInitializer(
+            app = app,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+            readPreferences = { PlaybackPreferenceSnapshot() },
+            preloadState = { _, _ -> RestoredPlayerStatePreload.NeedsFallback },
+            initializePlayer = { _, _, restoredState -> initializedState = restoredState }
+        )
+
+        initializer.initialize()
+
+        assertSame(RestoredPlayerStatePreload.NeedsFallback, initializedState)
+    }
+
+    @Test
+    fun `cancelled preload does not advance to the ui frame or initialize runtime`() = runTest {
+        val app = mock(Application::class.java)
+        val cancellation = CancellationException("cancel fixture")
+        val events = mutableListOf<String>()
+        val initializer = PlayerPreloadedInitializer(
+            app = app,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+            readPreferences = { PlaybackPreferenceSnapshot() },
+            preloadState = { _, _ -> throw cancellation },
+            initializePlayer = { _, _, _ -> events += "init" }
+        )
+
+        val thrown = runCatching { initializer.initialize(beforeInitialize = { events += "frame" }) }.exceptionOrNull()
+
+        assertEquals(cancellation.javaClass, thrown?.javaClass)
+        assertEquals(cancellation.message, thrown?.message)
+        assertTrue(generateSequence(thrown) { it.cause }.any { it === cancellation })
+        assertEquals(emptyList<String>(), events)
     }
 
     private suspend fun currentDispatcherName(ioDispatcher: CoroutineDispatcher): String {

@@ -36,6 +36,7 @@
     <string name="sync_upgrade_lossless_hint">All legacy lyrics are preserved and compressed losslessly, reducing duplicate storage and transfers. This prompt disappears after the upgrade completes.</string>
     <string name="sync_upgrade_syncing">Upgrading and syncing, please wait</string>
     <string name="sync_upgrade_attempt_failed">The upgrade or sync did not finish. Check your connection and available storage, then retry.</string>
+    <string name="sync_secure_storage_unavailable">Local secure storage is unavailable. Sync configuration cannot be read or saved. Please retry later.</string>
     <string name="sync_request_failed">The sync request could not be completed. Check the server status and your access permissions, then retry.</string>
     <string name="sync_remote_changed">The cloud sync state conflicted with this request. Please sync again.</string>
     <string name="webdav_sync_not_directory">The WebDAV sync path is not a directory. Check the sync path.</string>

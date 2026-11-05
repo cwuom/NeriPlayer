@@ -82,6 +82,15 @@ class LocalSongDisplayCoverTest {
         assertEquals(listOf(false), covers.lookups)
     }
 
+    @Test
+    fun `remote songs off the main thread use downloaded embedded artwork before the network URL`() {
+        covers.embedded = "file:///covers/downloaded.jpg"
+        val song = remoteSong().copy(coverUrl = "https://img.example.com/unavailable.jpg")
+
+        assertEquals("file:///covers/downloaded.jpg", offMainThread { song.displayCoverUrl(context) })
+        assertEquals(listOf(true), covers.lookups)
+    }
+
     private fun <T> offMainThread(block: () -> T): T {
         var result: Result<T>? = null
         thread { result = runCatching(block) }.join()
@@ -112,6 +121,7 @@ class LocalSongDisplayCoverTest {
     private class FakeCoverAccess : LocalMediaCoverAccess {
         var peeked: String? = null
         var resolved: String? = null
+        var embedded: String? = null
         var peekCount = 0
         val lookups = mutableListOf<Boolean>()
 
@@ -126,7 +136,7 @@ class LocalSongDisplayCoverTest {
             resolveLocalMediaFallback: Boolean
         ): String? {
             lookups += resolveLocalMediaFallback
-            return resolved
+            return if (resolveLocalMediaFallback) embedded ?: resolved else resolved
         }
     }
 }

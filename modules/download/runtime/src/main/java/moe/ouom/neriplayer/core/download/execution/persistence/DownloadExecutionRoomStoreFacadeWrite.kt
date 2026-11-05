@@ -169,7 +169,8 @@ internal suspend fun DownloadExecutionRoomStore.updateStateImpl(
     errorCode: String? = null,
     database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
     nowMs: Long = System.currentTimeMillis(),
-    expectedAttemptId: Long? = null
+    expectedAttemptId: Long? = null,
+    retryNotBeforeMs: Long? = null
 ): Boolean {
     return database.withTransaction {
         val dao = database.downloadOperationDao()
@@ -223,7 +224,8 @@ internal suspend fun DownloadExecutionRoomStore.updateStateImpl(
                 expectedRetryCount = current.retryCount,
                 expectedUpdatedAtMs = current.updatedAtMs,
                 retryCount = retryPlan.retryCount,
-                nextRetryAtMs = retryPlan.nextRetryAtMs,
+                nextRetryAtMs = retryNotBeforeMs?.let { maxOf(retryPlan.nextRetryAtMs ?: nowMs, it) }
+                    ?: retryPlan.nextRetryAtMs,
                 updatedAtMs = nowMs,
                 errorCode = errorCode
             ) > 0

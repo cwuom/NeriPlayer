@@ -7,7 +7,7 @@ import android.os.SystemClock
 import com.kyant.taglib.PropertyMap
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.EditableCoverWritePlan
 import moe.ouom.neriplayer.data.model.SongItem
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
@@ -40,7 +40,7 @@ class LocalMediaEditableMetadataReadbackFailureTest {
             metadataSnapshot = snapshotWithComments()
         )
 
-        assertFalse(verified)
+        assertEquals(LocalMediaMetadataWriteOutcome.FAILED, verified)
         verify(resolver, times(1)).openFileDescriptor(source, "r")
     }
 
@@ -57,7 +57,7 @@ class LocalMediaEditableMetadataReadbackFailureTest {
                 metadataSnapshot = snapshotWithComments()
             )
 
-            assertFalse(verified)
+            assertEquals(LocalMediaMetadataWriteOutcome.FAILED, verified)
             verify(resolver, times(SAF_WRITE_READBACK_RETRY_COUNT)).openFileDescriptor(source, "r")
             clock.verify { SystemClock.sleep(SAF_WRITE_READBACK_DELAYS_MS[1]) }
             clock.verify { SystemClock.sleep(SAF_WRITE_READBACK_DELAYS_MS[2]) }

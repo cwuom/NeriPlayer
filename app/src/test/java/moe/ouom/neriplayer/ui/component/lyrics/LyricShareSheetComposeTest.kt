@@ -9,12 +9,21 @@ import android.graphics.Color
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
@@ -124,6 +133,82 @@ class LyricShareSheetComposeTest {
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
         @Suppress("DEPRECATION")
         return chooser.getParcelableExtra(Intent.EXTRA_INTENT)!!
+    }
+
+    private fun assertActionIconsKeepTheirSize() {
+        for (labelRes in listOf(
+            CoreCommonR.string.lyric_share_copy_lyrics,
+            CoreCommonR.string.lyric_share_song,
+            CoreCommonR.string.lyric_share_card
+        )) {
+            composeRule.onNodeWithContentDescription(
+                context.getString(labelRes),
+                useUnmergedTree = true
+            ).assertIsDisplayed()
+                .assertWidthIsEqualTo(24.dp)
+                .assertHeightIsEqualTo(24.dp)
+        }
+    }
+
+    private fun assertActionsRemainUsableWithScrollableLyrics(expectedListHeight: Dp? = null) {
+        val manyLyrics = List(30) { index ->
+            LyricEntry(
+                text = "Lyric line $index",
+                startTimeMs = index * 1_000L,
+                endTimeMs = (index + 1) * 1_000L
+            )
+        }
+        setSheet(sheetLyrics = manyLyrics, initialLine = manyLyrics.first())
+
+        expectedListHeight?.let { height ->
+            composeRule.onNode(hasScrollToIndexAction()).assertHeightIsEqualTo(height)
+        }
+        assertActionIconsKeepTheirSize()
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(manyLyrics.lastIndex)
+        composeRule.onNodeWithText(manyLyrics.last().text).performClick()
+        composeRule.onNodeWithText(selectedTitle(2)).assertIsDisplayed()
+        assertActionIconsKeepTheirSize()
+
+        clickAction(CoreCommonR.string.lyric_share_copy_lyrics)
+        composeRule.waitUntil(timeoutMillis = 5_000L) { dismissCount == 1 }
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        assertEquals("Lyric line 0\nLyric line 29", clipboard.primaryClip?.getItemAt(0)?.text.toString())
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h540dp-mdpi")
+    fun `short portrait keeps full size action icons and scrollable lyrics`() {
+        assertActionsRemainUsableWithScrollableLyrics()
+    }
+
+    @Test
+    @Config(qualifiers = "w640dp-h360dp-mdpi")
+    fun `short landscape keeps full size action icons and scrollable lyrics`() {
+        assertActionsRemainUsableWithScrollableLyrics()
+    }
+
+    @Test
+    @Config(qualifiers = "w411dp-h900dp-mdpi")
+    fun `tall portrait caps the lyric list while keeping actions usable`() {
+        assertActionsRemainUsableWithScrollableLyrics(expectedListHeight = 430.dp)
+    }
+
+    @Test
+    @Config(qualifiers = "w411dp-h900dp-mdpi")
+    fun `short lyrics keep the list sized to its content on a tall screen`() {
+        val shortLyrics = lyrics.take(2)
+        setSheet(sheetLyrics = shortLyrics, initialLine = shortLyrics.first())
+
+        val listBounds = composeRule.onNode(hasScrollToIndexAction())
+            .fetchSemanticsNode().boundsInRoot
+        val firstLineBounds = composeRule.onNode(hasText(shortLyrics.first().text) and hasClickAction())
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val lastLineBounds = composeRule.onNode(hasText(shortLyrics.last().text) and hasClickAction())
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+
+        assertEquals("the list should start at its first lyric", firstLineBounds.top, listBounds.top, 1f)
+        assertEquals("the list should end at its last lyric", lastLineBounds.bottom, listBounds.bottom, 1f)
+        assertActionIconsKeepTheirSize()
     }
 
     @Test

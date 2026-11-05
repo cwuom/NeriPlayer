@@ -17,6 +17,7 @@ internal object SyncPreferenceRecovery {
         create = create,
         delete = delete,
         rebuildCorrupted = recoverOnFailure,
+        retryVolatile = true,
         report = { event, error ->
             if (event == SecurePreferencesEvent.DELETE_FAILED) onDeleteFailure(error) else onOpenFailure(error)
         }

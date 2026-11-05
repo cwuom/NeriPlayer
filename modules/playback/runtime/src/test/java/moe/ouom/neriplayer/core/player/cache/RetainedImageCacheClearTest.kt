@@ -29,6 +29,111 @@ class RetainedImageCacheClearTest {
     val temporary = TemporaryFolder()
 
     @Test
+    fun `a current key reads legacy bytes without creating or indexing a second entry`() {
+        val delegate = realCache()
+        write(delegate, "legacy-cover")
+        val disk = RetainingImageDiskCache(delegate, File(temporary.root, "aliases")) {
+            if (it == "current-cover") listOf("legacy-cover") else emptyList()
+        }
+
+        requireNotNull(disk.openSnapshot("current-cover")).use { snapshot ->
+            assertEquals("metadata:legacy-cover", disk.fileSystem.source(snapshot.metadata).buffer().use { it.readUtf8() })
+            assertEquals("data:legacy-cover", disk.fileSystem.source(snapshot.data).buffer().use { it.readUtf8() })
+        }
+        assertNull(delegate.openSnapshot("current-cover"))
+        assertEquals(setOf("legacy-cover"), disk.knownKeys())
+        assertEquals(entryBytes("legacy-cover"), disk.size)
+    }
+
+    @Test
+    fun `a current entry takes precedence over available legacy aliases`() {
+        val delegate = realCache()
+        write(delegate, "legacy-cover")
+        write(delegate, "current-cover")
+        val disk = RetainingImageDiskCache(delegate, File(temporary.root, "aliases")) { listOf("legacy-cover") }
+
+        assertEntry(disk, "current-cover")
+        assertEquals(setOf("current-cover"), disk.knownKeys())
+        assertEntry(delegate, "legacy-cover")
+    }
+
+    @Test
+    fun `a metadata-only update of an aliased snapshot preserves its existing image bytes`() {
+        val delegate = realCache()
+        write(delegate, "legacy-cover")
+        val disk = RetainingImageDiskCache(delegate, File(temporary.root, "aliases")) { listOf("legacy-cover") }
+        val snapshot = requireNotNull(disk.openSnapshot("current-cover"))
+        val editor = requireNotNull(snapshot.closeAndOpenEditor())
+        disk.fileSystem.sink(editor.metadata).buffer().use { it.writeUtf8("revalidated-metadata") }
+        editor.commit()
+
+        requireNotNull(disk.openSnapshot("current-cover")).use { updated ->
+            assertEquals("revalidated-metadata", disk.fileSystem.source(updated.metadata).buffer().use { it.readUtf8() })
+            assertEquals("data:legacy-cover", disk.fileSystem.source(updated.data).buffer().use { it.readUtf8() })
+        }
+        assertNull(delegate.openSnapshot("current-cover"))
+        assertEquals(setOf("legacy-cover"), disk.knownKeys())
+    }
+
+    @Test
+    fun `a new editor still writes the requested key without modifying its legacy alias`() {
+        val delegate = realCache()
+        write(delegate, "legacy-cover")
+        val disk = RetainingImageDiskCache(delegate, File(temporary.root, "aliases")) { listOf("legacy-cover") }
+
+        write(disk, "current-cover")
+
+        assertEntry(delegate, "current-cover")
+        assertEntry(delegate, "legacy-cover")
+        assertEquals(setOf("current-cover"), disk.knownKeys())
+    }
+
+    @Test
+    fun `removing a current representation also removes and unindexes every legacy alias`() {
+        val delegate = realCache()
+        val disk = RetainingImageDiskCache(delegate, File(temporary.root, "aliases")) {
+            if (it == "current-cover") listOf("legacy-first", "legacy-second", "legacy-first", it) else emptyList()
+        }
+        listOf("current-cover", "legacy-first", "legacy-second", "other-cover").forEach { write(disk, it) }
+
+        assertTrue(disk.remove("current-cover"))
+
+        for (key in listOf("current-cover", "legacy-first", "legacy-second")) assertNull(delegate.openSnapshot(key))
+        assertEquals(setOf("other-cover"), disk.knownKeys())
+        assertEntry(disk, "other-cover")
+    }
+
+    @Test
+    fun `a cache without aliases keeps the original exact-key behavior`() {
+        val delegate = realCache()
+        write(delegate, "legacy-cover")
+        val disk = track(delegate)
+
+        assertNull(disk.openSnapshot("current-cover"))
+        assertFalse(disk.remove("current-cover"))
+        assertEntry(delegate, "legacy-cover")
+    }
+
+    @Test
+    fun `legacy fallback estimates the physical entry once and retains it for the current cover`() = runTest {
+        val delegate = realCache()
+        write(delegate, "https://legacy.test/cover")
+        val disk = RetainingImageDiskCache(delegate, File(temporary.root, "aliases")) {
+            if (it == "https://current.test/cover") listOf("https://legacy.test/cover") else emptyList()
+        }
+        requireNotNull(disk.openSnapshot("https://current.test/cover")).close()
+        write(disk, "other-cover")
+
+        assertEquals(entryBytes("https://legacy.test/cover") + entryBytes("other-cover"),
+            estimateRetainingImageCache(loader(disk), emptySet(), true))
+        assertEquals(entryBytes("other-cover"),
+            estimateRetainingImageCache(loader(disk), setOf("https://current.test/cover"), true))
+        assertTrue(clearRetainingImageCache(loader(disk), setOf("https://current.test/cover")).success)
+        assertEntry(delegate, "https://legacy.test/cover")
+        assertNull(delegate.openSnapshot("other-cover"))
+    }
+
+    @Test
     fun `an emptied image cache retains physical journal bytes without reclaimable image payload`() = runTest {
         val disk = realCache()
         write(disk, "cover-before-clear")

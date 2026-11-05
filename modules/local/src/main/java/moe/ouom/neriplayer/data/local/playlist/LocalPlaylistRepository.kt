@@ -167,7 +167,8 @@ class LocalPlaylistRepository private constructor(
     internal data class PlaylistLoadResult(
         val playlists: List<LocalPlaylist>,
         val migrationRequired: Boolean,
-        val allowMigrationWrite: Boolean
+        val allowMigrationWrite: Boolean,
+        val allowRoomPromotion: Boolean = allowMigrationWrite
     )
 
     internal data class ParsedPlaylistCandidate(

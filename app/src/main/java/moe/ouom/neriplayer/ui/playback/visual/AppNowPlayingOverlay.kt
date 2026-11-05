@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
 import moe.ouom.neriplayer.ui.theme.NeriTheme
+import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 
 internal data class NowPlayingOverlayCover(
@@ -51,7 +52,9 @@ internal data class NowPlayingOverlayCover(
     val song: SongItem?,
     val assetRefreshKey: Int,
     val assetRefresh: NowPlayingCoverAssetRefresh? = null
-)
+) {
+    val clearCover: Boolean get() = song.hasKnownEmptyLocalCover()
+}
 
 internal data class NowPlayingOverlayTheme(
     val dynamicColorEnabled: Boolean,
@@ -102,9 +105,16 @@ internal fun releaseNowPlayingInputSession(
 
 internal fun resolveNowPlayingOverlayArtwork(
     songKey: String?,
-    flight: SharedCoverFlightState?
-): ImageBitmap? = RetainedPlaybackCoverBitmapCache.getLatestForOwner(songKey)?.bitmap
-    ?: flight?.miniCoverBitmap
+    flight: SharedCoverFlightState?,
+    clearCover: Boolean = false
+): ImageBitmap? {
+    if (clearCover) {
+        flight?.clearArtwork()
+        return null
+    }
+    return RetainedPlaybackCoverBitmapCache.getLatestForOwner(songKey)?.bitmap
+        ?: flight?.miniCoverBitmap
+}
 
 internal fun shouldUseNowPlayingContainerMorph(
     smallestScreenWidthDp: Int
@@ -180,7 +190,7 @@ internal fun AppNowPlayingOverlay(
         val morph = rememberNowPlayingMorphState(
             visible = visible,
             flight = sharedCoverFlight,
-            artwork = { resolveNowPlayingOverlayArtwork(cover.songKey, sharedCoverFlight) },
+            artwork = { resolveNowPlayingOverlayArtwork(cover.songKey, sharedCoverFlight, cover.clearCover) },
             backProgress = {
                 if (backPreviewEnabled) {
                     FastOutLinearInEasing.transform(dismissState.progress.coerceIn(0f, 1f))

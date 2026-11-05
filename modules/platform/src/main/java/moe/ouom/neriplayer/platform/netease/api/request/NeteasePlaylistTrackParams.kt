@@ -25,7 +25,8 @@ package moe.ouom.neriplayer.platform.netease.api.request
 
 internal fun buildNeteasePlaylistAddTracksParams(
     playlistId: Long,
-    songIds: List<Long>
+    songIds: List<Long>,
+    checkToken: String? = null
 ): Map<String, Any> {
     require(playlistId > 0L) { "playlistId must be positive" }
     require(songIds.isNotEmpty()) { "songIds must not be empty" }
@@ -40,7 +41,7 @@ internal fun buildNeteasePlaylistAddTracksParams(
         prefix = "[",
         postfix = "]"
     )
-    return mapOf(
+    val params = mutableMapOf<String, Any>(
         "op" to "add",
         "pid" to playlistId.toString(),
         "id" to playlistId.toString(),
@@ -48,4 +49,8 @@ internal fun buildNeteasePlaylistAddTracksParams(
         "trackIds" to idsJson,
         "imme" to "true"
     )
+    if (!checkToken.isNullOrBlank()) {
+        params["checkToken"] = checkToken
+    }
+    return params
 }

@@ -880,7 +880,7 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
     @Test
     fun `signed url rotation does not discard a resumable file`() {
         val fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
-            sourceUrl = "https://example.com/audio.m4a?token=old",
+            sourceUrl = "https://cdn.bilivideo.com/audio.m4a?token=old",
             etag = "\"same-validator\"",
             lastModified = null,
             expectedContentLength = 4_096L
@@ -888,31 +888,31 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
 
         assertFalse(
             AudioDownloadManager.shouldDiscardWorkingFileForResume(
-                requestUrl = "https://example.com/audio.m4a?token=new",
+                requestUrl = "https://cdn.bilivideo.com/audio.m4a?token=new",
                 fingerprint = fingerprint
             )
         )
         assertFalse(
             AudioDownloadManager.shouldDiscardWorkingFileForResume(
-                requestUrl = "https://example.com/audio.m4a?token=new",
+                requestUrl = "https://cdn.bilivideo.com/audio.m4a?token=new",
                 fingerprint = fingerprint.copy(etag = null, lastModified = null)
             )
         )
         assertTrue(
             AudioDownloadManager.shouldDiscardWorkingFileForResume(
-                requestUrl = "https://example.com/other.m4a?token=new",
+                requestUrl = "https://cdn.bilivideo.com/other.m4a?token=new",
                 fingerprint = fingerprint.copy(etag = null, lastModified = null)
             )
         )
         assertFalse(
             AudioDownloadManager.shouldDiscardWorkingFileForResume(
-                requestUrl = "https://example.com/audio.m4a?token=old",
+                requestUrl = "https://cdn.bilivideo.com/audio.m4a?token=old",
                 fingerprint = fingerprint
             )
         )
         assertTrue(
             AudioDownloadManager.shouldDiscardWorkingFileForResume(
-                requestUrl = "https://example.com/audio.m4a?quality=low",
+                requestUrl = "https://cdn.bilivideo.com/audio.m4a?quality=low",
                 fingerprint = fingerprint.copy(etag = null, lastModified = null)
             )
         )

@@ -129,8 +129,7 @@ internal fun StartupPlatformAccounts(
                 savedAtLabel = startupAccountSavedAtText(youTubeState.health.savedAt),
                 profile = profiles.youtube.profile,
                 profileLoading = profiles.youtube.loading
-            ),
-            SettingsAccountCardUiState(platform = SettingsAccountPlatform.QqMusic)
+            )
         ),
         inlineMessage = inlineMessage,
         onInlineMessageChange = onInlineMessageChange,

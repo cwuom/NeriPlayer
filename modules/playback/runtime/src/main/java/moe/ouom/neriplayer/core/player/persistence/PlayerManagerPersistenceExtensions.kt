@@ -9,13 +9,12 @@ import moe.ouom.neriplayer.data.settings.playback.sanitized
 
 import android.app.Application
 import android.os.SystemClock
-import androidx.media3.common.Player
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -30,9 +29,12 @@ import moe.ouom.neriplayer.core.player.heartbeat.restoreHeartbeatModeFromState
 import moe.ouom.neriplayer.data.model.playback.storage.PlayerMetadataClearRequest as RestorableMetadataClearPolicy
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
+import moe.ouom.neriplayer.core.player.metadata.firstUsableLocalCoverReference
 import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
 import moe.ouom.neriplayer.core.player.metadata.BiliSubtitleLyricsOptions
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
+import moe.ouom.neriplayer.core.player.metadata.SongMetadataApplyOptions
+import moe.ouom.neriplayer.core.player.metadata.SongMetadataApplyStage
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.core.player.runtime.metadata.SongMetadataRequestCoordinator
@@ -47,7 +49,6 @@ import moe.ouom.neriplayer.core.player.metadata.shouldSkipSongMetadataMutation
 import moe.ouom.neriplayer.core.player.metadata.shouldWriteLocalCoverMetadata
 import moe.ouom.neriplayer.core.player.metadata.toBasicSongDetails
 import moe.ouom.neriplayer.core.player.metadata.withUpdatedLyricsPreservingOriginal
-import moe.ouom.neriplayer.data.model.playback.PersistedState
 import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
@@ -58,7 +59,6 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
-import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.lyrics.offset.rebaseLyricUserOffsetMs
 import moe.ouom.neriplayer.lyrics.offset.saturatingAddLyricOffsetMs
@@ -66,12 +66,9 @@ import moe.ouom.neriplayer.lyrics.offset.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sync.SyncSong
-import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.player.host.PlayerFeedback
-import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
 
@@ -163,297 +160,19 @@ private fun downloadedLocalFilesCoverCandidates(): List<SongItem> {
     return PlayerDependencies.downloads.downloadedSongs()
 }
 
-internal data class PlaybackQueueLegacySnapshot(
-    val state: PersistedState,
-    val updatedAt: Long
-)
-
-private fun readLegacyPlaybackStateSnapshot(
-    stateFile: File,
-    playbackStateFile: File
-): PlaybackQueueLegacySnapshot? {
-    return runCatching {
-        val legacyStore = PlaybackQueueLegacyStore(
-            stateFile = stateFile,
-            playbackStateFile = playbackStateFile,
-            gson = PlayerManager.gson
-        )
-        val state = legacyStore.read() ?: return@runCatching null
-        PlaybackQueueLegacySnapshot(
-            state = state,
-            updatedAt = legacyStore.lastModified()
-        )
-    }.onFailure { error ->
-        NPLogger.w(
-            "NERI-PlayerManager",
-            "Failed to read legacy playback state: ${error.message}"
-        )
-    }.getOrNull()
-}
-
-internal fun selectRestoredPlaybackState(
-    roomPrimary: Boolean,
-    roomSnapshot: PlaybackQueueRoomSnapshot?,
-    legacySnapshot: PlaybackQueueLegacySnapshot?
-): PersistedState? {
-    if (!roomPrimary || roomSnapshot == null) {
-        return legacySnapshot?.state
-    }
-    if (legacySnapshot != null && legacySnapshot.updatedAt >= roomSnapshot.updatedAt) {
-        return legacySnapshot.state
-    }
-    return roomSnapshot.state
-}
-
-private fun buildRestoredStateSnapshot(
-    app: Application,
-    data: PersistedState,
-    keepLastPlaybackProgressEnabled: Boolean,
-    keepPlaybackModeStateEnabled: Boolean,
-    readLyricOverrides: (Set<String>) -> List<SyncSong>
-): RestoredPlayerStateSnapshot? {
-    return runCatching {
-        val playlist = data.playlist.map { persistedSong -> persistedSong.toSongItem() }
-        val currentlyUnreadableLocalCount = playlist.count { song ->
-            LocalSongSupport.isLocalSong(song, app) &&
-                !PlayerManager.isRestorableLocalSong(song, app)
-        }
-        if (currentlyUnreadableLocalCount > 0) {
-            NPLogger.w(
-                "NERI-PlayerManager",
-                "restoreState: keeping $currentlyUnreadableLocalCount local songs even though they are not readable yet"
-            )
-        }
-        val preferredSong = data.playlist.getOrNull(data.index)?.toSongItem()
-        val currentIndex = when {
-            playlist.isEmpty() -> -1
-            preferredSong != null -> {
-                playlist.indexOfFirst { it.sameIdentityAs(preferredSong) }
-                    .takeIf { it >= 0 }
-                    ?: data.index.coerceIn(0, playlist.lastIndex)
-            }
-            data.index in playlist.indices -> data.index
-            else -> 0
-        }
-        val currentSong = playlist.getOrNull(currentIndex)
-        val currentMediaUrl = if (currentSong == null) {
-            null
-        } else {
-            data.mediaUrl?.takeIf {
-                val isPersistedLocalMediaUrl =
-                    it.startsWith("file://") ||
-                        it.startsWith("content://") ||
-                        it.startsWith("android.resource://") ||
-                        it.startsWith("/")
-                !isPersistedLocalMediaUrl || PlayerManager.isRestorableLocalMediaUri(it, app)
-            }
-        }
-        val repeatMode = if (keepPlaybackModeStateEnabled) {
-            when (val persistedRepeatMode = data.repeatMode) {
-                Player.REPEAT_MODE_ALL,
-                Player.REPEAT_MODE_ONE,
-                Player.REPEAT_MODE_OFF -> persistedRepeatMode
-                else -> Player.REPEAT_MODE_OFF
-            }
-        } else {
-            Player.REPEAT_MODE_OFF
-        }
-
-        val snapshot = RestoredPlayerStateSnapshot(
-            playlist = playlist,
-            currentIndex = currentIndex,
-            currentMediaUrl = currentMediaUrl,
-            repeatMode = repeatMode,
-            shuffleEnabled = keepPlaybackModeStateEnabled && (data.shuffleEnabled == true),
-            shuffleRestorePlaylist = if (keepPlaybackModeStateEnabled && data.shuffleEnabled == true) {
-                data.shuffleRestorePlaylist?.map { persistedSong -> persistedSong.toSongItem() }
-            } else {
-                null
-            },
-            shuffleRestoreIndex = if (keepPlaybackModeStateEnabled && data.shuffleEnabled == true) {
-                data.shuffleRestoreIndex ?: -1
-            } else {
-                -1
-            },
-            resumePositionMs = if (keepLastPlaybackProgressEnabled) {
-                data.positionMs.coerceAtLeast(0L)
-            } else {
-                0L
-            },
-            shouldResumePlayback = data.shouldResumePlayback && currentIndex != -1,
-            originalPlaylistSize = data.playlist.size,
-            persistedIndex = data.index,
-            heartbeatMode = data.heartbeatMode ?: HeartbeatMode.OFF, // Room 实体没有该列，恢复为 OFF
-        )
-        val identities = playbackLyricIdentityKeys(snapshot.playlist.getOrNull(snapshot.currentIndex),
-            snapshot.playlist, snapshot.shuffleRestorePlaylist)
-        PlaybackLyricOverrideProjection(readLyricOverrides(identities)).restoredSnapshot(snapshot)
-    }.onFailure { error ->
-        if (error is CancellationException) throw error
-        NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${error.message}")
-    }.getOrNull()
-}
-
 suspend fun preloadRestoredStateSnapshot(
     app: Application,
     keepLastPlaybackProgressEnabled: Boolean,
     keepPlaybackModeStateEnabled: Boolean
 ): RestoredPlayerStateSnapshot? {
-    val startupStateFile = File(app.filesDir, "last_playlist.json")
-    val startupPlaybackStateFile = File(app.filesDir, "last_playback_state.json")
-    return withContext(Dispatchers.IO) {
-        val readContext = coroutineContext
-        val roomStore = PlaybackQueueRoomStore(
-            NeriUserDataDatabase.getInstance(app.applicationContext)
-        )
-        val roomRead = runCatching { roomStore.readSnapshotIfRoomPrimary() }
-            .onFailure { error ->
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "restoreState: Room read failed, trying legacy JSON: ${error.message}"
-                )
-            }
-        val roomPrimary = runCatching { roomStore.isRoomPrimary() }
-            .onFailure { error ->
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "restoreState: Room marker read failed: ${error.message}"
-                )
-            }
-            .getOrDefault(false)
-        val roomSnapshot = roomRead.getOrNull()
-        val legacySnapshot = if (!roomPrimary ||
-            roomSnapshot == null ||
-            PlaybackQueueLegacyStore(
-                stateFile = startupStateFile,
-                playbackStateFile = startupPlaybackStateFile,
-                gson = PlayerManager.gson
-            ).lastModified() >= roomSnapshot.updatedAt
-        ) {
-            readLegacyPlaybackStateSnapshot(
-                stateFile = startupStateFile,
-                playbackStateFile = startupPlaybackStateFile
-            )
-        } else {
-            null
-        }
-        val data = selectRestoredPlaybackState(
-            roomPrimary = roomPrimary,
-            roomSnapshot = roomSnapshot,
-            legacySnapshot = legacySnapshot
-        )
-        val selectedLegacySnapshot = legacySnapshot
-        if (data != null && selectedLegacySnapshot != null && data === selectedLegacySnapshot.state) {
-            selectedLegacySnapshot.state.also { legacyData ->
-                runCatching {
-                    roomStore.replaceSnapshot(legacyData)
-                }.onFailure { error ->
-                    NPLogger.w(
-                        "NERI-PlayerManager",
-                        "Failed to import legacy playback state into Room: ${error.message}"
-                    )
-                }
-            }
-        }
-        if (data == null) {
-            NPLogger.d("NERI-PlayerManager", "restoreState: no persisted playback state")
-            null
-        } else {
-            buildRestoredStateSnapshot(
-                app = app,
-                data = data,
-                keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled,
-                keepPlaybackModeStateEnabled = keepPlaybackModeStateEnabled,
-                readLyricOverrides = { keys ->
-                    SecureTokenStorage(app).getLyricOverridesForIdentityKeys(keys) { readContext.ensureActive() }
-                }
-            )
-        }
+    return when (val preload = preloadRestoredPlayerState(
+        app = app,
+        keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled,
+        keepPlaybackModeStateEnabled = keepPlaybackModeStateEnabled
+    )) {
+        is RestoredPlayerStatePreload.Completed -> preload.snapshot
+        RestoredPlayerStatePreload.NeedsFallback -> null
     }
-}
-
-private fun loadRestoredStateSnapshot(
-    app: Application,
-    stateFile: File,
-    playbackStateFile: File,
-    keepLastPlaybackProgressEnabled: Boolean,
-    keepPlaybackModeStateEnabled: Boolean
-): RestoredPlayerStateSnapshot? {
-    return runCatching {
-        runBlocking(Dispatchers.IO) {
-            val readContext = coroutineContext
-            val database = NeriUserDataDatabase.getInstance(app.applicationContext)
-            val roomStore = PlaybackQueueRoomStore(database)
-            val roomPrimary = runCatching { roomStore.isRoomPrimary() }
-                .onFailure { error ->
-                    NPLogger.w(
-                        "NERI-PlayerManager",
-                        "restoreState: Room marker read failed: ${error.message}"
-                    )
-                }
-                .getOrDefault(false)
-            val roomRead = if (roomPrimary) {
-                runCatching { roomStore.readSnapshotIfRoomPrimary() }
-                    .onFailure { error ->
-                        NPLogger.w(
-                            "NERI-PlayerManager",
-                            "restoreState: Room read failed, trying legacy JSON: ${error.message}"
-                        )
-                    }
-            } else {
-                null
-            }
-            val roomSnapshot = roomRead?.getOrNull()
-            val legacySnapshot = if (!roomPrimary ||
-                roomSnapshot == null ||
-                PlaybackQueueLegacyStore(
-                    stateFile = stateFile,
-                    playbackStateFile = playbackStateFile,
-                    gson = PlayerManager.gson
-                ).lastModified() >= roomSnapshot.updatedAt
-            ) {
-                readLegacyPlaybackStateSnapshot(
-                    stateFile = stateFile,
-                    playbackStateFile = playbackStateFile
-                )
-            } else {
-                null
-            }
-            val selected = selectRestoredPlaybackState(
-                roomPrimary = roomPrimary,
-                roomSnapshot = roomSnapshot,
-                legacySnapshot = legacySnapshot
-            )
-            val selectedLegacySnapshot = legacySnapshot
-            val data = if (selected != null && selectedLegacySnapshot != null && selected === selectedLegacySnapshot.state) {
-                selectedLegacySnapshot.state.also { legacyData ->
-                    runCatching {
-                        roomStore.replaceSnapshot(legacyData)
-                    }.onFailure { error ->
-                        NPLogger.w(
-                            "NERI-PlayerManager",
-                            "restoreState: failed to import legacy playback state: ${error.message}"
-                        )
-                    }
-                }
-            } else {
-                selected
-            }
-            if (data == null) return@runBlocking null
-            buildRestoredStateSnapshot(
-                app = app,
-                data = data,
-                keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled,
-                keepPlaybackModeStateEnabled = keepPlaybackModeStateEnabled,
-                readLyricOverrides = { keys ->
-                    SecureTokenStorage(app).getLyricOverridesForIdentityKeys(keys) { readContext.ensureActive() }
-                }
-            )
-        }
-    }.onFailure { error ->
-        if (error is CancellationException) throw error
-        NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${error.message}")
-    }.getOrNull()
 }
 
 internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerStateSnapshot) {
@@ -811,15 +530,17 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
     originalSong: SongItem,
     selectedSong: SongSearchInfo,
     isAuto: Boolean = false,
-    onComplete: ((Boolean) -> Unit)? = null
-) {
+    onComplete: ((Boolean) -> Unit)? = null,
+    options: SongMetadataApplyOptions? = null,
+    onProgress: ((SongMetadataApplyStage) -> Unit)? = null
+): Job? {
     val requestToken = songMetadataRequestCoordinator.begin(
         songKey = originalSong.stableKey(),
         isAuto = isAuto
     )
     if (requestToken == null) {
         dispatchMetadataReplacementCompletion(onComplete, applied = false)
-        return
+        return null
     }
 
     val applied = AtomicBoolean(false)
@@ -840,6 +561,28 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
                         message = getLocalizedString(CoreCommonR.string.netease_login_required_metadata)
                     )
                 }
+                return@launch
+            }
+
+            if (options != null && !isAuto) {
+                val requestContext = coroutineContext
+                applied.set(applyManualMetadataSelection(
+                    originalSong = originalSong,
+                    selectedSong = selectedSong,
+                    options = options,
+                    isLatestRequest = { songMetadataRequestCoordinator.isLatest(requestToken) },
+                    onProgress = { stage ->
+                        val callback = onProgress
+                        if (callback != null) withContext(Dispatchers.Main.immediate) {
+                            requestContext.ensureActive()
+                            if (!songMetadataRequestCoordinator.isLatest(requestToken)) {
+                                throw CancellationException("metadata request superseded")
+                            }
+                            callback(stage)
+                        }
+                    },
+                    onApplied = { applied.set(true) }
+                ))
                 return@launch
             }
 
@@ -969,6 +712,7 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
         songMetadataRequestCoordinator.complete(requestToken)
         dispatchMetadataReplacementCompletion(onComplete, applied.get())
     }
+    return replacementJob
 }
 
 private fun PlayerManager.shouldApplySearchMetadataAsCustomOverride(song: SongItem): Boolean {
@@ -1037,11 +781,17 @@ internal suspend fun PlayerManager.writeLocalEditableMetadata(
     val writableSong = resolveLocalSidecarWriteSong(song)
         ?.takeIf { LocalSongSupport.isLocalSong(it, application) }
         ?: return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
+    val writeSong = if (writeLyrics) {
+        completeUnknownLocalWriteLyrics(writableSong)
+            ?: return LocalMediaMetadataWriteOutcome.FAILED
+    } else {
+        writableSong
+    }
     val playbackSnapshot = parkCurrentPlaybackForLocalMetadataWrite(song)
     return try {
         LocalMediaSupport.writeEditableMetadata(
             context = application,
-            song = writableSong,
+            song = writeSong,
             coverReference = coverReference,
             writeCover = writeCover,
             writeLyrics = writeLyrics
@@ -1049,6 +799,30 @@ internal suspend fun PlayerManager.writeLocalEditableMetadata(
     } finally {
         resumePlaybackAfterLocalMetadataWrite(playbackSnapshot)
     }
+}
+
+private suspend fun PlayerManager.completeUnknownLocalWriteLyrics(song: SongItem): SongItem? {
+    val missingOriginal = song.matchedLyric == null && song.originalLyric == null
+    val missingTranslated = song.matchedTranslatedLyric == null && song.originalTranslatedLyric == null
+    val missingRomanized = song.matchedRomanizedLyric == null && song.originalRomanizedLyric == null
+    if (!missingOriginal && !missingTranslated && !missingRomanized) return song
+    val embedded = try {
+        withContext(Dispatchers.IO) {
+            LocalMediaSupport.inspectEmbeddedLyrics(application, song)
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        NPLogger.w("PlayerManager", "本地回写前未能确认现有歌词: ${error.message}")
+        null
+    }
+    if (embedded?.embeddedSourceResolved != true) return null
+    // 当前文件里的未知轨只用于本次回写，不能冒充已经丢失的原始恢复数据
+    return song.copy(
+        matchedLyric = if (missingOriginal) embedded.lyric.orEmpty() else song.matchedLyric,
+        matchedTranslatedLyric = if (missingTranslated) embedded.translatedLyric.orEmpty() else song.matchedTranslatedLyric,
+        matchedRomanizedLyric = if (missingRomanized) embedded.romanizedLyric.orEmpty() else song.matchedRomanizedLyric
+    )
 }
 
 private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
@@ -1077,7 +851,7 @@ internal suspend fun PlayerManager.resolveLocalSidecarWriteSong(song: SongItem):
     )
 }
 
-private fun PlayerManager.showLocalEditableMetadataWriteFeedback(
+internal fun PlayerManager.showLocalEditableMetadataWriteFeedback(
     outcome: LocalMediaMetadataWriteOutcome,
     downloadSyncOutcome: PlayerDownloadedMetadataSyncOutcome
 ) {
@@ -1092,7 +866,8 @@ private fun PlayerManager.showLocalEditableMetadataWriteFeedback(
             CoreCommonR.string.local_song_metadata_write_sidecar_only
         }
         LocalMediaMetadataWriteOutcome.NOT_WRITABLE -> CoreCommonR.string.local_song_metadata_write_not_writable
-        LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE -> {
+        LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE,
+        LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER -> {
             CoreCommonR.string.local_song_metadata_write_unsupported
         }
         LocalMediaMetadataWriteOutcome.FAILED -> CoreCommonR.string.local_song_metadata_write_failed
@@ -1127,7 +902,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(originalSong) }
                 ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(originalSong) }
                 ?: originalSong
-            val currentSong = preserveLocalSongMetadataOriginals(latestSong)
+            val currentSong = preserveLocalSongMetadataOriginals(latestSong, preserveLyrics = writeLyrics)
             val isLocalSong = LocalSongSupport.isLocalSong(currentSong, application)
 
             val baseName = currentSong.name
@@ -1171,17 +946,13 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             val shouldResolveLocalCover = isLocalSong &&
                 (coverChanged || restoreBaseCover)
             val discoveredLocalCoverUrl = if (shouldResolveLocalCover) {
-                sequenceOf(
+                firstUsableLocalCoverReference(
                     // 下载歌曲的 Covers 侧载是本地恢复的第一来源, 不要让远程标签覆盖它
-                    PlayerDependencies.downloads.peekLocalCoverUri(currentSong),
-                    LocalMediaSupport.resolveNearbyCoverUri(application, currentSong),
-                    LocalMediaSupport.peekCachedEmbeddedCoverUri(application, currentSong),
-                    LocalMediaSupport.resolveCoverUri(application, currentSong)
-                ).firstOrNull { reference ->
-                    !reference.isNullOrBlank() &&
-                        !CustomSongCoverStorage.isRemoteReference(reference) &&
-                        !isMediaStoreCoverReference(reference)
-                }
+                    { PlayerDependencies.downloads.peekLocalCoverUri(currentSong) },
+                    { LocalMediaSupport.resolveNearbyCoverUri(application, currentSong) },
+                    { LocalMediaSupport.peekCachedEmbeddedCoverUri(application, currentSong) },
+                    { LocalMediaSupport.resolveCoverUri(application, currentSong) }
+                )
             } else {
                 null
             }
@@ -1260,7 +1031,11 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 restoredBaseCoverReference = restoredBaseCoverUrl
             )
             // null is a deliberate clear when the user restores or removes a cover
-            val shouldWriteCoverToAudio = coverChanged
+            val shouldWriteCoverToAudio = coverChanged ||
+                (writeLocalMetadata && requestedCoverReference != null) ||
+                (writeLocalMetadata && isLocalSong && currentSong.originalCoverUrl == "" &&
+                    requestedCoverReference == null && currentSong.customCoverUrl.isNullOrBlank() &&
+                    baseCoverUrl.isNullOrBlank())
 
             val nextBaseName = if (restoreBaseName) restoredBaseName else baseName
             val nextBaseArtist = if (restoreBaseArtist) restoredBaseArtist else baseArtist
@@ -1317,7 +1092,10 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 matchedSongId = if (clearMatchedMetadata) null else currentSong.matchedSongId
             )
 
-            if (shouldSkipSongMetadataMutation(currentSong, updatedSong, writeLyrics)) {
+            if (shouldSkipSongMetadataMutation(
+                    currentSong, updatedSong, writeLyrics,
+                    writeLocalMetadata = writeLocalMetadata && isLocalSong
+                )) {
                 NPLogger.d("PlayerManager", "skip unchanged song metadata mutation")
                 return@runSongMetadataMutation true
             }
@@ -1393,8 +1171,17 @@ private fun String?.normalizedManualMetadataValue(): String? {
 }
 
 internal fun PlayerManager.hydrateSongMetadataImpl(originalSong: SongItem, updatedSong: SongItem) {
+    val queuedSongAtRequest = currentPlaylist.firstOrNull { it.sameIdentityAs(originalSong) }
+    val currentSongAtRequest = _currentSongFlow.value?.takeIf { it.sameIdentityAs(originalSong) }
+    if (queuedSongAtRequest?.let { it != originalSong } == true ||
+        currentSongAtRequest?.let { it != originalSong } == true
+    ) return
     ioScope.launch {
         runSongMetadataMutation {
+            // 输入可以是相等的副本，提交时仍校验实际快照是否已被后续保存替换
+            if (currentPlaylist.firstOrNull { it.sameIdentityAs(originalSong) } !== queuedSongAtRequest ||
+                _currentSongFlow.value?.takeIf { it.sameIdentityAs(originalSong) } !== currentSongAtRequest
+            ) return@runSongMetadataMutation
             NPLogger.d(
                 "NERI-PlayerManager",
                 "hydrateSongMetadata: original=${originalSong.name}/${originalSong.id}, updated=${updatedSong.name}/${updatedSong.id}, stack=[${debugStackHint()}]"

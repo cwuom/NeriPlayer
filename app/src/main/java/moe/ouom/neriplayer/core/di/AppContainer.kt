@@ -1,5 +1,13 @@
 package moe.ouom.neriplayer.core.di
 
+import moe.ouom.neriplayer.platform.subsonic.repository.SubsonicRepository
+
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicResourceInterceptor
+
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicClient
+
+import moe.ouom.neriplayer.platform.subsonic.auth.SubsonicAccounts
+
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -68,6 +76,7 @@ import moe.ouom.neriplayer.platform.netease.auth.NeteaseCookieRepository
 import moe.ouom.neriplayer.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthRepository
+import moe.ouom.neriplayer.platform.youtube.auth.mergeYouTubeAuthCookieUpdates
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.heartbeat.DislikedSongRepository
@@ -139,6 +148,7 @@ internal fun configureSharedOkHttpClient(
     }
 
     return builder
+        .addNetworkInterceptor(moe.ouom.neriplayer.platform.bilibili.api.stream.BiliStreamCredentialInterceptor())
         .connectTimeout(SHARED_HTTP_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .readTimeout(SHARED_HTTP_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         // 播放, 同步与 WebSocket 共用此客户端, 不能用总时限截断长请求
@@ -251,6 +261,15 @@ object AppContainer {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private const val YOUTUBE_DOWNLOAD_PLAYBACK_CALL_TIMEOUT_MS = 20_000L
 
+    val subsonicAccounts by lazy { SubsonicAccounts(application) }
+    val subsonicRepository by lazy {
+        SubsonicRepository(subsonicAccounts, SubsonicClient(sharedOkHttpClient),
+            moe.ouom.neriplayer.platform.subsonic.repository.SubsonicBrowseCache(
+                moe.ouom.neriplayer.platform.subsonic.repository.SubsonicBrowseRoomStore(
+                    moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore(
+                        moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase.getInstance(application)))))
+    }
+
     // 基础 Repo
     val settingsRepo by lazy { SettingsRepository(application) }
     val listenTogetherPreferences by lazy { ListenTogetherPreferences(application) }
@@ -261,10 +280,20 @@ object AppContainer {
         YouTubeAuthAutoRefreshManager(
             httpClientProvider = { sharedOkHttpClient },
             context = application,
-            authProvider = youtubeAuthRepo::getAuthOnce,
-            authHealthProvider = youtubeAuthRepo::getAuthHealthOnce,
-            authUpdater = youtubeAuthRepo::saveAuth,
-            rotatedCookieUpdater = youtubeAuthRepo::mergeRotatedCookies
+            authStore = youtubeAuthRepo
+        )
+    }
+
+    internal suspend fun changeYouTubeAuth(updateAuth: () -> Unit) {
+        withYouTubeAuthChange(
+            updateAuth = updateAuth,
+            stopRefresh = youtubeAuthAutoRefreshManager::cancelAndAwaitRefresh,
+            clearWebState = {
+                moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState(
+                    application,
+                    moe.ouom.neriplayer.data.auth.web.WebLoginPlatform.YOUTUBE
+                )
+            }
         )
     }
 
@@ -312,6 +341,7 @@ object AppContainer {
     val sharedOkHttpClient by lazy {
         val clientBuilder = OkHttpClient.Builder()
             .proxySelector(DynamicProxySelector)
+            .addInterceptor(SubsonicResourceInterceptor { subsonicAccounts })
             .addInterceptor { chain ->
                 val request = chain.request()
                 val host = request.url.host.lowercase()
@@ -322,7 +352,8 @@ object AppContainer {
                     throw YouTubeFeatureDisabledException()
                 }
 
-                val auth = youtubeAuthRepo.getAuthOnce().normalized()
+                val authSnapshot = youtubeAuthRepo.captureAuthSnapshot()
+                val auth = authSnapshot.auth
                 val originalHeaders = linkedMapOf<String, String>().apply {
                     request.headers.names().forEach { name ->
                         request.header(name)?.let { value -> put(name, value) }
@@ -362,7 +393,12 @@ object AppContainer {
                 val setCookieHeaders = response.headers.values("Set-Cookie")
                 if (setCookieHeaders.isNotEmpty()) {
                     runCatching {
-                        youtubeAuthRepo.mergeCookieUpdates(setCookieHeaders)
+                        youtubeAuthRepo.updateAuthIfCurrent(authSnapshot) { current ->
+                            mergeYouTubeAuthCookieUpdates(
+                                base = current,
+                                setCookieHeaders = setCookieHeaders
+                            )
+                        }
                     }.onFailure { error ->
                         NPLogger.w("AppContainer", "Failed to merge YouTube Set-Cookie headers", error)
                     }
@@ -547,6 +583,10 @@ object AppContainer {
             )
         )
         moe.ouom.neriplayer.data.network.DataHttpClients.bind { sharedOkHttpClient }
+        moe.ouom.neriplayer.data.sync.policy.SyncCoverUrlProjection.bind(
+            prepare = { subsonicAccounts.load() },
+            project = { subsonicAccounts.portableCoverUrl(it) }
+        )
         moe.ouom.neriplayer.data.sync.host.SyncPlaybackActivity.bind {
             moe.ouom.neriplayer.core.player.PlayerManager.playbackControlPlayingFlow.value
         }
@@ -554,10 +594,7 @@ object AppContainer {
             object : moe.ouom.neriplayer.data.auth.youtube.YouTubeRotationHost {
                 override fun isInitialized() = AppContainer.isInitialized()
                 override suspend fun isYouTubeEnabled() = settingsRepo.youtubeEnabledFlow.first()
-                override fun readAuth() = youtubeAuthRepo.getAuthOnce()
-                override fun persistRotatedCookies(cookies: Map<String, String>) {
-                    youtubeAuthRepo.mergeRotatedCookies(cookies)
-                }
+                override val authStore get() = youtubeAuthRepo
             }
         )
         moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests.bind(
@@ -601,6 +638,7 @@ object AppContainer {
         scope.launch {
             runCatching {
                 CoverUrlMapper.getInstance(application)
+                subsonicAccounts.load()
             }.onFailure { error ->
                 NPLogger.e("AppContainer", "Failed to preload cover URL mappings", error)
             }
@@ -667,13 +705,19 @@ object AppContainer {
 
         settingsRepo.bypassProxyFlow
             .onEach { enabled ->
-                DynamicProxySelector.bypassProxy = enabled
-                sharedOkHttpClient.connectionPool.evictAll()
-                if (youtubeAccountProfileHttpClientDelegate.isInitialized()) {
-                    youtubeAccountProfileHttpClientDelegate.value.connectionPool.evictAll()
-                }
-                neteaseClient.evictConnections()
-                AudioDownloadManager.notifyRecoveryOpportunity("proxy_changed")
+                applyBypassProxyChange(
+                    enabled = enabled,
+                    currentValue = DynamicProxySelector.bypassProxy,
+                    applyValue = { DynamicProxySelector.bypassProxy = it },
+                    onChanged = {
+                        sharedOkHttpClient.connectionPool.evictAll()
+                        if (youtubeAccountProfileHttpClientDelegate.isInitialized()) {
+                            youtubeAccountProfileHttpClientDelegate.value.connectionPool.evictAll()
+                        }
+                        neteaseClient.evictConnections()
+                        AudioDownloadManager.notifyRecoveryOpportunity("proxy_changed")
+                    }
+                )
             }
             .launchIn(scope)
 
@@ -720,13 +764,19 @@ object AppContainer {
             .launchIn(scope)
     }
 
-    private fun warmYouTubePlaybackOnAppStart() {
+    internal fun warmYouTubePlaybackOnAppStart(
+        backgroundWarmupAllowed: () -> Boolean = { !InstrumentationTestRuntime.isActive },
+        loadWarmBootstrap: () -> (() -> Unit) = {
+            youtubeMusicPlaybackRepository::warmBootstrapAsync
+        }
+    ) {
         if (!YouTubeFeatureGate.isEnabled()) {
             return
         }
         warmYouTubePlaybackIfEnabled(
             youtubeEnabled = YouTubeFeatureGate.isEnabled(),
-            warmBootstrapAsync = youtubeMusicPlaybackRepository::warmBootstrapAsync
+            backgroundWarmupAllowed = backgroundWarmupAllowed(),
+            warmBootstrapAsync = { loadWarmBootstrap().invoke() }
         )
     }
 

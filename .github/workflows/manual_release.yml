@@ -174,6 +174,10 @@ jobs:
             -PbuildAllReleaseAbis=true -PallowUnsignedRelease=true \
             --warning-mode all --stacktrace
 
+      - name: Remove temporary signing keystore
+        if: ${{ always() && !inputs.test_release }}
+        run: rm -f app/neri.jks
+
       - name: Stage and verify release artifacts
         env:
           NERI_BUILD_UUID: ${{ steps.identity.outputs.build_uuid }}

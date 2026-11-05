@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -56,6 +57,31 @@ class StorageCacheCleanupSheetTest {
 
     @Test
     fun materialEditsRetentionAndBackDismisses() = verifyEditableSheet(UiStyle.Material, dark = false)
+
+    @Test
+    fun serverBrowseAndLocalImportCachesCanBeSelectedAndFollowSelectAll() {
+        render(UiStyle.Clean, dark = false)
+        composeRule.onNodeWithText(string(CoreCommonR.string.storage_type_server_browse_cache))
+            .performScrollTo().performClick()
+        composeRule.runOnIdle { assertTrue(options.serverBrowseCache) }
+        composeRule.onNodeWithText(string(CoreCommonR.string.storage_type_local_import_cache))
+            .performScrollTo().performClick()
+        composeRule.runOnIdle { assertTrue(options.localImportCache) }
+
+        composeRule.onNodeWithText(string(CoreCommonR.string.storage_cleanup_select_all))
+            .performScrollTo().performClick()
+        composeRule.runOnIdle {
+            assertTrue(options.serverBrowseCache)
+            assertTrue(options.localImportCache)
+            assertTrue(options.otherCache)
+        }
+        composeRule.onNodeWithText(string(CoreCommonR.string.storage_cleanup_deselect_all)).performClick()
+        composeRule.runOnIdle {
+            assertFalse(options.serverBrowseCache)
+            assertFalse(options.localImportCache)
+            assertFalse(options.hasSelection)
+        }
+    }
 
     @Test
     fun runningCleanupKeepsSheetOpenAndDisablesActions() {

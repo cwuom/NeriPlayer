@@ -32,7 +32,7 @@
     <string name="bili_cc_subtitle_lang_en">英文</string>
     <string name="bili_cc_subtitle_lang_ja">日文</string>
     <string name="bili_cc_subtitle_lang_ko">韩文</string>
-    <string name="settings_bili_cc_subtitle_group">B 站 CC 字幕</string>
+    <string name="settings_bili_cc_subtitle_group">哔哩哔哩 CC 字幕</string>
     <string name="settings_bili_cc_subtitle_group_enabled">已启用 · %1$s</string>
     <string name="settings_bili_cc_subtitle_group_disabled">已关闭</string>
     <string name="bili_cc_subtitle_off">关闭 CC 字幕</string>

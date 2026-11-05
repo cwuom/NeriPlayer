@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.host
 
+import moe.ouom.neriplayer.platform.subsonic.repository.SubsonicRepository
+
 import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
 import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
 import moe.ouom.neriplayer.platform.search.api.client.CloudMusicSearchApi
@@ -24,6 +26,7 @@ import moe.ouom.neriplayer.platform.youtube.repository.YouTubeMusicPlaybackRepos
 import okhttp3.OkHttpClient
 
 interface PlayerRepositoryDependencies {
+    val subsonicRepository: SubsonicRepository? get() = null
     val settingsRepo: SettingsRepository
     val biliCookieRepo: BiliCookieRepository
     val neteaseCookieRepo: NeteaseCookieRepository

@@ -24,10 +24,10 @@ package moe.ouom.neriplayer.ui
  */
 
 import moe.ouom.neriplayer.data.identity.stableKey
-import android.app.Activity
 import android.app.Application
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -144,6 +144,7 @@ import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.theme.biasCoverSeedTowardBlue
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
+import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -349,6 +350,7 @@ private fun NeriAppContent(
     canShowGlobalDialogs: Boolean = true
 ) {
     val context = LocalContext.current
+    val activity = LocalActivity.current
     val composeResources = LocalResources.current
     val latestOnNowPlayingVisibilityChanged by rememberUpdatedState(
         onNowPlayingVisibilityChanged
@@ -606,7 +608,7 @@ private fun NeriAppContent(
         currentSong?.playbackVisualKeyAliases().orEmpty()
     }
     val playbackVisualCoverState = rememberPlaybackVisualCoverState(
-        playbackVisualCoverRequest(displayCoverUrl, currentSongVisualKey)
+        playbackVisualCoverRequest(displayCoverUrl, currentSongVisualKey, currentSong.hasKnownEmptyLocalCover())
     )
     val playbackVisualCoverUrl = playbackVisualCoverState.url
     // 旋转重建时直接复用当前封面颜色，避免首帧回到默认主题
@@ -950,7 +952,6 @@ private fun NeriAppContent(
             return
         }
 
-        val activity = context as? Activity
         val captureView = activity?.window?.decorView?.rootView ?: rootView.rootView
         val captureToken = themeRevealCaptureToken + 1
         themeRevealCaptureToken = captureToken

@@ -77,6 +77,7 @@ import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassBackdrops
 import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.feedback.AppFeedbackHostEffect
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.BottomBarLayoutInsets
 import moe.ouom.neriplayer.ui.banner.MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD
@@ -541,6 +542,7 @@ private fun AppMiniPlayerOverlay(
                 coverIdentityKey = miniPlayer.songVisualKey,
                 visualCoverIdentityKey = miniPlayer.visualCoverSongKey,
                 hasCurrentSong = miniPlayer.hasSong,
+                clearCover = miniPlayer.song.hasKnownEmptyLocalCover(),
                 isPlaying = controls.playbackRequested,
                 playPauseEnabled = !controls.usbPreparing,
                 modifier = Modifier.testTag("appMiniPlayer")

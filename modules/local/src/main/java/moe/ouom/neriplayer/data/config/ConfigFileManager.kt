@@ -57,7 +57,8 @@ class ConfigFileManager(
     biliCookieRepo: BiliCookieRepository? = null,
     youTubeAuthRepo: YouTubeAuthRepository? = null,
     upgradeRepository: SyncProtocolUpgradeRepository? = null,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val withYouTubeAuthChange: suspend (() -> Unit) -> Unit = { updateAuth -> updateAuth() }
 ) {
     private val listenTogetherRepository by lazy {
         listenTogetherPreferences ?: ListenTogetherPreferences(context)
@@ -325,7 +326,7 @@ class ConfigFileManager(
         persistPlaybackPreferenceSnapshot(context, restoredPrefs.toPlaybackPreferenceSnapshot())
     }
 
-    private fun restoreAuth(
+    private suspend fun restoreAuth(
         payload: AppConfigBackup,
         sections: AppConfigBackupSections,
         warnings: MutableList<String>,
@@ -360,16 +361,16 @@ class ConfigFileManager(
         return true
     }
 
-    private fun restoreYouTubeAuth(
+    private suspend fun restoreYouTubeAuth(
         snapshot: YouTubeAuthConfigSnapshot,
         allowCompatibilityStorage: Boolean
     ): Boolean {
-        if (!snapshot.hasData()) {
-            youTubeRepository.clear()
-            return false
+        val hasData = snapshot.hasData()
+        withYouTubeAuthChange {
+            if (hasData) youTubeRepository.saveAuth(snapshot.toAuthBundle(), allowCompatibilityStorage)
+            else youTubeRepository.clear()
         }
-        youTubeRepository.saveAuth(snapshot.toAuthBundle(), allowCompatibilityStorage)
-        return true
+        return hasData
     }
 
     private fun reconcileSyncWorkers(

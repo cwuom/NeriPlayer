@@ -155,9 +155,9 @@ internal class WebDavSyncBackend(
         data: SyncDataset,
         version: Version
     ): Result<Version> {
-        if (!canSafelyPublish(version) && version.lastKnownFingerprint == null) {
+        if (!canSafelyPublish(version) && opaqueCondition(version) == null && version.lastKnownFingerprint == null) {
             return Result.failure(WebDavMissingConcurrencyTokenException(
-                "WebDAV sync requires a strong ETag to prevent concurrent data loss"
+                "WebDAV sync requires an ETag or an observed manifest fingerprint"
             ))
         }
         return archive.prepareCancellable(data).use { prepared ->
@@ -168,12 +168,21 @@ internal class WebDavSyncBackend(
     private suspend fun uploadWithLease(prepared: SyncPreparedArchive, version: Version): Result<Version> {
         var published: Version? = null
         val result = withArchiveLease({}) { lease ->
+            requirePublicationProtection(version, lease)
             requireUnchangedManifest(version, lease)
             uploadPrepared(prepared, version, lease).onSuccess { published = it }
         }
         val completed = published ?: return result
         val releaseFailure = result.exceptionOrNull() ?: return result
         return reconcilePublication(completed, releaseFailure)
+    }
+
+    private fun requirePublicationProtection(version: Version, lease: WebDavArchiveLease?) {
+        if (lease != null || canSafelyPublish(version) || opaqueCondition(version) != null) return
+        throw WebDavMissingConcurrencyTokenException(
+            "WebDAV updates require a finite LOCK or an ETag accepted by If-Match; " +
+                "use a compatible WebDAV server or GitHub sync. Local data has been retained"
+        )
     }
 
     private suspend fun requireUnchangedManifest(version: Version, lease: WebDavArchiveLease?) {
@@ -260,13 +269,9 @@ internal class WebDavSyncBackend(
         }
     }
 
-    private suspend fun publishUnlocked(content: ByteArray, version: Version): Result<WebDavWriteResult> {
+    private fun publishUnlocked(content: ByteArray, version: Version): Result<WebDavWriteResult> {
         val opaque = opaqueCondition(version) ?: return writeFile(manifestUrl, content, null, version.token, version.createOnly)
-        val conditional = apiClient.updateFileContent(manifestUrl, content, expectedVersion = opaque)
-        if (!isExistingObjectConflict(conditional.exceptionOrNull())) return conditional
-        // 服务器也可能不认非标准 ETag，确认清单未变后才退回指纹保护的写入
-        requireUnchangedManifest(version, null)
-        return writeFile(manifestUrl, content, null)
+        return apiClient.updateFileContent(manifestUrl, content, expectedVersion = opaque)
     }
 
     // 坚果云返回不带引号的 ETag，原样用于 If-Match 才能由服务端原子拒绝并发发布
@@ -278,7 +283,7 @@ internal class WebDavSyncBackend(
     }
 
     private suspend fun confirmUnlockedPublication(fingerprint: String): WebDavRemoteFileSnapshot {
-        // 无锁且条件头可能被忽略时，回读确认未被并发发布覆盖，否则按冲突重新合并
+        // 回读只能发现已发生的覆盖，不能替代服务器对条件写入的原子检查
         val current = readFile(manifestUrl, null).getOrThrow()
         if (current.fingerprint != fingerprint) throw WebDavContentConflictException(412, "WebDAV archive changed during publication")
         return current
@@ -385,7 +390,7 @@ internal class WebDavSyncBackend(
     private suspend fun readFile(url: String, lease: WebDavArchiveLease?) = apiClient.getArchiveFileContent(url, lease)
 
     private fun writeFile(url: String, bytes: ByteArray, lease: WebDavArchiveLease?, token: WebDavConcurrencyToken? = null, createOnly: Boolean = false): Result<WebDavWriteResult> {
-        // 弱或缺失的 ETag 不用于条件写入，改由发布前核对的内容指纹保护
+        // 清单更新缺少强 ETag 时，只能在已取得的目录锁内写入
         val condition = token?.takeIf { it.etag?.let(WebDavArchiveListing::isStrongETag) == true }
         return if (lease == null) apiClient.updateFileContent(url, bytes, expectedVersion = condition, createOnly = createOnly)
         else apiClient.updateFileContentLocked(url, bytes, lease, expectedVersion = condition, createOnly = createOnly)
@@ -393,8 +398,8 @@ internal class WebDavSyncBackend(
 
     private fun canSafelyPublish(version: Version): Boolean {
         if (version.createOnly) return true
-        val etag = version.token?.etag?.trim() ?: return false
-        return strongETag.matches(etag)
+        val etag = version.token?.etag ?: return false
+        return WebDavArchiveListing.isStrongETag(etag)
     }
 
     private suspend fun uploadImmutableObject(path: String, content: ByteArray, lease: WebDavArchiveLease?): Result<Unit> {
@@ -422,7 +427,6 @@ internal class WebDavSyncBackend(
 
     private companion object {
         const val TAG = "WebDavSyncManager"
-        val strongETag = Regex("\"[!#-~\\u0080-\\u00ff]*\"")
         val opaqueETag = Regex("[!#-+\\--~]+")
     }
 }

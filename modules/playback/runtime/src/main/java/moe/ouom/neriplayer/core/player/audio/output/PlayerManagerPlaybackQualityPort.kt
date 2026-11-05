@@ -14,7 +14,7 @@ internal object PlayerManagerPlaybackQualityPort : PlaybackQualityPort {
         PlayerManager.currentPlaybackAudioInfoFlow.value?.source
 
     override suspend fun persistPreferredQuality(source: PlaybackAudioSource, key: String) {
-        if (source == PlaybackAudioSource.LOCAL) return
+        if (source == PlaybackAudioSource.LOCAL || source == PlaybackAudioSource.SUBSONIC) return
         writerFor(source)(key)
     }
 

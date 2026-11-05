@@ -34,7 +34,10 @@ die() {
 
 resolve_path() {
     local path="$1"
-    if [[ "${path}" = /* ]]; then
+    local normalized="${path//\\//}"
+    if [[ "${normalized}" =~ ^[A-Za-z]:/ ]]; then
+        printf '%s\n' "${normalized}"
+    elif [[ "${path}" = /* ]]; then
         printf '%s\n' "${path}"
     else
         printf '%s\n' "${REPO_ROOT}/${path}"
@@ -927,6 +930,17 @@ self_check() {
     done
     [[ -n "${manifest}" ]] || die "self-check requires --manifest"
     validate_manifest "${manifest}"
+    [[ "$(resolve_path 'D:/review/NeriPlayer/manifest.yaml')" == \
+        'D:/review/NeriPlayer/manifest.yaml' ]] ||
+        die "Windows absolute path self-check failed"
+    [[ "$(resolve_path 'D:\review\NeriPlayer\manifest.yaml')" == \
+        'D:/review/NeriPlayer/manifest.yaml' ]] ||
+        die "Windows separator self-check failed"
+    [[ "$(resolve_path '/tmp/manifest.yaml')" == '/tmp/manifest.yaml' ]] ||
+        die "POSIX absolute path self-check failed"
+    [[ "$(resolve_path 'relative/manifest.yaml')" == \
+        "${REPO_ROOT}/relative/manifest.yaml" ]] ||
+        die "relative path self-check failed"
     local warning_lines
     if ! warning_lines="$({
         printf 'CMake Warning at fixture.cmake:1\n'

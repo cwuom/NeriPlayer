@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.cover
 
 import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.Transition
 import androidx.compose.animation.core.VisibilityThreshold
@@ -9,7 +8,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateRect
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -51,8 +49,6 @@ private val CoverBoundsSpring = spring<Rect>(
 private val CoverCornerSpring = spring<Float>(
     stiffness = Spring.StiffnessMediumLow
 )
-private val CoverBoundsPreview = tween<Rect>(300, easing = LinearEasing)
-private val CoverCornerPreview = tween<Float>(300, easing = LinearEasing)
 
 private class CoverFlightAnimationSpecs(
     val bounds: FiniteAnimationSpec<Rect>,
@@ -61,7 +57,7 @@ private class CoverFlightAnimationSpecs(
 
 private val CoverIdleSpecs = CoverFlightAnimationSpecs(snap(), snap())
 private val CoverOrdinarySpecs = CoverFlightAnimationSpecs(CoverBoundsSpring, CoverCornerSpring)
-private val CoverPreviewSpecs = CoverFlightAnimationSpecs(CoverBoundsPreview, CoverCornerPreview)
+private val CoverPreviewSpecs = CoverOrdinarySpecs
 
 private fun coverFlightAnimationSpecs(
     navigating: Boolean,

@@ -130,10 +130,10 @@
     <string name="audio_effects_warmth">温暖度</string>
     <string name="audio_effects_warmth_desc">模拟电子管和黑胶的柔和厚实感，减少刺耳</string>
     <string name="audio_effects_clarity">清晰度</string>
-    <string name="audio_effects_clarity_desc">补回压缩音质丢失的细节和空气感</string>
+    <string name="audio_effects_clarity_desc">增强高频明亮感和空气感</string>
     <string name="audio_effects_clarity_frequency">清晰度范围</string>
     <string name="audio_effects_vocal">人声突出</string>
-    <string name="audio_effects_vocal_desc">只加强位于中间的人声，伴奏保持不变</string>
+    <string name="audio_effects_vocal_desc">增强中置声音的清晰度</string>
     <string name="audio_effects_vocal_removal">消除人声（伴奏模式）</string>
     <string name="audio_effects_vocal_removal_desc">削弱中间的人声方便跟唱，不同歌曲效果有差异</string>
 

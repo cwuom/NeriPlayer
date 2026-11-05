@@ -1,12 +1,11 @@
 package moe.ouom.neriplayer.data.auth.youtube
 
-import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthStore
 
 interface YouTubeRotationHost {
     fun isInitialized(): Boolean
     suspend fun isYouTubeEnabled(): Boolean
-    fun readAuth(): YouTubeAuthBundle
-    fun persistRotatedCookies(cookies: Map<String, String>)
+    val authStore: YouTubeAuthStore
 }
 
 object YouTubeRotationHosts {

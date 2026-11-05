@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="metadata_apply_options_title">Get Song Info</string>
+    <string name="metadata_apply_lyric_sources">Lyric sources</string>
+    <string name="metadata_apply_lyric_content">Lyric content</string>
+    <string name="metadata_apply_romanized">Romanization</string>
+    <string name="metadata_apply_destination">Save to</string>
+    <string name="metadata_apply_destination_file">Audio file</string>
+    <string name="metadata_apply_destination_app">App only</string>
+    <string name="metadata_apply_confirm">Get and Apply</string>
+    <string name="metadata_apply_fetching_details">Getting song info</string>
+    <string name="metadata_apply_fetching_lyrics">Getting lyrics</string>
+    <string name="metadata_apply_preparing_cover">Getting artwork</string>
+    <string name="metadata_apply_preparing_metadata">Preparing to save</string>
+    <string name="metadata_apply_committing">Saving song info</string>
+    <string name="metadata_apply_completed">Song info saved</string>
+    <string name="metadata_apply_stage_count">%1$d / %2$d</string>
+    <string name="metadata_apply_failed">Could not apply song info. Check storage access or the network and retry.</string>
+</resources>

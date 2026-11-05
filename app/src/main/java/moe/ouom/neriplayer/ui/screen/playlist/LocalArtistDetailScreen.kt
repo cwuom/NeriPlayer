@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,14 +31,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -95,6 +91,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.screen.artist.CreatorDetailAdaptiveLayout
+import moe.ouom.neriplayer.ui.screen.artist.CreatorDetailProfileCard
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
@@ -704,84 +701,14 @@ internal fun LocalArtistDetailHeader(
     offlineMode: Boolean,
     tabletProfile: Boolean = false
 ) {
-    val context = LocalContext.current
-    val coverModifier = (if (tabletProfile) {
-        Modifier.fillMaxWidth().aspectRatio(1f)
-    } else {
-        Modifier.size(96.dp)
-    }).clip(neriRoundedShape(18.dp))
-    val cover: @Composable () -> Unit = {
-        if (!coverUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = offlineCachedImageRequest(
-                    context = context,
-                    data = coverUrl,
-                    sizePx = if (tabletProfile) 512 else 256,
-                    allowHardware = false,
-                    offlineMode = offlineMode
-                ),
-                contentDescription = title,
-                contentScale = ContentScale.Crop,
-                modifier = coverModifier
-            )
-        } else {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = coverModifier
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.AccountCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(if (tabletProfile) 72.dp else 52.dp)
-                )
-            }
-        }
-    }
-    val identity: @Composable () -> Unit = {
-        Text(
-            text = title,
-            maxLines = if (tabletProfile) 3 else 2,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.headlineSmall
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = stringResource(
-                CoreCommonR.string.local_artist_total_duration,
-                formatTotalDuration(context, durationMs),
-                songCount
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium
-        )
-    }
-    Card(
-        shape = neriRoundedShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        if (tabletProfile) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                cover()
-                Spacer(Modifier.height(20.dp))
-                identity()
-            }
-        } else Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(16.dp)
-        ) {
-            cover()
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                identity()
-            }
-        }
-    }
+    CreatorDetailProfileCard(
+        title = title,
+        coverUrl = coverUrl,
+        subtitle = stringResource(CoreCommonR.string.local_artist_total_duration,
+            formatTotalDuration(LocalContext.current, durationMs), songCount),
+        offlineMode = offlineMode,
+        tabletProfile = tabletProfile
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

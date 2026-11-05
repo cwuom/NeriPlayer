@@ -14,6 +14,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -75,6 +76,18 @@ class QQMusicLyricsRepositoryTest {
         assertEquals("Signal", result.songName)
         assertEquals("[00:01.00]hello", result.lyric)
         assertEquals(0, requests.count { it.url.host == "amll.test" })
+    }
+
+    @Test
+    fun `metadata only lookup sends one detail request without native lyrics or AMLL`() = runTest {
+        val result = api { throw AssertionError("metadata lookup must not read AMLL preference") }
+            .getSongMetadataOnly("id")
+
+        assertEquals("Signal", result.songName)
+        assertNull(result.lyric)
+        assertNull(result.translatedLyric)
+        assertEquals(1, requests.size)
+        assertEquals(true, requests.single().url.queryParameter("data").orEmpty().contains("get_song_detail_yqq"))
     }
 
     @Test

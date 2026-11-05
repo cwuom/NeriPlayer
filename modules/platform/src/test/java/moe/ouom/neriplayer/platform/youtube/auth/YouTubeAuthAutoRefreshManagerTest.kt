@@ -16,7 +16,6 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -26,13 +25,43 @@ import org.mockito.Mockito.mock
 class YouTubeAuthAutoRefreshManagerTest {
 
     @Test
-    fun `rotation storage failure preserves the current account and lets the caller continue`() = runBlocking {
-        assertStorageFailureIsReturned(useRotatedCookieUpdater = true)
+    fun `rotation completed after logout cannot publish cookies or report success`() = runBlocking {
+        withRotationManager(replaceAuthDuringRotation = { YouTubeAuthBundle() }) { manager, saved, _ ->
+            val result = manager.refreshIfNeeded(reason = "synthetic logout race", force = true)
+
+            assertFalse(result.refreshed)
+            assertFalse(result.authChanged)
+            assertTrue(saved().cookies.isEmpty())
+        }
     }
 
     @Test
-    fun `fallback auth updater storage failure does not escape the refresh`() = runBlocking {
-        assertStorageFailureIsReturned(useRotatedCookieUpdater = false)
+    fun `rotation storage failure preserves the current account and lets the caller continue`() = runBlocking {
+        assertStorageFailureIsReturned()
+    }
+
+    @Test
+    fun `rotation completed after switching accounts cannot mix account cookies`() = runBlocking {
+        withRotationManager(replaceAuthDuringRotation = {
+            YouTubeAuthBundle(cookies = mapOf("__Secure-1PSID" to "new-session", "SAPISID" to "new-binding"))
+        }) { manager, saved, _ ->
+            val result = manager.refreshIfNeeded(reason = "synthetic account switch", force = true)
+
+            assertFalse(result.refreshed)
+            assertEquals("auth_changed", result.reason)
+            assertEquals(mapOf("__Secure-1PSID" to "new-session", "SAPISID" to "new-binding"), saved().cookies)
+        }
+    }
+
+    @Test
+    fun `rotation from an earlier login is rejected even when the same cookies are saved again`() = runBlocking {
+        withRotationManager(replaceAuthDuringRotation = { it }) { manager, saved, initial ->
+            val result = manager.refreshIfNeeded(reason = "synthetic repeated login", force = true)
+
+            assertFalse(result.refreshed)
+            assertEquals("auth_changed", result.reason)
+            assertEquals(initial, saved())
+        }
     }
 
     @Test
@@ -49,19 +78,18 @@ class YouTubeAuthAutoRefreshManagerTest {
     }
 
     @Test
-    fun `rotation callback programming errors are not treated as storage failures`() = runBlocking {
-        assertCallbackFailureEscapes(IllegalStateException("synthetic callback bug"))
+    fun `rotation update programming errors are not treated as storage failures`() = runBlocking {
+        assertUpdateFailureEscapes(IllegalStateException("synthetic update bug"))
     }
 
     @Test
-    fun `rotation callback cancellation is not treated as a storage failure`() = runBlocking {
-        assertCallbackFailureEscapes(CancellationException("synthetic cancellation"))
+    fun `rotation update cancellation is not treated as a storage failure`() = runBlocking {
+        assertUpdateFailureEscapes(CancellationException("synthetic cancellation"))
     }
 
-    private suspend fun assertStorageFailureIsReturned(useRotatedCookieUpdater: Boolean) {
+    private suspend fun assertStorageFailureIsReturned() {
         withRotationManager(
-            updateFailure = IOException("synthetic storage failure"),
-            useRotatedCookieUpdater = useRotatedCookieUpdater
+            updateFailure = IOException("synthetic storage failure")
         ) { manager, saved, initial ->
             val result = manager.refreshIfNeeded(reason = "synthetic rotation", force = true)
 
@@ -73,13 +101,16 @@ class YouTubeAuthAutoRefreshManagerTest {
         }
     }
 
-    private suspend fun assertCallbackFailureEscapes(failure: RuntimeException) {
+    private suspend fun assertUpdateFailureEscapes(failure: RuntimeException) {
         withRotationManager(updateFailure = failure) { manager, saved, initial ->
             try {
                 manager.refreshIfNeeded(reason = "synthetic rotation", force = true)
-                fail("The callback exception must propagate")
+                fail("The update exception must propagate")
             } catch (actual: RuntimeException) {
-                assertSame(failure, actual)
+                assertEquals(failure.javaClass, actual.javaClass)
+                assertEquals(failure.message, actual.message)
+                // 跨子协程边界时栈恢复会复制异常，但必须保留最初的失败
+                assertTrue(generateSequence<Throwable>(actual) { it.cause }.any { it === failure })
             }
             assertEquals(initial, saved())
         }
@@ -87,7 +118,7 @@ class YouTubeAuthAutoRefreshManagerTest {
 
     private suspend fun withRotationManager(
         updateFailure: Exception? = null,
-        useRotatedCookieUpdater: Boolean = true,
+        replaceAuthDuringRotation: ((YouTubeAuthBundle) -> YouTubeAuthBundle)? = null,
         block: suspend (YouTubeAuthAutoRefreshManager, () -> YouTubeAuthBundle, YouTubeAuthBundle) -> Unit
     ) {
         val context = mock(Context::class.java)
@@ -96,9 +127,10 @@ class YouTubeAuthAutoRefreshManagerTest {
             cookies = mapOf("__Secure-1PSID" to "synthetic-session", "SAPISID" to "synthetic-binding"),
             savedAt = 1L
         ).normalized()
-        var saved = initial
+        val store = RefreshTestAuthStore(initial, updateFailure)
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             assertEquals("/RotateCookies", chain.request().url.encodedPath)
+            replaceAuthDuringRotation?.let { replace -> store.replaceAuth(replace(store.captureAuthSnapshot().auth)) }
             Response.Builder()
                 .request(chain.request())
                 .protocol(Protocol.HTTP_1_1)
@@ -111,23 +143,12 @@ class YouTubeAuthAutoRefreshManagerTest {
         val previouslyEnabled = YouTubeFeatureGate.isEnabled()
         YouTubeFeatureGate.update(true)
         try {
-            val updater: (YouTubeAuthBundle) -> Unit = { bundle ->
-                if (updateFailure != null) throw updateFailure
-                saved = bundle
-            }
             val manager = YouTubeAuthAutoRefreshManager(
                 context = context,
                 httpClientProvider = { client },
-                authProvider = { saved },
-                authHealthProvider = {
-                    YouTubeAuthHealth(state = YouTubeAuthState.Valid, activeCookieKeys = listOf("SAPISID"))
-                },
-                authUpdater = updater,
-                rotatedCookieUpdater = if (useRotatedCookieUpdater) { cookies ->
-                    updater(mergeYouTubeAuthBundle(base = saved, observedCookies = cookies))
-                } else null
+                authStore = store
             )
-            block(manager, { saved }, initial)
+            block(manager, { store.captureAuthSnapshot().auth }, initial)
         } finally {
             YouTubeFeatureGate.update(previouslyEnabled)
             client.dispatcher.executorService.shutdown()
@@ -327,8 +348,7 @@ class YouTubeAuthAutoRefreshManagerTest {
         val manager = YouTubeAuthAutoRefreshManager(
             httpClientProvider = { okhttp3.OkHttpClient() },
             context = context,
-            authProvider = { auth },
-            authHealthProvider = { health }
+            authStore = RefreshTestAuthStore(auth)
         )
         val method = YouTubeAuthAutoRefreshManager::class.java.getDeclaredMethod(
             "shouldAttemptRefresh",

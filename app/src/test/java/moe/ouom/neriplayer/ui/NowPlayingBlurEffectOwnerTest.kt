@@ -19,7 +19,9 @@ import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBackdropFrame
 import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurImageCacheKey
 import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurNeighborCover
 import moe.ouom.neriplayer.ui.playback.visual.nowPlayingBlurPreloadRequest
+import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -202,6 +204,46 @@ class NowPlayingBlurEffectOwnerTest {
         owner.updateRetention(NowPlayingBlurRetentionRequest(true, false, "song", "cover"))
         runCurrent()
         assertNull(state.stableCoverUrl)
+    }
+
+    @Test
+    fun `restoring no artwork clears the backdrop owner and rejects its late image result`() = runTest {
+        val song = SongItem(
+            id = 74_126L,
+            name = "Restored backdrop",
+            artist = "Artist",
+            album = "Album",
+            albumId = 0L,
+            durationMs = 60_000L,
+            coverUrl = null,
+            mediaUri = "content://backdrop-restore/audio/74126",
+            originalCoverUrl = "",
+            channelId = "local",
+            audioId = "74126"
+        )
+        val songKey = song.playbackVisualKey()
+        val editedCover = "file:///backdrop-restore/edited.jpg"
+        val owner = NowPlayingBlurEffectOwner(this)
+        val state = owner.blurState
+        state.onImageSuccess("edited-request", "edited-request", editedCover, 4f)
+        owner.updateRetention(NowPlayingBlurRetentionRequest(true, true, songKey, null))
+        runCurrent()
+        assertEquals("a transient missing URL keeps the backdrop", editedCover, state.stableCoverUrl)
+
+        owner.updateRetention(
+            NowPlayingBlurRetentionRequest(true, true, songKey, null, song.hasKnownEmptyLocalCover())
+        )
+        runCurrent()
+
+        assertNull("a restored empty cover clears the stable backdrop", state.stableCoverUrl)
+        assertNull(state.stableBlurStrength)
+        state.onImageSuccess("edited-request", "edited-request", editedCover, 4f)
+        assertNull("a late image callback cannot restore the old backdrop", state.stableCoverUrl)
+        val frame = nowPlayingBackdropFrame(
+            NowPlayingOverlayCover(null, songKey, song, 0),
+            NowPlayingOverlayBackground(true, 4f, 0f, false, true), state, true
+        )
+        assertFalse("the real backdrop frame must stop drawing retained blur", frame.hasCoverBlur)
     }
 
     @Test

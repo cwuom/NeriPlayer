@@ -73,7 +73,10 @@ internal fun PlaylistExportSheet(
     onDismissRequest: () -> Unit,
     onCreateAndExport: (String) -> Unit,
     onExportToPlaylist: (LocalPlaylist) -> Unit,
-    createActionLabel: String? = null
+    createActionLabel: String? = null,
+    confirmationTitle: String? = null,
+    confirmationMessage: ((String) -> String)? = null,
+    confirmActionLabel: String? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -200,10 +203,10 @@ internal fun PlaylistExportSheet(
             onDismissRequest = {
                 clearPendingExport()
             },
-            title = { Text(stringResource(CoreCommonR.string.playlist_batch_export_confirm_title)) },
+            title = { Text(confirmationTitle ?: stringResource(CoreCommonR.string.playlist_batch_export_confirm_title)) },
             text = {
                 Text(
-                    pluralStringResource(
+                    confirmationMessage?.invoke(export.targetName) ?: pluralStringResource(
                         AppR.plurals.playlist_batch_export_confirm_message,
                         selectedCount,
                         selectedCount,
@@ -219,7 +222,7 @@ internal fun PlaylistExportSheet(
                         action()
                     }
                 ) {
-                    Text(stringResource(CoreCommonR.string.playlist_batch_export_confirm_button))
+                    Text(confirmActionLabel ?: stringResource(CoreCommonR.string.playlist_batch_export_confirm_button))
                 }
             },
             dismissButton = {

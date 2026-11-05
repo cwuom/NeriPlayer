@@ -11,6 +11,7 @@ import android.media.session.PlaybackState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState
@@ -144,7 +145,11 @@ class PlaybackServicePresentationOwnerTest {
         owner.updateNotification(false, true, lyricState, false)
         owner.updateNotification(false, true, lyricState, false)
         owner.updateNotification(false, true, lyricState, false)
+        advanceTimeBy(500L)
+        runCurrent()
         owner.updateNotification(true, true, lyricState, false)
+        advanceTimeBy(500L)
+        runCurrent()
 
         assertEquals(3, callCount(port, "publishNotification"))
         assertEquals(3, source.shareUrlRequests)
@@ -167,6 +172,8 @@ class PlaybackServicePresentationOwnerTest {
 
         source.currentPlayback = source.currentPlayback.copy(buffering = true)
         owner.updateNotification(false, true, lyricState, false)
+        advanceTimeBy(500L)
+        runCurrent()
         val bufferingInputs = mockingDetails(port).invocations
             .last { it.method.name == "publishNotification" }.arguments[0] as PlaybackServiceNotificationRenderInputs
         assertTrue(bufferingInputs.playbackControlPlaying)
@@ -264,8 +271,12 @@ class PlaybackServicePresentationOwnerTest {
         source.lyric = ExternalBluetoothLyricPayload("first line")
         owner.refreshLyricMetadata(true, true, lyricState, false)
         owner.refreshLyricMetadata(true, true, lyricState, false)
+        advanceTimeBy(500L)
+        runCurrent()
         source.lyric = ExternalBluetoothLyricPayload("second line")
         owner.refreshLyricMetadata(true, true, lyricState, false)
+        advanceTimeBy(500L)
+        runCurrent()
 
         assertEquals(2, callCount(port, "setMetadata"))
         assertEquals(3, callCount(port, "publishNotification"))
@@ -288,6 +299,8 @@ class PlaybackServicePresentationOwnerTest {
 
         owner.onScreenInteractive(true, lyricState, false)
         owner.onScreenInteractive(true, lyricState, false)
+        advanceTimeBy(500L)
+        runCurrent()
 
         assertEquals(2, callCount(port, "publishNotification"))
     }

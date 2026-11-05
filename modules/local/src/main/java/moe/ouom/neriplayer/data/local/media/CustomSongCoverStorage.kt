@@ -27,6 +27,10 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import moe.ouom.neriplayer.network.http.awaitResponse
 import moe.ouom.neriplayer.data.network.DataHttpClients
 import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
 import moe.ouom.neriplayer.core.download.storage.metadata.isCoverPixelBudgetWithin
@@ -346,27 +350,33 @@ object CustomSongCoverStorage {
                 .header("Accept", "image/*")
                 .build()
         }.getOrNull() ?: return null
-        val bytes = runCatching {
-            remoteCoverHttpClientProvider().newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use null
+        val bytes = try {
+            remoteCoverHttpClientProvider().newCall(request).awaitResponse { response ->
+                if (!response.isSuccessful) return@awaitResponse null
                 val contentType = response.header("Content-Type")
                     ?.substringBefore(';')
                     ?.trim()
                     ?.lowercase(Locale.ROOT)
                 if (contentType != null && !contentType.startsWith("image/")) {
-                    return@use null
+                    return@awaitResponse null
                 }
                 val body = response.body
                 val contentLength = body.contentLength()
-                if (contentLength > MAX_COVER_BYTES) return@use null
+                if (contentLength > MAX_COVER_BYTES) return@awaitResponse null
                 body.byteStream().use { input ->
                     input.readBytesLimited(MAX_COVER_BYTES)
                 }
             }
-        }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return null
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }?.takeIf { it.isNotEmpty() } ?: return null
+        currentCoroutineContext().ensureActive()
         if (!remoteCoverImageValidator(bytes)) {
             return null
         }
+        currentCoroutineContext().ensureActive()
         // 网络封面先保存为应用内输入, 最终本体由音频旁的 Covers 侧载承载
         return persistCoverBytes(
             context = context,

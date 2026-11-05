@@ -66,6 +66,7 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTermina
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 
 
 internal suspend fun GlobalDownloadManager.prepareConfirmedDownload(
@@ -1135,7 +1136,8 @@ internal suspend fun GlobalDownloadManager.startDownloadConfirmed(
                 operationId = operationId,
                 expectedAttemptId = attemptId,
                 expectedLeaseId = acquiredLeaseId,
-                error = error
+                error = error,
+                requestGeneration = requestGeneration
             )
         }
     } catch (error: DownloadSourceUnavailableException) {
@@ -1199,7 +1201,8 @@ internal suspend fun GlobalDownloadManager.startDownloadConfirmed(
                     networkUnavailable = false,
                     cause = error,
                     errorCode = (error as? DownloadIntegrityException)?.errorCode ?: "DOWNLOAD_FAILED"
-                )
+                ),
+                requestGeneration = requestGeneration
             )
         }
     } finally {
@@ -1230,16 +1233,39 @@ internal suspend fun GlobalDownloadManager.deferRetryableDownloadFailure(
     operationId: String?,
     expectedAttemptId: Long?,
     expectedLeaseId: String?,
-    error: RetryableDownloadFailureException
+    error: RetryableDownloadFailureException,
+    requestGeneration: Long? = null
 ) {
     val appContext = context.applicationContext
     val songKey = song.stableKey()
-    val previousProgress = taskStore.findTask(songKey)?.progress
-    val errorCode = if (error.networkUnavailable) {
-        DOWNLOAD_NETWORK_UNAVAILABLE_ERROR_CODE
-    } else {
-        error.errorCode ?: DOWNLOAD_TRANSIENT_FAILURE_ERROR_CODE
+    val serverFailure = SubsonicException.find(error)
+    if (serverFailure?.retryable == false) {
+        val settled = settleUnavailableDownloadSourceFailure(
+            context = appContext,
+            song = song,
+            operationId = operationId,
+            expectedAttemptId = expectedAttemptId,
+            expectedLeaseId = expectedLeaseId,
+            requestGeneration = requestGeneration
+                ?: requestGenerationTracker.currentGeneration(songKey) ?: 0L
+        )
+        if (!settled) throw error
+        return
     }
+    val previousProgress = taskStore.findTask(songKey)?.progress
+    val serverRetryAfterMs = serverFailure?.retryAfterMs?.takeIf { it > 0L }
+    val networkUnavailable = error.networkUnavailable && serverRetryAfterMs == null
+    val errorCode = when {
+        serverRetryAfterMs != null -> "DOWNLOAD_SERVER_RETRY_AFTER"
+        networkUnavailable -> DOWNLOAD_NETWORK_UNAVAILABLE_ERROR_CODE
+        else -> error.errorCode ?: DOWNLOAD_TRANSIENT_FAILURE_ERROR_CODE
+    }
+    val retryNotBeforeMs = (serverRetryAfterMs ?: error.retryAfterMs)
+        ?.coerceIn(0L, java.util.concurrent.TimeUnit.DAYS.toMillis(1L))
+        ?.let { delayMs ->
+            val nowMs = System.currentTimeMillis()
+            if (nowMs > Long.MAX_VALUE - delayMs) Long.MAX_VALUE else nowMs + delayMs
+        }
     val operationRetryPersisted = operationId?.let { id ->
         runCatching {
             DownloadExecutionRoomStore.updateState(
@@ -1247,7 +1273,8 @@ internal suspend fun GlobalDownloadManager.deferRetryableDownloadFailure(
                 operationId = id,
                 state = "RETRYABLE",
                 errorCode = errorCode,
-                expectedAttemptId = expectedAttemptId
+                expectedAttemptId = expectedAttemptId,
+                retryNotBeforeMs = retryNotBeforeMs
             )
         }.onFailure { persistError ->
             NPLogger.w(
@@ -1271,7 +1298,7 @@ internal suspend fun GlobalDownloadManager.deferRetryableDownloadFailure(
             "song=${song.name}, operationId=$operationId, errorCode=$errorCode")
         return
     }
-    val retryStatus = if (error.networkUnavailable) {
+    val retryStatus = if (networkUnavailable) {
         DownloadStatus.WAITING_NETWORK
     } else {
         DownloadStatus.QUEUED
@@ -1317,7 +1344,7 @@ internal suspend fun GlobalDownloadManager.deferRetryableDownloadFailure(
     NPLogger.w(
         TAG,
         "下载失败已转入持久恢复队列: song=${song.name}, errorCode=$errorCode, " +
-            "operationId=$operationId, offline=${error.networkUnavailable}, " +
+            "operationId=$operationId, offline=$networkUnavailable, " +
             "persisted=$operationRetryPersisted"
     )
 }
@@ -1334,27 +1361,32 @@ internal suspend fun GlobalDownloadManager.settleUnavailableDownloadSourceFailur
     val appContext = context.applicationContext
     val songKey = song.stableKey()
     val normalizedOperationId = operationId?.trim()?.takeIf(String::isNotBlank)
-    val operationState = normalizedOperationId?.let { id ->
-        val stateResult = runCatching {
-            DownloadExecutionRoomStore.state(appContext, id)
+    val operationMetadata = normalizedOperationId?.let { id ->
+        val metadataResult = runCatching {
+            DownloadExecutionRoomStore.readOperationRequestMetadata(appContext, setOf(id))[id]
         }
-        if (stateResult.isFailure) {
+        if (metadataResult.isFailure) {
             NPLogger.w(
                 TAG,
                 "下载来源不可用时读取 operation 状态失败，保留重试: " +
                     "song=${song.name}, operationId=$id, " +
-                    "error=${stateResult.exceptionOrNull()?.message}"
+                    "error=${metadataResult.exceptionOrNull()?.message}"
             )
             return false
         }
-        stateResult.getOrNull()
+        metadataResult.getOrNull()
     }
     if (
-        normalizedOperationId != null &&
-            isDownloadSourceUnavailableSettlementSuperseded(operationState)
+        normalizedOperationId != null && (
+            operationMetadata == null ||
+                isDownloadSourceUnavailableSettlementSuperseded(operationMetadata.state) ||
+                operationMetadata.stableKey != songKey ||
+                expectedAttemptId != null && operationMetadata.attemptId != expectedAttemptId
+            )
     ) {
         return true
     }
+    val attemptGuard = expectedAttemptId ?: operationMetadata?.attemptId
 
     val artifactSettled = expectedLeaseId?.let { leaseId ->
         runCatching {
@@ -1385,7 +1417,7 @@ internal suspend fun GlobalDownloadManager.settleUnavailableDownloadSourceFailur
                 context = appContext,
                 operationId = normalizedOperationId,
                 stableKey = songKey,
-                attemptId = expectedAttemptId,
+                attemptId = attemptGuard,
                 terminalBits = DownloadBatchMemberTerminal.FAILED
             )
             true
@@ -1401,18 +1433,13 @@ internal suspend fun GlobalDownloadManager.settleUnavailableDownloadSourceFailur
         if (!batchMemberPersisted) {
             return false
         }
-        forgetPendingDownloadQueueEntriesForOperation(
-            context = appContext,
-            songKey = songKey,
-            operationId = normalizedOperationId
-        )
-
         val invalidated = runCatching {
             DownloadExecutionRoomStore.updateState(
                 context = appContext,
                 operationId = normalizedOperationId,
                 state = "INVALID",
-                errorCode = downloadSourceUnavailableErrorCode(failureReason)
+                errorCode = downloadSourceUnavailableErrorCode(failureReason),
+                expectedAttemptId = attemptGuard
             )
         }.onFailure { persistError ->
             NPLogger.w(
@@ -1424,16 +1451,30 @@ internal suspend fun GlobalDownloadManager.settleUnavailableDownloadSourceFailur
             )
         }.getOrDefault(false)
         if (!invalidated) {
-            val latestStateResult = runCatching {
-                DownloadExecutionRoomStore.state(appContext, normalizedOperationId)
+            val latestMetadataResult = runCatching {
+                DownloadExecutionRoomStore.readOperationRequestMetadata(
+                    appContext, setOf(normalizedOperationId)
+                )[normalizedOperationId]
             }
-            if (latestStateResult.isFailure) {
+            if (latestMetadataResult.isFailure) {
                 return false
             }
-            if (!isDownloadSourceUnavailableSettlementSuperseded(latestStateResult.getOrNull())) {
-                return false
+            val latestMetadata = latestMetadataResult.getOrNull()
+            if (
+                latestMetadata == null ||
+                    isDownloadSourceUnavailableSettlementSuperseded(latestMetadata.state) ||
+                    latestMetadata.stableKey != songKey ||
+                    attemptGuard != null && latestMetadata.attemptId != attemptGuard
+            ) {
+                return true
             }
+            return false
         }
+        forgetPendingDownloadQueueEntriesForOperation(
+            context = appContext,
+            songKey = songKey,
+            operationId = normalizedOperationId
+        )
     }
 
     expectedLeaseId?.let { leaseId ->
@@ -1442,7 +1483,7 @@ internal suspend fun GlobalDownloadManager.settleUnavailableDownloadSourceFailur
     updateTaskStatus(
         songKey = songKey,
         status = DownloadStatus.FAILED,
-        expectedAttemptId = expectedAttemptId,
+        expectedAttemptId = attemptGuard,
         operationId = normalizedOperationId,
         failureReason = failureReason
     )

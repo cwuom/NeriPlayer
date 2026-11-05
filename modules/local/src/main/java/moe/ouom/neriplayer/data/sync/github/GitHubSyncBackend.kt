@@ -9,10 +9,10 @@ import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.api.sync.github.GitHubApiClient
 import moe.ouom.neriplayer.api.sync.github.GitHubArchiveHead
 import moe.ouom.neriplayer.api.sync.github.GitHubArchiveProof
-import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
 import moe.ouom.neriplayer.api.sync.github.GitHubFileNotFoundException
 import moe.ouom.neriplayer.api.sync.github.GitHubContentConflictException
 import moe.ouom.neriplayer.api.sync.github.GitHubSyncHead
+import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
 
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetRemoteSnapshot
@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.data.sync.remote.SyncRemoteSnapshotDecoder
 import moe.ouom.neriplayer.data.sync.runtime.SyncBackend
 import moe.ouom.neriplayer.data.sync.host.observeCurrentSyncProtocol
 import moe.ouom.neriplayer.data.model.sync.SyncData
+import moe.ouom.neriplayer.data.sync.store.secure.SyncStorageUnavailableException
 
 internal class GitHubSyncBackend(
     private val storage: SecureTokenStorage,
@@ -69,7 +70,12 @@ internal class GitHubSyncBackend(
         followUp()
     }
     override fun onFailure(error: Throwable) {
-        if (error is TokenExpiredException) storage.clearToken()
+        if (error !is TokenExpiredException) return
+        try {
+            metadataGuard { storage.setAutoSyncEnabled(false) }
+        } catch (_: SyncStorageUnavailableException) {
+            NPLogger.w(TAG, "Secure storage unavailable; automatic GitHub sync could not be paused")
+        }
     }
 
     data class Version(

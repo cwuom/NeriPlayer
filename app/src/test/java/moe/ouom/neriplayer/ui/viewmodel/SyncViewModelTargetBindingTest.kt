@@ -21,6 +21,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.sync.SyncResult
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -324,7 +326,15 @@ class SyncViewModelTargetBindingTest {
 
     private fun fixtures(): List<Fixture> {
         val github = GitHubSyncViewModel().also(viewModels::add)
+        github.ioDispatcher = Dispatchers.Main
+        val githubStorage = mock(SecureTokenStorage::class.java)
+        `when`(githubStorage.isPersistent).thenReturn(true)
+        GitHubSyncViewModel::class.java.getDeclaredField("storage").apply { isAccessible = true }.set(github, githubStorage)
         val webdav = WebDavSyncViewModel().also(viewModels::add)
+        webdav.ioDispatcher = Dispatchers.Main
+        val webDavStorage = mock(WebDavStorage::class.java)
+        `when`(webDavStorage.isPersistent).thenReturn(true)
+        WebDavSyncViewModel::class.java.getDeclaredField("storage").apply { isAccessible = true }.set(webdav, webDavStorage)
         return listOf(
             Fixture({ github.syncOperation = it }, { github.targetSyncOperation = it },
                 { github.performSync(it) }, { context, target, upgrade -> github.performSyncForTarget(context, target, onUpgradeRequired = upgrade) }, github::clearConfiguration,

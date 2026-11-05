@@ -108,7 +108,8 @@ import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusivePlaybackResumeAfterDeviceAttach
 import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
 import moe.ouom.neriplayer.core.player.persistence.persistStateNow
-import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.initializePreloadedRestoration
+import moe.ouom.neriplayer.core.player.persistence.preloadRestoredPlayerState
 import moe.ouom.neriplayer.core.player.persistence.scheduleRestoredPlaybackResume
 import moe.ouom.neriplayer.core.player.persistence.scheduleRestoredLocalSourceValidation
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
@@ -873,15 +874,15 @@ class AudioPlayerService : Service() {
             val playbackPreferences = withContext(Dispatchers.IO) {
                 readPlaybackPreferenceSnapshot(app)
             }
-            val restoredStateSnapshot = preloadRestoredStateSnapshot(
+            val restorationPreload = preloadRestoredPlayerState(
                 app = app,
                 keepLastPlaybackProgressEnabled = playbackPreferences.keepLastPlaybackProgress,
                 keepPlaybackModeStateEnabled = playbackPreferences.keepPlaybackModeState,
             )
-            PlayerManager.initializePreloaded(
+            PlayerManager.initializePreloadedRestoration(
                 app = app,
                 startupPlaybackPreferences = playbackPreferences,
-                restoredStateSnapshot = restoredStateSnapshot,
+                restorationPreload = restorationPreload,
             )
             awaitConcurrentPlayerInitialization()
             check(PlayerManager.initialized) { "Player runtime initialization failed" }
@@ -1894,9 +1895,8 @@ class AudioPlayerService : Service() {
     }
 
     private fun stopForegroundIfStarted(reason: String) {
-        if (!isForegroundStarted) {
-            return
-        }
+        if (presentationOwnerDelegate.isInitialized()) presentationOwner.stopNotificationUpdates()
+        if (!isForegroundStarted) return
         NPLogger.w("NERI-APS", "stopForegroundIfStarted reason=$reason ${buildStateSummary()}")
         stopForeground(STOP_FOREGROUND_REMOVE)
         isForegroundStarted = false

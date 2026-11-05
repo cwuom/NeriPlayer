@@ -5,6 +5,8 @@ import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
+import android.system.Os
+import android.system.OsConstants
 import androidx.core.net.toUri
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -20,12 +22,9 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.IOException
 import java.net.URI
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
-import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.FileTime
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -57,7 +56,9 @@ data class LocalMetadataRecoveryRecord(
     val companionTransaction: Boolean = false,
     val companionCommitted: Boolean = false,
     val audioUnchanged: Boolean = false,
-    val companions: List<LocalMediaCompanionRecoveryEntry> = emptyList()
+    val companions: List<LocalMediaCompanionRecoveryEntry> = emptyList(),
+    val originalFileIdentity: String? = null,
+    val originalWritableFileIdentity: String? = null
 )
 
 object LocalMediaMetadataRecoveryStore {
@@ -90,18 +91,29 @@ object LocalMediaMetadataRecoveryStore {
         val directory = stagingDirectory(context)
         require(directory.exists() || directory.mkdirs())
         val id = UUID.randomUUID().toString()
+        val originalSha256 = sha256(backupFile)
+        val updatedSha256 = sha256(updatedFile)
+        val originalFileIdentity = if (audioUnchanged) null else verifiedMetadataTargetIdentity(
+            context, targetReference, originalSha256
+        )
         val record = LocalMetadataRecoveryRecord(
             id = id,
             targetReference = targetReference,
             backupFile = backupFile,
             updatedFile = updatedFile,
-            originalSha256 = sha256(backupFile),
-            updatedSha256 = sha256(updatedFile),
+            originalSha256 = originalSha256,
+            updatedSha256 = updatedSha256,
             originalLastModifiedMs = originalLastModifiedMs,
             stage = LocalMetadataRecoveryStage.PREPARED,
             journalFile = File(directory, "$METADATA_RECOVERY_PREFIX$id$METADATA_RECOVERY_SUFFIX"),
             companionTransaction = companionTransaction,
-            audioUnchanged = audioUnchanged
+            audioUnchanged = audioUnchanged,
+            originalFileIdentity = originalFileIdentity,
+            originalWritableFileIdentity = when {
+                audioUnchanged -> null
+                directFile(targetReference) != null -> originalFileIdentity
+                else -> verifiedMetadataTargetIdentity(context, targetReference, originalSha256, writable = true)
+            }
         )
         recordGeneration.incrementAndGet()
         activeRecordIds += id
@@ -153,8 +165,19 @@ object LocalMediaMetadataRecoveryStore {
             releaseCompanionRecord(record)
             return false
         }
-        val companionResult = if (record.companionTransaction) rollbackLocalMediaCompanions(context, record)
-            else CompanionRollbackResult(record, true)
+        val rollbackRecord = if (record.stage == LocalMetadataRecoveryStage.REPLACING ||
+            record.stage == LocalMetadataRecoveryStage.TARGET_VERIFIED
+        ) {
+            // 回滚也可能被中断，必须先记录意图，重启后不能重新发布更新副本
+            runCatching { updateStage(record, LocalMetadataRecoveryStage.ROLLBACK_FAILED) }
+                .onFailure { error -> NPLogger.e(TAG, "记录元信息回滚意图失败，保留原文件", error) }
+                .getOrElse {
+                    releaseCompanionRecord(record)
+                    return false
+                }
+        } else record
+        val companionResult = if (rollbackRecord.companionTransaction) rollbackLocalMediaCompanions(context, rollbackRecord)
+            else CompanionRollbackResult(rollbackRecord, true)
         val latestRecord = companionResult.record
         onCompanionsUpdated(latestRecord)
         val companionsRestored = companionResult.restored
@@ -163,24 +186,31 @@ object LocalMediaMetadataRecoveryStore {
         } else if (targetMatches(context, record.targetReference, record.originalSha256)) {
             val targetFile = directFile(record.targetReference)
             val originalTime = record.originalLastModifiedMs?.takeIf { it > 0L }
-            targetFile == null || originalTime == null || runCatching {
-                targetFile.lastModified() == originalTime || targetFile.setLastModified(originalTime)
+            targetFile == null || originalTime == null || targetFile.lastModified() == originalTime ||
+                restoreOriginalDirectFileTime(targetFile, record, originalTime)
+        } else if (canRecoverMetadataTarget(context, latestRecord) &&
+            latestRecord.backupFile.isFile && runCatching {
+                sha256(latestRecord.backupFile) == latestRecord.originalSha256
             }.getOrDefault(false)
-        } else {
+        ) {
             replaceTargetFromFile(
                 context = context,
-                targetReference = record.targetReference,
-                source = record.backupFile,
-                lastModifiedMs = record.originalLastModifiedMs
-            ) && targetMatches(context, record.targetReference, record.originalSha256)
-        }
+                targetReference = latestRecord.targetReference,
+                source = latestRecord.backupFile,
+                lastModifiedMs = latestRecord.originalLastModifiedMs,
+                recoveryRecord = latestRecord
+            ) && targetMatches(context, latestRecord.targetReference, latestRecord.originalSha256)
+        } else false
         val restored = companionsRestored && audioRestored
         if (restored) {
             val rolledBack = runCatching {
                 updateStage(latestRecord, LocalMetadataRecoveryStage.ROLLED_BACK)
             }.onFailure { error ->
                 NPLogger.e(TAG, "记录元信息已回滚状态失败，保留恢复文件", error)
-            }.getOrNull() ?: return false
+            }.getOrElse {
+                releaseCompanionRecord(record)
+                return false
+            }
             return cleanup(rolledBack)
         } else {
             runCatching {
@@ -188,8 +218,7 @@ object LocalMediaMetadataRecoveryStore {
             }.onFailure { error ->
                 NPLogger.e(TAG, "记录元信息回滚失败状态失败，保留恢复文件", error)
             }
-            activeRecordIds -= record.id
-            recoveryCompleted = false
+            releaseCompanionRecord(record)
         }
         return false
     }
@@ -374,21 +403,16 @@ object LocalMediaMetadataRecoveryStore {
         context: Context,
         targetReference: String,
         source: File,
+        recoveryRecord: LocalMetadataRecoveryRecord,
         lastModifiedMs: Long? = null
     ): Boolean {
         if (!source.isFile || source.length() <= 0L) return false
         val directFile = directFile(targetReference)
         val replaced = if (directFile != null) {
-            replaceDirectFile(source, directFile)
+            replaceDirectFile(source, directFile, recoveryRecord, lastModifiedMs)
         } else {
             val uri = targetReference.toUri()
-            replaceContentUri(context, uri, source)
-        }
-        if (replaced && directFile != null && lastModifiedMs != null && lastModifiedMs > 0L) {
-            if (!directFile.setLastModified(lastModifiedMs)) {
-                NPLogger.w(TAG, "元信息替换后无法恢复文件修改时间: ${directFile.absolutePath}")
-                return false
-            }
+            replaceContentUri(context, uri, source, recoveryRecord)
         }
         return replaced
     }
@@ -428,13 +452,18 @@ object LocalMediaMetadataRecoveryStore {
         if (targetMatchesUpdated) {
             return cleanup(record)
         }
+        if (!canRecoverMetadataTarget(context, record)) {
+            NPLogger.w(TAG, "元信息恢复目标身份或内容冲突，保留原内容与恢复凭据")
+            return false
+        }
         val updatedValid = record.updatedFile.isFile &&
             runCatching { sha256(record.updatedFile) == record.updatedSha256 }.getOrDefault(false)
         if (updatedValid && replaceTargetFromFile(
                 context = context,
                 targetReference = record.targetReference,
                 source = record.updatedFile,
-                lastModifiedMs = record.originalLastModifiedMs
+                lastModifiedMs = record.originalLastModifiedMs,
+                recoveryRecord = record
             ) && targetMatches(context, record.targetReference, record.updatedSha256)
         ) {
             return cleanup(record)
@@ -462,6 +491,8 @@ object LocalMediaMetadataRecoveryStore {
             put("updatedSha256", record.updatedSha256)
             put("originalLastModifiedMs", record.originalLastModifiedMs ?: JSONObject.NULL)
             put("stage", record.stage.name)
+            put("originalFileIdentity", record.originalFileIdentity ?: JSONObject.NULL)
+            put("originalWritableFileIdentity", record.originalWritableFileIdentity ?: JSONObject.NULL)
             if (record.companionTransaction) {
                 put("companionTransaction", true)
                 put("companionCommitted", record.companionCommitted)
@@ -500,7 +531,11 @@ object LocalMediaMetadataRecoveryStore {
             audioUnchanged = body.optBoolean("audioUnchanged"),
             companions = body.optJSONArray("companions")?.let { entries ->
                 List(entries.length()) { index -> LocalMediaCompanionRecoveryEntry.fromJson(entries.getJSONObject(index), directory) }
-            }.orEmpty()
+            }.orEmpty(),
+            originalFileIdentity = body.optString("originalFileIdentity")
+                .takeIf { !body.isNull("originalFileIdentity") && it.isNotBlank() },
+            originalWritableFileIdentity = body.optString("originalWritableFileIdentity")
+                .takeIf { !body.isNull("originalWritableFileIdentity") && it.isNotBlank() }
         )
     }
 
@@ -531,77 +566,98 @@ object LocalMediaMetadataRecoveryStore {
         return true
     }
 
-    private fun directFile(targetReference: String): File? {
+    internal fun directFile(targetReference: String): File? {
         if (targetReference.startsWith('/')) return File(targetReference)
         val uri = targetReference.toUri()
         return uri.path?.takeIf { uri.isDirectFilePath(it) }?.let(::File)
     }
 
-    private fun replaceDirectFile(source: File, target: File): Boolean = runCatching {
-        val parent = target.parentFile ?: throw IOException("target parent is unavailable")
-        if (!parent.exists() && !parent.mkdirs()) {
-            throw IOException("target parent cannot be created")
-        }
-        val temporary = File(parent, ".${target.name}.npmeta-${UUID.randomUUID()}.tmp")
-        try {
-            FileInputStream(source).use { input ->
-                FileOutputStream(temporary).use { output ->
-                    input.copyTo(output)
-                    output.fd.sync()
-                }
-            }
-            try {
-                Files.move(
-                    temporary.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
-                )
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(
-                    temporary.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-                )
-            }
-        } finally {
-            if (temporary.exists()) temporary.delete()
+    private fun replaceDirectFile(
+        source: File,
+        target: File,
+        recoveryRecord: LocalMetadataRecoveryRecord,
+        lastModifiedMs: Long?
+    ): Boolean = runCatching {
+        ParcelFileDescriptor.open(target, ParcelFileDescriptor.MODE_READ_WRITE).use { descriptor ->
+            replaceOwnedDescriptor(descriptor, source, recoveryRecord)
+            restoreDescriptorTime(descriptor, lastModifiedMs)
         }
     }.onFailure { error ->
         NPLogger.e(TAG, "替换本地音频失败: ${target.absolutePath}", error)
     }.isSuccess
 
-    private fun replaceContentUri(context: Context, uri: Uri, source: File): Boolean {
-        val descriptor = openWritableDescriptor(context, uri) ?: return false
+    private fun replaceContentUri(
+        context: Context,
+        uri: Uri,
+        source: File,
+        recoveryRecord: LocalMetadataRecoveryRecord
+    ): Boolean {
+        val descriptor = runCatching { context.contentResolver.openFileDescriptor(uri, "rw") }.getOrNull() ?: return false
         return runCatching {
             descriptor.use { target ->
-                FileInputStream(source).use { input ->
-                    FileOutputStream(target.fileDescriptor).use { output ->
-                        input.copyTo(output)
-                        output.fd.sync()
-                    }
-                }
+                replaceOwnedDescriptor(target, source, recoveryRecord)
             }
         }.onFailure { error ->
             NPLogger.e(TAG, "替换 SAF 音频失败: $uri", error)
         }.isSuccess
     }
 
-    private fun openWritableDescriptor(context: Context, uri: Uri): ParcelFileDescriptor? {
-        return listOf("rwt", "wt").firstNotNullOfOrNull { mode ->
-            runCatching { context.contentResolver.openFileDescriptor(uri, mode) }.getOrNull()
+    private fun replaceOwnedDescriptor(
+        target: ParcelFileDescriptor,
+        source: File,
+        recoveryRecord: LocalMetadataRecoveryRecord
+    ) {
+        check(recoveryRecord.stage == LocalMetadataRecoveryStage.REPLACING ||
+            recoveryRecord.stage == LocalMetadataRecoveryStage.TARGET_VERIFIED ||
+            recoveryRecord.stage == LocalMetadataRecoveryStage.ROLLBACK_FAILED
+        ) { "元信息写入意图尚未持久化" }
+        FileInputStream(source).use { input ->
+            val sourceDigest = sha256(input)
+            check(sourceDigest == recoveryRecord.originalSha256 || sourceDigest == recoveryRecord.updatedSha256) {
+                "元信息恢复副本校验失败"
+            }
+            input.channel.position(0)
+            check(canRecoverMetadataDescriptor(target, recoveryRecord)) { "元信息恢复写入对象已改变" }
+            Os.ftruncate(target.fileDescriptor, 0)
+            Os.lseek(target.fileDescriptor, 0, OsConstants.SEEK_SET)
+            ParcelFileDescriptor.AutoCloseOutputStream(target.dup()).use { output ->
+                input.copyTo(output, LOCAL_METADATA_IO_BUFFER_BYTES)
+                output.flush()
+                Os.fsync(target.fileDescriptor)
+            }
         }
+    }
+
+    private fun restoreOriginalDirectFileTime(
+        target: File,
+        record: LocalMetadataRecoveryRecord,
+        lastModifiedMs: Long
+    ): Boolean = runCatching {
+        if (record.originalFileIdentity == null && record.originalWritableFileIdentity == null) return@runCatching true
+        ParcelFileDescriptor.open(target, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+            // 已是原文的新 owner 只做凭据清理，不能继承旧文件时间
+            if (!metadataDescriptorMatchesRecordedIdentity(descriptor, record)) return@use true
+            check(metadataDescriptorSha256(descriptor) == record.originalSha256)
+            restoreDescriptorTime(descriptor, lastModifiedMs)
+            true
+        }
+    }.getOrDefault(false)
+
+    private fun restoreDescriptorTime(descriptor: ParcelFileDescriptor, lastModifiedMs: Long?) {
+        if (lastModifiedMs == null || lastModifiedMs <= 0L) return
+        // owner fd 保持打开，路径被替换后也只修改原 inode 的时间
+        Files.setLastModifiedTime(File("/proc/self/fd/${descriptor.fd}").toPath(), FileTime.fromMillis(lastModifiedMs))
     }
 
     private fun openTargetInput(context: Context, targetReference: String) =
         directFile(targetReference)?.takeIf(File::isFile)?.inputStream()
             ?: targetReference.toUri().let(context.contentResolver::openInputStream)
 
-    private fun sha256(file: File): String = file.inputStream().use(::sha256)
+    internal fun sha256(file: File): String = file.inputStream().use(::sha256)
 
-    private fun sha256(input: java.io.InputStream): String {
+    internal fun sha256(input: java.io.InputStream): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        val buffer = ByteArray(LOCAL_METADATA_IO_BUFFER_BYTES)
         while (true) {
             val read = input.read(buffer)
             if (read < 0) break

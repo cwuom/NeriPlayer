@@ -82,6 +82,7 @@ internal val MP4_SUPPORTED_COVER_MIME_TYPES = setOf(
 )
 internal val EDITABLE_COVER_JPEG_QUALITIES = intArrayOf(95, 90, 85, 80, 75, 70, 65, 60)
 internal const val EDITABLE_METADATA_WRITE_BUDGET_MS = 3_000L
+internal const val LOCAL_METADATA_IO_BUFFER_BYTES = 128 * 1024
 internal val SAF_WRITE_READBACK_DELAYS_MS = longArrayOf(0L, 8L, 24L)
 internal const val LOCAL_METADATA_SUFFIX = ".npmeta.json"
 internal const val LEGACY_DOWNLOAD_ROOT = "/storage/emulated/0/neriplayer-download"
@@ -303,6 +304,7 @@ enum class LocalMediaMetadataWriteOutcome {
     SIDECAR_ONLY,
     NOT_WRITABLE,
     UNSUPPORTED_OR_UNREADABLE,
+    UNSUPPORTED_EMBEDDED_COVER,
     FAILED
 }
 
@@ -318,7 +320,8 @@ internal fun combineEditableMetadataWriteOutcome(
     if (allowSidecarAuthoritativeFallback &&
         directOutcome in setOf(
             LocalMediaMetadataWriteOutcome.FAILED,
-            LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE
+            LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE,
+            LocalMediaMetadataWriteOutcome.UNSUPPORTED_EMBEDDED_COVER
         )
     ) {
         // 部分 WAV 等容器不能由 TagLib 回写，但完整侧载已经通过读回校验。
@@ -414,16 +417,18 @@ private fun isRemoteCoverReference(reference: String): Boolean =
     reference.startsWith("http://", ignoreCase = true) || reference.startsWith("https://", ignoreCase = true)
 
 private fun validateLocalCoverReference(context: Context, uri: Uri): CoverReferenceValidation = when {
-    uri.scheme.equals("file", ignoreCase = true) -> validateCoverFilePath(uri.path)
+    uri.scheme.equals("file", ignoreCase = true) -> validateCoverFilePath(context, uri.path)
     uri.scheme.equals("content", ignoreCase = true) -> validateContentCoverReference(context, uri)
-    uri.scheme.isNullOrBlank() -> validateCoverFilePath(absolutePathOrNull(uri.path))
+    uri.scheme.isNullOrBlank() -> validateCoverFilePath(context, absolutePathOrNull(uri.path))
     else -> CoverReferenceValidation.USABLE
 }
 
 private fun absolutePathOrNull(path: String?): String? = path?.takeIf { it.startsWith("/") }
 
-private fun validateCoverFilePath(path: String?): CoverReferenceValidation =
-    if (path?.let(::File)?.let(::isUsableCoverFile) == true) {
+private fun validateCoverFilePath(context: Context, path: String?): CoverReferenceValidation =
+    if (path?.let(::File)?.let(::isUsableCoverFile) == true &&
+        LocalMediaSupport.retainEmbeddedCoverReference(context, path) != null
+    ) {
         CoverReferenceValidation.USABLE
     } else {
         CoverReferenceValidation.INVALID

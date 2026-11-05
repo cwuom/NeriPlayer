@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import java.util.Locale
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 
 
 internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichment(
@@ -1305,6 +1306,29 @@ internal suspend fun GlobalDownloadManager.settlePostCoreEnrichmentFailure(
                 "state=$operationState, errorCode=$errorCode"
         )
     }
+    val serverRetryAfterMs = error?.let { SubsonicException.find(it) }
+        ?.takeIf { it.retryable }?.retryAfterMs?.takeIf { it > 0L }
+        ?.takeIf { coreAudioCommitted || coreCommitAlreadyRecorded }
+    val retryErrorCode = if (serverRetryAfterMs != null) "DOWNLOAD_SERVER_RETRY_AFTER" else errorCode
+    if (serverRetryAfterMs != null && normalizedOperationId != null) {
+        val nowMs = System.currentTimeMillis()
+        val delayMs = serverRetryAfterMs.coerceAtMost(java.util.concurrent.TimeUnit.DAYS.toMillis(1L))
+        val deadline = if (nowMs > Long.MAX_VALUE - delayMs) Long.MAX_VALUE else nowMs + delayMs
+        val recorded = runCatching {
+            DownloadExecutionRoomStore.recordPostCoreRetryFailure(
+                context = appContext,
+                operationId = normalizedOperationId,
+                stableKey = song.stableKey(),
+                expectedAttemptId = expectedAttemptId,
+                errorCode = retryErrorCode,
+                nowMs = nowMs,
+                retryNotBeforeMs = deadline
+            )
+        }.onFailure { persistError ->
+            NPLogger.w(TAG, "服务器收尾重试期限写入失败，保留核心音频: operationId=$normalizedOperationId", persistError)
+        }.getOrNull()
+        if (recorded == null) return
+    }
     val taskStatus = resolvePostCoreEnrichmentTaskStatus(
         coreAudioCommitted = coreAudioCommitted || coreCommitAlreadyRecorded
     )
@@ -1334,7 +1358,7 @@ internal suspend fun GlobalDownloadManager.settlePostCoreEnrichmentFailure(
         TAG,
         "core 音频未通过最终收尾，保留有界恢复任务: " +
             "song=${song.name}, operationId=$normalizedOperationId, " +
-            "status=$taskStatus, errorCode=$errorCode, " +
+            "status=$taskStatus, errorCode=$retryErrorCode, " +
             "error=${error?.javaClass?.simpleName}: ${error?.message}",
         error
     )
@@ -1347,7 +1371,7 @@ internal suspend fun GlobalDownloadManager.settlePostCoreEnrichmentFailure(
         song = song,
         operationId = normalizedOperationId,
         expectedAttemptId = expectedAttemptId,
-        reason = errorCode,
+        reason = retryErrorCode,
         admissionTicket = admissionTicket
     )
 }
