@@ -84,7 +84,7 @@ class LanRoomEngine(
         }
         if (!validMedia(track, m)) return reject(id, "FULL_AUDIO_REQUIRED")
         currentLocalMedia = m.localMedia
-        currentPresentation = if (m.localMedia == null) m.presentation else null
+        currentPresentation = m.presentation?.takeIf { m.localMedia == null }
         currentSources = if (m.localMedia == null) m.sourceUrls.distinct().take(3) else emptyList()
         sourceFailure = null
         loading = Loading(track, decision.position, ++revision, clock.nowMs() + if (currentLocalMedia == null) 90_000 else 300_000)
