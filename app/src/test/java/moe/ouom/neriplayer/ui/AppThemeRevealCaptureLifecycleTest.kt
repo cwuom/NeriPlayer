@@ -10,6 +10,7 @@ import android.view.View
 import android.view.Window
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +111,28 @@ class AppThemeRevealCaptureLifecycleTest {
 
         assertNull(capture.await())
         assertTrue("a failed copy must release its unpublished buffer", copy.bitmap.isRecycled)
+    }
+
+    @Test
+    fun aFailedCopyStillReturnsTheRenderedFallbackView() = runTest(dispatcher) {
+        val fallbackView = View(ApplicationProvider.getApplicationContext<Application>()).apply {
+            layout(0, 0, 40, 24)
+            setBackgroundColor(Color.GREEN)
+        }
+        val capture = async(Dispatchers.Main) { captureThemeRevealSnapshot(activity, fallbackView) }
+        runCurrent()
+        val copy = checkNotNull(pendingCopy)
+
+        copy.finish(PixelCopy.ERROR_SOURCE_NO_DATA)
+        runCurrent()
+        val delivered = checkNotNull(capture.await()).asAndroidBitmap()
+        allocatedBitmaps += delivered
+
+        assertTrue(copy.bitmap.isRecycled)
+        assertFalse(delivered.isRecycled)
+        assertEquals(40, delivered.width)
+        assertEquals(24, delivered.height)
+        assertEquals(Color.GREEN, delivered.getPixel(20, 12))
     }
 
     @Test

@@ -176,6 +176,9 @@ class WindowSystemBarImmersiveRenderTest {
             composeRule.waitForIdle()
             assertVisibleGesturePill(nextDark, navigationInsets, File(output, "stage-$index"))
         }
+        if (InstrumentationRegistry.getArguments().getString("capturePrefix").isNullOrBlank()) {
+            check(output.deleteRecursively()) { "无法清理 pill 像素诊断目录: $output" }
+        }
     }
 
     @Test

@@ -237,7 +237,11 @@ class MoreOptionsSheetPredictiveBackTest {
             failure = error
             throw error
         } finally {
-            saveSheetDragTrace(samples, failure)
+            runCatching { saveSheetDragTrace(samples, failure) }
+                .onFailure { diagnosticFailure ->
+                    failure?.addSuppressed(diagnosticFailure)
+                    runCatching { android.util.Log.w("NeriIssue60", "drag trace save failed", diagnosticFailure) }
+                }
         }
     }
 
@@ -282,6 +286,7 @@ class MoreOptionsSheetPredictiveBackTest {
             assertTrue("夹具必须真的向下拖动 Sheet，不能只命中点击: $pulledSample",
                 pulledSample.offset != null && baseline.last().offset != null &&
                     pulledSample.offset > checkNotNull(baseline.last().offset) + 1f)
+            assertTrue("拖动中采样帧必须保持窗口焦点: $pulledSample", pulledSample.focused)
             root.performTouchInput {
                 repeat(4) { index ->
                     moveTo(pulled - Offset(0f, upDistance * (index + 1) / 4f), delayMillis = 10L)

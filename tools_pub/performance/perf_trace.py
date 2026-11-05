@@ -7,6 +7,7 @@ import csv
 from datetime import datetime, timezone
 import hashlib
 import io
+from itertools import accumulate
 import json
 import math
 from pathlib import Path
@@ -74,7 +75,7 @@ def cpu_summary(rows, start, end, reasons=()):
         invalid.append("no target scheduling slices; missing evidence is not zero load")
     total = 0
     full_bins = (end - start) // BIN_NS
-    bins = [0] * full_bins
+    bin_changes = defaultdict(int)
     for row in rows:
         ts, dur = int(row["ts"]), int(row["dur"])
         if dur < 0:
@@ -85,10 +86,26 @@ def cpu_summary(rows, start, end, reasons=()):
         if right <= left:
             continue
         total += right - left
+        bin_right = min(right, start + full_bins * BIN_NS)
+        if bin_right <= left:
+            continue
         first = (left - start) // BIN_NS
-        last = min(full_bins - 1, (right - 1 - start) // BIN_NS)
-        for index in range(first, last + 1):
-            bins[index] += min(right, start + (index + 1) * BIN_NS) - max(left, start + index * BIN_NS)
+        last = (bin_right - 1 - start) // BIN_NS
+        first_value = min(bin_right, start + (first + 1) * BIN_NS) - left
+        bin_changes[first] += first_value
+        bin_changes[first + 1] -= first_value
+        if last > first:
+            last_value = bin_right - (start + last * BIN_NS)
+            bin_changes[last] += last_value
+            bin_changes[last + 1] -= last_value
+            # full interior bins share one range update regardless of trace length
+            bin_changes[first + 1] += BIN_NS
+            bin_changes[last] -= BIN_NS
+    current = peak = 0
+    for index in sorted(bin_changes):
+        current += bin_changes[index]
+        if index < full_bins:
+            peak = max(peak, current)
     valid = not invalid
     result = {
         "status": "observed" if valid else "unknown",
@@ -96,19 +113,19 @@ def cpu_summary(rows, start, end, reasons=()):
         "cpu_time_ms": total / 1e6 if valid else None,
         "average_cores": total / (end - start) if valid else None,
         "average_percent_of_one_core": 100 * total / (end - start) if valid else None,
-        "peak_100ms_cores": max(bins) / BIN_NS if valid and bins else None,
-        "peak_100ms_percent_of_one_core": 100 * max(bins) / BIN_NS if valid and bins else None,
+        "peak_100ms_cores": peak / BIN_NS if valid and full_bins else None,
+        "peak_100ms_percent_of_one_core": 100 * peak / BIN_NS if valid and full_bins else None,
         "bin_ms": 100,
         "complete_bin_count": full_bins,
         "excluded_tail_ms": ((end - start) % BIN_NS) / 1e6,
         "scope": "sum of target package and colon subprocess thread CPU time; one busy core = 1.0 cores or 100%",
     }
-    return result, [
+    return result, (
         {"start_ns": start + index * BIN_NS, "duration_ns": BIN_NS,
          "cpu_time_ns": value if valid else None, "average_cores": value / BIN_NS if valid else None,
          "status": result["status"]}
-        for index, value in enumerate(bins)
-    ]
+        for index, value in enumerate(accumulate(bin_changes.get(index, 0) for index in range(full_bins)))
+    )
 
 
 def percentile(values, fraction):
@@ -170,6 +187,8 @@ def counter_summary(rows):
     for row in rows:
         tracks[(row["track_id"], row["name"], row.get("unit"))].append(float(row["value"]))
     return {
+        "status": "observed" if rows else "unknown",
+        "reasons": [] if rows else ["no matching counter samples"],
         "tracks": [
             {"track_id": key[0], "name": key[1], "unit": key[2],
              "sample_count": len(values), "sample_min": min(values), "sample_max": max(values)}
@@ -197,10 +216,17 @@ def analysis_queries(package, start, end):
             FROM sched s JOIN thread t USING(utid) JOIN app p USING(upid)
             WHERE s.ts < {end} AND (s.dur < 0 OR s.ts+s.dur > {start})
             ORDER BY s.ts,s.id;""",
-        "actual-frames": app + f"""SELECT a.id,a.ts,a.dur,a.upid,a.surface_frame_token,
+        "actual-frames": app + f""", window_layers AS (
+            SELECT a.id,a.upid,a.surface_frame_token
+            FROM actual_frame_timeline_slice a JOIN app USING(upid)
+            WHERE a.ts < {end} AND (a.dur < 0 OR a.ts+a.dur > {start})
+            ) SELECT a.id,a.ts,a.dur,a.upid,a.surface_frame_token,
             a.display_frame_token,a.layer_name,a.jank_type,a.on_time_finish,a.present_type
             FROM actual_frame_timeline_slice a JOIN app USING(upid)
-            WHERE a.ts < {end} AND (a.dur < 0 OR a.ts+a.dur > {start}) ORDER BY a.ts,a.id;""",
+            WHERE a.id IN (SELECT id FROM window_layers) OR (
+                a.surface_frame_token > 0 AND (a.upid,a.surface_frame_token) IN (
+                    SELECT upid,surface_frame_token FROM window_layers))
+            ORDER BY a.ts,a.id;""",
         "counters": f"""SELECT c.ts,c.track_id,t.name,t.unit,t.type,c.value
             FROM counter c JOIN counter_track t ON t.id=c.track_id
             WHERE c.ts >= {start} AND c.ts < {end} AND (
@@ -374,8 +400,16 @@ def capture(args):
             raise RuntimeError("trace pull failed or produced an empty file; remote evidence preserved")
         metadata["trace_sha256"] = sha256(out / "trace.pftrace")
         metadata["after"] = device_snapshot(args)
-        cleanup = adb_call(args, ["shell", "rm", remote])
-        metadata["remote_cleanup_returncode"] = cleanup.returncode
+        try:
+            cleanup = adb_call(args, ["shell", "rm", remote])
+            metadata["remote_cleanup_returncode"] = cleanup.returncode
+            metadata["remote_cleanup_stderr"] = cleanup.stderr
+        except (OSError, subprocess.SubprocessError) as error:
+            metadata["remote_cleanup_returncode"] = None
+            metadata["remote_cleanup_stderr"] = str(error)
+        if metadata["remote_cleanup_returncode"] != 0:
+            print(f"warning: trace captured but remote cleanup failed; manually remove {remote}",
+                  file=sys.stderr, flush=True)
         metadata["status"] = "captured"
         print(json.dumps({"status": "captured", "out": str(out), "trace_sha256": metadata["trace_sha256"]}), flush=True)
     except (Exception, KeyboardInterrupt) as error:
@@ -396,6 +430,8 @@ def query(processor, trace, out, name, sql):
         (out / f"{name}.csv").write_text(result.stdout)
         return {"returncode": result.returncode, "rows": parse_csv(result.stdout) if result.returncode == 0 else [], "stderr": result.stderr}
     except subprocess.TimeoutExpired:
+        (out / f"{name}.stderr.txt").write_text("query timed out\n")
+        (out / f"{name}.csv").write_text("")
         return {"returncode": None, "rows": [], "stderr": "query timed out"}
 
 
@@ -466,6 +502,10 @@ def analyze(args):
         for name in ("classified_jank_fraction", "duration_p50_ms", "duration_p95_ms", "duration_max_ms"):
             frames[name] = None
         frames["reasons"] = reasons or ["FrameTimeline query failed"]
+    counters = counter_summary(queries["counters"]["rows"])
+    if queries["counters"]["returncode"] != 0:
+        counters["status"] = "unknown"
+        counters["reasons"] = ["counters query failed"]
     version = subprocess.run([str(processor), "--version"], capture_output=True, text=True, timeout=10)
     report = {
         "schema_version": 1, "trace": str(trace), "trace_sha256": original_hash,
@@ -480,7 +520,7 @@ def analyze(args):
             "ftrace_setup_details": [row for row in queries["metadata"]["rows"] if row["name"] == "ftrace_setup_errors"],
             "scope": "optional setup notice counts and informational readaheads are not by themselves scheduler data loss; absent setup details remain unknown",
         },
-        "counters": counter_summary(queries["counters"]["rows"]),
+        "counters": counters,
         "startups": {"status": "observed" if queries["startups"]["rows"] and not reasons else "unknown",
                      "rows": queries["startups"]["rows"],
                      "scope": "Perfetto inferred startup type and duration; scenario label alone does not establish a cold start or full interactivity"},

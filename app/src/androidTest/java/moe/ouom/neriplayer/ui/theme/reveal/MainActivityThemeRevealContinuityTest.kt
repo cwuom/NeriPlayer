@@ -106,6 +106,7 @@ class MainActivityThemeRevealContinuityTest {
         var network: EmulatorOfflineNetworkFixture? = null
         var scenario: ActivityScenario<MainActivity>? = null
         var noImageFrame: Bitmap? = null
+        var viewportDirectory: File? = null
         var failure: Throwable? = null
         val autoAdvance = composeRule.mainClock.autoAdvance
         try {
@@ -149,7 +150,9 @@ class MainActivityThemeRevealContinuityTest {
 
             if (pageViewportOnly) {
                 UiFailureDiagnostics.onFailure("main-page-viewports-${style.name}") {
-                    assertMainPageViewports(style, activeScenario, localized)
+                    val diagnostics = File(context.cacheDir, "main-page-viewports-${style.name}-${System.nanoTime()}")
+                    viewportDirectory = diagnostics
+                    assertMainPageViewports(style, activeScenario, localized, diagnostics)
                 }
                 return
             }
@@ -207,6 +210,16 @@ class MainActivityThemeRevealContinuityTest {
             cleanup { NeriMotionStyle.clean = savedMotion }
             cleanup { network?.close() }
             cleanup { check(!directory.exists() || directory.deleteRecursively()) }
+            cleanup {
+                viewportDirectory?.let { diagnostics ->
+                    if (failure == null && cleanupFailures.isEmpty()) {
+                        check(!diagnostics.exists() || diagnostics.deleteRecursively())
+                    } else {
+                        // 失败时保留现场，按日志路径用 run-as 从模拟器取回
+                        android.util.Log.e("MainThemeReveal", "viewport diagnostics retained: ${diagnostics.absolutePath}")
+                    }
+                }
+            }
             cleanup { composeRule.mainClock.autoAdvance = autoAdvance }
             if (failure != null) cleanupFailures.forEach(failure::addSuppressed)
             else if (cleanupFailures.isNotEmpty()) {
@@ -230,8 +243,12 @@ class MainActivityThemeRevealContinuityTest {
         assumeTrue("专用模拟器不能配置 GitHub 或 WebDAV 同步目标", noTargets)
     }
 
-    private fun assertMainPageViewports(style: UiStyle, scenario: ActivityScenario<MainActivity>, localized: Context) {
-        val directory = File(context.cacheDir, "main-page-viewports-${style.name}-${System.nanoTime()}")
+    private fun assertMainPageViewports(
+        style: UiStyle,
+        scenario: ActivityScenario<MainActivity>,
+        localized: Context,
+        directory: File
+    ) {
         check(directory.mkdirs())
         val pages = listOf("home" to AppR.string.nav_home, "explore" to AppR.string.nav_explore,
             "settings" to AppR.string.nav_settings)
