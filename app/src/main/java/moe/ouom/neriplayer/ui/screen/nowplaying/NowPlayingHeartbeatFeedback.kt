@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -46,6 +47,33 @@ import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 
 /** 提示的停留时长。比 Snackbar 默认的 Short（约 4 秒）略短，够看清又不挡操作。 */
 private const val HeartbeatFailureSnackbarVisibleMs = 3_000L
+
+/** 等待「自己这条提示真正显示出来」时的轮询间隔 */
+private const val HeartbeatSnackbarPollMs = 50L
+
+/**
+ * 显示一条限时提示，**只在这条提示真正显示出来之后才开始计时**。
+ *
+ * 播放页的 Snackbar 是共享的：前一条还在显示时，[showNeriSnackbar] 会排队等待。
+ * 若在排队时就起 3 秒计时器，到点会把**别人的**提示提前收掉，自己这条反而还没露脸。
+ * 因此先等到 `currentSnackbarData` 变成自己这条，再算停留时间。
+ */
+private suspend fun SnackbarHostState.showTimedHeartbeatSnackbar(message: String) {
+    val text = message.trim()
+    if (text.isEmpty()) return
+    coroutineScope {
+        val showJob = launch { showNeriSnackbar(message = text) }
+        // 排队期间一直等自己成为当前提示；若提示被去重跳过，showJob 会立刻结束
+        while (!showJob.isCompleted && currentSnackbarData?.visuals?.message != text) {
+            delay(HeartbeatSnackbarPollMs)
+        }
+        if (showJob.isCompleted) return@coroutineScope
+        delay(HeartbeatFailureSnackbarVisibleMs)
+        if (currentSnackbarData?.visuals?.message == text) {
+            dismissCurrentNeriSnackbar()
+        }
+    }
+}
 
 /**
  * 心动模式的底部提示。
@@ -97,11 +125,7 @@ fun NowPlayingHeartbeatFeedback(
         }
         if (!heartbeatCandidatesExhausted) return@LaunchedEffect
         scope.launch {
-            // 提示本身是挂起调用（会一直等到 Snackbar 消失），所以放到子协程里，
-            // 让下面的计时器能按时把它收掉。
-            launch { snackbarHostState.showNeriSnackbar(message = messageCandidatesExhausted) }
-            delay(HeartbeatFailureSnackbarVisibleMs)
-            snackbarHostState.dismissCurrentNeriSnackbar()
+            snackbarHostState.showTimedHeartbeatSnackbar(messageCandidatesExhausted)
         }
     }
 
@@ -131,9 +155,7 @@ fun NowPlayingHeartbeatFeedback(
         lastRoomAutoOff = heartbeatRoomAutoOff
         lastRoomRejected = heartbeatRoomRejected
         scope.launch {
-            launch { snackbarHostState.showNeriSnackbar(message = message) }
-            delay(HeartbeatFailureSnackbarVisibleMs)
-            snackbarHostState.dismissCurrentNeriSnackbar()
+            snackbarHostState.showTimedHeartbeatSnackbar(message)
         }
     }
 
@@ -170,9 +192,7 @@ fun NowPlayingHeartbeatFeedback(
         }
         val message = if (userJustEnabled) messageEnabledLocalHint else messageOfficialUnavailable
         scope.launch {
-            launch { snackbarHostState.showNeriSnackbar(message = message) }
-            delay(HeartbeatFailureSnackbarVisibleMs)
-            snackbarHostState.dismissCurrentNeriSnackbar()
+            snackbarHostState.showTimedHeartbeatSnackbar(message)
         }
     }
 }

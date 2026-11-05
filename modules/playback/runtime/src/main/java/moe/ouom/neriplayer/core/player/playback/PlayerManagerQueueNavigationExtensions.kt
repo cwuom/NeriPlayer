@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.core.player.heartbeat.heartbeatReadyNextSong
 import moe.ouom.neriplayer.core.player.heartbeat.appendHeartbeatSongAndPlay
 import moe.ouom.neriplayer.core.player.heartbeat.isHeartbeatSourceSupported
 import moe.ouom.neriplayer.core.player.heartbeat.markHeartbeatSongFailed
+import moe.ouom.neriplayer.core.player.heartbeat.recordHeartbeatSkip
 import moe.ouom.neriplayer.core.player.heartbeat.requestHeartbeatSelectionAsync
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.queue.ListenTogetherTrackFinishPlan
@@ -252,7 +253,14 @@ private fun PlayerManager.dispatchFailureAdvance(
     commandSource: PlaybackCommandSource,
 ) {
     if (action == PlaybackFailureAdvanceAction.STOP) {
-        stopPlaybackPreservingQueue(clearMediaUrl = true)
+        // 心动候选追加在队尾并选中，所以「最后一首播放失败」同样是它需要接力的时刻；
+        // 直接停止会让一首放不出来的推荐把心动流彻底断掉，预取好的下一首也用不上。
+        _currentSongFlow.value?.let { markHeartbeatSongFailed(it) }
+        heartbeatAdvanceOrFallback(
+            reason = "playbackFailure:STOP",
+            resetFailureCount = false,
+            fallback = { stopPlaybackPreservingQueue(clearMediaUrl = true) },
+        )
         return
     }
     // 任务书 §八：本次播放失败的曲目要记入本次心动会话的黑名单，
@@ -314,11 +322,12 @@ internal fun PlayerManager.nextImpl(
     force: Boolean = false,
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
     bypassLoudVolumeWarning: Boolean = false,
-    allowRememberedLongFormPosition: Boolean = false
+    allowRememberedLongFormPosition: Boolean = false,
+    recordUserSkip: Boolean = false,
 ) {
     ensureInitialized()
     if (!initialized) return
-    advanceWithGuards(force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition)
+    advanceWithGuards(force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition, recordUserSkip)
 }
 
 /**
@@ -332,17 +341,55 @@ private fun PlayerManager.advanceWithGuards(
     commandSource: PlaybackCommandSource,
     bypassLoudVolumeWarning: Boolean,
     allowRememberedLongFormPosition: Boolean,
+    recordUserSkip: Boolean = false,
 ) {
+    // 没有可播的下一首时不该先弹 USB 高音量确认：用户确认完才发现无可播放，
+    // 等于为一次不会发生的操作打断他；这种情形也不该把当前歌记成「被跳过」。
+    if (!hasNextAdvanceTarget(force)) {
+        advanceOrFallbackWithoutSkip(force, commandSource, allowRememberedLongFormPosition)
+        return
+    }
     if (requestUsbExclusiveLoudPlaybackConfirmation(
             commandSource = commandSource,
             bypassWarning = bypassLoudVolumeWarning,
             continuePlayback = {
+                recordHeartbeatSkipForUserSkip(recordUserSkip)
                 nextImpl(force, commandSource, bypassLoudVolumeWarning = true, allowRememberedLongFormPosition)
             }
         )
     ) {
         return
     }
+    recordHeartbeatSkipForUserSkip(recordUserSkip)
+    advanceOrFallbackWithoutSkip(force, commandSource, allowRememberedLongFormPosition)
+}
+
+/**
+ * 本次「下一首」是否真的能推进：心动已有就绪候选，或原队列还有下一首。
+ *
+ * 只用于决定「要不要打断用户做 USB 高音量确认」，不改变实际推进路径。
+ */
+private fun PlayerManager.hasNextAdvanceTarget(force: Boolean): Boolean {
+    if (useHeartbeatAdvance() && heartbeatReadyNextSong != null) return true
+    return PlayerQueueNavigationOwner.nextStep(
+        currentPlaylist.size,
+        currentIndex,
+        repeatModeSetting,
+        force,
+    ) != null
+}
+
+/** 用户主动跳过只在真的会切歌时才计入降权；取消确认或无可播放时不该惩罚当前歌。 */
+private fun PlayerManager.recordHeartbeatSkipForUserSkip(enabled: Boolean) {
+    if (!enabled) return
+    _currentSongFlow.value?.let { recordHeartbeatSkip(it) }
+}
+
+private fun PlayerManager.advanceOrFallbackWithoutSkip(
+    force: Boolean,
+    commandSource: PlaybackCommandSource,
+    allowRememberedLongFormPosition: Boolean,
+) {
     // 心动模式优先：用户主动跳过时也走心跳候选，避免「跳过一次就掉出心动歌流」（任务书 §3.5 步骤 6）
     heartbeatAdvanceOrFallback(
         reason = "userSkip",

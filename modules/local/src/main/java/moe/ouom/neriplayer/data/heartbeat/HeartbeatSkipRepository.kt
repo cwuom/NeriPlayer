@@ -72,7 +72,7 @@ class HeartbeatSkipRepository(context: Context) {
             val next = current[key] ?: 0
             if (next >= MAX_SKIP_COUNT) return@edit
             val merged = current + (key to (next + 1))
-            prefs[SkippedKey] = skipJson.encodeToString(trimToLimit(merged))
+            prefs[SkippedKey] = skipJson.encodeToString(trimToLimit(merged, key))
         }
     }
 
@@ -88,13 +88,20 @@ class HeartbeatSkipRepository(context: Context) {
  *
  * 不按插入顺序淘汰：被跳过次数多的曲目信息价值更高，
  * 淘汰它们等于把最有用的负反馈先扔掉。
+ *
+ * [protectedKey] 是本次刚写入的曲目：它的计数从 1 开始，按次数排序时必然垫底，
+ * 若不单独保留，一旦表满就会「刚记完就被丢掉」，新歌的跳过永远累积不起来。
  */
-internal fun trimToLimit(counts: Map<String, Int>): Map<String, Int> {
+internal fun trimToLimit(counts: Map<String, Int>, protectedKey: String? = null): Map<String, Int> {
     if (counts.size <= DEFAULT_SKIP_ENTRY_LIMIT) return counts
-    return counts.entries
+    val protected = protectedKey?.let { key -> counts[key]?.let { key to it } }
+    val budget = DEFAULT_SKIP_ENTRY_LIMIT - if (protected != null) 1 else 0
+    val rest = counts.entries
+        .filter { it.key != protectedKey }
         .sortedByDescending { it.value }
-        .take(DEFAULT_SKIP_ENTRY_LIMIT)
-        .associate { it.key to it.value }
+        .take(budget)
+        .map { it.key to it.value }
+    return (listOfNotNull(protected) + rest).associate { it.first to it.second }
 }
 
 /** 单曲跳过次数上限，超过后不再累加 */

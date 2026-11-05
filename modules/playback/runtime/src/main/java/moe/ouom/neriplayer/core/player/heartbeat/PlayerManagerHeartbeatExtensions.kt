@@ -398,7 +398,9 @@ internal fun PlayerManager.requestHeartbeatSelectionAsync(reason: String) {
     val currentSong = _currentSongFlow.value ?: return
     val anchor = HeartbeatScorer.identityKey(currentSong)
     val generation = heartbeatSessionGeneration.get()
-    val queue = currentPlaylist.toList()
+    // 当前歌之后的尾巴会被心动候选整段替换，不应算作「已经在队列里」：
+    // 否则从「我喜欢的音乐」开始播放时，整个收藏都会被排除，本地候选一个都挑不出来。
+    val queue = currentPlaylist.take(currentIndex + 1)
     PlayerDependencies.launchBackgroundIo {
         val next = try {
             selector.selectNext(currentSong, queue)

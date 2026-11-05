@@ -147,4 +147,9 @@ private fun TrackStat.toHeartbeatSongItem(): SongItem = SongItem(
     // 必须带上统计库的身份键：不带的话 `HeartbeatScorer.identityKey` 会退化成 `:id`，
     // 与统计库里存的键对不上，重复播放惩罚与跳过降权永远命中不了。
     sourceStableKey = identityKey,
+    // 自定义名称/歌手/封面也要带上：播放界面和通知优先显示它们，
+    // 丢掉会让被推荐的歌突然变回原始标题，用户会以为数据被改坏了。
+    customName = customName,
+    customArtist = customArtist,
+    customCoverUrl = customCoverUrl,
 )

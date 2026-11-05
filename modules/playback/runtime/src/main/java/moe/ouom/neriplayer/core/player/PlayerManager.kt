@@ -256,7 +256,6 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.playback.stopPlaybackImmediatelyImpl
 import moe.ouom.neriplayer.core.player.heartbeat.heartbeatOnCurrentSongChanged
-import moe.ouom.neriplayer.core.player.heartbeat.recordHeartbeatSkip
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -1767,10 +1766,9 @@ object PlayerManager {
         force: Boolean = false,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
     ) {
-        // 用户主动跳过计入心动模式负反馈：放公开入口而非 nextImpl，避免内部递归重复计数；
-        // 必须在切歌前取当前歌。自动播完推进不走这里，所以「听完」不算跳过。
-        _currentSongFlow.value?.let { recordHeartbeatSkip(it) }
-        this.nextImpl(force, commandSource)
+        // 用户主动跳过计入心动模式负反馈：由 nextImpl 在确认真的会切歌之后记录，
+        // 避免「USB 确认被取消 / 队列已到底」时也惩罚当前歌。
+        this.nextImpl(force, commandSource, recordUserSkip = true)
     }
 
     fun previous(commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL) =

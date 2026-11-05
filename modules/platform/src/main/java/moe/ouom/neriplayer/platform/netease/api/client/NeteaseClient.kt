@@ -1651,10 +1651,19 @@ class NeteaseClient(
         return try {
             val code = JSONObject(resp).optInt("code", -1)
             if (code == 301 && hasLogin()) {
-                try { ensureWeapiSession() } catch (_: Exception) {}
+                // 预热是阻塞调用，放到 IO 调度器上：调用方取消时不会再让它把线程占到超时
+                try {
+                    withContext(Dispatchers.IO) { ensureWeapiSession() }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                }
                 resp = call(usePersistedCookies = true)
             }
             resp
+        } catch (cancelled: CancellationException) {
+            // 取消必须继续向上传播，否则会被当成一次普通的官方失败，污染熔断状态
+            throw cancelled
         } catch (_: Exception) {
             resp
         }

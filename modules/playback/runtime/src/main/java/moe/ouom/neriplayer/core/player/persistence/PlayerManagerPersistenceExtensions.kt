@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
+import moe.ouom.neriplayer.core.player.heartbeat.invalidateHeartbeatCandidateCache
 import moe.ouom.neriplayer.core.player.heartbeat.restoreHeartbeatModeFromState
 import moe.ouom.neriplayer.data.model.playback.storage.PlayerMetadataClearRequest as RestorableMetadataClearPolicy
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -235,6 +236,8 @@ private suspend fun PlayerManager.updateCurrentFavorite(
         } else {
             localRepo.removeFromFavorites(song)
         }
+        // 收藏变了，本地候选池的收藏层级就过期了；不主动失效会继续推进刚被取消收藏的歌
+        invalidateHeartbeatCandidateCache()
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
