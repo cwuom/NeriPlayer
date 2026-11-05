@@ -345,6 +345,10 @@ internal fun AppUnderlayBackScope(
     CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides underlayOwner, content = content)
 }
 
+/**
+ * 用同步快照填补偏好 Flow 首次发射前的首帧，之后以持久偏好驱动界面
+ * 导航图起点随导航状态保存，重建时保留已恢复栈的起点，避免启动页偏好变化破坏返回路径
+ */
 @Composable
 private fun NeriAppContent(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),

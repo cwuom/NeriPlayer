@@ -367,6 +367,10 @@ class MainActivity : ComponentActivity() {
         super.attachBaseContext(applyOnePlusHighDensityDisplayCorrection(localizedContext))
     }
 
+    /**
+     * 在创建界面前选择本次启动的主题和启动页快照，并区分安全模式入口
+     * 快照只提供首帧初值，已保存的 Activity 和 Compose 状态继续走原有恢复路径
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         safeModeActive = SafeModeManager.shouldEnterSafeMode(this)
         val startupLoadingStartedAtMs = SystemClock.elapsedRealtime()

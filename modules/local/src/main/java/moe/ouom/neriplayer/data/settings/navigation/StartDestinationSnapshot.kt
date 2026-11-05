@@ -86,6 +86,10 @@ private fun warmStartDestinationSnapshot(context: Context) {
     }
 }
 
+/**
+ * 只初始化仍缺失的缓存，避免较慢的读取覆盖期间写透的新选择
+ * 返回锁内实际采用的快照，已有缓存优先于传入的读取结果
+ */
 private fun initializeStartDestinationSnapshotIfMissing(
     context: Context,
     snapshot: StartDestinationSnapshot
@@ -133,6 +137,10 @@ internal fun readCachedStartDestinationSnapshot(context: Context): StartDestinat
     }
 }
 
+/**
+ * 从同一缓存句柄区分未知状态与已保存的默认路由
+ * 调用方须持有缓存锁，保证键存在性检查和取值不会被写入打断
+ */
 private fun readCachedStartDestinationSnapshot(prefs: SharedPreferences): StartDestinationSnapshot? {
     if (!prefs.contains(START_DESTINATION_KEY)) {
         return null

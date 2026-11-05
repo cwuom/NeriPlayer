@@ -674,6 +674,10 @@ object AppContainer {
             .launchIn(scope)
     }
 
+    /**
+     * 将 DataStore 真值同步到启动快照，并更新依赖设置的运行时行为
+     * 统一观察也覆盖配置导入等绕过设置页 setter 的写入入口
+     */
     private fun startSettingsObserver() {
         application.dataStore.data
             .onEach { preferences ->
