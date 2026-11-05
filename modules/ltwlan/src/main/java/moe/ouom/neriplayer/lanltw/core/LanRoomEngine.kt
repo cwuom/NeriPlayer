@@ -72,6 +72,9 @@ class LanRoomEngine(
         val code = message.code?.takeIf { it in setOf("AUDIO_DURATION", "AUDIO_FORMAT", "MEMORY_LIMIT", "FULL_AUDIO_REQUIRED") } ?: "SOURCE"
         cancelLoading(code)
     }
+    private fun applySharedPresentation(m: LanMessage) {
+        currentPresentation = if (m.localMedia == null) m.presentation else null
+    }
     private fun requestPlay(id: String, host: Boolean, m: LanMessage) {
         val decision = LanRoomPolicy.play(host, permissions, playback, currentPosition(), m)
         val error = decision.error
@@ -84,7 +87,7 @@ class LanRoomEngine(
         }
         if (!validMedia(track, m)) return reject(id, "FULL_AUDIO_REQUIRED")
         currentLocalMedia = m.localMedia
-        currentPresentation = m.presentation?.takeIf { m.localMedia == null }
+        applySharedPresentation(m)
         currentSources = if (m.localMedia == null) m.sourceUrls.distinct().take(3) else emptyList()
         sourceFailure = null
         loading = Loading(track, decision.position, ++revision, clock.nowMs() + if (currentLocalMedia == null) 90_000 else 300_000)
