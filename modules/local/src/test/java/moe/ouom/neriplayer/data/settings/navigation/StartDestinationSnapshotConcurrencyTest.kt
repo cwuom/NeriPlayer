@@ -39,12 +39,14 @@ class StartDestinationSnapshotConcurrencyTest {
             val finished = CountDownLatch(1)
             val cache = stores[SNAPSHOT_CACHE]
             val observedCache = object : SharedPreferences by cache {
+                /** 只在放行后的后台缓存访问完成时发信号，排除前台写透提前满足等待 */
                 private fun finishBackgroundAccess() {
                     if (Thread.currentThread() !== callerThread && gate.released.count == 0L) {
                         finished.countDown()
                     }
                 }
 
+                /** 补热命中已有缓存时不会调用 edit，存在性检查也须确认后台读取已完成 */
                 override fun contains(key: String): Boolean {
                     return cache.contains(key).also { present ->
                         if (present) finishBackgroundAccess()

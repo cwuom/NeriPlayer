@@ -95,6 +95,7 @@ class StartDestinationSnapshotCacheTest {
         assertEquals(StartDestinationSnapshot("settings"), readCachedStartDestinationSnapshot(context))
     }
 
+    /** 先监听缓存再触发异步补热，最终解绑监听器以保持各用例隔离 */
     @Test
     fun `unknown cache on the main thread stays unknown until settings warm it`() = runBlocking {
         IsolatedSettingsDataStore.withEmptySettings(

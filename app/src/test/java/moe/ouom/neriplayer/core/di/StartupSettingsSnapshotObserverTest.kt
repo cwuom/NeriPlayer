@@ -52,6 +52,10 @@ class StartupSettingsSnapshotObserverTest {
         }
     }
 
+    /**
+     * 暂停持有旧设置的真实观察器，提交新设置或重置后再放行，以暴露旧路由覆盖
+     * 失败时也释放本次线程并恢复设置和专属缓存，避免影响后续用例
+     */
     private suspend fun verifyPendingObserverKeepsNewerRoute(
         blockedSnapshot: String,
         initialRoute: String = "home",
@@ -68,6 +72,7 @@ class StartupSettingsSnapshotObserverTest {
         val context = object : ContextWrapper(application) {
             override fun getApplicationContext(): Context = this
 
+            /** 只暂停本次观察线程的目标缓存访问一次，设置更新和清理不受 gate 阻塞 */
             override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
                 if (name == blockedSnapshot && Thread.currentThread() === observerThread.get() &&
                     paused.compareAndSet(false, true)) {
