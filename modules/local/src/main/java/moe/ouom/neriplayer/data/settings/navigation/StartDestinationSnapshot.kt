@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.data.settings.navigation
  */
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Looper
 import androidx.core.content.edit
 import androidx.datastore.preferences.core.Preferences
@@ -42,6 +43,7 @@ private const val START_DESTINATION_SNAPSHOT_PREFS = "start_destination_snapshot
 private const val START_DESTINATION_KEY = "start_destination"
 private val startDestinationSnapshotWarmupScope =
     CoroutineScope(SupervisorJob() + Dispatchers.IO)
+private val startDestinationSnapshotLock = Any()
 
 /**
  * 读取启动页偏好的同步快照.
@@ -49,7 +51,7 @@ private val startDestinationSnapshotWarmupScope =
  * 返回 `null` 表示缓存尚未就绪, 调用方必须保留"未知"状态, 不能把默认值当作已确定的选择.
  * 主线程上不做阻塞读, 只调度后台补热; 后台线程可阻塞读一次真值并落盘.
  *
- * @return 已确定的快照; 缓存缺失且无法在当前线程阻塞读取时为 `null`.
+ * @return 已确定的快照; 缓存缺失且当前无法读到真值时为 `null`.
  */
 fun readStartDestinationSnapshotOrNull(context: Context): StartDestinationSnapshot? {
     readCachedStartDestinationSnapshot(context)?.let { return it }
@@ -59,15 +61,13 @@ fun readStartDestinationSnapshotOrNull(context: Context): StartDestinationSnapsh
         return null
     }
 
-    return runCatching {
+    val snapshot = runCatching {
         runBlocking {
             context.dataStore.data.first().toStartDestinationSnapshot()
         }
-    }.getOrElse {
-        StartDestinationSnapshot()
-    }.also { snapshot ->
-        persistStartDestinationSnapshot(context, snapshot)
-    }
+    }.getOrNull() ?: return readCachedStartDestinationSnapshot(context)
+
+    return initializeStartDestinationSnapshotIfMissing(context, snapshot)
 }
 
 /**
@@ -81,7 +81,20 @@ private fun warmStartDestinationSnapshot(context: Context) {
         runCatching {
             appContext.dataStore.data.first().toStartDestinationSnapshot()
         }.onSuccess { snapshot ->
-            persistStartDestinationSnapshot(appContext, snapshot)
+            initializeStartDestinationSnapshotIfMissing(appContext, snapshot)
+        }
+    }
+}
+
+private fun initializeStartDestinationSnapshotIfMissing(
+    context: Context,
+    snapshot: StartDestinationSnapshot
+): StartDestinationSnapshot {
+    val prefs = context.getSharedPreferences(START_DESTINATION_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
+    return synchronized(startDestinationSnapshotLock) {
+        // 读取期间可能已有设置写透，补热不能覆盖更新后的选择
+        readCachedStartDestinationSnapshot(prefs) ?: snapshot.also { initialSnapshot ->
+            prefs.edit { putString(START_DESTINATION_KEY, initialSnapshot.startDestination) }
         }
     }
 }
@@ -102,8 +115,9 @@ fun persistStartDestinationSnapshot(
     context: Context,
     snapshot: StartDestinationSnapshot
 ) {
-    context.getSharedPreferences(START_DESTINATION_SNAPSHOT_PREFS, Context.MODE_PRIVATE).edit {
-        putString(START_DESTINATION_KEY, snapshot.startDestination)
+    val prefs = context.getSharedPreferences(START_DESTINATION_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
+    synchronized(startDestinationSnapshotLock) {
+        prefs.edit { putString(START_DESTINATION_KEY, snapshot.startDestination) }
     }
 }
 
@@ -114,6 +128,12 @@ fun persistStartDestinationSnapshot(
  */
 internal fun readCachedStartDestinationSnapshot(context: Context): StartDestinationSnapshot? {
     val prefs = context.getSharedPreferences(START_DESTINATION_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
+    return synchronized(startDestinationSnapshotLock) {
+        readCachedStartDestinationSnapshot(prefs)
+    }
+}
+
+private fun readCachedStartDestinationSnapshot(prefs: SharedPreferences): StartDestinationSnapshot? {
     if (!prefs.contains(START_DESTINATION_KEY)) {
         return null
     }

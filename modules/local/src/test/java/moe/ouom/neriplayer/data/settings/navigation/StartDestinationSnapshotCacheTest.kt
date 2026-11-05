@@ -2,22 +2,24 @@ package moe.ouom.neriplayer.data.settings.navigation
 
 import android.os.Looper
 import androidx.datastore.preferences.core.mutablePreferencesOf
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.model.settings.navigation.StartDestinationSnapshot
 import moe.ouom.neriplayer.data.settings.IsolatedSettingsDataStore
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.testing.InMemorySharedPreferencesRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockStatic
 
 /**
  * 覆盖启动页快照的缓存语义: 命中即读、部分缓存视为缺失、未知态不被当成默认值,
  * 以及 DataStore 偏好到快照的投影与写透.
  *
- * 刻意不触发 `dataStore.edit`: 共享的 settings DataStore 在宿主测试里可能因临时文件
- * 重命名冲突而失败, 而快照逻辑本身不需要写入 DataStore 即可验证.
+ * 需要访问 DataStore 的用例隔离并恢复设置，避免影响其它设置测试
  */
 class StartDestinationSnapshotCacheTest {
     private val preferences = InMemorySharedPreferencesRegistry()
@@ -85,14 +87,38 @@ class StartDestinationSnapshotCacheTest {
     }
 
     @Test
-    fun `unknown cache is not reported as a default choice`() {
-        assertNull(
-            mockStatic(Looper::class.java).use { looper ->
-                looper.`when`<Looper> { Looper.myLooper() }.thenReturn(null)
-                looper.`when`<Looper> { Looper.getMainLooper() }.thenReturn(null)
-                readCachedStartDestinationSnapshot(context)
+    fun `explicit writes keep replacing an existing cached choice`() {
+        persistStartDestinationSnapshot(context, StartDestinationSnapshot("home"))
+        persistStartDestinationSnapshot(context, StartDestinationSnapshot("library"))
+        persistStartDestinationSnapshot(context, StartDestinationSnapshot("settings"))
+
+        assertEquals(StartDestinationSnapshot("settings"), readCachedStartDestinationSnapshot(context))
+    }
+
+    @Test
+    fun `unknown cache on the main thread stays unknown until settings warm it`() = runBlocking {
+        IsolatedSettingsDataStore.withEmptySettings(
+            context,
+            seed = { it[SettingsKeys.DEFAULT_START_DESTINATION] = "library" }
+        ) {
+            val warmed = CountDownLatch(1)
+            val cache = preferences[SNAPSHOT_CACHE]
+            val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == START_DESTINATION_KEY) warmed.countDown()
             }
-        )
+            cache.registerOnSharedPreferenceChangeListener(listener)
+            try {
+                mockStatic(Looper::class.java).use { looper ->
+                    looper.`when`<Looper> { Looper.myLooper() }.thenReturn(null)
+                    looper.`when`<Looper> { Looper.getMainLooper() }.thenReturn(null)
+                    assertNull(readStartDestinationSnapshotOrNull(context))
+                }
+                assertTrue("settings must warm the missing cache", warmed.await(10, TimeUnit.SECONDS))
+                assertEquals(StartDestinationSnapshot("library"), readCachedStartDestinationSnapshot(context))
+            } finally {
+                cache.unregisterOnSharedPreferenceChangeListener(listener)
+            }
+        }
     }
 
     private companion object {

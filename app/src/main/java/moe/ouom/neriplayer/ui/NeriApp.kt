@@ -1210,8 +1210,8 @@ private fun NeriAppContent(
             // 揭示快照完全遮住界面，颜色直接落到目标值，避免与扩散动画争抢帧
             animateColors = themeRevealSnapshot == null
     ) {
-            // changing NavHost's start destination rebuilds its graph and clears the live stack
-            val navHostStartDestination = remember { initialMainStartDestination }
+            // 恢复导航栈时保留原起点，避免启动页偏好变化后 popUpTo 找不到栈内目标
+            val navHostStartDestination = rememberSaveable { initialMainStartDestination }
             val navController = rememberNavController()
             val navigationVisibility = rememberAppNavigationVisibility(navController, lifecycleOwner)
             val currentRoute = navigationVisibility.currentRoute
