@@ -128,7 +128,7 @@ class DownloadedFlacStagingRegressionTest {
                 assertEquals(ORIGINAL, properties["NERI_LYRICS_ORIGINAL"]?.firstOrNull())
                 assertEquals(TRANSLATION, properties["NERI_LYRICS_TRANSLATED"]?.firstOrNull())
                 assertEquals(ROMANIZATION, properties["NERI_LYRICS_ROMANIZED"]?.firstOrNull())
-                assertTrue("标准 LYRICS 标签必须包含歌词", properties["LYRICS"]?.firstOrNull()?.isNotBlank() == true)
+                assertEquals("[00:00.00]合成原文\n[00:00.00]synthetic translation", properties["LYRICS"]?.firstOrNull())
                 assertTrue(
                     TagLib.getPictures(descriptor.dup().detachFd()).any { picture ->
                         picture.data.contentEquals(cover.readBytes())
