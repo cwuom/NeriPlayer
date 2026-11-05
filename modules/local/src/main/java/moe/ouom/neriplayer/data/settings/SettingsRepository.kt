@@ -32,7 +32,6 @@ import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreferenc
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
-import moe.ouom.neriplayer.data.settings.appearance.isDimensityDevice
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeDynamicColor
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeFollowSystemDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeForceDark

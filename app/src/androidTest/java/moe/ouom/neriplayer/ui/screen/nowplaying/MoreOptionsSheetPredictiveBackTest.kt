@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
 import android.graphics.Bitmap
+import android.os.Build
+import android.os.SystemClock
+import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SheetState
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -20,9 +25,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
@@ -30,6 +37,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
@@ -47,6 +55,8 @@ import moe.ouom.neriplayer.testutil.performNativeBack
 import moe.ouom.neriplayer.ui.component.common.PREDICTIVE_DISMISS_CANCEL_DURATION_MS
 import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.theme.NeriTheme
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -70,6 +80,10 @@ class MoreOptionsSheetPredictiveBackTest {
     private var surfaceColor = 0
     private var captureLabel = ""
     private lateinit var sheetOwner: MoreOptionsSheetOwner
+    private lateinit var observedSheetState: SheetState
+    private lateinit var observedSheetView: View
+    private var observedTouchSlop = Float.NaN
+    private val observedDragInputs = mutableListOf<JSONObject>()
 
     @Before
     fun requireComposeHost() {
@@ -180,6 +194,199 @@ class MoreOptionsSheetPredictiveBackTest {
         }
     }
 
+    @Test
+    fun materialMainTallSheetSettlesAfterRapidHandleDragReversal() =
+        verifyRapidHandleDragReversal(UiStyle.Material, tall = true, fromSubPage = false)
+
+    @Test
+    fun cleanMainShortSheetSettlesAfterRapidHandleDragReversal() =
+        verifyRapidHandleDragReversal(UiStyle.Clean, tall = false, fromSubPage = false)
+
+    @Test
+    fun materialShortSubPageAndMainSettleAfterRapidHandleDragReversal() =
+        verifyRapidHandleDragReversal(UiStyle.Material, tall = false, fromSubPage = true)
+
+    @Test
+    fun cleanTallSubPageAndMainSettleAfterRapidHandleDragReversal() =
+        verifyRapidHandleDragReversal(UiStyle.Clean, tall = true, fromSubPage = true)
+
+    private fun verifyRapidHandleDragReversal(style: UiStyle, tall: Boolean, fromSubPage: Boolean) {
+        captureLabel = "issue60-${style.name.lowercase()}-${if (tall) "tall" else "short"}-" +
+            if (fromSubPage) "sub-page" else "main"
+        val samples = mutableListOf<SheetDragSample>()
+        var failure: Throwable? = null
+        try {
+            UiFailureDiagnostics.onFailure(captureLabel) {
+                render(style, dark = false, tall = tall,
+                    startPage = if (fromSubPage) MoreOptionsPage.FONT_SIZE else MoreOptionsPage.MAIN)
+                composeRule.mainClock.autoAdvance = false
+                verifyHandleReversal(samples, if (fromSubPage) "sub-page" else "main")
+                if (fromSubPage) {
+                    composeRule.onNodeWithTag(BodyTag).performNativeBack()
+                    observeSheetDrag(samples, "return-to-main", 600L)
+                    composeRule.runOnIdle {
+                        assertEquals("窗口返回应进入面板主页", MoreOptionsPage.MAIN, sheetOwner.page)
+                        assertEquals(0, dismissals)
+                        assertTrue(visible)
+                    }
+                    composeRule.onNodeWithTag("$PageTag${MoreOptionsPage.MAIN.name}").assertIsDisplayed()
+                    verifyHandleReversal(samples, "returned-main")
+                }
+            }
+        } catch (error: Throwable) {
+            failure = error
+            throw error
+        } finally {
+            runCatching { saveSheetDragTrace(samples, failure) }
+                .onFailure { diagnosticFailure ->
+                    failure?.addSuppressed(diagnosticFailure)
+                    runCatching { android.util.Log.w("NeriIssue60", "drag trace save failed", diagnosticFailure) }
+                }
+        }
+    }
+
+    private fun verifyHandleReversal(samples: MutableList<SheetDragSample>, stage: String) {
+        val baseline = observeSheetDrag(samples, "$stage-baseline", 200L)
+        assertSettledSheet(baseline, baseline.last().offset)
+        val root = composeRule.onNode(isDialog())
+        val description = composeRule.activity.getString(
+            androidx.compose.material3.R.string.m3c_bottom_sheet_drag_handle_description
+        )
+        val handle = composeRule.onNodeWithContentDescription(description).assertIsDisplayed()
+        val rootBounds = root.fetchSemanticsNode().boundsInRoot
+        val handleBounds = handle.fetchSemanticsNode().boundsInRoot
+        val start = handleBounds.center - rootBounds.topLeft
+        val downDistance = with(composeRule.density) { 32.dp.toPx() }.coerceAtLeast(observedTouchSlop * 2f)
+        val upDistance = with(composeRule.density) {
+            80.dp.toPx().coerceAtLeast(downDistance + 24.dp.toPx())
+        }
+        val pulled = start + Offset(0f, downDistance)
+        val returned = pulled - Offset(0f, upDistance)
+        assertTrue("夹具需提供实际 Compose touchSlop", observedTouchSlop.isFinite() && observedTouchSlop > 0f)
+        assertTrue("夹具中的完整触摸轨迹必须留在窗口内",
+            start.x > 0f && start.x < rootBounds.width && returned.y > 0f && pulled.y < rootBounds.height)
+        observedDragInputs += JSONObject().put("stage", stage)
+            .put("clockMillis", composeRule.mainClock.currentTime)
+            .put("startX", start.x).put("startY", start.y)
+            .put("downDistancePx", downDistance).put("upDistancePx", upDistance)
+            .put("windowWidthPx", rootBounds.width).put("windowHeightPx", rootBounds.height)
+        val idle = frame("$stage-before-drag")
+        var pointerDown = false
+        try {
+            root.performTouchInput {
+                down(start)
+                pointerDown = true
+                repeat(3) { index ->
+                    moveTo(start + Offset(0f, downDistance * (index + 1) / 3f), delayMillis = 10L)
+                }
+            }
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.waitForIdle()
+            val pulledSample = sheetDragSample("$stage-pulled").also(samples::add)
+            assertTrue("夹具必须真的向下拖动 Sheet，不能只命中点击: $pulledSample",
+                pulledSample.offset != null && baseline.last().offset != null &&
+                    pulledSample.offset > checkNotNull(baseline.last().offset) + 1f)
+            assertTrue("拖动中采样帧必须保持窗口焦点: $pulledSample", pulledSample.focused)
+            root.performTouchInput {
+                repeat(4) { index ->
+                    moveTo(pulled - Offset(0f, upDistance * (index + 1) / 4f), delayMillis = 10L)
+                }
+                up()
+                pointerDown = false
+            }
+        } finally {
+            if (pointerDown) root.performTouchInput { cancel() }
+        }
+        val released = observeSheetDrag(samples, "$stage-released", 2_000L)
+        assertTrue("真实触摸全程不能误关闭或丢失窗口焦点",
+            (baseline + released).all { it.visible && it.dismissals == 0 && it.attached && it.focused })
+        assertSettledSheet(released.takeLast(12), baseline.last().offset)
+        assertRestored(idle, frame("$stage-after-drag"))
+    }
+
+    private fun observeSheetDrag(
+        all: MutableList<SheetDragSample>,
+        stage: String,
+        durationMillis: Long
+    ): List<SheetDragSample> {
+        val observed = mutableListOf(sheetDragSample(stage))
+        val deadline = composeRule.mainClock.currentTime + durationMillis
+        while (composeRule.mainClock.currentTime < deadline) {
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.waitForIdle()
+            observed += sheetDragSample(stage)
+        }
+        all += observed
+        return observed
+    }
+
+    private fun sheetDragSample(stage: String): SheetDragSample = composeRule.runOnIdle {
+        val offset = runCatching { observedSheetState.requireOffset() }
+        SheetDragSample(composeRule.mainClock.currentTime, stage, offset.getOrNull(),
+            offset.exceptionOrNull()?.let { "${it.javaClass.simpleName}: ${it.message}" },
+            observedSheetState.currentValue, observedSheetState.targetValue, observedSheetState.isAnimationRunning,
+            visible, dismissals, sheetOwner.page, observedSheetView.isAttachedToWindow,
+            observedSheetView.hasWindowFocus())
+    }
+
+    private fun assertSettledSheet(samples: List<SheetDragSample>, expectedOffset: Float?) {
+        assertTrue("需要连续稳定帧", samples.size >= 12 && expectedOffset != null && expectedOffset.isFinite())
+        assertTrue("真实 Sheet 必须稳定在展开锚点: ${samples.last()}", samples.all {
+            it.current == SheetValue.Expanded && it.target == SheetValue.Expanded && !it.running &&
+                it.offset != null && it.offset.isFinite() && abs(it.offset - checkNotNull(expectedOffset)) <= 1f &&
+                it.visible && it.dismissals == 0 && it.attached && it.focused
+        })
+    }
+
+    private fun saveSheetDragTrace(samples: List<SheetDragSample>, failure: Throwable?) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val prefix = InstrumentationRegistry.getArguments().getString("capturePrefix")
+            ?.replace(Regex("[^a-zA-Z0-9_-]"), "-")?.take(80)?.takeIf { it.isNotBlank() } ?: "issue60"
+        val trace = JSONObject()
+            .put("sdk", Build.VERSION.SDK_INT)
+            .put("captureLabel", captureLabel)
+            .put("inputGestures", JSONArray(observedDragInputs))
+            .put("downSegments", 3).put("downSegmentMillis", 10)
+            .put("upSegments", 4).put("upSegmentMillis", 10)
+            .put("framesBeforeReversal", 1)
+            .put("composeTouchSlopPx", observedTouchSlop.takeIf { it.isFinite() } ?: JSONObject.NULL)
+            .put("failure", failure?.let { "${it.javaClass.simpleName}: ${it.message}" } ?: JSONObject.NULL)
+            .put("samples", JSONArray(samples.map { sample ->
+                JSONObject().put("clockMillis", sample.clockMillis).put("stage", sample.stage)
+                    .put("offset", sample.offset?.takeIf { it.isFinite() } ?: JSONObject.NULL)
+                    .put("offsetError", sample.offsetError ?: JSONObject.NULL)
+                    .put("current", sample.current.name).put("target", sample.target.name)
+                    .put("running", sample.running).put("visible", sample.visible)
+                    .put("dismissals", sample.dismissals).put("page", sample.page.name)
+                    .put("attached", sample.attached).put("focused", sample.focused)
+            }))
+        if (::observedSheetView.isInitialized) {
+            val resources = observedSheetView.resources
+            trace.put("densityDpi", resources.displayMetrics.densityDpi)
+                .put("fontScale", resources.configuration.fontScale)
+                .put("smallestScreenWidthDp", resources.configuration.smallestScreenWidthDp)
+        }
+        val file = File(checkNotNull(instrumentation.targetContext.getExternalFilesDir(null)),
+            "$prefix-$captureLabel-drag-trace-${SystemClock.elapsedRealtimeNanos()}.json")
+        file.writeText(trace.toString(2))
+        android.util.Log.i("NeriIssue60", "drag trace: ${file.absolutePath}")
+    }
+
+    private data class SheetDragSample(
+        val clockMillis: Long,
+        val stage: String,
+        val offset: Float?,
+        val offsetError: String?,
+        val current: SheetValue,
+        val target: SheetValue,
+        val running: Boolean,
+        val visible: Boolean,
+        val dismissals: Int,
+        val page: MoreOptionsPage,
+        val attached: Boolean,
+        val focused: Boolean
+    )
+
     private fun verifySingleDismissal(label: String, dismiss: () -> Unit) {
         captureLabel = label
         UiFailureDiagnostics.onFailure("more-options-$label") {
@@ -266,9 +473,17 @@ class MoreOptionsSheetPredictiveBackTest {
                                 setEditSaving(saving)
                             }
                         }
-                        SideEffect { sheetOwner = owner }
+                        SideEffect {
+                            sheetOwner = owner
+                            observedSheetState = sheetState
+                        }
                         MoreOptionsSheetSurface(owner, sheetState, remember { SnackbarHostState() }) {
                             val view = LocalView.current
+                            val touchSlop = LocalViewConfiguration.current.touchSlop
+                            SideEffect {
+                                observedSheetView = view
+                                observedTouchSlop = touchSlop
+                            }
                             val dispatcher = requireNotNull(view.findViewTreeNavigationEventDispatcherOwner())
                                 .navigationEventDispatcher
                             val color = MaterialTheme.colorScheme.surface

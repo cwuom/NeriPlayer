@@ -1524,7 +1524,7 @@ private fun LyricsProgressSection(
     var pendingSeekPreviewPositionMs by remember(songKey) { mutableStateOf<Long?>(null) }
     val effectivePreviewPositionMs = resolveLyricPreviewTimeMs(
         isDraggingSlider = isUserDraggingSlider,
-        sliderPreviewPositionMs = sliderPosition.toLong(),
+        sliderPreviewPositionMs = if (isUserDraggingSlider) sliderPosition.toLong() else currentPosition,
         pendingSeekPreviewPositionMs = pendingSeekPreviewPositionMs,
         playbackPositionMs = currentPosition
     )

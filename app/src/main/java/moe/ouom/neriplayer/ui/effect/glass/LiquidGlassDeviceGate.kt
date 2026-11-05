@@ -15,11 +15,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
-import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
+import moe.ouom.neriplayer.data.settings.appearance.currentBuildUsesDimensityBlurCompatibility
 
 /**
  * Liquid glass adds a lens pass on top of the frosted mask. It is skipped in battery saver,
- * on low-RAM devices, and on Dimensity GPUs unless the user explicitly chose High quality.
+ * on low-RAM devices, and under the existing Dimensity blur policy unless the user chose High quality
  */
 internal fun resolveLiquidGlassDeviceAllowed(
     powerSaveMode: Boolean,
@@ -54,6 +54,6 @@ internal fun rememberLiquidGlassDeviceAllowed(quality: AdvancedBlurQuality): Boo
     val lowRamDevice = remember(appContext) {
         appContext.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true
     }
-    val dimensityDevice = remember { isCurrentBuildDimensity() }
-    return resolveLiquidGlassDeviceAllowed(powerSaveMode, lowRamDevice, dimensityDevice, quality)
+    val dimensityBlurCompatibility = remember { currentBuildUsesDimensityBlurCompatibility() }
+    return resolveLiquidGlassDeviceAllowed(powerSaveMode, lowRamDevice, dimensityBlurCompatibility, quality)
 }

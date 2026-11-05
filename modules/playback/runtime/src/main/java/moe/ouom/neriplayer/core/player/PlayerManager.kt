@@ -153,6 +153,7 @@ import moe.ouom.neriplayer.core.player.playback.togglePlayPauseImpl
 import moe.ouom.neriplayer.core.player.runtime.stats.trackEndDeduplicationKey
 import moe.ouom.neriplayer.core.player.persistence.LocalSongAssetEmbedding
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStatePreload
 import moe.ouom.neriplayer.core.player.persistence.embedLocalSongAssetsImpl
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.core.player.persistence.addCurrentToFavoritesImpl
@@ -1647,7 +1648,8 @@ object PlayerManager {
         app = app,
         maxCacheSize = startupPlaybackPreferences.maxCacheSizeBytes,
         startupPlaybackPreferences = startupPlaybackPreferences,
-        restoredStateSnapshot = restoredStateSnapshot
+        restorationPreload = restoredStateSnapshot?.let { RestoredPlayerStatePreload.Completed(it) }
+            ?: RestoredPlayerStatePreload.NeedsFallback
     )
 
     suspend fun clearCache(

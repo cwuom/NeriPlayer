@@ -5,8 +5,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
-import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStatePreload
+import moe.ouom.neriplayer.core.player.persistence.initializePreloadedRestoration
+import moe.ouom.neriplayer.core.player.persistence.preloadRestoredPlayerState
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshot
 
@@ -20,20 +21,20 @@ internal class PlayerPreloadedInitializer(
     private val readPreferences: suspend (Application) -> PlaybackPreferenceSnapshot = { application ->
         readPlaybackPreferenceSnapshot(application)
     },
-    private val preloadState: suspend (Application, PlaybackPreferenceSnapshot) -> RestoredPlayerStateSnapshot? =
+    private val preloadState: suspend (Application, PlaybackPreferenceSnapshot) -> RestoredPlayerStatePreload =
         { application, preferences ->
-            preloadRestoredStateSnapshot(
+            preloadRestoredPlayerState(
                 app = application,
                 keepLastPlaybackProgressEnabled = preferences.keepLastPlaybackProgress,
                 keepPlaybackModeStateEnabled = preferences.keepPlaybackModeState
             )
         },
-    private val initializePlayer: (Application, PlaybackPreferenceSnapshot, RestoredPlayerStateSnapshot?) -> Unit =
+    private val initializePlayer: (Application, PlaybackPreferenceSnapshot, RestoredPlayerStatePreload) -> Unit =
         { application, preferences, restoredState ->
-            PlayerManager.initializePreloaded(
+            PlayerManager.initializePreloadedRestoration(
                 app = application,
                 startupPlaybackPreferences = preferences,
-                restoredStateSnapshot = restoredState
+                restorationPreload = restoredState
             )
         }
 ) {
