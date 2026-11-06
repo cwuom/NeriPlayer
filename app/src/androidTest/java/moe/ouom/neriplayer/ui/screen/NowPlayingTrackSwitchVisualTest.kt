@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen
 
+import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -45,12 +46,18 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.activity.AppUiDensityRoot
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.persistence.PlaybackQueueRoomStore
 import moe.ouom.neriplayer.data.identity.playbackVisualKey
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.playback.PersistedState
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
@@ -63,7 +70,9 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingScreen
 import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -80,6 +89,7 @@ class NowPlayingTrackSwitchVisualTest {
     val composeRule = createAndroidComposeRule<TestComposeActivity>()
 
     private var savedPreferences: Preferences? = null
+    private var savedQueue: SavedQueue? = null
     private var savedCleanMotion = false
     private var mounted by mutableStateOf(true)
     private var fixtureDirectory: File? = null
@@ -96,6 +106,12 @@ class NowPlayingTrackSwitchVisualTest {
             composeRule.activity.window.setBackgroundDrawable(ColorDrawable(Color.BLACK))
             WindowCompat.getInsetsController(composeRule.activity.window, composeRule.activity.window.decorView)
                 .hide(WindowInsetsCompat.Type.systemBars())
+            PlayerManager.release()
+        }
+        savedQueue = runBlocking {
+            withTimeout(PersistenceTimeoutMs) {
+                persistenceWriterMutex().withLock { SavedQueue.read(context) }
+            }
         }
         savedPreferences = runBlocking { context.dataStore.data.first() }
         runBlocking {
@@ -147,7 +163,6 @@ class NowPlayingTrackSwitchVisualTest {
             )
         }
         composeRule.runOnUiThread {
-            PlayerManager.release()
             PlayerManager.initialize(composeRule.activity.application)
             PlayerManager.playPlaylist(songs, startIndex = 0)
         }
@@ -176,6 +191,18 @@ class NowPlayingTrackSwitchVisualTest {
                 composeRule.waitForIdle()
             } finally {
                 composeRule.runOnUiThread { PlayerManager.release() }
+                savedQueue?.let { original ->
+                    val context = composeRule.activity.applicationContext
+                    runBlocking {
+                        withTimeout(PersistenceTimeoutMs) {
+                            // release 只取消旧写入，恢复前仍需等同步 I/O 退出
+                            persistenceWriterMutex().withLock {
+                                original.restore(context)
+                                original.assertRestored(context)
+                            }
+                        }
+                    }
+                }
             }
         } finally {
             try {
@@ -380,7 +407,60 @@ class NowPlayingTrackSwitchVisualTest {
         }
     }
 
+    private data class SavedQueue(
+        val roomPrimary: Boolean,
+        val state: PersistedState?,
+        val legacy: Map<String, ByteArray?>
+    ) {
+        suspend fun restore(context: Context) {
+            val store = PlaybackQueueRoomStore(NeriUserDataDatabase.getInstance(context))
+            if (roomPrimary && state != null) store.replaceSnapshot(state) else store.clear()
+            legacy.forEach { (name, bytes) ->
+                val file = File(context.filesDir, name)
+                if (bytes != null) file.writeBytes(bytes) else check(!file.exists() || file.delete())
+            }
+            if (!roomPrimary) store.markLegacyJsonPrimary(System.currentTimeMillis())
+        }
+
+        suspend fun assertRestored(context: Context) {
+            val store = PlaybackQueueRoomStore(NeriUserDataDatabase.getInstance(context))
+            assertEquals("the fixture must restore the original queue storage owner", roomPrimary, store.isRoomPrimary())
+            assertEquals("the fixture must restore the original persisted queue", state, store.readIfRoomPrimary())
+            legacy.forEach { (name, bytes) ->
+                val file = File(context.filesDir, name)
+                if (bytes == null) {
+                    assertFalse("the fixture must remove its legacy queue file: $name", file.exists())
+                } else {
+                    assertTrue("the original legacy queue file must remain: $name", file.exists())
+                    assertArrayEquals("the fixture must restore legacy queue bytes: $name", bytes, file.readBytes())
+                }
+            }
+        }
+
+        companion object {
+            suspend fun read(context: Context): SavedQueue {
+                val store = PlaybackQueueRoomStore(NeriUserDataDatabase.getInstance(context))
+                return SavedQueue(
+                    store.isRoomPrimary(),
+                    store.readIfRoomPrimary(),
+                    QueueFiles.associateWith { name ->
+                        File(context.filesDir, name).takeIf(File::exists)?.readBytes()
+                    }
+                )
+            }
+        }
+    }
+
     private companion object {
         const val ViewportTag = "now-playing-track-switch-visual"
+        const val PersistenceTimeoutMs = 10_000L
+        val QueueFiles = listOf("last_playlist.json", "last_playback_state.json")
+
+        fun persistenceWriterMutex(): Mutex {
+            val coordinator = PlayerManager::class.java.getDeclaredField("statePersistenceCoordinator")
+                .apply { isAccessible = true }.get(PlayerManager)
+            return coordinator.javaClass.getDeclaredField("writerMutex").apply { isAccessible = true }
+                .get(coordinator) as Mutex
+        }
     }
 }

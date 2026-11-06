@@ -35,6 +35,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -182,11 +183,18 @@ class DownloadedCoverOfflineRenderingTest {
 
             val resolvedCover = AtomicReference<String?>()
             val loadedCover = AtomicReference<String?>()
+            val loadError = AtomicReference<String?>()
+            val resolutionCount = AtomicInteger()
             composeRule.setContent {
                 if (mounted.value) {
                     CompositionLocalProvider(LocalContext provides context) {
                         val cover = rememberSongDisplayCoverUrl(song)
-                        SideEffect { resolvedCover.set(cover) }
+                        SideEffect {
+                            val previous = resolvedCover.getAndSet(cover)
+                            if (resolutionCount.incrementAndGet() == 1 || previous != cover) {
+                                android.util.Log.i("OfflineArtwork", "$extension resolved=$cover")
+                            }
+                        }
                         val request = remember(cover) {
                             ImageRequest.Builder(context)
                                 .data(cover)
@@ -199,16 +207,34 @@ class DownloadedCoverOfflineRenderingTest {
                             imageLoader = imageLoader,
                             contentDescription = "Downloaded embedded artwork",
                             contentScale = ContentScale.FillBounds,
-                            onSuccess = { loadedCover.set(it.result.request.data.toString()) },
+                            onSuccess = {
+                                loadedCover.set(it.result.request.data.toString())
+                                android.util.Log.i("OfflineArtwork", "$extension loaded=${loadedCover.get()}")
+                            },
+                            onError = {
+                                val failure = it.result.throwable
+                                loadError.set("${failure.javaClass.name}: ${failure.message}")
+                                android.util.Log.e("OfflineArtwork", "$extension load failed: ${it.result.request.data}", failure)
+                            },
                             modifier = Modifier.size(96.dp).background(Color.Black).testTag(CoverTag)
                         )
                     }
                 }
             }
             contentSet = true
-            composeRule.waitUntil(timeoutMillis = 10_000L) {
-                val cover = resolvedCover.get()
-                cover?.toUri()?.scheme == "file" && loadedCover.get() == cover
+            try {
+                composeRule.waitUntil(timeoutMillis = 10_000L) {
+                    val cover = resolvedCover.get()
+                    cover?.toUri()?.scheme == "file" && loadedCover.get() == cover
+                }
+            } catch (failure: Throwable) {
+                android.util.Log.e("OfflineArtwork",
+                    "$extension resolved=${resolvedCover.get()} loaded=${loadedCover.get()} " +
+                        "error=${loadError.get()} compositions=${resolutionCount.get()} " +
+                        "downloaded=${GlobalDownloadManager.hasDownloadedSongCached(song)} " +
+                        "snapshot=${ManagedDownloadStorage.peekDownloadedAudio(song)?.reference} " +
+                        "audioExists=${audio.isFile} autoAdvance=${composeRule.mainClock.autoAdvance}", failure)
+                throw failure
             }
             val cover = requireNotNull(resolvedCover.get())
             val extracted = File(requireNotNull(cover.toUri().path))
