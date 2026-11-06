@@ -50,7 +50,9 @@ class LocalHeartbeatCandidateSource(
         val tiers = LinkedHashMap<Int, List<HeartbeatCandidate>>(pool.tiers.size)
         for ((tier, candidates) in pool.tiers) {
             tiers[tier] = candidates.map { candidate ->
-                val count = skips[HeartbeatScorer.identityKey(candidate.song)] ?: 0
+                val count = HeartbeatScorer.identityKeyAliases(candidate.song)
+                    .mapNotNull { skips[it] }
+                    .maxOrNull() ?: 0
                 if (count <= 0 || count == candidate.skipCount) candidate else candidate.copy(skipCount = count)
             }
         }
@@ -75,7 +77,7 @@ class LocalHeartbeatCandidateSource(
             tiers[tier] = candidates.map { candidate ->
                 if (candidate.notLiked) {
                     candidate
-                } else if (HeartbeatScorer.identityKey(candidate.song) in disliked) {
+                } else if (HeartbeatScorer.identityKeyAliases(candidate.song).any { it in disliked }) {
                     candidate.copy(notLiked = true)
                 } else {
                     candidate

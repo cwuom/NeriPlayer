@@ -176,11 +176,65 @@ object HeartbeatScorer {
      *
      * 播放来源只看播放渠道，不看歌词来源：换一个歌词服务不应该改变同一首歌的身份，
      * 否则已存的降权、不喜欢与队列排除都会对不上。
+     *
+     * 稳定键会被规范化成「播放来源:歌曲 id」：统计库与同步写的是
+     * 「数字id|来源|音频标识」，而播放中的歌大多没有该字段、按「播放来源:id」计算。
+     * 两者不统一的话，同一首歌在候选池与播放队列里会算出两个不同的键，
+     * 跳过降权、不喜欢与队列排除就永远命中不了。
      */
     fun identityKey(song: SongItem): String {
-        song.sourceStableKey?.takeIf { it.isNotBlank() }?.let { return it }
+        song.sourceStableKey?.takeIf { it.isNotBlank() }?.let { sourceKey ->
+            canonicalKeyFromSource(sourceKey)?.let { return it }
+            return sourceKey
+        }
         if (song.id > 0L) return "${playbackSourceKey(song)}:${song.id}"
         return "${song.name.trim().lowercase()}|${song.artist.trim().lowercase()}"
+    }
+
+    /**
+     * 这首歌可能被记录过的全部身份键，含规范化之前的旧格式。
+     *
+     * 本地存着用户标记的「不喜欢」名单与跳过次数。老版本把统计库/下载来的歌
+     * 按「数字id|来源|音频标识」写进去，[identityKey] 规范化之后同一首歌算的是
+     * 「播放来源:id」，单键比较会让这些历史标记失效。读取时两种键都查一遍，
+     * 用户不需要重新标记一遍。
+     */
+    fun identityKeyAliases(song: SongItem): Set<String> {
+        val canonical = identityKey(song)
+        val legacy = song.sourceStableKey?.trim()?.takeIf { it.isNotBlank() }
+        return if (legacy != null && legacy != canonical) setOf(canonical, legacy) else setOf(canonical)
+    }
+
+    /**
+     * 把「数字id|来源|音频标识」形式的稳定键还原成「播放来源:数字id」。
+     *
+     * 识别不出该格式时返回 `null`，由调用方原样透传（例如本地文件的
+     * `local:/music/a.flac`），避免把别的键格式误读成同一首歌。
+     */
+    private fun canonicalKeyFromSource(sourceKey: String): String? {
+        val firstSeparator = sourceKey.indexOf('|')
+        if (firstSeparator <= 0) return null
+        val secondSeparator = sourceKey.indexOf('|', firstSeparator + 1)
+        if (secondSeparator <= firstSeparator) return null
+        val id = sourceKey.substring(0, firstSeparator).toLongOrNull() ?: return null
+        val channel = sourceKey.substring(firstSeparator + 1, secondSeparator).trim().lowercase()
+        if (channel.isEmpty()) return null
+        return "${canonicalSourceName(channel)}:$id"
+    }
+
+    /**
+     * 稳定键里的来源段与 [SongItem.playbackSourceKey] 的取值对齐。
+     *
+     * [SongItem.playbackSourceKey] 只认 `bilibili` / `youtubeMusic` / `netease` / `local`
+     * 四个渠道值，其余一律兜底成本地歌：服务器歌曲的来源段是 `subsonic`、
+     * 本地文件是 `__local_files__`，它们播放时都算 `local`。
+     * 这里必须跟着走同样的兜底，否则同一首歌两侧仍会算出不同的键。
+     */
+    private fun canonicalSourceName(channel: String): String = when (channel) {
+        "bilibili", "bili" -> "bili"
+        "youtube_music", "youtubemusic", "youtube", "ytmusic" -> "youtube"
+        "netease" -> "netease"
+        else -> "local"
     }
 
     /**

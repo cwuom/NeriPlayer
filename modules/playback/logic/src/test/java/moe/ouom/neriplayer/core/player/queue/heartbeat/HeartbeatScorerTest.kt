@@ -406,6 +406,58 @@ class HeartbeatScorerTest {
         assertNotEquals(HeartbeatScorer.identityKey(netease), HeartbeatScorer.identityKey(bili))
     }
 
+    @Test
+    fun `identity key normalizes the stats stable key to the playing song key`() {
+        // 统计库与同步写的是「数字id|来源|音频标识」，播放中的歌没有该字段、
+        // 按「播放来源:id」计算；两边必须算出同一个键，否则跳过降权命中不了
+        val fromStats = song(39175763, "x").copy(sourceStableKey = "39175763|netease|")
+        val playing = song(39175763, "x").copy(channelId = "netease")
+
+        assertEquals("netease:39175763", HeartbeatScorer.identityKey(fromStats))
+        assertEquals(HeartbeatScorer.identityKey(playing), HeartbeatScorer.identityKey(fromStats))
+    }
+
+    @Test
+    fun `identity key normalizes the local file stable key to the local prefix`() {
+        val fromStats = song(42, "x").copy(sourceStableKey = "42|__local_files__|/song.flac")
+
+        assertEquals("local:42", HeartbeatScorer.identityKey(fromStats))
+        assertEquals(HeartbeatScorer.identityKey(song(42, "x")), HeartbeatScorer.identityKey(fromStats))
+    }
+
+    @Test
+    fun `identity key falls back to local for channels the player does not recognise`() {
+        // 服务器歌曲的来源段是 subsonic，而 playbackSourceKey 只认四个渠道值、
+        // 其余一律算本地歌：两侧必须同样兜底，否则这类歌的降权与标记仍会失效
+        val server = song(7, "x").copy(
+            channelId = "subsonic",
+            sourceStableKey = "7|subsonic|",
+        )
+
+        assertEquals("local:7", HeartbeatScorer.identityKey(server))
+        assertEquals(HeartbeatScorer.identityKey(song(7, "x")), HeartbeatScorer.identityKey(server))
+    }
+
+    @Test
+    fun `identity key maps youtube music channels to the youtube prefix`() {
+        val fromStats = song(9, "x").copy(sourceStableKey = "9|youtube_music|")
+
+        assertEquals("youtube:9", HeartbeatScorer.identityKey(fromStats))
+    }
+
+    @Test
+    fun `identity key aliases keep the pre-normalisation stats key readable`() {
+        // 老版本把统计库的键原样存进「不喜欢」与跳过记录；规范化上线后
+        // 读取时两种键都要能命中，否则用户已有的标记会全部失效
+        val fromStats = song(39175763, "x").copy(sourceStableKey = "39175763|netease|")
+
+        assertEquals(
+            setOf("netease:39175763", "39175763|netease|"),
+            HeartbeatScorer.identityKeyAliases(fromStats)
+        )
+        assertEquals(setOf("local:42"), HeartbeatScorer.identityKeyAliases(song(42, "x")))
+    }
+
     // ---- 助手 ----
 
     private fun candidate(

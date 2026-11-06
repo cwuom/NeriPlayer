@@ -348,6 +348,37 @@ class LocalHeartbeatCandidateSourceTest {
         assertEquals(64L, source.selectNext(current, emptyList())?.id)
     }
 
+    @Test
+    fun `disliked keys stored in the legacy stats format still match`() = runTest {
+        // 老版本把统计库的「数字id|来源|音频标识」原样写进名单；
+        // 规范化之后同一首歌算的是「播放来源:id」，读取时两种都要能命中，
+        // 否则用户已有的标记会凭空失效
+        val target = song(65, "老格式标记").copy(sourceStableKey = "65|netease|")
+        val provider = DislikeProvider(
+            favorites = listOf(target),
+            history = emptyList(),
+            dislikedKeys = setOf("65|netease|"),
+        )
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        assertNull(source.selectNext(current, emptyList()))
+    }
+
+    @Test
+    fun `skip counts stored in the legacy stats format still lower the score`() = runTest {
+        val target = song(66, "老格式跳过").copy(sourceStableKey = "66|netease|")
+        val clean = song(67, "没跳过")
+        val provider = DislikeProvider(
+            favorites = listOf(target, clean),
+            history = emptyList(),
+            dislikedKeys = emptySet(),
+            skips = mapOf("66|netease|" to 3),
+        )
+        val source = LocalHeartbeatCandidateSource(provider = provider)
+
+        assertEquals(67L, source.selectNext(current, emptyList())?.id)
+    }
+
     // ---- 测试替身 ----
 
     private class StaticProvider(
@@ -398,6 +429,7 @@ class LocalHeartbeatCandidateSourceTest {
         private val favorites: List<SongItem>,
         private val history: List<SongItem>,
         var dislikedKeys: Set<String>,
+        var skips: Map<String, Int> = emptyMap(),
     ) : HeartbeatCandidateProvider {
         var dislikedCalls: Int = 0
             private set
@@ -409,6 +441,8 @@ class LocalHeartbeatCandidateSourceTest {
             dislikedCalls++
             return dislikedKeys
         }
+
+        override suspend fun skipCounts(): Map<String, Int> = skips
     }
 
     private fun song(id: Long, name: String) = SongItem(

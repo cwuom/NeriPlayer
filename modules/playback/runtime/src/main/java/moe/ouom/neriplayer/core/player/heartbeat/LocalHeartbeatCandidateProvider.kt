@@ -144,8 +144,10 @@ private fun TrackStat.toHeartbeatSongItem(): SongItem = SongItem(
     mediaUri = mediaUri,
     localFilePath = localFilePath,
     localFileName = localFileName,
-    // 必须带上统计库的身份键：不带的话 `HeartbeatScorer.identityKey` 会退化成 `:id`，
-    // 与统计库里存的键对不上，重复播放惩罚与跳过降权永远命中不了。
+    // 必须带上统计库的身份键：它是唯一还写着播放渠道的地方。
+    // 不带的话 `HeartbeatScorer.identityKey` 会按本地歌算成 `local:id`，
+    // 与队列里真实的网易云歌对不上，重复播放惩罚与跳过降权永远命中不了。
+    // 键格式（「数字id|来源|音频标识」）与播放侧的差异由 `identityKey` 统一规范化。
     sourceStableKey = identityKey,
     // 自定义名称/歌手/封面也要带上：播放界面和通知优先显示它们，
     // 丢掉会让被推荐的歌突然变回原始标题，用户会以为数据被改坏了。
