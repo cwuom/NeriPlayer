@@ -223,6 +223,7 @@ private data class TabletNowPlayingPose(
 private class TabletNowPlayingTransitionState(initiallyVisible: Boolean) {
     var mounted by mutableStateOf(initiallyVisible)
     var animating by mutableStateOf(false)
+    var entering by mutableStateOf(false)
     var pose by mutableStateOf(
         TabletNowPlayingPose(
             offsetY = if (initiallyVisible) 0f else 1f,
@@ -254,6 +255,7 @@ private fun TabletNowPlayingTransition(
             return@LaunchedEffect
         }
         state.pose = start
+        state.entering = visible
         state.animating = true
         state.mounted = true
         val duration = if (visible) 300 else 250
@@ -272,10 +274,16 @@ private fun TabletNowPlayingTransition(
     }
     if (visible || state.mounted) {
         Box(Modifier.fillMaxSize().graphicsLayer {
-            val pose = if (state.animating) state.pose else state.pose.copy(
-                preview = dismissState.progress *
-                    if (dismissState.swipeEdge == BackEventCompat.EDGE_RIGHT) -1f else 1f
-            )
+            val livePreview = dismissState.progress *
+                if (dismissState.swipeEdge == BackEventCompat.EDGE_RIGHT) -1f else 1f
+            // A committed dismissal ignores the gesture; entry keeps following a back swipe started mid-animation.
+            val pose = when {
+                !state.animating -> state.pose.copy(preview = livePreview)
+                state.entering -> state.pose.copy(
+                    preview = (state.pose.preview + livePreview).coerceIn(-1f, 1f)
+                )
+                else -> state.pose
+            }
             state.renderedPose = pose
             val transform = predictiveDismissTransform(
                 progress = abs(pose.preview),
