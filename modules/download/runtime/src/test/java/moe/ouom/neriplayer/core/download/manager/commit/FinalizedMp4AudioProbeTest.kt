@@ -37,6 +37,20 @@ class FinalizedMp4AudioProbeTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
 
     @Test
+    fun `bounded FLAC fallback rejects mixed FLAC and AVC sample entries`() = runTest {
+        val file = temporaryFolder.newFile("mixed-flac-avc.mp4").apply {
+            writeBytes(fixtureBytes("flac-with-avc.mp4"))
+        }
+
+        try {
+            readFinalizedMp4AudioDuration(context, Uri.fromFile(file))
+            org.junit.Assert.fail("mixed sample entries must be rejected before codec configuration parsing")
+        } catch (error: IOException) {
+            assertTrue(error.message.orEmpty().contains("does not support this sample entry"))
+        }
+    }
+
+    @Test
     fun `provider asset offsets and lengths constrain the parsed audio`() = runTest {
         val fixture = fixtureBytes()
         val file = temporaryFolder.newFile("provider.bin").apply {
@@ -262,8 +276,8 @@ class FinalizedMp4AudioProbeTest {
         assertFalse(returnedMetadata)
     }
 
-    private fun fixtureBytes(): ByteArray = checkNotNull(
-        javaClass.getResourceAsStream("/download/finalized-audio/flac-in-mp4.m4a")
+    private fun fixtureBytes(name: String = "flac-in-mp4.m4a"): ByteArray = checkNotNull(
+        javaClass.getResourceAsStream("/download/finalized-audio/$name")
     ).use { it.readBytes() }
 
     private suspend fun assertRejected(uri: Uri) {
