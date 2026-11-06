@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 LYRICS_CLASS = "moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest"
 ROTATION_CLASS = "moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest"
 GLASS_CLASS = "moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassInverseMaskParityTest"
+THEME_REVEAL_CLASS = "moe.ouom.neriplayer.ui.theme.reveal.MainActivityThemeRevealContinuityTest"
 LYRICS_CASES = {
     "cleanExternalLyricsPageBottomRowsReceiveNativeTouchesWithMiniPlayer",
     "cleanExternalLyricsPageBottomRowsReceiveNativeTouchesAtExpandedUiDensity",
@@ -22,6 +23,12 @@ GLASS_CASES = {
     "productionGraphMatchesFrozenGraphForOpaqueAndTransparentInputs",
     "sameSessionUpdatesDoNotPollutePreviouslyBoundEffects",
     "frozenOracleRespondsToCoverageBlurAndLiquidTieOrder",
+}
+THEME_REVEAL_CASES = {
+    "cleanThemeRoundTripsKeepRealBackgroundsAndNavigationUsable",
+    "materialThemeRoundTripsKeepRealBackgroundsAndNavigationUsable",
+    "cleanMainTabScrollingViewportsReachTheWindowBottom",
+    "materialMainTabScrollingViewportsReachTheWindowBottom",
 }
 LIBRARY_MODULES = {"modules/database", "modules/local", "modules/playback/runtime"}
 ASSUMPTION_TYPES = {
@@ -55,6 +62,7 @@ def validate_reports(root: Path, shared_shards: int = 4) -> dict[str, set[str]]:
         (LYRICS_CLASS, LYRICS_CASES),
         (ROTATION_CLASS, ROTATION_CASES),
         (GLASS_CLASS, GLASS_CASES),
+        (THEME_REVEAL_CLASS, THEME_REVEAL_CASES),
     ]
     for shard in range(shared_shards + len(dedicated_hosts)):
         lane = root / f"android-instrumented-test-reports-{shard}"
@@ -95,7 +103,7 @@ def validate_reports(root: Path, shared_shards: int = 4) -> dict[str, set[str]]:
             class_name, name = case.get("classname"), case.get("name")
             if not class_name or not name:
                 raise ValueError(f"Incomplete testcase identity in shard {shard}")
-            if shard < shared_shards and class_name in {LYRICS_CLASS, ROTATION_CLASS, GLASS_CLASS}:
+            if shard < shared_shards and class_name in {LYRICS_CLASS, ROTATION_CLASS, GLASS_CLASS, THEME_REVEAL_CLASS}:
                 raise ValueError(f"Unexpected dedicated host test in shard {shard}")
             key = f"{class_name}#{name}"
             if key in inventory["app"]:
