@@ -179,8 +179,8 @@ object HeartbeatScorer {
      *
      * 稳定键会被规范化成「播放来源:歌曲 id」：统计库与同步写的是
      * 「数字id|来源|音频标识」，而播放中的歌大多没有该字段、按「播放来源:id」计算。
-     * 两者不统一的话，同一首歌在候选池与播放队列里会算出两个不同的键，
-     * 跳过降权、不喜欢与队列排除就永远命中不了。
+     * 两者不统一的话，同一首歌在候选池与播放队列里会算出两个不同的键：
+     * 只要一边带这个字段、另一边不带，跳过降权、不喜欢与队列排除就查不到对方存的记录。
      */
     fun identityKey(song: SongItem): String {
         song.sourceStableKey?.takeIf { it.isNotBlank() }?.let { sourceKey ->
