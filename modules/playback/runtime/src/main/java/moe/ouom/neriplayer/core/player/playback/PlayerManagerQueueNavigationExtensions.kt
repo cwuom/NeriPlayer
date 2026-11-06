@@ -252,21 +252,35 @@ private fun PlayerManager.dispatchFailureAdvance(
     action: PlaybackFailureAdvanceAction,
     commandSource: PlaybackCommandSource,
 ) {
+    // 任务书 §八：本次播放失败的曲目要记入本次心动会话的黑名单，
+    // 否则「失败 → 自动换下一首 → 又选中同一首」会无限循环。
+    markCurrentSongFailedForHeartbeat()
     if (action == PlaybackFailureAdvanceAction.STOP) {
         // 心动候选追加在队尾并选中，所以「最后一首播放失败」同样是它需要接力的时刻；
         // 直接停止会让一首放不出来的推荐把心动流彻底断掉，预取好的下一首也用不上。
-        _currentSongFlow.value?.let { markHeartbeatSongFailed(it) }
-        heartbeatAdvanceOrFallback(
-            reason = "playbackFailure:STOP",
-            resetFailureCount = false,
-            fallback = { stopPlaybackPreservingQueue(clearMediaUrl = true) },
-        )
+        advanceHeartbeatAfterStopFailure()
         return
     }
-    // 任务书 §八：本次播放失败的曲目要记入本次心动会话的黑名单，
-    // 否则「失败 → 自动换下一首 → 又选中同一首」会无限循环。
-    _currentSongFlow.value?.let { markHeartbeatSongFailed(it) }
     // 播放失败时先用心动候选顶上（任务书 §3.5 步骤 5），拿不到才按原失败策略推进
+    advanceHeartbeatAfterFailure(action, commandSource)
+}
+
+private fun PlayerManager.markCurrentSongFailedForHeartbeat() {
+    _currentSongFlow.value?.let { markHeartbeatSongFailed(it) }
+}
+
+private fun PlayerManager.advanceHeartbeatAfterStopFailure() {
+    heartbeatAdvanceOrFallback(
+        reason = "playbackFailure:STOP",
+        resetFailureCount = false,
+        fallback = { stopPlaybackPreservingQueue(clearMediaUrl = true) },
+    )
+}
+
+private fun PlayerManager.advanceHeartbeatAfterFailure(
+    action: PlaybackFailureAdvanceAction,
+    commandSource: PlaybackCommandSource,
+) {
     heartbeatAdvanceOrFallback(
         reason = "playbackFailure",
         resetFailureCount = false,
@@ -349,6 +363,16 @@ private fun PlayerManager.advanceWithGuards(
         advanceOrFallbackWithoutSkip(force, commandSource, allowRememberedLongFormPosition)
         return
     }
+    advanceWithVolumeGuard(force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition, recordUserSkip)
+}
+
+private fun PlayerManager.advanceWithVolumeGuard(
+    force: Boolean,
+    commandSource: PlaybackCommandSource,
+    bypassLoudVolumeWarning: Boolean,
+    allowRememberedLongFormPosition: Boolean,
+    recordUserSkip: Boolean,
+) {
     if (requestUsbExclusiveLoudPlaybackConfirmation(
             commandSource = commandSource,
             bypassWarning = bypassLoudVolumeWarning,
@@ -369,19 +393,27 @@ private fun PlayerManager.advanceWithGuards(
  *
  * 只用于决定「要不要打断用户做 USB 高音量确认」，不改变实际推进路径。
  */
-private fun PlayerManager.hasNextAdvanceTarget(force: Boolean): Boolean {
-    if (useHeartbeatAdvance() && heartbeatReadyNextSong != null) return true
-    return PlayerQueueNavigationOwner.nextStep(
+private fun PlayerManager.hasNextAdvanceTarget(force: Boolean): Boolean =
+    hasReadyHeartbeatTarget() || queueHasNextStep(force)
+
+private fun PlayerManager.hasReadyHeartbeatTarget(): Boolean =
+    useHeartbeatAdvance() && heartbeatReadyNextSong != null
+
+private fun PlayerManager.queueHasNextStep(force: Boolean): Boolean =
+    PlayerQueueNavigationOwner.nextStep(
         currentPlaylist.size,
         currentIndex,
         repeatModeSetting,
         force,
     ) != null
-}
 
 /** 用户主动跳过只在真的会切歌时才计入降权；取消确认或无可播放时不该惩罚当前歌。 */
 private fun PlayerManager.recordHeartbeatSkipForUserSkip(enabled: Boolean) {
     if (!enabled) return
+    recordHeartbeatSkipForCurrentSong()
+}
+
+private fun PlayerManager.recordHeartbeatSkipForCurrentSong() {
     _currentSongFlow.value?.let { recordHeartbeatSkip(it) }
 }
 
