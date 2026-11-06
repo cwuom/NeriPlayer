@@ -148,6 +148,7 @@ import moe.ouom.neriplayer.core.startup.sync.StartupSyncWarningRepository
 import moe.ouom.neriplayer.core.startup.theme.StartupNightModeSyncPlanner
 import moe.ouom.neriplayer.core.startup.theme.StartupResourceNightMode
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
+import moe.ouom.neriplayer.core.startup.navigation.StartDestinationSnapshotProvider
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeSnapshotProvider
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherInvite
 import moe.ouom.neriplayer.api.ltw.reconnect.LISTEN_TOGETHER_RECONNECT_EXHAUSTED_REASON
@@ -366,11 +367,19 @@ class MainActivity : ComponentActivity() {
         super.attachBaseContext(applyOnePlusHighDensityDisplayCorrection(localizedContext))
     }
 
+    /**
+     * 在创建界面前选择本次启动的主题和启动页快照，并区分安全模式入口
+     * 快照只提供首帧初值，已保存的 Activity 和 Compose 状态继续走原有恢复路径
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         safeModeActive = SafeModeManager.shouldEnterSafeMode(this)
         val startupLoadingStartedAtMs = SystemClock.elapsedRealtime()
         val startupSettingsSnapshot = readBootstrapSettingsSnapshotSync(this)
         val startupThemeSnapshot = StartupThemeSnapshotProvider.read(
+            context = this,
+            safeModeActive = safeModeActive
+        )
+        val startupStartDestinationSnapshot = StartDestinationSnapshotProvider.read(
             context = this,
             safeModeActive = safeModeActive
         )
@@ -1155,6 +1164,8 @@ class MainActivity : ComponentActivity() {
                                         var appGlobalDialogVisible by remember { mutableStateOf(true) }
                                         NeriApp(
                                             initialThemeSnapshot = startupThemeSnapshot,
+                                            initialStartDestinationSnapshot =
+                                                startupStartDestinationSnapshot,
                                             launcherShortcutRequestFlow = launcherShortcutRequestFlow,
                                             onLauncherShortcutRequestConsumed =
                                                 ::clearLauncherShortcutRequest,

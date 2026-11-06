@@ -36,6 +36,8 @@ import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.platform.netease.api.auth.NeteaseYdDeviceTokenProvider
 import android.app.Application
+import android.content.Context
+import androidx.datastore.preferences.core.Preferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -97,6 +99,7 @@ import moe.ouom.neriplayer.api.ltw.ws.ListenTogetherWebSocketClient
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.playback.persistPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.navigation.synchronizeStartDestinationSnapshot
 import moe.ouom.neriplayer.data.settings.bootstrap.readBootstrapSettingsSnapshotSync
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.bootstrap.toBootstrapSettingsSnapshot
@@ -241,6 +244,13 @@ private fun moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle.toWarm
         origin = normalized.origin,
         userAgent = normalized.userAgent
     )
+}
+
+/** 将设置发射同步到启动缓存，启动页重读当前真值以排除延迟的旧发射 */
+internal suspend fun persistStartupSettingsSnapshots(context: Context, preferences: Preferences) {
+    persistBootstrapSettingsSnapshot(context, preferences.toBootstrapSettingsSnapshot())
+    persistPlaybackPreferenceSnapshot(context, preferences.toPlaybackPreferenceSnapshot())
+    synchronizeStartDestinationSnapshot(context)
 }
 
 /**
@@ -672,17 +682,14 @@ object AppContainer {
             .launchIn(scope)
     }
 
+    /**
+     * 将 DataStore 真值同步到启动快照，并更新依赖设置的运行时行为
+     * 统一观察也覆盖配置导入等绕过设置页 setter 的写入入口
+     */
     private fun startSettingsObserver() {
         application.dataStore.data
             .onEach { preferences ->
-                persistBootstrapSettingsSnapshot(
-                    application,
-                    preferences.toBootstrapSettingsSnapshot()
-                )
-                persistPlaybackPreferenceSnapshot(
-                    application,
-                    preferences.toPlaybackPreferenceSnapshot()
-                )
+                persistStartupSettingsSnapshots(application, preferences)
             }
             .launchIn(scope)
 
