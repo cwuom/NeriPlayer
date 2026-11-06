@@ -12,6 +12,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
@@ -50,6 +52,8 @@ class AppTabletNowPlayingBackTest {
 
     private val visible = mutableStateOf(false)
     private val previewEnabled = mutableStateOf(true)
+    private val landscape = mutableStateOf(false)
+    private val uiStyle = mutableStateOf(UiStyle.Clean)
     private val flight = SharedCoverFlightState()
     private val queue = MutableStateFlow<List<SongItem>>(emptyList())
     private val visibilityEvents = mutableListOf<Boolean>()
@@ -63,9 +67,10 @@ class AppTabletNowPlayingBackTest {
         composeRule.setContent {
             val configuration = Configuration(LocalConfiguration.current).apply {
                 smallestScreenWidthDp = 800
-                screenWidthDp = 800
-                screenHeightDp = 1280
-                orientation = Configuration.ORIENTATION_PORTRAIT
+                screenWidthDp = if (landscape.value) 1280 else 800
+                screenHeightDp = if (landscape.value) 800 else 1280
+                orientation = if (landscape.value) Configuration.ORIENTATION_LANDSCAPE
+                    else Configuration.ORIENTATION_PORTRAIT
             }
             dismiss = rememberPredictiveDismissState()
             CompositionLocalProvider(
@@ -80,7 +85,7 @@ class AppTabletNowPlayingBackTest {
                         queueFlow = queue,
                         theme = NowPlayingOverlayTheme(
                             false, null, "6750A4", PaletteStyle.TonalSpot,
-                            ColorSpec.SpecVersion.Default, uiStyle = UiStyle.Clean
+                            ColorSpec.SpecVersion.Default, uiStyle = uiStyle.value
                         ),
                         background = NowPlayingOverlayBackground(false, 0f, 0f, false, true),
                         onVisibilityChanged = { visibilityEvents.add(it) },
@@ -115,6 +120,7 @@ class AppTabletNowPlayingBackTest {
     @Test
     fun reversedAndCancelledPredictiveBackRestoresTheTabletBeforeOrdinaryClose() {
         openPlayer()
+        val original = playerBounds()
         val originalWidth = playerWidth()
         val dispatcher = composeRule.activity.onBackPressedDispatcher
         composeRule.runOnIdle { dispatcher.dispatchOnBackStarted(backEvent(0f)) }
@@ -137,7 +143,12 @@ class AppTabletNowPlayingBackTest {
         advance(400)
         assertOpen()
         assertEquals(originalWidth, playerWidth(), 1f)
-        composeRule.runOnIdle { assertEquals(0, closeRequests) }
+        assertEquals(original.left, playerBounds().left, 1f)
+        assertEquals(original.top, playerBounds().top, 1f)
+        composeRule.runOnIdle {
+            assertEquals(0, closeRequests)
+            assertEquals(listOf(true), visibilityEvents)
+        }
 
         composeRule.runOnIdle { dispatcher.onBackPressed() }
         advance(400)
@@ -188,11 +199,83 @@ class AppTabletNowPlayingBackTest {
     }
 
     @Test
-    fun reopeningDuringTheSystemBackExitKeepsTheTabletMounted() {
+    fun toolbarVisibilityChangeKeepsTheTabletMountedUntilExitCompletes() {
         openPlayer()
+        val original = playerBounds()
+        composeRule.runOnIdle { visible.value = false }
+        advance(64)
+        assertTrue(playerBounds().top > original.top)
+        composeRule.runOnIdle { assertEquals(listOf(true), visibilityEvents) }
+        advance(400)
+        assertClosed(expectedCloseRequests = 0)
+    }
+
+    @Test
+    fun committedPredictiveBackContinuesFromThePreviewAndSettlesWhileSlidingDown() {
+        val dispatcher = composeRule.activity.onBackPressedDispatcher
+        for (isLandscape in listOf(false, true)) {
+            for (style in listOf(UiStyle.Material, UiStyle.Clean)) {
+                for (edge in listOf(BackEventCompat.EDGE_LEFT, BackEventCompat.EDGE_RIGHT)) {
+                    for (progress in listOf(0.2f, 0.7f)) {
+                        composeRule.runOnIdle {
+                            landscape.value = isLandscape
+                            uiStyle.value = style
+                            visibilityEvents.clear()
+                            closeRequests = 0
+                        }
+                        openPlayer()
+                        val original = playerBounds()
+                        composeRule.runOnIdle {
+                            dispatcher.dispatchOnBackStarted(backEvent(0f, edge))
+                            dispatcher.dispatchOnBackProgressed(backEvent(progress, edge))
+                        }
+                        advance(32)
+                        val preview = playerBounds()
+                        composeRule.runOnIdle { dispatcher.onBackPressed() }
+                        advance(16)
+                        val committed = playerBounds()
+                        assertEquals(preview.left, committed.left, 1f)
+                        assertEquals(preview.top, committed.top, 1f)
+                        assertEquals(preview.width, committed.width, 1f)
+                        var previous = committed
+                        repeat(3) {
+                            advance(32)
+                            val current = playerBounds()
+                            assertTrue("退出应持续向下移动", current.top > previous.top)
+                            assertTrue("退出时缩放应恢复", current.width > previous.width)
+                            assertTrue(
+                                "退出时横向偏移应回正",
+                                kotlin.math.abs(current.center.x - original.center.x) <
+                                    kotlin.math.abs(previous.center.x - original.center.x)
+                            )
+                            previous = current
+                        }
+                        advance(400)
+                        assertClosed()
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun reopeningDuringThePredictiveBackExitKeepsTheTabletMounted() {
+        openPlayer()
+        composeRule.runOnIdle {
+            val dispatcher = composeRule.activity.onBackPressedDispatcher
+            dispatcher.dispatchOnBackStarted(backEvent(0f))
+            dispatcher.dispatchOnBackProgressed(backEvent(0.7f))
+        }
+        advance(32)
         composeRule.runOnIdle { composeRule.activity.onBackPressedDispatcher.onBackPressed() }
         advance(64)
+        val closing = playerBounds()
         composeRule.runOnIdle { visible.value = true }
+        advance(16)
+        val reopened = playerBounds()
+        assertEquals(closing.left, reopened.left, 1f)
+        assertEquals(closing.top, reopened.top, 1f)
+        assertEquals(closing.width, reopened.width, 1f)
         advance(400)
         assertOpen()
         composeRule.runOnIdle { assertEquals(listOf(true), visibilityEvents) }
@@ -244,8 +327,16 @@ class AppTabletNowPlayingBackTest {
     private fun playerWidth(): Float =
         composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.width
 
-    private fun backEvent(progress: Float) =
-        BackEventCompat(0f, 0f, progress, BackEventCompat.EDGE_LEFT)
+    private fun playerBounds(): Rect {
+        val coordinates = composeRule.onNodeWithTag(PlayerContent, useUnmergedTree = true)
+            .fetchSemanticsNode().layoutInfo.coordinates
+        return composeRule.runOnIdle {
+            coordinates.findRootCoordinates().localBoundingBoxOf(coordinates, clipBounds = false)
+        }
+    }
+
+    private fun backEvent(progress: Float, edge: Int = BackEventCompat.EDGE_LEFT) =
+        BackEventCompat(0f, 0f, progress, edge)
 
     private companion object {
         const val PlayerContent = "tablet-back-player"
