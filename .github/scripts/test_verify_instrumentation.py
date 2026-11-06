@@ -16,13 +16,6 @@ GLASS_CASES = {
     "sameSessionUpdatesDoNotPollutePreviouslyBoundEffects",
     "frozenOracleRespondsToCoverageBlurAndLiquidTieOrder",
 }
-THEME_REVEAL_CLASS = "moe.ouom.neriplayer.ui.theme.reveal.MainActivityThemeRevealContinuityTest"
-THEME_REVEAL_CASES = {
-    "cleanThemeRoundTripsKeepRealBackgroundsAndNavigationUsable",
-    "materialThemeRoundTripsKeepRealBackgroundsAndNavigationUsable",
-    "cleanMainTabScrollingViewportsReachTheWindowBottom",
-    "materialMainTabScrollingViewportsReachTheWindowBottom",
-}
 
 
 class InstrumentationReportsTest(unittest.TestCase):
@@ -37,7 +30,6 @@ class InstrumentationReportsTest(unittest.TestCase):
         self.write(4, "app", [(verification.LYRICS_CLASS, name) for name in verification.LYRICS_CASES])
         self.write(5, "app", [(verification.ROTATION_CLASS, name) for name in verification.ROTATION_CASES])
         self.write(6, "app", [(GLASS_CLASS, name) for name in GLASS_CASES])
-        self.write(7, "app", [(THEME_REVEAL_CLASS, name) for name in THEME_REVEAL_CASES])
 
     def write(self, shard, module, cases, skipped=False, result_tag=None, result_text=None, result_type=None):
         output = self.root / f"android-instrumented-test-reports-{shard}" / module
@@ -57,12 +49,8 @@ class InstrumentationReportsTest(unittest.TestCase):
 
     def test_accepts_complete_disjoint_test_routes(self):
         inventory = verification.validate_reports(self.root)
-        self.assertEqual(len(inventory["app"]), 16)
+        self.assertEqual(len(inventory["app"]), 12)
         self.assertEqual(len(inventory["libraries"]), 3)
-        self.assertEqual(
-            {key for key in inventory["app"] if key.startswith(f"{THEME_REVEAL_CLASS}#")},
-            {f"{THEME_REVEAL_CLASS}#{name}" for name in THEME_REVEAL_CASES},
-        )
 
     def test_counts_agp_assumption_failures_without_type_as_skipped(self):
         self.write(0, "app", [("ExampleTest", "case0")], result_tag="failure",
@@ -71,7 +59,7 @@ class InstrumentationReportsTest(unittest.TestCase):
                    result_text="org.junit.internal.AssumptionViolatedException: got: <false>, expected: is <true>\n\tat org.junit.Assume.assumeTrue(Assume.java:50)")
         inventory = verification.validate_reports(self.root)
         self.assertEqual(inventory["skipped"], {"ExampleTest#case0", "modules/local:LocalTest#case"})
-        self.assertEqual(len(inventory["app"]), 16)
+        self.assertEqual(len(inventory["app"]), 12)
         self.assertEqual(len(inventory["libraries"]), 3)
 
     def test_explicit_assumption_type_is_authoritative(self):
@@ -106,7 +94,6 @@ class InstrumentationReportsTest(unittest.TestCase):
             (4, verification.LYRICS_CLASS, verification.LYRICS_CASES),
             (5, verification.ROTATION_CLASS, verification.ROTATION_CASES),
             (6, GLASS_CLASS, GLASS_CASES),
-            (7, THEME_REVEAL_CLASS, THEME_REVEAL_CASES),
         ]:
             with self.subTest(shard=shard):
                 self.write(shard, "app", [(class_name, name) for name in names], result_tag="failure",
@@ -189,59 +176,6 @@ class InstrumentationReportsTest(unittest.TestCase):
 
     def test_rejects_unexpected_class_in_glass_host(self):
         self.write(6, "app", [("ExampleTest", name) for name in GLASS_CASES])
-        with self.assertRaisesRegex(ValueError, "incomplete dedicated host"):
-            verification.validate_reports(self.root)
-
-    def test_rejects_missing_theme_reveal_host_lane(self):
-        path = self.root / "android-instrumented-test-reports-7"
-        (path / "app/build/outputs/androidTest-results/connected/debug/TEST-result.xml").unlink()
-        with self.assertRaisesRegex(ValueError, "no app test"):
-            verification.validate_reports(self.root)
-
-    def test_rejects_each_missing_theme_reveal_method(self):
-        for missing in THEME_REVEAL_CASES:
-            with self.subTest(missing=missing):
-                self.write(7, "app", [(THEME_REVEAL_CLASS, name) for name in THEME_REVEAL_CASES - {missing}])
-                with self.assertRaisesRegex(ValueError, "incomplete dedicated host"):
-                    verification.validate_reports(self.root)
-
-    def test_rejects_duplicate_theme_reveal_method(self):
-        cases = [(THEME_REVEAL_CLASS, name) for name in THEME_REVEAL_CASES]
-        self.write(7, "app", cases + [cases[0]])
-        with self.assertRaisesRegex(ValueError, "incomplete dedicated host|duplicate"):
-            verification.validate_reports(self.root)
-
-    def test_rejects_skipped_theme_reveal_methods(self):
-        self.write(7, "app", [(THEME_REVEAL_CLASS, name) for name in THEME_REVEAL_CASES], skipped=True)
-        with self.assertRaisesRegex(ValueError, "did not pass"):
-            verification.validate_reports(self.root)
-
-    def test_rejects_theme_reveal_failures_and_errors(self):
-        for result_tag in ["failure", "error"]:
-            with self.subTest(result_tag=result_tag):
-                self.write(7, "app", [(THEME_REVEAL_CLASS, name) for name in THEME_REVEAL_CASES],
-                           result_tag=result_tag, result_text="java.lang.AssertionError: pixels differ")
-                with self.assertRaisesRegex(ValueError, "did not pass"):
-                    verification.validate_reports(self.root)
-
-    def test_rejects_theme_reveal_class_in_each_shared_shard(self):
-        for shard in range(4):
-            with self.subTest(shard=shard):
-                self.write(shard, "app", [(THEME_REVEAL_CLASS, "unexpected")])
-                try:
-                    with self.assertRaisesRegex(ValueError, "dedicated host"):
-                        verification.validate_reports(self.root)
-                finally:
-                    self.write(shard, "app", [("ExampleTest", f"case{shard}")])
-
-    def test_rejects_unexpected_class_in_theme_reveal_host(self):
-        self.write(7, "app", [("ExampleTest", name) for name in THEME_REVEAL_CASES])
-        with self.assertRaisesRegex(ValueError, "incomplete dedicated host"):
-            verification.validate_reports(self.root)
-
-    def test_rejects_extra_shared_case_in_theme_reveal_host(self):
-        cases = [(THEME_REVEAL_CLASS, name) for name in THEME_REVEAL_CASES]
-        self.write(7, "app", cases + [("ExampleTest", "sharedCase")])
         with self.assertRaisesRegex(ValueError, "incomplete dedicated host"):
             verification.validate_reports(self.root)
 

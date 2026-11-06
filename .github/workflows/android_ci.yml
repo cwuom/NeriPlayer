@@ -156,7 +156,6 @@ jobs:
               -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass2=moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassInverseMaskParityTest
-              -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass3=moe.ouom.neriplayer.ui.theme.reveal.MainActivityThemeRevealContinuityTest
           - shard: 1
             test_group: shard 1
             # 该分片在 SwiftShader 宿主上重复掉线，用 ANGLE 路径隔离图形后端影响
@@ -169,7 +168,6 @@ jobs:
               -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass2=moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassInverseMaskParityTest
-              -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass3=moe.ouom.neriplayer.ui.theme.reveal.MainActivityThemeRevealContinuityTest
           - shard: 2
             test_group: shard 2
             # 主题切换回归期间两次丢失 SwiftShader 宿主，使用已有 ANGLE 路径保留完整测试
@@ -182,7 +180,6 @@ jobs:
               -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass2=moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassInverseMaskParityTest
-              -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass3=moe.ouom.neriplayer.ui.theme.reveal.MainActivityThemeRevealContinuityTest
           - shard: 3
             test_group: shard 3
             emulator_gpu: swiftshader
@@ -194,7 +191,6 @@ jobs:
               -Pandroid.testInstrumentationRunnerArguments.notClass=moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass=moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass2=moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassInverseMaskParityTest
-              -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass3=moe.ouom.neriplayer.ui.theme.reveal.MainActivityThemeRevealContinuityTest
           # 完整宿主触摸回归使用独立的新 AVD，隔离套件间图形状态并保留全部断言
           - shard: 4
             test_group: External Lyrics host
@@ -219,14 +215,6 @@ jobs:
             module_tests: ""
             app_test_arguments: >-
               -Pandroid.testInstrumentationRunnerArguments.class=moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassInverseMaskParityTest
-          # 主题切换使用独立的新 AVD，隔离其他用例的图形状态并保留完整像素断言
-          - shard: 7
-            test_group: Theme reveal host
-            emulator_gpu: swangle
-            build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
-            module_tests: ""
-            app_test_arguments: >-
-              -Pandroid.testInstrumentationRunnerArguments.class=moe.ouom.neriplayer.ui.theme.reveal.MainActivityThemeRevealContinuityTest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -302,7 +290,7 @@ jobs:
             python3 -B .github/scripts/run_connected_tests.py
 
       - name: Verify instrumented test routing
-        if: ${{ matrix.shard < 4 || matrix.test_group == 'Player rotation host' || matrix.test_group == 'Glass rendering host' || matrix.test_group == 'Theme reveal host' }}
+        if: ${{ matrix.shard < 4 || matrix.test_group == 'Player rotation host' || matrix.test_group == 'Glass rendering host' }}
         shell: python
         env:
           TEST_GROUP: ${{ matrix.test_group }}
@@ -314,7 +302,6 @@ jobs:
           rotation_class = "moe.ouom.neriplayer.activity.MainActivityRotationContinuityTest"
           external_lyrics_class = "moe.ouom.neriplayer.ui.screen.tab.settings.component.floating.SettingsExternalLyricsPageTouchTest"
           glass_class = "moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassInverseMaskParityTest"
-          theme_class = "moe.ouom.neriplayer.ui.theme.reveal.MainActivityThemeRevealContinuityTest"
           cases = [
               case
               for report in Path("app/build/outputs/androidTest-results/connected").rglob("TEST-*.xml")
@@ -331,12 +318,6 @@ jobs:
                   "sameSessionUpdatesDoNotPollutePreviouslyBoundEffects",
                   "frozenOracleRespondsToCoverageBlurAndLiquidTieOrder",
               }),
-              "Theme reveal host": (theme_class, {
-                  "cleanThemeRoundTripsKeepRealBackgroundsAndNavigationUsable",
-                  "materialThemeRoundTripsKeepRealBackgroundsAndNavigationUsable",
-                  "cleanMainTabScrollingViewportsReachTheWindowBottom",
-                  "materialMainTabScrollingViewportsReachTheWindowBottom",
-              }),
           }
           if os.environ["TEST_GROUP"] in dedicated_hosts:
               expected_class, expected = dedicated_hosts[os.environ["TEST_GROUP"]]
@@ -349,7 +330,7 @@ jobs:
                       f"Dedicated host regression did not pass: {case.get('name')}"
               print(f"All {len(expected)} dedicated host regression cases executed and passed")
           else:
-              assert all(case.get("classname") not in {rotation_class, external_lyrics_class, glass_class, theme_class} for case in cases), \
+              assert all(case.get("classname") not in {rotation_class, external_lyrics_class, glass_class} for case in cases), \
                   "Dedicated host tests must not execute in shared shards"
               print(f"Shared shard routing verified for {len(cases)} cases")
 

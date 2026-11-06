@@ -91,7 +91,6 @@ class MainActivityThemeRevealContinuityTest {
         assumeTrue("整应用夹具仅在模拟器运行", Build.HARDWARE in setOf("ranchu", "goldfish"))
         assumeNoSyncTargets()
         assumeComposeHostAvailable()
-        android.util.Log.i("MainThemeReveal", "style=$style viewportOnly=$pageViewportOnly drawingEnabled=${HardwareRendererCompat.isDrawingEnabled()}")
         val settings = SettingsRepository(context)
         val savedSettings = runBlocking { context.dataStore.data.first() }
         val savedWarning = runBlocking { context.debugBuildWarningDataStore.data.first() }

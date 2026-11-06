@@ -105,7 +105,7 @@ class ThemeRevealWrappedContextCaptureTest {
             }
             try {
                 assertEquals("the window capture failure must execute", 1, windowCaptureCalls)
-                assertNull("a failed hardware window capture must use the reveal color fallback", snapshot)
+                assertNull("a failed hardware window capture must not produce a software snapshot", snapshot)
             } finally {
                 snapshot?.asAndroidBitmap()?.recycle()
             }

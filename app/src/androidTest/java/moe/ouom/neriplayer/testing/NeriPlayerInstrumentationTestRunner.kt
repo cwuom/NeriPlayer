@@ -23,11 +23,7 @@ class NeriPlayerInstrumentationTestRunner : AndroidJUnitRunner() {
 
 internal fun withAdditionalExcludedTestClass(arguments: Bundle?): Bundle {
     val merged = arguments?.let(::Bundle) ?: Bundle()
-    val additional = listOf(
-        "neriplayerAdditionalExcludedClass",
-        "neriplayerAdditionalExcludedClass2",
-        "neriplayerAdditionalExcludedClass3"
-    )
+    val additional = listOf("neriplayerAdditionalExcludedClass", "neriplayerAdditionalExcludedClass2")
         .map { key ->
             val value = merged.getString(key).orEmpty().trim()
             merged.remove(key)

@@ -164,7 +164,7 @@ private fun pixelCopyBitmapOrNull(result: Int, bitmap: Bitmap): Bitmap? {
 
 private suspend fun captureThemeRevealFallbackSnapshot(view: View): ImageBitmap? {
     return withContext(Dispatchers.Main.immediate) {
-        // hardware images require window capture; a failed copy uses the reveal color fallback
+        // hardware images require window capture; a failed copy leaves the live page visible
         if (view.isHardwareAccelerated) return@withContext null
         runCatching { view.drawScaledThemeRevealBitmap()?.asImageBitmap() }.getOrNull()
     }
