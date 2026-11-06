@@ -2,6 +2,9 @@ package moe.ouom.neriplayer.core.download.manager.runtime
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -132,6 +135,63 @@ class GlobalDownloadManagerPostCoreTaskRecoveryTest {
     }
 
     @Test
+    fun `enrichment ending during task restoration publishes its latest retry wait`() = runBlocking {
+        fixture.upsert(request(song, operationId = operationId, attemptId = 71L), "ASSETS_ENRICHING")
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        manager.assetEnrichmentCoordinator.enqueue(operationId) {
+            entered.complete(Unit)
+            release.await()
+        }
+        entered.await()
+        try {
+            val settlingContext = onNetworkRead {
+                release.complete(Unit)
+                runBlocking {
+                    assertTrue(manager.assetEnrichmentCoordinator.awaitCompletion(setOf(operationId), 5_000L))
+                    fixture.rewrite(operationId) { it.copy(nextRetryAtMs = Long.MAX_VALUE) }
+                }
+            }
+
+            manager.restorePostCoreDownloadTask(settlingContext, requireNotNull(fixture.read(operationId)),
+                requireNotNull(manager.downloadAdmissionGate.openTicketOrNull()))
+
+            assertEquals(DownloadStage.WAITING_RETRY,
+                manager.taskStore.findTask(song.stableKey())?.progress?.stage)
+            assertEquals(DownloadStatus.WAITING_NETWORK,
+                manager.taskStore.findTask(song.stableKey())?.status)
+        } finally {
+            release.complete(Unit)
+        }
+    }
+
+    @Test
+    fun `replaced durable attempt cannot acquire a recovery artifact lease`() = runBlocking {
+        val original = request(song, operationId = operationId, attemptId = 71L, userInitiated = false)
+        fixture.upsert(original, "CORE_COMMITTED")
+        val connectivity = mock(ConnectivityManager::class.java)
+        val network = mock(Network::class.java)
+        val capabilities = mock(NetworkCapabilities::class.java)
+        `when`(connectivity.activeNetwork).thenReturn(network)
+        `when`(connectivity.getNetworkCapabilities(network)).thenReturn(capabilities)
+        `when`(capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)).thenReturn(true)
+        var networkReads = 0
+        val replacingContext = onNetworkRead(connectivity) {
+            // 每次网络快照读取两次系统服务，第三次已越过恢复任务的二次身份检查
+            if (++networkReads == 3) {
+                runBlocking { fixture.upsert(original.copy(attemptId = 72L), "CORE_COMMITTED") }
+            }
+        }
+
+        manager.recoverPostCoreDownloadOperation(replacingContext, song, operationId, 71L,
+            requireNotNull(manager.downloadAdmissionGate.openTicketOrNull()))
+
+        assertEquals(72L, fixture.read(operationId)?.attemptId)
+        assertEquals(original.artifactLeaseId, fixture.read(operationId)?.artifactLeaseId)
+        assertTrue(fixture.database.managedDownloadArtifactDao().findAllByStableKey(song.stableKey()).isEmpty())
+    }
+
+    @Test
     fun `legacy post core operation persists its restored progress attempt`() = runBlocking {
         withActiveEnrichment(attemptId = null) {
             manager.recoverPostCoreDownloadOperation(fixture.context, song, operationId, null,
@@ -141,6 +201,57 @@ class GlobalDownloadManagerPostCoreTaskRecoveryTest {
             assertTrue(attemptId > 0L)
             assertEquals(attemptId, fixture.read(operationId)?.attemptId)
         }
+    }
+
+    @Test
+    fun `explicit retry binds an unbound legacy operation to its failed task attempt`() = runBlocking {
+        manager.taskStore.ensureDownloadTasks(listOf(song), status = DownloadStatus.FAILED,
+            durableAttemptIds = mapOf(song.stableKey() to 71L))
+        withActiveEnrichment(attemptId = null) {
+            manager.scheduleUserDownload(fixture.context, song, skipTrafficRiskPrompt = true,
+                replacingAttemptId = 71L, manualRetry = true)
+
+            withTimeout(5_000L) {
+                while (manager.taskStore.findTask(song.stableKey())?.progress == null) delay(10L)
+            }
+            val task = manager.taskStore.findTask(song.stableKey())
+            assertEquals(71L, task?.attemptId)
+            assertEquals(operationId, task?.progress?.operationId)
+            assertEquals(71L, fixture.read(operationId)?.attemptId)
+        }
+    }
+
+    @Test
+    fun `automatic legacy recovery cannot adopt an unbound failed task without ownership evidence`() = runBlocking {
+        manager.taskStore.ensureDownloadTasks(listOf(song), status = DownloadStatus.FAILED,
+            durableAttemptIds = mapOf(song.stableKey() to 71L))
+        val task = manager.taskStore.findTask(song.stableKey())
+        withActiveEnrichment(attemptId = null) {
+            manager.recoverPostCoreDownloadOperation(fixture.context, song, operationId, null,
+                requireNotNull(manager.downloadAdmissionGate.openTicketOrNull()))
+
+            assertEquals(task, manager.taskStore.findTask(song.stableKey()))
+            assertNull(fixture.read(operationId)?.attemptId)
+        }
+    }
+
+    @Test
+    fun `durably settled recovery removes its matching restored task`() {
+        manager.taskStore.ensureDownloadTasks(listOf(song),
+            durableAttemptIds = mapOf(song.stableKey() to 71L))
+
+        assertEquals(71L, manager.settleAndRemoveRecoveredTask(song.stableKey(), 71L, promoteStatus = true))
+        assertNull(manager.taskStore.findTask(song.stableKey()))
+    }
+
+    @Test
+    fun `durably settled old recovery preserves a newer task`() {
+        manager.taskStore.ensureDownloadTasks(listOf(song),
+            durableAttemptIds = mapOf(song.stableKey() to 72L))
+        val newer = manager.taskStore.findTask(song.stableKey())
+
+        assertNull(manager.settleAndRemoveRecoveredTask(song.stableKey(), 71L, promoteStatus = true))
+        assertEquals(newer, manager.taskStore.findTask(song.stableKey()))
     }
 
     @Test
@@ -265,12 +376,15 @@ class GlobalDownloadManagerPostCoreTaskRecoveryTest {
             requireNotNull(manager.downloadAdmissionGate.openTicketOrNull()))
     }
 
-    private fun onNetworkRead(action: () -> Unit): Context = object : ContextWrapper(fixture.context) {
+    private fun onNetworkRead(
+        connectivity: ConnectivityManager? = null,
+        action: () -> Unit
+    ): Context = object : ContextWrapper(fixture.context) {
         override fun getApplicationContext(): Context = this
         override fun getSystemService(name: String): Any? {
             if (name != CONNECTIVITY_SERVICE) return super.getSystemService(name)
             action()
-            return null
+            return connectivity
         }
     }
 }

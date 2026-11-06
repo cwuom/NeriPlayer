@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import kotlinx.coroutines.cancel
@@ -60,18 +61,183 @@ class FinalizedMp4AudioProbeTest {
     }
 
     @Test
-    fun `large media payload is skipped while finding metadata at the end`() = runTest {
+    fun `provider declared length cannot expose metadata after the asset slice`() = runTest {
+        val fixture = fixtureBytes()
+        val file = temporaryFolder.newFile("truncated-asset.bin").apply { writeBytes(fixture) }
+        val provider = AudioAssetProvider(file, 0L, boxOffset(fixture, "moov").toLong() + 8L)
+        registerProvider(provider)
+
+        assertRejected(Uri.parse("content://audio-probe/song"))
+        assertTrue(provider.lastDescriptor?.fileDescriptor?.valid() == false)
+    }
+
+    @Test
+    fun `metadata cannot validate a sample whose chunk offset is past the file`() = runTest {
+        val fixture = fixtureBytes()
+        ByteBuffer.wrap(fixture, typeOffset(fixture, "stco") + 12, 4).putInt(fixture.size + 1_024)
+        val file = temporaryFolder.newFile("invalid-chunk.m4a").apply { writeBytes(fixture) }
+
+        assertRejected(Uri.fromFile(file))
+    }
+
+    @Test
+    fun `untrusted sample counts cannot request unbounded sample table arrays`() = runTest {
+        val fixture = fixtureBytes()
+        ByteBuffer.wrap(fixture, typeOffset(fixture, "stsz") + 12, 4).putInt(1_000_001)
+        val file = temporaryFolder.newFile("oversized-sample-table.m4a").apply { writeBytes(fixture) }
+
+        assertRejected(Uri.fromFile(file))
+    }
+
+    @Test
+    fun `codec initialization boxes cannot allocate beyond their sample entry`() = runTest {
+        val fixture = fixtureBytes()
+        ByteBuffer.wrap(fixture, typeOffset(fixture, "dfLa") - 4, 4).putInt(8 * 1_024 * 1_024)
+        val file = temporaryFolder.newFile("invalid-codec-box.m4a").apply { writeBytes(fixture) }
+
+        assertRejected(Uri.fromFile(file))
+    }
+
+    @Test
+    fun `media bytes nested in movie metadata are not treated as a media data box`() = runTest {
         val fixture = fixtureBytes()
         val mdatOffset = boxOffset(fixture, "mdat")
         val moovOffset = boxOffset(fixture, "moov")
+        val mdatSize = ByteBuffer.wrap(fixture, mdatOffset, 4).int
+        val payload = fixture.copyOfRange(mdatOffset + 8, mdatOffset + mdatSize)
+        ByteBuffer.wrap(fixture, mdatOffset + 4, 4).put("free".toByteArray())
+        ByteBuffer.wrap(fixture, moovOffset, 4).putInt(fixture.size - moovOffset + mdatSize)
+        ByteBuffer.wrap(fixture, typeOffset(fixture, "stco") + 12, 4).putInt(fixture.size + 8)
+        val file = temporaryFolder.newFile("nested-media.m4a")
+        file.outputStream().use { output ->
+            output.write(fixture)
+            output.write(ByteBuffer.allocate(8).putInt(mdatSize).put("mdat".toByteArray()).array())
+            output.write(payload)
+        }
+
+        assertRejected(Uri.fromFile(file))
+    }
+
+    @Test
+    fun `an auxiliary container inside movie metadata cannot introduce a media payload`() = runTest {
+        val fixture = fixtureBytes()
+        val mdatOffset = boxOffset(fixture, "mdat")
+        val moovOffset = boxOffset(fixture, "moov")
+        val mdatSize = ByteBuffer.wrap(fixture, mdatOffset, 4).int
+        val payload = fixture.copyOfRange(mdatOffset + 8, mdatOffset + mdatSize)
+        ByteBuffer.wrap(fixture, mdatOffset + 4, 4).put("free".toByteArray())
+        ByteBuffer.wrap(fixture, moovOffset, 4).putInt(fixture.size - moovOffset + mdatSize + 8)
+        ByteBuffer.wrap(fixture, typeOffset(fixture, "stco") + 12, 4).putInt(fixture.size + 16)
+        val file = temporaryFolder.newFile("nested-auxiliary-media.m4a")
+        file.outputStream().use { output ->
+            output.write(fixture)
+            output.write(ByteBuffer.allocate(8).putInt(mdatSize + 8).put("axte".toByteArray()).array())
+            output.write(ByteBuffer.allocate(8).putInt(mdatSize).put("mdat".toByteArray()).array())
+            output.write(payload)
+        }
+
+        assertRejected(Uri.fromFile(file))
+    }
+
+    @Test
+    fun `auxiliary MP4 boxes cannot hide untrusted sample table counts`() = runTest {
+        val fixture = fixtureBytes()
+        ByteBuffer.wrap(fixture, typeOffset(fixture, "stsz") + 12, 4).putInt(1_000_001)
+        val moovOffset = boxOffset(fixture, "moov")
+        val moovSize = fixture.size - moovOffset
+        val file = temporaryFolder.newFile("auxiliary-table.m4a")
+        file.outputStream().use { output ->
+            output.write(fixture, 0, moovOffset)
+            output.write(ByteBuffer.allocate(8).putInt(moovSize + 8).put("axte".toByteArray()).array())
+            output.write(fixture, moovOffset, moovSize)
+        }
+
+        try {
+            readFinalizedMp4AudioDuration(context, Uri.fromFile(file))
+            org.junit.Assert.fail("untrusted auxiliary sample counts must be rejected before parsing")
+        } catch (error: IOException) {
+            assertTrue(error.message.orEmpty().contains("budget"))
+        }
+    }
+
+    @Test
+    fun `oversized user metadata is rejected before parser payload allocation`() = runTest {
+        val fixture = fixtureBytes()
+        val boxSize = 8 * 1_024 * 1_024
+        val file = temporaryFolder.newFile("oversized-user-metadata.m4a")
+        RandomAccessFile(file, "rw").use { output ->
+            output.write(fixture)
+            output.writeInt(boxSize)
+            output.writeBytes("udta")
+            output.setLength(fixture.size.toLong() + boxSize)
+        }
+
+        try {
+            readFinalizedMp4AudioDuration(context, Uri.fromFile(file))
+            org.junit.Assert.fail("oversized user metadata must be rejected")
+        } catch (error: IOException) {
+            assertTrue(error.message.orEmpty().contains("allocation budget"))
+        }
+    }
+
+    @Test
+    fun `sample offsets cannot read movie metadata in place of a missing media payload`() = runTest {
+        val fixture = fixtureBytes()
+        val mdatOffset = boxOffset(fixture, "mdat")
+        val moovOffset = boxOffset(fixture, "moov")
+        val file = temporaryFolder.newFile("missing-media.m4a")
+        file.outputStream().use { output ->
+            output.write(fixture, 0, mdatOffset)
+            output.write(ByteBuffer.allocate(8).putInt(8).put("mdat".toByteArray()).array())
+            output.write(fixture, moovOffset, fixture.size - moovOffset)
+        }
+
+        assertRejected(Uri.fromFile(file))
+    }
+
+    @Test
+    fun `metadata reads cannot exceed the probe budget`() = runTest {
+        val fixture = fixtureBytes()
+        val moovOffset = boxOffset(fixture, "moov")
+        val metadataBoxSize = 1_024 * 1_024
+        val extraMetadataSize = 5 * metadataBoxSize
+        val file = temporaryFolder.newFile("oversized-metadata.m4a")
+        RandomAccessFile(file, "rw").use { output ->
+            output.write(fixture)
+            output.seek(moovOffset.toLong())
+            output.writeInt(fixture.size - moovOffset + extraMetadataSize)
+            output.seek(fixture.size.toLong())
+            repeat(5) {
+                output.writeInt(metadataBoxSize)
+                output.writeBytes("udta")
+                output.seek(output.filePointer + metadataBoxSize - 8L)
+            }
+            output.setLength(output.filePointer)
+        }
+
+        try {
+            readFinalizedMp4AudioDuration(context, Uri.fromFile(file))
+            org.junit.Assert.fail("metadata larger than the probe budget must be rejected")
+        } catch (_: IOException) {
+            // 超预算属于可恢复的探测失败，不能变成内存分配失败
+        }
+    }
+
+    @Test
+    fun `large media payload is skipped while finding metadata at the end`() = runTest {
+        val fixture = fixtureBytes()
+        val mdatOffset = boxOffset(fixture, "mdat")
         val extraMediaBytes = 32 * 1024 * 1024
         val file = temporaryFolder.newFile("large-media.m4a")
         RandomAccessFile(file, "rw").use { output ->
-            output.write(fixture, 0, moovOffset)
+            val sampleOffset = ByteBuffer.wrap(fixture, typeOffset(fixture, "stco") + 12, 4).int
+            ByteBuffer.wrap(fixture, typeOffset(fixture, "stco") + 12, 4)
+                .putInt(sampleOffset + extraMediaBytes)
+            output.write(fixture, 0, mdatOffset + 8)
             output.seek(mdatOffset.toLong())
             output.writeInt(ByteBuffer.wrap(fixture, mdatOffset, 4).int + extraMediaBytes)
-            output.seek(moovOffset.toLong() + extraMediaBytes)
-            output.write(fixture, moovOffset, fixture.size - moovOffset)
+            output.seek(mdatOffset + 8L + extraMediaBytes)
+            output.write(fixture, mdatOffset + 8, fixture.size - mdatOffset - 8)
         }
 
         val durationMs = readFinalizedMp4AudioDuration(context, Uri.fromFile(file))
@@ -99,6 +265,27 @@ class FinalizedMp4AudioProbeTest {
     private fun fixtureBytes(): ByteArray = checkNotNull(
         javaClass.getResourceAsStream("/download/finalized-audio/flac-in-mp4.m4a")
     ).use { it.readBytes() }
+
+    private suspend fun assertRejected(uri: Uri) {
+        try {
+            assertEquals(null, readFinalizedMp4AudioDuration(context, uri))
+        } catch (_: IOException) {
+            // 解析器拒绝结构或样本不完整的容器时，调用方会保留恢复凭据
+        }
+    }
+
+    private fun registerProvider(provider: ContentProvider) {
+        provider.attachInfo(context, ProviderInfo().apply {
+            authority = "audio-probe"
+            packageName = context.packageName
+            applicationInfo = context.applicationInfo
+        })
+        ShadowContentResolver.registerProviderInternal("audio-probe", provider)
+    }
+
+    private fun typeOffset(bytes: ByteArray, type: String): Int = bytes.indices.first { offset ->
+        offset + 4 <= bytes.size && String(bytes, offset, 4, Charsets.US_ASCII) == type
+    }
 
     private fun boxOffset(bytes: ByteArray, type: String): Int {
         var offset = 0

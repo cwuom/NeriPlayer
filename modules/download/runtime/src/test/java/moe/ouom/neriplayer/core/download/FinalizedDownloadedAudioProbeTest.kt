@@ -90,6 +90,28 @@ class FinalizedDownloadedAudioProbeTest {
     }
 
     @Test
+    fun `MP4 fallback resolves duration when platform only confirms an audio track`() = runTest {
+        extractorMime = "audio/flac"
+
+        val probe = inspect("flac-in-mp4.m4a")
+
+        assertTrue(probe.readable)
+        assertEquals(2_000L, probe.durationMs)
+    }
+
+    @Test
+    fun `movie duration without audio properties cannot override the audio track duration`() = runTest {
+        extractorMime = "audio/flac"
+        extractorDurationUs = 1_000_000L
+        containerProperties = AudioProperties(2_000, 0, 0, 0)
+
+        val probe = inspect("flac-in-mp4.m4a")
+
+        assertTrue(probe.readable)
+        assertEquals(1_000L, probe.durationMs)
+    }
+
+    @Test
     fun `container audio properties remain valid when the platform extractor throws`() = runTest {
         extractorFailure = IllegalArgumentException()
         containerProperties = AudioProperties(164_955, 1_411, 44_100, 2)

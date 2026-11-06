@@ -154,7 +154,10 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
                     operationId = existingInFlightRequest.operationId
                 )
                 if (requiresDownloadFinalizationRecovery(inFlightStateToRecover)) {
-                    restorePostCoreDownloadTask(appContext, existingInFlightRequest, admissionTicket)
+                    restorePostCoreDownloadTask(
+                        appContext, existingInFlightRequest, admissionTicket,
+                        expectedRetryAttemptId = replacingAttemptId.takeIf { manualRetry }
+                    )
                 }
                 operationPersisted = true
                 NPLogger.d(
@@ -220,7 +223,10 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
             if (operationState in DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES) {
                 inFlightRequestToRecover = persistedRequest
                 if (requiresDownloadFinalizationRecovery(operationState)) {
-                    restorePostCoreDownloadTask(appContext, persistedRequest, admissionTicket)
+                    restorePostCoreDownloadTask(
+                        appContext, persistedRequest, admissionTicket,
+                        expectedRetryAttemptId = replacingAttemptId.takeIf { manualRetry }
+                    )
                 }
                 NPLogger.d(
                     TAG,
@@ -349,7 +355,8 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
 internal suspend fun GlobalDownloadManager.restorePostCoreDownloadTask(
     context: Context,
     request: DownloadExecutionRequest,
-    admissionTicket: Long
+    admissionTicket: Long,
+    expectedRetryAttemptId: Long? = null
 ): Long? {
     val songKey = request.song.stableKey()
     val entry = PostCoreRecoveryReadStore.entries(context, listOf(request.operationId))
@@ -367,13 +374,12 @@ internal suspend fun GlobalDownloadManager.restorePostCoreDownloadTask(
             context, operationId, respectRetryDeadline = false
         )
     ) return null
-    val activeEnrichment = assetEnrichmentCoordinator.isActive(operationId)
     val networkEligible = isPostCoreRecoveryNetworkEligible(
         persistedRequest.requiresWifiNetwork,
         context.currentDownloadNetworkTypeOrNull(),
         mobileDataDownloadOverrideAllowed
     )
-    val status = if (activeEnrichment || networkEligible) {
+    val status = if (assetEnrichmentCoordinator.isActive(operationId) || networkEligible) {
         DownloadStatus.QUEUED
     } else {
         DownloadStatus.WAITING_NETWORK
@@ -383,7 +389,8 @@ internal suspend fun GlobalDownloadManager.restorePostCoreDownloadTask(
         song = song,
         status = status,
         durableAttemptId = persistedRequest.attemptId,
-        operationId = operationId
+        operationId = operationId,
+        expectedRetryAttemptId = expectedRetryAttemptId
     ) ?: return null
     if (persistedRequest.attemptId == null && !DownloadExecutionRoomStore.ensureAttemptId(
             context, operationId, songKey, attemptId
@@ -404,7 +411,7 @@ internal suspend fun GlobalDownloadManager.restorePostCoreDownloadTask(
     val checkpoint = DownloadExecutionRoomStore.readProgressCheckpoint(
         context, operationId, songKey, attemptId
     )
-    val waitingForRetry = !activeEnrichment &&
+    val waitingForRetry = !assetEnrichmentCoordinator.isActive(operationId) &&
         currentEntry.nextRetryAtMs?.let { it > System.currentTimeMillis() } == true
     publishDownloadStage(
         song = song,
@@ -580,7 +587,8 @@ internal suspend fun GlobalDownloadManager.recoverPostCoreDownloadOperation(
         val recoveryClaim = claimArtifactForRecovery(
             context = context,
             song = song,
-            operationId = operationId
+            operationId = operationId,
+            expectedAttemptId = restoredAttemptId
         )
         val claim = recoveryClaim?.claim
         if (claim == null || claim is ManagedDownloadArtifactClaim.InFlight) {

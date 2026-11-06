@@ -696,10 +696,10 @@ internal suspend fun GlobalDownloadManager.inspectFinalizedDownloadedAudio(
         val containerHasAudio = containerProperties?.let {
             it.length > 0 && it.sampleRate > 0 && it.channels > 0
         } == true
-        // MP3 extractor 可能用文件大小和首帧码率估算，已确认音轨后优先使用容器时长
+        // MP3 extractor 可能用文件大小和首帧码率估算，可信音频属性的时长优先
         val containerDurationMs = containerProperties?.length?.toLong()
-            ?.takeIf { it > 0L && (extractorProbe.readable || containerHasAudio) }
-        val mp4DurationMs = if (!extractorProbe.readable && !containerHasAudio) {
+            ?.takeIf { it > 0L && containerHasAudio }
+        val mp4DurationMs = if (extractorProbe.durationMs == null && !containerHasAudio) {
             try {
                 readFinalizedMp4AudioDuration(context, playbackUri)
             } catch (error: CancellationException) {

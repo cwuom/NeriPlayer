@@ -19,6 +19,53 @@ import kotlin.time.Duration.Companion.milliseconds
 @Config(sdk = [28], manifest = Config.NONE)
 class GlobalDownloadManagerCancellationSettlementTest {
     @Test
+    fun `cancellation without explicit operation ids uses the captured ownership snapshot`() = runBlocking {
+        val coordinator = GlobalDownloadManager.assetEnrichmentCoordinator
+        val songKey = "enrichment-cancel-snapshot"
+        val operationId = "enrichment-cancel-snapshot-old"
+        val replacementId = "enrichment-cancel-snapshot-replacement"
+        val started = CompletableDeferred<Unit>()
+        val replacementStarted = CompletableDeferred<Unit>()
+        val old = coordinator.enqueue(operationId) {
+            started.complete(Unit)
+            awaitCancellation()
+        }
+        val replacement = coordinator.enqueue(replacementId) {
+            replacementStarted.complete(Unit)
+            awaitCancellation()
+        }
+        val previousIds = GlobalDownloadManager.cancellationOperationIdsBySongKey.put(
+            songKey, setOf(operationId)
+        )
+        try {
+            withTimeout(2_000.milliseconds) {
+                started.await()
+                replacementStarted.await()
+            }
+            GlobalDownloadManager.cancelledSongKeys.add(songKey)
+
+            assertTrue(GlobalDownloadManager.awaitSongCancellationSettled(
+                songKey = songKey,
+                timeoutMs = 2_000L,
+                logProgress = false
+            ))
+
+            assertTrue(old.isCancelled)
+            assertFalse(coordinator.isActive(operationId))
+            assertTrue(replacement.isActive)
+            assertTrue(coordinator.isActive(replacementId))
+        } finally {
+            coordinator.cancelAndJoin(setOf(operationId, replacementId))
+            GlobalDownloadManager.clearSongCancelled(songKey)
+            if (previousIds == null) {
+                GlobalDownloadManager.cancellationOperationIdsBySongKey.remove(songKey)
+            } else {
+                GlobalDownloadManager.cancellationOperationIdsBySongKey[songKey] = previousIds
+            }
+        }
+    }
+
+    @Test
     fun `single song cancellation stops captured enrichment without cancelling replacement`() = runBlocking {
         val coordinator = GlobalDownloadManager.assetEnrichmentCoordinator
         val songKey = "enrichment-cancel-target"

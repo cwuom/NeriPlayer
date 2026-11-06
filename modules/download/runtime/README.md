@@ -14,9 +14,9 @@ app 在 `core/integration/download` 通过 `DownloadHosts.install(DownloadHostBi
 
 The app installs host interfaces through `DownloadHosts.install(DownloadHostBindings(...))` in `core/integration/download` before starting downloads.
 
-最终音频校验不能把平台解析器不支持的容器直接判为损坏；MP4 音轨可使用项目现有版本的 Media3 解析器独立核验，仍需确认音轨和实际时长。恢复已有收尾操作时，应按持久 attempt 和进度检查点重建任务展示；取消必须等待该 operation 的资产处理和不可取消写入完成后，才释放取消状态。
+最终音频校验不能把平台解析器不支持的容器直接判为损坏；标准 FLAC-in-MP4 音轨可使用项目现有版本的 Media3 解析器独立核验，仍需确认音轨、实际时长和至少一个完整可读样本，并限制解析过程的读取量与内存分配。恢复已有收尾操作时，应按持久 attempt 和进度检查点重建任务展示；取消必须等待该 operation 的资产处理和不可取消写入完成后，才释放取消状态。
 
-Final audio validation must distinguish unsupported platform containers from damaged files. MP4 audio can be independently checked with the project's existing Media3 version, while still requiring audio-track and measured-duration evidence. Resuming post-core operations restores task presentation from the durable attempt and progress checkpoint. Cancellation waits for that operation's asset processing and non-cancellable writes before releasing cancellation state.
+Final audio validation must distinguish unsupported platform containers from damaged files. Standard FLAC-in-MP4 audio can be independently checked with the project's existing Media3 version, while still requiring an audio track, a measured duration, and at least one complete readable sample within read and allocation budgets. Resuming post-core operations restores task presentation from the durable attempt and progress checkpoint. Cancellation waits for that operation's asset processing and non-cancellable writes before releasing cancellation state.
 
 ## 兼容 / Compatibility
 
