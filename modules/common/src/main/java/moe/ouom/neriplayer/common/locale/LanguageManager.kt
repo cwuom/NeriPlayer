@@ -67,6 +67,8 @@ object LanguageManager {
      * 设置语言
      * Set language
      */
+    // serialize readers that also publish locale state with explicit language changes
+    @Synchronized
     fun setLanguage(context: Context, language: Language) {
         // 保存设置
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -89,6 +91,7 @@ object LanguageManager {
      * 应用语言设置到 Context
      * Apply language setting to Context
      */
+    @Synchronized
     fun applyLanguage(context: Context): Context {
         val language = getCurrentLanguage(context)
         val locale = resolveLocale(context, language)
