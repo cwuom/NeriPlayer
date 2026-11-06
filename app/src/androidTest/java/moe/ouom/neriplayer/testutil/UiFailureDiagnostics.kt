@@ -33,7 +33,7 @@ internal object UiFailureDiagnostics {
         runCatching {
             val instrumentation = InstrumentationRegistry.getInstrumentation()
             val automation = instrumentation.uiAutomation
-            log(label, "original", "${failure.javaClass.name}: ${failure.message}")
+            log(label, "original", failure.stackTraceToString())
             runCatching { log(label, "windows", windows(automation)) }
                 .onFailure { logCaptureError(label, "windows", it) }
             val targetPackage = instrumentation.targetContext.packageName

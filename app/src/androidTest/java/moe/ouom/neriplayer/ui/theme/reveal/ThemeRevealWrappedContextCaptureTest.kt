@@ -73,18 +73,60 @@ class ThemeRevealWrappedContextCaptureTest {
 
     @Test
     fun attachedWindowCaptureKeepsAHardwareBitmapBackgroundWithAConfigurationOnlyLocalContext() {
-        val source = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
-        val hardwareBackground = try {
-            source.eraseColor(AndroidColor.BLUE)
-            checkNotNull(source.copy(Bitmap.Config.HARDWARE, false))
-        } finally {
-            source.recycle()
-        }
+        val hardwareBackground = createHardwareBackground()
         try {
             assertEquals(Bitmap.Config.HARDWARE, hardwareBackground.config)
             assertWrappedContextCapture(hardwareBackground)
         } finally {
             hardwareBackground.recycle()
+        }
+    }
+
+    @Test
+    fun failedWindowCaptureDoesNotDrawHardwareBitmapsThroughSoftwareCanvas() {
+        val hardwareBackground = createHardwareBackground()
+        try {
+            showFixture(hardwareBackground)
+            composeRule.runOnIdle {
+                assertTrue("the regression requires the real hardware-accelerated window",
+                    composeHost.rootView.isAttachedToWindow && composeHost.rootView.isHardwareAccelerated)
+            }
+            var windowCaptureCalls = 0
+            val snapshot = runBlocking {
+                withTimeout(5_000L) {
+                    withContext(Dispatchers.Main.immediate) {
+                        captureThemeRevealSnapshot(null, composeHost.rootView, windowCapture = { activity ->
+                            assertSame(composeRule.activity, activity)
+                            windowCaptureCalls += 1
+                            null
+                        })
+                    }
+                }
+            }
+            try {
+                assertEquals("the window capture failure must execute", 1, windowCaptureCalls)
+                assertNull("a failed hardware window capture must use the reveal color fallback", snapshot)
+            } finally {
+                snapshot?.asAndroidBitmap()?.recycle()
+            }
+            composeRule.waitForIdle()
+        } finally {
+            try {
+                composeRule.runOnIdle { fixtureVisible.value = false }
+                composeRule.waitForIdle()
+            } finally {
+                hardwareBackground.recycle()
+            }
+        }
+    }
+
+    private fun createHardwareBackground(): Bitmap {
+        val source = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        return try {
+            source.eraseColor(AndroidColor.BLUE)
+            checkNotNull(source.copy(Bitmap.Config.HARDWARE, false))
+        } finally {
+            source.recycle()
         }
     }
 

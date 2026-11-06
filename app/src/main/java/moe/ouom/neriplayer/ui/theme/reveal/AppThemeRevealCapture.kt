@@ -105,10 +105,11 @@ private fun View.drawScaledThemeRevealBitmapOrNull(): Bitmap? {
 
 internal suspend fun captureThemeRevealSnapshot(
     activity: Activity?,
-    fallbackView: View
+    fallbackView: View,
+    windowCapture: suspend (Activity) -> Bitmap? = ::captureWindowThemeRevealSnapshot
 ): ImageBitmap? {
     val captureActivity = activity ?: fallbackView.findAttachedThemeRevealActivity()
-    return captureOptionalWindowThemeRevealSnapshot(captureActivity)?.asImageBitmap()
+    return captureActivity?.let { windowCapture(it) }?.asImageBitmap()
         ?: captureThemeRevealFallbackSnapshot(fallbackView)
 }
 
@@ -125,9 +126,6 @@ private tailrec fun Context.findThemeRevealActivity(): Activity? = when (this) {
     is ContextWrapper -> baseContext.findThemeRevealActivity()
     else -> null
 }
-
-private suspend fun captureOptionalWindowThemeRevealSnapshot(activity: Activity?): Bitmap? =
-    activity?.let { captureWindowThemeRevealSnapshot(it) }
 
 private suspend fun captureWindowThemeRevealSnapshot(activity: Activity): Bitmap? =
     suspendCancellableCoroutine { continuation ->
@@ -166,6 +164,8 @@ private fun pixelCopyBitmapOrNull(result: Int, bitmap: Bitmap): Bitmap? {
 
 private suspend fun captureThemeRevealFallbackSnapshot(view: View): ImageBitmap? {
     return withContext(Dispatchers.Main.immediate) {
+        // hardware images require window capture; a failed copy uses the reveal color fallback
+        if (view.isHardwareAccelerated) return@withContext null
         runCatching { view.drawScaledThemeRevealBitmap()?.asImageBitmap() }.getOrNull()
     }
 }
