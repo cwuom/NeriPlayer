@@ -393,11 +393,15 @@ private fun PlayerManager.advanceWithVolumeGuard(
  *
  * 只用于决定「要不要打断用户做 USB 高音量确认」，不改变实际推进路径。
  */
-private fun PlayerManager.hasNextAdvanceTarget(force: Boolean): Boolean =
-    hasReadyHeartbeatTarget() || queueHasNextStep(force)
+private fun PlayerManager.hasNextAdvanceTarget(force: Boolean): Boolean {
+    if (hasReadyHeartbeatTarget()) return true
+    return queueHasNextStep(force)
+}
 
-private fun PlayerManager.hasReadyHeartbeatTarget(): Boolean =
-    useHeartbeatAdvance() && heartbeatReadyNextSong != null
+private fun PlayerManager.hasReadyHeartbeatTarget(): Boolean {
+    if (!useHeartbeatAdvance()) return false
+    return heartbeatReadyNextSong != null
+}
 
 private fun PlayerManager.queueHasNextStep(force: Boolean): Boolean =
     PlayerQueueNavigationOwner.nextStep(
