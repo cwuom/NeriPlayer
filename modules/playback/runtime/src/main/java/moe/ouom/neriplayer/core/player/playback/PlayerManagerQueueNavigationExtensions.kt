@@ -400,8 +400,10 @@ private fun PlayerManager.hasNextAdvanceTarget(force: Boolean): Boolean {
 
 private fun PlayerManager.hasReadyHeartbeatTarget(): Boolean {
     if (!useHeartbeatAdvance()) return false
-    return heartbeatReadyNextSong != null
+    return hasHeartbeatPendingSong()
 }
+
+private fun PlayerManager.hasHeartbeatPendingSong(): Boolean = heartbeatReadyNextSong != null
 
 private fun PlayerManager.queueHasNextStep(force: Boolean): Boolean =
     PlayerQueueNavigationOwner.nextStep(
