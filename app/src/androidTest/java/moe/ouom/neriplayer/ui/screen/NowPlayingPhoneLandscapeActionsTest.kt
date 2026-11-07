@@ -86,14 +86,17 @@ class NowPlayingPhoneLandscapeActionsTest {
         val actions = composeRule.onAllNodes(
             hasClickAction() and hasAnyAncestor(hasTestTag("nowPlayingPhoneAuxiliaryActions"))
         )
-        actions.assertCountEquals(5)
-        repeat(5) { index ->
+        actions.assertCountEquals(6)
+        repeat(6) { index ->
             val action = actions[index]
             if (scrollToActions) action.performScrollTo()
             action.assertIsDisplayed().performTouchInput { click(center) }
         }
         composeRule.runOnIdle {
-            assertEquals(listOf("queue", "timer", "volume", "lyrics", "add"), clickedActions)
+            assertEquals(
+                listOf("queue", "timer", "volume", "lyrics", "add", "heartbeat"),
+                clickedActions
+            )
         }
     }
 
@@ -103,7 +106,8 @@ class NowPlayingPhoneLandscapeActionsTest {
             onSleepTimer = { clickedActions += "timer" },
             onVolume = { clickedActions += "volume" },
             onLyrics = { clickedActions += "lyrics" },
-            onAddToPlaylist = { clickedActions += "add" }
+            onAddToPlaylist = { clickedActions += "add" },
+            onHeartbeat = { clickedActions += "heartbeat" }
         )
         composeRule.setContent {
             MaterialTheme {

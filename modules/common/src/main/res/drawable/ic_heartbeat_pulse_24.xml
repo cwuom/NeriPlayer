@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+  Copyright (C) 2025-2025 NeriPlayer developers
+  https://github.com/cwuom/NeriPlayer
+
+  This software is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This software is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this software.
+  If not, see <https://www.gnu.org/licenses/>.
+
+  File: drawable/ic_heartbeat_pulse_24
+
+  心动模式开关图标：线稿心形轮廓 + 内部 ECG 折线。
+
+  为什么是线稿心形而不是实心爱心：播放栏的爱心语义已被「收藏」占用
+  （NowPlayingCoverTopBar / LyricsScreen / NowPlayingQueueSheet / RecentScreen
+  都用 Icons.Filled.Favorite 实心爱心）。这里用 stroke 线稿轮廓，与工具栏
+  其它线稿图标（随机 / 循环 / 下一首）风格一致，视觉上不会与实心收藏混淆。
+
+  为什么不是单根脉冲线：早期版本只用一条未闭合折线配 fillColor，
+  Android 会把开放路径隐式闭合后整体填成实心，渲染出一个扭曲的细楔形。
+  现在两根 path 都用 strokeColor 描边、fillColor 透明，形状所见即所得。
+
+  颜色：不写 android:tint，由调用方决定。
+  NowPlayingCoverActionToolbar 通过 toolbarActiveTint(...) 传入激活色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 心形轮廓 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,21.35 L10.55,20.03 C5.4,15.36 2,12.28 2,8.5 C2,5.42 4.42,3 7.5,3 C9.24,3 10.91,3.81 12,5.09 C13.09,3.81 14.76,3 16.5,3 C19.58,3 22,5.42 22,8.5 C22,12.28 18.6,15.36 13.45,20.03 L12,21.35 Z" />
+
+    <!-- 心形内部的 ECG 折线 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="1.15"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M7.6,11.2 H9.8 L10.8,8.6 L12.5,14.2 L13.6,10.8 L14.5,12.4 H16.8" />
+</vector>
