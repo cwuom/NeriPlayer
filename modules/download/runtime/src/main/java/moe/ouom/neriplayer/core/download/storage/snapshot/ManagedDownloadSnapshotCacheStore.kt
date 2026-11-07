@@ -6,11 +6,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS
 import moe.ouom.neriplayer.common.logging.NPLogger
 import kotlin.time.Duration.Companion.milliseconds
@@ -71,7 +75,11 @@ internal class ManagedDownloadSnapshotCacheStore(
     @Volatile
     private var snapshotGeneration: Long = 0L
 
+    @Volatile
     private var snapshotRevision: Long = 0L
+
+    private val coverRevisionState = MutableStateFlow(0L)
+    val coverRevision: StateFlow<Long> = coverRevisionState.asStateFlow()
 
     private val snapshotMutationLock = Any()
     private val snapshotPersistenceLock = Any()
@@ -86,9 +94,7 @@ internal class ManagedDownloadSnapshotCacheStore(
         return synchronized(snapshotMutationLock) { snapshotCache?.snapshot }
     }
 
-    fun snapshotRevision(): Long {
-        return synchronized(snapshotMutationLock) { snapshotRevision }
-    }
+    fun snapshotRevision(): Long = snapshotRevision
 
     fun captureSnapshot(
         context: Context,
@@ -218,9 +224,86 @@ internal class ManagedDownloadSnapshotCacheStore(
         cacheKey: String,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
     ) {
-        snapshotCache = SnapshotCache(key = cacheKey, snapshot = snapshot)
-        snapshotRevision += 1L
+        replaceSnapshotLocked(SnapshotCache(key = cacheKey, snapshot = snapshot))
         schedulePersist(context.applicationContext, cacheKey)
+    }
+
+    private fun replaceSnapshotLocked(replacement: SnapshotCache?) {
+        val coverChanged = coverLookupChanged(snapshotCache, replacement)
+        snapshotCache = replacement
+        snapshotRevision += 1L
+        if (coverChanged) {
+            coverRevisionState.value += 1L
+        }
+    }
+
+    private fun coverLookupChanged(previous: SnapshotCache?, replacement: SnapshotCache?): Boolean {
+        if (previous == null || replacement == null || previous.key != replacement.key) {
+            return previous?.snapshot?.hasCoverLookupEntries() == true ||
+                replacement?.snapshot?.hasCoverLookupEntries() == true
+        }
+        val old = previous.snapshot
+        val new = replacement.snapshot
+        if (old === new || (!old.hasCoverLookupEntries() && !new.hasCoverLookupEntries())) return false
+        return old.audioEntries != new.audioEntries ||
+            old.rootEntriesComplete != new.rootEntriesComplete ||
+            old.coverEntriesByName != new.coverEntriesByName ||
+            !hasSameCoverLookupMetadata(old.metadataByAudioName, new.metadataByAudioName) ||
+            hasChangedMetadataCoverReferences(old, new)
+    }
+
+    private fun ManagedDownloadStorage.DownloadLibrarySnapshot.hasCoverLookupEntries(): Boolean =
+        audioEntries.isNotEmpty() || coverEntriesByName.isNotEmpty()
+
+    private fun hasSameCoverLookupMetadata(
+        previous: Map<String, DownloadedAudioMetadata>,
+        replacement: Map<String, DownloadedAudioMetadata>
+    ): Boolean {
+        if (previous === replacement) return true
+        if (previous.size != replacement.size) return false
+        // 规范化后的文件名或引用相同，查找时会优先选取先出现的元数据
+        val replacementEntries = replacement.entries.iterator()
+        return previous.entries.all { (name, metadata) ->
+            val entry = replacementEntries.next()
+            name == entry.key && metadata.hasSameCoverLookupInputs(entry.value)
+        }
+    }
+
+    private fun DownloadedAudioMetadata.hasSameCoverLookupInputs(other: DownloadedAudioMetadata): Boolean =
+        stableKey == other.stableKey &&
+            songId == other.songId &&
+            mediaUri == other.mediaUri &&
+            channelId == other.channelId &&
+            audioId == other.audioId &&
+            subAudioId == other.subAudioId &&
+            audioFileName == other.audioFileName &&
+            coverPath == other.coverPath &&
+            downloadFinalized == other.downloadFinalized &&
+            audioPublicationPending == other.audioPublicationPending &&
+            metadataEmbeddingState == other.metadataEmbeddingState
+
+    private fun hasChangedMetadataCoverReferences(
+        previous: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        replacement: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): Boolean {
+        if (previous.knownReferences.hasSameIterationOrder(replacement.knownReferences) &&
+            previous.lyricEntriesByName.values.hasSameIterationOrder(replacement.lyricEntriesByName.values)
+        ) {
+            return false
+        }
+        // 旧快照的封面引用也可能通过其它目录中的同一文件解析
+        return previous.metadataByAudioName.values.any { metadata ->
+            val reference = metadata.coverPath ?: return@any false
+            ManagedDownloadArtifactPlanner.trustedMetadataReference(reference, previous) !=
+                ManagedDownloadArtifactPlanner.trustedMetadataReference(reference, replacement)
+        }
+    }
+
+    private fun <T> Collection<T>.hasSameIterationOrder(other: Collection<T>): Boolean {
+        if (this === other) return true
+        if (size != other.size) return false
+        val entries = other.iterator()
+        return all { it == entries.next() }
     }
 
     fun restorePersisted(
@@ -263,8 +346,7 @@ internal class ManagedDownloadSnapshotCacheStore(
             if (currentCache?.key == restored.first) {
                 currentCache.snapshot
             } else {
-                snapshotCache = SnapshotCache(key = restored.first, snapshot = restored.second)
-                snapshotRevision += 1L
+                replaceSnapshotLocked(SnapshotCache(key = restored.first, snapshot = restored.second))
                 restored.second
             }
         }
@@ -378,8 +460,7 @@ internal class ManagedDownloadSnapshotCacheStore(
     }
 
     private fun invalidateLocked(appContext: Context?): Job? {
-        snapshotCache = null
-        snapshotRevision += 1L
+        replaceSnapshotLocked(null)
         var clearJobToStart: Job? = null
         synchronized(snapshotPersistenceLock) {
             snapshotGeneration += 1L

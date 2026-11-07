@@ -21,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
@@ -660,7 +661,7 @@ fun rememberPlaylistDisplayCoverUrl(
 ): String? {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
-    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
+    val revision = rememberCollectionCoverRevision()
     val normalizedPreferredCover = preferredCoverUrl
         ?.trim()
         ?.takeIf(String::isNotBlank)
@@ -677,23 +678,27 @@ fun rememberPlaylistDisplayCoverUrl(
     } else {
         additionalCoverCandidates
     }
-    val playlistKey = effectivePlaylist?.let { playlist ->
-        playlistCoverResolutionCacheKey(playlist, effectiveCoverCandidates) +
-            "|preferred=${normalizedPreferredCover.orEmpty()}"
-    } ?: normalizedPreferredCover?.let { "preferred:$it" }
-    val resolvedCacheKey = versionedCoverCacheKey(playlistKey, downloadPresenceVersion)
-    var coverUrl by remember(playlistKey) {
+    val visualKey = effectivePlaylist?.coverResolutionKey(effectiveCoverCandidates, ::playlistCoverVisualSignature)
+        ?.let { "$it|preferred=${normalizedPreferredCover.orEmpty()}" }
+        ?: normalizedPreferredCover?.let { "preferred:$it" }
+    val resolutionKey = effectivePlaylist?.let {
+        playlistCoverResolutionCacheKey(it, effectiveCoverCandidates)
+    }
+    val cache = remember(visualKey, resolutionKey, revision) {
+        CollectionCoverCache("playlist", visualKey, resolutionKey, revision)
+    }
+    var coverUrl by remember(visualKey, revision.root) {
         mutableStateOf(
-            cachedResolvedCover(resolvedCacheKey)
+            cache.resolved()
                 ?: normalizedPreferredCover
                 ?: effectivePlaylist?.customCoverUrl?.takeIf { it.isNotBlank() }
+                ?: cache.previous()
         )
     }
 
     LaunchedEffect(
-        playlistKey,
+        cache,
         appContext,
-        downloadPresenceVersion,
         resolveLocalFallback,
         allowEmbeddedCoverFallback,
         normalizedPreferredCover
@@ -709,12 +714,13 @@ fun rememberPlaylistDisplayCoverUrl(
             }
             currentCoroutineContext().ensureActive()
             if (preferredUsable) {
-                rememberResolvedCover(resolvedCacheKey, normalizedPreferredCover)
-                coverUrl = choosePreferredPlaylistCover(
-                    preferredCoverUrl = normalizedPreferredCover,
-                    fallbackCoverUrl = null,
-                    preferredCoverUsable = true
-                )
+                if (cache.publish(normalizedPreferredCover)) {
+                    coverUrl = choosePreferredPlaylistCover(
+                        preferredCoverUrl = normalizedPreferredCover,
+                        fallbackCoverUrl = null,
+                        preferredCoverUsable = true
+                    )
+                }
                 return@LaunchedEffect
             }
             // keep the last frame visible until a replacement is resolved or rejected
@@ -724,38 +730,29 @@ fun rememberPlaylistDisplayCoverUrl(
             return@LaunchedEffect
         }
 
-        val cachedCover = cachedResolvedCover(resolvedCacheKey)
+        val cachedCover = cache.resolved()
         if (!cachedCover.isNullOrBlank()) {
             val cacheIsUsable = withContext(coverProbeDispatcher) {
                 isUsableCoverReference(appContext, cachedCover)
             }
             if (cacheIsUsable) {
-                coverUrl = cachedCover
+                if (cache.isCurrent()) coverUrl = cachedCover
                 return@LaunchedEffect
             }
-            forgetResolvedCover(resolvedCacheKey)
         }
         val immediateCover = withContext(coverProbeDispatcher) {
             resolveImmediatePlaylistCover(
                 context = appContext,
                 playlist = effectivePlaylist,
                 additionalCoverCandidates = effectiveCoverCandidates,
-                probeGeneration = downloadPresenceVersion
+                probeGeneration = revision.downloadPresence
             )
         }
         if (!immediateCover.isNullOrBlank()) {
-            rememberResolvedCover(resolvedCacheKey, immediateCover)
-            coverUrl = retainCoverDuringResolution(coverUrl, immediateCover)
+            if (cache.publish(immediateCover)) coverUrl = immediateCover
         }
         if (!resolveLocalFallback || !allowEmbeddedCoverFallback) {
-            if (immediateCover.isNullOrBlank()) {
-                coverUrl = finishCoverResolution(
-                    coverUrl,
-                    null,
-                    resolutionComplete = true,
-                    currentCoverUsable = false
-                )
-            }
+            if (immediateCover.isNullOrBlank() && cache.publish(null)) coverUrl = null
             return@LaunchedEffect
         }
         if (
@@ -771,19 +768,9 @@ fun rememberPlaylistDisplayCoverUrl(
             context = appContext,
             playlist = effectivePlaylist,
             additionalCoverCandidates = effectiveCoverCandidates,
-            probeGeneration = downloadPresenceVersion
+            probeGeneration = revision.downloadPresence
         )
-        if (!resolvedCover.isNullOrBlank()) {
-            rememberResolvedCover(resolvedCacheKey, resolvedCover)
-            coverUrl = resolvedCover
-        } else if (immediateCover.isNullOrBlank()) {
-            coverUrl = finishCoverResolution(
-                coverUrl,
-                null,
-                resolutionComplete = true,
-                currentCoverUsable = false
-            )
-        }
+        if (cache.publish(resolvedCover)) coverUrl = resolvedCover
     }
 
     return coverUrl
@@ -800,19 +787,15 @@ private suspend fun resolvePlaylistCoverFallbackGradually(
             currentCoroutineContext().ensureActive()
             if (!song.isLocalSong()) continue
 
-            val fastCover = resolveCachedSongDisplayCoverUrl(
-                context = context,
-                song = song,
-                probeGeneration = probeGeneration,
-                allowRemoteCoverFallback = song.allowsRemoteCoverFallback()
-            )
-            if (!fastCover.isNullOrBlank()) return fastCover
+            val allowRemoteCoverFallback = song.allowsRemoteCoverFallback()
             val resolvedCover = withContext(embeddedCoverResolutionDispatcher) {
-                song.displayCoverUrl(
+                resolveCachedSongDisplayCoverUrl(
                     context = context,
-                    resolveLocalMetadataFallback = true
-                )
-                    ?.takeIf { isAllowedCoverCandidate(it, song.allowsRemoteCoverFallback()) }
+                    song = song,
+                    probeGeneration = probeGeneration,
+                    allowRemoteCoverFallback = allowRemoteCoverFallback
+                ) ?: song.displayCoverUrl(context = context, resolveLocalMetadataFallback = true)
+                    ?.takeIf { isAllowedCoverCandidate(it, allowRemoteCoverFallback) }
                     ?.takeIf { isUsableCoverReference(context, it) }
             }
             currentCoroutineContext().ensureActive()
@@ -865,17 +848,22 @@ fun rememberLocalArtistDisplayCoverUrl(
 ): String? {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
-    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
+    val revision = rememberCollectionCoverRevision()
     val artistKey = remember(artist) {
         artist?.coverResolutionKey()
     }
-    val resolvedCacheKey = versionedCoverCacheKey(artistKey, downloadPresenceVersion)
+    val visualKey = remember(artist) {
+        artist?.coverResolutionKey(::playlistCoverVisualSignature)
+    }
+    val cache = remember(visualKey, artistKey, revision) {
+        CollectionCoverCache("artist", visualKey, artistKey, revision)
+    }
     val allowRemoteCoverFallback = artist?.songs?.any {
         it.allowsRemoteCoverFallback()
     } == true
-    var coverUrl by remember(artistKey) {
-        val cachedCover = cachedResolvedCover(resolvedCacheKey)
-            ?.takeIf { isAllowedCoverCandidate(it, allowRemoteCoverFallback) }
+    var coverUrl by remember(visualKey, revision.root, allowRemoteCoverFallback) {
+        val cachedCover = cache.resolved(allowRemoteCoverFallback)
+            ?: cache.previous(allowRemoteCoverFallback)
         val immediateCover = artist?.songs?.asSequence()
             ?.mapNotNull { song ->
                 song.displayCoverUrl()
@@ -888,9 +876,8 @@ fun rememberLocalArtistDisplayCoverUrl(
     }
 
     LaunchedEffect(
-        artistKey,
+        cache,
         appContext,
-        downloadPresenceVersion,
         resolveLocalFallback,
         allowRemoteCoverFallback
     ) {
@@ -899,36 +886,22 @@ fun rememberLocalArtistDisplayCoverUrl(
             return@LaunchedEffect
         }
 
-        val immediateCover = artist.songs.asSequence()
-            .mapNotNull { song ->
-                song.displayCoverUrl()
-                    ?.takeIf {
+        val immediateCover = withContext(coverProbeDispatcher) {
+            artist.songs.asSequence()
+                .mapNotNull { song ->
+                    song.displayCoverUrl()?.takeIf {
                         isAllowedCoverCandidate(it, song.allowsRemoteCoverFallback()) &&
-                            isFastCoverReference(it) &&
-                            isUsableCoverReference(appContext, it)
+                            isFastCoverReference(it) && isUsableCoverReference(appContext, it)
                     }
-            }
-            .firstOrNull()
-        val cachedCover = cachedResolvedCover(resolvedCacheKey)
-            ?.takeIf { isAllowedCoverCandidate(it, allowRemoteCoverFallback) }
-        if (!cachedCover.isNullOrBlank()) {
-            val cacheIsUsable = withContext(coverProbeDispatcher) {
-                isUsableCoverReference(appContext, cachedCover)
-            }
-            if (cacheIsUsable) {
-                coverUrl = cachedCover
-            } else {
-                forgetResolvedCover(resolvedCacheKey)
-            }
+                }
+                .firstOrNull()
+                ?: cache.resolved(allowRemoteCoverFallback)?.takeIf { isUsableCoverReference(appContext, it) }
         }
         if (!immediateCover.isNullOrBlank()) {
-            rememberResolvedCover(resolvedCacheKey, immediateCover)
-            coverUrl = immediateCover
+            if (cache.publish(immediateCover)) coverUrl = immediateCover
         }
         if (!resolveLocalFallback) {
-            if (immediateCover.isNullOrBlank()) {
-                coverUrl = finishCoverResolution(coverUrl, null, resolutionComplete = true)
-            }
+            if (immediateCover.isNullOrBlank() && cache.publish(null)) coverUrl = null
             return@LaunchedEffect
         }
 
@@ -943,11 +916,8 @@ fun rememberLocalArtistDisplayCoverUrl(
                 }
                 .firstOrNull()
         }
-        if (!resolvedCover.isNullOrBlank()) {
-            rememberResolvedCover(resolvedCacheKey, resolvedCover)
-            coverUrl = resolvedCover
-        } else if (immediateCover.isNullOrBlank()) {
-            coverUrl = finishCoverResolution(coverUrl, null, resolutionComplete = true)
+        if (!resolvedCover.isNullOrBlank() || immediateCover.isNullOrBlank()) {
+            if (cache.publish(resolvedCover)) coverUrl = resolvedCover
         }
     }
 
@@ -963,14 +933,14 @@ internal fun cachedResolvedCover(key: String?): String? {
 
 internal fun cachedStableResolvedCover(
     aliases: List<String>,
-    validationKey: String,
+    validationKey: String?,
     allowRemoteCoverFallback: Boolean = true
 ): String? {
     if (aliases.isEmpty()) return null
     return synchronized(stableResolvedCoverMemoryCache) {
         aliases.firstNotNullOfOrNull { alias ->
             stableResolvedCoverMemoryCache[alias]
-                ?.takeIf { it.validationKey == validationKey }
+                ?.takeIf { validationKey == null || it.validationKey == validationKey }
                 ?.takeIf {
                     isAllowedCoverCandidate(it.coverUrl, allowRemoteCoverFallback)
                 }
@@ -1004,6 +974,51 @@ internal fun versionedCoverCacheKey(baseKey: String?, generation: Int): String? 
 internal fun versionedCoverCacheKey(baseKey: String?, generation: String): String? {
     if (baseKey.isNullOrBlank()) return null
     return "$baseKey|generation=$generation"
+}
+
+private data class CollectionCoverRevision(val downloadPresence: Int, val storage: String, val root: Long)
+
+@Composable
+private fun rememberCollectionCoverRevision(): CollectionCoverRevision {
+    val downloadPresence by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
+    val storage by ManagedDownloadStorage.coverLookupRevisions.collectAsStateWithLifecycle(
+        initialValue = ManagedDownloadStorage.coverLookupRevision()
+    )
+    val root by LocalAssetInvalidationBus.rootGenerationFlow.collectAsStateWithLifecycle()
+    return CollectionCoverRevision(downloadPresence, storage, root)
+}
+
+private class CollectionCoverCache(
+    kind: String,
+    visualKey: String?,
+    resolutionKey: String?,
+    private val revision: CollectionCoverRevision
+) {
+    private val aliases = listOfNotNull(visualKey?.let { "$kind:${revision.root}:$it" })
+    private val validationKey = "${revision.downloadPresence}:${revision.storage}:${resolutionKey.orEmpty()}"
+
+    fun resolved(allowRemoteFallback: Boolean = true): String? =
+        cachedStableResolvedCover(aliases, validationKey, allowRemoteFallback)
+
+    fun previous(allowRemoteFallback: Boolean = true): String? =
+        cachedStableResolvedCover(aliases, null, allowRemoteFallback)
+
+    fun isCurrent(): Boolean =
+        revision.downloadPresence == GlobalDownloadManager.downloadPresenceVersion.value &&
+            revision.storage == ManagedDownloadStorage.coverLookupRevision() &&
+            revision.root == LocalAssetInvalidationBus.rootGenerationFlow.value
+
+    fun publish(reference: String?): Boolean {
+        if (!isCurrent()) return false
+        if (reference == null) {
+            synchronized(stableResolvedCoverMemoryCache) {
+                aliases.forEach(stableResolvedCoverMemoryCache::remove)
+            }
+        } else {
+            rememberStableResolvedCover(aliases, reference, validationKey)
+        }
+        return true
+    }
 }
 
 internal fun forgetResolvedCover(key: String?) {
@@ -1054,41 +1069,57 @@ internal fun playlistCoverResolutionCacheKey(
 }
 
 private fun LocalPlaylist.coverResolutionKey(
-    additionalCoverCandidates: List<SongItem>
+    additionalCoverCandidates: List<SongItem>,
+    signature: (List<SongItem>) -> Long = ::playlistCoverResolutionSignature
 ): String {
     return listOf(
         id.toString(),
         modifiedAt.toString(),
         customCoverUrl.orEmpty(),
         songs.size.toString(),
-        playlistCoverResolutionSignature(songs).toString(),
+        signature(songs).toString(),
         additionalCoverCandidates.size.toString(),
-        playlistCoverResolutionSignature(additionalCoverCandidates).toString()
+        signature(additionalCoverCandidates).toString()
     ).joinToString("|")
 }
 
-private fun LocalArtistSummary.coverResolutionKey(): String {
+private fun LocalArtistSummary.coverResolutionKey(
+    signature: (List<SongItem>) -> Long = ::playlistCoverResolutionSignature
+): String {
     return listOf(
         stableKey,
         name,
         songs.size.toString(),
-        playlistCoverResolutionSignature(songs).toString()
+        signature(songs).toString()
     ).joinToString("|")
 }
 
 internal fun playlistCoverResolutionSignature(songs: List<SongItem>): Long =
     songs.fold(1_125_899_906_842_597L) { signature, song -> signature.mixCoverSignature(song) }
 
-private fun Long.mixCoverSignature(song: SongItem): Long = this
+private fun playlistCoverVisualSignature(songs: List<SongItem>): Long =
+    songs.fold(1_125_899_906_842_597L) { signature, song -> signature.mixCoverVisualSignature(song) }
+
+private fun Long.mixCoverSignature(song: SongItem): Long = mixCoverVisualSignature(song)
+    .mixSignature(song.name)
+    .mixSignature(song.artist)
+    .mixSignature(song.customName ?: song.name)
+    .mixSignature(song.customArtist ?: song.artist)
+    .mixSignature(song.originalName)
+    .mixSignature(song.originalArtist)
+    .mixSignature(song.durationMs)
+
+private fun Long.mixCoverVisualSignature(song: SongItem): Long = this
     .mixSignature(song.id)
     .mixSignature(song.album.hashCode().toLong())
     .mixSignature(song.albumId)
     .mixSignature(song.customCoverUrl)
     .mixSignature(song.coverUrl)
     .mixSignature(song.originalCoverUrl)
+    .mixSignature(song.localFileName)
     .mixSignature(song.localFilePath)
     .mixSignature(song.mediaUri)
-    .mixSignatureWhenPresent(AudioDownloadManager.peekLocalCoverUri(song))
+    .mixSignature(song.explicitLocalSourceReference)
     .mixSignature(song.channelId)
     .mixSignature(song.audioId)
     .mixSignature(song.subAudioId)
@@ -1097,6 +1128,3 @@ private fun Long.mixCoverSignature(song: SongItem): Long = this
 private fun Long.mixSignature(value: Long): Long = 31L * this + value
 
 private fun Long.mixSignature(value: String?): Long = mixSignature(value.orEmpty().hashCode().toLong())
-
-private fun Long.mixSignatureWhenPresent(value: String?): Long =
-    if (value.isNullOrBlank()) this else mixSignature(value)

@@ -115,21 +115,24 @@ class CoverReferenceHelpersTest {
     }
 
     @Test
-    fun `playlist cover signature keeps the original rolling hash`() {
-        val first = song().copy(
-            customCoverUrl = "custom",
-            originalCoverUrl = "original",
-            localFilePath = "/music/a.mp3",
-            mediaUri = "content://a",
-            channelId = "local",
-            audioId = "1",
-            subAudioId = "2",
-            sourceStableKey = "source"
+    fun `playlist cover signature changes when legacy download matching inputs change`() {
+        val track = song()
+        val original = playlistCoverResolutionSignature(listOf(track))
+        val variants = listOf(
+            track.copy(name = "Renamed track"),
+            track.copy(artist = "Another artist"),
+            track.copy(customName = "Custom title"),
+            track.copy(customArtist = "Custom artist"),
+            track.copy(originalName = "Original title"),
+            track.copy(originalArtist = "Original artist"),
+            track.copy(durationMs = 4_000L),
+            track.copy(localFileName = "old-download.m4a"),
+            track.copy(explicitLocalSourceReference = "content://music/track")
         )
-        val second = song().copy(id = 2L, album = "other", albumId = 9L)
-
-        assertEquals(1_125_899_906_842_597L, playlistCoverResolutionSignature(emptyList()))
-        assertEquals(legacySignature(listOf(first, second)), playlistCoverResolutionSignature(listOf(first, second)))
+        variants.forEach { updated ->
+            assertNotEquals(updated.toString(), original, playlistCoverResolutionSignature(listOf(updated)))
+        }
+        assertEquals(original, playlistCoverResolutionSignature(listOf(track.copy(matchedLyric = "lyrics"))))
     }
 
     @Test
@@ -195,27 +198,6 @@ class CoverReferenceHelpersTest {
         assertNull(cachedStableResolvedCover(listOf(alias), "v2"))
         assertNull(cachedStableResolvedCover(listOf(alias), "v1", allowRemoteCoverFallback = false))
         assertEquals("https://example.com/a.jpg", cachedStableResolvedCover(listOf(otherAlias, alias), "v1"))
-    }
-
-    private fun legacySignature(songs: List<SongItem>): Long {
-        var signature = 1_125_899_906_842_597L
-        songs.forEach { song ->
-            signature = 31L * signature + song.id
-            signature = 31L * signature + song.album.hashCode()
-            signature = 31L * signature + song.albumId
-            listOf(
-                song.customCoverUrl,
-                song.coverUrl,
-                song.originalCoverUrl,
-                song.localFilePath,
-                song.mediaUri,
-                song.channelId,
-                song.audioId,
-                song.subAudioId,
-                song.sourceStableKey
-            ).forEach { value -> signature = 31L * signature + value.orEmpty().hashCode() }
-        }
-        return signature
     }
 
     private fun song(): SongItem = SongItem(

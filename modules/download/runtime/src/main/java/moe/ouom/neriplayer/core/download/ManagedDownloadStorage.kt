@@ -22,10 +22,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndex
@@ -1046,6 +1048,16 @@ object ManagedDownloadStorage {
         val snapshot = snapshotCacheStore.peekSnapshot() ?: return null
         return ManagedDownloadCoverLookup.findCoverReference(snapshot, audio)
     }
+
+    val coverLookupRevisions: Flow<String> = combine(
+        snapshotCacheStore.coverRevision,
+        settings.fileNameTemplateState
+    ) { snapshotRevision, template -> "$snapshotRevision:${template.revision}" }
+
+    /** 封面和模板可独立于下载目录更新，发布解析结果前需要核对当前版本 */
+    fun coverLookupRevision(): String =
+        "${snapshotCacheStore.coverRevision.value}:${settings.fileNameTemplateState.value.revision}"
+
     internal fun shouldUseSidecarRefreshForCoverLookup(
         forceRefresh: Boolean,
         preferSidecarRefresh: Boolean,

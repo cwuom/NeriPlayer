@@ -59,6 +59,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
@@ -96,6 +97,124 @@ class DownloadedCoverOfflineRenderingTest {
             extension = "opus",
             expectedColor = AndroidColor.BLUE
         )
+    }
+
+    @Test
+    fun playlistCoverRefreshesInPlaceAndSurvivesUnrelatedChanges() = runBlocking {
+        GlobalDownloadManager.startupRecoveryMutex.withLock {
+            val baseContext = InstrumentationRegistry.getInstrumentation().targetContext
+            val ownedDirectory = File(baseContext.cacheDir, "playlist-cover-${UUID.randomUUID()}")
+            check(ownedDirectory.mkdir())
+            val context = IsolatedCoverContext(baseContext, ownedDirectory)
+            val previousSongs = GlobalDownloadManager.downloadedSongs.value
+            val mounted = mutableStateOf(true)
+            var contentSet = false
+            try {
+                val audio = File(ownedDirectory, "download.m4a").apply { writeText("audio") }
+                val cover = File(ownedDirectory, "download.png")
+                val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+                try {
+                    bitmap.eraseColor(AndroidColor.RED)
+                    cover.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+                } finally {
+                    bitmap.recycle()
+                }
+                val song = SongItem(
+                    id = System.nanoTime(),
+                    name = "Downloaded playlist track",
+                    artist = "Cover fixture",
+                    album = "youtube_music",
+                    albumId = 0L,
+                    durationMs = 100L,
+                    coverUrl = "https://offline-artwork.invalid/playlist.png"
+                )
+                val playlist = mutableStateOf(LocalPlaylist(song.id, "Downloaded playlist", mutableListOf(song)))
+                GlobalDownloadManager.publishDownloadedSongs(
+                    context,
+                    listOf(DownloadedSong(
+                        id = song.id,
+                        name = song.name,
+                        artist = song.artist,
+                        album = song.album,
+                        filePath = audio.absolutePath,
+                        fileSize = audio.length(),
+                        downloadTime = 1L,
+                        stableKey = song.stableKey(),
+                        sourceIdentityAlbum = song.album,
+                        localFileName = audio.name
+                    )),
+                    persistCatalog = false
+                )
+                publishFinalizedAudioSnapshot(context, audio, song)
+                val downloadPresence = GlobalDownloadManager.downloadPresenceVersion.value
+                val playlistKey = playlistCoverResolutionCacheKey(playlist.value)
+                val resolvedCover = AtomicReference<String?>()
+                val renderedCovers = mutableListOf<String?>()
+                composeRule.setContent {
+                    if (mounted.value) {
+                        CompositionLocalProvider(LocalContext provides context) {
+                            val reference = rememberPlaylistDisplayCoverUrl(playlist.value)
+                            SideEffect {
+                                resolvedCover.set(reference)
+                                renderedCovers += reference
+                            }
+                        }
+                    }
+                }
+                contentSet = true
+                composeRule.waitUntil(10_000L) { resolvedCover.get() == song.coverUrl }
+
+                publishFinalizedAudioSnapshot(context, audio, song, cover)
+                val localReference = requireNotNull(AudioDownloadManager.peekLocalCoverUri(song))
+                assertEquals(downloadPresence, GlobalDownloadManager.downloadPresenceVersion.value)
+                assertEquals(
+                    "playlist metadata keys must not consult the download index",
+                    playlistKey,
+                    playlistCoverResolutionCacheKey(playlist.value)
+                )
+                composeRule.waitUntil(10_000L) { resolvedCover.get() == localReference }
+
+                composeRule.runOnIdle { mounted.value = false }
+                val unrelatedCover = cover.copyTo(File(ownedDirectory, "another.png"))
+                publishFinalizedAudioSnapshot(context, audio, song, cover, unrelatedCover)
+                composeRule.runOnIdle {
+                    renderedCovers.clear()
+                    mounted.value = true
+                }
+                composeRule.waitForIdle()
+                assertEquals(localReference, composeRule.runOnIdle { renderedCovers.first() })
+
+                composeRule.runOnIdle {
+                    renderedCovers.clear()
+                    playlist.value = playlist.value.copy(songs = mutableListOf(song.copy(durationMs = 10_000L)))
+                }
+                composeRule.waitForIdle()
+                assertEquals(localReference, composeRule.runOnIdle { renderedCovers.first() })
+                composeRule.waitUntil(10_000L) { resolvedCover.get() == localReference }
+
+                composeRule.runOnIdle {
+                    mounted.value = false
+                    playlist.value = playlist.value.copy(songs = mutableListOf(song.copy(durationMs = 20_000L)))
+                }
+                composeRule.runOnIdle {
+                    renderedCovers.clear()
+                    mounted.value = true
+                }
+                composeRule.waitForIdle()
+                assertEquals(localReference, composeRule.runOnIdle { renderedCovers.first() })
+            } finally {
+                try {
+                    if (contentSet) {
+                        composeRule.runOnIdle { mounted.value = false }
+                        composeRule.waitForIdle()
+                    }
+                } finally {
+                    ManagedDownloadStorage.snapshotCacheStore.invalidate()
+                    GlobalDownloadManager.publishDownloadedSongs(baseContext, previousSongs, persistCatalog = false)
+                    check(ownedDirectory.deleteRecursively())
+                }
+            }
+        }
     }
 
     private suspend fun assertDownloadedArtworkRenders(
@@ -263,15 +382,14 @@ class DownloadedCoverOfflineRenderingTest {
         }
     }
 
-    private suspend fun publishFinalizedAudioSnapshot(context: Context, audio: File, song: SongItem) {
-        val entry = ManagedDownloadStorage.StoredEntry(
-            name = audio.name,
-            reference = audio.absolutePath,
-            mediaUri = audio.toURI().toString(),
-            localFilePath = audio.absolutePath,
-            sizeBytes = audio.length(),
-            lastModifiedMs = audio.lastModified()
-        )
+    private suspend fun publishFinalizedAudioSnapshot(
+        context: Context,
+        audio: File,
+        song: SongItem,
+        cover: File? = null,
+        unrelatedCover: File? = null
+    ) {
+        val entry = audio.toStoredEntry()
         val metadata = DownloadedAudioMetadata(
             stableKey = song.stableKey(),
             songId = song.id,
@@ -279,7 +397,7 @@ class DownloadedCoverOfflineRenderingTest {
             name = song.name,
             artist = song.artist,
             mediaUri = song.mediaUri,
-            coverPath = null,
+            coverPath = cover?.absolutePath,
             downloadFinalized = true,
             metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
         )
@@ -287,7 +405,7 @@ class DownloadedCoverOfflineRenderingTest {
             audioEntries = listOf(entry),
             metadataEntries = emptyList(),
             metadataByAudioName = mapOf(entry.name to metadata),
-            coverEntries = emptyList(),
+            coverEntries = listOfNotNull(cover?.toStoredEntry(), unrelatedCover?.toStoredEntry()),
             lyricEntries = emptyList()
         )
         val store = ManagedDownloadStorage.snapshotCacheStore
@@ -296,6 +414,15 @@ class DownloadedCoverOfflineRenderingTest {
         val persistField = store.javaClass.getDeclaredField("snapshotPersistJob").apply { isAccessible = true }
         (persistField.get(store) as? Job)?.cancelAndJoin()
     }
+
+    private fun File.toStoredEntry() = ManagedDownloadStorage.StoredEntry(
+        name = name,
+        reference = absolutePath,
+        mediaUri = toURI().toString(),
+        localFilePath = absolutePath,
+        sizeBytes = length(),
+        lastModifiedMs = lastModified()
+    )
 
     private suspend fun assertExternalImportArtwork(
         baseContext: Context,

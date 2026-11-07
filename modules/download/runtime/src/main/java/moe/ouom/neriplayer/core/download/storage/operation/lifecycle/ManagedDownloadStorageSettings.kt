@@ -4,31 +4,37 @@ import moe.ouom.neriplayer.core.download.naming.normalizeDownloadFileNameTemplat
 import android.content.Context
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
 
 internal class ManagedDownloadStorageSettings(
     private val defaultRootPathProvider: (Context) -> String
 ) {
+    data class FileNameTemplateState(val template: String?, val revision: Long)
+
     @Volatile
     private var customDirectoryUri: String? = null
 
     @Volatile
     private var customDirectoryLabel: String? = null
 
-    @Volatile
-    private var downloadFileNameTemplate: String? = null
+    private val mutableFileNameTemplateState = MutableStateFlow(FileNameTemplateState(null, 0L))
+    val fileNameTemplateState: StateFlow<FileNameTemplateState> = mutableFileNameTemplateState.asStateFlow()
 
     val configuredDirectoryUri: String?
         get() = customDirectoryUri
 
     val fileNameTemplate: String?
-        get() = downloadFileNameTemplate
+        get() = fileNameTemplateState.value.template
 
     fun prime(directoryUri: String?, directoryLabel: String?, fileNameTemplate: String?) {
         customDirectoryUri = directoryUri?.takeIf { it.isNotBlank() }
         customDirectoryLabel = directoryLabel?.takeIf { it.isNotBlank() }
-        downloadFileNameTemplate = normalizeDownloadFileNameTemplate(fileNameTemplate)
+        updateFileNameTemplate(fileNameTemplate)
     }
 
     @Synchronized
@@ -44,7 +50,11 @@ internal class ManagedDownloadStorageSettings(
     }
 
     fun updateFileNameTemplate(template: String?) {
-        downloadFileNameTemplate = normalizeDownloadFileNameTemplate(template)
+        val normalizedTemplate = normalizeDownloadFileNameTemplate(template)
+        mutableFileNameTemplateState.update { current ->
+            if (current.template == normalizedTemplate) current
+            else FileNameTemplateState(normalizedTemplate, current.revision + 1L)
+        }
     }
 
     fun describeDirectory(context: Context, uriString: String? = customDirectoryUri): String {
