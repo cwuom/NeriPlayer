@@ -1046,6 +1046,11 @@ object ManagedDownloadStorage {
         val snapshot = snapshotCacheStore.peekSnapshot() ?: return null
         return ManagedDownloadCoverLookup.findCoverReference(snapshot, audio)
     }
+
+    /** 侧载封面刷新和旧文件名匹配规则的变更可以独立于下载目录发布 */
+    fun coverLookupRevision(): String =
+        "${snapshotCacheStore.snapshotRevision()}:${settings.fileNameTemplate.orEmpty()}"
+
     internal fun shouldUseSidecarRefreshForCoverLookup(
         forceRefresh: Boolean,
         preferSidecarRefresh: Boolean,

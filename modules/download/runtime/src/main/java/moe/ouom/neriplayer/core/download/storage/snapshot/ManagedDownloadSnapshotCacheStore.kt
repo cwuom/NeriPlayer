@@ -71,6 +71,7 @@ internal class ManagedDownloadSnapshotCacheStore(
     @Volatile
     private var snapshotGeneration: Long = 0L
 
+    @Volatile
     private var snapshotRevision: Long = 0L
 
     private val snapshotMutationLock = Any()
@@ -86,9 +87,7 @@ internal class ManagedDownloadSnapshotCacheStore(
         return synchronized(snapshotMutationLock) { snapshotCache?.snapshot }
     }
 
-    fun snapshotRevision(): Long {
-        return synchronized(snapshotMutationLock) { snapshotRevision }
-    }
+    fun snapshotRevision(): Long = snapshotRevision
 
     fun captureSnapshot(
         context: Context,

@@ -21,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
@@ -681,7 +682,7 @@ fun rememberPlaylistDisplayCoverUrl(
         playlistCoverResolutionCacheKey(playlist, effectiveCoverCandidates) +
             "|preferred=${normalizedPreferredCover.orEmpty()}"
     } ?: normalizedPreferredCover?.let { "preferred:$it" }
-    val resolvedCacheKey = versionedCoverCacheKey(playlistKey, downloadPresenceVersion)
+    val resolvedCacheKey = collectionCoverCacheKey(playlistKey, downloadPresenceVersion)
     var coverUrl by remember(playlistKey) {
         mutableStateOf(
             cachedResolvedCover(resolvedCacheKey)
@@ -691,9 +692,8 @@ fun rememberPlaylistDisplayCoverUrl(
     }
 
     LaunchedEffect(
-        playlistKey,
+        resolvedCacheKey,
         appContext,
-        downloadPresenceVersion,
         resolveLocalFallback,
         allowEmbeddedCoverFallback,
         normalizedPreferredCover
@@ -800,19 +800,15 @@ private suspend fun resolvePlaylistCoverFallbackGradually(
             currentCoroutineContext().ensureActive()
             if (!song.isLocalSong()) continue
 
-            val fastCover = resolveCachedSongDisplayCoverUrl(
-                context = context,
-                song = song,
-                probeGeneration = probeGeneration,
-                allowRemoteCoverFallback = song.allowsRemoteCoverFallback()
-            )
-            if (!fastCover.isNullOrBlank()) return fastCover
+            val allowRemoteCoverFallback = song.allowsRemoteCoverFallback()
             val resolvedCover = withContext(embeddedCoverResolutionDispatcher) {
-                song.displayCoverUrl(
+                resolveCachedSongDisplayCoverUrl(
                     context = context,
-                    resolveLocalMetadataFallback = true
-                )
-                    ?.takeIf { isAllowedCoverCandidate(it, song.allowsRemoteCoverFallback()) }
+                    song = song,
+                    probeGeneration = probeGeneration,
+                    allowRemoteCoverFallback = allowRemoteCoverFallback
+                ) ?: song.displayCoverUrl(context = context, resolveLocalMetadataFallback = true)
+                    ?.takeIf { isAllowedCoverCandidate(it, allowRemoteCoverFallback) }
                     ?.takeIf { isUsableCoverReference(context, it) }
             }
             currentCoroutineContext().ensureActive()
@@ -869,7 +865,7 @@ fun rememberLocalArtistDisplayCoverUrl(
     val artistKey = remember(artist) {
         artist?.coverResolutionKey()
     }
-    val resolvedCacheKey = versionedCoverCacheKey(artistKey, downloadPresenceVersion)
+    val resolvedCacheKey = collectionCoverCacheKey(artistKey, downloadPresenceVersion)
     val allowRemoteCoverFallback = artist?.songs?.any {
         it.allowsRemoteCoverFallback()
     } == true
@@ -888,9 +884,8 @@ fun rememberLocalArtistDisplayCoverUrl(
     }
 
     LaunchedEffect(
-        artistKey,
+        resolvedCacheKey,
         appContext,
-        downloadPresenceVersion,
         resolveLocalFallback,
         allowRemoteCoverFallback
     ) {
@@ -1006,6 +1001,11 @@ internal fun versionedCoverCacheKey(baseKey: String?, generation: String): Strin
     return "$baseKey|generation=$generation"
 }
 
+private fun collectionCoverCacheKey(baseKey: String?, downloadPresenceVersion: Int): String? {
+    if (baseKey == null) return null
+    return versionedCoverCacheKey(baseKey, "$downloadPresenceVersion:${ManagedDownloadStorage.coverLookupRevision()}")
+}
+
 internal fun forgetResolvedCover(key: String?) {
     if (key.isNullOrBlank()) return
     synchronized(resolvedCoverMemoryCache) {
@@ -1081,14 +1081,22 @@ internal fun playlistCoverResolutionSignature(songs: List<SongItem>): Long =
 
 private fun Long.mixCoverSignature(song: SongItem): Long = this
     .mixSignature(song.id)
+    .mixSignature(song.name)
+    .mixSignature(song.artist)
+    .mixSignature(song.customName ?: song.name)
+    .mixSignature(song.customArtist ?: song.artist)
+    .mixSignature(song.originalName)
+    .mixSignature(song.originalArtist)
     .mixSignature(song.album.hashCode().toLong())
     .mixSignature(song.albumId)
+    .mixSignature(song.durationMs)
     .mixSignature(song.customCoverUrl)
     .mixSignature(song.coverUrl)
     .mixSignature(song.originalCoverUrl)
+    .mixSignature(song.localFileName)
     .mixSignature(song.localFilePath)
     .mixSignature(song.mediaUri)
-    .mixSignatureWhenPresent(AudioDownloadManager.peekLocalCoverUri(song))
+    .mixSignature(song.explicitLocalSourceReference)
     .mixSignature(song.channelId)
     .mixSignature(song.audioId)
     .mixSignature(song.subAudioId)
@@ -1097,6 +1105,3 @@ private fun Long.mixCoverSignature(song: SongItem): Long = this
 private fun Long.mixSignature(value: Long): Long = 31L * this + value
 
 private fun Long.mixSignature(value: String?): Long = mixSignature(value.orEmpty().hashCode().toLong())
-
-private fun Long.mixSignatureWhenPresent(value: String?): Long =
-    if (value.isNullOrBlank()) this else mixSignature(value)
