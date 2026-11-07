@@ -1478,6 +1478,7 @@ private fun PlayerManager.observePlaybackSettings() {
             }
         }
     }
+    observeBiliBindingPlaybackSettings()
     ioScope.launch {
         settingsRepo.stopOnBluetoothDisconnectFlow.collect { enabled ->
             stopOnBluetoothDisconnectEnabled = enabled

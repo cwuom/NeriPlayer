@@ -18,7 +18,8 @@ internal object SyncArchiveMetadataWire {
         SyncPlaybackStatBucket.serializer().descriptor, SyncPlaylistSongDeletion.serializer().descriptor,
         SyncPlaylistUsageStat.serializer().descriptor, SyncLocalPlaylistPlaybackStat.serializer().descriptor,
         SyncLocalPlaylistPlaybackBucket.serializer().descriptor, SyncBiliVideoSkipRule.serializer().descriptor,
-        SyncSong.serializer().descriptor, SyncPlaylistUsageDeletion.serializer().descriptor
+        SyncSong.serializer().descriptor, SyncPlaylistUsageDeletion.serializer().descriptor,
+        SyncBiliCollectionBinding.serializer().descriptor
     )
     private val children = ConcurrentHashMap<String, Map<Int, SerialDescriptor>>()
 

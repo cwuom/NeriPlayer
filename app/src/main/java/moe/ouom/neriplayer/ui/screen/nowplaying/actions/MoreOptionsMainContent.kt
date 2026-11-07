@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Share
@@ -137,6 +138,7 @@ internal fun MoreOptionsMainContent(
     onOpenBiliCcSubtitle: () -> Unit,
     onOpenListenTogether: () -> Unit,
     onOpenEncyclopedia: () -> Unit,
+    onBindBiliSource: () -> Unit,
     onShowSongDetails: () -> Unit,
     onShowQualitySwitch: () -> Unit,
     onEnterAlbum: (AlbumSummary) -> Unit,
@@ -168,6 +170,14 @@ internal fun MoreOptionsMainContent(
                 onEnterAlbum = onEnterAlbum,
                 snackbarHostState = snackbarHostState
             )
+            if (!isLocalSong && isNeteaseAlbumNavigationSource(originalSong)) {
+                MoreOptionsItem(
+                    title = stringResource(CoreCommonR.string.bili_binding_song_entry),
+                    icon = Icons.Outlined.Link,
+                    hue = MoreHuePink,
+                    onClick = onBindBiliSource
+                )
+            }
         }
         MoreOptionsGroup {
             LyricsActions(

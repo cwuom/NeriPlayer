@@ -127,6 +127,7 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 
 - **Multi-source and local playback**: NetEase, Bilibili, YouTube Music, and local audio share one queue.
 - **Playback fallback**: NetEase downgrades quality first; with the Bilibili fallback enabled, candidates match by title, artist, and duration, and repeated failures skip automatically.
+- **Bilibili source binding**: bind a song, album, or playlist to a multi-part Bilibili video by in-app search or a pasted share link; playback and the source badge follow the binding, which syncs through GitHub / WebDAV.
 - **YouTube playback compatibility**: valid identity cookies are preserved and rotated; when a cached `player.js` or playback candidate is rejected, the app falls back to EJS/HLS instead of retrying the same candidate.
 - **Audio effects**: a self-built DSP with built-in presets, a 10-band equalizer, AutoEQ import, loudness leveling, and 32-bit high-resolution output — fully bypassed when off.
 - **USB exclusive output**: UAC1.0 and UAC2.0 Type I PCM DACs with bit-perfect output; responding to USB attach events can be disabled separately.

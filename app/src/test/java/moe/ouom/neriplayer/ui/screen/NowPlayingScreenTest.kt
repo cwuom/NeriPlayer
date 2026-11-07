@@ -1533,6 +1533,76 @@ class NowPlayingScreenTest {
         assertEquals(PlaybackSourceType.LOCAL, sourceType)
     }
 
+    @Test
+    fun `bili collection binding keeps netease badge when netease audio is playing`() {
+        val sourceType = resolveNowPlayingPlaybackSourceType(
+            isLocalSong = false,
+            isYouTubeMusicSong = false,
+            isFromNeteaseTag = true,
+            isFromBiliTag = false,
+            currentMediaUrl = "https://m701.music.126.net/demo.mp3",
+            playbackAudioSource = PlaybackAudioSource.NETEASE,
+            hasBiliCollectionBinding = true
+        )
+
+        assertEquals(PlaybackSourceType.NETEASE, sourceType)
+    }
+
+    @Test
+    fun `bili collection binding also overrides tag only resolution`() {
+        val sourceType = resolveNowPlayingPlaybackSourceType(
+            isLocalSong = false,
+            isYouTubeMusicSong = false,
+            isFromNeteaseTag = true,
+            isFromBiliTag = false,
+            currentMediaUrl = null,
+            playbackAudioSource = null,
+            hasBiliCollectionBinding = true
+        )
+
+        assertEquals(PlaybackSourceType.BILIBILI, sourceType)
+    }
+
+    @Test
+    fun `netease badge stays netease without bili collection binding`() {
+        val sourceType = resolveNowPlayingPlaybackSourceType(
+            isLocalSong = false,
+            isYouTubeMusicSong = false,
+            isFromNeteaseTag = true,
+            isFromBiliTag = false,
+            currentMediaUrl = "https://m701.music.126.net/demo.mp3",
+            playbackAudioSource = PlaybackAudioSource.NETEASE,
+            hasBiliCollectionBinding = false
+        )
+
+        assertEquals(PlaybackSourceType.NETEASE, sourceType)
+    }
+
+    @Test
+    fun `bili collection binding does not override local or youtube badges`() {
+        val localType = resolveNowPlayingPlaybackSourceType(
+            isLocalSong = true,
+            isYouTubeMusicSong = false,
+            isFromNeteaseTag = false,
+            isFromBiliTag = false,
+            currentMediaUrl = "content://media/external/audio/media/42",
+            playbackAudioSource = PlaybackAudioSource.LOCAL,
+            hasBiliCollectionBinding = true
+        )
+        val youtubeType = resolveNowPlayingPlaybackSourceType(
+            isLocalSong = false,
+            isYouTubeMusicSong = true,
+            isFromNeteaseTag = false,
+            isFromBiliTag = false,
+            currentMediaUrl = "https://music.youtube.com/demo",
+            playbackAudioSource = PlaybackAudioSource.YOUTUBE_MUSIC,
+            hasBiliCollectionBinding = true
+        )
+
+        assertEquals(PlaybackSourceType.LOCAL, localType)
+        assertEquals(PlaybackSourceType.YOUTUBE_MUSIC, youtubeType)
+    }
+
     private fun testSong(
         id: Long,
         name: String
