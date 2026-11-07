@@ -39,6 +39,7 @@ import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SkipNext
@@ -56,6 +57,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -106,6 +108,9 @@ import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.screen.nowplaying.hasCachedLocalDownload
 import moe.ouom.neriplayer.ui.screen.nowplaying.shouldHideDownloadActionForSong
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
+import moe.ouom.neriplayer.ui.viewmodel.nowplaying.NowPlayingNeteasePlaylistOwner
+import moe.ouom.neriplayer.ui.viewmodel.nowplaying.canCollectToNeteasePlaylist
+import moe.ouom.neriplayer.ui.component.playlist.NeteaseRemotePlaylistPickerDialog
 import moe.ouom.neriplayer.ui.viewmodel.album.isNeteaseAlbumNavigationSource
 import moe.ouom.neriplayer.ui.viewmodel.album.neteaseAlbumDisplayName
 import moe.ouom.neriplayer.ui.viewmodel.album.resolveNeteaseAlbum
@@ -140,7 +145,8 @@ internal fun MoreOptionsMainContent(
     onShowSongDetails: () -> Unit,
     onShowQualitySwitch: () -> Unit,
     onEnterAlbum: (AlbumSummary) -> Unit,
-    onDismissSheet: (() -> Unit) -> Unit
+    onDismissSheet: (() -> Unit) -> Unit,
+    offlineMode: Boolean
 ) {
     val scrollState = rememberScrollState()
     Column(
@@ -167,6 +173,14 @@ internal fun MoreOptionsMainContent(
                 song = originalSong,
                 onEnterAlbum = onEnterAlbum,
                 snackbarHostState = snackbarHostState
+            )
+            NeteasePlaylistCollectionAction(
+                owner = viewModel.neteasePlaylistCollection,
+                song = originalSong,
+                audioInfo = currentPlaybackAudioInfo,
+                offlineMode = offlineMode,
+                isDismissing = isDismissing,
+                onSubmitted = { onDismissSheet {} }
             )
         }
         MoreOptionsGroup {
@@ -216,6 +230,40 @@ internal fun MoreOptionsMainContent(
                 onClick = onOpenListenTogether
             )
         }
+    }
+}
+
+@Composable
+internal fun NeteasePlaylistCollectionAction(
+    owner: NowPlayingNeteasePlaylistOwner,
+    song: SongItem,
+    audioInfo: PlaybackAudioInfo?,
+    offlineMode: Boolean,
+    isDismissing: Boolean,
+    onSubmitted: () -> Unit
+) {
+    val state by owner.state.collectAsStateWithLifecycle()
+    LaunchedEffect(owner, song, audioInfo) { owner.updatePlayback(song, audioInfo) }
+    DisposableEffect(owner) { onDispose { owner.dismiss() } }
+    if (!canCollectToNeteasePlaylist(song, audioInfo)) return
+    MoreOptionsItem(
+        title = stringResource(CoreCommonR.string.nowplaying_netease_playlist_collect),
+        icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
+        hue = MoreHuePink,
+        enabled = !isDismissing && !state.submitting,
+        busy = state.submitting,
+        onClick = { owner.open(song, audioInfo, offlineMode) }
+    )
+    if (state.song != null) {
+        NeteaseRemotePlaylistPickerDialog(
+            playlists = state.playlists,
+            loading = state.loading,
+            errorMessage = state.error,
+            onPlaylistClick = { playlist ->
+                if (owner.select(playlist, song, audioInfo, offlineMode)) onSubmitted()
+            },
+            onDismissRequest = owner::dismiss
+        )
     }
 }
 

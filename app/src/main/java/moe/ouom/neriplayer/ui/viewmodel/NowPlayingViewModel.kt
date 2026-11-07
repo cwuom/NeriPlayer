@@ -56,6 +56,11 @@ import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseArtistsFromSongD
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.concurrent.RequestGeneration
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import moe.ouom.neriplayer.ui.viewmodel.nowplaying.NowPlayingNeteasePlaylistOwner
 
 private const val YOUTUBE_MUSIC_CREATOR_SEARCH_LIMIT = 8
 
@@ -104,6 +109,26 @@ data class ManualSearchState(
 )
 
 class NowPlayingViewModel : ViewModel() {
+
+    private val collectionFeedback = MutableSharedFlow<UiText>(
+        extraBufferCapacity = 2,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    internal val neteaseCollectionFeedback = collectionFeedback.asSharedFlow()
+
+    internal val neteasePlaylistCollection by lazy {
+        val context = AppContainer.applicationContext
+        val repository = LocalPlaylistRepository.getInstance(context)
+        NowPlayingNeteasePlaylistOwner(
+            scope = viewModelScope,
+            hasLogin = { AppContainer.neteaseClient.hasLogin() },
+            loadPlaylists = { repository.fetchNeteaseRemotePlaylists(AppContainer.neteaseClient) },
+            addSong = { playlistId, song ->
+                repository.syncSongsToNeteasePlaylist(AppContainer.neteaseClient, playlistId, listOf(song))
+            },
+            feedback = { collectionFeedback.tryEmit(it) }
+        )
+    }
 
     private val searchRequestCoordinator = ManualSearchRequestCoordinator()
     private val originalInfoRequests = RequestGeneration()

@@ -662,7 +662,7 @@ private fun MoreOptionsPages(
     MoreOptionsMainPage(
         targetState, viewModel, originalSong, queue, isLocalSong,
         currentLyricFontScale, currentTranslationFontScale,
-        currentPlaybackAudioInfo, snackbarHostState, owner, mainActions
+        currentPlaybackAudioInfo, snackbarHostState, owner, mainActions, offlineMode
     )
     MoreOptionsListenTogetherPage(targetState)
     MoreOptionsBiliVideoSkipPage(targetState, actualSong, owner, biliClient)
@@ -1160,12 +1160,13 @@ private fun MoreOptionsMainPage(
     currentPlaybackAudioInfo: PlaybackAudioInfo?,
     snackbarHostState: SnackbarHostState,
     owner: MoreOptionsSheetOwner,
-    actions: MoreOptionsMainActions
+    actions: MoreOptionsMainActions,
+    offlineMode: Boolean
 ) {
     if (targetState != MoreOptionsPage.MAIN) return
     MoreOptionsMainPageContent(
         viewModel, originalSong, queue, isLocalSong, lyricFontScale,
-        translationFontScale, currentPlaybackAudioInfo, snackbarHostState, owner, actions
+        translationFontScale, currentPlaybackAudioInfo, snackbarHostState, owner, actions, offlineMode
     )
 }
 
@@ -1180,7 +1181,8 @@ private fun MoreOptionsMainPageContent(
     currentPlaybackAudioInfo: PlaybackAudioInfo?,
     snackbarHostState: SnackbarHostState,
     owner: MoreOptionsSheetOwner,
-    actions: MoreOptionsMainActions
+    actions: MoreOptionsMainActions,
+    offlineMode: Boolean
 ) {
     MoreOptionsMainContent(
         viewModel = viewModel,
@@ -1203,6 +1205,7 @@ private fun MoreOptionsMainPageContent(
         onShowSongDetails = actions.onShowDetails,
         onShowQualitySwitch = actions.onShowQuality,
         onEnterAlbum = actions.onAlbum,
-        onDismissSheet = actions.onDismissSheet
+        onDismissSheet = actions.onDismissSheet,
+        offlineMode = offlineMode
     )
 }

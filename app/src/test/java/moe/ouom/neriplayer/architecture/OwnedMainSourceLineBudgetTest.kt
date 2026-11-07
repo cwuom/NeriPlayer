@@ -39,6 +39,8 @@ class OwnedMainSourceLineBudgetTest {
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/listentogether/SettingsListenTogetherSection.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingPlaybackControls.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingSecondaryActions.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/viewmodel/nowplaying/NowPlayingNeteasePlaylistOwner.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/component/playlist/NeteaseRemotePlaylistPickerDialog.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/artwork/PlaybackArtworkOwner.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/artwork/PlaybackArtworkPolicies.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/artwork/PlaybackArtworkSources.kt",
