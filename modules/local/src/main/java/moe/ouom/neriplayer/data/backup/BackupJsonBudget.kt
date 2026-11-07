@@ -10,7 +10,8 @@ import java.io.StringReader
 import java.io.Writer
 
 internal data class BackupJsonLimits(
-    val maxMetadataCharacters: Long = 16L * 1024 * 1024,
+    // 歌单、历史和恢复候选保留歌词全文，默认不限制累计大小
+    val maxMetadataBytes: Long? = null,
     val maxMetadataObjects: Long = 65_536,
     val maxTokenCharacters: Long = 10L * 1024 * 1024,
     val maxStatisticsRecordCharacters: Long = 10L * 1024 * 1024,
@@ -18,8 +19,8 @@ internal data class BackupJsonLimits(
     val maxStatisticsRecordBytes: Long = 10L * 1024 * 1024
 ) {
     init {
-        listOf(
-            maxMetadataCharacters to "metadata character",
+        listOfNotNull(
+            maxMetadataBytes?.let { it to "metadata byte" },
             maxMetadataObjects to "metadata object",
             maxTokenCharacters to "token character",
             maxStatisticsRecordCharacters to "statistics record character",
@@ -93,7 +94,8 @@ private class BackupJsonBudget(private val limits: BackupJsonLimits) {
     private var metadataField = false
     private var statisticsField = false
     private var metadataValue = false
-    private var metadataCharacters = 0L
+    private var metadataBytes = 0L
+    private var previousMetadataHighSurrogate = false
     private var metadataObjects = 0L
     private var rootFields = 0L
     private var rootNameCharacters = 0L
@@ -150,11 +152,21 @@ private class BackupJsonBudget(private val limits: BackupJsonLimits) {
     }
 
     private fun countMetadata(character: Char) {
+        val limit = limits.maxMetadataBytes ?: return
         if (!metadataValue) return
         if (!tokens.inString && character.isWhitespace()) return
         if (!tokens.inString && depth == 1 && (character == ',' || character == '}')) return
-        if (metadataCharacters == limits.maxMetadataCharacters) throw IOException("Backup metadata character budget exceeded")
-        metadataCharacters++
+        val size = metadataUtf8Size(character)
+        if (metadataBytes > limit - size) throw IOException("Backup metadata byte budget exceeded")
+        metadataBytes += size
+        previousMetadataHighSurrogate = character.isHighSurrogate()
+    }
+
+    private fun metadataUtf8Size(character: Char): Long = when {
+        character <= '\u007f' -> 1L
+        character <= '\u07ff' -> 2L
+        previousMetadataHighSurrogate && character.isLowSurrogate() -> 1L
+        else -> 3L
     }
 
     private fun acceptStructure(character: Char) {
