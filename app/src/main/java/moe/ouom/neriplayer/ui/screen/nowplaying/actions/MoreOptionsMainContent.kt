@@ -126,6 +126,7 @@ import kotlin.math.roundToInt
 import moe.ouom.neriplayer.ui.feedback.startActivityOrShowUnavailable
 import moe.ouom.neriplayer.R as AppR
 
+/** 播放页更多菜单。可用的歌曲操作取决于当前音源。 */
 @Composable
 internal fun MoreOptionsMainContent(
     viewModel: NowPlayingViewModel,

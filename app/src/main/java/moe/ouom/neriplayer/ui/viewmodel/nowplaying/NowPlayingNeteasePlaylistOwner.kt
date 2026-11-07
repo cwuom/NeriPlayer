@@ -26,6 +26,7 @@ internal class NeteaseCollectionFeedback {
         pending.value = message
     }
 
+    /** 展示完成后消费消息。页面中途退出时，消息留给下一次展示。 */
     suspend fun display(showMessage: suspend (UiText) -> Unit) {
         pending.collectLatest { message ->
             if (message != null) {
