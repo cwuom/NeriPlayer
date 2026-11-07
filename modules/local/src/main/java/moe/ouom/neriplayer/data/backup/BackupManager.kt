@@ -67,6 +67,9 @@ import java.util.Locale
 class BackupManager internal constructor(
     private val context: Context,
     private val jsonLimits: BackupJsonLimits = BackupJsonLimits(),
+    private val heapHeadroomBytes: () -> Long = {
+        Runtime.getRuntime().run { maxMemory() - (totalMemory() - freeMemory()) }
+    },
     private val storageFactory: (Context) -> SecureTokenStorage
 ) {
     constructor(context: Context) : this(context, storageFactory = ::SecureTokenStorage)
@@ -77,6 +80,8 @@ class BackupManager internal constructor(
         private const val TAG = "BackupManager"
         private const val BACKUP_FILE_PREFIX = "neriplayer_backup"
         private const val BACKUP_FILE_EXTENSION = ".json"
+        private const val HEAP_ALLOWANCE_PER_METADATA_BYTE = 8L
+        private const val HEAP_ALLOWANCE_PER_METADATA_OBJECT = 1024L
     }
 
     private data class PlaylistLookup(
@@ -434,12 +439,24 @@ class BackupManager internal constructor(
         )
     }
 
+    /** 为导入和差异预览使用本次读取开始时的堆余量 */
     private fun backupReader() = BackupJsonReader(
         FileSyncPlaybackDatasetStore(File(context.cacheDir, "backup-playback")),
         { BackupMetadataMapper.sanitizeTrackStat(it, context) },
         { BackupMetadataMapper.sanitizePlaybackStatBucket(it, context) },
-        jsonLimits
+        restoreLimits()
     )
+
+    /** 给解码后的字符串、对象和后续合并留出空间，同时约束体积很小的对象 */
+    private fun restoreLimits(): BackupJsonLimits {
+        val headroom = heapHeadroomBytes()
+        val metadataBytes = (headroom / HEAP_ALLOWANCE_PER_METADATA_BYTE).coerceAtLeast(1L)
+        val metadataObjects = (headroom / HEAP_ALLOWANCE_PER_METADATA_OBJECT).coerceAtLeast(1L)
+        return jsonLimits.copy(
+            maxMetadataBytes = minOf(jsonLimits.maxMetadataBytes ?: metadataBytes, metadataBytes),
+            maxMetadataObjects = minOf(jsonLimits.maxMetadataObjects, metadataObjects)
+        )
+    }
 
     private suspend fun readBackup(uri: Uri): BackupJsonContent {
         val input = context.contentResolver.openInputStream(uri) ?: throw TransferIOException(
