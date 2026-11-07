@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.concurrent.RequestGeneration
@@ -17,8 +18,27 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.ui.i18n.UiText
 import moe.ouom.neriplayer.common.R as CoreCommonR
 
+/** 保留最新反馈；页面重建打断展示时，由下一个播放页继续展示。 */
+internal class NeteaseCollectionFeedback {
+    private val pending = MutableStateFlow<UiText?>(null)
+
+    fun show(message: UiText) {
+        pending.value = message
+    }
+
+    suspend fun display(showMessage: suspend (UiText) -> Unit) {
+        pending.collectLatest { message ->
+            if (message != null) {
+                showMessage(message)
+                pending.compareAndSet(message, null)
+            }
+        }
+    }
+}
+
+/** 仅允许收藏正在使用有效网易云音频 ID 的曲目。 */
 internal fun canCollectToNeteasePlaylist(song: SongItem?, audioInfo: PlaybackAudioInfo?): Boolean =
-    song != null && !song.isLocalSong() && audioInfo?.source == PlaybackAudioSource.NETEASE &&
+    song != null && song.id > 0 && !song.isLocalSong() && audioInfo?.source == PlaybackAudioSource.NETEASE &&
         !audioInfo.isNeteaseLocalFallback
 
 internal data class NowPlayingNeteasePlaylistState(
@@ -42,9 +62,10 @@ internal class NowPlayingNeteasePlaylistOwner(
     private val mutableState = MutableStateFlow(NowPlayingNeteasePlaylistState())
     val state = mutableState.asStateFlow()
 
+    /** 打开歌单选择器，只接收当前请求的查询结果。 */
     fun open(song: SongItem, audioInfo: PlaybackAudioInfo?, offline: Boolean) {
         if (state.value.submitting || !canCollectToNeteasePlaylist(song, audioInfo)) return
-        if (!checkAccess(offline)) return
+        accessError(offline)?.let { feedback(it); return }
         dismiss()
         val request = requests.capture()
         mutableState.value = NowPlayingNeteasePlaylistState(song = song, loading = true)
@@ -72,6 +93,7 @@ internal class NowPlayingNeteasePlaylistOwner(
         }
     }
 
+    /** 取消选择和查询，已提交的写入继续执行。 */
     fun dismiss() {
         requests.advance()
         loadJob?.cancel()
@@ -79,6 +101,7 @@ internal class NowPlayingNeteasePlaylistOwner(
         mutableState.value = NowPlayingNeteasePlaylistState(submitting = state.value.submitting)
     }
 
+    /** 提交前切换曲目或音源时，使之前的选择失效。 */
     fun updatePlayback(song: SongItem?, audioInfo: PlaybackAudioInfo?) {
         val selectedSong = state.value.song ?: return
         if (!canCollectToNeteasePlaylist(song, audioInfo) || !selectedSong.sameIdentityAs(song)) {
@@ -86,6 +109,7 @@ internal class NowPlayingNeteasePlaylistOwner(
         }
     }
 
+    /** 提交成功入队时返回 true，供菜单决定是否收起。 */
     fun select(
         playlist: NeteaseRemotePlaylist,
         currentSong: SongItem?,
@@ -96,13 +120,18 @@ internal class NowPlayingNeteasePlaylistOwner(
         val snapshot = state.value
         val song = snapshot.song ?: return false
         if (snapshot.loading || snapshot.submitting || playlist !in snapshot.playlists) return false
-        if (!checkAccess(offline)) return false
+        accessError(offline)?.let {
+            mutableState.value = snapshot.copy(error = it)
+            return false
+        }
         dismiss()
         mutableState.value = state.value.copy(submitting = true)
         feedback(UiText.Resource(CoreCommonR.string.nowplaying_netease_playlist_adding, listOf(playlist.name)))
         scope.launch {
             try {
-                val result = addSong(playlist.id, song)
+                // 网易云播放请求使用 song.id。明确标记提交副本的来源，避免同步逻辑回退到歌词匹配 ID。
+                val track = song.copy(channelId = "netease", audioId = null)
+                val result = addSong(playlist.id, track)
                 feedback(neteasePlaylistCollectionResultText(result, playlist.name))
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -115,17 +144,15 @@ internal class NowPlayingNeteasePlaylistOwner(
         return true
     }
 
-    private fun checkAccess(offline: Boolean): Boolean {
-        val error = when {
-            offline -> CoreCommonR.string.nowplaying_netease_playlist_offline
-            !hasLogin() -> CoreCommonR.string.nowplaying_netease_playlist_login_required
-            else -> return true
-        }
-        feedback(UiText.Resource(error))
-        return false
+    /** 同一访问检查分别在打开选择器与提交时执行。 */
+    private fun accessError(offline: Boolean): UiText? = when {
+        offline -> UiText.Resource(CoreCommonR.string.nowplaying_netease_playlist_offline)
+        !hasLogin() -> UiText.Resource(CoreCommonR.string.nowplaying_netease_playlist_login_required)
+        else -> null
     }
 }
 
+/** 将单曲同步结果转换为包含目标歌单名的播放页提示。 */
 internal fun neteasePlaylistCollectionResultText(result: NeteaseLikeSyncResult, playlistName: String): UiText {
     val message = when {
         result.failed > 0 || result.skippedUnsupported > 0 -> CoreCommonR.string.nowplaying_netease_playlist_failed

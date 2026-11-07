@@ -58,6 +58,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.layout.BoxScope
+import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
+import moe.ouom.neriplayer.ui.viewmodel.nowplaying.NeteaseCollectionFeedback
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -233,6 +236,21 @@ internal fun MoreOptionsMainContent(
     }
 }
 
+/** 两个界面共享提示状态。菜单可见时由菜单内的 Snackbar 显示消息。 */
+@Composable
+internal fun BoxScope.NeteaseCollectionFeedbackHost(
+    feedback: NeteaseCollectionFeedback,
+    host: SnackbarHostState,
+    menuOpen: Boolean
+) {
+    val resources = LocalResources.current
+    LaunchedEffect(feedback, host, resources) {
+        feedback.display { host.showNeriSnackbar(it.resolve(resources)) }
+    }
+    if (!menuOpen) NeriOverlaySnackbarHost(host)
+}
+
+/** 选择器只在提交被接受时收起更多菜单。 */
 @Composable
 internal fun NeteasePlaylistCollectionAction(
     owner: NowPlayingNeteasePlaylistOwner,

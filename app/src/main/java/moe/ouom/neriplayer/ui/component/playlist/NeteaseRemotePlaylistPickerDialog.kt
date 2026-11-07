@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as Aler
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R as AppR
 
+/** 展示远端歌单、加载状态和可重试的访问错误。 */
 @Composable
 internal fun NeteaseRemotePlaylistPickerDialog(
     playlists: List<NeteaseRemotePlaylist>,

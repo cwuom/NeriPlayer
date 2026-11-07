@@ -2,6 +2,10 @@ package moe.ouom.neriplayer.ui.screen
 
 import android.app.Application
 import android.content.Context
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +27,8 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.ui.component.playlist.NeteaseRemotePlaylistPickerDialog
+import moe.ouom.neriplayer.ui.screen.nowplaying.actions.NeteaseCollectionFeedbackHost
+import moe.ouom.neriplayer.ui.viewmodel.nowplaying.NeteaseCollectionFeedback
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.NeteasePlaylistCollectionAction
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.viewmodel.nowplaying.NowPlayingNeteasePlaylistOwner
@@ -50,7 +56,8 @@ class NowPlayingNeteasePlaylistComposeTest {
     private fun assertCollection(style: UiStyle) {
         val completion = CompletableDeferred<NeteaseLikeSyncResult>()
         var menuOpen by mutableStateOf(true)
-        var feedback by mutableStateOf("")
+        val feedback = NeteaseCollectionFeedback()
+        var screenMounted by mutableStateOf(true)
         val submissions = mutableListOf<Pair<Long, SongItem>>()
         composeRule.setContent {
             val scope = rememberCoroutineScope()
@@ -58,16 +65,19 @@ class NowPlayingNeteasePlaylistComposeTest {
                 NowPlayingNeteasePlaylistOwner(scope, { true }, { listOf(playlist) }, { id, track ->
                     submissions += id to track
                     completion.await()
-                }, { feedback = it.resolve(context.resources) })
+                }, feedback::show)
             }
             NeriTheme(followSystemDark = false, forceDark = false, dynamicColor = false, seedColorHex = "885522",
                 uiStyle = style, animateColors = false) {
                 Surface {
-                    if (menuOpen) {
-                        NeteasePlaylistCollectionAction(owner, song,
-                            PlaybackAudioInfo(PlaybackAudioSource.NETEASE), false, false) { menuOpen = false }
-                    } else {
-                        androidx.compose.material3.Text(feedback)
+                    if (screenMounted) {
+                        Box(Modifier.fillMaxSize()) {
+                            if (menuOpen) {
+                                NeteasePlaylistCollectionAction(owner, song,
+                                    PlaybackAudioInfo(PlaybackAudioSource.NETEASE), false, false) { menuOpen = false }
+                            }
+                            NeteaseCollectionFeedbackHost(feedback, remember { SnackbarHostState() }, menuOpen)
+                        }
                     }
                 }
             }
@@ -80,9 +90,47 @@ class NowPlayingNeteasePlaylistComposeTest {
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.nowplaying_netease_playlist_adding, playlist.name)).assertIsDisplayed()
         composeRule.runOnIdle {
             assertEquals(listOf(playlist.id to song), submissions)
+            screenMounted = false
+        }
+        composeRule.runOnIdle {
             completion.complete(NeteaseLikeSyncResult(1, 1, 0, 0, 1, 0))
         }
-        composeRule.onNodeWithText(context.getString(CoreCommonR.string.nowplaying_netease_playlist_added, playlist.name)).assertIsDisplayed()
+        composeRule.runOnIdle { screenMounted = true }
+        val added = context.getString(CoreCommonR.string.nowplaying_netease_playlist_added, playlist.name)
+        composeRule.onNodeWithText(added).assertIsDisplayed()
+        composeRule.mainClock.advanceTimeBy(10_000)
+        composeRule.onNodeWithText(added).assertDoesNotExist()
+        composeRule.runOnIdle { screenMounted = false }
+        composeRule.runOnIdle { screenMounted = true }
+        composeRule.onNodeWithText(added).assertDoesNotExist()
+    }
+
+    @Test
+    fun `disconnect after loading shows error inside the picker and permits retry`() {
+        var offline by mutableStateOf(false)
+        var submissions = 0
+        composeRule.setContent {
+            val scope = rememberCoroutineScope()
+            val owner = remember {
+                NowPlayingNeteasePlaylistOwner(scope, { true }, { listOf(playlist) }, { _, _ ->
+                    submissions++
+                    NeteaseLikeSyncResult(1, 1, 0, 0, 1, 0)
+                }, {})
+            }
+            NeriTheme(followSystemDark = false, forceDark = false, dynamicColor = false,
+                seedColorHex = "885522", animateColors = false) {
+                NeteasePlaylistCollectionAction(owner, song, PlaybackAudioInfo(PlaybackAudioSource.NETEASE),
+                    offline, false) {}
+            }
+        }
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.nowplaying_netease_playlist_collect)).performClick()
+        composeRule.runOnIdle { offline = true }
+        composeRule.onNodeWithText(playlist.name).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.nowplaying_netease_playlist_offline)).assertIsDisplayed()
+        composeRule.runOnIdle { assertEquals(0, submissions); offline = false }
+        composeRule.onNodeWithText(playlist.name).performClick()
+        composeRule.onNodeWithText(playlist.name).assertDoesNotExist()
+        composeRule.runOnIdle { assertEquals(1, submissions) }
     }
 
     @Test

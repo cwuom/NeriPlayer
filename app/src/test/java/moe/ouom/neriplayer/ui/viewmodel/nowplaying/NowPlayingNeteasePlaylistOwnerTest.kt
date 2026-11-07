@@ -58,9 +58,11 @@ class NowPlayingNeteasePlaylistOwnerTest {
         owner.open(song, audio, offline = false)
         runCurrent()
         owner.select(playlist, song, audio, offline = true)
+        assertEquals(UiText.Resource(CoreCommonR.string.nowplaying_netease_playlist_offline), owner.state.value.error)
         loggedIn = false
         owner.select(playlist, song, audio, offline = false)
         runCurrent()
+        assertEquals(UiText.Resource(CoreCommonR.string.nowplaying_netease_playlist_login_required), owner.state.value.error)
         assertEquals(1, loads)
         assertEquals(0, adds)
     }
@@ -144,6 +146,23 @@ class NowPlayingNeteasePlaylistOwnerTest {
         runCurrent()
         assertFalse(owner.state.value.submitting)
         assertEquals(UiText.Resource(CoreCommonR.string.nowplaying_netease_playlist_added, listOf(playlist.name)), messages.last())
+    }
+
+    @Test
+    fun `restored tracks submit the playback id despite conflicting lyrics and audio metadata`() = runTest {
+        val restored = song.copy(channelId = null, audioId = "456", matchedSongId = "789",
+            matchedLyricSource = MusicPlatform.CLOUD_MUSIC)
+        val submissions = mutableListOf<SongItem>()
+        val owner = NowPlayingNeteasePlaylistOwner(this, { true }, { listOf(playlist) },
+            { _, track -> submissions += track; result(added = 1) }, {})
+        owner.open(restored, audio, false)
+        runCurrent()
+        assertTrue(owner.select(playlist, restored, audio, false))
+        runCurrent()
+        val submitted = submissions.single()
+        assertEquals(restored.id, submitted.id)
+        assertEquals("netease", submitted.channelId)
+        assertNull(submitted.audioId)
     }
 
     @Test

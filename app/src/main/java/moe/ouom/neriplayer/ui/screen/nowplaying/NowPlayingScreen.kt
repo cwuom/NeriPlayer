@@ -146,8 +146,7 @@ import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.ui.component.playback.SleepTimerDialog
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
-import kotlinx.coroutines.flow.collectLatest
-import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
+import moe.ouom.neriplayer.ui.screen.nowplaying.actions.NeteaseCollectionFeedbackHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.theme.LocalNeriTargetColorScheme
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricSeekPosition
@@ -796,11 +795,6 @@ fun NowPlayingScreen(
     val embeddedPhoneticLyrics = loadedLyricsState.embeddedPhoneticLyrics
     val loadedPreferredLyricSource = loadedLyricsState.preferredSource
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
-    LaunchedEffect(nowPlayingViewModel, snackbarHostState, composeResources) {
-        nowPlayingViewModel.neteaseCollectionFeedback.collectLatest { message ->
-            snackbarHostState.showNeriSnackbar(message.resolve(composeResources))
-        }
-    }
     var artistPickerCandidates by remember { mutableStateOf<List<NeteaseArtistSummary>>(emptyList()) }
     var youtubeCreatorPickerCandidates by remember {
         mutableStateOf<List<YouTubeMusicCreatorSummary>>(emptyList())
@@ -1977,7 +1971,7 @@ fun NowPlayingScreen(
                             )
                         }
                     }
-                    if (!showMoreOptions) NeriOverlaySnackbarHost(snackbarHostState)
+                    NeteaseCollectionFeedbackHost(nowPlayingViewModel.neteaseCollectionFeedback, snackbarHostState, showMoreOptions)
                     if (coverFlight != null) {
                         NowPlayingLyricsCoverFlightLayer(coverFlight) { modifier ->
                             PassiveNowPlayingCoverImage(coverOwner, coverSource, modifier)
