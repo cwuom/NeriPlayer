@@ -13,6 +13,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.*
@@ -118,6 +119,63 @@ class WebDavArchiveLeaseTest {
             xml.replace("https://sync.test/dav/", "http://[invalid"),
             xml.replace(rootElement, "<d:lockroot><d:href/></d:lockroot>"))) {
             assertThrows(IOException::class.java) { WebDavArchiveLockResponse.read(response(200, bad), root, "auth") }
+        }
+    }
+
+    @Test fun `OpenList storage paths keep acquisition renewal and writes on the original DAV URL`() {
+        val collection = root.resolve("123云盘/音理音理！/")!!
+        val storagePath = "/123云盘/音理音理！"
+        val grantToken = "1770000123456789"
+        var now = 0L
+        val requests = arrayListOf<Request>()
+        val client = client(requests) { request ->
+            if (request.method == "LOCK") {
+                response(200, xml.replace(root.toString(), storagePath).replace(token, grantToken), request)
+                    .newBuilder().removeHeader("Lock-Token").apply {
+                        if (request.body != null) header("Lock-Token", "<$grantToken>")
+                    }.build()
+            } else {
+                response(204, "", request)
+            }
+        }
+
+        val manifest = collection.resolve("backup")!!
+        val lease = WebDavArchiveLease.acquire(manifest.toString(), client, "Basic fixture", "auth", false, {}, { now })
+        requireNotNull(lease).use {
+            now = 250_000L
+            it.execute<Unit>(Request.Builder().url(manifest).put("backup".toRequestBody())) { _, _ -> }
+        }
+
+        assertEquals(listOf("LOCK", "LOCK", "PUT", "UNLOCK"), requests.map { it.method })
+        assertEquals(listOf(collection, collection, manifest, collection), requests.map { it.url })
+        assertNull(requests[1].body)
+        assertEquals("<$collection> (<$grantToken>)", requests[1].header("If"))
+        assertEquals("<$collection> (<$grantToken>)", requests[2].header("If"))
+        assertEquals("<$grantToken>", requests[3].header("Lock-Token"))
+    }
+
+    @Test fun `OpenList storage roots require the exact DAV mount path and a decimal token`() {
+        val collection = root.resolve("parent/library/")!!
+        val storagePath = "/parent/library/"
+        val grantToken = "1770000123456789"
+        val grant = xml.replace(root.toString(), storagePath).replace(token, grantToken)
+        val request = Request.Builder().url(collection).build()
+        fun grantResponse(body: String) = response(200, body, request).newBuilder()
+            .header("Lock-Token", "<$grantToken>").build()
+
+        assertEquals(grantToken, WebDavArchiveLockResponse.read(grantResponse(grant), collection, "auth").token)
+        for (other in listOf("/library/", "/parent/other/", "https://sync.test$storagePath",
+            "//other.test$storagePath", "//sync.test$storagePath", "/\\sync.test$storagePath",
+            "$storagePath?query", "$storagePath#fragment")) {
+            assertThrows(IOException::class.java) {
+                WebDavArchiveLockResponse.read(grantResponse(grant.replace(storagePath, other)), collection, "auth")
+            }
+        }
+        assertThrows(IOException::class.java) {
+            WebDavArchiveLockResponse.read(grantResponse(grant), root.resolve("/davish/parent/library/")!!, "auth")
+        }
+        assertThrows(IOException::class.java) {
+            WebDavArchiveLockResponse.read(response(200, xml.replace(root.toString(), storagePath), request), collection, "auth")
         }
     }
 
