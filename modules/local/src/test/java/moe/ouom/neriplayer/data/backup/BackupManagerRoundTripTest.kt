@@ -93,6 +93,42 @@ class BackupManagerRoundTripTest {
         }
     }
 
+    @Test fun largeBackupExportsButRestoreAndPreviewUseCurrentHeapHeadroom() = runBlocking {
+        var headroom = 8L * 1024
+        Fixture(heapHeadroomBytes = { headroom }).use { fixture ->
+            val lyrics = "lyric\n".repeat(512)
+            `when`(fixture.storage.getLegacyLyricCandidates())
+                .thenReturn(listOf(SyncSong(id = 7, originalLyric = lyrics)))
+            fixture.manager.exportPlaylists(fixture.uri).getOrThrow()
+            fixture.input = fixture.output.toByteArray()
+
+            clearInvocations(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
+            assertEquals("Backup metadata byte budget exceeded",
+                fixture.manager.analyzeDifferences(fixture.uri).exceptionOrNull()?.message)
+            assertEquals("Backup metadata byte budget exceeded",
+                fixture.manager.importPlaylists(fixture.uri).exceptionOrNull()?.message)
+            verifyNoInteractions(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
+            assertTrue(fixture.cache.walkTopDown().none { it.isFile })
+
+            headroom = 128L * 1024
+            assertEquals(0, fixture.manager.analyzeDifferences(fixture.uri).getOrThrow().totalMissingSongs)
+            assertEquals(1, fixture.manager.importPlaylists(fixture.uri).getOrThrow().totalCount)
+        }
+    }
+
+    @Test fun restoreHeapBudgetAlsoCountsCompactMetadataObjects() = runBlocking {
+        Fixture(heapHeadroomBytes = { 8L * 1024 }).use { fixture ->
+            val songs = (1..9).joinToString(",") { """{"id":$it}""" }
+            fixture.input = """{"playlists":[{"id":9,"name":"existing","songs":[$songs]}]}""".toByteArray()
+            clearInvocations(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
+
+            assertEquals("Backup metadata object budget exceeded",
+                fixture.manager.importPlaylists(fixture.uri).exceptionOrNull()?.message)
+            verifyNoInteractions(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
+            assertTrue(fixture.cache.walkTopDown().none { it.isFile })
+        }
+    }
+
     @Test fun exportCannotReportSuccessWhenTheMetadataObjectBudgetWouldRejectItsBackup() = runBlocking {
         Fixture(BackupJsonLimits(maxMetadataObjects = 2)).use { fixture ->
             `when`(fixture.history.syncSnapshot()).thenReturn(listOf(entry(1)))
@@ -151,7 +187,10 @@ class BackupManagerRoundTripTest {
     private fun entry(id: Long) = PlayedEntry(id = id, name = "song $id", artist = "artist", album = "netease",
         albumId = 1, durationMs = 100, coverUrl = null, playedAt = id)
 
-    private inner class Fixture(limits: BackupJsonLimits = BackupJsonLimits()) : Closeable {
+    private inner class Fixture(
+        limits: BackupJsonLimits = BackupJsonLimits(),
+        heapHeadroomBytes: () -> Long = { 1024L * 1024 * 1024 }
+    ) : Closeable {
         val cache = temporary.newFolder()
         val uri = mock(Uri::class.java)
         val output = ByteArrayOutputStream()
@@ -170,7 +209,7 @@ class BackupManagerRoundTripTest {
             replaceSingleton(PlaybackStatsRepository::class.java, stats)
         )
         val storage = mock(SecureTokenStorage::class.java)
-        val manager = BackupManager(context, limits) { storage }
+        val manager = BackupManager(context, limits, heapHeadroomBytes) { storage }
 
         init {
             `when`(context.cacheDir).thenReturn(cache)

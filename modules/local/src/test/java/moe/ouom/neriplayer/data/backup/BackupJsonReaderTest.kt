@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.backup
 
+import java.io.ByteArrayOutputStream
 import java.io.StringReader
 import java.io.FilterReader
 import java.io.IOException
@@ -10,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
 import moe.ouom.neriplayer.data.model.sync.SyncSong
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertSame
@@ -69,6 +71,37 @@ class BackupJsonReaderTest {
                 assertEquals("", rejected.toString())
                 assertTrue(directory.walkTopDown().none { it.isFile })
             }
+        }
+    }
+
+    @Test fun utf8BudgetsMatchWriterReplacementForIsolatedSurrogatesAcrossChunks() {
+        fun encode(value: String): ByteArray = ByteArrayOutputStream().apply {
+            writer(Charsets.UTF_8).use { it.write(value) }
+        }.toByteArray()
+
+        val name = "\uDC00中é🎵\uD800a\uD800🎵\\ud800Z\\udc00\uDC00"
+        val record = """{"identityKey":"netease:7","id":7,"name":"$name"}"""
+        val recordBytes = encode(record).size.toLong()
+        val metadataBytes = recordBytes + 2L
+        val cases = listOf(
+            Triple("legacyLyricCandidates", BackupJsonLimits(maxMetadataBytes = metadataBytes),
+                BackupJsonLimits(maxMetadataBytes = metadataBytes - 1)),
+            Triple("playbackStats", BackupJsonLimits(maxStatisticsRecordBytes = recordBytes),
+                BackupJsonLimits(maxStatisticsRecordBytes = recordBytes - 1))
+        )
+        for ((field, exact, tooSmall) in cases) {
+            val json = """{"$field":[$record]}"""
+            val expected = encode(json)
+            val output = ByteArrayOutputStream()
+            output.writer(Charsets.UTF_8).withBackupJsonBudget(exact) { }.use { writer ->
+                json.forEach { writer.write(it.code) }
+            }
+            assertArrayEquals(expected, output.toByteArray())
+
+            val failure = runCatching {
+                ByteArrayOutputStream().writer(Charsets.UTF_8).withBackupJsonBudget(tooSmall) { }.use { it.write(json) }
+            }.exceptionOrNull()
+            assertTrue("Expected the UTF-8 budget to reject $field one byte past the limit, got $failure", failure is IOException)
         }
     }
 

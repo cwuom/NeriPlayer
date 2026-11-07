@@ -128,9 +128,9 @@ Track playback statistics use Room as their primary store, avoiding full track o
 | Queries & Manual Backup | Summaries and rankings use SQL aggregation and pagination; manual JSON backups import and export statistics in pages, keeping full history without the 1,000-entry truncation |
 | Validation & Limits | Imports validate the entire JSON document and version, rejecting unknown future versions; playlists, history, and lyric metadata still restore as lists, backups are not cross-repository transactions, and config imports plus full queues keep their own capacity limits |
 
-手动歌单备份的导入与导出默认不限制歌单、历史和歌词的累计元数据大小。元数据对象数量、单个 JSON token 与单条统计记录仍有独立上限，统计列表按页处理。歌词元数据仍会完整保存在内存中，超大备份可能受到设备可用内存限制。
+手动歌单备份支持导出大量元数据，继续校验对象数量、单个 JSON token 和单条统计记录。导入和差异预览会根据开始读取时的进程堆余量额外设置元数据字节和对象预算，给解码和合并留出空间。超出预算时会在修改本地仓库前返回失败，统计列表仍按页处理。
 
-Manual playlist backup imports and exports do not limit the aggregate size of playlist, history, and lyric metadata by default. Metadata object counts, individual JSON tokens, and statistics records retain separate limits; statistics lists are processed in pages. Lyric metadata is still retained in memory, so very large backups may exceed the device's available memory.
+Manual playlist exports allow large metadata payloads while enforcing object, token, and statistics-record limits. Imports and difference previews also set byte and object budgets from the process heap headroom at the start of each read, leaving room for decoding and merging. Backups that exceed these budgets fail before local repositories are modified. Statistics lists are processed in pages.
 
 带事件 ID 的歌单播放增量只有在 Room 计数和回执共用事务时才能确认。旧 JSON 导入失败时保留该事件，恢复后先确认实际主存再重试迁移，避免进程重启后重复计数。没有事件 ID 的既有歌单写入仍支持 JSON 回退。
 
