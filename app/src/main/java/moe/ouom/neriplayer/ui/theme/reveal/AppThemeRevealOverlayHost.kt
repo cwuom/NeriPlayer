@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.theme.reveal
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -35,6 +36,14 @@ internal fun AppThemeRevealOverlayHost(
     startRadiusPx: Float,
     onFinished: (Int) -> Unit
 ) {
+    if (presentation != null && snapshot == null) {
+        // preserve the live page and its normal color transition when window capture fails
+        LaunchedEffect(presentation.captureToken) {
+            android.util.Log.i("ThemeReveal", "window snapshot unavailable; retaining live theme content")
+            onFinished(presentation.captureToken)
+        }
+        return
+    }
     themeRevealContent(presentation, snapshot, startRadiusPx, onFinished)()
 }
 

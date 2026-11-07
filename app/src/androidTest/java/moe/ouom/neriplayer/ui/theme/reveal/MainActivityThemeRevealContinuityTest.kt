@@ -394,7 +394,12 @@ class MainActivityThemeRevealContinuityTest {
     private fun awaitLoadedBackground(scenario: ActivityScenario<MainActivity>, noImage: Bitmap) {
         composeRule.waitUntil(UiTimeoutMs) {
             advanceFrames(1)
-            val frame = captureWindow(scenario)
+            val frame = try {
+                captureWindow(scenario)
+            } catch (_: WindowCopyTimeout) {
+                android.util.Log.i("MainThemeReveal", "background PixelCopy source buffer not ready (ERROR_TIMEOUT)")
+                return@waitUntil false
+            }
             try { changedPixelFraction(noImage, frame) > 0.03 } finally { frame.recycle() }
         }
     }
@@ -480,6 +485,7 @@ class MainActivityThemeRevealContinuityTest {
         }
         try {
             assertTrue("主题窗口 PixelCopy 超时", finished.await(1, TimeUnit.SECONDS))
+            if (copyResult == PixelCopy.ERROR_TIMEOUT) throw WindowCopyTimeout()
             assertEquals("主题窗口 PixelCopy 失败", PixelCopy.SUCCESS, copyResult)
             return bitmap
         } catch (failure: Throwable) {
@@ -490,6 +496,8 @@ class MainActivityThemeRevealContinuityTest {
             throw failure
         }
     }
+
+    private class WindowCopyTimeout : AssertionError("主题窗口 PixelCopy 返回 ERROR_TIMEOUT")
 
     private fun assertNonEmpty(bitmap: Bitmap, stage: String) {
         assertTrue("窗口截图尺寸无效: $stage", bitmap.width > 0 && bitmap.height > 0)

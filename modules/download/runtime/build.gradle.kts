@@ -20,6 +20,7 @@ dependencies {
     implementation(project(":local"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.documentfile)
+    implementation(libs.androidx.media3.extractor)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.work.runtime.ktx)
     api(libs.kotlinx.coroutines.android)
