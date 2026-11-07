@@ -11,6 +11,21 @@ class OwnedMainSourceLineBudgetTest {
             File(System.getProperty("user.dir") ?: ".")
         )
         listOf(
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/LanRoomPolicy.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/LanPeerTiming.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/BeatSyncRuntime.java",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/LanClock.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/LanNtpEstimator.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/LanRoomEngine.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/LanSchedule.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/discovery/LanDiscovery.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/playback/LanPlaybackPort.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/playback/LanPlaybackScheduler.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/protocol/LanCodec.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/session/LanKeepAlive.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/session/LanSessionManager.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/transport/LanWebSocketClient.kt",
+            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/transport/LanWebSocketServer.kt",
             "modules/local/src/main/java/moe/ouom/neriplayer/data/settings/AutoSettingsSchema.kt",
             "modules/local/src/main/java/moe/ouom/neriplayer/data/settings/playback/PlaybackSettingsSection.kt",
             "modules/platform/src/main/java/moe/ouom/neriplayer/platform/bilibili/api/client/BiliClient.kt",

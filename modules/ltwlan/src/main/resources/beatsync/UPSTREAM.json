@@ -1,0 +1,37 @@
+{
+  "commit": "94c38ab16ec861835ce0b4bc3a7db82dabbb9b88",
+  "files": [
+    {
+      "file": "ntp.ts",
+      "upstreamPath": "apps/client/src/utils/ntp.ts",
+      "sha256": "b833010cb1e2b37eb5588d539c0e495125776fafaa07f1422d66a973e7f7c6fe"
+    },
+    {
+      "file": "constants.ts",
+      "upstreamPath": "packages/shared/constants.ts",
+      "sha256": "53871faa2138178a377b0515e53059dc8238094ea920ef905ca771f608641552"
+    },
+    {
+      "file": "ntp.test.ts",
+      "upstreamPath": "apps/client/src/utils/__tests__/ntp.test.ts",
+      "sha256": "00a84217e9e0bdf8a7e71d1f226f59260e87124e5de8fa8c25e87d893d9fa3db"
+    },
+    {
+      "file": "LICENSE",
+      "upstreamPath": "LICENSE",
+      "sha256": "dbe8db9df4090176ab0412ed96f05d79f0be9b43c177c6052f817751758f75c0"
+    },
+    {
+      "file": "config.ts",
+      "upstreamPath": "apps/server/src/config.ts",
+      "sha256": "b18255a65bda9e7cc3dff06b66040e92e5b81daa24b2d221ca9b899897e2e3b0"
+    },
+    {
+      "file": "ws.ts",
+      "upstreamPath": "apps/client/src/utils/ws.ts",
+      "sha256": "82e118e923b6ad08d0273aad14db933c3f94717158184805d191f97357f98f64"
+    }
+  ],
+  "repository": "https://github.com/freeman-jiang/beatsync",
+  "generatedSha256": "36f9c9152f1ef6b2a67f8619156e2203c5c4780060adbfb7f6c10a4439eff0c5"
+}

@@ -1,0 +1,19 @@
+{
+    "status": "passed",
+    "engine": "Zipline QuickJS 1.28.0",
+    "cases": 1516,
+    "mismatches": 0,
+    "absoluteTolerance": 1.0E-6,
+    "bridgeRoundTripMs": {
+        "p50": 0.0356,
+        "p95": 0.059,
+        "p99": 0.177,
+        "max": 0.8244
+    },
+    "warmupCalls": 1000,
+    "measuredCalls": 3000,
+    "platform": "Windows 11",
+    "architecture": "amd64",
+    "boundary": "JVM evaluate(String) -> native QuickJS parse invocation+JS JSON parse+original function+stringify -> JVM String",
+    "limitations": "No full Zipline Kotlin/JS bridge, compiler plugin or audio deadlines tested. Different invocation path from Rhino Function.call; do not rank engines by these times."
+}

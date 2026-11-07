@@ -22,7 +22,8 @@ internal typealias PlaybackStatePersistRequest =
 internal fun PlayerManager.prepareStatePersist(
     positionMs: Long = _playbackPositionMs.value.coerceAtLeast(0L),
     shouldResumePlayback: Boolean = currentPlaylist.isNotEmpty() && shouldResumePlaybackSnapshot()
-): PlaybackStatePersistRequest? = statePersistenceCoordinator.prepare {
+): PlaybackStatePersistRequest? = if (currentPlaylist.any { it.sourceStableKey?.startsWith("lan-session:") == true }) null
+else statePersistenceCoordinator.prepare {
     val session = queueStore.sessionSnapshot()
     PlaybackStatePersistenceSnapshot(
         session = session,

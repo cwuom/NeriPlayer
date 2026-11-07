@@ -250,7 +250,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android 音频
 
 构建版本、模块边界与关键实现路径已拆分到独立文档：
 
-- [docs/implementation.md](./docs/implementation.md)：构建与版本、14 个自有库的职责、
+- [docs/implementation.md](./docs/implementation.md)：构建与版本、15 个自有库的职责、
   入口与导航、播放与缓存、搜索与数据来源、本地数据与安全、下载与备份。
 - [CONTRIBUTING.md](./CONTRIBUTING.md#项目结构与当前实现--project-layout)：开发者视角的模块边界、
   扩展路径、测试与提交要求。
@@ -395,3 +395,10 @@ NeriPlayer 支持把本地元数据同步到 **用户自己的** GitHub 仓库�
     <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cwuom/neriplayer&type=timeline&legend=bottom-right" />
   </picture>
 </a>
+
+
+## 局域网一起听（首版）
+
+播放页「更多」菜单中的「局域网一起听」与云端一起听入口相邻，进入后可创建、加入或管理房间；「设置 → 一起听」仍提供直接创建和加入按钮。同一 Wi-Fi 下自动发现或手动输入主控地址；主控分享本次会话的完整音源链接，副设备直接使用。主控可授权播放/暂停、切歌和 seek，并调整系统媒体音量；成员可使用手动偏移。首版不支持跨机本地文件匹配和 USB 独占输出，与云端 Worker 房间独立。详见[模块说明](modules/ltwlan/README.md)。
+
+副设备未获主控授权时，播放/暂停、上一首/下一首及进度条显示为灰色且不可操作，迷你播放器切歌手势也会禁用。主控的三项权限保存在本机设置中，重开房间或重启应用后沿用；副设备加入别人的房间不会覆盖本机主控偏好。

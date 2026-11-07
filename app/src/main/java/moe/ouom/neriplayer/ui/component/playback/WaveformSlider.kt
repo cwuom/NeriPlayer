@@ -49,6 +49,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -100,9 +104,9 @@ fun WaveformSlider(
     playbackSessionKey: String? = null
 ) {
     val clampedValue = normalizeWaveProgress(value)
-    val activeColor = activeTint.copy(alpha = if (enabled) 1f else 0.55f)
+    val activeColor = if (enabled) activeTint else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
     val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.3f else 0.18f)
-    val thumbColor = activeTint.copy(alpha = if (enabled) 1f else 0.55f)
+    val thumbColor = if (enabled) activeTint else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
 
     var isDragging by remember { mutableStateOf(false) }
     val latestOnValueChangeCanceled by rememberUpdatedState(onValueChangeCanceled)
@@ -225,6 +229,10 @@ fun WaveformSlider(
             .fillMaxWidth()
             .height(48.dp)
             .then(dragModifier)
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(clampedValue, 0f..1f)
+                if (!enabled) disabled()
+            }
     ) {
         val centerY = size.height / 2
         val progressValue = if (isProgressPredicting) {

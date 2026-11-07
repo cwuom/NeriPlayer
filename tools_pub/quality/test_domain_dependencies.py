@@ -62,6 +62,10 @@ class DomainDependenciesTest(unittest.TestCase):
         self.assertEqual(2, report["domains"]["calculation"])
         self.assertEqual(1, report["bridge_references"])
 
+    def test_unicode_constants_are_decoded_consistently(self):
+        self.compile('public String label() { return "\\u4e2d\\u6587"; }')
+        self.assertEqual([], self.check()["errors"])
+
     def test_rejects_fully_qualified_runtime_call(self):
         self.compile("public String load() { return sample.runtime.PlayerManager.read(); }")
         self.assertTrue(any("forbidden class sample.runtime.PlayerManager" in x for x in self.check()["errors"]))

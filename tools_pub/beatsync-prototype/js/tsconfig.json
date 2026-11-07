@@ -1,0 +1,1 @@
+{"compilerOptions":{"baseUrl":".","paths":{"@beatsync/shared":["./shared.ts"],"@/utils/ntp":["./upstream/ntp.ts"]}}}

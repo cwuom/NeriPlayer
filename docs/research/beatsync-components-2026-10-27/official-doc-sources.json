@@ -1,0 +1,35 @@
+[
+  {
+    "name": "android-media3-hello",
+    "url": "https://developer.android.com/media/media3/exoplayer/hello-world",
+    "error": "Response status code does not indicate success: 429 (Too Many Requests)."
+  },
+  {
+    "name": "ktor-server-engines",
+    "url": "https://ktor.io/docs/server-engines.html",
+    "file": "ktor-server-engines.txt",
+    "fetchedAt": "2026-10-27T15:59:47.3413458+00:00"
+  },
+  {
+    "name": "android-nsd",
+    "url": "https://developer.android.com/develop/connectivity/wifi/use-nsd",
+    "error": "Response status code does not indicate success: 429 (Too Many Requests)."
+  },
+  {
+    "name": "android-local-network",
+    "url": "https://developer.android.com/privacy-and-security/local-network-permission",
+    "error": "Response status code does not indicate success: 429 (Too Many Requests)."
+  },
+  {
+    "name": "ktor-server-websockets",
+    "url": "https://ktor.io/docs/server-websockets.html",
+    "file": "ktor-server-websockets.txt",
+    "fetchedAt": "2026-10-27T15:59:48.3928176+00:00"
+  },
+  {
+    "name": "ktor-supported-platforms",
+    "url": "https://ktor.io/docs/supported-platforms.html",
+    "file": "ktor-supported-platforms.txt",
+    "fetchedAt": "2026-10-27T15:59:48.4830926+00:00"
+  }
+]

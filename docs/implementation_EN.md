@@ -38,6 +38,7 @@ The project owns 14 Android libraries, registered once in [gradle/owned-modules.
 | [`:lyrics`](../modules/lyrics/README.md) | LRC/YRC/TTML parsing, transforms, timelines, translation alignment, time offsets, and Lyricon/SuperLyric output coordination. |
 | [`:platform`](../modules/platform/README.md) | Bilibili, NetEase, YouTube, and Subsonic music server (preview; not sufficiently tested) protocols, accounts, caches, and business services, plus comments, lyric sources, metadata search, matching, and fallback. |
 | [`:local`](../modules/local/README.md) | settings, local media/playlists, history/statistics, backups, traffic, storage accounting, scans, cleanup, and Android sync host adapters. |
+| [`:ltwlan`](../modules/ltwlan/README.md) | LAN rooms, BeatSync timing, discovery, permissions and device media volume. |
 | [`:sync`](../modules/sync/README.md) | GitHub/WebDAV transport, encrypted credential state, sessions, compatible codecs, merges, concurrency protection, and Worker policies. |
 | [`:listentogether`](../modules/listentogether/README.md) | protocol, HTTP/WebSocket transport, identity rules, sessions, reconnects, controls, and playback synchronization. |
 

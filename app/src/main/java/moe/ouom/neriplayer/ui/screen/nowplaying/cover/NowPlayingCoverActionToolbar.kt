@@ -189,6 +189,7 @@ internal fun NowPlayingCoverActionToolbar(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         NowPlayingCoverToolbarDock(spec, status, actions, sharedTransitionScope, animatedVisibilityScope)
+        moe.ouom.neriplayer.ui.component.playback.lan.ActiveLanRoomMenu()
     }
 }
 

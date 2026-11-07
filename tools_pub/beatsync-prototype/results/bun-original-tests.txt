@@ -1,0 +1,15 @@
+bun test v1.3.8 (b64edcb4)
+
+upstream\ntp.test.ts:
+(pass) calculateOffsetEstimate > should select the offset from the minimum-RTT measurement
+(pass) calculateOffsetEstimate > should ignore high-RTT spikes entirely
+(pass) calculateOffsetEstimate > should handle negative clock offsets (client ahead of server)
+(pass) calculateOffsetEstimate > should handle a single measurement
+(pass) calculateWaitTimeMilliseconds > should return exact wait time when target is in the future
+(pass) calculateWaitTimeMilliseconds > should return 0 when target time has already passed
+(pass) calculateWaitTimeMilliseconds > should handle negative clock offset (client ahead of server)
+
+ 7 pass
+ 0 fail
+ 9 expect() calls
+Ran 7 tests across 1 file. [83.00ms]

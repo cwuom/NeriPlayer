@@ -429,8 +429,10 @@ class AutoSettingsGeneratedTest {
     fun inheritedPlaybackSectionKeepsEveryGeneratedSetting() {
         val settings = AutoSettingsMetadata.settingsIn(AutoSettingsSections.playback)
 
-        assertEquals(41, settings.size)
-        assertEquals(41, settings.map { it.keyName }.toSet().size)
+        assertEquals(43, settings.size)
+        assertEquals(43, settings.map { it.keyName }.toSet().size)
+        assertEquals(0, AutoSettingsSchema.playback.lanHostPermissions.defaultValue)
+        assertEquals(0, AutoSettingsSchema.playback.lanNudgeMs.defaultValue)
         assertEquals("playback_fade_in", settings.first().keyName)
         assertEquals(
             AutoSettingsSections.playback,

@@ -3,7 +3,6 @@
 )
 
 package moe.ouom.neriplayer.core.player.lifecycle
-
 import moe.ouom.neriplayer.core.player.runtime.stats.PlaybackStatsTracker
 
 import moe.ouom.neriplayer.core.player.session.AppQueueSongIdentity
@@ -908,6 +907,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.externalAudio) return
             if (!shouldAcceptPlayerCallback(
                     playbackRequestToken,
                     loadedMediaRequestToken,
@@ -939,6 +939,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.externalAudio) return
             if (!shouldExposePlayerCallbackState(
                     playbackRequestToken,
                     loadedMediaRequestToken,
@@ -1753,7 +1754,7 @@ internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
 }
 
 internal fun PlayerManager.handleAudioBecomingNoisyImpl(): Boolean =
-    audioDeviceRouteOwner.onAudioBecomingNoisy()
+    moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.interruptOr { audioDeviceRouteOwner.onAudioBecomingNoisy() }
 
 private fun PlayerManager.handleUsbExclusivePlaybackSettingChanged(enabled: Boolean) {
     usbPlaybackRouteOwner.changeSetting(enabled)

@@ -1,0 +1,89 @@
+[
+  {
+    "name": "java-websocket-readme",
+    "url": "https://api.github.com/repos/TooTallNate/Java-WebSocket/readme",
+    "file": "java-websocket-readme.txt",
+    "fetchedAt": "2026-10-27T16:02:53.8506032+00:00"
+  },
+  {
+    "name": "quickjs-readme",
+    "url": "https://api.github.com/repos/bellard/quickjs/readme",
+    "file": "quickjs-readme.txt",
+    "fetchedAt": "2026-10-27T16:02:54.1449156+00:00"
+  },
+  {
+    "name": "ableton-link-readme",
+    "url": "https://raw.githubusercontent.com/Ableton/link/master/README.md",
+    "file": "ableton-link-readme.txt",
+    "fetchedAt": "2026-10-27T16:02:54.9746950+00:00"
+  },
+  {
+    "name": "ableton-link-metadata",
+    "url": "https://api.github.com/repos/Ableton/link",
+    "file": "ableton-link-metadata.json",
+    "fetchedAt": "2026-10-27T16:02:55.0840109+00:00"
+  },
+  {
+    "name": "bun-metadata",
+    "url": "https://api.github.com/repos/oven-sh/bun",
+    "file": "bun-metadata.json",
+    "fetchedAt": "2026-10-27T16:02:55.0840100+00:00"
+  },
+  {
+    "name": "android-nsd-source",
+    "url": "https://android.googlesource.com/platform/packages/modules/Connectivity/+/refs/heads/main/framework/src/android/net/nsd/NsdManager.java?format=TEXT",
+    "error": "Response status code does not indicate success: 404 (Not Found)."
+  },
+  {
+    "name": "java-websocket-release",
+    "url": "https://api.github.com/repos/TooTallNate/Java-WebSocket/releases/latest",
+    "file": "java-websocket-release.json",
+    "fetchedAt": "2026-10-27T16:02:55.7153709+00:00"
+  },
+  {
+    "name": "zipline-release",
+    "url": "https://api.github.com/repos/cashapp/zipline/releases/latest",
+    "file": "zipline-release.json",
+    "fetchedAt": "2026-10-27T16:02:56.2459691+00:00"
+  },
+  {
+    "name": "ktor-release",
+    "url": "https://api.github.com/repos/ktorio/ktor/releases/latest",
+    "file": "ktor-release.json",
+    "fetchedAt": "2026-10-27T16:02:56.2459692+00:00"
+  },
+  {
+    "name": "oboe-release",
+    "url": "https://api.github.com/repos/google/oboe/releases/latest",
+    "file": "oboe-release.json",
+    "fetchedAt": "2026-10-27T16:02:57.0965508+00:00"
+  },
+  {
+    "name": "media3-release",
+    "url": "https://api.github.com/repos/androidx/media/releases/latest",
+    "file": "media3-release.json",
+    "fetchedAt": "2026-10-27T16:02:57.5293607+00:00"
+  },
+  {
+    "name": "java-websocket-pom",
+    "url": "https://raw.githubusercontent.com/TooTallNate/Java-WebSocket/master/pom.xml",
+    "file": "java-websocket-pom.txt",
+    "fetchedAt": "2026-10-27T16:02:57.7235177+00:00"
+  },
+  {
+    "name": "quickjs-kt-release",
+    "url": "https://api.github.com/repos/dokar3/quickjs-kt/releases/latest",
+    "file": "quickjs-kt-release.json",
+    "fetchedAt": "2026-10-27T16:02:57.9414710+00:00"
+  },
+  {
+    "name": "okhttp-release",
+    "url": "https://api.github.com/repos/square/okhttp/releases/latest",
+    "error": "Response status code does not indicate success: 404 (Not Found)."
+  },
+  {
+    "name": "zipline-quickjs-api",
+    "url": "https://raw.githubusercontent.com/cashapp/zipline/trunk/zipline/src/commonMain/kotlin/app/cash/zipline/QuickJs.kt",
+    "error": "Response status code does not indicate success: 404 (Not Found)."
+  }
+]

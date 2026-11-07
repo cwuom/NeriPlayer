@@ -11,6 +11,7 @@ NeriPlayer 按根目录的 [GPL-3.0 许可证](LICENSE) 发布。本文记录部
 
 | Project | Contribution/reference | License |
 | --- | --- | --- |
+| [BeatSync](https://github.com/freeman-jiang/beatsync) | Unmodified NTP algorithms, scheduling constants, transport helper and tests at commit `94c38ab16ec861835ce0b4bc3a7db82dabbb9b88` in [`tools_pub/beatsync-prototype/js/upstream/`](tools_pub/beatsync-prototype/js/upstream/); prototype and generated production NTP resource in `modules/ltwlan/src/main/resources/beatsync/`, plus original audio scheduling functions and AudioContextManager in `modules/ltwlan/src/main/assets/lan-audio/` | MIT; original notice retained in [`LICENSE`](tools_pub/beatsync-prototype/js/upstream/LICENSE) |
 | [Capsulyric](https://github.com/FrancoGiudans/Capsulyric) | Directly ported `ShizukuHook`, `FirewallCompat`, `ShizukuXmsfNetworkHelper`, and the aggressive-isolation state handling used by the Super Island lyric bridge | GPL-3.0-or-later, as declared in the adapted source headers |
 | [InstallerX Revived](https://github.com/wxxsfxyzm/InstallerX-Revived) | Upstream Shizuku hooked-binder technique retained by the Capsulyric port | GPL-3.0-only |
 | libusb | Sources and headers in [`modules/native/src/main/cpp/third_party/libusb/`](modules/native/src/main/cpp/third_party/libusb/) used by USB exclusive output | LGPL-2.1-or-later, as declared in the imported source headers |

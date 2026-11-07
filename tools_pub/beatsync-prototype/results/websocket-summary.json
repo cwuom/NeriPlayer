@@ -1,0 +1,32 @@
+{
+  "scope": "Windows JVM loopback, 2 concurrent peers, 4 alternating rounds per implementation",
+  "limitations": "No Wi-Fi, Android, audio, background, packet loss or production room state machine measured. Receive timestamp boundaries differ by library. Not a cold-start benchmark.",
+  "summaries": [
+    {
+      "server": "java-websocket",
+      "rounds": 4,
+      "pairs": 240,
+      "purePairs": 240,
+      "pureRate": 1,
+      "rttMs": {
+        "p50": 1.1322999997064471,
+        "p95": 1.6761000000406057,
+        "p99": 1.8667999997269362,
+        "max": 2.628099999856204
+      }
+    },
+    {
+      "server": "ktor-cio",
+      "rounds": 4,
+      "pairs": 240,
+      "purePairs": 237,
+      "pureRate": 0.9875,
+      "rttMs": {
+        "p50": 1.3847999998833984,
+        "p95": 2.0774000000674278,
+        "p99": 3.849900000030175,
+        "max": 15.971700000111014
+      }
+    }
+  ]
+}

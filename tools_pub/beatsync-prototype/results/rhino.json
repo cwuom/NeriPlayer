@@ -1,0 +1,19 @@
+{
+    "engine": "Rhino 1.8.0 (interpreter)",
+    "platform": "Windows 11",
+    "java": "21.0.12.1",
+    "cases": 1516,
+    "mismatches": 0,
+    "absoluteTolerance": 1.0E-6,
+    "bundleLoadMs": 89.8223,
+    "bridgeRoundTripMs": {
+        "p50": 0.032,
+        "p95": 0.0936,
+        "p99": 0.5386,
+        "max": 4.664
+    },
+    "warmupCalls": 1000,
+    "measuredCalls": 3000,
+    "boundary": "JVM String -> JS parse+original wait function+stringify -> JVM String",
+    "limitations": "Desktop JVM only; no Android/R8/audio deadline validation; measurements include no network"
+}
