@@ -143,6 +143,7 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 
 ### 🗂️ Library and local management
 
+- **Add to NetEase playlists**: while playing a NetEase audio source, open the top-right three-dot menu and choose “Add to NetEase playlist”, then select one of your playlists to add the song directly. Login and a network connection are required. The action is hidden when playback falls back to Bilibili or local audio.
 - **Category browsing**: local, favorites, NetEase, YouTube Music, and Bilibili entries; YouTube can be disabled entirely, while Bilibili music can be turned off for the home sections only.
 - **Home discovery**: recently used playlists, charts, new songs, daily picks, Private FM, curated playlists, and radar playlists; a refresh updates every section.
 - **Search and link recognition**: per-platform search with paging on NetEase and Bilibili, plus pasting a share text with title or short link to resolve NetEase, Bilibili, and YouTube content.
