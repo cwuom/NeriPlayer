@@ -210,8 +210,11 @@ internal object WebDavArchiveLockResponse {
         val lock = lockProperties(response)
         requireElement(lock, "lockscope", "exclusive")
         requireElement(lock, "locktype", "write")
-        requireRoot(lock, root, expectedToken != null)
+        if (text(lock, "depth") != "infinity") {
+            throw IOException("WebDAV archive requires an exclusive depth infinity collection lock")
+        }
         val token = readToken(lock, response, expectedToken)
+        requireRoot(lock, root, token, expectedToken != null)
         return Grant(token, duration(text(lock, "timeout")))
     }
 
@@ -231,10 +234,7 @@ internal object WebDavArchiveLockResponse {
         return locks.item(0) as Element
     }
 
-    private fun requireRoot(lock: Element, root: HttpUrl, refreshing: Boolean) {
-        if (text(lock, "depth") != "infinity") {
-            throw IOException("WebDAV archive requires an exclusive depth infinity collection lock")
-        }
+    private fun requireRoot(lock: Element, root: HttpUrl, token: String, refreshing: Boolean) {
         // 旧 DAV 服务器可能省略 lockroot，成功且不重定向的 LOCK 已绑定请求目录
         val lockRoot = childOrNull(lock, "lockroot") ?: return
         val href = text(lockRoot, "href")
@@ -242,9 +242,17 @@ internal object WebDavArchiveLockResponse {
         val grantedRoot = root.resolve(href) ?: throw IOException("Invalid WebDAV archive lock root")
         if (grantedRoot == root) return
         // Go WebDAV 续租会去掉目录末尾斜杠，只兼容已持有锁的同一路径
-        if (!refreshing || grantedRoot.newBuilder().addPathSegment("").build() != root) {
-            throw IOException("WebDAV archive requires an exclusive depth infinity collection lock")
-        }
+        if (refreshing && grantedRoot.newBuilder().addPathSegment("").build() == root) return
+        if (matchesLegacyOpenListRoot(root, href, grantedRoot, token)) return
+        throw IOException("WebDAV archive requires an exclusive depth infinity collection lock")
+    }
+
+    private fun matchesLegacyOpenListRoot(root: HttpUrl, href: String, grantedRoot: HttpUrl, token: String): Boolean {
+        if (!decimalToken.matches(token) || !root.encodedPath.startsWith("/dav/")) return false
+        if (!href.startsWith('/') || href.startsWith("//") || '\\' in href) return false
+        // 旧版 OpenList 的十进制锁令牌对应存储路径，申请和续租均可能省略末尾斜杠
+        val storageRoot = root.newBuilder().removePathSegment(0).build()
+        return grantedRoot == storageRoot || grantedRoot.newBuilder().addPathSegment("").build() == storageRoot
     }
 
     private fun readToken(lock: Element, response: Response, expectedToken: String?): String {
