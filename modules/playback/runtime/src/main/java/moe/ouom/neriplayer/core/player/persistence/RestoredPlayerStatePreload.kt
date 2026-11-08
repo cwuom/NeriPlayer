@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lifecycle.initializeImpl
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -159,7 +160,8 @@ private fun buildRestoredStateSnapshot(
             },
             shouldResumePlayback = data.shouldResumePlayback && currentIndex != -1,
             originalPlaylistSize = data.playlist.size,
-            persistedIndex = data.index
+            persistedIndex = data.index,
+            heartbeatMode = data.heartbeatMode ?: HeartbeatMode.OFF
         )
         val identities = playbackLyricIdentityKeys(snapshot.playlist.getOrNull(snapshot.currentIndex),
             snapshot.playlist, snapshot.shuffleRestorePlaylist)

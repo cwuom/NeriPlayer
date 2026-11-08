@@ -1048,6 +1048,9 @@ class ListenTogetherSessionManager(
         _sessionState.value = prepared.applyTo(_sessionState.value)
         membershipOwner.retainCurrentCredential()
         applySessionRoomState(response)
+        // 会话身份真变了才通知：这是「加入了一个房间」的时刻，
+        // 也是唯一需要把心动模式关掉的时刻（房间控制播放，心动选歌不会生效）。
+        if (prepared.sessionChanged) playback.onListenTogetherSessionJoined()
     }
 
     private fun resetForSessionChange(changed: Boolean) {

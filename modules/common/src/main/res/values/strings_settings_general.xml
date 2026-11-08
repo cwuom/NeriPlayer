@@ -87,6 +87,8 @@
     <string name="settings_playback_sleep_timer_finish_current_on_expiry_desc">开启后，倒计时结束时播放完当前歌曲再停止</string>
     <string name="settings_playback_crossfade_in_duration">下一首淡入时长</string>
     <string name="settings_playback_crossfade_out_duration">当前曲淡出时长</string>
+    <string name="settings_heartbeat_section_title">心动模式</string>
+    <string name="settings_heartbeat_section_desc">已登录：使用网易云官方心动模式推荐（基于你的「我喜欢的音乐」与当前播放歌曲）\n未登录：使用本地推荐（基于你的收藏、播放历史与当前歌曲的同歌手/同专辑歌曲）</string>
     <string name="settings_playback_volume_normalization">响度均衡</string>
     <string name="settings_playback_volume_normalization_desc">平衡不同歌曲音量，USB 独占时不生效</string>
     <string name="settings_playback_high_resolution_output">32-bit 高解析输出</string>

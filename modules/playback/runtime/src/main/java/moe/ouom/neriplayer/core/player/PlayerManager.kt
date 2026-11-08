@@ -255,6 +255,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.playback.stopPlaybackImmediatelyImpl
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatOnCurrentSongChanged
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -424,12 +425,7 @@ object PlayerManager {
         get() = playbackQualityOwner.biliPreferredQuality
         set(value) = playbackQualityOwner.setPreferredQuality(PlaybackAudioSource.BILIBILI, value)
 
-    /**
-     * 各平台的音质偏好, 供切换弹窗回显
-     *
-     * 播放页弹窗改的是全局偏好, 选中项不能拿当前流实测出来的档位充数
-     * 否则平台只发得出低码率时弹窗会显示低档, 用户点一下就把默认设置改掉了
-     */
+    /** 各平台的音质偏好, 供切换弹窗回显; 不能拿当前流实测档位充数, 否则只发得出低码率时会显示低档 */
     val preferredQualityKeys: StateFlow<PreferredQualityKeys>
         get() = playbackQualityOwner.preferredKeys
     internal var mobileDataFollowDefaultAudioQuality = true
@@ -810,6 +806,7 @@ object PlayerManager {
         synchronized(storageCachePlaybackLock) { _currentSongFlow.value = song }
         lyriconOutput.publishSong(song)
         playbackProgressOwner.onCurrentSongPublished(song)
+        heartbeatOnCurrentSongChanged(song)
     }
 
     private fun syncChangedSongOutputs(song: SongItem?, syncLyricon: Boolean) {
@@ -1768,7 +1765,11 @@ object PlayerManager {
     fun next(
         force: Boolean = false,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
-    ) = this.nextImpl(force, commandSource)
+    ) {
+        // 用户主动跳过计入心动模式负反馈：由 nextImpl 在确认真的会切歌之后记录，
+        // 避免「USB 确认被取消 / 队列已到底」时也惩罚当前歌。
+        this.nextImpl(force, commandSource, recordUserSkip = true)
+    }
 
     fun previous(commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL) =
         this.previousImpl(commandSource)
