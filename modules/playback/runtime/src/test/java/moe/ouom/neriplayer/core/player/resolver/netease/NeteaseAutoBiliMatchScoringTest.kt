@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.core.player.resolver.netease
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NeteaseAutoBiliMatchScoringTest {
@@ -81,6 +83,26 @@ class NeteaseAutoBiliMatchScoringTest {
 
         assertEquals(-15, scoreNeteaseAutoBiliText(loveStory, "unrelated", "fan", durationSec = 600))
         assertEquals(0, scoreNeteaseAutoBiliText(loveStory, "unrelated", "fan", durationSec = 300))
+    }
+
+    @Test
+    fun `auto source pages must match the song duration`() {
+        val tenMinutes = song(name = "长曲", artist = "某人", durationMs = 600_000L)
+
+        assertTrue(autoBiliDurationMatches(sunny.durationMs, 270))
+        assertTrue(autoBiliDurationMatches(sunny.durationMs, 276))
+        assertFalse(autoBiliDurationMatches(sunny.durationMs, 279))
+        assertFalse(autoBiliDurationMatches(sunny.durationMs, 190))
+
+        // 长曲按 2% 放宽，但封顶 15 秒
+        assertTrue(autoBiliDurationMatches(tenMinutes.durationMs, 611))
+        assertFalse(autoBiliDurationMatches(tenMinutes.durationMs, 614))
+    }
+
+    @Test
+    fun `unknown durations leave the auto source open`() {
+        assertTrue(autoBiliDurationMatches(songDurationMs = 0L, pageDurationSec = 300))
+        assertTrue(autoBiliDurationMatches(sunny.durationMs, pageDurationSec = 0))
     }
 
     private fun song(

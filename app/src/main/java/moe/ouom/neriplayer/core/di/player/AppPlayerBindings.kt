@@ -34,6 +34,7 @@ private object AppPlayerRepositories : PlayerRepositoryDependencies {
     override val youtubeMusicPlaybackRepository get() = AppContainer.youtubeMusicPlaybackRepository
     override val biliSponsorBlockRepository get() = AppContainer.biliSponsorBlockRepository
     override val biliVideoSkipRepository get() = AppContainer.biliVideoSkipRepository
+    override val biliCollectionBindingRepository get() = AppContainer.biliCollectionBindingRepository
     override val cloudMusicSearchApi get() = AppContainer.cloudMusicSearchApi
     override val qqMusicSearchApi get() = AppContainer.qqMusicSearchApi
     override val lrcLibClient get() = AppContainer.lrcLibClient

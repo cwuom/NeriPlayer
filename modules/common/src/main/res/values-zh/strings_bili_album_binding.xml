@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bili_collection_binding_entry">绑定哔哩哔哩分 P</string>
+    <string name="bili_collection_binding_title">绑定哔哩哔哩分 P</string>
+    <string name="bili_collection_binding_desc">填入一个多 P 视频的链接或 BV 号，专辑内每首歌会自动对应到一个分 P；播放该专辑时直接播放对应分 P。</string>
+    <string name="bili_collection_binding_input_hint">视频链接或 BV 号</string>
+    <string name="bili_collection_binding_parse">解析</string>
+    <string name="bili_collection_binding_reparse">重新解析</string>
+    <string name="bili_collection_binding_save">保存绑定</string>
+    <string name="bili_collection_binding_unbind">解除绑定</string>
+    <string name="bili_collection_binding_cancel">取消</string>
+    <string name="bili_collection_binding_invalid_input">没认出视频链接或 BV 号</string>
+    <string name="bili_collection_binding_parse_failed">解析失败，检查网络或视频是否可用</string>
+    <string name="bili_collection_binding_no_pages">这个视频没有可用的分 P</string>
+    <string name="bili_collection_binding_matched_format">已匹配 %1$d / %2$d 首</string>
+    <string name="bili_collection_binding_unmatched">未匹配，点此手动选择</string>
+    <string name="bili_collection_binding_part_format">P%1$d · %2$s</string>
+    <string name="bili_collection_binding_saved">分 P 绑定已保存</string>
+    <string name="bili_collection_binding_save_failed">保存失败，至少需要一首歌对应到分 P</string>
+    <string name="bili_collection_binding_removed">已解除绑定</string>
+    <string name="bili_collection_binding_clear_match">不绑定这一首</string>
+    <string name="bili_collection_binding_current">当前：%1$s</string>
+    <string name="bili_collection_binding_loading">正在解析视频信息…</string>
+    <string name="bili_collection_binding_album_unavailable">专辑信息还没加载完，稍后再试</string>
+    <string name="bili_binding_title_song">指定哔哩哔哩音源</string>
+    <string name="bili_binding_title_album">绑定专辑的哔哩哔哩分 P</string>
+    <string name="bili_binding_title_playlist">绑定歌单的哔哩哔哩分 P</string>
+    <string name="bili_binding_desc">搜索框已填入名字，可直接搜索；单曲点中即保存，专辑/歌单按名字自动配对分 P，也可以手动改选。播放时优先用这里指定的音源。</string>
+    <string name="bili_binding_search_hint">在哔哩哔哩搜索</string>
+    <string name="bili_binding_search">搜索</string>
+    <string name="bili_binding_search_empty">没搜到视频，换个关键词再试</string>
+    <string name="bili_binding_use_link">改用链接</string>
+    <string name="bili_binding_result_count">搜索结果（%1$d）</string>
+    <string name="bili_binding_song_entry">指定哔哩哔哩音源</string>
+</resources>

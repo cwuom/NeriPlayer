@@ -291,6 +291,36 @@ abstract class PlaybackSettingsSection protected constructor() {
     )
 
     @AutoSetting(
+        key = "netease_auto_source_quality_probe",
+        type = SettingValueType.Boolean,
+        defaultBoolean = true,
+        order = 138,
+        ui = SettingUiType.Switch
+    )
+    val neteaseAutoSourceQualityProbe = autoSwitchSetting(
+        key = "netease_auto_source_quality_probe",
+        defaultValue = true,
+        titleRes = CoreCommonR.string.settings_netease_auto_source_quality_probe,
+        descriptionRes = CoreCommonR.string.settings_netease_auto_source_quality_probe_desc,
+        iconRes = CoreCommonR.drawable.ic_bilibili
+    )
+
+    @AutoSetting(
+        key = "bili_collection_binding_priority",
+        type = SettingValueType.Boolean,
+        defaultBoolean = true,
+        order = 139,
+        ui = SettingUiType.Switch
+    )
+    val biliAlbumBindingPriority = autoSwitchSetting(
+        key = "bili_collection_binding_priority",
+        defaultValue = true,
+        titleRes = CoreCommonR.string.settings_bili_collection_binding_priority,
+        descriptionRes = CoreCommonR.string.settings_bili_collection_binding_priority_desc,
+        iconRes = CoreCommonR.drawable.ic_bilibili
+    )
+
+    @AutoSetting(
         key = "youtube_playback_source",
         type = SettingValueType.String,
         defaultString = DEFAULT_YOUTUBE_PLAYBACK_SOURCE,

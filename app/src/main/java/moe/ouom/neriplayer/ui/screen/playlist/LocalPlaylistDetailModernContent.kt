@@ -51,6 +51,7 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Sync
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
@@ -159,6 +160,7 @@ internal fun LocalPlaylistDetailModernContent(
         vm.downloadedSongDeleteFailureDismissed.collectAsStateWithLifecycle()
         var deletingSongCount by remember(playlistId) { mutableIntStateOf(0) }
         var showInsertDialog by remember(playlistId) { mutableStateOf(false) }
+        var showBiliBinding by remember(playlistId) { mutableStateOf(false) }
         var insertInProgress by remember(playlistId) { mutableStateOf(false) }
         var curationSongs by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
         val curatableTabSongs = remember(tabSongs) { tabSongs.filter { it.isLocalSong() } }
@@ -346,6 +348,14 @@ internal fun LocalPlaylistDetailModernContent(
                 }
 
                 if (!isSystemPlaylist) {
+                    HapticIconButton(onClick = { showBiliBinding = true }) {
+                        Icon(
+                            Icons.Outlined.Link,
+                            contentDescription = stringResource(
+                                CoreCommonR.string.bili_collection_binding_entry
+                            )
+                        )
+                    }
                     HapticIconButton(onClick = {
                         renameText =
                             playlistNameFieldValue(playlist.name, maxNameLength)
@@ -1273,6 +1283,14 @@ internal fun LocalPlaylistDetailModernContent(
                 BackHandler(enabled = selectionMode) { exitSelectionMode() }
             }
         )
+
+        if (showBiliBinding) {
+            BiliCollectionBindingDialog(
+                target = biliBindingTargetForPlaylist(playlist.id, playlist.name),
+                songs = playlist.songs,
+                onDismiss = { showBiliBinding = false }
+            )
+        }
     }
 }
 

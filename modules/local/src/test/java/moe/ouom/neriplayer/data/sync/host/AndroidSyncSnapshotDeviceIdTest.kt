@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.sync.host
 
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
@@ -41,7 +42,7 @@ class AndroidSyncSnapshotDeviceIdTest {
         val history = (1L..1501L).map(::entry)
         `when`(fixture.history.syncSnapshot()).thenReturn(history)
 
-        val snapshot = fixture.builder.build(fixture.context, 0L)
+        val snapshot = runBlocking { fixture.builder.build(fixture.context, 0L) }
 
         assertEquals("device", snapshot.deviceId)
         assertEquals(history.map { it.id }, snapshot.recentPlays.map { it.songId })
@@ -55,8 +56,8 @@ class AndroidSyncSnapshotDeviceIdTest {
         `when`(fixture.history.syncSnapshot()).thenReturn(listOf(entry(1L), entry(2L)))
         `when`(fixture.storage.getOrCreateDeviceId()).thenReturn("first-device", "second-device")
 
-        val first = fixture.builder.build(fixture.context, 0L)
-        val second = fixture.builder.build(fixture.context, 0L)
+        val first = runBlocking { fixture.builder.build(fixture.context, 0L) }
+        val second = runBlocking { fixture.builder.build(fixture.context, 0L) }
 
         assertEquals("first-device", first.deviceId)
         assertEquals(setOf("first-device"), first.recentPlays.map { it.deviceId }.toSet())
@@ -72,7 +73,7 @@ class AndroidSyncSnapshotDeviceIdTest {
         `when`(fixture.storage.getOrCreateDeviceId()).thenThrow(failure)
 
         assertSame(failure, assertThrows(IllegalStateException::class.java) {
-            fixture.builder.build(fixture.context, 0L)
+            runBlocking { fixture.builder.build(fixture.context, 0L) }
         })
         verify(fixture.storage, times(1)).getOrCreateDeviceId()
     }
