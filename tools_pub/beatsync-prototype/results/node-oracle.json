@@ -1,0 +1,8 @@
+{
+  "runtime": "v22.15.0",
+  "cases": 1516,
+  "deterministicSeed": 1234567,
+  "upstreamCommit": "94c38ab16ec861835ce0b4bc3a7db82dabbb9b88",
+  "handCheckedCases": 16,
+  "generatedCases": 1500
+}

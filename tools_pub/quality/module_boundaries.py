@@ -75,6 +75,7 @@ LIBRARY_OWNED_FAMILIES = (
 )
 MODEL_MODULE = ":model"
 ALLOWED_DEPENDENCIES = {
+    ":ltwlan": {":common", MODEL_MODULE},
     ":common": set(),
     ":native": set(),
     ":network": {":common"},
@@ -94,7 +95,7 @@ ALLOWED_DEPENDENCIES = {
         ":platform", ":common", ":database", ":download:logic", ":local", ":lyrics", MODEL_MODULE, ":network",
     },
     ":playback:runtime": {
-        ":platform", ":common", ":database", ":listentogether", ":local", ":lyrics", MODEL_MODULE,
+        ":platform", ":common", ":database", ":listentogether", ":ltwlan", ":local", ":lyrics", MODEL_MODULE,
         ":network", ":native", ":playback:logic", ":sync",
     },
 }
@@ -111,6 +112,7 @@ LEGACY_MODEL_TYPES = {
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem")
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.data.sync.model.SyncCausalToken")
 PACKAGE_OWNERS = {
+    "moe.ouom.neriplayer.lanltw": ":ltwlan",
     **{f"moe.ouom.neriplayer.platform.{platform}.api": ":platform"
        for platform in ("bilibili", "netease", "youtube")},
     "moe.ouom.neriplayer.platform.lyrics.api": ":platform",

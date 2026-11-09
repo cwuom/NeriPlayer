@@ -98,6 +98,7 @@ internal fun searchSettingsEntries(
 }
 
 internal fun AutoSettingInfo.settingsPage(): SettingsPage? {
+    if (keyName == "lan_listen_nudge_ms") return SettingsPage.ListenTogether
     if (keyName in LyricAppearanceSettingKeys) {
         return SettingsPage.Lyrics
     }
@@ -162,6 +163,7 @@ internal fun AutoSettingInfo.searchTokens(
 }
 
 internal fun AutoSettingInfo.searchTargetId(): String {
+    if (keyName == "lan_listen_nudge_ms") return "page:ListenTogether"
     val targetKey = when (keyName) {
         "playback_fade_in_duration_ms",
         "playback_fade_out_duration_ms" -> "playback_fade_in"
@@ -755,6 +757,14 @@ internal fun manualSettingsSearchEntries(resources: Resources): List<SettingsSea
         ),
         entry(
             page = SettingsPage.ListenTogether,
+            titleRes = CoreCommonR.string.lan_title,
+            descriptionRes = CoreCommonR.string.lan_description,
+            id = "lan_listen_together",
+            aliases = listOf("LAN", "Wi-Fi", "局域网", "nudge", "偏移"),
+            targetId = "page:ListenTogether"
+        ),
+        entry(
+            page = SettingsPage.ListenTogether,
             titleRes = CoreCommonR.string.listen_together_join_room,
             descriptionRes = CoreCommonR.string.settings_listen_together_join_room_desc,
             id = "listen_together_join_room",
@@ -916,7 +926,7 @@ private val PageSearchAliases = mapOf(
     SettingsPage.TrafficManagement to listOf("traffic", "mobile", "roaming", "data", "liuliang"),
     SettingsPage.Downloads to listOf("download", "downloads", "threads", "parallel", "concurrency", "xiazai"),
     SettingsPage.Backup to listOf("backup", "sync", "github", "webdav", "import", "export", "beifen"),
-    SettingsPage.ListenTogether to listOf("listen together", "room", "worker", "server", "yiqiting"),
+    SettingsPage.ListenTogether to listOf("listen together", "room", "worker", "server", "yiqiting", "LAN", "Wi-Fi", "局域网", "一起听"),
     SettingsPage.About to listOf("about", "version", "debug", "guanyu")
 )
 

@@ -57,7 +57,7 @@ internal suspend fun resolveBackgroundOriginal(
 ): List<LyricEntry> {
     val song = inputs.song
     song.confirmedLyricFor(ManagedLyricVariant.ORIGINAL)?.let { return parseAvailableLyric(it) }
-    if (song?.isLocalSong() == true) return resolveLocalOriginal(inputs, raw)
+    if (song?.isLocalSong() == true && !isLanSessionSong(song)) return resolveLocalOriginal(inputs, raw)
     return resolveRemoteOriginal(inputs, raw, sources)
 }
 
@@ -127,6 +127,10 @@ private suspend fun preferOnlineWordTimedOriginal(
     sources: NowPlayingLyricsSources
 ): List<LyricEntry> = sources.onlineOriginal(song).takeIf { it.hasWordTimedEntries() } ?: parsed
 
+/** LAN 会话歌的歌词来自主控共享的 presentation（经 PlayerManager 钩子），不走本机边车/内嵌解析。 */
+private fun isLanSessionSong(song: SongItem?): Boolean =
+    song?.sourceStableKey?.startsWith("lan-session:") == true
+
 internal fun shouldDelayNowPlayingOnlineLyrics(inputs: NowPlayingLyricsBackgroundInputs): Boolean {
     return shouldWaitForPlaybackMediaUrl(inputs.currentMediaUrl) &&
         isYouTubeMusicMediaUri(inputs.song?.mediaUri)
@@ -171,7 +175,7 @@ private suspend fun readOnlineTranslationUnlessLocal(
     sources: NowPlayingLyricsSources
 ): List<LyricEntry> {
     val song = inputs.song ?: return emptyList()
-    if (song.isLocalSong()) return emptyList()
+    if (song.isLocalSong() && !isLanSessionSong(song)) return emptyList()
     return sources.onlineTranslated(song)
 }
 
@@ -218,7 +222,7 @@ private suspend fun readOnlinePhoneticUnlessLocal(
     song: SongItem?,
     sources: NowPlayingLyricsSources
 ): List<LyricEntry> {
-    if (song == null || song.isLocalSong()) return emptyList()
+    if (song == null || (song.isLocalSong() && !isLanSessionSong(song))) return emptyList()
     return sources.onlineRomanized(song)
 }
 
