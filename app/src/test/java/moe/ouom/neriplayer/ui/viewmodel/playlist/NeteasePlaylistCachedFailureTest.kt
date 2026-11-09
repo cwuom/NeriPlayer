@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -51,6 +52,7 @@ class NeteasePlaylistCachedFailureTest {
     private val application = ApplicationProvider.getApplicationContext<Application>()
     private val client = mock(NeteaseClient::class.java)
     private val cacheRepo = mock(NeteasePlaylistCacheRepository::class.java)
+    private val playlistChanges = MutableSharedFlow<Long>()
     private val cookieFlow = MutableStateFlow(emptyMap<String, String>())
     private val cookieRepo = mock(NeteaseCookieRepository::class.java) { invocation ->
         when (invocation.method.name) {
@@ -104,6 +106,26 @@ class NeteasePlaylistCachedFailureTest {
 
         assertEquals(listOf(7L), state.tracks.map { it.id })
         assertEquals(PlaylistLoadFailure.Unknown, state.error)
+    }
+
+    @Test
+    fun `confirmed change reloads only the open destination and updates its tracks and count`(): Unit = runBlocking {
+        val empty = """{"code":200,"playlist":{"id":41,"name":"Remote","trackCount":0,"tracks":[]}}"""
+        val updated = """{"code":200,"playlist":{"id":41,"name":"Remote","trackCount":1,"tracks":[{"id":8,"name":"New"}],"trackIds":[{"id":8}]}}"""
+        `when`(client.getPlaylistDetailCancellable(41L)).thenReturn(empty, updated)
+        val vm = viewModel()
+        val owner = Any()
+        vm.startPlaylist(playlist(), owner = owner)
+        withTimeout(5_000L) { vm.uiState.first { !it.loading } }
+        playlistChanges.emit(42L)
+        verify(client, times(1)).getPlaylistDetailCancellable(41L)
+
+        playlistChanges.emit(41L)
+        val state = withTimeout(5_000L) { vm.uiState.first { !it.loading && it.tracks.any { song -> song.id == 8L } } }
+        assertEquals(1, state.header?.trackCount)
+        vm.stop(owner)
+        playlistChanges.emit(41L)
+        verify(client, times(2)).getPlaylistDetailCancellable(41L)
     }
 
     @Test
@@ -277,7 +299,7 @@ class NeteasePlaylistCachedFailureTest {
         assertEquals("Remote playlist", state.header?.name)
     }
 
-    private fun viewModel() = NeteaseCollectionDetailViewModel(application, client, cookieRepo, cacheRepo)
+    private fun viewModel() = NeteaseCollectionDetailViewModel(application, client, cookieRepo, cacheRepo, playlistChanges)
         .also(viewModels::add)
 
     private fun playlist() = PlaylistSummary(41L, "Playlist", "", 0L, 1)
