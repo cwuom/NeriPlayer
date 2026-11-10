@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.ui.component.playlist.playlistLoadFailure
 private const val TAG_CLOUD = "NERI-NeteaseCloudVM"
 private const val CLOUD_PAGE_SIZE = 200
 
+/** 云盘页面状态；[tracks] 仅包含已加载曲目，翻页完成后才是完整列表。 */
 data class NeteaseCloudUiState(
     val loading: Boolean = true,
     val loadingMore: Boolean = false,
@@ -58,6 +59,10 @@ data class NeteaseCloudUiState(
     val maxBytes: Long = 0L
 )
 
+/**
+ * 网易云云盘列表状态：分页拉取、容量/总数、登录与离线处理。
+ * 离开页面时通过 [stop] 释放已加载的 [SongItem] 列表。
+ */
 class NeteaseCloudViewModel internal constructor(
     application: Application,
     private val client: NeteaseClient,
@@ -77,6 +82,7 @@ class NeteaseCloudViewModel internal constructor(
     private var currentOwner: Any? = null
     private var currentOfflineMode: Boolean = false
 
+    /** 绑定页面并开始加载；同一 owner 重复调用不会重复请求。 */
     fun start(owner: Any, offlineMode: Boolean = false) {
         if (currentOwner === owner) return
         currentOwner = owner
@@ -84,16 +90,19 @@ class NeteaseCloudViewModel internal constructor(
         reload()
     }
 
+    /** 重新拉取当前列表。 */
     fun refresh(owner: Any) {
         if (currentOwner !== owner) return
         reload()
     }
 
+    /** 加载失败后重试。 */
     fun retry(owner: Any) {
         if (currentOwner !== owner) return
         reload()
     }
 
+    /** 页面切换脱机模式时更新加载状态。 */
     fun updateOfflineMode(owner: Any, offlineMode: Boolean) {
         if (currentOwner !== owner || currentOfflineMode == offlineMode) return
         currentOfflineMode = offlineMode
@@ -110,6 +119,7 @@ class NeteaseCloudViewModel internal constructor(
         }
     }
 
+    /** 页面销毁时停止请求并释放列表。 */
     fun stop(owner: Any) {
         if (currentOwner !== owner) return
         cancelLoad()
@@ -124,6 +134,7 @@ class NeteaseCloudViewModel internal constructor(
         loadJob = null
     }
 
+    /** 取消旧请求并从头加载；已有列表时以刷新态保留旧数据。 */
     private fun reload() {
         loadJob?.cancel()
         loadGeneration += 1L
@@ -174,6 +185,7 @@ class NeteaseCloudViewModel internal constructor(
         }
     }
 
+    /** 顺序拉完所有分页；每页先上屏，同时防止重复页/计数异常导致死循环。 */
     private suspend fun loadAllPages(generation: Long) {
         var offset = 0
         val loaded = mutableListOf<SongItem>()

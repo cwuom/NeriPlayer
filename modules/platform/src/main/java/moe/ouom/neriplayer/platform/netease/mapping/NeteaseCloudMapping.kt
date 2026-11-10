@@ -38,33 +38,33 @@ fun parseNeteaseCloudPage(raw: String, offset: Int): NeteaseCloudPage {
     )
 }
 
+/**
+ * 云盘条目转可播放 [SongItem]；simpleSong 缺失或字段为 null 时回退到条目元数据。
+ */
 private fun parseNeteaseCloudSong(item: JSONObject): SongItem? {
     val simpleSong = item.optJSONObject("simpleSong")
     val songId = simpleSong?.optLong("id", 0L)?.takeIf { it > 0L }
         ?: item.optLong("songId", 0L).takeIf { it > 0L }
         ?: return null
     val name = sequenceOf(
-        simpleSong?.optString("name", ""),
-        item.optString("songName", ""),
-        item.optString("fileName", "").substringBeforeLast('.')
-    ).mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
-        .firstOrNull()
+        simpleSong?.stringOrNull("name"),
+        item.stringOrNull("songName"),
+        item.stringOrNull("fileName")?.substringBeforeLast('.')?.takeIf(String::isNotBlank)
+    ).firstNotNullOfOrNull { it }
         ?: return null
 
     val artists = parseNeteaseArtistsFromSongJson(simpleSong)
     val album = simpleSong?.optJSONObject("al") ?: simpleSong?.optJSONObject("album")
     val albumName = sequenceOf(
-        album?.optString("name", ""),
-        item.optString("album", "")
-    ).mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
-        .firstOrNull()
+        album?.stringOrNull("name"),
+        item.stringOrNull("album")
+    ).firstNotNullOfOrNull { it }
         .orEmpty()
     val coverBase = sequenceOf(
-        album?.optString("picUrl", ""),
-        item.optString("cover", "")
-    ).mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
-        .map { it.replaceFirst(Regex("^http://"), "https://") }
-        .firstOrNull()
+        album?.stringOrNull("picUrl"),
+        item.stringOrNull("cover")
+    ).mapNotNull { url -> url?.replaceFirst(Regex("^http://"), "https://") }
+        .firstOrNull { url -> url.startsWith("https://") }
     val coverUrl = coverBase?.let { withNeteaseImageSize(it, 300) }
     val originalCoverUrl = coverBase?.let { withNeteaseImageSize(it, 1024) }
 
@@ -72,7 +72,7 @@ private fun parseNeteaseCloudSong(item: JSONObject): SongItem? {
         id = songId,
         name = name,
         artist = artists.joinToString(" / ") { it.name }
-            .ifBlank { item.optString("artist", "").trim() },
+            .ifBlank { item.stringOrNull("artist").orEmpty() },
         album = if (albumName.isBlank()) "Netease" else "Netease$albumName",
         albumId = album?.optLong("id", 0L) ?: 0L,
         durationMs = simpleSong?.optLong("dt", 0L)?.takeIf { it > 0L }
@@ -86,6 +86,11 @@ private fun parseNeteaseCloudSong(item: JSONObject): SongItem? {
     )
 }
 
+/** Android 的 optString 会把 JSON null 变成 "null"，这里只接受真正的字符串。 */
+private fun JSONObject.stringOrNull(key: String): String? =
+    if (isNull(key)) null else (opt(key) as? String)?.trim()?.takeIf(String::isNotBlank)
+
+/** 网易云图片 CDN 支持 ?param=WxH；已有尺寸参数时保持原样。 */
 private fun withNeteaseImageSize(url: String, size: Int): String {
     if (url.contains("param=")) return url
     val separator = if (url.contains('?')) '&' else '?'

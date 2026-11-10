@@ -288,6 +288,7 @@ internal fun NeteaseLibraryEmptyCard(
     }
 }
 
+/** 媒体库里的云盘入口行，仅登录后展示。 */
 @Composable
 internal fun NeteaseCloudEntryRow(
     cardShape: Shape,

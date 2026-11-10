@@ -79,6 +79,64 @@ class NeteaseCloudMappingTest {
     }
 
     @Test
+    fun `cloud page ignores null and non-string metadata instead of literal null`() {
+        val raw = """
+            {
+              "code": 200,
+              "count": 4,
+              "data": [
+                {
+                  "songId": 21,
+                  "fileName": null,
+                  "songName": null,
+                  "artist": null,
+                  "album": null,
+                  "cover": 0,
+                  "simpleSong": {"id": 21, "name": null}
+                },
+                {
+                  "songId": 22,
+                  "fileName": "plain.mp3",
+                  "songName": null,
+                  "artist": null,
+                  "album": null,
+                  "cover": "https://cover.test/plain.jpg?v=1"
+                },
+                {
+                  "songId": 23,
+                  "fileName": null,
+                  "songName": null
+                },
+                {
+                  "songId": 24,
+                  "fileName": "no-cover.mp3",
+                  "artist": null,
+                  "album": null,
+                  "cover": 0
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val page = parseNeteaseCloudPage(raw, offset = 0)
+
+        assertEquals(4, page.consumed)
+        assertEquals(listOf(22L, 24L), page.songs.map { it.id })
+
+        val plain = page.songs[0]
+        assertEquals("plain", plain.name)
+        assertEquals("", plain.artist)
+        assertEquals("Netease", plain.album)
+        assertEquals("https://cover.test/plain.jpg?v=1&param=300y300", plain.coverUrl)
+        assertEquals("https://cover.test/plain.jpg?v=1&param=1024y1024", plain.originalCoverUrl)
+
+        val noCover = page.songs[1]
+        assertEquals("no-cover", noCover.name)
+        assertNull(noCover.coverUrl)
+        assertNull(noCover.originalCoverUrl)
+    }
+
+    @Test
     fun `cloud page falls back to file name and skips unusable items`() {
         val raw = """
             {

@@ -105,6 +105,12 @@ import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCloudUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCloudViewModel
 
+/**
+ * 网易云云盘歌曲页
+ * @param onBack 返回回调
+ * @param onSongClick 播放回调，参数为已加载完成的云盘列表与起始下标
+ * @param offlineMode 是否处于脱机模式
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NeteaseCloudScreen(
@@ -288,7 +294,10 @@ fun NeteaseCloudScreen(
                                     selected = false,
                                     onToggleSelect = {},
                                     onLongPress = {},
-                                    onClick = { onSongClick(ui.tracks, index) },
+                                    // 翻页未完成时 tracks 只是前缀，先不让点击入队，避免队列被截断
+                                    onClick = {
+                                        if (!ui.loadingMore) onSongClick(ui.tracks, index)
+                                    },
                                     onPlayNext = { PlayerManager.addToQueueNext(song) },
                                     onAddToQueueEnd = { PlayerManager.addToQueueEnd(song) },
                                     snackbarHostState = snackbarHostState,
@@ -326,6 +335,7 @@ fun NeteaseCloudScreen(
     }
 }
 
+/** 云盘头部：曲目数、容量与播放全部。 */
 @Composable
 private fun NeteaseCloudHeader(
     ui: NeteaseCloudUiState,
@@ -385,7 +395,7 @@ private fun NeteaseCloudHeader(
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalButton(
                 onClick = onPlayAll,
-                enabled = ui.tracks.isNotEmpty()
+                enabled = ui.tracks.isNotEmpty() && !ui.loadingMore
             ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
@@ -402,6 +412,7 @@ private fun NeteaseCloudHeader(
     }
 }
 
+/** 登录、空列表等居中提示。 */
 @Composable
 private fun NeteaseCloudMessage(
     icon: ImageVector,
