@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.platform.netease.api.client
 
+import moe.ouom.neriplayer.platform.netease.api.request.buildNeteaseCloudParams
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
@@ -148,6 +149,24 @@ class NeteaseClientTest {
     @Test(expected = IllegalArgumentException::class)
     fun radarPlaylistMetadataParams_rejectNonPositivePlaylistId() {
         buildNeteaseRadarPlaylistMetadataParams(0L)
+    }
+
+    @Test
+    fun cloudParams_encodeOffsetAndLimit() {
+        val params = buildNeteaseCloudParams(offset = 200, limit = 500)
+
+        assertEquals("200", params["offset"])
+        assertEquals("500", params["limit"])
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun cloudParams_rejectNegativeOffset() {
+        buildNeteaseCloudParams(offset = -1, limit = 100)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun cloudParams_rejectUnsupportedLimit() {
+        buildNeteaseCloudParams(offset = 0, limit = 1001)
     }
 
     private fun assertTrueHexSessionCookie(value: String?) {

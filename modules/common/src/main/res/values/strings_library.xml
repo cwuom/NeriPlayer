@@ -59,6 +59,15 @@
     <string name="library_netease_search_empty_hint">试试输入名称、ID、播放数或曲目数</string>
     <string name="library_netease_playlist_empty">还没有加载到网易云歌单</string>
     <string name="library_netease_album_empty">还没有加载到网易云专辑</string>
+    <string name="library_netease_cloud_entry">云盘</string>
+    <string name="library_netease_cloud_entry_hint">收听上传到网易云的音乐</string>
+    <string name="netease_cloud_title">网易云云盘</string>
+    <string name="netease_cloud_summary" formatted="false">%1$d 首 · %2$s / %3$s</string>
+    <string name="netease_cloud_empty">云盘里还没有歌曲</string>
+    <string name="netease_cloud_empty_hint">在网易云音乐上传音乐后，会显示在这里</string>
+    <string name="netease_cloud_login_required">请先登录网易云音乐</string>
+    <string name="netease_cloud_login_hint">在设置中登录网易云音乐账号后，即可收听云盘里上传的歌曲</string>
+    <string name="netease_cloud_loading_more">正在加载更多…</string>
     <string name="library_bili_empty">还没有加载到哔哩哔哩收藏夹或合集</string>
     <string name="library_bili_hint">确认已登录哔哩哔哩后，会加载创建的收藏夹、订阅收藏夹和收藏的合集</string>
     <string name="library_bili_search_hint">搜索收藏夹 / 合集</string>
