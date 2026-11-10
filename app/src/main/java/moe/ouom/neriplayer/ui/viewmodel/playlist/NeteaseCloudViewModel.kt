@@ -204,9 +204,12 @@ class NeteaseCloudViewModel internal constructor(
                 "page offset=$offset, songs=${page.songs.size}, consumed=${page.consumed}, " +
                     "total=${page.totalCount}, hasMore=${page.hasMore}"
             )
-            val sizeBefore = loaded.size
+            var addedCount = 0
             page.songs.forEach { song ->
-                if (seenIds.add(song.id)) loaded.add(song)
+                if (seenIds.add(song.id)) {
+                    loaded.add(song)
+                    addedCount += 1
+                }
             }
             _uiState.value = NeteaseCloudUiState(
                 loading = false,
@@ -219,9 +222,16 @@ class NeteaseCloudViewModel internal constructor(
                 usedBytes = page.usedBytes,
                 maxBytes = page.maxBytes
             )
-            if (!page.hasMore || page.consumed <= 0) break
-            // offset 未生效时服务端会重复返回同一页，没有新增歌曲就停止
-            if (loaded.size == sizeBefore) break
+            if (
+                shouldStopNeteaseCloudPaging(
+                    hasMore = page.hasMore,
+                    consumed = page.consumed,
+                    parsedCount = page.songs.size,
+                    addedCount = addedCount
+                )
+            ) {
+                break
+            }
             val nextOffset = offset + page.consumed
             // count 是服务端给出的上限，避免 hasMore 异常时无限翻页
             if (page.totalCount > 0 && nextOffset >= page.totalCount) break
@@ -260,4 +270,15 @@ class NeteaseCloudViewModel internal constructor(
             )
         }
     }
+}
+
+/** 判断当前页后是否停止翻页；整页解析失败时不能当成重复页，否则会漏掉后续页。 */
+internal fun shouldStopNeteaseCloudPaging(
+    hasMore: Boolean,
+    consumed: Int,
+    parsedCount: Int,
+    addedCount: Int
+): Boolean {
+    if (!hasMore || consumed <= 0) return true
+    return parsedCount > 0 && addedCount == 0
 }
