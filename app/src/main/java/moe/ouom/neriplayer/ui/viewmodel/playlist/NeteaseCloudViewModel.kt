@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.data.model.playlist.PlaylistLoadFailure
 import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
 import moe.ouom.neriplayer.platform.netease.api.client.mergeNeteaseSessionCookies
 import moe.ouom.neriplayer.platform.netease.auth.NeteaseCookieRepository
+import moe.ouom.neriplayer.platform.netease.mapping.NeteaseCloudAuthRequiredException
 import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseCloudPage
 import moe.ouom.neriplayer.ui.component.playlist.playlistLoadFailure
 
@@ -173,6 +174,13 @@ class NeteaseCloudViewModel internal constructor(
                 loadAllPages(generation)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: NeteaseCloudAuthRequiredException) {
+                if (!isCurrent(generation)) return@launch
+                NPLogger.w(TAG_CLOUD, "NetEase cloud session rejected by server")
+                _uiState.value = NeteaseCloudUiState(
+                    loading = false,
+                    loginRequired = true
+                )
             } catch (e: IOException) {
                 if (!isCurrent(generation)) return@launch
                 NPLogger.e(TAG_CLOUD, "NetEase cloud request failed", e)
@@ -188,6 +196,7 @@ class NeteaseCloudViewModel internal constructor(
     /** 顺序拉完所有分页；每页先上屏，同时防止重复页/计数异常导致死循环。 */
     private suspend fun loadAllPages(generation: Long) {
         var offset = 0
+        var previousRawPage: String? = null
         val loaded = mutableListOf<SongItem>()
         val seenIds = mutableSetOf<Long>()
         while (true) {
@@ -195,6 +204,9 @@ class NeteaseCloudViewModel internal constructor(
                 client.getCloudSongsCancellable(offset, CLOUD_PAGE_SIZE)
             }
             if (!isCurrent(generation)) return
+            // 服务端忽略 offset 时会原样重复同一页；按原始响应判断，不能按“无新增歌曲”判断
+            if (raw == previousRawPage) break
+            previousRawPage = raw
             val page = withContext(Dispatchers.Default) {
                 parseNeteaseCloudPage(raw, offset)
             }
@@ -204,12 +216,8 @@ class NeteaseCloudViewModel internal constructor(
                 "page offset=$offset, songs=${page.songs.size}, consumed=${page.consumed}, " +
                     "total=${page.totalCount}, hasMore=${page.hasMore}"
             )
-            var addedCount = 0
             page.songs.forEach { song ->
-                if (seenIds.add(song.id)) {
-                    loaded.add(song)
-                    addedCount += 1
-                }
+                if (seenIds.add(song.id)) loaded.add(song)
             }
             _uiState.value = NeteaseCloudUiState(
                 loading = false,
@@ -222,16 +230,7 @@ class NeteaseCloudViewModel internal constructor(
                 usedBytes = page.usedBytes,
                 maxBytes = page.maxBytes
             )
-            if (
-                shouldStopNeteaseCloudPaging(
-                    hasMore = page.hasMore,
-                    consumed = page.consumed,
-                    parsedCount = page.songs.size,
-                    addedCount = addedCount
-                )
-            ) {
-                break
-            }
+            if (!page.hasMore || page.consumed <= 0) break
             val nextOffset = offset + page.consumed
             // count 是服务端给出的上限，避免 hasMore 异常时无限翻页
             if (page.totalCount > 0 && nextOffset >= page.totalCount) break
@@ -270,15 +269,4 @@ class NeteaseCloudViewModel internal constructor(
             )
         }
     }
-}
-
-/** 判断当前页后是否停止翻页；整页解析失败时不能当成重复页，否则会漏掉后续页。 */
-internal fun shouldStopNeteaseCloudPaging(
-    hasMore: Boolean,
-    consumed: Int,
-    parsedCount: Int,
-    addedCount: Int
-): Boolean {
-    if (!hasMore || consumed <= 0) return true
-    return parsedCount > 0 && addedCount == 0
 }

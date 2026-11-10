@@ -202,7 +202,7 @@ class NeteaseCloudMappingTest {
 
     @Test
     fun `cloud page rejects unsuccessful responses`() {
-        assertThrows(IllegalArgumentException::class.java) {
+        assertThrows(NeteaseCloudAuthRequiredException::class.java) {
             parseNeteaseCloudPage("""{"code":301,"message":"need login"}""", offset = 0)
         }
         assertThrows(IllegalArgumentException::class.java) {

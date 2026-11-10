@@ -4,6 +4,9 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.netease.cloud.NeteaseCloudPage
 import org.json.JSONObject
 
+/** 云盘请求被判定为登录态失效（例如 MUSIC_U 过期）。 */
+class NeteaseCloudAuthRequiredException : IllegalStateException("NetEase cloud login required")
+
 /**
  * 解析云盘分页响应
  * @param raw 接口原始响应
@@ -12,6 +15,7 @@ import org.json.JSONObject
 fun parseNeteaseCloudPage(raw: String, offset: Int): NeteaseCloudPage {
     val root = JSONObject(raw)
     val code = root.optInt("code", -1)
+    if (code == 301) throw NeteaseCloudAuthRequiredException()
     require(code == 200) { "NetEase cloud request failed with code $code" }
 
     val items = root.optJSONArray("data")
