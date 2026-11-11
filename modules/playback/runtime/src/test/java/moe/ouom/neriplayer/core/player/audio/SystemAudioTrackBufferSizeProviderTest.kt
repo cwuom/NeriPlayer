@@ -23,9 +23,31 @@ class SystemAudioTrackBufferSizeProviderTest {
                     1.0
                 )
 
-                assertEquals(sampleRate * frameSize * 640 / 1_000, bufferBytes)
+                assertEquals(sampleRate * frameSize * 2, bufferBytes)
             }
         }
+    }
+
+    @Test
+    fun `large pcm frames stay within the additional buffer budget and retain whole frames`() {
+        val frameSize = 24
+        val bufferBytes = SystemAudioTrackBufferSizeProvider.getBufferSizeInBytes(
+            32_768, C.ENCODING_PCM_FLOAT, DefaultAudioSink.OUTPUT_MODE_PCM,
+            frameSize, 384_000, C.RATE_UNSET_INT, 1.0
+        )
+
+        assertEquals(4_194_288, bufferBytes)
+        assertEquals(0, bufferBytes % frameSize)
+    }
+
+    @Test
+    fun `device minimum is honored when larger than the additional buffer budget`() {
+        val bufferBytes = SystemAudioTrackBufferSizeProvider.getBufferSizeInBytes(
+            4_500_000, C.ENCODING_PCM_FLOAT, DefaultAudioSink.OUTPUT_MODE_PCM,
+            8, 192_000, C.RATE_UNSET_INT, 1.0
+        )
+
+        assertEquals(4_500_000, bufferBytes)
     }
 
     @Test

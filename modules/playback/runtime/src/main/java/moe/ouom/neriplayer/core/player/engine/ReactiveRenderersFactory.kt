@@ -132,7 +132,8 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
             if (out[index].trackType != C.TRACK_TYPE_AUDIO) continue
             out[index] = SteadyFeedAudioRenderer(
                 out[index],
-                steadyFeedRequired = { AudioReactive.enabled || outputSink.isPlayingHighRateSystemPcm() }
+                steadyFeedRequired = { AudioReactive.enabled || outputSink.isPlayingHighRateSystemPcm() },
+                highRateSystemOutput = outputSink::isPlayingHighRateSystemPcm
             )
         }
     }
@@ -150,14 +151,18 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
             .setAudioTrackBufferSizeProvider(SystemAudioTrackBufferSizeProvider)
             .build()
         val fallbackSink = DefaultAudioSink.Builder(context)
-            .setAudioOutputProvider(outputProvider)
+            .setAudioOutputProvider(TimedHighRatePcmOutputProvider(outputProvider))
             .setAudioProcessors(arrayOf<AudioProcessor>(volumeNormalization, balance, tee))
             .setEnableFloatOutput(enableFloatOutput)
             // 优先使用 Media3 的音频处理链, 避免部分设备在极低倍速下
             // 走平台 AudioTrack PlaybackParams 时出现明显电音/颗粒化失真
             .setEnableAudioOutputPlaybackParameters(false)
             .build()
-        val usbSink = UsbExclusiveAudioSink(context.applicationContext, fallbackSink)
+        val systemSink = object : ForwardingAudioSink(fallbackSink) {
+            // Media3 只从未包装的 AudioTrack provider 查询路由能力
+            override fun getAudioCapabilities() = outputProvider.audioCapabilities
+        }
+        val usbSink = UsbExclusiveAudioSink(context.applicationContext, systemSink)
         usbExclusiveAudioSink = usbSink
         return AudioEffectsAudioSink(usbSink, usbNativeOutputActive = usbSink::isNativeOutputActive)
     }

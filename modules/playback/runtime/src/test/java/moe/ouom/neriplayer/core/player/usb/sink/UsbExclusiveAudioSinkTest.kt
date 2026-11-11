@@ -138,7 +138,11 @@ class UsbExclusiveAudioSinkTest {
         val renderer = mock(Renderer::class.java)
         val dynamicDelayUs = 160_000L
         `when`(renderer.getDurationToProgressUs(0L, 0L)).thenReturn(dynamicDelayUs)
-        val steadyRenderer = SteadyFeedAudioRenderer(renderer, sink::isPlayingHighRateSystemPcm)
+        val steadyRenderer = SteadyFeedAudioRenderer(
+            renderer,
+            steadyFeedRequired = { sink.isPlayingHighRateSystemPcm() },
+            highRateSystemOutput = { false }
+        )
         val highRateFormat = rawPcmFormat().buildUpon().setSampleRate(192_000).build()
 
         sink.configure(highRateFormat, 0, null)
