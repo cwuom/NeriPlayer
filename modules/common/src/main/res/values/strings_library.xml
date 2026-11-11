@@ -68,6 +68,7 @@
     <string name="netease_cloud_login_required">请先登录网易云音乐</string>
     <string name="netease_cloud_login_hint">在设置中登录网易云音乐账号后，即可收听云盘里上传的歌曲</string>
     <string name="netease_cloud_loading_more">正在加载更多…</string>
+    <string name="netease_cloud_incomplete_hint">云盘歌曲未加载完整，请刷新后重试</string>
     <string name="library_bili_empty">还没有加载到哔哩哔哩收藏夹或合集</string>
     <string name="library_bili_hint">确认已登录哔哩哔哩后，会加载创建的收藏夹、订阅收藏夹和收藏的合集</string>
     <string name="library_bili_search_hint">搜索收藏夹 / 合集</string>

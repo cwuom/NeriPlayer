@@ -104,6 +104,7 @@ import moe.ouom.neriplayer.ui.navigation.rememberMainTabDetailVisibilityState
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCloudUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCloudViewModel
+import moe.ouom.neriplayer.ui.viewmodel.playlist.canQueueNeteaseCloudTracks
 
 /**
  * 网易云云盘歌曲页
@@ -294,9 +295,16 @@ fun NeteaseCloudScreen(
                                     selected = false,
                                     onToggleSelect = {},
                                     onLongPress = {},
-                                    // 翻页未完成时 tracks 只是前缀，先不让点击入队，避免队列被截断
+                                    // 列表未完整加载时 tracks 只是前缀，先不让点击入队，避免队列被截断
                                     onClick = {
-                                        if (!ui.loadingMore) onSongClick(ui.tracks, index)
+                                        if (
+                                            canQueueNeteaseCloudTracks(
+                                                hasTracks = ui.tracks.isNotEmpty(),
+                                                incomplete = ui.incomplete
+                                            )
+                                        ) {
+                                            onSongClick(ui.tracks, index)
+                                        }
                                     },
                                     onPlayNext = { PlayerManager.addToQueueNext(song) },
                                     onAddToQueueEnd = { PlayerManager.addToQueueEnd(song) },
@@ -395,7 +403,10 @@ private fun NeteaseCloudHeader(
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalButton(
                 onClick = onPlayAll,
-                enabled = ui.tracks.isNotEmpty() && !ui.loadingMore
+                enabled = canQueueNeteaseCloudTracks(
+                    hasTracks = ui.tracks.isNotEmpty(),
+                    incomplete = ui.incomplete
+                )
             ) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
@@ -408,6 +419,14 @@ private fun NeteaseCloudHeader(
                     strokeWidth = 2.dp
                 )
             }
+        }
+        if (ui.incomplete && !ui.loading && !ui.loadingMore && !ui.refreshing) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(CoreCommonR.string.netease_cloud_incomplete_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
         }
     }
 }

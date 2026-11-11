@@ -70,6 +70,7 @@
     <string name="netease_cloud_login_required">Sign in to Netease Music</string>
     <string name="netease_cloud_login_hint">Sign in from Settings to listen to music uploaded to your cloud</string>
     <string name="netease_cloud_loading_more">Loading more…</string>
+    <string name="netease_cloud_incomplete_hint">Cloud songs are not fully loaded. Refresh and try again.</string>
     <string name="library_bili_empty">No Bilibili favorites or collections loaded yet</string>
     <string name="library_bili_hint">Sign in to Bilibili to load created favorites, subscribed favorites, and saved collections</string>
     <string name="library_bili_search_hint">Search favorites / collections</string>

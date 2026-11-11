@@ -51,6 +51,8 @@ private const val CLOUD_PAGE_SIZE = 200
 data class NeteaseCloudUiState(
     val loading: Boolean = true,
     val loadingMore: Boolean = false,
+    /** 当前 [tracks] 是否可能只是前缀（翻页未完成或中途失败），此时不能入队。 */
+    val incomplete: Boolean = false,
     val refreshing: Boolean = false,
     val loginRequired: Boolean = false,
     val error: PlaylistLoadFailure? = null,
@@ -197,6 +199,7 @@ class NeteaseCloudViewModel internal constructor(
     private suspend fun loadAllPages(generation: Long) {
         var offset = 0
         var previousRawPage: String? = null
+        var completed = false
         val loaded = mutableListOf<SongItem>()
         val seenIds = mutableSetOf<Long>()
         while (true) {
@@ -205,7 +208,15 @@ class NeteaseCloudViewModel internal constructor(
             }
             if (!isCurrent(generation)) return
             // 服务端忽略 offset 时会原样重复同一页；按原始响应判断，不能按“无新增歌曲”判断
-            if (raw == previousRawPage) break
+            if (raw == previousRawPage) {
+                NPLogger.w(TAG_CLOUD, "repeated cloud page at offset=$offset, stop paging")
+                _uiState.value = _uiState.value.copy(
+                    loadingMore = false,
+                    incomplete = true,
+                    error = PlaylistLoadFailure.Unknown
+                )
+                break
+            }
             previousRawPage = raw
             val page = withContext(Dispatchers.Default) {
                 parseNeteaseCloudPage(raw, offset)
@@ -222,6 +233,7 @@ class NeteaseCloudViewModel internal constructor(
             _uiState.value = NeteaseCloudUiState(
                 loading = false,
                 loadingMore = page.hasMore,
+                incomplete = page.hasMore,
                 refreshing = false,
                 loginRequired = false,
                 error = null,
@@ -230,15 +242,22 @@ class NeteaseCloudViewModel internal constructor(
                 usedBytes = page.usedBytes,
                 maxBytes = page.maxBytes
             )
-            if (!page.hasMore || page.consumed <= 0) break
+            if (!page.hasMore || page.consumed <= 0) {
+                completed = true
+                break
+            }
             val nextOffset = offset + page.consumed
             // count 是服务端给出的上限，避免 hasMore 异常时无限翻页
-            if (page.totalCount > 0 && nextOffset >= page.totalCount) break
+            if (page.totalCount > 0 && nextOffset >= page.totalCount) {
+                completed = true
+                break
+            }
             offset = nextOffset
         }
-        if (_uiState.value.loadingMore) {
-            _uiState.value = _uiState.value.copy(loadingMore = false)
-        }
+        _uiState.value = _uiState.value.copy(
+            loadingMore = false,
+            incomplete = if (completed) false else _uiState.value.incomplete
+        )
         withContext(Dispatchers.IO) { persistSessionCookies() }
     }
 
@@ -270,3 +289,7 @@ class NeteaseCloudViewModel internal constructor(
         }
     }
 }
+
+/** 只有列表完整加载后才能把当前 tracks 入队，避免只入队前缀。 */
+internal fun canQueueNeteaseCloudTracks(hasTracks: Boolean, incomplete: Boolean): Boolean =
+    hasTracks && !incomplete
