@@ -28,7 +28,7 @@ import java.nio.ByteBuffer
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.core.player.audio.HIGH_RATE_PCM_SAMPLE_RATE_HZ
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -117,6 +117,12 @@ internal class UsbExclusiveAudioSink(
     }
 
     fun isNativeOutputActive(): Boolean = usingNative
+
+    fun isPlayingHighRateSystemPcm(): Boolean =
+        playing && fallbackConfigured && !usingNative &&
+            configuredFormat?.sampleMimeType == MimeTypes.AUDIO_RAW &&
+            sampleRate >= HIGH_RATE_PCM_SAMPLE_RATE_HZ
+
     private var fallbackConfigured = false
     private var configuredFormat: Format? = null
     private var configuredBufferSize = 0
@@ -1985,14 +1991,4 @@ internal fun shouldRetryNativeFailure(reason: String): Boolean {
     }
     return !reason.contains("feedback_scheduler", ignoreCase = true) &&
         !reason.contains("permission", ignoreCase = true)
-}
-
-internal fun nativeFormatWarningMessageResId(reason: String): Int? = when {
-    reason.startsWith("sample_rate_unsupported") ->
-        CoreCommonR.string.settings_usb_exclusive_issue_sample_rate
-    reason.startsWith("bit_depth_unsupported") ->
-        CoreCommonR.string.settings_usb_exclusive_issue_bit_depth
-    reason.startsWith("channel_count_unsupported") ->
-        CoreCommonR.string.settings_usb_exclusive_issue_device
-    else -> null
 }

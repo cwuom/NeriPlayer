@@ -191,6 +191,7 @@ private class LocalAudioPlaybackProbe(private val targetPositionMs: Long) :
                 val exoPlayer = ExoPlayer.Builder(context, renderers)
                     .setMediaSourceFactory(mediaSources)
                     .setLoadControl(buildAudioLoadControl())
+                    .experimentalSetDynamicSchedulingEnabled(true)
                     .setReleaseTimeoutMs(1_000L)
                     .build()
                 player = exoPlayer

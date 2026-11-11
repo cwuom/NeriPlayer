@@ -574,7 +574,8 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
             NPLogger.w(
                 "NERI-PlaybackDecoder",
                 "audio underrun: bufferSize=$bufferSize, bufferMs=$bufferSizeMs, " +
-                    "elapsedSinceFeedMs=$elapsedSinceLastFeedMs"
+                    "elapsedSinceFeedMs=$elapsedSinceLastFeedMs, " +
+                    "bufferedMs=${eventTime.totalBufferedDurationMs}"
             )
         }
 

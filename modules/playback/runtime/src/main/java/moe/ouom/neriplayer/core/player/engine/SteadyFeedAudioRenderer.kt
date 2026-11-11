@@ -7,8 +7,8 @@ import androidx.media3.exoplayer.Renderer
 import kotlin.math.min
 
 /**
- * 动态调度会让播放线程按音频缓冲余量休眠，省电但 PCM 会成批送达；
- * 可视化需要连续的数据，开启时退回固定 10 ms 节奏
+ * 动态调度会让播放线程按音频缓冲余量休眠，PCM 会成批送达
+ * 可视化和高采样率系统输出需要更频繁地补数，调度间隔最多 10 ms
  */
 internal class SteadyFeedAudioRenderer(
     renderer: Renderer,

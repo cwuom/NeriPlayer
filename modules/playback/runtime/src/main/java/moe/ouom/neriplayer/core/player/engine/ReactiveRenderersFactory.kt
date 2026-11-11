@@ -37,6 +37,7 @@ import androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer
 import androidx.media3.decoder.ffmpeg.FfmpegLibrary
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.AudioRendererEventListener
 import androidx.media3.exoplayer.audio.DefaultAudioSink
@@ -45,6 +46,7 @@ import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.audio.SystemAudioTrackBufferSizeProvider
 import moe.ouom.neriplayer.core.player.audio.effects.AudioEffectsAudioSink
 import moe.ouom.neriplayer.core.player.usb.sink.UsbExclusiveAudioSink
 import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
@@ -58,6 +60,7 @@ import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
 @UnstableApi
 class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
     private var forceFfmpegPcm16Output = true
+    private lateinit var usbExclusiveAudioSink: UsbExclusiveAudioSink
 
     init {
         val ffmpegPreferredMimeTypes = FFMPEG_PREFERRED_AUDIO_MIME_TYPES.filterTo(linkedSetOf()) { mimeType ->
@@ -124,9 +127,13 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
                 )
             )
         }
+        val outputSink = usbExclusiveAudioSink
         for (index in out.indices) {
             if (out[index].trackType != C.TRACK_TYPE_AUDIO) continue
-            out[index] = SteadyFeedAudioRenderer(out[index], steadyFeedRequired = { AudioReactive.enabled })
+            out[index] = SteadyFeedAudioRenderer(
+                out[index],
+                steadyFeedRequired = { AudioReactive.enabled || outputSink.isPlayingHighRateSystemPcm() }
+            )
         }
     }
 
@@ -139,7 +146,11 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
         val volumeNormalization = VolumeNormalizationAudioProcessor()
         val balance = StereoBalanceAudioProcessor()
         val tee = TeeAudioProcessor(AudioReactive.teeSink)
+        val outputProvider = AudioTrackAudioOutputProvider.Builder(context.applicationContext)
+            .setAudioTrackBufferSizeProvider(SystemAudioTrackBufferSizeProvider)
+            .build()
         val fallbackSink = DefaultAudioSink.Builder(context)
+            .setAudioOutputProvider(outputProvider)
             .setAudioProcessors(arrayOf<AudioProcessor>(volumeNormalization, balance, tee))
             .setEnableFloatOutput(enableFloatOutput)
             // 优先使用 Media3 的音频处理链, 避免部分设备在极低倍速下
@@ -147,6 +158,7 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
             .setEnableAudioOutputPlaybackParameters(false)
             .build()
         val usbSink = UsbExclusiveAudioSink(context.applicationContext, fallbackSink)
+        usbExclusiveAudioSink = usbSink
         return AudioEffectsAudioSink(usbSink, usbNativeOutputActive = usbSink::isNativeOutputActive)
     }
 }
