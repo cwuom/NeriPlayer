@@ -243,7 +243,8 @@ class NeteaseCloudViewModel internal constructor(
                 maxBytes = page.maxBytes
             )
             if (!page.hasMore || page.consumed <= 0) {
-                completed = true
+                // 只有服务端明确没有下一页才算完整；空页只是停止循环，列表仍可能是前缀
+                completed = !page.hasMore
                 break
             }
             val nextOffset = offset + page.consumed
