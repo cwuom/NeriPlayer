@@ -4,6 +4,7 @@ package moe.ouom.neriplayer.core.player.engine.datasource
 
 import moe.ouom.neriplayer.network.range.ResumableHttpRangeSupport
 import android.net.Uri
+import android.os.SystemClock
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BaseDataSource
@@ -239,10 +240,11 @@ internal class ResumableChunkedHttpDataSource(
         val baseSpec = transformedSpec ?: return false
         if (bytesRemainingInRequest == 0L) return false
         val nextStartPosition = baseSpec.position + bytesReadFromRequest
+        val openTime = if (NPLogger.isFileLoggingEnabled) " atMs=${SystemClock.elapsedRealtime()}" else ""
         NPLogger.d(
             TAG,
             "open next resumable range: host=${baseSpec.uri.host}, " +
-                "position=$nextStartPosition, remaining=$bytesRemainingInRequest"
+                "position=$nextStartPosition, remaining=$bytesRemainingInRequest$openTime"
         )
         return try {
             openChunk(startPosition = nextStartPosition)

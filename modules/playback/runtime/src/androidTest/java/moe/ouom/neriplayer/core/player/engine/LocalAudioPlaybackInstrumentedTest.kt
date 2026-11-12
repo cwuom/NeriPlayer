@@ -50,6 +50,7 @@ class LocalAudioPlaybackInstrumentedTest {
         require(source.isAbsolute) { "localAudioSamplePath must be an absolute device path" }
         val expectedMimeType = arguments.getString("expectedAudioMimeType")
             ?.takeIf { it.isNotBlank() }
+        val expectedBufferBytes = arguments.getString("expectedAudioTrackBufferBytes")?.toInt()
         val startPositionMs = arguments.getString("startPositionMs")?.toLong() ?: 0L
         val minimumPositionAdvanceMs = arguments.getString("minimumPositionAdvanceMs")
             ?.toLong() ?: 1_000L
@@ -84,6 +85,9 @@ class LocalAudioPlaybackInstrumentedTest {
         assertTrue("Audio input format was not reported: $diagnostic", !result.inputMimeType.isNullOrBlank())
         if (expectedMimeType != null) {
             assertEquals("Unexpected audio input format: $diagnostic", expectedMimeType, result.inputMimeType)
+        }
+        if (expectedBufferBytes != null) {
+            assertEquals("Unexpected AudioTrack buffer size: $diagnostic", expectedBufferBytes, result.outputBufferBytes)
         }
         assertTrue(
             "AudioTrack did not receive PCM: $diagnostic",
@@ -147,6 +151,7 @@ private class LocalAudioPlaybackProbe(private val targetPositionMs: Long) :
     private var decoderName: String? = null
     private var outputEncoding: Int? = null
     private var outputSampleRate = 0
+    private var outputBufferBytes = 0
     private var audioPositionAdvancing = false
     private var lastSinkError: String? = null
     private var failure: Throwable? = null
@@ -191,6 +196,7 @@ private class LocalAudioPlaybackProbe(private val targetPositionMs: Long) :
                 val exoPlayer = ExoPlayer.Builder(context, renderers)
                     .setMediaSourceFactory(mediaSources)
                     .setLoadControl(buildAudioLoadControl())
+                    .experimentalSetDynamicSchedulingEnabled(true)
                     .setReleaseTimeoutMs(1_000L)
                     .build()
                 player = exoPlayer
@@ -273,6 +279,7 @@ private class LocalAudioPlaybackProbe(private val targetPositionMs: Long) :
     ) {
         outputEncoding = audioTrackConfig.encoding
         outputSampleRate = audioTrackConfig.sampleRate
+        outputBufferBytes = audioTrackConfig.bufferSize
     }
 
     override fun onAudioPositionAdvancing(
@@ -297,6 +304,7 @@ private class LocalAudioPlaybackProbe(private val targetPositionMs: Long) :
                 decoderName = decoderName,
                 outputEncoding = outputEncoding,
                 outputSampleRate = outputSampleRate,
+                outputBufferBytes = outputBufferBytes,
                 audioPositionAdvancing = audioPositionAdvancing,
                 positionMs = exoPlayer.currentPosition,
                 bufferedPositionMs = exoPlayer.bufferedPosition,
@@ -318,6 +326,7 @@ private data class LocalAudioPlaybackSnapshot(
     val decoderName: String? = null,
     val outputEncoding: Int? = null,
     val outputSampleRate: Int = 0,
+    val outputBufferBytes: Int = 0,
     val audioPositionAdvancing: Boolean = false,
     val positionMs: Long = 0L,
     val bufferedPositionMs: Long = 0L,

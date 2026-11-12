@@ -6,9 +6,11 @@ import android.content.Context
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
+import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.audio.AudioOffloadSupport
 import androidx.media3.exoplayer.audio.AudioSink
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.engine.SteadyFeedAudioRenderer
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import org.junit.Assert.assertEquals
@@ -127,6 +129,38 @@ class UsbExclusiveAudioSinkTest {
 
         verify(fallbackSink).configure(format, 0, null)
         verify(fallbackSink).play()
+    }
+
+    @Test
+    fun `only playing high rate system pcm caps the renderer sleep`() {
+        PlayerManager.usbExclusivePlaybackEnabled = false
+        val sink = createSink(mock(AudioSink::class.java))
+        val renderer = mock(Renderer::class.java)
+        val dynamicDelayUs = 160_000L
+        `when`(renderer.getDurationToProgressUs(0L, 0L)).thenReturn(dynamicDelayUs)
+        val steadyRenderer = SteadyFeedAudioRenderer(
+            renderer,
+            steadyFeedRequired = { sink.isPlayingHighRateSystemPcm() },
+            highRateSystemOutput = { false }
+        )
+        val highRateFormat = rawPcmFormat().buildUpon().setSampleRate(192_000).build()
+
+        sink.configure(highRateFormat, 0, null)
+        assertEquals(dynamicDelayUs, steadyRenderer.getDurationToProgressUs(0L, 0L))
+
+        sink.play()
+        assertEquals(Renderer.DEFAULT_DURATION_TO_PROGRESS_US, steadyRenderer.getDurationToProgressUs(0L, 0L))
+
+        setPrivateField(sink, "usingNative", true)
+        assertEquals(dynamicDelayUs, steadyRenderer.getDurationToProgressUs(0L, 0L))
+        setPrivateField(sink, "usingNative", false)
+
+        sink.pause()
+        assertEquals(dynamicDelayUs, steadyRenderer.getDurationToProgressUs(0L, 0L))
+
+        sink.play()
+        sink.configure(rawPcmFormat(), 0, null)
+        assertEquals(dynamicDelayUs, steadyRenderer.getDurationToProgressUs(0L, 0L))
     }
 
     @Test
