@@ -248,9 +248,8 @@ class NeteaseCloudViewModel internal constructor(
                 break
             }
             val nextOffset = offset + page.consumed
-            // count 是服务端给出的上限，避免 hasMore 异常时无限翻页
+            // count 只是停止循环的上限；hasMore 仍为 true 时列表可能不完整
             if (page.totalCount > 0 && nextOffset >= page.totalCount) {
-                completed = true
                 break
             }
             offset = nextOffset
