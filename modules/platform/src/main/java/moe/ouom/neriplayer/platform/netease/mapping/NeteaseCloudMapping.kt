@@ -85,8 +85,10 @@ private fun parseNeteaseCloudSongId(simpleSong: JSONObject?, item: JSONObject): 
 private fun parseNeteaseCloudSongName(simpleSong: JSONObject?, item: JSONObject): String? {
     val simpleName = simpleSong?.stringOrNull("name")
     if (simpleName != null) return simpleName
-    val itemName = item.stringOrNull("songName")
-    if (itemName != null) return itemName
+    return item.stringOrNull("songName") ?: parseNeteaseCloudFileName(item)
+}
+
+private fun parseNeteaseCloudFileName(item: JSONObject): String? {
     val fileName = item.stringOrNull("fileName") ?: return null
     return fileName.substringBeforeLast('.').takeIf { it.isNotBlank() }
 }
@@ -122,7 +124,7 @@ private fun neteaseCloudAlbumLabel(name: String): String =
 private fun JSONObject.stringOrNull(key: String): String? {
     if (isNull(key)) return null
     val value = opt(key) as? String ?: return null
-    return value.trim().takeIf { it.isNotBlank() }
+    return value.trim().ifBlank { null }
 }
 
 /** 网易云图片 CDN 支持 ?param=WxH；已有尺寸参数时保持原样。 */
