@@ -61,6 +61,16 @@
     <string name="library_netease_search_empty_hint">Try a name, ID, play count, or track count</string>
     <string name="library_netease_playlist_empty">No NetEase playlists loaded yet</string>
     <string name="library_netease_album_empty">No NetEase albums loaded yet</string>
+    <string name="library_netease_cloud_entry">Cloud</string>
+    <string name="library_netease_cloud_entry_hint">Listen to music uploaded to Netease</string>
+    <string name="netease_cloud_title">Netease Cloud</string>
+    <string name="netease_cloud_summary" formatted="false">%1$d songs · %2$s / %3$s</string>
+    <string name="netease_cloud_empty">No songs in your cloud yet</string>
+    <string name="netease_cloud_empty_hint">Music you upload in the Netease app will appear here</string>
+    <string name="netease_cloud_login_required">Sign in to Netease Music</string>
+    <string name="netease_cloud_login_hint">Sign in from Settings to listen to music uploaded to your cloud</string>
+    <string name="netease_cloud_loading_more">Loading more…</string>
+    <string name="netease_cloud_incomplete_hint">Cloud songs are not fully loaded. Refresh and try again.</string>
     <string name="library_bili_empty">No Bilibili favorites or collections loaded yet</string>
     <string name="library_bili_hint">Sign in to Bilibili to load created favorites, subscribed favorites, and saved collections</string>
     <string name="library_bili_search_hint">Search favorites / collections</string>

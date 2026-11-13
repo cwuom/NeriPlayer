@@ -85,7 +85,7 @@ python3 -B tools_pub/quality/module_boundaries.py
   只落到主标签或播放服务入口，不会绕过正常导航状态恢复。
 - `Library` 使用分页导航组织本地、收藏、音乐服务器（预览版）、网易云、YouTube Music 与 Bilibili；YouTube Music 入口可在设置中关闭，同时提供最近播放和播放统计入口。
 - 本地媒体库支持歌单/歌手二级分类；收藏页支持歌单/歌手/热点二级分类；
-  网易云页支持歌单/专辑二级分类。
+  网易云页支持歌单/专辑二级分类，并在已登录时提供云盘入口。
 - 本地歌手详情页由 `LocalArtistDetailScreen` 承载，支持播放全部、多选、
   导出歌单和批量下载在线歌曲；网易云艺术家详情页由
   `NeteaseArtistDetailScreen` 承载，支持歌曲/专辑分页和关注状态。
@@ -179,6 +179,10 @@ python3 -B tools_pub/quality/module_boundaries.py
   `NeteasePlaylistCacheRepository` 会缓存歌单 header、曲目、最近曲目签名和保存时间；
   `NeteaseCollectionDetailViewModel` 会先发布缓存再刷新网络，
   当曲目签名未变化或网络失败时复用缓存。
+- **网易云云盘**：
+  `NeteaseCloudViewModel` 通过 `/weapi/v1/cloud/get` 分页拉取用户云盘，
+  优先用 `simpleSong`（缺省时回退文件名与条目元数据）生成可播放的 `SongItem`；
+  云盘歌曲沿用普通网易云播放地址解析。
 
 ## 本地数据与安全
 

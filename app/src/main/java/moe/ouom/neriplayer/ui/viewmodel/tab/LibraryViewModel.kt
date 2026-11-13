@@ -65,6 +65,7 @@ data class LibraryUiState(
     val localPlaylists: List<LocalPlaylist> = emptyList(),
     val neteasePlaylists: List<PlaylistSummary> = emptyList(),
     val neteaseAlbums: List<AlbumSummary> = emptyList(),
+    val neteaseLoggedIn: Boolean = false,
     val neteaseError: String? = null,
     val youtubeMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
     val youtubeMusicError: String? = null,
@@ -88,7 +89,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
 
     private val _uiState = MutableStateFlow(
-        LibraryUiState(localPlaylists = localRepo.playlists.value)
+        LibraryUiState(
+            localPlaylists = localRepo.playlists.value,
+            neteaseLoggedIn = neteaseCookieRepo.getCookiesOnce()["MUSIC_U"]
+                ?.takeIf { it.isNotBlank() } != null
+        )
     )
     val uiState: StateFlow<LibraryUiState> = _uiState
     private var lastYouTubeAuthFingerprint: String? = null
@@ -136,6 +141,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             var observedSession: String? = null
             neteaseCookieRepo.cookieFlow.collect { cookies ->
                 val nextSession = cookies["MUSIC_U"]?.takeIf { it.isNotBlank() }
+                val loggedIn = nextSession != null
+                if (_uiState.value.neteaseLoggedIn != loggedIn) {
+                    _uiState.update { it.copy(neteaseLoggedIn = loggedIn) }
+                }
                 if (nextSession != observedSession || nextSession == null) {
                     neteaseRefreshOwner.cancel()
                 }
