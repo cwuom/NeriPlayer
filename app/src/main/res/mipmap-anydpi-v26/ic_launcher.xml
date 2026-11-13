@@ -2,5 +2,10 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_adaptive_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground_material" />
+    <!-- Android 13+ themed icons: the launcher keeps only this layer's alpha
+         and repaints it with the wallpaper palette. Must be a VectorDrawable
+         (a bitmap layer is ignored by some OEM launchers) and keep its
+         pathData small - a multi-subpath path over ~36 KB fails to inflate
+         and the launcher falls back to the default icon. -->
     <monochrome android:drawable="@drawable/ic_launcher_monochrome_material" />
 </adaptive-icon>
