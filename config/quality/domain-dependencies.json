@@ -2349,6 +2349,7 @@
       "moe.ouom.neriplayer.data.model.netease.playlist.NeteaseLikeSyncPlan",
       "moe.ouom.neriplayer.data.model.netease.playlist.NeteaseLikeSyncResult",
       "moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist",
+      "moe.ouom.neriplayer.data.model.netease.cloud.NeteaseCloudPage",
       "moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaAward",
       "moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo",
       "moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaBasicInfo",

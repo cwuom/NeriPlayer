@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.platform.netease.api.crypto.NeteaseCrypto
 import moe.ouom.neriplayer.data.model.netease.crypto.CryptoMode
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo
 import moe.ouom.neriplayer.platform.netease.api.request.buildNeteasePlaylistAddTracksParams
+import moe.ouom.neriplayer.platform.netease.api.request.buildNeteaseCloudParams
 import moe.ouom.neriplayer.platform.netease.api.request.buildNeteaseFollowedArtistsParams
 import moe.ouom.neriplayer.common.json.JsonUtil.jsonQuote
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -914,8 +915,23 @@ class NeteaseClient(
             "includeVideo" to "true"
         )
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
-    }  
-    
+    }
+
+    /**
+     * 分页获取用户云盘歌曲
+     * @param offset 偏移量
+     * @param limit 单页数量
+     */
+    suspend fun getCloudSongsCancellable(offset: Int = 0, limit: Int = 200): String {
+        return requestCancellable(
+            url = "https://music.163.com/weapi/v1/cloud/get",
+            params = buildNeteaseCloudParams(offset, limit),
+            mode = CryptoMode.WEAPI,
+            method = "POST",
+            usePersistedCookies = true
+        )
+    }
+
     @Throws(IOException::class)
     fun getUserAlbums(userId: Long, offset: Int = 0, limit: Int = 30): String {
         val url = "https://interface3.music.163.com/eapi/mine/rn/resource/list"

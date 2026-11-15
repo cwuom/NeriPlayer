@@ -9,7 +9,7 @@ fun parseNeteaseArtistSummaries(array: JSONArray?): List<NeteaseArtistSummary> {
     if (array == null) return emptyList()
     return array.mapObjectsNotNull { obj ->
         val id = obj.optLong("id", 0L)
-        val name = obj.optString("name", "").trim()
+        val name = if (obj.isNull("name")) "" else obj.optString("name", "").trim()
         if (id <= 0L || name.isBlank()) return@mapObjectsNotNull null
         NeteaseArtistSummary(id = id, name = name)
     }

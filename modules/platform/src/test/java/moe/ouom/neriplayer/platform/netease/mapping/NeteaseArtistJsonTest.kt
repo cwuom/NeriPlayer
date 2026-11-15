@@ -20,6 +20,15 @@ class NeteaseArtistJsonTest {
     }
 
     @Test
+    fun `null artist names are ignored instead of becoming literal null`() {
+        val artists = parseNeteaseArtistSummaries(
+            JSONArray("""[{"id":1,"name":null},{"id":2,"name":" valid "}]""")
+        )
+
+        assertEquals(listOf(NeteaseArtistSummary(id = 2L, name = "valid")), artists)
+    }
+
+    @Test
     fun `song json falls back to artists array when ar is missing`() {
         val song = JSONObject(
             """

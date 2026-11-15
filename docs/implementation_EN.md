@@ -94,7 +94,7 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   or playback-service state recovery.
 - `Library` uses paged navigation for Local, Favorites, Music Server (preview), NetEase, YouTube Music, and Bilibili; the YouTube Music entry can be disabled in Settings. Recent Plays and Playback Stats are also available.
 - Local Library has playlist/artist categories; Favorites has playlist/artist/Hot
-  categories; NetEase has playlist/album categories.
+  categories; NetEase has playlist/album categories plus a cloud entry when signed in.
 - `LocalArtistDetailScreen` handles local artist pages with play-all,
   multi-select, playlist export, and batch downloads for online songs.
   `NeteaseArtistDetailScreen` handles NetEase artist songs/albums and follow state.
@@ -227,6 +227,10 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   signatures, and save time. `NeteaseCollectionDetailViewModel` can publish cached
   data before refreshing the network and reuse the cache when the signature is
   unchanged or a network/parse failure occurs.
+- **NetEase cloud storage**:
+  `NeteaseCloudViewModel` pages through `/weapi/v1/cloud/get` and maps each
+  `simpleSong` (falling back to file name and item metadata) into a playable
+  `SongItem`. Cloud tracks reuse the regular NetEase playback URL resolution.
 
 ## Local data and security
 
