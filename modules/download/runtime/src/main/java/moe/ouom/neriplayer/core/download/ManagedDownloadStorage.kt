@@ -1749,21 +1749,6 @@ object ManagedDownloadStorage {
         return this.buildLyricCandidateNamesImpl(songId, candidateBaseNames, kind)
     }
 
-    /**
-     * 并行读取互不相关的 metadata，单个 sidecar 暂时不可读时保留其余音频结果
-     */
-    internal fun serializeSnapshotCachePayload(
-        cacheKey: String,
-        snapshot: DownloadLibrarySnapshot
-    ): String {
-        return ManagedDownloadSnapshotIndex.serializePayload(cacheKey, snapshot)
-    }
-    internal fun deserializeSnapshotCachePayload(
-        raw: String,
-        expectedKey: String? = null
-    ): Pair<String, DownloadLibrarySnapshot>? {
-        return ManagedDownloadSnapshotIndex.deserializePayload(raw, expectedKey)
-    }
     internal fun applyMetadataWriteToSnapshot(
         snapshot: DownloadLibrarySnapshot,
         metadataEntry: StoredEntry,

@@ -1,14 +1,18 @@
 package moe.ouom.neriplayer.core.download.catalog
 
-import java.io.File
-import java.nio.file.Files
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class DownloadedSongCatalogDurableBackupTest {
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
+
     @Test
     fun `durable catalog round trip preserves complete song metadata`() {
         val song = DownloadedSong(
@@ -79,6 +83,65 @@ class DownloadedSongCatalogDurableBackupTest {
         )
 
         assertEquals(song, restored?.single())
+    }
+
+    @Test
+    fun `old catalog file restores lyrics and ignores missing optional fields`() {
+        val file = temporaryFolder.newFile("legacy-catalog.json")
+        file.writeText(
+            """
+            {
+              "songs": [null, {
+                "id": 42,
+                "name": "夜曲",
+                "filePath": "content://downloads/audio/42.flac",
+                "originalLyric": "[00:01.00]歌词\n[00:02.00]\"回声\"",
+                "matchedLyric": "",
+                "originalCoverUrl": null
+              }],
+              "cacheKey": "legacy-root"
+            }
+            """.trimIndent()
+        )
+
+        val restored = checkNotNull(readManagedCatalogBackupFile(file, "legacy-root")).single()
+
+        assertEquals(42L, restored.id)
+        assertEquals("夜曲", restored.name)
+        assertEquals("[00:01.00]歌词\n[00:02.00]\"回声\"", restored.originalLyric)
+        assertEquals("", restored.matchedLyric)
+        assertNull(restored.originalCoverUrl)
+        assertNull(restored.originalTranslatedLyric)
+        assertNull(readManagedCatalogBackupFile(file, "other-root"))
+    }
+
+    @Test
+    fun `large durable backup round trips all lyric variants`() {
+        val file = temporaryFolder.newFile("large-catalog.json")
+        val lyric = "[00:01.00]第一行 \"回声\"\n".repeat(512)
+        val songs = List(256) { index ->
+            song().copy(
+                id = index.toLong(),
+                stableKey = "$index|local|",
+                filePath = "content://audio/$index",
+                matchedLyric = lyric,
+                originalLyric = lyric,
+                originalTranslatedLyric = lyric,
+                originalRomanizedLyric = lyric
+            )
+        }
+
+        assertTrue(writeManagedCatalogBackupFile(file, "root", songs))
+
+        val restored = checkNotNull(readManagedCatalogBackupFile(file, "root"))
+        assertEquals(songs.size, restored.size)
+        restored.forEachIndexed { index, song ->
+            assertEquals("content://audio/$index", song.filePath)
+            assertEquals(lyric, song.matchedLyric)
+            assertEquals(lyric, song.originalLyric)
+            assertEquals(lyric, song.originalTranslatedLyric)
+            assertEquals(lyric, song.originalRomanizedLyric)
+        }
     }
 
     @Test
@@ -230,27 +293,20 @@ class DownloadedSongCatalogDurableBackupTest {
 
     @Test
     fun `failed backup write does not replace an existing payload`() {
-        val temporaryDirectory = Files.createTempDirectory("neri-catalog-backup").toFile()
-        val existing = File(temporaryDirectory, "backup.json")
+        val existing = temporaryFolder.newFile("backup.json")
         existing.writeText("old-payload")
+        val invalidSongs = object : AbstractList<DownloadedSong>() {
+            override val size = 2
 
-        try {
-            assertFalse(
-                writeManagedCatalogBackupFile(
-                    file = existing,
-                    rootKey = "root",
-                    songs = listOf(song()),
-                    writeAtomically = { _, _ ->
-                        error("simulated atomic write failure")
-                    }
-                )
-            )
-            assertEquals("old-payload", existing.readText())
-            assertTrue(existing.isFile)
-        } finally {
-            existing.delete()
-            temporaryDirectory.delete()
+            override fun get(index: Int): DownloadedSong {
+                check(index == 0) { "simulated failure after the first song" }
+                return song()
+            }
         }
+
+        assertFalse(writeManagedCatalogBackupFile(existing, "root", invalidSongs))
+        assertEquals("old-payload", existing.readText())
+        assertEquals(listOf(existing.name), temporaryFolder.root.list()?.toList())
     }
 
     private fun song(): DownloadedSong {

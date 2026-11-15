@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.common.io.writeTextAtomically
+import moe.ouom.neriplayer.common.io.writeUtf8Atomically
 
 internal const val MANAGED_LIBRARY_CATALOG_BACKUP_SUFFIX = ".managed-v1.json"
 internal const val CONFIRMED_EMPTY_CATALOG_MARKER_SUFFIX = ".confirmed-empty"
@@ -370,12 +371,9 @@ internal class DownloadedSongCatalogRoomStore(
     }
 
     private fun writeLegacyCatalog(rootKey: String, songs: List<DownloadedSong>) {
-        File(context.filesDir, cacheFileName).writeTextAtomically(
-            serializeDownloadedSongsCatalog(
-                cacheKey = rootKey,
-                songs = songs
-            )
-        )
+        File(context.filesDir, cacheFileName).writeUtf8Atomically { writer ->
+            writeDownloadedSongsCatalog(writer, rootKey, songs)
+        }
     }
 
     private fun readLegacyCatalog(rootKey: String): List<DownloadedSong>? {
@@ -383,23 +381,12 @@ internal class DownloadedSongCatalogRoomStore(
         if (!file.exists()) {
             return null
         }
-        val rawPayload = runCatching { file.readText(Charsets.UTF_8) }
-            .onFailure { error ->
-                NPLogger.w(loggerTag, "读取旧下载歌曲目录失败: ${error.message}")
-            }
-            .getOrNull()
-            ?: return null
-        if (rawPayload.isBlank()) {
-            return null
-        }
         return runCatching {
-            deserializeDownloadedSongsCatalog(
-                raw = rawPayload,
-                expectedCacheKey = rootKey,
-                includeOriginalLyrics = true
-            )
+            file.bufferedReader(Charsets.UTF_8).use { reader ->
+                readDownloadedSongsCatalog(reader, rootKey, includeOriginalLyrics = true)
+            }
         }.onFailure { error ->
-            NPLogger.w(loggerTag, "解析旧下载歌曲目录失败，保留文件等待下次迁移: ${error.message}")
+            NPLogger.w(loggerTag, "读取或解析旧下载歌曲目录失败，保留文件等待下次迁移: ${error.message}")
         }.getOrNull()
     }
 
@@ -416,22 +403,13 @@ internal class DownloadedSongCatalogRoomStore(
 internal fun writeManagedCatalogBackupFile(
     file: File,
     rootKey: String,
-    songs: List<DownloadedSong>,
-    writeAtomically: (File, String) -> Unit = { target, payload ->
-        target.writeTextAtomically(payload)
-    }
+    songs: List<DownloadedSong>
 ): Boolean {
     return runCatching {
-        writeAtomically(
-            file,
-            serializeDownloadedSongsCatalog(
-                cacheKey = rootKey,
-                songs = songs,
-                includeOriginalLyrics = true
-            )
-        )
-        true
-    }.getOrElse { false }
+        file.writeUtf8Atomically { writer ->
+            writeDownloadedSongsCatalog(writer, rootKey, songs, includeOriginalLyrics = true)
+        }
+    }.isSuccess
 }
 
 internal fun readManagedCatalogBackupFile(
@@ -440,11 +418,9 @@ internal fun readManagedCatalogBackupFile(
 ): List<DownloadedSong>? {
     if (!file.isFile) return null
     return runCatching {
-        deserializeDownloadedSongsCatalog(
-            raw = file.readText(Charsets.UTF_8),
-            expectedCacheKey = rootKey,
-            includeOriginalLyrics = true
-        )
+        file.bufferedReader(Charsets.UTF_8).use { reader ->
+            readDownloadedSongsCatalog(reader, rootKey, includeOriginalLyrics = true)
+        }
     }.getOrNull()
 }
 

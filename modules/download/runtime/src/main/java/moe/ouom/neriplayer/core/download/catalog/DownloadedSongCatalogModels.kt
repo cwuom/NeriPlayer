@@ -1,5 +1,14 @@
 package moe.ouom.neriplayer.core.download.catalog
 
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
+import com.google.gson.stream.JsonWriter
+import java.io.Reader
+import java.io.StringReader
+import java.io.StringWriter
+import java.io.Writer
+import moe.ouom.neriplayer.core.download.storage.readJsonObject
+import moe.ouom.neriplayer.core.download.storage.writeJsonValue
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.download.catalog.projection.projectDownloadedSongEdits
@@ -13,7 +22,6 @@ import moe.ouom.neriplayer.data.identity.remoteDownloadIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.abs
 import kotlin.math.max
@@ -524,53 +532,66 @@ internal fun serializeDownloadedSongsCatalog(
     songs: List<DownloadedSong>,
     includeOriginalLyrics: Boolean = false
 ): String {
+    val output = StringWriter()
+    writeDownloadedSongsCatalog(output, cacheKey, songs, includeOriginalLyrics)
+    return output.toString()
+}
+
+internal fun writeDownloadedSongsCatalog(
+    output: Writer,
+    cacheKey: String,
+    songs: List<DownloadedSong>,
+    includeOriginalLyrics: Boolean = false
+) {
+    with(JsonWriter(output)) {
+        beginObject()
+        name("cacheKey").value(cacheKey)
+        name("songs").beginArray()
+        songs.forEach { song -> writeJsonValue(catalogSongToJson(song, includeOriginalLyrics)) }
+        endArray()
+        endObject()
+    }
+}
+
+private fun catalogSongToJson(song: DownloadedSong, includeOriginalLyrics: Boolean): JSONObject {
     return JSONObject().apply {
-        put("cacheKey", cacheKey)
-        put("songs", JSONArray().apply {
-            songs.forEach { song ->
-                put(
-                    JSONObject().apply {
-                        put("id", song.id)
-                        put("name", song.name)
-                        put("artist", song.artist)
-                        put("album", song.album)
-                        put("filePath", song.filePath)
-                        put("localFileName", song.localFileName)
-                        put("fileSize", song.fileSize)
-                        put("downloadTime", song.downloadTime)
-                        put("coverPath", song.coverPath)
-                        put("coverUrl", song.coverUrl)
-                        put("matchedLyric", song.matchedLyric)
-                        put("matchedTranslatedLyric", song.matchedTranslatedLyric)
-                        put("matchedRomanizedLyric", song.matchedRomanizedLyric)
-                        put("matchedLyricSource", song.matchedLyricSource)
-                        put("matchedSongId", song.matchedSongId)
-                        put("userLyricOffsetMs", song.userLyricOffsetMs)
-                        put("customCoverUrl", song.customCoverUrl)
-                        put("customName", song.customName)
-                        put("customArtist", song.customArtist)
-                        put("originalName", song.originalName)
-                        put("originalArtist", song.originalArtist)
-                        put("originalCoverUrl", song.originalCoverUrl)
-                        if (includeOriginalLyrics) {
-                            put("originalLyric", song.originalLyric)
-                            put("originalTranslatedLyric", song.originalTranslatedLyric)
-                            put("originalRomanizedLyric", song.originalRomanizedLyric)
-                        }
-                        put("mediaUri", song.mediaUri)
-                        put("durationMs", song.durationMs)
-                        put("stableKey", song.catalogStableKey())
-                        put("sourceIdentityAlbum", song.sourceIdentityAlbum)
-                        put("sourceMediaUri", song.sourceMediaUri)
-                        put("sourceChannelId", song.sourceChannelId)
-                        put("sourceAudioId", song.sourceAudioId)
-                        put("sourceSubAudioId", song.sourceSubAudioId)
-                        put("sourcePlaylistContextId", song.sourcePlaylistContextId)
-                    }
-                )
-            }
-        })
-    }.toString()
+        put("id", song.id)
+        put("name", song.name)
+        put("artist", song.artist)
+        put("album", song.album)
+        put("filePath", song.filePath)
+        put("localFileName", song.localFileName)
+        put("fileSize", song.fileSize)
+        put("downloadTime", song.downloadTime)
+        put("coverPath", song.coverPath)
+        put("coverUrl", song.coverUrl)
+        put("matchedLyric", song.matchedLyric)
+        put("matchedTranslatedLyric", song.matchedTranslatedLyric)
+        put("matchedRomanizedLyric", song.matchedRomanizedLyric)
+        put("matchedLyricSource", song.matchedLyricSource)
+        put("matchedSongId", song.matchedSongId)
+        put("userLyricOffsetMs", song.userLyricOffsetMs)
+        put("customCoverUrl", song.customCoverUrl)
+        put("customName", song.customName)
+        put("customArtist", song.customArtist)
+        put("originalName", song.originalName)
+        put("originalArtist", song.originalArtist)
+        put("originalCoverUrl", song.originalCoverUrl)
+        if (includeOriginalLyrics) {
+            put("originalLyric", song.originalLyric)
+            put("originalTranslatedLyric", song.originalTranslatedLyric)
+            put("originalRomanizedLyric", song.originalRomanizedLyric)
+        }
+        put("mediaUri", song.mediaUri)
+        put("durationMs", song.durationMs)
+        put("stableKey", song.catalogStableKey())
+        put("sourceIdentityAlbum", song.sourceIdentityAlbum)
+        put("sourceMediaUri", song.sourceMediaUri)
+        put("sourceChannelId", song.sourceChannelId)
+        put("sourceAudioId", song.sourceAudioId)
+        put("sourceSubAudioId", song.sourceSubAudioId)
+        put("sourcePlaylistContextId", song.sourcePlaylistContextId)
+    }
 }
 
 internal fun deserializeDownloadedSongsCatalog(
@@ -578,71 +599,106 @@ internal fun deserializeDownloadedSongsCatalog(
     expectedCacheKey: String,
     includeOriginalLyrics: Boolean = false
 ): List<DownloadedSong>? {
-    val root = JSONObject(raw)
-    if (root.optString("cacheKey") != expectedCacheKey) {
-        return null
-    }
-    val songs = root.optJSONArray("songs") ?: return emptyList()
-    return buildList(songs.length()) {
-        for (index in 0 until songs.length()) {
-            val item = songs.optJSONObject(index) ?: continue
-            add(
-                DownloadedSong(
-                    id = item.optLong("id"),
-                    name = item.optString("name"),
-                    artist = item.optString("artist"),
-                    album = item.optString("album"),
-                    filePath = item.optString("filePath"),
-                    localFileName = item.optPresentCatalogString("localFileName")
-                        ?.takeIf(String::isNotBlank),
-                    fileSize = item.optLong("fileSize"),
-                    downloadTime = item.optLong("downloadTime"),
-                    coverPath = item.optString("coverPath").takeIf(String::isNotBlank),
-                    coverUrl = item.optString("coverUrl").takeIf(String::isNotBlank),
-                    matchedLyric = item.optPresentCatalogString("matchedLyric"),
-                    matchedTranslatedLyric = item.optPresentCatalogString("matchedTranslatedLyric"),
-                    matchedRomanizedLyric = item.optPresentCatalogString("matchedRomanizedLyric"),
-                    matchedLyricSource = item.optString("matchedLyricSource").takeIf(String::isNotBlank),
-                    matchedSongId = item.optString("matchedSongId").takeIf(String::isNotBlank),
-                    userLyricOffsetMs = item.optLong("userLyricOffsetMs"),
-                    customCoverUrl = item.optString("customCoverUrl").takeIf(String::isNotBlank),
-                    customName = item.optString("customName").takeIf(String::isNotBlank),
-                    customArtist = item.optString("customArtist").takeIf(String::isNotBlank),
-                    originalName = item.optString("originalName").takeIf(String::isNotBlank),
-                    originalArtist = item.optString("originalArtist").takeIf(String::isNotBlank),
-                    originalCoverUrl = item.optPresentCatalogString("originalCoverUrl")
-                        ?.takeIf { it.isEmpty() || it.isNotBlank() },
-                    originalLyric = if (includeOriginalLyrics) {
-                        item.optPresentCatalogString("originalLyric")
-                    } else {
-                        null
-                    },
-                    originalTranslatedLyric = if (includeOriginalLyrics) {
-                        item.optPresentCatalogString("originalTranslatedLyric")
-                    } else {
-                        null
-                    },
-                    originalRomanizedLyric = if (includeOriginalLyrics) {
-                        item.optPresentCatalogString("originalRomanizedLyric")
-                    } else {
-                        null
-                    },
-                    mediaUri = item.optString("mediaUri").takeIf(String::isNotBlank),
-                    durationMs = item.optLong("durationMs"),
-                    stableKey = item.optString("stableKey").takeIf(String::isNotBlank),
-                    sourceIdentityAlbum = item.optString("sourceIdentityAlbum")
-                        .takeIf(String::isNotBlank),
-                    sourceMediaUri = item.optString("sourceMediaUri").takeIf(String::isNotBlank),
-                    sourceChannelId = item.optString("sourceChannelId").takeIf(String::isNotBlank),
-                    sourceAudioId = item.optString("sourceAudioId").takeIf(String::isNotBlank),
-                    sourceSubAudioId = item.optString("sourceSubAudioId")
-                        .takeIf(String::isNotBlank),
-                    sourcePlaylistContextId = item.optString("sourcePlaylistContextId")
-                        .takeIf(String::isNotBlank)
-                ).withRecoveredRemoteSourceStableKey()
-            )
+    return readDownloadedSongsCatalog(StringReader(raw), expectedCacheKey, includeOriginalLyrics)
+}
+
+internal fun readDownloadedSongsCatalog(
+    input: Reader,
+    expectedCacheKey: String,
+    includeOriginalLyrics: Boolean = false
+): List<DownloadedSong>? {
+    val reader = JsonReader(input)
+    var hasMatchingKey = false
+    var songs = emptyList<DownloadedSong>()
+    reader.beginObject()
+    while (reader.hasNext()) {
+        when (reader.nextName()) {
+            "cacheKey" -> {
+                if (reader.peek() != JsonToken.STRING || reader.nextString() != expectedCacheKey) {
+                    return null
+                }
+                hasMatchingKey = true
+            }
+            "songs" -> songs = reader.readCatalogSongs(includeOriginalLyrics)
+            else -> reader.skipValue()
         }
     }
+    reader.endObject()
+    return songs.takeIf { hasMatchingKey && reader.peek() == JsonToken.END_DOCUMENT }
+}
+
+private fun JsonReader.readCatalogSongs(includeOriginalLyrics: Boolean): List<DownloadedSong> {
+    if (peek() != JsonToken.BEGIN_ARRAY) {
+        skipValue()
+        return emptyList()
+    }
+    return buildList {
+        beginArray()
+        while (hasNext()) {
+            if (peek() == JsonToken.BEGIN_OBJECT) {
+                add(readJsonObject().toCatalogSong(includeOriginalLyrics))
+            } else {
+                skipValue()
+            }
+        }
+        endArray()
+    }
+}
+
+private fun JSONObject.toCatalogSong(includeOriginalLyrics: Boolean): DownloadedSong {
+    return DownloadedSong(
+        id = optLong("id"),
+        name = optString("name"),
+        artist = optString("artist"),
+        album = optString("album"),
+        filePath = optString("filePath"),
+        localFileName = optPresentCatalogString("localFileName")
+            ?.takeIf(String::isNotBlank),
+        fileSize = optLong("fileSize"),
+        downloadTime = optLong("downloadTime"),
+        coverPath = optString("coverPath").takeIf(String::isNotBlank),
+        coverUrl = optString("coverUrl").takeIf(String::isNotBlank),
+        matchedLyric = optPresentCatalogString("matchedLyric"),
+        matchedTranslatedLyric = optPresentCatalogString("matchedTranslatedLyric"),
+        matchedRomanizedLyric = optPresentCatalogString("matchedRomanizedLyric"),
+        matchedLyricSource = optString("matchedLyricSource").takeIf(String::isNotBlank),
+        matchedSongId = optString("matchedSongId").takeIf(String::isNotBlank),
+        userLyricOffsetMs = optLong("userLyricOffsetMs"),
+        customCoverUrl = optString("customCoverUrl").takeIf(String::isNotBlank),
+        customName = optString("customName").takeIf(String::isNotBlank),
+        customArtist = optString("customArtist").takeIf(String::isNotBlank),
+        originalName = optString("originalName").takeIf(String::isNotBlank),
+        originalArtist = optString("originalArtist").takeIf(String::isNotBlank),
+        originalCoverUrl = optPresentCatalogString("originalCoverUrl")
+            ?.takeIf { it.isEmpty() || it.isNotBlank() },
+        originalLyric = if (includeOriginalLyrics) {
+            optPresentCatalogString("originalLyric")
+        } else {
+            null
+        },
+        originalTranslatedLyric = if (includeOriginalLyrics) {
+            optPresentCatalogString("originalTranslatedLyric")
+        } else {
+            null
+        },
+        originalRomanizedLyric = if (includeOriginalLyrics) {
+            optPresentCatalogString("originalRomanizedLyric")
+        } else {
+            null
+        },
+        mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
+        durationMs = optLong("durationMs"),
+        stableKey = optString("stableKey").takeIf(String::isNotBlank),
+        sourceIdentityAlbum = optString("sourceIdentityAlbum")
+            .takeIf(String::isNotBlank),
+        sourceMediaUri = optString("sourceMediaUri").takeIf(String::isNotBlank),
+        sourceChannelId = optString("sourceChannelId").takeIf(String::isNotBlank),
+        sourceAudioId = optString("sourceAudioId").takeIf(String::isNotBlank),
+        sourceSubAudioId = optString("sourceSubAudioId")
+            .takeIf(String::isNotBlank),
+        sourcePlaylistContextId = optString("sourcePlaylistContextId")
+            .takeIf(String::isNotBlank)
+    ).withRecoveredRemoteSourceStableKey()
 }
 
 internal fun isResolvableLocalReference(reference: String): Boolean {
