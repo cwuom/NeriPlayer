@@ -390,7 +390,7 @@ internal class UsbExclusiveAudioSink(
         if (written <= 0) {
             val nowMs = SystemClock.elapsedRealtime()
             val runtimeReport = refreshRuntimeAfterStalledWrite(nowMs)
-            val metrics = runtimeReport.usbRuntimeMetrics()
+            val metrics = pcmWriter.runtimeMetrics(runtimeReport)
             if (
                 executeNativeRecoveryActionIfNeeded(
                     runtimeReport = runtimeReport,
@@ -1105,7 +1105,7 @@ internal class UsbExclusiveAudioSink(
 
     private fun recoverNativePlaybackAfterAudioQualityDegradationIfNeeded(
         runtimeReport: String = UsbExclusiveSessionController.runtimeReportForWritePlanning(nativeHandle),
-        metrics: UsbExclusiveRuntimeMetrics = runtimeReport.usbRuntimeMetrics(),
+        metrics: UsbExclusiveRuntimeMetrics = pcmWriter.runtimeMetrics(runtimeReport),
         nowMs: Long = SystemClock.elapsedRealtime()
     ): Boolean {
         if (!usingNative || nativeHandle == 0L || failoverRequested) return false
@@ -1128,7 +1128,7 @@ internal class UsbExclusiveAudioSink(
 
     private fun executeNativeRecoveryActionIfNeeded(
         runtimeReport: String = UsbExclusiveSessionController.runtimeReportForWritePlanning(nativeHandle),
-        metrics: UsbExclusiveRuntimeMetrics = runtimeReport.usbRuntimeMetrics(),
+        metrics: UsbExclusiveRuntimeMetrics = pcmWriter.runtimeMetrics(runtimeReport),
         nowMs: Long = SystemClock.elapsedRealtime()
     ): Boolean {
         if (!usingNative || nativeHandle == 0L || failoverRequested) return false
