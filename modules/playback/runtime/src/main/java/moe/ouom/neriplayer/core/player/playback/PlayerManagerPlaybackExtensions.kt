@@ -1774,6 +1774,7 @@ private fun PlayerManager.reportFirstProgressAdvanceIfDetected() {
     startupStallRecoveryAttempts = 0
     // 解析成功不代表能解码，只有真正出声才结束连续失败计数
     consecutivePlayFailures = 0
+    biliHttpErrorRefreshRequestToken = null
     cancelPlaybackStartupWatchdog(reason = "position_advanced")
     PlaybackTransitionWakeLock.release(playbackRequestToken, "position_advanced")
     recordPlaybackRuntimeProgress(player.currentPosition)

@@ -114,8 +114,10 @@ python3 -B tools_pub/quality/module_boundaries.py
 
 - 播放核心基于 Media3 ExoPlayer，由 `PlayerManager` 统一管理。
 - `AudioPlayerService` 提供前台播放服务、媒体通知、MediaSession 和基础传输控制。
-- Bilibili 播放通过 `ConditionalHttpDataSourceFactory`
-  动态附加 `Referer / User-Agent / Cookie`。
+- Bilibili 播放通过 `ConditionalHttpDataSourceFactory` 为媒体 CDN 附加 `Referer` 和
+  `User-Agent`，仅在受信任的 HTTPS CDN 上发送 Cookie。海外 COS CDN 在从头请求整个
+  音频时使用 `Range: bytes=0-`，Akamai 备用 CDN 使用公开请求头。最后一个候选返回
+  HTTP 错误时，播放器只尝试重新取流一次，直到播放进度推进或新的播放请求开始。
 - YouTube Music 播放包含平台 Range 传输兼容、Seek 刷新策略和预取逻辑；播放解析
   会复用登录 Cookie、匿名会话、bootstrap、`player.js` 和 PoToken 缓存，并在播放候选
   被拒时回退 EJS/HLS；长音频的大幅 Seek 会进入更短的启动恢复窗口，避免等待普通

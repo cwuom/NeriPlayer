@@ -600,18 +600,33 @@ private fun String.toLocalPlaybackUri(): Uri? {
     }
 }
 
-internal fun PlayerManager.shouldAttemptUrlRefresh(
+internal fun PlayerManager.tryBeginUrlRefreshAfterPlaybackError(
     error: PlaybackException,
     song: SongItem?,
     isOfflineCache: Boolean
 ): Boolean {
     if (song == null) return false
-    return shouldAttemptCachedPlaybackRepair(
-        error = error,
-        isOfflineCache = isOfflineCache,
-        isYouTubeTrack = isYouTubeMusicTrack(song),
-        isLocalSong = isLocalSong(song)
-    )
+    val isLocal = isLocalSong(song)
+    if (!shouldAttemptCachedPlaybackRepair(
+            error = error,
+            isOfflineCache = isOfflineCache,
+            isYouTubeTrack = isYouTubeMusicTrack(song),
+            isLocalSong = isLocal
+        )
+    ) return false
+
+    if (isOfflineCache || isLocal || error.errorCode != PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS) return true
+
+    val isBili = _currentPlaybackAudioInfo.value
+        ?.let { it.source == PlaybackAudioSource.BILIBILI }
+        ?: isBiliTrack(song)
+    if (!isBili) return true
+
+    // 重新取流可能仍返回同一组被拒绝的 CDN 地址
+    val requestToken = playbackRequestToken
+    if (biliHttpErrorRefreshRequestToken == requestToken) return false
+    biliHttpErrorRefreshRequestToken = requestToken
+    return true
 }
 
 internal fun shouldAttemptCachedPlaybackRepair(

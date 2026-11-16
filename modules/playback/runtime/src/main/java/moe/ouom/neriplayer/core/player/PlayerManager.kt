@@ -572,6 +572,7 @@ object PlayerManager {
     internal var playbackPositionGeneration: Long = 0L
     internal var lastUrlRefreshKey: String? = null
     internal var lastUrlRefreshAtMs: Long = 0L
+    internal var biliHttpErrorRefreshRequestToken: Long? = null
     internal var currentMediaUrlResolvedAtMs: Long = 0L
     internal var currentPlaybackDemandCacheKey: String? = null
     // One-shot retry position for the current server track, independent of restart preferences.
