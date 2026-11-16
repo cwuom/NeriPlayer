@@ -892,6 +892,39 @@ class PlayerManagerLocalMetadataEditRegressionTest {
     }
 
     @Test
+    fun `app-only manual acquisition saves the match when the audio tree is read only`() = runTest {
+        val tree = DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", "primary:Music")
+        val document = DocumentsContract.buildDocumentUriUsingTree(tree, "primary:Music/song.mp3")
+        val resolver = mock(ContentResolver::class.java)
+        val permission = mock(UriPermission::class.java)
+        doReturn(resolver).`when`(application).contentResolver
+        doReturn(listOf(permission)).`when`(resolver).persistedUriPermissions
+        doReturn(tree).`when`(permission).uri
+        doReturn(true).`when`(permission).isReadPermission
+        val song = localSong(document.toString()).copy(
+            durationMs = 120_000L,
+            originalLyric = "original lyrics", originalTranslatedLyric = "", originalRomanizedLyric = ""
+        )
+        val selected = configureManualSelection()
+        manager.publishCurrentQueue(listOf(song), 0)
+
+        assertTrue(manager.applyManualMetadataSelection(
+            song, selected,
+            SongMetadataApplyOptions(lyricSources = setOf(EditableLyricMatchSource.KUGOU), romanizedLyrics = false),
+            isLatestRequest = { true }, onProgress = {}
+        ))
+
+        val applied = manager.currentPlaylist.single()
+        assertEquals(song.mediaUri, applied.mediaUri)
+        assertEquals("Selected", applied.customName)
+        assertEquals("Singer", applied.customArtist)
+        assertEquals("[00:01.00]selected lyric", applied.matchedLyric)
+        assertEquals("[00:01.00]selected translation", applied.matchedTranslatedLyric)
+        assertEquals("original lyrics", applied.originalLyric)
+        assertTrue(applied.lyricSyncEdited == true)
+    }
+
+    @Test
     fun `superseded manual acquisition does not commit its prepared metadata`() = runTest {
         val audio = temporaryFolder.newFile("manual-stale.mp3").apply { writeText("audio") }
         val song = localSong(audio.path).copy(

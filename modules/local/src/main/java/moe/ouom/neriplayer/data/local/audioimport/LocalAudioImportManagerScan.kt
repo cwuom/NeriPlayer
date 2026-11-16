@@ -14,8 +14,10 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
 import moe.ouom.neriplayer.data.local.media.LOCAL_METADATA_SUFFIX
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.curation.LocalMediaWriteAccess
 import moe.ouom.neriplayer.data.local.media.isNeteaseManagedSourceStableKey
 import moe.ouom.neriplayer.data.local.media.isMediaStoreSidecarReference
+import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
 import moe.ouom.neriplayer.data.local.media.repairLocalMetadataText
 import moe.ouom.neriplayer.data.model.SongItem
@@ -200,6 +202,9 @@ private fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         metadata.originalLyric == null && metadata.originalTranslatedLyric == null &&
         metadata.originalRomanizedLyric == null
     ) return LocalMediaSupport.retainEmbeddedSongCovers(context, song)
+    // 只读目录中的侧载文件可能早于应用内自定义信息
+    val preferAppOverrides = (song.customName != null || song.customArtist != null || song.customCoverUrl != null) &&
+        song.localMediaUri()?.let { LocalMediaWriteAccess.requiresDocumentFolderGrant(context, it) } == true
     return LocalMediaSupport.retainEmbeddedSongCovers(context, song.copy(
         sourceModifiedAtMs = metadata.sourceModifiedAtMs ?: song.sourceModifiedAtMs,
         id = metadata.songId ?: song.id,
@@ -219,9 +224,9 @@ private fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
             ?: metadataCoverForIdentity
             ?: song.originalCoverUrl.normalizeImportedCoverReference()
             ?: resolvedCover,
-        customName = firstMeaningfulMetadataValue(metadata.customName)
+        customName = firstMeaningfulMetadataValue(song.customName.takeIf { preferAppOverrides }, metadata.customName)
             ?: song.customName?.takeUnless(::isQuickMetadataPlaceholder),
-        customArtist = firstMeaningfulMetadataValue(metadata.customArtist)
+        customArtist = firstMeaningfulMetadataValue(song.customArtist.takeIf { preferAppOverrides }, metadata.customArtist)
             ?: song.customArtist?.takeUnless(::isQuickMetadataPlaceholder),
         originalName = firstMeaningfulMetadataValue(metadata.originalName)
             ?: firstMeaningfulMetadataValue(song.originalName)
@@ -232,7 +237,7 @@ private fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         originalLyric = metadata.originalLyric ?: song.originalLyric,
         originalTranslatedLyric = metadata.originalTranslatedLyric ?: song.originalTranslatedLyric,
         originalRomanizedLyric = metadata.originalRomanizedLyric ?: song.originalRomanizedLyric,
-        customCoverUrl = firstMeaningfulMetadataValue(metadata.customCoverUrl)
+        customCoverUrl = firstMeaningfulMetadataValue(song.customCoverUrl.takeIf { preferAppOverrides }, metadata.customCoverUrl)
             ?: song.customCoverUrl,
         channelId = metadata.channelId?.takeIf(String::isNotBlank) ?: song.channelId,
         audioId = metadata.audioId?.takeIf(String::isNotBlank) ?: song.audioId,

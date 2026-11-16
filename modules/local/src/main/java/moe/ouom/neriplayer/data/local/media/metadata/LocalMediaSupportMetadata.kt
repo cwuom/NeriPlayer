@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.SystemClock
 import android.provider.DocumentsContract
 import kotlinx.coroutines.CancellationException
+import moe.ouom.neriplayer.data.local.media.curation.FolderArtworkLocator
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.io.readBytesLimited
@@ -54,7 +55,9 @@ internal fun LocalMediaSupport.editableLocalMediaUriCandidates(
     context: Context,
     song: SongItem
 ): List<Uri> {
-    val directCandidates = song.localMediaUriCandidates()
+    val directCandidates = song.localMediaUriCandidates().map { uri ->
+        FolderArtworkLocator.writableExternalStorageDocumentUri(context, uri) ?: uri
+    }
     val safCandidates = directCandidates.asSequence()
         .filter(::isMediaStoreUri)
         .mapNotNull { source -> resolveWritableSafMirrorOrNull(context, source) }

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.media.curation
 
 import android.content.Context
+import android.content.UriPermission
 import android.net.Uri
 import android.provider.DocumentsContract
 import java.io.File
@@ -8,6 +9,7 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.isExternalStorageDocumentUri
 import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.model.SongItem
 
@@ -134,6 +136,48 @@ object FolderArtworkLocator {
         val directory = songDirectory(context, song) ?: return@withContext false
         val path = storagePathOf(directory) ?: return@withContext false
         grantedTrees(context, requireWrite = true).any { (_, documentId) -> path.isInside(documentId) }
+    }
+
+    internal fun externalStorageDocumentParent(uri: Uri): StorageDocumentPath? {
+        if (!isExternalStorageDocumentUri(uri)) return null
+        val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull() ?: return null
+        val volumeId = documentId.substringBefore(':')
+        val path = documentId.substringAfter(':', "")
+        if (volumeId.isBlank() || path.split('/').any { it.isEmpty() || it == "." || it == ".." }) return null
+        return StorageDocumentPath(volumeId, path.substringBeforeLast('/', ""))
+    }
+
+    internal fun writableExternalStorageDocumentUri(context: Context, sourceUri: Uri): Uri? {
+        val parent = externalStorageDocumentParent(sourceUri) ?: return null
+        return writableExternalStorageDocumentUri(
+            sourceUri, parent, context.contentResolver.persistedUriPermissions.orEmpty()
+        )
+    }
+
+    internal fun writableExternalStorageDocumentUri(
+        sourceUri: Uri,
+        parent: StorageDocumentPath,
+        permissions: List<UriPermission>
+    ): Uri? {
+        val sourceTreeId = if (DocumentsContract.isTreeUri(sourceUri)) {
+            DocumentsContract.getTreeDocumentId(sourceUri)
+        } else null
+        var writableTree: Uri? = null
+        for (permission in permissions) {
+            if (!permission.isReadPermission || !permission.isWritePermission) continue
+            val tree = permission.uri
+            if (tree.authority != EXTERNAL_STORAGE_AUTHORITY ||
+                tree.pathSegments.size != 2 || !DocumentsContract.isTreeUri(tree)
+            ) continue
+            val treeId = DocumentsContract.getTreeDocumentId(tree)
+            // 歌词和封面写在歌曲旁，授权需要覆盖歌曲所在目录
+            if (':' !in treeId || !parent.isInside(treeId)) continue
+            if (treeId == sourceTreeId) return sourceUri
+            if (writableTree == null) writableTree = tree
+        }
+        return writableTree?.let { tree ->
+            DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getDocumentId(sourceUri))
+        }
     }
 
     private fun grantedTrees(context: Context, requireWrite: Boolean = false): List<Pair<Uri, String>> {

@@ -859,6 +859,18 @@ object LocalAudioImportManager {
             channelId = quickSong.channelId ?: detailedSong.channelId ?: "local",
             audioId = resolvedAudioId,
             sourceStableKey = resolvedSourceStableKey
+        ).withEditedLyricsFrom(quickSong)
+    }
+
+    private fun SongItem.withEditedLyricsFrom(song: SongItem): SongItem {
+        if (song.lyricSyncEdited != true) return this
+        // 应用内匹配的歌词可能无法写入只读目录，重新读取文件时保留这些修改
+        return copy(
+            matchedLyric = song.matchedLyric ?: matchedLyric,
+            matchedTranslatedLyric = song.matchedTranslatedLyric ?: matchedTranslatedLyric,
+            matchedRomanizedLyric = song.matchedRomanizedLyric ?: matchedRomanizedLyric,
+            matchedLyricSource = song.matchedLyricSource,
+            matchedSongId = song.matchedSongId
         )
     }
 
@@ -1052,7 +1064,7 @@ object LocalAudioImportManager {
             } else {
                 song.matchedSongId
             }
-        ).let { LocalMediaSupport.retainEmbeddedSongCovers(context, it) }
+        ).withEditedLyricsFrom(song).let { LocalMediaSupport.retainEmbeddedSongCovers(context, it) }
     }
 
     /**
