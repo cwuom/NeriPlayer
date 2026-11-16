@@ -77,7 +77,7 @@ class LocalAudioImportOriginalMetadataTest {
     }
 
     @Test
-    fun `read only folder hydration keeps app metadata over stale sidecar overrides`() {
+    fun `folder hydration keeps app metadata after a read only tree becomes writable`() {
         val tree = DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", "primary:Music")
         val document = DocumentsContract.buildDocumentUriUsingTree(tree, "primary:Music/song.flac")
         val resolver = mock(ContentResolver::class.java)
@@ -112,9 +112,17 @@ class LocalAudioImportOriginalMetadataTest {
         val writable = LocalAudioImportManager.hydrateLocalSongFromIndexedMetadataSidecar(
             mockContext, edited, metadata.absolutePath
         )
-        assertEquals("Old title", writable.customName)
-        assertEquals("Old artist", writable.customArtist)
-        assertEquals("/saved/old.jpg", writable.customCoverUrl)
+        assertEquals(edited.customName, writable.customName)
+        assertEquals(edited.customArtist, writable.customArtist)
+        assertEquals(edited.customCoverUrl, writable.customCoverUrl)
+
+        val freshImport = edited.copy(customName = null, customArtist = null, customCoverUrl = null)
+        val fromSidecar = LocalAudioImportManager.hydrateLocalSongFromIndexedMetadataSidecar(
+            mockContext, freshImport, metadata.absolutePath
+        )
+        assertEquals("Old title", fromSidecar.customName)
+        assertEquals("Old artist", fromSidecar.customArtist)
+        assertEquals("/saved/old.jpg", fromSidecar.customCoverUrl)
     }
 
     @Test

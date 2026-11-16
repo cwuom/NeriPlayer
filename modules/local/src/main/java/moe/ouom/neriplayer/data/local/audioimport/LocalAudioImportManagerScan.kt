@@ -14,7 +14,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
 import moe.ouom.neriplayer.data.local.media.LOCAL_METADATA_SUFFIX
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.media.curation.LocalMediaWriteAccess
+import moe.ouom.neriplayer.data.local.media.isExternalStorageDocumentUri
 import moe.ouom.neriplayer.data.local.media.isNeteaseManagedSourceStableKey
 import moe.ouom.neriplayer.data.local.media.isMediaStoreSidecarReference
 import moe.ouom.neriplayer.data.local.media.localMediaUri
@@ -202,9 +202,9 @@ private fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         metadata.originalLyric == null && metadata.originalTranslatedLyric == null &&
         metadata.originalRomanizedLyric == null
     ) return LocalMediaSupport.retainEmbeddedSongCovers(context, song)
-    // 只读目录中的侧载文件可能早于应用内自定义信息
+    // 授予目录写权限不会更新旧侧载，已有的应用内自定义信息继续优先
     val preferAppOverrides = (song.customName != null || song.customArtist != null || song.customCoverUrl != null) &&
-        song.localMediaUri()?.let { LocalMediaWriteAccess.requiresDocumentFolderGrant(context, it) } == true
+        song.localMediaUri()?.let(::isExternalStorageDocumentUri) == true
     return LocalMediaSupport.retainEmbeddedSongCovers(context, song.copy(
         sourceModifiedAtMs = metadata.sourceModifiedAtMs ?: song.sourceModifiedAtMs,
         id = metadata.songId ?: song.id,
