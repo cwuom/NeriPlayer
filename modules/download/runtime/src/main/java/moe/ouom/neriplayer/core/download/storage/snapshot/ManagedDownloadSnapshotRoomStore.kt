@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
-import moe.ouom.neriplayer.common.io.writeTextAtomically
+import moe.ouom.neriplayer.common.io.writeUtf8Atomically
 import java.io.IOException
 
 /** Compatibility adapter for code that still names the old Room store. */
@@ -43,9 +43,9 @@ internal class ManagedDownloadSnapshotRoomStore(
         return try {
             // 先纠正旧提升标记，避免清理器把唯一的新快照当作可删除的旧 JSON
             markDiskPrimary(cacheKey)
-            cacheFile.writeTextAtomically(
-                ManagedDownloadSnapshotIndex.serializePayload(cacheKey, snapshot)
-            )
+            cacheFile.writeUtf8Atomically { writer ->
+                ManagedDownloadSnapshotJsonCodec.write(writer, cacheKey, snapshot)
+            }
             true
         } catch (error: IOException) {
             NPLogger.w(TAG, "写入下载索引缓存失败: ${error.message}")

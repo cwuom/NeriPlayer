@@ -23,6 +23,7 @@ dependencies {
     implementation(libs.androidx.media3.extractor)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.gson)
     api(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
     implementation(libs.taglib)
