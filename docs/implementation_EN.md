@@ -142,8 +142,12 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 - Playback is based on Media3 ExoPlayer and managed by `PlayerManager`.
 - `AudioPlayerService` provides foreground playback, media notifications,
   MediaSession, and basic transport controls.
-- Bilibili playback uses `ConditionalHttpDataSourceFactory` to append
-  `Referer / User-Agent / Cookie`.
+- Bilibili playback uses `ConditionalHttpDataSourceFactory` to attach `Referer` and
+  `User-Agent` to media CDN requests. Cookies are sent only to trusted HTTPS CDN
+  hosts. Unbounded requests from byte zero on the overseas COS CDN use
+  `Range: bytes=0-`. The Akamai backup uses public request headers. After exhausting
+  the candidates on an HTTP error, playback refreshes the stream URLs only once
+  until playback advances or a new playback request starts.
 - YouTube Music playback includes platform range-transfer compatibility, seek refresh policy,
   and prefetching. Login cookies, anonymous sessions, bootstrap, `player.js`, and
   PoToken caches are reused, with EJS/HLS fallback after playback-candidate rejection.

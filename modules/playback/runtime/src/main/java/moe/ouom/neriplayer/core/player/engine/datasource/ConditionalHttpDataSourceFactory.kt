@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.core.player.engine.datasource
  */
 
 import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.DataSpec
@@ -42,6 +43,8 @@ import moe.ouom.neriplayer.platform.bilibili.api.stream.isBiliStreamUrl
 import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.platform.youtube.api.transport.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
+import moe.ouom.neriplayer.network.range.ResumableHttpRangeSupport
+import moe.ouom.neriplayer.network.security.normalizeTrustedHost
 
 internal fun removeExplicitRangeHeader(headers: Map<String, String>): Map<String, String> {
     return LinkedHashMap<String, String>().apply {
@@ -67,6 +70,8 @@ class ConditionalHttpDataSourceFactory(
 ) : HttpDataSource.Factory {
 
     companion object {
+        private const val BILI_OVERSEAS_COS_HOST = "upos-sz-mirrorcosov.bilivideo.com"
+        private const val BILI_AKAMAI_HOST = "upos-hz-mirrorakam.akamaized.net"
         private const val BILI_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                 "AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/124.0.0.0 Safari/537.36"
@@ -95,16 +100,9 @@ class ConditionalHttpDataSourceFactory(
         val dataSource = ServerAwareHttpDataSource(ResumableChunkedHttpDataSource(
             upstreamFactory = baseFactory,
             transformDataSpec = { dataSpec ->
+                val host = normalizeTrustedHost(dataSpec.uri.host)
                 when {
-                    shouldInjectBiliHeaders(dataSpec.uri) -> {
-                        val headers = buildBiliHeaders(
-                            dataSpec.httpRequestHeaders,
-                            allowCookies = dataSpec.uri.scheme.equals("https", ignoreCase = true)
-                        )
-                        dataSpec.buildUpon()
-                            .setHttpRequestHeaders(headers)
-                            .build()
-                    }
+                    shouldInjectBiliHeaders(dataSpec.uri, host) -> buildBiliDataSpec(dataSpec, host)
                     shouldInjectYouTubeHeaders(dataSpec.uri) -> {
                         buildYouTubeDataSpec(dataSpec)
                     }
@@ -140,9 +138,9 @@ class ConditionalHttpDataSourceFactory(
     /**
      * 是否需要为该 URI 注入 B 站拉流所需的请求头
      */
-    private fun shouldInjectBiliHeaders(uri: Uri): Boolean {
+    private fun shouldInjectBiliHeaders(uri: Uri, host: String): Boolean {
         return (uri.scheme.equals("https", ignoreCase = true) || uri.scheme.equals("http", ignoreCase = true)) &&
-            (isBiliStreamHost(uri.host.orEmpty()) || isBiliStreamUrl(uri.toString()))
+            (host == BILI_AKAMAI_HOST || isBiliStreamHost(host) || isBiliStreamUrl(uri.toString()))
     }
 
     private fun shouldInjectYouTubeHeaders(uri: Uri): Boolean {
@@ -157,19 +155,30 @@ class ConditionalHttpDataSourceFactory(
             rawUrl.contains("/videoplayback")
     }
 
-    /**
-     * 基于原始请求头构建 B 站拉流所需的头部 (Referer/UA/Cookie)
-     */
-    private fun buildBiliHeaders(original: Map<String, String>, allowCookies: Boolean): Map<String, String> {
-        val newHeaders = LinkedHashMap<String, String>(original)
-        newHeaders["Referer"] = "https://www.bilibili.com"
-        newHeaders["User-Agent"] = BILI_USER_AGENT
+    private fun buildBiliDataSpec(dataSpec: DataSpec, host: String): DataSpec {
+        val headers = LinkedHashMap(dataSpec.httpRequestHeaders)
+        headers["Referer"] = "https://www.bilibili.com"
+        headers["User-Agent"] = BILI_USER_AGENT
+        val allowCookies = dataSpec.uri.scheme.equals("https", ignoreCase = true) && host != BILI_AKAMAI_HOST
         if (!allowCookies) {
-            newHeaders.keys.removeAll { it.equals("Cookie", ignoreCase = true) }
+            headers.keys.removeAll { it.equals("Cookie", ignoreCase = true) }
         } else if (latestCookieHeader.isNotBlank()) {
-            newHeaders["Cookie"] = latestCookieHeader
+            headers["Cookie"] = latestCookieHeader
         }
-        return newHeaders
+
+        // 海外 COS 会拒绝无 Range 的整段 GET，Media3 只会为有偏移或长度的请求生成 Range
+        if (host == BILI_OVERSEAS_COS_HOST &&
+            dataSpec.httpMethod == DataSpec.HTTP_METHOD_GET &&
+            dataSpec.position == 0L &&
+            dataSpec.length == C.LENGTH_UNSET.toLong() &&
+            !ResumableHttpRangeSupport.hasExplicitRangeHeader(headers)
+        ) {
+            headers["Range"] = "bytes=0-"
+        }
+
+        return dataSpec.buildUpon()
+            .setHttpRequestHeaders(headers)
+            .build()
     }
 
     private fun buildYouTubeHeaders(

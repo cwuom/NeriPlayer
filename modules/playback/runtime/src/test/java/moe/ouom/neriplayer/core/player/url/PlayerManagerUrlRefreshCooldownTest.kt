@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.url
 
 import android.app.Application
 import android.os.SystemClock
+import androidx.media3.common.PlaybackException
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +20,8 @@ import moe.ouom.neriplayer.core.player.runtime.stats.PlaybackStatsOwner
 import moe.ouom.neriplayer.core.player.testing.FakeExoPlayer
 import moe.ouom.neriplayer.core.player.testing.PlayerTestEnvironment
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -33,6 +36,40 @@ import org.robolectric.annotation.Config
 @Config(sdk = [28], manifest = Config.NONE)
 class PlayerManagerUrlRefreshCooldownTest {
     private val manager = PlayerManager
+    private val badHttpStatus = PlaybackException(
+        "CDN rejected the stream", null, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+    )
+
+    @Test
+    fun `bilibili http failures can refresh once per playback request`() = runTest {
+        withPlaybackState {
+            val biliSong = song(518L).copy(album = "${PlayerManager.BILI_SOURCE_TAG}|BV1Test")
+            manager._currentPlaybackAudioInfo.value = null
+
+            assertTrue(manager.tryBeginUrlRefreshAfterPlaybackError(badHttpStatus, biliSong, isOfflineCache = false))
+            assertFalse(manager.tryBeginUrlRefreshAfterPlaybackError(badHttpStatus, biliSong, isOfflineCache = false))
+
+            manager.playbackRequestToken++
+
+            assertTrue(manager.tryBeginUrlRefreshAfterPlaybackError(badHttpStatus, biliSong, isOfflineCache = false))
+        }
+    }
+
+    @Test
+    fun `bilibili http refresh limit follows the resolved audio source`() = runTest {
+        withPlaybackState {
+            val neteaseSong = song(518L)
+            manager._currentPlaybackAudioInfo.value = PlaybackAudioInfo(PlaybackAudioSource.BILIBILI)
+
+            assertTrue(manager.tryBeginUrlRefreshAfterPlaybackError(badHttpStatus, neteaseSong, isOfflineCache = false))
+            assertFalse(manager.tryBeginUrlRefreshAfterPlaybackError(badHttpStatus, neteaseSong, isOfflineCache = false))
+            assertTrue(manager.tryBeginUrlRefreshAfterPlaybackError(badHttpStatus, neteaseSong, isOfflineCache = true))
+
+            manager._currentPlaybackAudioInfo.value = PlaybackAudioInfo(PlaybackAudioSource.NETEASE)
+
+            assertTrue(manager.tryBeginUrlRefreshAfterPlaybackError(badHttpStatus, neteaseSong, isOfflineCache = false))
+        }
+    }
 
     @Test
     fun `cooldown fallback ignores a replaced playback request for the same song`() = runTest {
@@ -219,6 +256,7 @@ class PlayerManagerUrlRefreshCooldownTest {
         val previousResumeRequested = manager.resumePlaybackRequested
         val previousRefreshKey = manager.lastUrlRefreshKey
         val previousRefreshAt = manager.lastUrlRefreshAtMs
+        val previousBiliHttpErrorRefreshRequestToken = manager.biliHttpErrorRefreshRequestToken
         val previousFailures = manager.consecutivePlayFailures
         val previousMediaUrl = manager._currentMediaUrl.value
         val previousAudioInfo = manager._currentPlaybackAudioInfo.value
@@ -268,6 +306,7 @@ class PlayerManagerUrlRefreshCooldownTest {
                 manager.consecutivePlayFailures = 0
                 manager.lastUrlRefreshKey = manager.computeCacheKey(requireNotNull(manager._currentSongFlow.value))
                 manager.lastUrlRefreshAtMs = SystemClock.elapsedRealtime()
+                manager.biliHttpErrorRefreshRequestToken = null
                 fake.check()
             } finally {
                 backgroundScope.coroutineContext.cancelChildren()
@@ -280,6 +319,7 @@ class PlayerManagerUrlRefreshCooldownTest {
                 manager.updateResumePlaybackRequested(previousResumeRequested)
                 manager.lastUrlRefreshKey = previousRefreshKey
                 manager.lastUrlRefreshAtMs = previousRefreshAt
+                manager.biliHttpErrorRefreshRequestToken = previousBiliHttpErrorRefreshRequestToken
                 manager.consecutivePlayFailures = previousFailures
                 manager._currentMediaUrl.value = previousMediaUrl
                 manager._currentPlaybackAudioInfo.value = previousAudioInfo
