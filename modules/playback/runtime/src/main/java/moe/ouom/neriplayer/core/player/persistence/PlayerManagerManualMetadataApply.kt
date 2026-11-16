@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.persistence
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -19,6 +20,8 @@ import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.curation.LocalMediaWriteAccess
+import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
@@ -104,13 +107,21 @@ internal suspend fun PlayerManager.applyManualMetadataSelection(
                         writeLyrics = lyrics.hasUpdates
                     )
                 } else {
-                    val writable = resolveLocalSidecarWriteSong(updated)
-                    if (writable != null && LocalMediaSupport.writeLocalMetadataSidecar(
+                    val saved = resolveLocalSidecarWriteSong(updated)?.let { writable ->
+                        val needsFolderGrant = withContext(Dispatchers.IO) {
+                            writable.localMediaUri()?.let { uri ->
+                                LocalMediaWriteAccess.requiresDocumentFolderGrant(application, uri)
+                            } == true
+                        }
+                        // 只读目录也可以通过应用的歌单和播放状态保存匹配结果
+                        needsFolderGrant || LocalMediaSupport.writeLocalMetadataSidecar(
                             context = application,
                             song = writable,
                             writeLyrics = lyrics.hasUpdates,
                             coverReference = coverReference
-                        )) LocalMediaMetadataWriteOutcome.SUCCESS else LocalMediaMetadataWriteOutcome.FAILED
+                        )
+                    } == true
+                    if (saved) LocalMediaMetadataWriteOutcome.SUCCESS else LocalMediaMetadataWriteOutcome.FAILED
                 }
                 if (outcome != LocalMediaMetadataWriteOutcome.SUCCESS) {
                     showLocalEditableMetadataWriteFeedback(outcome, PlayerDownloadedMetadataSyncOutcome.NOT_DOWNLOADED)

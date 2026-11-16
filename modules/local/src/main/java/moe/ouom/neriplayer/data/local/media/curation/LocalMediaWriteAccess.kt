@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.local.media.curation
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.UriPermission
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -29,7 +30,7 @@ sealed interface LocalMediaWriteAccessPlan {
     data class SystemConsent(val requests: List<PendingIntent>, val pendingItems: Int) : LocalMediaWriteAccessPlan
 
     /**
-     * Android 10 没有批量修改授权，只能让用户授予这批歌曲所在的文件夹，写入改走文件夹授权；
+     * 存储文档以及 Android 10 上无法直接修改的媒体文件，需要其所在目录的写权限
      * 跨存储卷或用户选了别的目录时一次覆盖不全，授权后需要重新规划
      */
     data class FolderGrant(
@@ -49,22 +50,44 @@ object LocalMediaWriteAccess {
     fun isMediaStoreItem(uri: Uri): Boolean =
         uri.scheme.equals("content", ignoreCase = true) && uri.authority == MEDIA_STORE_AUTHORITY
 
+    fun requiresDocumentFolderGrant(context: Context, uri: Uri): Boolean =
+        pendingDocumentFolder(uri) { context.contentResolver.persistedUriPermissions.orEmpty() } != null
+
     suspend fun plan(context: Context, songs: List<SongItem>): LocalMediaWriteAccessPlan =
         withContext(Dispatchers.IO) {
+            val permissions by lazy(LazyThreadSafetyMode.NONE) {
+                context.contentResolver.persistedUriPermissions.orEmpty()
+            }
+            val documentFolders = songs.mapNotNull { song ->
+                song.localMediaUri()?.let { uri -> pendingDocumentFolder(uri) { permissions } }
+            }
             when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                    val pending = songs.mapNotNull { song -> pendingMediaStoreUri(context, song) }.distinct()
-                    systemConsentPlan(pending) { batch -> MediaStore.createWriteRequest(context.contentResolver, batch) }
-                }
                 Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> {
                     val pending = songs.filter { song ->
                         pendingMediaStoreUri(context, song)?.let { uri -> !isOwnedByApp(context, uri) } == true
                     }
-                    folderGrantPlan(pending.map { song -> FolderArtworkLocator.storagePathOf(context, song) })
+                    folderGrantPlan(
+                        documentFolders + pending.map { song -> FolderArtworkLocator.storagePathOf(context, song) }
+                    )
+                }
+                documentFolders.isNotEmpty() -> folderGrantPlan(documentFolders)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                    val pending = songs.mapNotNull { song -> pendingMediaStoreUri(context, song) }.distinct()
+                    systemConsentPlan(pending) { batch -> MediaStore.createWriteRequest(context.contentResolver, batch) }
                 }
                 else -> LocalMediaWriteAccessPlan.Ready
             }
         }
+
+    private inline fun pendingDocumentFolder(
+        uri: Uri,
+        permissions: () -> List<UriPermission>
+    ): StorageDocumentPath? {
+        val parent = FolderArtworkLocator.externalStorageDocumentParent(uri) ?: return null
+        return parent.takeIf {
+            FolderArtworkLocator.writableExternalStorageDocumentUri(uri, it, permissions()) == null
+        }
+    }
 
     private suspend fun pendingMediaStoreUri(context: Context, song: SongItem): Uri? {
         val uri = song.localMediaUri()?.takeIf(::isMediaStoreItem) ?: return null
