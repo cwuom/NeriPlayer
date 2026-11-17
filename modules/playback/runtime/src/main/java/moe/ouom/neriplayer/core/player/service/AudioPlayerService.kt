@@ -991,6 +991,12 @@ class AudioPlayerService : Service() {
             PlayerManager.colorOsLyricTimelineFlow, PlayerManager.colorOsLockscreenLyricsEnabledFlow,
         ) { refreshLyricMetadata() }
         serviceScope.launch {
+            while (true) {
+                delay(25_000L)
+                if (presentationOwnerDelegate.isInitialized()) presentationOwner.refreshAtomicLyrics()
+            }
+        }
+        serviceScope.launch {
             PlayerManager.currentAudioDeviceFlow.collectSafely("currentAudioDeviceFlow") {
                 updateMetadata()
             }

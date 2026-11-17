@@ -95,6 +95,7 @@ internal interface PlaybackServicePresentationPort {
     fun publishWidget(state: PlaybackWidgetState, artwork: Bitmap?)
     fun publishWidgetProgress(state: PlaybackWidgetState)
     fun setMetadata(metadata: MediaMetadata)
+    fun setExtras(extras: Bundle)
     fun artworkUri(song: SongItem): String?
     suspend fun publishArtwork(song: SongItem, bitmap: Bitmap, source: String?): String?
     fun setPlaybackState(state: PlaybackState)
@@ -217,6 +218,10 @@ internal class AndroidPlaybackServicePresentationPort(
 
     override fun setMetadata(metadata: MediaMetadata) {
         requireSession().setMetadata(metadata)
+    }
+
+    override fun setExtras(extras: Bundle) {
+        requireSession().setExtras(extras)
     }
 
     override fun artworkUri(song: SongItem): String = CarArtworkProvider.uriFor(context, song).toString()

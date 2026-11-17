@@ -68,6 +68,7 @@ internal fun serviceMetadataSnapshot(
     artworkUri: String? = null,
     mediaId: String? = null,
     colorOsLyricInfo: String? = null,
+    joviCarLyrics: String? = null,
 ): PlaybackMetadataSnapshot = PlaybackMetadataSnapshot(
     songKey = song?.playbackVisualKey(),
     title = text.title,
@@ -84,6 +85,7 @@ internal fun serviceMetadataSnapshot(
     numTracks = queueSize.toLong(),
     artworkUri = artworkUri,
     colorOsLyricInfo = colorOsLyricInfo,
+    joviCarLyrics = joviCarLyrics,
 )
 
 internal fun serviceMediaMetadata(
@@ -103,8 +105,13 @@ internal fun serviceMediaMetadata(
         .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, snapshot.mediaId)
         .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, snapshot.trackNumber)
         .putLong(MediaMetadata.METADATA_KEY_NUM_TRACKS, snapshot.numTracks)
+        .putLong("vivomusicmix.media.metadata.support_event", 31L)
         .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, mediaBitmap)
         .putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, iconBitmap)
+    snapshot.joviCarLyrics?.takeIf(String::isNotBlank)?.let { lyrics ->
+        builder.putString("ucar.media.metadata.LYRICS_WHOLE", lyrics)
+        builder.putLong("ucar.media.metadata.LYRICS_STATUS", 0L)
+    }
     addOptionalAlbum(builder, snapshot.album)
     addOptionalDescription(builder, snapshot.displayDescription)
     addArtworkUri(builder, snapshot.artworkUri)

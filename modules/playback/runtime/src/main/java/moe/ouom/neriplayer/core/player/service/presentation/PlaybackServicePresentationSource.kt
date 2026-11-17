@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.core.player.service.lyrics.coloros.ColorOsLyricTimeline
 import moe.ouom.neriplayer.core.player.service.lyrics.coloros.colorOsLyricPayload
+import moe.ouom.neriplayer.core.player.service.lyrics.coloros.joviCarLyricPayload
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -49,6 +50,7 @@ internal data class PlaybackServiceMetadataInputs(
     val album: String? = null,
     val colorOsLyricsEnabled: Boolean = false,
     val colorOsLyricInfo: String? = null,
+    val joviCarLyrics: String? = null,
 )
 
 internal data class PlaybackServiceTimerInputs(
@@ -104,7 +106,13 @@ internal class AndroidPlaybackServicePresentationSource(
         album = metadataAlbum(),
         colorOsLyricsEnabled = PlayerManager.colorOsLockscreenLyricsEnabled,
         colorOsLyricInfo = currentColorOsLyricInfo(),
+        joviCarLyrics = currentJoviCarLyrics(),
     )
+
+    private fun currentJoviCarLyrics(): String? {
+        val song = playbackSurfaceSong() ?: return null
+        return joviCarLyricPayload(PlayerManager.colorOsLyricTimelineFlow.value, song.stableKey())
+    }
 
     private fun currentColorOsLyricInfo(): String? {
         if (!PlayerManager.colorOsLockscreenLyricsEnabled) return null

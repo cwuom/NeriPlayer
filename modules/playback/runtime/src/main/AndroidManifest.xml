@@ -31,6 +31,7 @@
             tools:ignore="ExportedService">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
+                <action android:name="com.vivo.musicwidgetmix.support.service" />
             </intent-filter>
         </service>
         <!-- 蓝牙与 Android Auto 必须跨应用读取封面，provider 在每次 openFile 和 getType 时校验 UID 权限或签名 -->

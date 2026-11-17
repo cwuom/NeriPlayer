@@ -279,14 +279,8 @@ private fun PlayerManager.clearFloatingTranslatedLyricLine() {
 }
 
 private fun PlayerManager.shouldProvideExternalLyricLine(): Boolean {
-    return externalBluetoothLyricsEnabled ||
-        externalBluetoothTranslationEnabled ||
-        dynamicIslandLyricsEnabled ||
-        colorOsLockscreenLyricsEnabled ||
-        xiaomiSuperIslandLyricEnabled ||
-        liveUpdateLyricEnabled ||
-        statusBarLyricsEnable ||
-        floatingLyricsEnabled
+    // JoviInCar and vivo's atomic player request whole-song lyrics through MediaSession.
+    return true
 }
 
 private fun PlayerManager.shouldProvideExternalTranslatedLyricLine(): Boolean {
@@ -302,7 +296,7 @@ private fun PlayerManager.shouldProvideExternalTranslatedLyricLine(): Boolean {
 }
 
 private fun PlayerManager.publishColorOsLyricTimeline(song: SongItem) {
-    if (!colorOsLockscreenLyricsEnabled || externalBluetoothLyricsSongKey != song.stableKey()) return
+    if (externalBluetoothLyricsSongKey != song.stableKey()) return
     val request = externalLyricRequest ?: return
     colorOsLyricTimelineOwner.publish(
         request, externalBluetoothLyrics, floatingTranslatedLyrics, externalLyricOffsetMs(song),

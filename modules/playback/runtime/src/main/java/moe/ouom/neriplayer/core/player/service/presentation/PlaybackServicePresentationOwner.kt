@@ -25,6 +25,7 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.Bundle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -72,6 +73,7 @@ internal data class PlaybackMetadataSnapshot(
     val numTracks: Long = 0L,
     val artworkUri: String? = null,
     val colorOsLyricInfo: String? = null,
+    val joviCarLyrics: String? = null,
 )
 
 internal fun resolveServicePlaybackState(snapshot: PlaybackServicePlaybackSnapshot): Int = when {
@@ -129,6 +131,8 @@ internal class PlaybackServicePresentationOwner(
     // 会话拒收过位图的封面, 同一封面后续只发布 URI, 避免每行歌词都重复失败的 Binder 事务
     private var rejectedArtworkCoverSource: String? = null
     private var metadataFailureLogged = false
+    private var lastAtomicLyricsSentAtMs = 0L
+    private var lastAtomicLyricsMediaId: String? = null
     private var lyricNotificationRepostPending = false
     private var lastWidgetState: PlaybackWidgetState? = null
     private var favoriteSongKeys: Set<String> = emptySet()
@@ -340,11 +344,43 @@ internal class PlaybackServicePresentationOwner(
             carArtwork.observe(song, artworkSnapshot),
             serviceMetadataMediaId(song, playback.queue, playback.queueIndex),
             metadataInputs.colorOsLyricInfo.takeIf { metadataInputs.colorOsLyricsEnabled },
+            metadataInputs.joviCarLyrics,
         )
-        if (snapshot == lastMetadataSnapshot) return false
+        if (snapshot == lastMetadataSnapshot) {
+            publishAtomicLyrics(metadataInputs.joviCarLyrics, snapshot.mediaId)
+            return false
+        }
         lastMetadataSnapshot = snapshot
         publishMetadata(snapshot, artworkSnapshot)
+        publishAtomicLyrics(metadataInputs.joviCarLyrics, snapshot.mediaId)
         return true
+    }
+
+    fun refreshAtomicLyrics() {
+        val inputs = source.metadata()
+        val playback = source.playback()
+        val song = playback.song ?: return
+        publishAtomicLyrics(
+            inputs.joviCarLyrics,
+            serviceMetadataMediaId(song, playback.queue, playback.queueIndex) ?: song.stableKey(),
+        )
+    }
+
+    private fun publishAtomicLyrics(lyrics: String?, mediaId: String?) {
+        if (lyrics.isNullOrBlank()) return
+        val now = System.currentTimeMillis()
+        val trackId = mediaId ?: source.playback().song?.stableKey().orEmpty()
+        if (trackId == lastAtomicLyricsMediaId && now - lastAtomicLyricsSentAtMs < 25_000L) return
+        val extras = Bundle().apply {
+            putString("vivomusicmix.meida.extra.key.action", "vivomusicmix.extra.lrc_change")
+            putString("vivomusicmix.extra.key.meidia_id", trackId)
+            putString("vivomusicmix.extra.key.lyric", lyrics)
+        }
+        runCatching { port.setExtras(extras) }
+            .onSuccess {
+                lastAtomicLyricsSentAtMs = now
+                lastAtomicLyricsMediaId = trackId
+            }
     }
 
     private fun publishMetadata(snapshot: PlaybackMetadataSnapshot, artworkSnapshot: PlaybackArtworkSnapshot) {
