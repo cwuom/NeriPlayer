@@ -33,7 +33,7 @@ internal suspend fun LocalMediaSupport.writeLocalMetadataSidecarImpl(
     coverReference: String? = null,
     clearCoverReference: Boolean = false
 ): Boolean = withContext(Dispatchers.IO) {
-    val (candidates, recoveryReferences) = editableLocalMediaTargets(context, song)
+    val (candidates, recoveryReferences) = editableLocalMediaTargets(context, song, sidecarsOnly = true)
     if (candidates.isEmpty()) return@withContext false
     val writesCover = coverReference != null || clearCoverReference
     LocalMediaMetadataRecoveryStore.withRecoveredTargets(

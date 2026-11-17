@@ -596,7 +596,7 @@ object LocalMediaSupport {
         persistMetadata: Boolean = false
     ): Boolean = withContext(Dispatchers.IO) {
         val startedAtMs = SystemClock.elapsedRealtime()
-        val (candidates, recoveryReferences) = editableLocalMediaTargets(context, song)
+        val (candidates, recoveryReferences) = editableLocalMediaTargets(context, song, sidecarsOnly = true)
         if (candidates.isEmpty()) return@withContext false
         val written = LocalMediaMetadataRecoveryStore.withRecoveredTargets(
             context = context.applicationContext,
@@ -707,7 +707,7 @@ object LocalMediaSupport {
         writeCover: Boolean,
         stableIdentityKey: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
-        val candidates = editableLocalMediaTargets(context, song).candidates
+        val candidates = editableLocalMediaTargets(context, song, sidecarsOnly = true).candidates
         if (candidates.isEmpty() || !writeCover) return@withContext true
         val resolvedStableIdentityKey = stableIdentityKey
             ?.trim()

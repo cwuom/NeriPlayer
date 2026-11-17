@@ -57,7 +57,8 @@ internal data class EditableLocalMediaTargets(val candidates: List<Uri>, val rec
 
 internal fun LocalMediaSupport.editableLocalMediaTargets(
     context: Context,
-    song: SongItem
+    song: SongItem,
+    sidecarsOnly: Boolean = false
 ): EditableLocalMediaTargets {
     val sources = song.localMediaUriCandidates()
     val source = sources.firstOrNull()
@@ -81,8 +82,10 @@ internal fun LocalMediaSupport.editableLocalMediaTargets(
             else -> 1
         }
     }
-    // 授权后的目标优先写入，避免先在受限目录创建侧载
-    val preferred = pathTarget?.uri.takeIf { documentPath == null }
+    // 媒体条目授权只覆盖音频本身，单独写侧载仍需通过文件路径或 SAF 树
+    val preferred = pathTarget?.uri?.takeIf { uri ->
+        documentPath == null && (!sidecarsOnly || !isMediaStoreUri(uri))
+    }
     val candidates = (listOfNotNull(preferred) + orderedCandidates).distinctBy(Uri::toString)
     // 即使授权变化导致写入目标切换，也要检查旧引用是否有待恢复的事务
     val recoveryAliases = pathTarget?.let { it.recoveryAliases + listOfNotNull(documentPath) }.orEmpty()

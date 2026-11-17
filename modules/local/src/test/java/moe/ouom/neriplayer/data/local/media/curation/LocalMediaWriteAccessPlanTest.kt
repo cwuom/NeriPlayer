@@ -17,7 +17,9 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaTargets
 import moe.ouom.neriplayer.data.model.SongItem
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -182,7 +184,7 @@ class LocalMediaWriteAccessPlanTest {
 
     @Test
     @Config(sdk = [35])
-    fun `granted media URI stays preferred when the filesystem also reports write access`() = runBlocking {
+    fun `granted media URI stays preferred for audio while cover sidecars use the writable directory`() = runBlocking {
         val root = temporaryFolder.newFolder()
         ShadowEnvironment.setExternalStorageDirectory(root.toPath())
         val file = temporaryFolder.newFile()
@@ -202,6 +204,16 @@ class LocalMediaWriteAccessPlanTest {
         doReturn(PackageManager.PERMISSION_GRANTED).`when`(context)
             .checkUriPermission(item, Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         assertEquals(listOf(item, source), LocalMediaSupport.editableLocalMediaTargets(context, song).candidates)
+
+        val coverBytes = byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xe0.toByte(), 1, 2, 3)
+        val cover = temporaryFolder.newFile("selected.jpg").apply { writeBytes(coverBytes) }
+        val identity = "local:1"
+        val sidecar = File(root, "Covers/" + LocalMediaSupport.localCoverSidecarName("song", "jpg", identity))
+        assertTrue(LocalMediaSupport.writeLocalCoverSidecar(context, song, cover.absolutePath, true, identity))
+        assertTrue("a successful sidecar write must create the cover", sidecar.isFile)
+        assertArrayEquals(coverBytes, sidecar.readBytes())
+        assertTrue(LocalMediaSupport.writeLocalCoverSidecar(context, song, null, true, identity))
+        assertFalse("a successful sidecar clear must remove the cover", sidecar.exists())
     }
 
     @Test
