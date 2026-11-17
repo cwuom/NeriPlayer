@@ -1,25 +1,42 @@
 package moe.ouom.neriplayer.data.local.media.curation
 
 import android.app.PendingIntent
+import android.content.ClipData
 import android.content.ContentResolver
 import android.content.Context
+import android.content.Intent
 import android.content.UriPermission
+import android.content.pm.PackageManager
+import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Bundle
+import android.os.Process
 import android.provider.DocumentsContract
+import java.io.File
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
-import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaUriCandidates
+import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaTargets
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
+import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.eq
+import org.mockito.ArgumentMatchers.isNull
+import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowEnvironment
 
 @RunWith(RobolectricTestRunner::class)
 class LocalMediaWriteAccessPlanTest {
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
 
     @Test
     fun `nothing pending needs no system consent`() {
@@ -104,12 +121,12 @@ class LocalMediaWriteAccessPlanTest {
         assertEquals(LocalMediaWriteAccessPlan.Ready, LocalMediaWriteAccess.plan(separateParent, listOf(song)))
         assertEquals(
             song.mediaUri,
-            LocalMediaSupport.editableLocalMediaUriCandidates(upgraded, song).first().toString()
+            LocalMediaSupport.editableLocalMediaTargets(upgraded, song).candidates.first().toString()
         )
         val parentTree = DocumentsContract.buildTreeDocumentUri(EXTERNAL_STORAGE_AUTHORITY, "primary:Music/Album")
         assertEquals(
             DocumentsContract.buildDocumentUriUsingTree(parentTree, SONG_DOCUMENT_ID),
-            LocalMediaSupport.editableLocalMediaUriCandidates(separateParent, song).first()
+            LocalMediaSupport.editableLocalMediaTargets(separateParent, song).candidates.first()
         )
     }
 
@@ -127,6 +144,106 @@ class LocalMediaWriteAccessPlanTest {
             LocalMediaWriteAccessPlan.FolderGrant(StorageDocumentPath("primary", "Music/Album"), 1),
             LocalMediaWriteAccess.plan(context, listOf(song))
         )
+    }
+
+    @Test
+    @Config(sdk = [35])
+    fun `legacy paths request consent and prioritize the same media item for writeback`() = runBlocking {
+        val context = contextWithGrants()
+        val resolver = context.contentResolver
+        val pendingIntent = mock(PendingIntent::class.java)
+        val item = Uri.parse("content://media/abcd-1234/audio/media/42")
+        val collection = Uri.parse("content://media/abcd-1234/audio/media")
+        val path = "/storage/ABCD-1234/音乐搜索/音频/情字最大 #1.mp3"
+        val song = externalStorageSong().copy(mediaUri = path)
+        val fileUri = Uri.fromFile(File(path))
+        val alias = song.copy(mediaUri = null, localFilePath = fileUri.toString())
+        stubMediaStorePath(context, collection, path, 42L, path)
+        doReturn(PackageManager.PERMISSION_DENIED).`when`(context)
+            .checkUriPermission(item, Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        doAnswer { call ->
+            val clip = checkNotNull(call.getArgument<Bundle>(3).getParcelable("clip_data", ClipData::class.java))
+            assertEquals(1, clip.itemCount)
+            assertEquals(item, clip.getItemAt(0).uri)
+            Bundle().apply { putParcelable("result", pendingIntent) }
+        }.`when`(resolver).call(eq("media"), eq("create_write_request"), isNull(), any(Bundle::class.java))
+
+        assertEquals(
+            LocalMediaWriteAccessPlan.SystemConsent(listOf(pendingIntent), 1),
+            LocalMediaWriteAccess.plan(context, listOf(song, alias))
+        )
+        doReturn(PackageManager.PERMISSION_GRANTED).`when`(context)
+            .checkUriPermission(item, Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        assertEquals(LocalMediaWriteAccessPlan.Ready, LocalMediaWriteAccess.plan(context, listOf(song, alias)))
+        assertEquals(listOf(item, fileUri), LocalMediaSupport.editableLocalMediaTargets(context, song).candidates)
+        assertEquals(listOf(item, fileUri), LocalMediaSupport.editableLocalMediaTargets(context, alias).candidates)
+        assertEquals("mp3", LocalMediaSupport.resolveEditableMediaExtension(song, item))
+    }
+
+    @Test
+    @Config(sdk = [35])
+    fun `granted media URI stays preferred when the filesystem also reports write access`() = runBlocking {
+        val root = temporaryFolder.newFolder()
+        ShadowEnvironment.setExternalStorageDirectory(root.toPath())
+        val file = temporaryFolder.newFile()
+        val audio = file.copyTo(File(root, "song.mp3"))
+        val source = Uri.fromFile(audio)
+        val song = externalStorageSong().copy(mediaUri = audio.path)
+        val context = contextWithGrants()
+        val item = Uri.parse("content://media/external_primary/audio/media/42")
+        stubMediaStorePath(
+            context, Uri.parse("content://media/external_primary/audio/media"), audio.canonicalPath, 42L, audio.canonicalPath
+        )
+        doReturn(PackageManager.PERMISSION_DENIED).`when`(context)
+            .checkUriPermission(item, Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        assertEquals(LocalMediaWriteAccessPlan.Ready, LocalMediaWriteAccess.plan(context, listOf(song)))
+        assertEquals(listOf(source), LocalMediaSupport.editableLocalMediaTargets(context, song).candidates)
+
+        doReturn(PackageManager.PERMISSION_GRANTED).`when`(context)
+            .checkUriPermission(item, Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        assertEquals(listOf(item, source), LocalMediaSupport.editableLocalMediaTargets(context, song).candidates)
+    }
+
+    @Test
+    @Config(sdk = [35])
+    fun `unindexed path uses the matching writable folder only`() = runBlocking {
+        ShadowEnvironment.setExternalStorageDirectory(File("/storage/emulated/0").toPath())
+        val path = "/storage/emulated/0/Music/Album/song.mp3"
+        val song = externalStorageSong().copy(mediaUri = path)
+        val otherVolume = treeGrant("ABCD-1234:Music/Album", writable = true)
+        val limited = contextWithGrants(otherVolume)
+        stubMediaStorePath(
+            limited,
+            Uri.parse("content://media/external_primary/audio/media"),
+            path,
+            42L,
+            "/storage/emulated/0/Other/Album/song.mp3"
+        )
+        assertEquals(
+            LocalMediaWriteAccessPlan.FolderGrant(StorageDocumentPath("primary", "Music/Album"), 1),
+            LocalMediaWriteAccess.plan(limited, listOf(song))
+        )
+
+        val granted = contextWithGrants(otherVolume, treeGrant("primary:Music", writable = true))
+        stubMediaStorePath(granted, Uri.parse("content://media/external_primary/audio/media"), path, 42L, path)
+        assertEquals(LocalMediaWriteAccessPlan.Ready, LocalMediaWriteAccess.plan(granted, listOf(song)))
+        val targets = LocalMediaSupport.editableLocalMediaTargets(granted, song)
+        assertEquals(
+            Uri.parse("content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FAlbum%2Fsong.mp3"),
+            targets.candidates.first()
+        )
+        assertTrue("content://media/external_primary/audio/media/42" in targets.recoveryReferences)
+        val documentTargets = LocalMediaSupport.editableLocalMediaTargets(granted, externalStorageSong())
+        assertEquals(listOf(targets.candidates.first()), documentTargets.candidates)
+        assertTrue(Uri.fromFile(File(path)).toString() in documentTargets.recoveryReferences)
+        assertTrue("content://media/external_primary/audio/media/42" in documentTargets.recoveryReferences)
+    }
+
+    private fun stubMediaStorePath(context: Context, collection: Uri, path: String, id: Long, rowPath: String) {
+        val resolver = context.contentResolver
+        doAnswer {
+            MatrixCursor(arrayOf("_id", "_data")).apply { addRow(arrayOf<Any>(id, rowPath)) }
+        }.`when`(resolver).query(collection, arrayOf("_id", "_data"), "_data = ?", arrayOf(path), null)
     }
 
     private fun externalStorageSong(): SongItem {

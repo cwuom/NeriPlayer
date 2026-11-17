@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.local.media
 
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaCompanionTransaction
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
-import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaUriCandidates
+import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaTargets
 import moe.ouom.neriplayer.data.local.media.metadata.isStandaloneContentMetadataTarget
 import moe.ouom.neriplayer.data.local.media.metadata.logEditableMetadataWriteTiming
 import moe.ouom.neriplayer.data.local.media.metadata.resolveEditableSidecarFile
@@ -596,11 +596,11 @@ object LocalMediaSupport {
         persistMetadata: Boolean = false
     ): Boolean = withContext(Dispatchers.IO) {
         val startedAtMs = SystemClock.elapsedRealtime()
-        val candidates = editableLocalMediaUriCandidates(context, song)
+        val (candidates, recoveryReferences) = editableLocalMediaTargets(context, song)
         if (candidates.isEmpty()) return@withContext false
         val written = LocalMediaMetadataRecoveryStore.withRecoveredTargets(
             context = context.applicationContext,
-            targetReferences = candidates.map(Uri::toString),
+            targetReferences = recoveryReferences,
             blockedResult = false
         ) {
             candidates.any { sourceUri ->
@@ -707,7 +707,7 @@ object LocalMediaSupport {
         writeCover: Boolean,
         stableIdentityKey: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
-        val candidates = editableLocalMediaUriCandidates(context, song)
+        val candidates = editableLocalMediaTargets(context, song).candidates
         if (candidates.isEmpty() || !writeCover) return@withContext true
         val resolvedStableIdentityKey = stableIdentityKey
             ?.trim()

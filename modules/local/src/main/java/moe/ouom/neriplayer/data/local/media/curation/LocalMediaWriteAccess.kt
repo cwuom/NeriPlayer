@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Process
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.localMediaUri
@@ -30,7 +31,7 @@ sealed interface LocalMediaWriteAccessPlan {
     data class SystemConsent(val requests: List<PendingIntent>, val pendingItems: Int) : LocalMediaWriteAccessPlan
 
     /**
-     * 存储文档以及 Android 10 上无法直接修改的媒体文件，需要其所在目录的写权限
+     * 存储文档以及没有可用媒体授权的路径，需要其所在目录的写权限
      * 跨存储卷或用户选了别的目录时一次覆盖不全，授权后需要重新规划
      */
     data class FolderGrant(
@@ -58,23 +59,37 @@ object LocalMediaWriteAccess {
             val permissions by lazy(LazyThreadSafetyMode.NONE) {
                 context.contentResolver.persistedUriPermissions.orEmpty()
             }
-            val documentFolders = songs.mapNotNull { song ->
-                song.localMediaUri()?.let { uri -> pendingDocumentFolder(uri) { permissions } }
+            val folders = mutableListOf<StorageDocumentPath?>()
+            val pending = linkedSetOf<Uri>()
+            for (song in songs) {
+                ensureActive()
+                val source = song.localMediaUri() ?: continue
+                val documentFolder = pendingDocumentFolder(source) { permissions }
+                if (documentFolder != null) {
+                    folders += documentFolder
+                    continue
+                }
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) continue
+                val pathTarget = resolveSharedAudioPathWriteTarget(context, source) { permissions }
+                val folderNeedingGrant = pathTarget?.folderNeedingGrant
+                if (folderNeedingGrant != null) {
+                    folders += folderNeedingGrant
+                    continue
+                }
+                val uri = (pathTarget?.uri ?: source).takeIf(::isMediaStoreItem) ?: continue
+                if (hasWriteGrant(context, uri) ||
+                    pathTarget == null && FolderArtworkLocator.isInsideWritableTree(context, song)
+                ) continue
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    if (pathTarget == null || !isOwnedByApp(context, uri)) pending += uri
+                } else if (!isOwnedByApp(context, uri)) {
+                    folders += FolderArtworkLocator.storagePathOf(context, song)
+                }
             }
             when {
-                Build.VERSION.SDK_INT == Build.VERSION_CODES.Q -> {
-                    val pending = songs.filter { song ->
-                        pendingMediaStoreUri(context, song)?.let { uri -> !isOwnedByApp(context, uri) } == true
-                    }
-                    folderGrantPlan(
-                        documentFolders + pending.map { song -> FolderArtworkLocator.storagePathOf(context, song) }
-                    )
-                }
-                documentFolders.isNotEmpty() -> folderGrantPlan(documentFolders)
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                    val pending = songs.mapNotNull { song -> pendingMediaStoreUri(context, song) }.distinct()
-                    systemConsentPlan(pending) { batch -> MediaStore.createWriteRequest(context.contentResolver, batch) }
-                }
+                folders.isNotEmpty() -> folderGrantPlan(folders)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
+                    systemConsentPlan(pending.toList()) { batch -> MediaStore.createWriteRequest(context.contentResolver, batch) }
                 else -> LocalMediaWriteAccessPlan.Ready
             }
         }
@@ -89,14 +104,7 @@ object LocalMediaWriteAccess {
         }
     }
 
-    private suspend fun pendingMediaStoreUri(context: Context, song: SongItem): Uri? {
-        val uri = song.localMediaUri()?.takeIf(::isMediaStoreItem) ?: return null
-        return uri.takeUnless {
-            hasWriteGrant(context, it) || FolderArtworkLocator.isInsideWritableTree(context, song)
-        }
-    }
-
-    private fun hasWriteGrant(context: Context, uri: Uri): Boolean {
+    internal fun hasWriteGrant(context: Context, uri: Uri): Boolean {
         return context.checkUriPermission(
             uri,
             Process.myPid(),
@@ -105,7 +113,7 @@ object LocalMediaWriteAccess {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    /** Android 10 上应用自己写入的媒体文件无需授权 */
+    /** 应用自己写入的媒体文件无需附加授权 */
     private fun isOwnedByApp(context: Context, uri: Uri): Boolean = runCatching {
         context.contentResolver.query(uri, arrayOf(OWNER_PACKAGE_NAME_COLUMN), null, null, null)?.use { cursor ->
             cursor.moveToFirst() && cursor.getString(0) == context.packageName

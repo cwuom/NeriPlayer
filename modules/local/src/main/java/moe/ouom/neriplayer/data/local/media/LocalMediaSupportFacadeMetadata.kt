@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.ContentSidecarReferences
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaCompanionTransaction
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
-import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaUriCandidates
+import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaTargets
 import moe.ouom.neriplayer.data.local.media.metadata.resolveEditableSidecarFile
 import moe.ouom.neriplayer.data.local.media.metadata.writeLocalCoverSidecar
 
@@ -33,12 +33,12 @@ internal suspend fun LocalMediaSupport.writeLocalMetadataSidecarImpl(
     coverReference: String? = null,
     clearCoverReference: Boolean = false
 ): Boolean = withContext(Dispatchers.IO) {
-    val candidates = editableLocalMediaUriCandidates(context, song)
+    val (candidates, recoveryReferences) = editableLocalMediaTargets(context, song)
     if (candidates.isEmpty()) return@withContext false
     val writesCover = coverReference != null || clearCoverReference
     LocalMediaMetadataRecoveryStore.withRecoveredTargets(
         context = context.applicationContext,
-        targetReferences = candidates.map(Uri::toString),
+        targetReferences = recoveryReferences,
         blockedResult = false
     ) {
         candidates.any { sourceUri ->
