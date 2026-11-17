@@ -13,6 +13,7 @@ import java.io.File
 import java.util.Locale
 
 internal data class SharedAudioPathWriteTarget(
+    val file: File,
     val uri: Uri?,
     val folderNeedingGrant: StorageDocumentPath?,
     val recoveryAliases: List<Uri>
@@ -52,6 +53,7 @@ internal fun resolveSharedAudioPathWriteTarget(
         null
     }
     return SharedAudioPathWriteTarget(
+        file = file,
         uri = target,
         folderNeedingGrant = parent.takeIf { target == null && !canWriteFile },
         recoveryAliases = listOfNotNull(document, mediaItem)

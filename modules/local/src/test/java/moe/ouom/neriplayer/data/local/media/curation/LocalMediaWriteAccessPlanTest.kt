@@ -14,8 +14,14 @@ import android.os.Process
 import android.provider.DocumentsContract
 import java.io.File
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaTargets
+import moe.ouom.neriplayer.data.local.media.metadata.withMetadataRecoveryDescriptors
+import moe.ouom.neriplayer.data.local.media.source.CrashLogCleanup
+import moe.ouom.neriplayer.data.local.media.source.LocalMediaCoverAccess
+import moe.ouom.neriplayer.data.local.media.source.LocalMediaDownloadAccess
+import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -31,7 +37,10 @@ import org.mockito.ArgumentMatchers.isNull
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockStatic
+import org.mockito.stubbing.Answer
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowEnvironment
 
@@ -214,6 +223,58 @@ class LocalMediaWriteAccessPlanTest {
         assertArrayEquals(coverBytes, sidecar.readBytes())
         assertTrue(LocalMediaSupport.writeLocalCoverSidecar(context, song, null, true, identity))
         assertFalse("a successful sidecar clear must remove the cover", sidecar.exists())
+    }
+
+    @Test
+    @Config(sdk = [35])
+    fun `embedded write through MediaStore also refreshes lyrics in a writable directory`() = withMetadataRecoveryDescriptors {
+        val root = temporaryFolder.newFolder("shared")
+        ShadowEnvironment.setExternalStorageDirectory(root.toPath())
+        val album = File(root, "Music/Album").apply { check(mkdirs()) }
+        val audio = File(album, "song.mp3").apply { writeText("audio fixture") }
+        val lyrics = File(album, "song.lrc").apply { writeText("[00:00.00]Old line") }
+        val context = contextWithGrants()
+        val resolver = context.contentResolver
+        val song = externalStorageSong().copy(mediaUri = audio.path, matchedLyric = "[00:00.00]New line")
+        val item = Uri.parse("content://media/external_primary/audio/media/42")
+        stubMediaStorePath(
+            context, Uri.parse("content://media/external_primary/audio/media"), audio.canonicalPath, 42L, audio.canonicalPath
+        )
+        doReturn(context).`when`(context).applicationContext
+        doReturn(temporaryFolder.newFolder("journal")).`when`(context).noBackupFilesDir
+        doReturn(RuntimeEnvironment.getApplication().packageManager).`when`(context).packageManager
+        doReturn(PackageManager.PERMISSION_GRANTED).`when`(context)
+            .checkUriPermission(item, Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        doAnswer {
+            MatrixCursor(arrayOf("relative_path")).apply { addRow(arrayOf("Music/Album/")) }
+        }.`when`(resolver).query(eq(item), any(), isNull(), isNull(), isNull())
+        val access = LocalMediaHostAccess::class.java.getDeclaredField("access").apply { isAccessible = true }
+        val previous = access.get(null)
+        try {
+            LocalMediaHostAccess.bind(
+                mock(LocalMediaDownloadAccess::class.java),
+                mock(LocalMediaCoverAccess::class.java),
+                CrashLogCleanup { false }
+            )
+            mockStatic(Class.forName("moe.ouom.neriplayer.data.local.media.LocalMediaSupportLyricsKt"),
+                Answer<Any?> { call ->
+                    if (call.method.name == "writeEditableMetadataThroughStagedContentCopy") {
+                        assertEquals(item, call.getArgument<Uri>(3))
+                        LocalMediaSupport.EditableMetadataWriteTransaction(LocalMediaMetadataWriteOutcome.SUCCESS)
+                    } else {
+                        call.callRealMethod()
+                    }
+                }
+            ).use {
+                assertEquals(
+                    LocalMediaMetadataWriteOutcome.SUCCESS,
+                    LocalMediaSupport.writeEditableMetadata(context, song, writeLyrics = true)
+                )
+            }
+        } finally {
+            access.set(null, previous)
+        }
+        assertEquals("[00:00.00]New line", lyrics.readText())
     }
 
     @Test

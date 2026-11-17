@@ -8,6 +8,9 @@ import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.DocumentsContract
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.data.local.media.curation.FolderArtworkLocator
 import moe.ouom.neriplayer.data.local.media.curation.resolveSharedAudioPathWriteTarget
@@ -18,6 +21,7 @@ import moe.ouom.neriplayer.common.io.readBytesLimited
 import moe.ouom.neriplayer.common.io.isFileInsideDirectory
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 import androidx.core.net.toUri
 
 internal fun LocalMediaSupport.logEditableMetadataWriteTiming(
@@ -53,7 +57,11 @@ private fun LocalMediaSupport.resolveWritableSafMirrorOrNull(context: Context, s
     null
 }
 
-internal data class EditableLocalMediaTargets(val candidates: List<Uri>, val recoveryReferences: List<String>)
+internal data class EditableLocalMediaTargets(
+    val candidates: List<Uri>,
+    val recoveryReferences: List<String>,
+    val mediaStoreFile: File?
+)
 
 internal fun LocalMediaSupport.editableLocalMediaTargets(
     context: Context,
@@ -90,7 +98,39 @@ internal fun LocalMediaSupport.editableLocalMediaTargets(
     // 即使授权变化导致写入目标切换，也要检查旧引用是否有待恢复的事务
     val recoveryAliases = pathTarget?.let { it.recoveryAliases + listOfNotNull(documentPath) }.orEmpty()
     val recoveryReferences = (candidates + recoveryAliases).map(Uri::toString).distinct()
-    return EditableLocalMediaTargets(candidates, recoveryReferences)
+    val mediaStoreFile = pathTarget?.file?.takeIf { preferred?.let(::isMediaStoreUri) == true }
+    return EditableLocalMediaTargets(candidates, recoveryReferences, mediaStoreFile)
+}
+
+internal fun SongItem.sidecarDisplayName(sourceUri: Uri): String {
+    localFileName?.takeIf(String::isNotBlank)?.let { return it }
+    val segment = sourceUri.lastPathSegment.orEmpty()
+    return if (isExternalStorageDocumentUri(sourceUri)) segment.substringAfter(':').substringAfterLast('/') else segment
+}
+
+internal fun canCreateSidecarTemporaryFile(file: File): Boolean {
+    val parent = file.parentFile ?: return false
+    if (!file.isFile) return false
+    // 分区存储可能允许 stat 和音频回写，但仍拒绝同目录的临时文件
+    val probe = File(parent, ".neri-sidecar-${UUID.randomUUID()}.tmp")
+    val descriptor = try {
+        Os.open(
+            probe.path,
+            OsConstants.O_WRONLY or OsConstants.O_CREAT or OsConstants.O_EXCL or OsConstants.O_CLOEXEC,
+            OsConstants.S_IRUSR or OsConstants.S_IWUSR
+        )
+    } catch (error: ErrnoException) {
+        when (error.errno) {
+            OsConstants.EACCES, OsConstants.EPERM, OsConstants.EROFS -> return false
+            else -> throw IOException(error.message, error)
+        }
+    }
+    try {
+        Os.remove(probe.path)
+    } finally {
+        Os.close(descriptor)
+    }
+    return true
 }
 
 internal fun LocalMediaSupport.resolveEditableSidecarFile(context: Context, sourceUri: Uri): File? {

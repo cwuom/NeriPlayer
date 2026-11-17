@@ -99,7 +99,9 @@ internal suspend fun LocalMediaSupport.writeEditableMetadataImpl(
     embeddedPropertyPlanFactory: ((PropertyMap) -> EmbeddedMetadataPropertyPlan)? = null
 ): LocalMediaMetadataWriteOutcome {
     return try {
-        val (candidates, recoveryReferences) = withContext(Dispatchers.IO) { editableLocalMediaTargets(context, song) }
+        val (candidates, recoveryReferences, mediaStoreFile) = withContext(Dispatchers.IO) {
+            editableLocalMediaTargets(context, song)
+        }
         if (candidates.isEmpty()) return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
         LocalMediaMetadataRecoveryStore.withRecoveredTargets(
             context = context.applicationContext,
@@ -116,7 +118,8 @@ internal suspend fun LocalMediaSupport.writeEditableMetadataImpl(
                 requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys,
                 persistCompanionSidecars = persistCompanionSidecars,
                 embeddedPropertyPlanFactory = embeddedPropertyPlanFactory,
-                candidates = candidates
+                candidates = candidates,
+                mediaStoreFile = mediaStoreFile
             )
         }
     } catch (error: CancellationException) {

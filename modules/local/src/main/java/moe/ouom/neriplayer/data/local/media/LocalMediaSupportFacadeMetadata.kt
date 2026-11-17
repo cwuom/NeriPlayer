@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaCompanionTransact
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaTargets
 import moe.ouom.neriplayer.data.local.media.metadata.resolveEditableSidecarFile
+import moe.ouom.neriplayer.data.local.media.metadata.sidecarDisplayName
 import moe.ouom.neriplayer.data.local.media.metadata.writeLocalCoverSidecar
 
 import android.content.Context
@@ -44,9 +45,7 @@ internal suspend fun LocalMediaSupport.writeLocalMetadataSidecarImpl(
         candidates.any { sourceUri ->
             currentCoroutineContext().ensureActive()
             val file = resolveEditableSidecarFile(context, sourceUri)
-            val displayName = song.localFileName
-                ?.takeIf(String::isNotBlank)
-                ?: sourceUri.lastPathSegment.orEmpty()
+            val displayName = song.sidecarDisplayName(sourceUri)
             val transaction = LocalMediaCompanionTransaction(context, sourceUri.toString())
             var committed = false
             var rollbackSucceeded = true
