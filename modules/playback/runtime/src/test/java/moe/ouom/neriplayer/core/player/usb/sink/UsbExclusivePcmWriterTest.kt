@@ -5,6 +5,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -203,6 +205,26 @@ class UsbExclusivePcmWriterTest {
         assertEquals(12_288, writer.writeSize(65_536, directBuffer = true, snapshot()))
         port.report = port.report.replace("transferBytes=3072", "transferBytes=1024")
         assertEquals(4_096, writer.writeSize(65_536, directBuffer = true, snapshot()))
+    }
+
+    @Test
+    fun `write planning overlays live free space without replacing the cached report metrics`() {
+        val port = FakePcmWritePort()
+        val healthyReport = "source=player_pcm sampleRate=48000 channels=2 subslotBytes=2 " +
+            "transferBytes=3072 pcmLevel=288000/288000 pcmFreeBytes=0 " +
+            "running=true transportFailed=false lastError=none"
+        port.report = healthyReport
+        port.liveFreeBytes = 288_000L
+        val writer = UsbExclusivePcmWriter(port) {}
+        val healthy = writer.runtimeMetrics(healthyReport)
+
+        assertEquals(12_288, writer.writeSize(65_536, directBuffer = true, snapshot()))
+        assertSame(healthy, writer.runtimeMetrics(healthyReport))
+        assertEquals(0L, healthy.pcmFreeBytes)
+
+        val failed = writer.runtimeMetrics("running=false transportFailed=true")
+        assertNotSame(healthy, failed)
+        assertEquals(true, failed.transportFailed)
     }
 
     @Test

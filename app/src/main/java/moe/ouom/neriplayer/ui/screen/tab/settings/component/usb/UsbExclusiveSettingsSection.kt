@@ -28,11 +28,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,9 +43,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
@@ -71,6 +74,28 @@ import kotlin.time.Duration.Companion.milliseconds
 private const val USB_STATUS_REFRESH_INTERVAL_MS = 1_000L
 
 @Composable
+internal fun observeUsbExclusiveSettingsState(
+    nativeStates: StateFlow<UsbExclusiveNativeState>,
+    usbExclusivePlayback: Boolean,
+    refresh: suspend () -> Unit
+): UsbExclusiveNativeState {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val nativeState by nativeStates.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.RESUMED)
+    val refreshDiagnostics by rememberUpdatedState(refresh)
+
+    // 诊断刷新会发布新的播放计数，用前台状态和开关控制采样周期
+    LaunchedEffect(lifecycleOwner, usbExclusivePlayback) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (isActive) {
+                refreshDiagnostics()
+                delay(USB_STATUS_REFRESH_INTERVAL_MS.milliseconds)
+            }
+        }
+    }
+    return nativeState
+}
+
+@Composable
 internal fun UsbExclusiveSettingsSection(
     usbExclusivePlayback: Boolean,
     onUsbExclusivePlaybackChange: (Boolean) -> Unit,
@@ -92,25 +117,17 @@ internal fun UsbExclusiveSettingsSection(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current.applicationContext
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val nativeState by UsbExclusiveSessionController.state.collectAsState()
     var snapshot by remember(context) {
         mutableStateOf(UsbExclusiveDiagnostics.snapshot(context))
     }
-
-    // 页面不可见时停止逐秒的 JNI 刷新和设备查询，回到前台后立即继续
-    LaunchedEffect(context, lifecycleOwner) {
-        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            while (currentCoroutineContext().isActive) {
-                delay(USB_STATUS_REFRESH_INTERVAL_MS.milliseconds)
-                UsbExclusiveSessionController.refresh(context)
-                snapshot = UsbExclusiveDiagnostics.snapshot(context)
-            }
+    val nativeState = observeUsbExclusiveSettingsState(
+        UsbExclusiveSessionController.state,
+        usbExclusivePlayback
+    ) {
+        snapshot = withContext(Dispatchers.IO) {
+            UsbExclusiveSessionController.refresh(context)
+            UsbExclusiveDiagnostics.snapshot(context)
         }
-    }
-    LaunchedEffect(nativeState, usbExclusivePlayback) {
-        UsbExclusiveSessionController.refresh(context)
-        snapshot = UsbExclusiveDiagnostics.snapshot(context)
     }
 
     Column(
