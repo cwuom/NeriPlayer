@@ -271,6 +271,22 @@ class LocalMediaLyricTransactionTest {
     }
 
     @Test
+    fun `lyrics without a stored filename use the basename of the SAF document`() = runBlocking(Dispatchers.IO) {
+        fixture {
+            val source = add("primary:Music/Album/Song.flac", "Song.flac", "root", "audio")
+            val restoredSong = song().copy(mediaUri = source.uri.toString(), localFileName = null)
+            documents.remove("source")
+            doReturn(source.id).`when`(source.uri).lastPathSegment
+            val existing = add("original", "Song.lrc", "lyrics", "old original").file!!
+
+            assertTrue(LocalMediaSupport.writeLocalLyricsSidecars(context, restoredSong))
+
+            assertEquals("new original", existing.readText())
+            assertEquals("new translation", File(existing.parentFile, "Song_trans.lrc").readText())
+        }
+    }
+
+    @Test
     fun `editable metadata stops audio alias fallback when sidecar rollback is unresolved`() = runBlocking(Dispatchers.IO) {
         fixture {
             val alias = add("source-alias", "Song.flac", "root", "audio")

@@ -124,7 +124,7 @@ class ResolvedLocalMediaSource private constructor(
             }
         }
 
-        private fun externalStorageFile(uri: Uri): File? {
+        internal fun externalStorageFile(uri: Uri): File? {
             val documentId = DocumentsContract.getDocumentId(uri)
             val volume = documentId.substringBefore(':')
             val relative = documentId.substringAfter(':', "").takeIf(String::isNotBlank) ?: return null

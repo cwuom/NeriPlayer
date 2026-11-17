@@ -255,6 +255,7 @@ internal fun LocalMediaSupport.resolveEditableMediaExtension(song: SongItem, sou
         song.localFileName,
         song.localFilePath,
         sourcePathSegment,
+        song.localMediaUri()?.takeIf { it.scheme.equals("file", ignoreCase = true) }?.lastPathSegment,
         song.mediaUri?.substringBefore('?')?.substringBefore('#')
     ).firstNotNullOfOrNull(::editableMediaExtensionOf) ?: "bin"
 }

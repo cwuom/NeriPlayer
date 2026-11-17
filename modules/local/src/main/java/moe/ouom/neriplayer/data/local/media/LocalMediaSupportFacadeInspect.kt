@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.local.media
 
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
-import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaUriCandidates
+import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaTargets
 import moe.ouom.neriplayer.data.local.media.metadata.inspectLyricsFromKnownReferences
 import moe.ouom.neriplayer.data.local.media.metadata.logLyricsInspection
 
@@ -99,11 +99,13 @@ internal suspend fun LocalMediaSupport.writeEditableMetadataImpl(
     embeddedPropertyPlanFactory: ((PropertyMap) -> EmbeddedMetadataPropertyPlan)? = null
 ): LocalMediaMetadataWriteOutcome {
     return try {
-        val candidates = withContext(Dispatchers.IO) { editableLocalMediaUriCandidates(context, song) }
+        val (candidates, recoveryReferences, mediaStoreFile) = withContext(Dispatchers.IO) {
+            editableLocalMediaTargets(context, song)
+        }
         if (candidates.isEmpty()) return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
         LocalMediaMetadataRecoveryStore.withRecoveredTargets(
             context = context.applicationContext,
-            targetReferences = candidates.map(Uri::toString),
+            targetReferences = recoveryReferences,
             blockedResult = LocalMediaMetadataWriteOutcome.FAILED
         ) {
             writeEditableMetadataInternal(
@@ -116,7 +118,8 @@ internal suspend fun LocalMediaSupport.writeEditableMetadataImpl(
                 requiredEmbeddedPropertyKeys = requiredEmbeddedPropertyKeys,
                 persistCompanionSidecars = persistCompanionSidecars,
                 embeddedPropertyPlanFactory = embeddedPropertyPlanFactory,
-                candidates = candidates
+                candidates = candidates,
+                mediaStoreFile = mediaStoreFile
             )
         }
     } catch (error: CancellationException) {

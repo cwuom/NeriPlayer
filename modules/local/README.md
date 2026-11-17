@@ -72,8 +72,8 @@ Every local song save offers audio write-back or app-only persistence. Explicit 
 
 | 环节 | 行为 |
 | --- | --- |
-| Android 11+ 授权 | 对尚不可写的 MediaStore 条目分批请求系统写入同意 |
-| Android 10 授权 | 对其他应用创建的文件引导授予所在文件夹权限 |
+| Android 11+ 授权 | 将旧曲库的公共存储路径按卷和完整路径匹配到 MediaStore，对尚不可写的条目分批请求系统写入同意 |
+| 文件夹授权 | Android 10 上其他应用创建的文件，以及 Android 11+ 上未索引且不可直接写入的路径，引导授予所在文件夹权限 |
 | 恢复日志与提交 | 日志记录写入意图、原始备份与对象身份，写入后经读回校验确认才提交 |
 | 冲突保护 | 覆盖前同时校验完整对象身份与内容；哈希相同不能证明对象归属，检测到对象被替换或内容冲突时保留恢复日志并中止覆盖 |
 | 中断写入 | 空文件或不完整音频须匹配原对象身份及已校验原始或更新副本的内容前缀；缺少身份的旧日志只允许清理已完成的操作，不授权覆盖 |
@@ -84,8 +84,8 @@ Every local song save offers audio write-back or app-only persistence. Explicit 
 
 | Stage | Behavior |
 | --- | --- |
-| Android 11+ Authorization | Requests system write consent in batches for MediaStore items that are not yet writable |
-| Android 10 Authorization | Prompts for folder grants when modifying files created by other apps |
+| Android 11+ Authorization | Resolves legacy shared-storage paths to MediaStore items by volume and full path, then requests consent in batches for items that are not yet writable |
+| Folder Authorization | Prompts for a folder grant for files created by other apps on Android 10 and for unindexed paths without direct write access on Android 11+ |
 | Recovery Journal & Commit | Tracks write intent, original backups, and object identity; commits only after read-back verification |
 | Conflict Protection | Verifies full instance identity and content before overwriting; an equal hash does not establish ownership, and object replacement or content conflicts retain the journal and stop the write |
 | Interrupted Writes | Empty or incomplete audio must match the recorded instance and a prefix of a verified original or updated copy; legacy journals without identity may only clean up completed operations and cannot authorize overwrites |
