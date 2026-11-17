@@ -52,7 +52,6 @@ class OwnedMainSourceLineBudgetTest {
             "modules/platform/src/main/java/moe/ouom/neriplayer/platform/youtube/api/challenge/YouTubeStreamingCipherResolution.kt",
             "modules/platform/src/main/java/moe/ouom/neriplayer/platform/youtube/api/protocol/YouTubePlayerRequestComposer.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/AudioPlayerService.kt",
-            "modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/policy/service/PlaybackServiceTaskRemovalPolicy.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/presentation/PlaybackServicePresentationOwner.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/presentation/PlaybackServicePresentationSource.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/presentation/AndroidPlaybackServicePresentationPort.kt",

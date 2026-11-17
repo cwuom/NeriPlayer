@@ -1982,16 +1982,3 @@ private fun PlayerManager.currentSongNameForProgressLog(): String? = _currentSon
 private fun PlayerManager.hasQueueStopMediaUrl(): Boolean = hasNonBlankMediaUrl(_currentMediaUrl.value)
 
 internal fun hasNonBlankMediaUrl(url: String?): Boolean = !url.isNullOrBlank()
-
-internal fun PlayerManager.stopPlaybackImmediatelyImpl(
-    reason: String,
-    forcePersist: Boolean = true
-) {
-    pauseImpl(
-        forcePersist = forcePersist,
-        commandSource = PlaybackCommandSource.LOCAL_SAFETY,
-        allowFadeOut = false,
-        debugReason = reason,
-        flushPlayerOutput = true,
-    )
-}
