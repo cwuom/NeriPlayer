@@ -757,7 +757,12 @@ fun LibraryHostScreen(
                                         localPlaylistSourceRoute(current.playlistId)
                                     )
                                 },
-                                offlineMode = offlineMode
+                                offlineMode = offlineMode,
+                                onPlayBiliParts = { info, index, coverUrl ->
+                                    onPlayBiliPartsWithSourceRoute(
+                                        info, index, coverUrl, localPlaylistSourceRoute(current.playlistId)
+                                    )
+                                }
                             )
                         }
 

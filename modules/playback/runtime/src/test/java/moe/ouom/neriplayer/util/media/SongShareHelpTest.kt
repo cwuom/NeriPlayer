@@ -66,6 +66,20 @@ class SongShareHelpTest {
     }
 
     @Test
+    fun `desktop bilibili favorites share their BV source instead of the sync id`() {
+        val song = song(
+            id = 3_078_922_585_826_408_280L,
+            album = "",
+            channelId = "bilibili",
+        ).copy(audioId = "BV1uVRiBXETe")
+
+        assertEquals(
+            "https://www.bilibili.com/video/BV1uVRiBXETe",
+            buildRemoteSongShareUrl(song, emptyList()),
+        )
+    }
+
+    @Test
     fun `bilibili multi part uses page index from queue order`() {
         val p1 = song(
             id = 777L,
