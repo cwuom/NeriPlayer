@@ -253,6 +253,8 @@ For release build and signing details, see
 | **QQ Music** | Now Playing metadata and lyric completion | No login, playback, or library pages |
 | **Local Audio** | Share/open import, device and folder scanning, playback, artist grouping, sharing, and playlist management | Local file playback and management |
 
+When online, tap a desktop-synced Bilibili multipart video in My Favorites or a local playlist to choose the part to play.
+
 ---
 
 ## Implementation Notes
