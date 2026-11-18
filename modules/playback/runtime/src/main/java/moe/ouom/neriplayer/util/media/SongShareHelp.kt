@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.util.media
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.biliBvidFromAudioIdOrNull
 import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
 import java.net.URI
 import java.util.Locale
@@ -29,17 +30,19 @@ fun buildRemoteSongShareUrl(originalSong: SongItem, queue: List<SongItem>): Stri
     }
 
     if (isBilibiliSong(originalSong)) {
-        if (originalSong.id <= 0L) return null
+        val videoId = originalSong.biliBvidFromAudioIdOrNull()
+            ?: originalSong.id.takeIf { it > 0L }?.let { "av$it" }
+            ?: return null
         val videoParts = queue.filter {
             it.id == originalSong.id && isBilibiliSong(it)
         }
         if (videoParts.size > 1) {
             val pageIndex = videoParts.indexOfFirst { it.album == originalSong.album }
             if (pageIndex != -1) {
-                return "https://www.bilibili.com/video/av${originalSong.id}/?p=${pageIndex + 1}"
+                return "https://www.bilibili.com/video/$videoId/?p=${pageIndex + 1}"
             }
         }
-        return "https://www.bilibili.com/video/av${originalSong.id}"
+        return "https://www.bilibili.com/video/$videoId"
     }
 
     if (isNeteaseSong(originalSong)) {

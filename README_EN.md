@@ -130,7 +130,7 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 - **YouTube playback compatibility**: valid identity cookies are preserved and rotated; when a cached `player.js` or playback candidate is rejected, the app falls back to EJS/HLS instead of retrying the same candidate.
 - **Audio effects**: a self-built DSP with built-in presets, a 10-band equalizer, AutoEQ import, loudness leveling, and 32-bit high-resolution output — fully bypassed when off.
 - **USB exclusive output**: UAC1.0 and UAC2.0 Type I PCM DACs with bit-perfect output; responding to USB attach events can be disabled separately.
-- **Background keep-alive**: an optional floating window (invisible 1-pixel) reduces the chance of the system freezing background playback.
+- **Background playback**: music can continue through the foreground media service when you switch apps or swipe NeriPlayer out of Recents. An optional invisible 1-pixel floating window reduces the chance of the system freezing background playback.
 - **Playback behavior**: fade in/out, crossfade on track change, pause on Bluetooth disconnect, mix with other apps, and audio focus policy, with resume position and play mode restored.
 - **Bilibili skipping**: SponsorBlock auto-skip and custom ranges, off by default, disabled during Listen Together.
 
@@ -252,6 +252,8 @@ For release build and signing details, see
 | **Self-Hosted Music Server**<br>*(Navidrome / OpenSubsonic)* | Browse and search albums, songs, and artists; view artist albums; play with existing player, artwork, and lyrics; local favorites, playlist management, and original-file offline downloads | **Preview (limited testing)**; compatibility and stability across servers, libraries, and networks still need verification; server write-back, Listen Together, and profile migration are not wired up yet |
 | **QQ Music** | Now Playing metadata and lyric completion | No login, playback, or library pages |
 | **Local Audio** | Share/open import, device and folder scanning, playback, artist grouping, sharing, and playlist management | Local file playback and management |
+
+When online, tap a desktop-synced Bilibili multipart video in My Favorites or a local playlist to choose the part to play.
 
 ---
 
