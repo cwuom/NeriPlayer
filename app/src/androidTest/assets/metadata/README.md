@@ -1,10 +1,8 @@
 # Synthetic playback metadata fixture
 
-`synthetic-playing-restore.flac` contains 30 seconds of generated mono silence,
-original title/artist and three independent lyric tracks, with no artwork.
-It contains no third-party audio or lyrics.
+`synthetic-playing-restore.flac` holds 30 seconds of generated mono silence, an original title and artist, and three independent lyric tracks. It has no artwork, third-party audio, or lyrics.
 
-Regenerate from the repository root with FFmpeg:
+Regenerate it from the repository root with FFmpeg:
 
 ```sh
 ffmpeg -hide_banner -loglevel error \
@@ -20,8 +18,15 @@ ffmpeg -hide_banner -loglevel error \
   app/src/androidTest/assets/metadata/synthetic-playing-restore.flac
 ```
 
-`RestoredLocalPlaybackThreadTest.singleRestoreWhilePlayingPublishesOriginalMetadataToSessionAndNotification`
-runs only on an API 37 emulator with notifications allowed and no existing
-playback, playback service, sleep timer or sync target. It uses a private copy,
-restores the saved queue and runtime preferences, and removes only its synthetic
-history/statistics entries and temporary media files.
+`RestoredLocalPlaybackThreadTest.singleRestoreWhilePlayingPublishesOriginalMetadataToSessionAndNotification` runs on an API 37 emulator.
+
+Preconditions:
+
+- Notifications are allowed
+- No playback, playback service, sleep timer, or sync target exists
+
+Behavior:
+
+- The test uses a private copy of the fixture
+- It restores the saved queue and runtime preferences afterward
+- It removes only its own synthetic history and statistics entries and temporary media files
