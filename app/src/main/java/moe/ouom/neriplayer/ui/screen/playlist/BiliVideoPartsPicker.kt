@@ -56,7 +56,7 @@ internal fun LocalPlaylistBiliPartsPicker(
     title: String,
     loadVideo: suspend (String) -> VideoBasicInfo,
     onDismiss: () -> Unit,
-    onPlaySinglePart: () -> Unit,
+    onPlayOriginal: () -> Unit,
     onPlayPart: (VideoBasicInfo, Int) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -64,7 +64,7 @@ internal fun LocalPlaylistBiliPartsPicker(
     var failed by remember(bvid) { mutableStateOf(false) }
     var attempt by remember(bvid) { mutableIntStateOf(0) }
     val dismiss by rememberUpdatedState(onDismiss)
-    val playSinglePart by rememberUpdatedState(onPlaySinglePart)
+    val playOriginal by rememberUpdatedState(onPlayOriginal)
 
     LaunchedEffect(bvid, attempt) {
         val info = try {
@@ -77,10 +77,11 @@ internal fun LocalPlaylistBiliPartsPicker(
         }
         currentCoroutineContext().ensureActive()
         when {
-            info == null || info.pages.isEmpty() -> failed = true
-            info.pages.size == 1 -> {
+            // 接口业务失败时可能返回一个没有 aid 的空对象
+            info == null || info.aid <= 0L -> failed = true
+            info.pages.size <= 1 -> {
                 dismiss()
-                playSinglePart()
+                playOriginal()
             }
             else -> video = info
         }

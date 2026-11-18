@@ -1709,7 +1709,7 @@ fun LocalPlaylistDetailScreen(
                     title = song.name,
                     loadVideo = { AppContainer.biliClient.getVideoBasicInfoByBvid(it) },
                     onDismiss = { requestedBiliParts = null },
-                    onPlaySinglePart = {
+                    onPlayOriginal = {
                         val index = tabSongs.indexOfFirst { it.sameIdentityAs(song) }
                         if (index >= 0) onSongClick(tabSongs, index)
                     },

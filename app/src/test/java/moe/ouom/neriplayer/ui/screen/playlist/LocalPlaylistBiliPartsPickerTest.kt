@@ -8,12 +8,14 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoStats
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -49,7 +51,7 @@ class LocalPlaylistBiliPartsPickerTest {
                         video
                     },
                     onDismiss = {},
-                    onPlaySinglePart = { error("Multipart playback must wait for a selection") },
+                    onPlayOriginal = { error("Multipart playback must wait for a selection") },
                     onPlayPart = { info, index ->
                         selected = info to index
                     }
@@ -71,22 +73,49 @@ class LocalPlaylistBiliPartsPickerTest {
 
     @Test
     fun `single part uses the original playlist playback action`() {
+        assertOriginalPlayback(VideoPage(42_903_669_033L, 1, "Only track", 230, 0, 0))
+    }
+
+    @Test
+    fun `valid video with no pages uses the original playlist playback action`() {
+        assertOriginalPlayback()
+    }
+
+    @Test
+    fun `missing video identity offers retry instead of starting playback`() {
+        val invalidVideo = videoInfo().copy(aid = 0L, bvid = "")
+        composeRule.setContent {
+            MaterialTheme {
+                LocalPlaylistBiliPartsPicker(
+                    bvid = desktopFavorite.audioId.orEmpty(),
+                    title = desktopFavorite.name,
+                    loadVideo = { invalidVideo },
+                    onDismiss = { error("The failed request should keep the picker open") },
+                    onPlayOriginal = { error("The failed request should not start playback") },
+                    onPlayPart = { _, _ -> error("The failed request has no part to select") }
+                )
+            }
+        }
+
+        composeRule.onNodeWithText(composeRule.activity.getString(AppR.string.bili_get_parts_failed)).assertExists()
+    }
+
+    private fun assertOriginalPlayback(vararg pages: VideoPage) {
         var played = false
         composeRule.setContent {
             MaterialTheme {
                 LocalPlaylistBiliPartsPicker(
                     bvid = "BV1uVRiBXETe",
                     title = desktopFavorite.name,
-                    loadVideo = { videoInfo(VideoPage(42_903_669_033L, 1, "Only track", 230, 0, 0)) },
+                    loadVideo = { videoInfo(*pages) },
                     onDismiss = {},
-                    onPlaySinglePart = { played = true },
-                    onPlayPart = { _, _ -> error("A single part should play directly") }
+                    onPlayOriginal = { played = true },
+                    onPlayPart = { _, _ -> error("A video without a choice of parts should play directly") }
                 )
             }
         }
 
-        composeRule.runOnIdle { assertEquals(true, played) }
-        composeRule.onNodeWithText("Only track").assertDoesNotExist()
+        composeRule.runOnIdle { assertTrue(played) }
     }
 
     private val desktopFavorite = SongItem(
