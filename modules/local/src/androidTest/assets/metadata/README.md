@@ -1,4 +1,6 @@
-The audio fixture is synthetic noise generated for local metadata round-trip tests. It contains no recorded or third-party audio and has no artwork
+# Synthetic metadata fixture
+
+`synthetic-edit.flac` is synthetic noise generated for local metadata round-trip tests. It contains no recorded or third-party audio and has no artwork.
 
 Generation command:
 
