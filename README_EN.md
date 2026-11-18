@@ -155,7 +155,8 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 ### 🗂️ Library and local management
 
 - **Add to NetEase playlists**: while playing from a NetEase Cloud Music source, open the top-right three-dot menu, choose “Add to NetEase playlist”, and pick one of your playlists.
-- **Requirements**: sign-in and a network connection; the entry is hidden when playback falls back to Bilibili or local audio.
+  - Requires sign-in and a network connection.
+  - The entry is hidden when playback falls back to Bilibili or local audio.
 - **Category browsing**: local, favorites, NetEase Cloud Music, YouTube Music, and Bilibili entries. YouTube Music can be disabled entirely, and Bilibili music can be hidden from the home page alone.
 - **Home discovery**: recently used playlists, charts, new songs, daily picks, Private FM, curated playlists, and radar playlists; a refresh updates every section.
 - **Search**: per-platform search, with paging on NetEase Cloud Music and Bilibili.
