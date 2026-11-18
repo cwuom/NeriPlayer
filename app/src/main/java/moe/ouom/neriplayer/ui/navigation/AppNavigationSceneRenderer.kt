@@ -30,27 +30,18 @@ internal class AppNavigationSceneRenderer(
     private val visibleNavigationRoutes: Set<String?>,
     private val mainTabNavigationMotion: () -> MainTabNavigationMotionState
 ) {
+    // 整组动画参数打包成一个值传入：Compose 会为每个带默认值的参数生成分支，拆开传参会推高复杂度
     @Composable
     fun RenderNavigationScene(
-        revealTopFraction: Float,
-        contentTranslationYFraction: Float,
-        contentScale: Float,
+        motion: AdvancedGlassSceneMotion,
         navigationDepth: Int,
         fixedBackground: Boolean,
-        sceneTranslationXFraction: Float = 0f,
-        sceneDim: Float = 0f,
         content: @Composable () -> Unit
     ) {
         AdvancedGlassSceneLayer(
             controller = advancedGlassController,
             modifier = Modifier.advancedGlassSceneZIndex(navigationDepth),
-            motion = AdvancedGlassSceneMotion(
-                revealTopFraction = revealTopFraction,
-                contentTranslationYFraction = contentTranslationYFraction,
-                contentScale = contentScale,
-                sceneTranslationXFraction = sceneTranslationXFraction,
-                sceneDim = sceneDim
-            ),
+            motion = motion,
             disableStretchOverscroll = backgroundImageUri != null,
             fixedBackground = fixedBackground,
             background = {
@@ -86,9 +77,7 @@ internal class AppNavigationSceneRenderer(
             label = "nav_scene_${sceneRoute.orEmpty()}"
         )
         RenderNavigationScene(
-            revealTopFraction = motion.revealTopFraction,
-            contentTranslationYFraction = motion.contentTranslationYFraction,
-            contentScale = motion.contentScale,
+            motion = motion,
             navigationDepth = intent.sceneDepth,
             fixedBackground = false,
             content = content
@@ -109,15 +98,14 @@ internal class AppNavigationSceneRenderer(
             mainTabNavigationMotion()
         )
         RenderNavigationScene(
-            revealTopFraction = motion.revealTopFraction,
-            contentTranslationYFraction = presentation.translationYFraction,
-            contentScale = presentation.scale,
+            motion = motion.copy(
+                contentTranslationYFraction = presentation.translationYFraction,
+                contentScale = presentation.scale
+            ),
             navigationDepth = sceneDepth,
             // 只有 tab 根列表 (sceneDepth 0) 走固定背景, 横滑切 tab 时壁纸不动
             // 嵌套详情必须保留不透明自背景, 靠揭示裁剪盖住退出列表, 否则两页内容互透叠印
             fixedBackground = presentation.fixedBackground,
-            sceneTranslationXFraction = motion.sceneTranslationXFraction,
-            sceneDim = motion.sceneDim,
             content = content
         )
     }
