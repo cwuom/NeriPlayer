@@ -1946,6 +1946,7 @@
       "moe.ouom.neriplayer.data.model.lyrics.LyricEntry",
       "moe.ouom.neriplayer.platform.bilibili.api.auth.BiliCookieSource",
       "moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient",
+      "moe.ouom.neriplayer.platform.bilibili.api.client.BiliVideoIdCodec",
       "moe.ouom.neriplayer.platform.bilibili.api.sponsorblock.BiliSponsorBlockClient",
       "moe.ouom.neriplayer.common.logging.NPLogger",
       "moe.ouom.neriplayer.platform.bilibili.auth.*",
