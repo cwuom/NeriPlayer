@@ -36,7 +36,9 @@ data class NeriDesignTokens(
     val sectionSpacing: Dp,
     val hairlineAlpha: Float,
     val pressScaleEnabled: Boolean,
-    val liquidGlass: Boolean = false
+    val liquidGlass: Boolean = false,
+    /** Clean-only iOS-style extras: spring menus with slide-to-pick, dialog window blur, deeper bar glass. */
+    val enhancedEffects: Boolean = false
 ) {
     val isClean: Boolean get() = style == UiStyle.Clean
 }

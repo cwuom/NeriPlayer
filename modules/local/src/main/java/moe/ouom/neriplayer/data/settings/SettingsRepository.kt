@@ -156,6 +156,9 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[SettingsKeys.LIQUID_GLASS_ENABLED] = value }
     }
 
+    val enhancedVisualEffectsEnabledFlow: Flow<Boolean> =
+        dataStoreSettingFlow { it[SettingsKeys.ENHANCED_VISUAL_EFFECTS_ENABLED] ?: true }
+
     val predictiveBackPreviewEnabledFlow: Flow<Boolean> =
         settingFlow(AutoSettingsSchema.motion.predictiveBackPreviewEnabled)
 

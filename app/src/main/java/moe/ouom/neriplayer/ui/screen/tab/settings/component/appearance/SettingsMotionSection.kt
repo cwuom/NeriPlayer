@@ -24,10 +24,12 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component.appearance
  */
 
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.datastore.preferences.core.Preferences
+import kotlinx.coroutines.flow.Flow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import android.os.Build
@@ -233,6 +235,12 @@ internal fun SettingsMotionSection(
                     repository = autoSettingsRepository,
                     scope = scope,
                     sectionScope = AutoSettingsScopes.motion,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+                EnhancedVisualEffectsSettingItem(
+                    autoSettingsRepository = autoSettingsRepository,
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
@@ -557,20 +565,57 @@ private fun LiquidGlassSettingItem(
     onHighlightFinished: (() -> Unit)?
 ) {
     val repo = AppContainer.settingsRepo
+    CleanStyleSwitchItem(
+        settingKey = AutoSettingsKeys.LIQUID_GLASS_ENABLED,
+        enabledFlow = repo.liquidGlassEnabledFlow,
+        onEnabledChange = repo::setLiquidGlassEnabled,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+}
+
+@Composable
+private fun EnhancedVisualEffectsSettingItem(
+    autoSettingsRepository: AutoSettingsRepository,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
+    CleanStyleSwitchItem(
+        settingKey = AutoSettingsKeys.ENHANCED_VISUAL_EFFECTS_ENABLED,
+        enabledFlow = autoSettingsRepository.enhancedVisualEffectsEnabledFlow,
+        onEnabledChange = autoSettingsRepository::setEnhancedVisualEffectsEnabled,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+}
+
+/** 仅简洁风格生效的开关：其它风格下保留存储值但置灰显示 */
+@Composable
+private fun CleanStyleSwitchItem(
+    settingKey: Preferences.Key<Boolean>,
+    enabledFlow: Flow<Boolean>,
+    onEnabledChange: suspend (Boolean) -> Unit,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
     val scope = rememberCoroutineScope()
-    val uiStyle by repo.uiStyleFlow.collectAsStateWithLifecycle(initialValue = UiStyle.Material)
-    val liquidGlassEnabled by repo.liquidGlassEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
-    val available = uiStyle == UiStyle.Clean
+    val settingEnabled by enabledFlow.collectAsStateWithLifecycle(initialValue = true)
+    // 设置页渲染在应用主题之内，当前风格直接取自主题，免去再订阅一次存储
+    val available = NeriDesign.isClean
     val update: (Boolean) -> Unit = { enabled ->
-        if (available) scope.launch { repo.setLiquidGlassEnabled(enabled) }
+        if (available) scope.launch { onEnabledChange(enabled) }
     }
     MotionSwitchItem(
-        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LIQUID_GLASS_ENABLED),
+        setting = AutoSettingsMetadata.requireSetting(settingKey),
         disabledSuffix = stringResource(CoreCommonR.string.settings_liquid_glass_requires_clean),
-        checked = available && liquidGlassEnabled,
+        checked = available && settingEnabled,
         enabled = available,
         alpha = if (available) 1f else 0.5f,
-        onToggle = { update(!liquidGlassEnabled) },
+        onToggle = { update(!settingEnabled) },
         onCheckedChange = update,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,

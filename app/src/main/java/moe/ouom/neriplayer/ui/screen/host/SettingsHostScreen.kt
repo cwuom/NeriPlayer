@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.screen.host
  */
 
 import androidx.compose.animation.AnimatedContent
+import moe.ouom.neriplayer.ui.navigation.HostSceneRenderer
 import androidx.compose.animation.SizeTransform
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Surface
@@ -110,7 +111,7 @@ internal fun isSettingsScreenSettled(
 @Composable
 internal fun SettingsHostScreen(
     bindings: AppSettingsHostBindings,
-    renderScene: @Composable (Float, Float, Float, Int, @Composable () -> Unit) -> Unit
+    renderScene: HostSceneRenderer
 ) {
     val coherentFeedbackEnabled = bindings.environment.coherentFeedbackEnabled
 
@@ -162,6 +163,7 @@ internal fun SettingsHostScreen(
             }
         },
         label = "settings_screen_switch",
+        previewEasing = hostBackPreviewEasing(coherentFeedbackEnabled),
         seekEnabled = isSettingsScreenSettled(
             screenState = screenState,
             requestedState = requestedScreenState,
@@ -231,14 +233,10 @@ internal fun SettingsHostScreen(
                 sceneState = state,
                 coherentFeedbackEnabled = coherentFeedbackEnabled,
                 navigationDepth = { item -> item.navigationDepth },
-                label = "settings_host_scene"
+                label = "settings_host_scene",
+                iosPush = iosPushNavigationActive(coherentFeedbackEnabled)
             )
-            renderScene(
-                sceneMotion.revealTopFraction,
-                sceneMotion.contentTranslationYFraction,
-                sceneMotion.contentScale,
-                state.navigationDepth
-            ) {
+            renderScene(sceneMotion, state.navigationDepth) {
                     saveableStateHolder.SaveableStateProvider(state.saveableKey()) {
                         val settingsPage: @Composable () -> Unit = {
                             SettingsScreen(

@@ -14,6 +14,12 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneLayer
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassSceneZIndex
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassVisibilitySceneMotion
 
+/** Renders a main-tab host scene from its navigation motion and depth. */
+internal typealias HostSceneRenderer =
+    @Composable (motion: AdvancedGlassSceneMotion, sceneDepth: Int, content: @Composable () -> Unit) -> Unit
+
+internal val PassThroughHostSceneRenderer: HostSceneRenderer = { _, _, content -> content() }
+
 internal class AppNavigationSceneRenderer(
     private val advancedGlassController: AdvancedGlassController,
     private val backgroundImageUri: String?,
@@ -31,6 +37,8 @@ internal class AppNavigationSceneRenderer(
         contentScale: Float,
         navigationDepth: Int,
         fixedBackground: Boolean,
+        sceneTranslationXFraction: Float = 0f,
+        sceneDim: Float = 0f,
         content: @Composable () -> Unit
     ) {
         AdvancedGlassSceneLayer(
@@ -39,7 +47,9 @@ internal class AppNavigationSceneRenderer(
             motion = AdvancedGlassSceneMotion(
                 revealTopFraction = revealTopFraction,
                 contentTranslationYFraction = contentTranslationYFraction,
-                contentScale = contentScale
+                contentScale = contentScale,
+                sceneTranslationXFraction = sceneTranslationXFraction,
+                sceneDim = sceneDim
             ),
             disableStretchOverscroll = backgroundImageUri != null,
             fixedBackground = fixedBackground,
@@ -87,30 +97,43 @@ internal class AppNavigationSceneRenderer(
 
     @Composable
     fun RenderMainTabNavigationScene(
-        revealTopFraction: Float,
-        contentTranslationYFraction: Float,
-        contentScale: Float,
+        motion: AdvancedGlassSceneMotion,
         sceneDepth: Int,
         content: @Composable () -> Unit
     ) {
         val presentation = mainTabScenePresentation(
-            contentTranslationYFraction,
-            contentScale,
+            motion.contentTranslationYFraction,
+            motion.contentScale,
             sceneDepth,
             backgroundImageUri != null,
             mainTabNavigationMotion()
         )
         RenderNavigationScene(
-            revealTopFraction = revealTopFraction,
+            revealTopFraction = motion.revealTopFraction,
             contentTranslationYFraction = presentation.translationYFraction,
             contentScale = presentation.scale,
             navigationDepth = sceneDepth,
             // 只有 tab 根列表 (sceneDepth 0) 走固定背景, 横滑切 tab 时壁纸不动
             // 嵌套详情必须保留不透明自背景, 靠揭示裁剪盖住退出列表, 否则两页内容互透叠印
             fixedBackground = presentation.fixedBackground,
+            sceneTranslationXFraction = motion.sceneTranslationXFraction,
+            sceneDim = motion.sceneDim,
             content = content
         )
     }
+
+    @Composable
+    fun RenderMainTabNavigationScene(
+        revealTopFraction: Float,
+        contentTranslationYFraction: Float,
+        contentScale: Float,
+        sceneDepth: Int,
+        content: @Composable () -> Unit
+    ) = RenderMainTabNavigationScene(
+        motion = AdvancedGlassSceneMotion(revealTopFraction, contentTranslationYFraction, contentScale),
+        sceneDepth = sceneDepth,
+        content = content
+    )
 }
 
 internal data class AppNavHostSceneMotionIntent(

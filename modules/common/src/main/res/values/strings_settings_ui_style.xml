@@ -12,6 +12,8 @@
     <string name="settings_liquid_glass">液态玻璃</string>
     <string name="settings_liquid_glass_desc">简洁风格下为底栏与迷你播放器加入边缘折射与高光；低端设备、省电模式下会自动降级</string>
     <string name="settings_liquid_glass_requires_clean">需切换到简洁风格</string>
+    <string name="settings_enhanced_visual_effects">增强视觉效果</string>
+    <string name="settings_enhanced_visual_effects_desc">简洁风格下的类 iOS 交互：菜单弹性展开并可滑动选取，弹窗背景模糊，底栏玻璃更立体；省电或低内存时自动降级</string>
     <string name="settings_nowplaying_immersive_mode">沉浸模式</string>
     <string name="settings_nowplaying_immersive_mode_desc">大封面布局：封面撑满宽度、标题左对齐，隐藏封面页歌词；在播放页长按播放键也可切换</string>
     <string name="nowplaying_immersive_mode_on">已进入沉浸模式</string>

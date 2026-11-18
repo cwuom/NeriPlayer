@@ -35,6 +35,18 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassSceneOpacity
 import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.foundation.background
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Color
+import moe.ouom.neriplayer.ui.effect.glass.IOS_PUSH_EASING
+import moe.ouom.neriplayer.ui.effect.glass.IOS_PUSH_GESTURE_EASING
+import moe.ouom.neriplayer.ui.effect.glass.IOS_PUSH_OPEN_DURATION_MS
+import moe.ouom.neriplayer.ui.effect.glass.IOS_PUSH_UNDERLAY_DIM
+import moe.ouom.neriplayer.ui.effect.glass.iosPushContentTransform
+import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.backTargetPage
@@ -162,23 +174,53 @@ internal fun PhoneSettingsPageTransitionHost(
     onBack: () -> Unit,
     content: @Composable (SettingsPage?) -> Unit
 ) {
+    // 自定义背景图要透出来，不能给页面垫纯色底，此时保留整页横移
+    val iosPush = NeriDesign.tokens.enhancedEffects && !LocalHasCustomBackground.current
     // 返回手势按进度拖动同一个横向转场，松手后返回上一级，取消时回弹
     val pageTransition = rememberHostPredictiveBackTransition(
         targetState = activePage,
         backEnabled = backEnabled,
         backTargetState = activePage?.backTargetPage(),
         onBack = { onBack() },
-        label = "settings_page_switch"
+        label = "settings_page_switch",
+        previewEasing = if (iosPush) IOS_PUSH_GESTURE_EASING else LinearEasing
     )
     pageTransition.AnimatedContent(
         modifier = Modifier.fillMaxSize(),
         transitionSpec = {
-            isolatedAdvancedGlassHorizontalTransition(
-                forward = isForwardSettingsPageTransition(initialState, targetState)
-            ).using(SizeTransform(clip = true))
+            val forward = isForwardSettingsPageTransition(initialState, targetState)
+            val transform = if (iosPush) {
+                iosPushContentTransform(forward)
+            } else {
+                isolatedAdvancedGlassHorizontalTransition(forward)
+            }
+            transform.using(SizeTransform(clip = true))
         }
     ) { page ->
-        Box(Modifier.fillMaxSize().testTag(settingsPageTransitionSceneTag(page))) {
+        val underlayDim = if (iosPush) {
+            val forward = isForwardSettingsPageTransition(
+                pageTransition.segment.initialState,
+                pageTransition.segment.targetState
+            )
+            transition.animateFloat(
+                transitionSpec = { tween(IOS_PUSH_OPEN_DURATION_MS, easing = IOS_PUSH_EASING) },
+                label = "settings_page_underlay_dim"
+            ) { state -> resolveIosPushUnderlayDim(state, forward) }
+        } else {
+            null
+        }
+        val pageBackground = MaterialTheme.colorScheme.background
+        Box(
+            Modifier
+                .fillMaxSize()
+                .testTag(settingsPageTransitionSceneTag(page))
+                .then(if (iosPush) Modifier.background(pageBackground) else Modifier)
+                .drawWithContent {
+                    drawContent()
+                    val dim = underlayDim?.value ?: 0f
+                    if (dim > 0.001f) drawRect(Color.Black, alpha = dim)
+                }
+        ) {
             AdvancedGlassNavigationHandoff(
                 enabled = shouldHandoffGlass(isolateAdvancedGlassTransitions, transition.isRunning)
             ) {
@@ -190,4 +232,10 @@ internal fun PhoneSettingsPageTransitionHost(
             }
         }
     }
+}
+
+/** 推入时被盖住的是旧页，返回时露出来的是新页，只有这一页随转场压暗 */
+internal fun resolveIosPushUnderlayDim(state: EnterExitState, forward: Boolean): Float {
+    val underlay = if (forward) state == EnterExitState.PostExit else state == EnterExitState.PreEnter
+    return if (underlay) IOS_PUSH_UNDERLAY_DIM else 0f
 }

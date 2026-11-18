@@ -24,6 +24,8 @@ package moe.ouom.neriplayer.ui.screen.host
  */
 
 import android.os.Parcelable
+import moe.ouom.neriplayer.ui.navigation.HostSceneRenderer
+import moe.ouom.neriplayer.ui.navigation.PassThroughHostSceneRenderer
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -280,7 +282,7 @@ private enum class LibraryScrollSource {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryHostScreen(
+internal fun LibraryHostScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onSongClickWithSourceRoute: (List<SongItem>, Int, String?) -> Unit = { songs, index, _ ->
         onSongClick(songs, index)
@@ -304,15 +306,7 @@ fun LibraryHostScreen(
     onOpenStats: () -> Unit = {},
     offlineMode: Boolean = false,
     coherentFeedbackEnabled: Boolean = false,
-    renderScene: @Composable (
-        revealTopFraction: Float,
-        contentTranslationYFraction: Float,
-        contentScale: Float,
-        sceneDepth: Int,
-        content: @Composable () -> Unit
-    ) -> Unit = { _, _, _, _, content ->
-        content()
-    }
+    renderScene: HostSceneRenderer = PassThroughHostSceneRenderer
 ) {
     var selected by rememberSaveable(stateSaver = librarySelectedItemSaver) {
         mutableStateOf(null)
@@ -558,12 +552,7 @@ fun LibraryHostScreen(
                     label = "library_host_scene"
                 )
             }
-            renderScene(
-                sceneMotion.revealTopFraction,
-                sceneMotion.contentTranslationYFraction,
-                sceneMotion.contentScale,
-                scene.navigationDepth
-            ) {
+            renderScene(sceneMotion, scene.navigationDepth) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (current == null) {
                         Box(

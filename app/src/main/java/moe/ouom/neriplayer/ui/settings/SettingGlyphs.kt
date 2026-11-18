@@ -215,6 +215,7 @@ internal fun settingGlyphFor(key: String): SettingGlyph? = when (key) {
     "coherent_feedback_enabled" -> g(Icons.Rounded.TouchApp, Orange)
     "predictive_back_preview_enabled" -> g(Icons.Rounded.SwipeLeft, Blue)
     "liquid_glass_enabled" -> g(Icons.Rounded.WaterDrop, Cyan)
+    "enhanced_visual_effects_enabled" -> g(Icons.Rounded.AutoAwesome, Pink)
     "advanced_blur_enabled" -> g(Icons.Rounded.BlurOn, Indigo)
     "enhanced_advanced_blur_enabled" -> g(Icons.Rounded.BlurCircular, Purple)
     "enhanced_advanced_blur_radius_dp" -> g(Icons.Rounded.BlurLinear, Purple)
