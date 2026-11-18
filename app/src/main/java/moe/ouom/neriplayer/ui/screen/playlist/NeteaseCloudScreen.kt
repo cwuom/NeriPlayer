@@ -84,6 +84,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -239,6 +240,13 @@ fun NeteaseCloudScreen(
         selectionMode = false
         selectedIds = emptySet()
     }
+    // 翻页/刷新/清空后同步选中集合：清掉已不在列表里的 id，列表为空时退出多选
+    // （放在分支外，刷新返回空列表时也能生效）
+    LaunchedEffect(ui.tracks) {
+        val availableIds = ui.tracks.mapTo(mutableSetOf()) { it.id }
+        selectedIds = selectedIds.intersect(availableIds)
+        if (availableIds.isEmpty()) selectionMode = false
+    }
 
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(
         initial = false
@@ -361,12 +369,6 @@ fun NeteaseCloudScreen(
                     selectNeteaseCloudSongs(tracks, selectedIds)
                 }
                 val allSelected = tracks.isNotEmpty() && selectedIds.size == tracks.size
-                // 翻页/刷新后清掉已经不在列表里的选中项，避免选中计数与导出口径不一致
-                LaunchedEffect(tracks) {
-                    val availableIds = tracks.mapTo(mutableSetOf()) { it.id }
-                    selectedIds = selectedIds.intersect(availableIds)
-                    if (availableIds.isEmpty()) selectionMode = false
-                }
 
                 fun play(shuffle: Boolean) {
                     if (!canUseTracks) return
@@ -543,6 +545,21 @@ fun NeteaseCloudScreen(
                                 offlineMode = offlineMode
                             )
                         }
+                        if (displayedTracks.isEmpty() && searchQuery.isNotBlank()) {
+                            item(key = "netease_cloud_search_empty") {
+                                Text(
+                                    text = stringResource(
+                                        CoreCommonR.string.netease_cloud_search_empty
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(
+                                        horizontal = 20.dp,
+                                        vertical = 24.dp
+                                    )
+                                )
+                            }
+                        }
                         if (ui.loadingMore) {
                             item(key = "netease_cloud_loading_more") {
                                 NeteaseCloudLoadingMoreRow()
@@ -571,6 +588,8 @@ fun NeteaseCloudScreen(
                                 playlists = playlists,
                                 repository = repo,
                                 snackbarHostState = snackbarHostState,
+                                scope = scope,
+                                canWrite = { true },
                                 onDismiss = { showExportSheet = false }
                             )
                         }
@@ -580,6 +599,9 @@ fun NeteaseCloudScreen(
                                 playlists = playlists,
                                 repository = repo,
                                 snackbarHostState = snackbarHostState,
+                                scope = scope,
+                                // 面板打开后刷新可能把列表退回到前缀状态，确认时必须再校验一次
+                                canWrite = { canUseTracks },
                                 onDismiss = { showExportAllSheet = false }
                             )
                         }
@@ -722,10 +744,20 @@ private fun NeteaseCloudExportSheet(
     playlists: List<LocalPlaylist>,
     repository: LocalPlaylistRepository,
     snackbarHostState: SnackbarHostState,
+    scope: CoroutineScope,
+    canWrite: () -> Boolean,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    // 导出必须跑在页面作用域上：面板隐藏动画结束会销毁面板自身的 composition/scope
+    fun rejectIncomplete() {
+        onDismiss()
+        scope.launch {
+            snackbarHostState.showNeriSnackbar(
+                context.getString(CoreCommonR.string.netease_cloud_incomplete_hint)
+            )
+        }
+    }
     PlaylistExportSheet(
         title = stringResource(CoreCommonR.string.playlist_export_to_local),
         playlists = playlists.filterNot { playlist ->
@@ -734,35 +766,43 @@ private fun NeteaseCloudExportSheet(
         selectedCount = songs.size,
         onDismissRequest = onDismiss,
         onCreateAndExport = { name ->
-            scope.launchLocalPlaylistMutation(
-                operation = "createPlaylistFromNeteaseCloud",
-                onResult = { result ->
-                    scope.showPlaylistBatchExportCreatedResult(
-                        context = context,
-                        snackbarHostState = snackbarHostState,
-                        repository = repository,
-                        result = result
-                    )
+            if (!canWrite()) {
+                rejectIncomplete()
+            } else {
+                scope.launchLocalPlaylistMutation(
+                    operation = "createPlaylistFromNeteaseCloud",
+                    onResult = { result ->
+                        scope.showPlaylistBatchExportCreatedResult(
+                            context = context,
+                            snackbarHostState = snackbarHostState,
+                            repository = repository,
+                            result = result
+                        )
+                    }
+                ) {
+                    repository.createPlaylistWithSongs(name, songs)
                 }
-            ) {
-                repository.createPlaylistWithSongs(name, songs)
             }
         },
         onExportToPlaylist = { playlist ->
-            scope.launchLocalPlaylistMutation(
-                operation = "exportSongsFromNeteaseCloud",
-                onResult = { result ->
-                    scope.showPlaylistBatchExportAddedResult(
-                        context = context,
-                        snackbarHostState = snackbarHostState,
-                        repository = repository,
-                        targetPlaylistId = playlist.id,
-                        targetPlaylistName = playlist.name,
-                        result = result
-                    )
+            if (!canWrite()) {
+                rejectIncomplete()
+            } else {
+                scope.launchLocalPlaylistMutation(
+                    operation = "exportSongsFromNeteaseCloud",
+                    onResult = { result ->
+                        scope.showPlaylistBatchExportAddedResult(
+                            context = context,
+                            snackbarHostState = snackbarHostState,
+                            repository = repository,
+                            targetPlaylistId = playlist.id,
+                            targetPlaylistName = playlist.name,
+                            result = result
+                        )
+                    }
+                ) {
+                    repository.addSongsToPlaylistWithResult(playlist.id, songs)
                 }
-            ) {
-                repository.addSongsToPlaylistWithResult(playlist.id, songs)
             }
         }
     )
