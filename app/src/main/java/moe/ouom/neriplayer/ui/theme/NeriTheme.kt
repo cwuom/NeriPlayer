@@ -74,6 +74,7 @@ fun NeriTheme(
     systemDark: Boolean? = null,
     uiStyle: UiStyle = UiStyle.Material,
     liquidGlass: Boolean = false,
+    enhancedEffects: Boolean = false,
     animateColors: Boolean = true,
     neutralSurfaces: Boolean = true,
     content: @Composable () -> Unit
@@ -115,8 +116,11 @@ fun NeriTheme(
         targetColorScheme
     }
     val baseTokens = neriDesignTokensFor(uiStyle)
-    val designTokens = remember(baseTokens, liquidGlass) {
-        baseTokens.copy(liquidGlass = liquidGlass && uiStyle == UiStyle.Clean)
+    val designTokens = remember(baseTokens, liquidGlass, enhancedEffects) {
+        baseTokens.copy(
+            liquidGlass = liquidGlass && uiStyle == UiStyle.Clean,
+            enhancedEffects = enhancedEffects && uiStyle == UiStyle.Clean
+        )
     }
 
     CompositionLocalProvider(

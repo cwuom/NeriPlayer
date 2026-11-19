@@ -24,6 +24,8 @@ package moe.ouom.neriplayer.ui.screen.host
  */
 
 import androidx.compose.animation.AnimatedContent
+import moe.ouom.neriplayer.ui.navigation.HostSceneRenderer
+import moe.ouom.neriplayer.ui.navigation.PassThroughHostSceneRenderer
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
@@ -147,7 +149,7 @@ internal fun resolveExploreSelectedDetailBackTarget(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExploreHostScreen(
+internal fun ExploreHostScreen(
     offlineMode: Boolean = false,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onSongClickWithSourceRoute: (List<SongItem>, Int, String?) -> Unit = { songs, index, _ ->
@@ -159,15 +161,7 @@ fun ExploreHostScreen(
     onSongAddToQueueEnd: (SongItem) -> Unit = {},
     onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
     coherentFeedbackEnabled: Boolean = false,
-    renderScene: @Composable (
-        revealTopFraction: Float,
-        contentTranslationYFraction: Float,
-        contentScale: Float,
-        sceneDepth: Int,
-        content: @Composable () -> Unit
-    ) -> Unit = { _, _, _, _, content ->
-        content()
-    }
+    renderScene: HostSceneRenderer = PassThroughHostSceneRenderer
 ) {
     var selected by remember { mutableStateOf<ExploreSelectedItem?>(null) }
     val context = LocalContext.current
@@ -327,12 +321,7 @@ fun ExploreHostScreen(
                     label = "explore_host_scene"
                 )
             }
-            renderScene(
-                sceneMotion.revealTopFraction,
-                sceneMotion.contentTranslationYFraction,
-                sceneMotion.contentScale,
-                current.navigationDepth
-            ) {
+            renderScene(sceneMotion, current.navigationDepth) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (current == null) {
                         Box(

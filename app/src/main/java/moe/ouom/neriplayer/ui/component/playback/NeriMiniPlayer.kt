@@ -100,6 +100,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
 import moe.ouom.neriplayer.ui.theme.NeriDesign
+import androidx.compose.ui.graphics.luminance
 import moe.ouom.neriplayer.ui.theme.supportsContinuousCornerOutline
 import moe.ouom.neriplayer.ui.playback.visual.shouldUseNowPlayingContainerMorph
 import kotlinx.coroutines.Job
@@ -108,6 +109,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
+import moe.ouom.neriplayer.ui.effect.glass.enhancedGlassRim
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
@@ -868,6 +870,7 @@ fun NeriMiniPlayer(
         MaterialTheme.colorScheme.secondaryContainer
     }
     SideEffect { sharedCoverFlight?.miniPlayerContainerColor = capsuleColor }
+    val enhancedEffects = NeriDesign.tokens.enhancedEffects
     AdvancedGlassSurface(
         role = AdvancedGlassRole.MiniPlayer,
         modifier = modifier
@@ -881,7 +884,9 @@ fun NeriMiniPlayer(
             }
             .clip(shape)
             .then(
-                if (cleanStyle && !useTabletControls) {
+                if (cleanStyle && !useTabletControls && enhancedEffects) {
+                    Modifier.enhancedGlassRim(shape, MaterialTheme.colorScheme.surface.luminance() < 0.5f)
+                } else if (cleanStyle && !useTabletControls) {
                     Modifier.border(
                         width = 0.5.dp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),

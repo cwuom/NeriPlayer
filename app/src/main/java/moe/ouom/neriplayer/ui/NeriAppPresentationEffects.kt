@@ -23,7 +23,8 @@ import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
 internal data class AppStylePreferences(
     val uiStyle: UiStyle,
     val liquidGlassEnabled: Boolean,
-    val predictiveBackPreviewEnabled: Boolean
+    val predictiveBackPreviewEnabled: Boolean,
+    val enhancedVisualEffectsEnabled: Boolean
 )
 
 internal data class NowPlayingBackgroundMode(val dynamic: Boolean, val audioReactive: Boolean)
@@ -44,13 +45,15 @@ internal fun rememberAppStylePreferences(
 ): AppStylePreferences {
     val uiStyle by repo.uiStyleFlow.collectAsStateWithLifecycle(initialValue = initialUiStyle)
     val liquidGlassEnabled by repo.liquidGlassEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
+    val enhancedVisualEffectsEnabled by repo.enhancedVisualEffectsEnabledFlow
+        .collectAsStateWithLifecycle(initialValue = true)
     val predictiveBackPreviewEnabled by repo.predictiveBackPreviewEnabledFlow
         .collectAsStateWithLifecycle(
             initialValue = AutoSettingsSchema.motion.predictiveBackPreviewEnabled.defaultValue
         )
     SideEffect { NeriMotionStyle.clean = uiStyle == UiStyle.Clean }
     return AppStylePreferences(
-        uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled
+        uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled, enhancedVisualEffectsEnabled
     )
 }
 

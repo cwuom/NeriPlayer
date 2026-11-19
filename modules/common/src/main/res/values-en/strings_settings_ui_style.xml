@@ -12,6 +12,8 @@
     <string name="settings_liquid_glass">Liquid glass</string>
     <string name="settings_liquid_glass_desc">Adds edge refraction and highlights to the bottom bar and mini player in the clean style; scales down automatically on low-end devices and in battery saver</string>
     <string name="settings_liquid_glass_requires_clean">Requires the clean style</string>
+    <string name="settings_enhanced_visual_effects">Enhanced visual effects</string>
+    <string name="settings_enhanced_visual_effects_desc">iOS-style touches for the clean style: springy menus with slide-to-pick, blurred dialog backdrops and deeper bar glass; scales down in battery saver or on low-RAM devices</string>
     <string name="settings_nowplaying_immersive_mode">Immersive mode</string>
     <string name="settings_nowplaying_immersive_mode_desc">Large-cover layout: full-width artwork, left-aligned title and no cover lyrics; long-press play on Now Playing to toggle</string>
     <string name="nowplaying_immersive_mode_on">Immersive mode on</string>

@@ -41,6 +41,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -261,6 +263,14 @@ private fun bottomBarVisibilityTarget(visible: Boolean): Float =
 private fun bottomBarVisibilityDuration(visible: Boolean): Int =
     if (visible) 280 else 220
 
+// 按下底栏时玻璃透镜会高出底栏顶边，裁剪区向上留出这段余量
+private val BottomBarLensHeadroom = 16.dp
+
+/** Clips like clipToBounds on three sides but lets content rise [headroom] above the top. */
+private fun Modifier.clipToBoundsWithTopHeadroom(headroom: Dp): Modifier = drawWithContent {
+    clipRect(top = -headroom.toPx()) { this@drawWithContent.drawContent() }
+}
+
 private fun Modifier.collapseBottomBarSlot(collapsed: Boolean): Modifier = layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
     // 保留自然测量和动画实例，只释放隐藏chrome占用的Scaffold槽位
@@ -297,7 +307,7 @@ private fun AppScaffoldBottomBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clipToBounds()
+            .clipToBoundsWithTopHeadroom(BottomBarLensHeadroom)
             .collapseBottomBarSlot(yieldsToIme)
             .onGloballyPositioned { coordinates ->
                 if (!yieldsToIme) {

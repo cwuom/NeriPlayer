@@ -19,6 +19,9 @@ NeriPlayer 按根目录的 [GPL-3.0 许可证](LICENSE) 发布。
 - libusb
   - 引用：[`modules/native/src/main/cpp/third_party/libusb/`](modules/native/src/main/cpp/third_party/libusb/) 中的源码和头文件，用于 USB 独占输出
   - 许可：LGPL-2.1-or-later，以导入源码头部声明为准
+- [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)（经 `np-submodule/miuix` 示例中的移植版本改写）
+  - 引用：简洁风格增强底栏透镜使用的圆角矩形折射与色散着色器，位于 [`CleanTabLensShader.kt`](app/src/main/java/moe/ouom/neriplayer/ui/component/navigation/CleanTabLensShader.kt)
+  - 许可：Apache-2.0
 
 ### 超级岛改编与 Native 授权
 
@@ -44,6 +47,9 @@ This document records selected source imports and adaptations. It is not an exha
 - libusb
   - Contribution: sources and headers in [`modules/native/src/main/cpp/third_party/libusb/`](modules/native/src/main/cpp/third_party/libusb/), used by USB exclusive output
   - License: LGPL-2.1-or-later, as declared in the imported source headers
+- [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (adapted from the port in the `np-submodule/miuix` example)
+  - Contribution: the rounded-rect refraction and dispersion shader used by the enhanced clean-style tab bar lens, in [`CleanTabLensShader.kt`](app/src/main/java/moe/ouom/neriplayer/ui/component/navigation/CleanTabLensShader.kt)
+  - License: Apache-2.0
 
 ### Super Island adaptations and native licensing
 

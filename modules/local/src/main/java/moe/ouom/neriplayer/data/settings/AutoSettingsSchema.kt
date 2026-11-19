@@ -864,6 +864,19 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "enhanced_visual_effects_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 18,
+            ui = SettingUiType.Custom
+        )
+        val enhancedVisualEffectsEnabled = autoSetting(
+            titleRes = CoreCommonR.string.settings_enhanced_visual_effects,
+            descriptionRes = CoreCommonR.string.settings_enhanced_visual_effects_desc,
+            icon = AutoSettingIcon.AutoAwesome
+        )
+
+        @AutoSetting(
             key = "advanced_blur_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,

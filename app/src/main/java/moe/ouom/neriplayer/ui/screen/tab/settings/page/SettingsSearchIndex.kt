@@ -971,6 +971,17 @@ private val SettingSearchAliases = mapOf(
     "always_use_new_tab_style" to listOf("tab", "bottom bar", "new ui"),
     "ui_style" to listOf("style", "theme", "clean", "apple", "ios", "material", "fengge", "jianjie", "风格", "简洁"),
     "liquid_glass_enabled" to listOf("liquid glass", "glass", "refraction", "yetai boli", "液态玻璃"),
+    "enhanced_visual_effects_enabled" to listOf(
+        "visual effects",
+        "ios",
+        "menu",
+        "popup",
+        "dialog blur",
+        "zengqiang shijue",
+        "视觉效果",
+        "弹窗",
+        "菜单"
+    ),
     "predictive_back_preview_enabled" to listOf("predictive back", "back gesture", "preview", "yuce fanhui", "预测性返回"),
     "nowplaying_immersive_mode" to listOf("immersive", "fullscreen", "status bar", "chenjin", "沉浸"),
     "nowplaying_song_title_marquee_enabled" to listOf(
