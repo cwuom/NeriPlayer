@@ -229,6 +229,8 @@ fun NeteaseCloudScreen(
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
+    // 打开面板时快照待导出歌曲：刷新可能让列表退回前缀，导出范围必须稳定
+    var exportSelectedSongs by remember { mutableStateOf<List<SongItem>>(emptyList()) }
     var showExportAllSheet by remember { mutableStateOf(false) }
     var showDownloadManager by remember { mutableStateOf(false) }
     val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
@@ -245,7 +247,11 @@ fun NeteaseCloudScreen(
     LaunchedEffect(ui.tracks) {
         val availableIds = ui.tracks.mapTo(mutableSetOf()) { it.id }
         selectedIds = selectedIds.intersect(availableIds)
-        if (availableIds.isEmpty()) selectionMode = false
+        if (availableIds.isEmpty()) {
+            selectionMode = false
+            showExportSheet = false
+            showExportAllSheet = false
+        }
     }
 
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(
@@ -480,7 +486,10 @@ fun NeteaseCloudScreen(
                                 }
                             },
                             canExport = selectedSongs.isNotEmpty(),
-                            onExport = { showExportSheet = true }
+                            onExport = {
+                                exportSelectedSongs = selectedSongs
+                                showExportSheet = true
+                            }
                         )
                     },
                     beforeList = { _ ->
@@ -584,13 +593,24 @@ fun NeteaseCloudScreen(
                         BackHandler(enabled = selectionMode) { exitSelection() }
                         if (showExportSheet) {
                             NeteaseCloudExportSheet(
-                                songs = selectedSongs,
+                                songs = exportSelectedSongs,
                                 playlists = playlists,
                                 repository = repo,
                                 snackbarHostState = snackbarHostState,
                                 scope = scope,
-                                canWrite = { true },
-                                onDismiss = { showExportSheet = false }
+                                // 快照里有歌已经不在当前列表时拒绝写入，避免只导出被截断的子集
+                                canWrite = {
+                                    exportSelectedSongs.all { song ->
+                                        tracks.any { it.id == song.id }
+                                    }
+                                },
+                                blockedMessage = stringResource(
+                                    CoreCommonR.string.netease_cloud_export_selection_stale
+                                ),
+                                onDismiss = {
+                                    showExportSheet = false
+                                    exportSelectedSongs = emptyList()
+                                }
                             )
                         }
                         if (showExportAllSheet) {
@@ -602,6 +622,9 @@ fun NeteaseCloudScreen(
                                 scope = scope,
                                 // 面板打开后刷新可能把列表退回到前缀状态，确认时必须再校验一次
                                 canWrite = { canUseTracks },
+                                blockedMessage = stringResource(
+                                    CoreCommonR.string.netease_cloud_incomplete_hint
+                                ),
                                 onDismiss = { showExportAllSheet = false }
                             )
                         }
@@ -746,16 +769,15 @@ private fun NeteaseCloudExportSheet(
     snackbarHostState: SnackbarHostState,
     scope: CoroutineScope,
     canWrite: () -> Boolean,
+    blockedMessage: String,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     // 导出必须跑在页面作用域上：面板隐藏动画结束会销毁面板自身的 composition/scope
-    fun rejectIncomplete() {
+    fun rejectBlocked() {
         onDismiss()
         scope.launch {
-            snackbarHostState.showNeriSnackbar(
-                context.getString(CoreCommonR.string.netease_cloud_incomplete_hint)
-            )
+            snackbarHostState.showNeriSnackbar(blockedMessage)
         }
     }
     PlaylistExportSheet(
@@ -767,7 +789,7 @@ private fun NeteaseCloudExportSheet(
         onDismissRequest = onDismiss,
         onCreateAndExport = { name ->
             if (!canWrite()) {
-                rejectIncomplete()
+                rejectBlocked()
             } else {
                 scope.launchLocalPlaylistMutation(
                     operation = "createPlaylistFromNeteaseCloud",
@@ -786,7 +808,7 @@ private fun NeteaseCloudExportSheet(
         },
         onExportToPlaylist = { playlist ->
             if (!canWrite()) {
-                rejectIncomplete()
+                rejectBlocked()
             } else {
                 scope.launchLocalPlaylistMutation(
                     operation = "exportSongsFromNeteaseCloud",

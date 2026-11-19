@@ -73,6 +73,7 @@
     <string name="netease_cloud_incomplete_hint">Cloud songs are not fully loaded. Refresh and try again.</string>
     <string name="netease_cloud_search_hint">Search cloud songs</string>
     <string name="netease_cloud_search_empty">No matching cloud songs</string>
+    <string name="netease_cloud_export_selection_stale">Selected songs no longer match the current list. Please select again.</string>
     <string name="library_bili_empty">No Bilibili favorites or collections loaded yet</string>
     <string name="library_bili_hint">Sign in to Bilibili to load created favorites, subscribed favorites, and saved collections</string>
     <string name="library_bili_search_hint">Search favorites / collections</string>
