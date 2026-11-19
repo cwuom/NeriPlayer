@@ -8,6 +8,7 @@ import android.content.ContextWrapper
 import android.content.res.Resources
 import androidx.annotation.StringRes
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -151,7 +152,7 @@ fun ListenTogetherRoomPanel(
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
-    val activity = remember(context) { context.findComponentActivity() }
+    val activity = rememberListenTogetherHostActivity()
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     val sessionManager = remember { AppContainer.listenTogetherSessionManager }
@@ -918,6 +919,16 @@ internal fun Context.findComponentActivity(): ComponentActivity? = when (this) {
     is ComponentActivity -> this
     is ContextWrapper -> baseContext.findComponentActivity()
     else -> null
+}
+
+@Composable
+internal fun rememberListenTogetherHostActivity(): ComponentActivity? {
+    val hostActivity = LocalActivity.current
+    val context = LocalContext.current
+    return remember(hostActivity, context) {
+        // 应用语言 Context 由 createConfigurationContext 生成且会被 Sheet 窗口沿用，无法从包装链回溯到宿主
+        hostActivity as? ComponentActivity ?: context.findComponentActivity()
+    }
 }
 
 private fun Clipboard.copyText(
