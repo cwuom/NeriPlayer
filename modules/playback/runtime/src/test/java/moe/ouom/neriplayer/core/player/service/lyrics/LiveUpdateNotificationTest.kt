@@ -6,6 +6,11 @@ import android.app.NotificationManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Looper
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import moe.ouom.neriplayer.core.player.host.PlayerPresentationHost
+import moe.ouom.neriplayer.core.player.testing.PlayerTestEnvironment
+import org.mockito.Mockito.mock
 import android.text.Spanned
 import android.text.style.TtsSpan
 import androidx.core.app.NotificationCompat
@@ -20,6 +25,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -58,6 +64,7 @@ class LiveUpdateNotificationTest {
     fun clearBridge() {
         bridge?.setEnabled(false)
         idle()
+        PlayerTestEnvironment.reset()
     }
 
     @Test
@@ -308,6 +315,115 @@ class LiveUpdateNotificationTest {
     }
 
     @Test
+    fun `a late dismissal of the previous song does not hide the next one`() {
+        val bridge = enabledBridge()
+        bridge.publish(frame)
+        idle()
+        val firstSongDelete = checkNotNull(checkNotNull(postedNotification()).deleteIntent)
+
+        idleFor(500L)
+        bridge.publish(frame.copy(songKey = "netease:2", songTitle = "第二首歌", lyric = null, positionMs = 0L))
+        idle()
+        firstSongDelete.send()
+        idle()
+        bridge.publish(frame.copy(songKey = "netease:2", songTitle = "第二首歌", lyric = "新的一句", positionMs = 1_000L))
+        idleFor(500L)
+
+        assertEquals("新的一句", checkNotNull(postedNotification()).extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+    }
+
+    @Test
+    fun `switching songs starts the new song's progress from its own position`() {
+        val bridge = enabledBridge()
+        bridge.publish(frame.copy(positionMs = 1_000L))
+        idle()
+
+        idleFor(400L)
+        bridge.publish(frame.copy(songKey = "netease:2", songTitle = "第二首歌", lyric = null, positionMs = 0L))
+        idle()
+
+        assertEquals(0, postedProgress())
+    }
+
+    @Test
+    fun `a refresh long after the last player frame does not run past the extrapolation limit`() {
+        val bridge = enabledBridge()
+        bridge.publish(frame)
+        idle()
+
+        idleFor(3_500L)
+        bridge.setArtwork(frame.songKey, Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888), coverSource = null)
+        idle()
+
+        val posted = checkNotNull(postedNotification())
+        assertNotNull(posted.getLargeIcon())
+        assertEquals(32, posted.extras.getInt(Notification.EXTRA_PROGRESS))
+    }
+
+    @Test
+    fun `promotion that cannot be confirmed yet is checked again on later posts`() {
+        promotion.promoted = null
+        val bridge = enabledBridge()
+        bridge.publish(frame)
+        idleFor(LiveLyricNotificationBridge.PROMOTION_CHECK_DELAY_MS + 100L)
+        assertNotNull(postedNotification())
+
+        promotion.promoted = false
+        idleFor(1_200L)
+
+        assertNull(postedNotification())
+        assertTrue(LiveUpdateNotificationStatus.systemDeclinedPromotion.value)
+    }
+
+    @Test
+    fun `non-1x playback moves the bar at the playback rate without a wall-clock chronometer`() {
+        val bridge = enabledBridge()
+        bridge.publish(frame.copy(playbackSpeed = 2f))
+        idle()
+        assertFalse(checkNotNull(postedNotification()).extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
+        assertEquals(30, postedProgress())
+
+        idleFor(1_100L)
+
+        assertEquals(32, postedProgress())
+    }
+
+    @Test
+    fun `a cover delivered while switched off is colored once the live update starts`() {
+        val loads = AtomicInteger()
+        installPresentation { loads.incrementAndGet(); ACCENT }
+        val bridge = LiveLyricNotificationBridge(context, promotion).also { this.bridge = it }
+        bridge.setArtwork(frame.songKey, null, coverSource = "cover://neri")
+        idle()
+        assertEquals(0, loads.get())
+
+        bridge.setEnabled(true)
+        bridge.publish(frame)
+        awaitMain { postedNotification()?.color == ACCENT }
+
+        assertEquals(1, loads.get())
+    }
+
+    @Test
+    fun `an album color request cancelled by a collapse is retried when playback continues`() {
+        val loads = AtomicInteger()
+        val neverAnswered = CompletableDeferred<Int?>()
+        installPresentation { if (loads.incrementAndGet() == 1) neverAnswered.await() else ACCENT }
+        val bridge = enabledBridge()
+        bridge.publish(frame)
+        bridge.setArtwork(frame.songKey, null, coverSource = "cover://neri")
+        idle()
+        awaitMain { loads.get() == 1 }
+
+        bridge.clear()
+        idle()
+        bridge.publish(frame)
+        awaitMain { postedNotification()?.color == ACCENT }
+
+        assertEquals(2, loads.get())
+    }
+
+    @Test
     fun `nothing is posted while the system disallows promotion for the app`() {
         promotion.canPost = false
         val bridge = enabledBridge()
@@ -377,6 +493,25 @@ class LiveUpdateNotificationTest {
         legacyColorizedPromotion = legacyColorized,
     )
 
+    private fun installPresentation(loadAccent: suspend () -> Int?) {
+        PlayerTestEnvironment.install(
+            presentation = object : PlayerPresentationHost by mock(PlayerPresentationHost::class.java) {
+                override suspend fun loadCoverAccentColor(context: Context, source: String): Int? = loadAccent()
+                override fun peekCoverAccentColor(source: String): Int? = null
+            }
+        )
+    }
+
+    /** 取色在 IO 线程完成后才回到主线程，结果还要经过发布节流；边推进主线程时钟边等待 */
+    private fun awaitMain(condition: () -> Boolean) {
+        repeat(AWAIT_ATTEMPTS) {
+            idleFor(AWAIT_STEP_MS)
+            if (condition()) return
+            Thread.sleep(AWAIT_STEP_MS)
+        }
+        fail("condition not met on the main looper")
+    }
+
     private fun postedProgress(): Int = checkNotNull(postedNotification()).extras.getInt(Notification.EXTRA_PROGRESS)
 
     private fun spokenLabel(title: CharSequence): String? =
@@ -403,6 +538,8 @@ class LiveUpdateNotificationTest {
 
     private companion object {
         const val ACCENT = 0xFF3482FF.toInt()
+        const val AWAIT_ATTEMPTS = 200
+        const val AWAIT_STEP_MS = 10L
         const val PREVIOUS_GLYPH = "\u23EE\uFE0E"
         const val PAUSE_GLYPH = "\u2759\u2759"
         const val PLAY_GLYPH = "\u25B6\uFE0E"

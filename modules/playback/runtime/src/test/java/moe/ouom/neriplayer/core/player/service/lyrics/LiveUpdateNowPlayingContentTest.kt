@@ -91,11 +91,40 @@ class LiveUpdateNowPlayingContentTest {
 
     @Test
     fun `while the chronometer runs progress is read from its clock`() {
-        assertEquals(30_400L, resolveLiveUpdateClockPosition(anchorAt(970_000L), 1_000_400L, 29_000L, 240_000L))
-        assertEquals(240_000L, resolveLiveUpdateClockPosition(anchorAt(0L), 999_000L, 29_000L, 240_000L))
-        assertEquals(0L, resolveLiveUpdateClockPosition(anchorAt(1_000_500L), 1_000_000L, 29_000L, 240_000L))
-        assertEquals(999_000L, resolveLiveUpdateClockPosition(anchorAt(0L), 999_000L, 29_000L, 0L))
-        assertEquals(29_000L, resolveLiveUpdateClockPosition(null, 1_000_000L, 29_000L, 240_000L))
+        assertEquals(30_400L, resolveLiveUpdateClockPosition(anchorAt(970_000L), 1_000_400L, frame, 30_400L))
+        assertEquals(0L, resolveLiveUpdateClockPosition(anchorAt(1_000_500L), 1_000_000L, frame, 30_000L))
+        assertEquals(29_000L, resolveLiveUpdateClockPosition(null, 1_000_000L, frame, 29_000L))
+        assertEquals(
+            240_000L,
+            resolveLiveUpdateClockPosition(anchorAt(0L), 999_000L, frame.copy(positionMs = 239_000L), 240_000L),
+        )
+    }
+
+    @Test
+    fun `a stale frame cannot push the clock past the extrapolation limit`() {
+        // 节拍或其他刷新迟到时，旧锚点仍在容差内，但显示位置必须停在最后一帧之后 2.5 秒
+        assertEquals(
+            30_000L + LIVE_UPDATE_MAX_EXTRAPOLATION_MS,
+            resolveLiveUpdateClockPosition(anchorAt(970_000L), 1_003_500L, frame, 32_500L),
+        )
+    }
+
+    @Test
+    fun `playback speed scales extrapolation, the clock and the anchor`() {
+        val doubled = frame.copy(playbackSpeed = 2f)
+        assertEquals(32_400L, extrapolateLiveUpdatePosition(doubled, elapsedSinceFrameMs = 1_200L))
+        assertEquals(30_000L + 2 * LIVE_UPDATE_MAX_EXTRAPOLATION_MS, extrapolateLiveUpdatePosition(doubled, 60_000L))
+        assertEquals(31_200L, extrapolateLiveUpdatePosition(frame.copy(playbackSpeed = 0f), 1_200L))
+
+        val anchor = checkNotNull(resolveLiveUpdateClockAnchor(null, 50_000L, 1_700_000_050_000L, 30_000L, true, speed = 2f))
+        assertEquals(LiveUpdateClockAnchor(elapsedMs = 35_000L, wallMs = 1_700_000_035_000L, speed = 2f), anchor)
+        assertFalse(anchor.drivesChronometer)
+        assertEquals(32_000L, resolveLiveUpdateClockPosition(anchor, 51_000L, doubled, 32_000L))
+
+        // 倍速变化后不沿用旧锚点
+        val normal = resolveLiveUpdateClockAnchor(anchor, 51_000L, 1_700_000_051_000L, 32_000L, true, speed = 1f)
+        assertEquals(LiveUpdateClockAnchor(elapsedMs = 19_000L, wallMs = 1_700_000_019_000L), normal)
+        assertTrue(checkNotNull(normal).drivesChronometer)
     }
 
     @Test
@@ -141,6 +170,17 @@ class LiveUpdateNowPlayingContentTest {
         // 跳转后重新锚定
         assertEquals(now - 90_000L, resolveLiveUpdateChronometerBase(base, now, positionMs = 90_000L, playing = true))
         assertNull(resolveLiveUpdateChronometerBase(base, now, positionMs = 30_000L, playing = false))
+        // 2× 时锚点按播放位置折算，容差也按播放位置计算
+        assertEquals(now - 15_000L, resolveLiveUpdateChronometerBase(null, now, positionMs = 30_000L, true, speed = 2f))
+        assertEquals(now - 15_000L, resolveLiveUpdateChronometerBase(now - 15_000L, now + 600L, 31_000L, true, 2f))
+    }
+
+    @Test
+    fun `timeout follows the wall-clock length of the rest of the song at slow speeds`() {
+        assertEquals(
+            420_000L + LIVE_UPDATE_PLAYING_TIMEOUT_MARGIN_MS,
+            resolveLiveUpdateTimeoutMs(true, 30_000L, 240_000L, pausedLingerMs = 60_000L, speed = 0.5f),
+        )
     }
 
     @Test

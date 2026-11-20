@@ -17,6 +17,12 @@ private const val LIVE_UPDATE_NEUTRAL_SATURATION = 0.12f
 private const val LIVE_UPDATE_MIN_SATURATION = 0.55f
 private const val LIVE_UPDATE_MIN_LIGHTNESS = 0.48f
 private const val LIVE_UPDATE_MAX_LIGHTNESS = 0.62f
+// 系统只按 1.3:1 调整进度条颜色，播放头位图不会被调整；按浅色与深色卡片背景分别校验
+private const val LIVE_UPDATE_MIN_SURFACE_CONTRAST = 1.3
+private const val LIVE_UPDATE_LIGHT_SURFACE = 0xFFFFFFFF.toInt()
+private const val LIVE_UPDATE_DARK_SURFACE = 0xFF1F1F1F.toInt()
+private const val LIVE_UPDATE_LIGHTNESS_STEP = 0.02f
+private const val LIVE_UPDATE_CONTRAST_MAX_STEPS = 25
 
 /** 系统按 trackerHeight 缩放，位图只需比显示尺寸略大以保证清晰 */
 internal const val LIVE_UPDATE_TRACKER_SIZE_PX = 72
@@ -25,7 +31,7 @@ private const val LIVE_UPDATE_TRACKER_CORE_RATIO = 0.19f
 
 /**
  * 封面取色多为偏灰的 Vibrant/Muted 色，直接画在浅色通知上发闷；
- * 提到中等明度与较高饱和度，深浅主题下都醒目，且始终满足系统 1.3:1 的进度条对比度。
+ * 提到中等明度与较高饱和度，再确保与浅色、深色卡片背景都至少 1.3:1，深浅主题下都醒目。
  */
 @ColorInt
 internal fun resolveLiveUpdateAccentColor(@ColorInt baseColor: Int?): Int? {
@@ -35,9 +41,42 @@ internal fun resolveLiveUpdateAccentColor(@ColorInt baseColor: Int?): Int? {
     if (hsl[1] < LIVE_UPDATE_NEUTRAL_SATURATION) return null
     val saturation = hsl[1].coerceAtLeast(LIVE_UPDATE_MIN_SATURATION)
     val lightness = hsl[2].coerceIn(LIVE_UPDATE_MIN_LIGHTNESS, LIVE_UPDATE_MAX_LIGHTNESS)
-    if (saturation == hsl[1] && lightness == hsl[2]) return baseColor or 0xFF000000.toInt()
-    return ColorUtils.HSLToColor(floatArrayOf(hsl[0], saturation, lightness))
+    val lifted = if (saturation == hsl[1] && lightness == hsl[2]) {
+        baseColor or 0xFF000000.toInt()
+    } else {
+        ColorUtils.HSLToColor(floatArrayOf(hsl[0], saturation, lightness))
+    }
+    return ensureLiveUpdateSurfaceContrast(lifted, hsl[0], saturation, lightness)
 }
+
+/** 黄、青等高亮度色相即使在中等明度下也贴近浅色背景：太亮就压暗，太暗就提亮，直到两种背景都达标 */
+@ColorInt
+private fun ensureLiveUpdateSurfaceContrast(@ColorInt color: Int, hue: Float, saturation: Float, lightness: Float): Int {
+    var candidate = color
+    var currentLightness = lightness
+    repeat(LIVE_UPDATE_CONTRAST_MAX_STEPS) {
+        val step = when {
+            ColorUtils.calculateContrast(candidate, LIVE_UPDATE_LIGHT_SURFACE) < LIVE_UPDATE_MIN_SURFACE_CONTRAST ->
+                -LIVE_UPDATE_LIGHTNESS_STEP
+            ColorUtils.calculateContrast(candidate, LIVE_UPDATE_DARK_SURFACE) < LIVE_UPDATE_MIN_SURFACE_CONTRAST ->
+                LIVE_UPDATE_LIGHTNESS_STEP
+            else -> return candidate
+        }
+        currentLightness = (currentLightness + step).coerceIn(0f, 1f)
+        candidate = ColorUtils.HSLToColor(floatArrayOf(hue, saturation, currentLightness))
+    }
+    return candidate
+}
+
+/** 取色只为正在展示的歌曲进行；已有颜色、正在取色或同一封面失败过时不再发起 */
+internal fun shouldLoadLiveUpdateAccent(
+    enabled: Boolean,
+    artworkSongKey: String,
+    frameSongKey: String?,
+    hasAccent: Boolean,
+    loading: Boolean,
+    alreadyAttempted: Boolean,
+): Boolean = enabled && artworkSongKey == frameSongKey && !hasAccent && !loading && !alreadyAttempted
 
 /** 没有封面色时用系统动态强调色，保证播放头与进度条同色 */
 @ColorInt

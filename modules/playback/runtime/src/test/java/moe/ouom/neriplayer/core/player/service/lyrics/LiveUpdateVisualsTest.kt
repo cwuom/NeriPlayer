@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Color
 import androidx.core.graphics.ColorUtils
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,6 +41,37 @@ class LiveUpdateVisualsTest {
     fun `colors that are already vivid are kept exactly`() {
         assertEquals(0xFF3482FF.toInt(), resolveLiveUpdateAccentColor(0xFF3482FF.toInt()))
     }
+
+    @Test
+    fun `bright hues are toned down until they stand out on light and dark cards`() {
+        listOf(0xFFFFFF00.toInt(), 0xFF00FFFF.toInt(), 0xFFB0FF20.toInt(), 0xFF0000FF.toInt()).forEach { cover ->
+            val accent = checkNotNull(resolveLiveUpdateAccentColor(cover))
+
+            assertTrue("light ${Integer.toHexString(cover)}", ColorUtils.calculateContrast(accent, Color.WHITE) >= 1.3)
+            assertTrue("dark ${Integer.toHexString(cover)}", ColorUtils.calculateContrast(accent, 0xFF1F1F1F.toInt()) >= 1.3)
+            assertEquals(hsl(cover)[0], hsl(accent)[0], 1.5f)
+        }
+    }
+
+    @Test
+    fun `accent is loaded once for the cover of the song on screen`() {
+        assertTrue(load())
+        assertFalse(load(enabled = false))
+        assertFalse(load(frameSongKey = "netease:2"))
+        assertFalse(load(frameSongKey = null))
+        assertFalse(load(hasAccent = true))
+        assertFalse(load(loading = true))
+        // 同一封面取色失败过就不再逐帧重试；被取消的取色不算尝试过，会重新发起
+        assertFalse(load(alreadyAttempted = true))
+    }
+
+    private fun load(
+        enabled: Boolean = true,
+        frameSongKey: String? = "netease:1",
+        hasAccent: Boolean = false,
+        loading: Boolean = false,
+        alreadyAttempted: Boolean = false,
+    ) = shouldLoadLiveUpdateAccent(enabled, "netease:1", frameSongKey, hasAccent, loading, alreadyAttempted)
 
     @Test
     fun `gray covers and missing colors defer to the system accent`() {

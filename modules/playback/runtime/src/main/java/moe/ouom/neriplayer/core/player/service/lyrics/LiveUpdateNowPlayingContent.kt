@@ -26,7 +26,12 @@ internal data class LiveUpdateFrame(
     val playing: Boolean,
     val positionMs: Long,
     val durationMs: Long,
-)
+    val playbackSpeed: Float = 1f,
+) {
+    /** 倍速改变播放位置随时间前进的速率；异常值按 1× 处理 */
+    val effectiveSpeed: Float
+        get() = playbackSpeed.takeIf { it > 0f && it.isFinite() } ?: 1f
+}
 
 internal data class LiveUpdateProgress(val max: Int, val value: Int)
 
@@ -76,50 +81,68 @@ internal fun resolveLiveUpdateProgress(positionMs: Long, durationMs: Long): Live
     return LiveUpdateProgress(max = maxSeconds, value = positionSeconds.coerceAtMost(maxSeconds))
 }
 
-/** 两次播放器推送之间按经过的时间外推播放位置，进度条才能逐秒前进 */
+/** 两次播放器推送之间按经过的时间与倍速外推播放位置，进度条才能逐秒前进 */
 internal fun extrapolateLiveUpdatePosition(frame: LiveUpdateFrame, elapsedSinceFrameMs: Long): Long {
     if (!frame.playing) return frame.positionMs
-    val advanced = frame.positionMs + elapsedSinceFrameMs.coerceIn(0L, LIVE_UPDATE_MAX_EXTRAPOLATION_MS)
+    val elapsedMs = elapsedSinceFrameMs.coerceIn(0L, LIVE_UPDATE_MAX_EXTRAPOLATION_MS)
+    val advanced = frame.positionMs + (elapsedMs * frame.effectiveSpeed).toLong()
     return if (frame.durationMs > 0L) advanced.coerceAtMost(frame.durationMs) else advanced
 }
 
-/** 播放起点在开机时钟与墙钟上的对应时刻；墙钟只用于通知 when，节拍按不受改时间影响的开机时钟走 */
-internal data class LiveUpdateClockAnchor(val elapsedMs: Long, val wallMs: Long)
+/**
+ * 播放起点在开机时钟与墙钟上的对应时刻；墙钟只用于通知 when，节拍按不受改时间影响的开机时钟走。
+ * 位置 = (现在 - elapsedMs) × speed。
+ */
+internal data class LiveUpdateClockAnchor(val elapsedMs: Long, val wallMs: Long, val speed: Float = 1f) {
+    /** 系统计时器按墙钟 1× 走字，倍速播放时会与真实进度越走越远，只能不显示 */
+    val drivesChronometer: Boolean get() = speed == 1f
+}
 
-/** 锚点只在跳转、暂停或漂移过大时更换，未换时原样复用，避免两次读时钟的毫秒差导致重发 */
+/**
+ * 锚点只在跳转、暂停、倍速变化或漂移过大时更换，未换时原样复用，避免两次读时钟的毫秒差导致重发。
+ * 切歌时不要传入上一首的锚点，否则新歌开头可能被当作抖动沿用旧锚点。
+ */
 internal fun resolveLiveUpdateClockAnchor(
     previous: LiveUpdateClockAnchor?,
     nowElapsedMs: Long,
     nowWallMs: Long,
     positionMs: Long,
     playing: Boolean,
+    speed: Float = 1f,
 ): LiveUpdateClockAnchor? {
-    val baseElapsedMs = resolveLiveUpdateChronometerBase(previous?.elapsedMs, nowElapsedMs, positionMs, playing)
+    val reusable = previous?.takeIf { it.speed == speed }
+    val baseElapsedMs = resolveLiveUpdateChronometerBase(reusable?.elapsedMs, nowElapsedMs, positionMs, playing, speed)
         ?: return null
-    if (baseElapsedMs == previous?.elapsedMs) return previous
-    return LiveUpdateClockAnchor(elapsedMs = baseElapsedMs, wallMs = nowWallMs - (nowElapsedMs - baseElapsedMs))
+    if (reusable != null && baseElapsedMs == reusable.elapsedMs) return reusable
+    return LiveUpdateClockAnchor(
+        elapsedMs = baseElapsedMs,
+        wallMs = nowWallMs - (nowElapsedMs - baseElapsedMs),
+        speed = speed,
+    )
 }
 
 /**
- * 播放中按锚点换算进度：进度条与计时器同一节奏跨秒，不受播放器推送时机忽早忽晚的影响
+ * 播放中按锚点换算进度：进度条与计时器同一节奏跨秒，不受播放器推送时机忽早忽晚的影响。
+ * 结果不超过外推上限，播放器久未推送（卡顿或主线程延迟）时停在原地而不是凭锚点继续前进。
  */
 internal fun resolveLiveUpdateClockPosition(
     anchor: LiveUpdateClockAnchor?,
     nowElapsedMs: Long,
-    fallbackPositionMs: Long,
-    durationMs: Long,
+    frame: LiveUpdateFrame,
+    extrapolatedMs: Long,
 ): Long {
-    anchor ?: return fallbackPositionMs
-    val position = (nowElapsedMs - anchor.elapsedMs).coerceAtLeast(0L)
-    return if (durationMs > 0L) position.coerceAtMost(durationMs) else position
+    anchor ?: return extrapolatedMs
+    val limitMs = extrapolateLiveUpdatePosition(frame, LIVE_UPDATE_MAX_EXTRAPOLATION_MS).coerceAtLeast(0L)
+    return ((nowElapsedMs - anchor.elapsedMs) * anchor.speed).toLong().coerceIn(0L, limitMs)
 }
 
-/** 距离下一个整秒的时长；刷新对齐整秒，每次重发恰好前进一格 */
-internal fun msUntilNextLiveUpdateProgressTick(positionMs: Long): Long =
-    LIVE_UPDATE_PROGRESS_TICK_MS - positionMs.coerceAtLeast(0L) % LIVE_UPDATE_PROGRESS_TICK_MS
+/** 距离下一个整秒的时长；刷新按锚点对齐整秒，1× 时每次重发恰好前进一格 */
+internal fun msUntilNextLiveUpdateProgressTick(clockMs: Long): Long =
+    LIVE_UPDATE_PROGRESS_TICK_MS - clockMs.coerceAtLeast(0L) % LIVE_UPDATE_PROGRESS_TICK_MS
 
 /**
  * 计时器自行走字，只有暂停、恢复或跳转时才需要新锚点；与时钟种类无关，只要前后用同一个时钟。
+ * 锚点满足 位置 = (现在 - 锚点) × speed，漂移按播放位置计算。
  * @return 新的锚点；暂停时返回 null 表示不显示计时器
  */
 internal fun resolveLiveUpdateChronometerBase(
@@ -127,28 +150,30 @@ internal fun resolveLiveUpdateChronometerBase(
     nowMs: Long,
     positionMs: Long,
     playing: Boolean,
+    speed: Float = 1f,
 ): Long? {
     if (!playing) return null
-    val expectedBase = nowMs - positionMs.coerceAtLeast(0L)
+    val expectedBase = nowMs - (positionMs.coerceAtLeast(0L) / speed).toLong()
     if (previousBaseMs != null &&
-        abs(previousBaseMs - expectedBase) <= LIVE_UPDATE_CHRONOMETER_DRIFT_TOLERANCE_MS
+        abs(previousBaseMs - expectedBase) * speed <= LIVE_UPDATE_CHRONOMETER_DRIFT_TOLERANCE_MS
     ) {
         return previousBaseMs
     }
     return expectedBase
 }
 
-/** @return 通知的系统超时；0 表示不设置 */
+/** @return 通知的系统超时；0 表示不设置。剩余时长按倍速换算成墙钟时间，慢速播放时不会提前超时 */
 internal fun resolveLiveUpdateTimeoutMs(
     playing: Boolean,
     positionMs: Long,
     durationMs: Long,
     pausedLingerMs: Long,
+    speed: Float = 1f,
 ): Long {
     if (!playing) return pausedLingerMs.coerceAtLeast(0L) + LIVE_UPDATE_PAUSED_TIMEOUT_GRACE_MS
     if (durationMs <= 0L) return 0L
     val remainingMs = (durationMs - positionMs.coerceIn(0L, durationMs)).coerceAtLeast(0L)
-    return remainingMs + LIVE_UPDATE_PLAYING_TIMEOUT_MARGIN_MS
+    return (remainingMs / speed).toLong() + LIVE_UPDATE_PLAYING_TIMEOUT_MARGIN_MS
 }
 
 /** Build.VERSION_CODES_FULL.BAKLAVA_1；自定义常量避免在低版本上引用 API 36 的类 */

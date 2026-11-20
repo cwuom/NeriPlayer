@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Paint
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -102,6 +103,10 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         const val PAUSED_LINGER_MS = 60_000L
         // FLAG_PROMOTED_ONGOING 由系统在入队时异步写入，稍后再核对
         const val PROMOTION_CHECK_DELAY_MS = 1_000L
+        // 查不到通知（入队尚未完成等）时随后续发布重试，次数有限，避免查询失败时每秒空转
+        private const val PROMOTION_CHECK_MAX_UNKNOWN = 5
+        // 划掉事件以歌曲区分：每首歌的 deleteIntent 是独立令牌，迟到的旧事件不会算到新歌头上
+        private const val DISMISS_URI_SCHEME = "neriplayer-live-update"
         // 越过整秒后再刷新，避免外推位置还差几毫秒没进到下一格
         private const val PROGRESS_TICK_SLACK_MS = 20L
         // 逐秒节拍不走 400 ms 节流，否则紧跟在歌词换行之后的节拍会被推迟，进度忽快忽慢；
@@ -138,17 +143,22 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
     private val dismissAction = "${appContext.packageName}.action.LIVE_UPDATE_DISMISSED"
     private val dismissReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == dismissAction) onUserDismissed()
+            if (intent.action == dismissAction) onUserDismissed(intent.data?.schemeSpecificPart)
         }
     }
     private var dismissReceiverRegistered = false
     private var accentJob: Job? = null
+    // 已取过色（成功或失败）的封面；失败的不再逐帧重试
+    private var accentAttemptedCover: String? = null
     private val pausedDismiss = Runnable {
         pausedDismissScheduled = false
         clearImpl()
     }
     private var pausedDismissScheduled = false
     private val promotionCheck = Runnable(::verifyPromotion)
+    private var promotionCheckPending = false
+    private var promotionVerified = false
+    private var promotionUnknownChecks = 0
     private val progressTick = Runnable(::dispatchProgressTick)
     private var enabled = false
     private var latestFrame: LiveUpdateFrame? = null
@@ -205,17 +215,38 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         if (dismissedSongKey != null && dismissedSongKey != frame.songKey) dismissedSongKey = null
         latestFrame = frame
         latestFrameElapsedMs = SystemClock.elapsedRealtime()
+        ensureAccentColor()
         scheduleDispatch()
     }
 
     private fun setArtworkImpl(songKey: String, bitmap: Bitmap?, coverSource: String?) {
         val current = artwork
-        if (current?.songKey == songKey && current.bitmap === bitmap && current.coverSource == coverSource) return
+        if (current?.songKey == songKey && current.bitmap === bitmap && current.coverSource == coverSource) {
+            // 取色可能因收起被取消，同一封面再次到达时补上
+            ensureAccentColor()
+            return
+        }
         val retainedAccent = current?.accentColor?.takeIf { coverSource != null && current.coverSource == coverSource }
         val accent = retainedAccent ?: coverSource?.let(::peekAccentColor)
         artwork = Artwork(songKey, bitmap, coverSource, accent)
-        if (accent == null && coverSource != null) loadAccentColor(songKey, coverSource)
+        accentJob?.cancel()
+        ensureAccentColor()
         onArtworkChanged(songKey)
+    }
+
+    /** 只为正在展示的歌曲取色；关闭期间到达、或被收起取消的取色在下一帧补上 */
+    private fun ensureAccentColor() {
+        val current = artwork ?: return
+        val coverSource = current.coverSource ?: return
+        val load = shouldLoadLiveUpdateAccent(
+            enabled = enabled,
+            artworkSongKey = current.songKey,
+            frameSongKey = latestFrame?.songKey,
+            hasAccent = current.accentColor != null,
+            loading = accentJob?.isActive == true,
+            alreadyAttempted = accentAttemptedCover == coverSource,
+        )
+        if (load) loadAccentColor(current.songKey, coverSource)
     }
 
     private fun onArtworkChanged(songKey: String) {
@@ -232,7 +263,9 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
             val color = withContext(Dispatchers.IO) {
                 runCatching { PlayerDependencies.presentation.loadCoverAccentColor(appContext, coverSource) }
                     .getOrNull()
-            } ?: return@launch
+            }
+            accentAttemptedCover = coverSource
+            color ?: return@launch
             val current = artwork
             if (current?.songKey != songKey || current.coverSource != coverSource) return@launch
             artwork = current.copy(accentColor = color)
@@ -244,7 +277,7 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         cancelPendingDispatch()
         cancelPausedDismiss()
         mainHandler.removeCallbacks(progressTick)
-        mainHandler.removeCallbacks(promotionCheck)
+        cancelPromotionCheck()
         accentJob?.cancel()
         accentJob = null
         latestFrame = null
@@ -253,14 +286,14 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         notificationManager.cancel(NOTIFICATION_ID)
     }
 
-    private fun onUserDismissed() {
-        if (!enabled) return
-        val songKey = lastPosted?.content?.songKey ?: return
+    private fun onUserDismissed(songKey: String?) {
+        // 划掉的是旧歌而新歌已经发出时，不能把新歌算作被划掉
+        if (!enabled || songKey == null || songKey != lastPosted?.content?.songKey) return
         dismissedSongKey = songKey
         cancelPendingDispatch()
         cancelPausedDismiss()
         mainHandler.removeCallbacks(progressTick)
-        mainHandler.removeCallbacks(promotionCheck)
+        cancelPromotionCheck()
         lastPosted = null
     }
 
@@ -293,17 +326,18 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         val elapsedSinceFrameMs = nowElapsedMs - latestFrameElapsedMs
         val extrapolatedMs = extrapolateLiveUpdatePosition(received, elapsedSinceFrameMs)
         val anchor = resolveLiveUpdateClockAnchor(
-            previous = lastPosted?.clockAnchor,
+            previous = lastPosted?.takeIf { it.content.songKey == received.songKey }?.clockAnchor,
             nowElapsedMs = nowElapsedMs,
             nowWallMs = System.currentTimeMillis(),
             positionMs = extrapolatedMs,
             playing = received.playing,
+            speed = received.effectiveSpeed,
         )
         val frame = received.copy(
-            positionMs = resolveLiveUpdateClockPosition(anchor, nowElapsedMs, extrapolatedMs, received.durationMs)
+            positionMs = resolveLiveUpdateClockPosition(anchor, nowElapsedMs, received, extrapolatedMs)
         )
         postFrame(frame, anchor)
-        scheduleProgressTick(frame, elapsedSinceFrameMs)
+        scheduleProgressTick(frame, anchor, nowElapsedMs, elapsedSinceFrameMs)
     }
 
     private fun dispatchProgressTick() {
@@ -341,7 +375,7 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         val notification = buildLiveUpdateNotification(
             appContext,
             content = content,
-            chronometerBaseWallMs = state.clockAnchor?.wallMs,
+            chronometerBaseWallMs = state.clockAnchor?.takeIf { it.drivesChronometer }?.wallMs,
             artwork = state.artwork,
             accentColor = state.accentColor,
             timeoutMs = resolveLiveUpdateTimeoutMs(
@@ -349,26 +383,30 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
                 positionMs = frame.positionMs,
                 durationMs = frame.durationMs,
                 pausedLingerMs = PAUSED_LINGER_MS,
+                speed = frame.effectiveSpeed,
             ),
-            deleteIntent = dismissPendingIntent(),
+            deleteIntent = dismissPendingIntent(content.songKey),
         )
         try {
             ensureChannel()
             notificationManager.notify(NOTIFICATION_ID, notification)
             lastPosted = state
-            if (previous == null) {
-                mainHandler.removeCallbacks(promotionCheck)
-                mainHandler.postDelayed(promotionCheck, PROMOTION_CHECK_DELAY_MS)
-            }
+            armPromotionCheck(firstPost = previous == null)
         } catch (securityException: SecurityException) {
             Log.w(TAG, "Unable to post Live Update notification", securityException)
         }
     }
 
-    /** 亮屏播放时逐秒推进进度条；播放器长时间没有新位置时停下，等下一次推送再继续 */
-    private fun scheduleProgressTick(frame: LiveUpdateFrame, elapsedSinceFrameMs: Long) {
-        val delayMs = msUntilNextLiveUpdateProgressTick(frame.positionMs) + PROGRESS_TICK_SLACK_MS
-        val ticking = lastPosted != null && frame.playing && frame.durationMs > 0L &&
+    /** 亮屏播放时按锚点逐秒推进进度条；播放器长时间没有新位置时停下，等下一次推送再继续 */
+    private fun scheduleProgressTick(
+        frame: LiveUpdateFrame,
+        anchor: LiveUpdateClockAnchor?,
+        nowElapsedMs: Long,
+        elapsedSinceFrameMs: Long,
+    ) {
+        anchor ?: return
+        val delayMs = msUntilNextLiveUpdateProgressTick(nowElapsedMs - anchor.elapsedMs) + PROGRESS_TICK_SLACK_MS
+        val ticking = lastPosted != null && frame.durationMs > 0L &&
             elapsedSinceFrameMs + delayMs <= LIVE_UPDATE_MAX_EXTRAPOLATION_MS && powerManager?.isInteractive != false
         if (ticking) mainHandler.postDelayed(progressTick, delayMs)
     }
@@ -387,12 +425,35 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         return false
     }
 
+    /** 首次发布后核对提升结果；查不到时随后续发布有限次重试，确认提升后不再核对 */
+    private fun armPromotionCheck(firstPost: Boolean) {
+        if (firstPost) {
+            promotionVerified = false
+            promotionUnknownChecks = 0
+        }
+        if (promotionVerified || promotionCheckPending || promotionUnknownChecks >= PROMOTION_CHECK_MAX_UNKNOWN) return
+        promotionCheckPending = true
+        mainHandler.postDelayed(promotionCheck, PROMOTION_CHECK_DELAY_MS)
+    }
+
+    private fun cancelPromotionCheck() {
+        mainHandler.removeCallbacks(promotionCheck)
+        promotionCheckPending = false
+    }
+
     private fun verifyPromotion() {
-        if (lastPosted == null || promotion.isPromoted(NOTIFICATION_ID) != false) return
-        Log.i(TAG, "System did not promote the Live Update; withdraw it to avoid a duplicate notification")
-        systemDeclinedPromotion = true
-        LiveUpdateNotificationStatus.report(true)
-        clearImpl()
+        promotionCheckPending = false
+        if (lastPosted == null) return
+        when (promotion.isPromoted(NOTIFICATION_ID)) {
+            true -> promotionVerified = true
+            null -> promotionUnknownChecks++
+            false -> {
+                Log.i(TAG, "System did not promote the Live Update; withdraw it to avoid a duplicate notification")
+                systemDeclinedPromotion = true
+                LiveUpdateNotificationStatus.report(true)
+                clearImpl()
+            }
+        }
     }
 
     /** 胶囊宽度按 dp 封顶而文字随系统字号放大，大字号下可容纳的 em 数相应减少 */
@@ -421,10 +482,12 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         pendingDispatch = null
     }
 
-    private fun dismissPendingIntent(): PendingIntent = PendingIntent.getBroadcast(
+    private fun dismissPendingIntent(songKey: String): PendingIntent = PendingIntent.getBroadcast(
         appContext,
         LIVE_UPDATE_REQUEST_CODE_BASE,
-        Intent(dismissAction).setPackage(appContext.packageName),
+        Intent(dismissAction)
+            .setPackage(appContext.packageName)
+            .setData(Uri.fromParts(DISMISS_URI_SCHEME, songKey, null)),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 
@@ -433,7 +496,7 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         ContextCompat.registerReceiver(
             appContext,
             dismissReceiver,
-            IntentFilter(dismissAction),
+            IntentFilter(dismissAction).apply { addDataScheme(DISMISS_URI_SCHEME) },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         dismissReceiverRegistered = true

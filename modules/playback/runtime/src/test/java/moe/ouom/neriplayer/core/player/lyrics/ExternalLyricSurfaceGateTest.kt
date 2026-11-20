@@ -1,7 +1,11 @@
 package moe.ouom.neriplayer.core.player.lyrics
 
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
+import moe.ouom.neriplayer.core.player.audio.output.PlaybackSoundOwner
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
+import org.mockito.Mockito.`when`
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -194,6 +198,35 @@ class ExternalLyricSurfaceGateTest {
         } finally {
             manager._isPlayingFlow.value = previousPlaying
             manager._playbackControlPlayingFlow.value = previousControl
+        }
+    }
+
+    @Test
+    fun `artwork reaches the live update bridge while it is switched off`() {
+        val bridge = mock(LiveLyricNotificationBridge::class.java)
+        manager.liveLyricNotificationBridge = bridge
+        manager.liveUpdateLyricEnabled = false
+
+        manager.updateLiveUpdateArtwork(song, artwork = null, coverSource = "cover://neri")
+
+        verify(bridge).setArtwork(song.stableKey(), null, "cover://neri")
+    }
+
+    @Test
+    fun `live update frames carry the playback speed`() {
+        val bridge = mock(LiveLyricNotificationBridge::class.java)
+        val previousSoundOwner = manager.playbackSoundOwner
+        val soundOwner = mock(PlaybackSoundOwner::class.java)
+        `when`(soundOwner.state).thenReturn(MutableStateFlow(PlaybackSoundState(speed = 1.5f)))
+        manager.liveLyricNotificationBridge = bridge
+        manager.liveUpdateLyricEnabled = true
+        manager.playbackSoundOwner = soundOwner
+        try {
+            manager.publishLiveUpdateNowPlaying(song, positionMs = 1_000L)
+
+            assertEquals(1.5f, capturePublishedFrame(bridge).playbackSpeed)
+        } finally {
+            manager.playbackSoundOwner = previousSoundOwner
         }
     }
 

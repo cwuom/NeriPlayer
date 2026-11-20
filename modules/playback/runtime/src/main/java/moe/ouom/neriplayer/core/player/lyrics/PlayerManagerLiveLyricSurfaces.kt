@@ -157,13 +157,17 @@ internal fun PlayerManager.publishLiveUpdateNowPlaying(
             playing = isLiveUpdatePlaying(),
             positionMs = positionMs,
             durationMs = liveSurfaceDurationMs(song),
+            playbackSpeed = playbackSoundStateFlow.value.speed,
         )
     )
 }
 
-/** 封面由播放服务的封面管线解析后转交，本地、下载和远程歌曲共用同一来源 */
+/**
+ * 封面由播放服务的封面管线解析后转交，本地、下载和远程歌曲共用同一来源。
+ * 关闭期间也转交：封面只在切歌或播放状态变化时送达，开启后才能立即带上当前封面。
+ */
 internal fun PlayerManager.updateLiveUpdateArtwork(song: SongItem?, artwork: Bitmap?, coverSource: String?) {
-    val bridge = liveLyricNotificationBridge.takeIf { liveUpdateLyricEnabled } ?: return
+    val bridge = liveLyricNotificationBridge ?: return
     song ?: return
     bridge.setArtwork(song.stableKey(), artwork, coverSource)
 }
