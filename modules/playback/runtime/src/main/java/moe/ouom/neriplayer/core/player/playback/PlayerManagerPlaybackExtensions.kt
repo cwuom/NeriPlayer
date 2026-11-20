@@ -645,6 +645,10 @@ internal fun PlayerManager.playAtIndex(
         commandSource = commandSource
     )
     clearPendingSeekPosition()
+    if (moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.tryInterceptPlayAtIndex(
+            song, resolvedResumePositionMs, startPaused, requestToken
+        )
+    ) return
     enterPendingMediaLoad(resolvedResumePositionMs)
     playJob = ioScope.launch {
         try {
@@ -1104,6 +1108,7 @@ internal fun PlayerManager.playImpl(
     if (!usbExclusivePlaybackEnabled) {
         clearUsbExclusiveInterruptedPlaybackIntent("manual_play")
     }
+    if (moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.tryInterceptPlay(commandSource)) return
     val song = _currentSongFlow.value
     val preparedInPlayer = isPreparedInPlayer()
     NPLogger.d(
@@ -1262,6 +1267,7 @@ internal fun PlayerManager.pauseImpl(
     val internalUsbTransition = debugReason.startsWith("usb_toggle_")
     if (!internalUsbTransition && shouldBlockLocalRoomControl(commandSource)) return
     clearRestoredPlayback()
+    if (moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.tryInterceptPause(commandSource, debugReason)) return
     if (isPendingMediaLoadActive()) {
         val action = resolvePendingPauseAction(
             pendingLoadActive = true,
@@ -1502,6 +1508,7 @@ private fun PlayerManager.restoreUnmutedPauseVolume() {
 internal fun PlayerManager.togglePlayPauseImpl(allowFade: Boolean = true) {
     ensureInitialized()
     if (!initialized) return
+    if (moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.tryInterceptTogglePlayPause()) return
     if (isAudioRouteMuteSuppressed()) {
         restoreAudioRouteMuteImpl()
         return
@@ -1532,6 +1539,10 @@ internal fun PlayerManager.seekToImpl(
     val resolvedPositionMs = positionMs.coerceAtLeast(0L)
     playbackPositionGeneration += 1L
     logSeekRequested(resolvedPositionMs, commandSource)
+    if (moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.tryInterceptSeek(
+            resolvedPositionMs, commandSource, ::syncSeekOutputs
+        )
+    ) return
     val preparedSeek = preparePlaybackSeek(resolvedPositionMs)
     applyPlaybackSeek(resolvedPositionMs, commandSource, preparedSeek)
     refreshPlaybackUrlAfterSeek(resolvedPositionMs, commandSource, preparedSeek)
@@ -1910,6 +1921,7 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
         reason = "stop_playback_preserving_queue"
     )
     stopPlayerForQueuePreservation()
+    moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.onQueueStopRequested()
     restoreQueueAfterStop(clearMediaUrl)
     consecutivePlayFailures = 0
     logQueueStopComplete()

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.url
 
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.logging.playbackLogReference
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
@@ -26,6 +27,20 @@ internal val NETEASE_QUALITY_FALLBACK_ORDER = listOf(
     "higher",
     "standard"
 )
+
+internal fun sanitizeNeteasePlaybackLogSummary(
+    songId: Long,
+    requestedLevel: String,
+    parsed: NeteasePlaybackResponseParser.PlaybackResult
+): String = when (parsed) {
+    is NeteasePlaybackResponseParser.PlaybackResult.Success ->
+        "id=$songId, level=$requestedLevel, resolvedLevel=${parsed.level}, type=${parsed.type}, " +
+            "bitrateKbps=${parsed.bitrateKbps}, notice=${parsed.notice}, url=${playbackLogReference(parsed.url)}"
+    NeteasePlaybackResponseParser.PlaybackResult.RequiresLogin ->
+        "id=$songId, level=$requestedLevel, result=RequiresLogin"
+    is NeteasePlaybackResponseParser.PlaybackResult.Failure ->
+        "id=$songId, level=$requestedLevel, result=Failure(${parsed.reason})"
+}
 
 internal fun qualityLabelForNetease(key: String, getLocalizedString: (Int) -> String): String = when (key) {
     "standard" -> getLocalizedString(CoreCommonR.string.quality_standard)

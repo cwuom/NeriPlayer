@@ -224,7 +224,31 @@ class OwnedMainSourceLineBudgetTest {
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/audio/effects/AudioEffectsOwner.kt",
             "modules/model/src/main/java/moe/ouom/neriplayer/data/model/playback/effects/AudioEffectsPresets.kt",
             "modules/model/src/main/java/moe/ouom/neriplayer/data/model/playback/effects/NeriDspParams.kt",
-            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/audio/AudioEffectsSettingsPage.kt"
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/audio/AudioEffectsSettingsPage.kt",
+            "modules/model/src/main/java/moe/ouom/neriplayer/data/model/playback/dlna/DlnaModels.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/audio/DlnaTrackMetadataNormalizer.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/audio/LosslessSourcePolicy.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/audio/LosslessSourceResolver.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/audio/LosslessWavDecoder.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/audio/Mp4Defragmenter.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/audio/PcmSampleConverter.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/protocol/DidlLiteBuilder.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/protocol/FlacHeaderInspector.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/protocol/FlacVorbisCommentWriter.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/protocol/Mp3Id3TagWriter.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/protocol/Mp4MetadataWriter.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/protocol/SsdpDiscoveryClient.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/protocol/UpnpControlClient.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/protocol/UpnpXmlParser.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/protocol/WavId3TagBuilder.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/server/DlnaLanAddressResolver.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/server/DlnaMediaServer.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaCastManager.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaCastStateMachine.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaNetworkAndLockController.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaPreferencesStore.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/PlayerManagerDlnaAdapter.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/nowplaying/dlna/DlnaOutputControlSheet.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)

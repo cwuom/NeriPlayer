@@ -826,6 +826,12 @@ class MainActivity : ComponentActivity() {
                                                     shouldOfferListenTogetherLeaveAction(
                                                         dialogMessage
                                                     )
+                                        val dlnaCastState by moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.castStateFlow
+                                            .collectAsStateWithLifecycle()
+                                        val showAllowDlnaLossyAction =
+                                            dlnaCastState.isCastingActive &&
+                                                    dlnaCastState.qualityReport?.strictLosslessBlocked == true &&
+                                                    dialogMessage == dlnaCastState.qualityReport?.blockReason
 
                                         // 初始化异常处理器事件监听
                                         LaunchedEffect(Unit) {
@@ -1022,19 +1028,33 @@ class MainActivity : ComponentActivity() {
                                                         Text(stringResource(CoreCommonR.string.action_confirm))
                                                     }
                                                 },
-                                                dismissButton = if (showLeaveListenTogetherAction) {
-                                                    {
-                                                        HapticTextButton(
-                                                            onClick = {
-                                                                AppContainer.listenTogetherSessionManager.leaveRoom()
-                                                                showDialog = false
+                                                dismissButton = when {
+                                                    showLeaveListenTogetherAction -> {
+                                                        {
+                                                            HapticTextButton(
+                                                                onClick = {
+                                                                    AppContainer.listenTogetherSessionManager.leaveRoom()
+                                                                    showDialog = false
+                                                                }
+                                                            ) {
+                                                                Text(stringResource(CoreCommonR.string.listen_together_leave_room))
                                                             }
-                                                        ) {
-                                                            Text(stringResource(CoreCommonR.string.listen_together_leave_room))
                                                         }
                                                     }
-                                                } else {
-                                                    null
+                                                    showAllowDlnaLossyAction -> {
+                                                        {
+                                                            HapticTextButton(
+                                                                onClick = {
+                                                                    moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager
+                                                                        .disableStrictLosslessAndRetryCurrent()
+                                                                    showDialog = false
+                                                                }
+                                                            ) {
+                                                                Text(stringResource(CoreCommonR.string.dlna_allow_lossy_and_retry))
+                                                            }
+                                                        }
+                                                    }
+                                                    else -> null
                                                 }
                                             )
                                         }

@@ -382,6 +382,7 @@ private fun PlayerManager.cycleRepeatModeIfAllowed(commandSource: PlaybackComman
     repeatModeSetting = newMode
     syncExoRepeatMode()
     _repeatModeFlow.value = newMode
+    moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.invalidateQueuedNext()
     NPLogger.d(
         "NERI-PlayerManager",
         "cycleRepeatMode: previousMode=$previousMode, newMode=$newMode, exoRepeatMode=${player.repeatMode}"
@@ -436,6 +437,7 @@ private fun PlayerManager.changeShuffleMode(enabled: Boolean, commandSource: Pla
     )
     updateQueueShuffleMode(enabled, commandSource)
     player.shuffleModeEnabled = enabled
+    moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.invalidateQueuedNext()
     scheduleStatePersist()
     emitPlaybackCommand(
         type = "PLAYBACK_MODE",
