@@ -13,9 +13,12 @@ import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.service.lyrics.LiveLyricNotificationBridge
+import moe.ouom.neriplayer.core.player.service.lyrics.LiveUpdateFrame
 import moe.ouom.neriplayer.data.local.media.displayName
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockingDetails
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 
 class ExternalLyricSurfaceGateTest {
@@ -140,11 +143,85 @@ class ExternalLyricSurfaceGateTest {
         try {
             manager.publishLiveLyricSurfaces(song, positionMs = 8_500L, lyricOffsetMs = 2_000L)
 
-            verify(bridge).sendLyric(songTitle = song.displayName(), line = second, secondaryLyric = null)
+            val frame = capturePublishedFrame(bridge)
+            assertEquals("second", frame.lyric)
+            assertNull(frame.translation)
+            assertEquals(song.displayName(), frame.songTitle)
+            assertEquals(song.stableKey(), frame.songKey)
+            assertEquals(8_500L, frame.positionMs)
+            assertEquals(true, frame.playing)
         } finally {
             manager._isPlayingFlow.value = previousPlaying
         }
     }
+
+    @Test
+    fun `live update keeps now playing during intros instead of cancelling`() {
+        val bridge = mock(LiveLyricNotificationBridge::class.java)
+        val previousPlaying = manager._isPlayingFlow.value
+        manager.liveLyricNotificationBridge = bridge
+        manager.liveUpdateLyricEnabled = true
+        manager._isPlayingFlow.value = true
+        manager.externalBluetoothLyrics = listOf(LyricEntry(text = "first", startTimeMs = 10_000L, endTimeMs = 20_000L))
+        try {
+            manager.publishLiveLyricSurfaces(song, positionMs = 1_000L, lyricOffsetMs = 0L)
+
+            val frame = capturePublishedFrame(bridge)
+            assertNull(frame.lyric)
+            assertEquals(song.displayName(), frame.songTitle)
+            verify(bridge, never()).clear()
+        } finally {
+            manager._isPlayingFlow.value = previousPlaying
+        }
+    }
+
+    @Test
+    fun `buffering with a play intent keeps the live update in its playing state`() {
+        val bridge = mock(LiveLyricNotificationBridge::class.java)
+        val previousPlaying = manager._isPlayingFlow.value
+        val previousControl = manager._playbackControlPlayingFlow.value
+        manager.liveLyricNotificationBridge = bridge
+        manager.liveUpdateLyricEnabled = true
+        manager._isPlayingFlow.value = false
+        manager._playbackControlPlayingFlow.value = true
+        manager.externalBluetoothLyrics = listOf(LyricEntry(text = "first", startTimeMs = 0L, endTimeMs = 20_000L))
+        try {
+            manager.publishLiveLyricSurfaces(song, positionMs = 1_000L, lyricOffsetMs = 0L)
+
+            val frame = capturePublishedFrame(bridge)
+            assertEquals("first", frame.lyric)
+            assertEquals(true, frame.playing)
+        } finally {
+            manager._isPlayingFlow.value = previousPlaying
+            manager._playbackControlPlayingFlow.value = previousControl
+        }
+    }
+
+    @Test
+    fun `clearing the lyric only collapses the live update once the song is gone`() {
+        val bridge = mock(LiveLyricNotificationBridge::class.java)
+        val previousSong = manager._currentSongFlow.value
+        manager.liveLyricNotificationBridge = bridge
+        manager.liveUpdateLyricEnabled = true
+        try {
+            manager._currentSongFlow.value = song
+            manager.clearLiveUpdateLyric()
+            assertNull(capturePublishedFrame(bridge).lyric)
+            verify(bridge, never()).clear()
+
+            manager._currentSongFlow.value = null
+            manager.clearLiveUpdateLyric()
+            verify(bridge).clear()
+        } finally {
+            manager._currentSongFlow.value = previousSong
+        }
+    }
+
+    private fun capturePublishedFrame(bridge: LiveLyricNotificationBridge): LiveUpdateFrame =
+        mockingDetails(bridge).invocations
+            .filter { it.method.name == "publish" }
+            .map { it.arguments.single() as LiveUpdateFrame }
+            .single()
 
     private class SurfaceFlag(val get: () -> Boolean, val set: (Boolean) -> Unit)
 

@@ -98,6 +98,7 @@ import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
+import moe.ouom.neriplayer.core.player.lyrics.updateLiveUpdateArtwork
 import moe.ouom.neriplayer.core.player.service.lyrics.coloros.observeColorOsLyricMetadata
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusivePlaybackResumeAfterDeviceAttach
@@ -1461,6 +1462,18 @@ class AudioPlayerService : Service() {
             foregroundStarted = isForegroundStarted,
             lyricState = statusBarLyricState,
             floatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled(),
+        )
+        publishLiveUpdateArtwork()
+    }
+
+    /** Live Update 复用媒体通知已解析好的封面，只在对应歌曲的位图就绪后转交 */
+    private fun publishLiveUpdateArtwork() {
+        val song = PlayerManager.currentSongFlow.value ?: return
+        val snapshot = artworkOwner.snapshotFor(song)
+        PlayerManager.updateLiveUpdateArtwork(
+            song = song,
+            artwork = snapshot.notificationBitmap.takeIf { snapshot.notificationReady },
+            coverSource = snapshot.coverSource,
         )
     }
 

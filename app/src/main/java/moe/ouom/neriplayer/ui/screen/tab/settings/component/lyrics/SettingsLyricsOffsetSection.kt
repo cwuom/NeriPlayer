@@ -162,6 +162,12 @@ internal fun SettingsLyricsSection(
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
                 )
+                LiveUpdateLyricsSetting(
+                    repository = autoSettingsRepository,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished,
+                )
                 DynamicIslandLyricsSetting(
                     repository = settingsRepository,
                     highlightTargetId = highlightTargetId,

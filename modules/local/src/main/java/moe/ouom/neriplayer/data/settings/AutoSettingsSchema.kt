@@ -1160,9 +1160,11 @@ object AutoSettingsSchema {
             type = SettingValueType.Boolean,
             defaultBoolean = false,
             order = 12,
-            ui = SettingUiType.Switch
+            ui = SettingUiType.Custom
         )
-        val liveUpdateLyricEnabled = autoSetting(
+        val liveUpdateLyricEnabled = autoSwitchSetting(
+            key = "live_update_lyric_enabled",
+            defaultValue = false,
             titleRes = CoreCommonR.string.settings_live_update_lyric_enabled,
             descriptionRes = CoreCommonR.string.settings_live_update_lyric_enabled_desc,
             icon = AutoSettingIcon.Subtitles
