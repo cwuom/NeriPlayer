@@ -27,10 +27,16 @@ internal data class LiveUpdateFrame(
     val positionMs: Long,
     val durationMs: Long,
     val playbackSpeed: Float = 1f,
+    /** 引擎是否真的在走；playing 含播放意图，缓冲时为 true 但位置不动 */
+    val advancing: Boolean = playing,
 ) {
     /** 倍速改变播放位置随时间前进的速率；异常值按 1× 处理 */
     val effectiveSpeed: Float
         get() = playbackSpeed.takeIf { it > 0f && it.isFinite() } ?: 1f
+
+    /** 只有引擎真正前进时才外推进度和走计时器；缓冲时按钮仍是暂停，但进度原地不动 */
+    val clockRunning: Boolean
+        get() = playing && advancing
 }
 
 internal data class LiveUpdateProgress(val max: Int, val value: Int)
@@ -83,7 +89,7 @@ internal fun resolveLiveUpdateProgress(positionMs: Long, durationMs: Long): Live
 
 /** 两次播放器推送之间按经过的时间与倍速外推播放位置，进度条才能逐秒前进 */
 internal fun extrapolateLiveUpdatePosition(frame: LiveUpdateFrame, elapsedSinceFrameMs: Long): Long {
-    if (!frame.playing) return frame.positionMs
+    if (!frame.clockRunning) return frame.positionMs
     val elapsedMs = elapsedSinceFrameMs.coerceIn(0L, LIVE_UPDATE_MAX_EXTRAPOLATION_MS)
     val advanced = frame.positionMs + (elapsedMs * frame.effectiveSpeed).toLong()
     return if (frame.durationMs > 0L) advanced.coerceAtMost(frame.durationMs) else advanced

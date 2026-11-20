@@ -195,6 +195,29 @@ class ExternalLyricSurfaceGateTest {
             val frame = capturePublishedFrame(bridge)
             assertEquals("first", frame.lyric)
             assertEquals(true, frame.playing)
+            assertFalse(frame.advancing)
+        } finally {
+            manager._isPlayingFlow.value = previousPlaying
+            manager._playbackControlPlayingFlow.value = previousControl
+        }
+    }
+
+    @Test
+    fun `a seek while paused reaches the live update card that is still shown`() {
+        val bridge = mock(LiveLyricNotificationBridge::class.java)
+        val previousPlaying = manager._isPlayingFlow.value
+        val previousControl = manager._playbackControlPlayingFlow.value
+        manager.liveLyricNotificationBridge = bridge
+        manager.liveUpdateLyricEnabled = true
+        manager._isPlayingFlow.value = false
+        manager._playbackControlPlayingFlow.value = false
+        manager.externalBluetoothLyrics = listOf(LyricEntry(text = "first", startTimeMs = 0L, endTimeMs = 200_000L))
+        try {
+            manager.publishLiveLyricSurfaces(song, positionMs = 90_000L, lyricOffsetMs = 0L)
+
+            val frame = capturePublishedFrame(bridge)
+            assertEquals(90_000L, frame.positionMs)
+            assertFalse(frame.playing)
         } finally {
             manager._isPlayingFlow.value = previousPlaying
             manager._playbackControlPlayingFlow.value = previousControl

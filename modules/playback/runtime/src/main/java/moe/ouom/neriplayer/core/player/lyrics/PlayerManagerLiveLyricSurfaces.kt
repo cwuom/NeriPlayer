@@ -102,6 +102,8 @@ internal fun PlayerManager.publishLiveLyricSurfaces(
 ) {
     val superIsland = xiaomiSuperIslandLyricBridge.takeIf { xiaomiSuperIslandLyricEnabled && _isPlayingFlow.value }
     val liveUpdateActive = liveUpdateLyricEnabled && isLiveUpdatePlaying()
+    // 暂停中拖动进度也要更新还在保留期内的卡片；桥接层不会因暂停帧新建通知
+    if (liveUpdateLyricEnabled && !liveUpdateActive) publishLiveUpdateNowPlaying(song, positionMs)
     if (superIsland == null && !liveUpdateActive) return
     // 与歌词页、蓝牙歌词一致：偏移为正表示歌词提前显示
     val lyricPositionMs = positionMs + lyricOffsetMs
@@ -155,6 +157,7 @@ internal fun PlayerManager.publishLiveUpdateNowPlaying(
             lyric = lyric,
             translation = translation,
             playing = isLiveUpdatePlaying(),
+            advancing = _isPlayingFlow.value,
             positionMs = positionMs,
             durationMs = liveSurfaceDurationMs(song),
             playbackSpeed = playbackSoundStateFlow.value.speed,

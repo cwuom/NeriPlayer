@@ -5,7 +5,13 @@ internal class FakeLiveUpdatePromotionPort(
     var canPost: Boolean? = true,
     var promoted: Boolean? = true,
 ) : LiveUpdatePromotionPort {
+    var promotionQueries = 0
+        private set
+
     override fun canPostPromoted(): Boolean? = canPost
 
-    override fun isPromoted(notificationId: Int): Boolean? = promoted
+    override fun isPromoted(notificationId: Int): Boolean? {
+        promotionQueries++
+        return promoted
+    }
 }

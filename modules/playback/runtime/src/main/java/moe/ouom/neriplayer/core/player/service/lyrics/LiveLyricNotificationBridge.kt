@@ -103,8 +103,8 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         const val PAUSED_LINGER_MS = 60_000L
         // FLAG_PROMOTED_ONGOING 由系统在入队时异步写入，稍后再核对
         const val PROMOTION_CHECK_DELAY_MS = 1_000L
-        // 查不到通知（入队尚未完成等）时随后续发布重试，次数有限，避免查询失败时每秒空转
-        private const val PROMOTION_CHECK_MAX_UNKNOWN = 5
+        // 查不到通知（入队尚未完成等）时每秒重试，次数有限，避免查询失败时一直空转
+        const val PROMOTION_CHECK_MAX_UNKNOWN = 5
         // 划掉事件以歌曲区分：每首歌的 deleteIntent 是独立令牌，迟到的旧事件不会算到新歌头上
         private const val DISMISS_URI_SCHEME = "neriplayer-live-update"
         // 越过整秒后再刷新，避免外推位置还差几毫秒没进到下一格
@@ -330,7 +330,7 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
             nowElapsedMs = nowElapsedMs,
             nowWallMs = System.currentTimeMillis(),
             positionMs = extrapolatedMs,
-            playing = received.playing,
+            playing = received.clockRunning,
             speed = received.effectiveSpeed,
         )
         val frame = received.copy(
@@ -425,7 +425,7 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         return false
     }
 
-    /** 首次发布后核对提升结果；查不到时随后续发布有限次重试，确认提升后不再核对 */
+    /** 首次发布后核对提升结果；查不到时有限次重试（自行排期，也随后续发布补排），确认提升后不再核对 */
     private fun armPromotionCheck(firstPost: Boolean) {
         if (firstPost) {
             promotionVerified = false
@@ -446,7 +446,11 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         if (lastPosted == null) return
         when (promotion.isPromoted(NOTIFICATION_ID)) {
             true -> promotionVerified = true
-            null -> promotionUnknownChecks++
+            // 内容不变时不会再发布，重试不能依赖下一次发布，自行排下一次核对
+            null -> {
+                promotionUnknownChecks++
+                armPromotionCheck(firstPost = false)
+            }
             false -> {
                 Log.i(TAG, "System did not promote the Live Update; withdraw it to avoid a duplicate notification")
                 systemDeclinedPromotion = true

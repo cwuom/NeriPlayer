@@ -376,6 +376,33 @@ class LiveUpdateNotificationTest {
     }
 
     @Test
+    fun `an unknown promotion result is rechecked even when nothing is reposted`() {
+        promotion.promoted = null
+        val bridge = enabledBridge()
+        // 时长未知没有进度节拍，歌词也不变，之后不会再有发布
+        bridge.publish(frame.copy(durationMs = 0L))
+        idleFor(LiveLyricNotificationBridge.PROMOTION_CHECK_DELAY_MS + 100L)
+        assertNotNull(postedNotification())
+
+        promotion.promoted = false
+        idleFor(LiveLyricNotificationBridge.PROMOTION_CHECK_DELAY_MS)
+
+        assertNull(postedNotification())
+    }
+
+    @Test
+    fun `promotion checks stop after a bounded number of unknown results`() {
+        promotion.promoted = null
+        val bridge = enabledBridge()
+        bridge.publish(frame.copy(durationMs = 0L))
+
+        idleFor(LiveLyricNotificationBridge.PROMOTION_CHECK_DELAY_MS * 20)
+
+        assertEquals(LiveLyricNotificationBridge.PROMOTION_CHECK_MAX_UNKNOWN, promotion.promotionQueries)
+        assertNotNull(postedNotification())
+    }
+
+    @Test
     fun `non-1x playback moves the bar at the playback rate without a wall-clock chronometer`() {
         val bridge = enabledBridge()
         bridge.publish(frame.copy(playbackSpeed = 2f))
@@ -421,6 +448,26 @@ class LiveUpdateNotificationTest {
         awaitMain { postedNotification()?.color == ACCENT }
 
         assertEquals(2, loads.get())
+    }
+
+    @Test
+    fun `buffering keeps the pause control but freezes progress and the chronometer`() {
+        val bridge = enabledBridge()
+        val buffering = frame.copy(advancing = false)
+        bridge.publish(buffering)
+        idle()
+
+        // 播放器缓冲期间仍按节拍推送同一位置，进度不能随墙钟前进后再回跳
+        repeat(3) {
+            idleFor(1_000L)
+            bridge.publish(buffering)
+        }
+        idleFor(1_000L)
+
+        val posted = checkNotNull(postedNotification())
+        assertEquals(30, posted.extras.getInt(Notification.EXTRA_PROGRESS))
+        assertFalse(posted.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
+        assertEquals(text(R.string.player_pause), spokenLabel(checkNotNull(posted.actions)[1].title))
     }
 
     @Test

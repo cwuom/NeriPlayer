@@ -87,6 +87,8 @@ class LiveUpdateNowPlayingContentTest {
         assertEquals(30_000L, extrapolateLiveUpdatePosition(frame.copy(playing = false), 1_200L))
         assertEquals(240_000L, extrapolateLiveUpdatePosition(frame.copy(positionMs = 239_500L), 1_200L))
         assertEquals(31_200L, extrapolateLiveUpdatePosition(frame.copy(durationMs = 0L), 1_200L))
+        // 缓冲时仍是播放意图，但引擎没在走，不能凭时间外推
+        assertEquals(30_000L, extrapolateLiveUpdatePosition(frame.copy(advancing = false), 1_200L))
     }
 
     @Test
