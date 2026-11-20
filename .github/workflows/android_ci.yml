@@ -183,8 +183,8 @@ jobs:
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass2=moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassInverseMaskParityTest
           - shard: 3
             test_group: shard 3
-            # 歌词首帧渲染回归在 SwiftShader 宿主上多次触发 ColorBuffer 错误并丢失模拟器
-            emulator_gpu: swangle
+            # ANGLE 下该分片耗时翻倍并新增时序失败，模拟器偶发丢失交由整道重跑兜底
+            emulator_gpu: swiftshader
             build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
             module_tests: ""
             app_test_arguments: >-
