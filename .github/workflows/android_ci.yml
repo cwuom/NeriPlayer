@@ -130,7 +130,8 @@ jobs:
     name: Android instrumented tests (${{ matrix.test_group }})
     needs: ci-tooling
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 预留模拟器丢失后在新模拟器上整道重跑一次的时间
+    timeout-minutes: 95
     if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
     env:
       ORG_GRADLE_PROJECT_buildUuid: ${{ needs.ci-tooling.outputs.build_uuid }}
@@ -182,7 +183,8 @@ jobs:
               -Pandroid.testInstrumentationRunnerArguments.neriplayerAdditionalExcludedClass2=moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassInverseMaskParityTest
           - shard: 3
             test_group: shard 3
-            emulator_gpu: swiftshader
+            # 歌词首帧渲染回归在 SwiftShader 宿主上多次触发 ColorBuffer 错误并丢失模拟器
+            emulator_gpu: swangle
             build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
             module_tests: ""
             app_test_arguments: >-
@@ -259,12 +261,17 @@ jobs:
           "$JAVA_HOME/bin/jps" -l > build/reports/emulator-host/before-emulator-jvm-classes.txt 2>&1 || true
 
       - name: Run connected Android tests
+        id: connected
+        # 由下方步骤区分模拟器丢失与测试失败，测试失败仍会让作业失败
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
-        env:
+        env: &connected-env
           ANDROID_SERIAL: emulator-5554
           INSTRUMENTATION_MODULE_TASKS: ${{ matrix.module_tests }}
           INSTRUMENTATION_APP_ARGUMENTS: ${{ matrix.app_test_arguments }}
-        with:
+          # 少量失败用例各自单独重跑一次，必须全部通过并以警告标注为不稳定用例
+          INSTRUMENTATION_FLAKY_RETRY_LIMIT: 3
+        with: &connected-emulator
           api-level: 35
           target: google_apis
           arch: x86_64
@@ -288,6 +295,38 @@ jobs:
             adb shell am force-stop --user 0 com.google.android.apps.nexuslauncher &&
             adb shell am force-stop --user 0 com.google.android.googlesdksetup &&
             python3 -B .github/scripts/run_connected_tests.py
+
+      - name: Classify connected test failure
+        id: lane
+        if: ${{ steps.connected.outcome == 'failure' }}
+        shell: bash
+        run: |
+          status=$(cat build/reports/emulator-host/connected-lane-status.txt 2>/dev/null || echo not-started)
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          case "$status" in
+            not-started|running|device-lost)
+              echo "::warning title=Emulator infrastructure failure::Lane ended as '$status'; retrying once on a fresh emulator"
+              echo "retry=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "retry=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Retry connected Android tests on a fresh emulator
+        id: connected-retry
+        if: ${{ steps.lane.outputs.retry == 'true' }}
+        uses: reactivecircus/android-emulator-runner@v2
+        env: *connected-env
+        with: *connected-emulator
+
+      - name: Require connected Android tests to pass
+        if: ${{ steps.connected.outcome == 'failure' && steps.connected-retry.outcome != 'success' }}
+        env:
+          LANE_STATUS: ${{ steps.lane.outputs.status }}
+        run: |
+          echo "::error::Connected Android tests failed (lane status: $LANE_STATUS)"
+          exit 1
 
       - name: Verify instrumented test routing
         if: ${{ matrix.shard < 4 || matrix.test_group == 'Player rotation host' || matrix.test_group == 'Glass rendering host' }}
