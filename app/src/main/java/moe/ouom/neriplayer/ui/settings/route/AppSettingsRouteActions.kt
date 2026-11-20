@@ -7,8 +7,10 @@ import android.os.Build
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.State
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionDisplayMode
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
@@ -356,6 +358,71 @@ internal class AppHomeSettingsActions(
     val onShowHomeBilibiliCardChange: (Boolean) -> Unit = { enabled ->
             scope.launch { repo.setHomeCardBilibili(enabled) }
         }
+
+    val onReorderHomeMajorSection: (List<String>) -> Unit = { order ->
+            scope.launch { repo.setHomeMajorOrder(order) }
+        }
+
+    val onReorderHomeTrendingSection: (List<String>) -> Unit = { order ->
+            scope.launch { repo.setHomeTrendingOrder(order) }
+        }
+
+    val onReorderHomeRadarSection: (List<String>) -> Unit = { order ->
+            scope.launch { repo.setHomeRadarOrder(order) }
+        }
+
+    val onReorderHomeRecommendedSection: (List<String>) -> Unit = { order ->
+            scope.launch { repo.setHomeRecommendedOrder(order) }
+        }
+
+    val onSetHomeMajorVisible: (String, Boolean) -> Unit = { id, visible ->
+            scope.launch {
+                when (id) {
+                    moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds.CONTINUE ->
+                        repo.setHomeCardContinue(visible)
+                    moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds.TRENDING ->
+                        repo.setHomeCardTrending(visible)
+                    moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds.RADAR ->
+                        repo.setHomeCardRadar(visible)
+                    moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds.RECOMMENDED ->
+                        repo.setHomeCardRecommended(visible)
+                    moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds.BILIBILI ->
+                        repo.setHomeCardBilibili(visible)
+                }
+            }
+        }
+
+    val onSetHomeTrendingVisible: (String, Boolean) -> Unit = { id, visible ->
+            scope.launch {
+                val hidden = repo.homeTrendingHiddenFlow.first().toMutableSet()
+                if (visible) hidden.remove(id) else hidden.add(id)
+                repo.setHomeTrendingHidden(hidden)
+            }
+        }
+
+    val onSetHomeRadarVisible: (String, Boolean) -> Unit = { id, visible ->
+            scope.launch {
+                val hidden = repo.homeRadarHiddenFlow.first().toMutableSet()
+                if (visible) hidden.remove(id) else hidden.add(id)
+                repo.setHomeRadarHidden(hidden)
+            }
+        }
+
+    val onSetHomeRecommendedVisible: (String, Boolean) -> Unit = { id, visible ->
+        scope.launch {
+            val hidden = repo.homeRecommendedHiddenFlow.first().toMutableSet()
+            if (visible) hidden.remove(id) else hidden.add(id)
+            repo.setHomeRecommendedHidden(hidden)
+        }
+    }
+
+    val onSetHomeSongSectionMode: (String, HomeSongSectionDisplayMode) -> Unit = { id, mode ->
+        scope.launch { repo.setHomeSongSectionMode(id, mode) }
+    }
+
+    val onSetHomeSongCardColumns: (Int) -> Unit = { columns ->
+        scope.launch { repo.setHomeSongCardColumns(columns) }
+    }
 }
 
 internal class AppStorageSettingsActions(

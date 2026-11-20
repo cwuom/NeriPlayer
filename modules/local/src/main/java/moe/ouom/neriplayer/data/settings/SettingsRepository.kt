@@ -87,6 +87,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
@@ -104,6 +105,18 @@ import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettingsCodec
+import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongCardColumns
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionDisplayMode
+import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionHidden
+import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionOrder
+import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSongSectionModes
+import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionHidden
+import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionOrder
+import moe.ouom.neriplayer.data.model.settings.home.parseHomeSongSectionModes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.playback.toAudioEffectsSettings
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
@@ -566,6 +579,53 @@ class SettingsRepository(private val context: Context) {
 
     val homeCardBilibiliFlow: Flow<Boolean> =
         autoSettingsRepository.homeCardBilibiliFlow
+
+    val homeMajorOrderFlow: Flow<List<String>> =
+        autoSettingsRepository.homeMajorOrderFlow.map { raw ->
+            parseHomeSectionOrder(raw, HomeMajorSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeTrendingOrderFlow: Flow<List<String>> =
+        autoSettingsRepository.homeTrendingOrderFlow.map { raw ->
+            parseHomeSectionOrder(raw, HomeTrendingSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeTrendingHiddenFlow: Flow<Set<String>> =
+        autoSettingsRepository.homeTrendingHiddenFlow.map { raw ->
+            parseHomeSectionHidden(raw, HomeTrendingSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeRadarOrderFlow: Flow<List<String>> =
+        autoSettingsRepository.homeRadarOrderFlow.map { raw ->
+            parseHomeSectionOrder(raw, HomeRadarSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeRadarHiddenFlow: Flow<Set<String>> =
+        autoSettingsRepository.homeRadarHiddenFlow.map { raw ->
+            parseHomeSectionHidden(raw, HomeRadarSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeRecommendedOrderFlow: Flow<List<String>> =
+        autoSettingsRepository.homeRecommendedOrderFlow.map { raw ->
+            parseHomeSectionOrder(raw, HomeRecommendedSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeRecommendedHiddenFlow: Flow<Set<String>> =
+        autoSettingsRepository.homeRecommendedHiddenFlow.map { raw ->
+            parseHomeSectionHidden(raw, HomeRecommendedSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    /** 歌曲类小模块的展示模式（默认列表 / 榜单卡片）。 */
+    val homeSongSectionModesFlow: Flow<Map<String, HomeSongSectionDisplayMode>> =
+        autoSettingsRepository.homeSongSectionModeFlow.map { raw ->
+            parseHomeSongSectionModes(raw)
+        }.distinctUntilChanged()
+
+    /** 榜单卡片并排数量，固定 1 / 2 / 3 三档。 */
+    val homeSongCardColumnsFlow: Flow<Int> =
+        autoSettingsRepository.homeSongCardColumnsFlow.map { raw ->
+            HomeSongCardColumns.normalize(raw)
+        }.distinctUntilChanged()
 
     val playbackFadeInFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_FADE_IN] ?: true }
@@ -1343,6 +1403,56 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setHomeCardBilibili(enabled: Boolean) {
         autoSettingsRepository.setHomeCardBilibili(enabled)
+    }
+
+    suspend fun setHomeMajorOrder(order: List<String>) {
+        autoSettingsRepository.setHomeMajorOrder(
+            encodeHomeSectionOrder(order.ifEmpty { HomeMajorSectionIds.DEFAULT_ORDER })
+        )
+    }
+
+    suspend fun setHomeTrendingOrder(order: List<String>) {
+        autoSettingsRepository.setHomeTrendingOrder(
+            encodeHomeSectionOrder(order.ifEmpty { HomeTrendingSubSectionIds.DEFAULT_ORDER })
+        )
+    }
+
+    suspend fun setHomeTrendingHidden(hidden: Set<String>) {
+        autoSettingsRepository.setHomeTrendingHidden(encodeHomeSectionHidden(hidden))
+    }
+
+    suspend fun setHomeRadarOrder(order: List<String>) {
+        autoSettingsRepository.setHomeRadarOrder(
+            encodeHomeSectionOrder(order.ifEmpty { HomeRadarSubSectionIds.DEFAULT_ORDER })
+        )
+    }
+
+    suspend fun setHomeRadarHidden(hidden: Set<String>) {
+        autoSettingsRepository.setHomeRadarHidden(encodeHomeSectionHidden(hidden))
+    }
+
+    suspend fun setHomeRecommendedOrder(order: List<String>) {
+        autoSettingsRepository.setHomeRecommendedOrder(
+            encodeHomeSectionOrder(order.ifEmpty { HomeRecommendedSubSectionIds.DEFAULT_ORDER })
+        )
+    }
+
+    suspend fun setHomeRecommendedHidden(hidden: Set<String>) {
+        autoSettingsRepository.setHomeRecommendedHidden(encodeHomeSectionHidden(hidden))
+    }
+
+    suspend fun setHomeSongSectionMode(id: String, mode: HomeSongSectionDisplayMode) {
+        val current = homeSongSectionModesFlow.first().toMutableMap()
+        if (mode == HomeSongSectionDisplayMode.DEFAULT) {
+            current.remove(id)
+        } else {
+            current[id] = mode
+        }
+        autoSettingsRepository.setHomeSongSectionMode(encodeHomeSongSectionModes(current))
+    }
+
+    suspend fun setHomeSongCardColumns(columns: Int) {
+        autoSettingsRepository.setHomeSongCardColumns(HomeSongCardColumns.normalize(columns))
     }
 
     suspend fun setPlaybackFadeIn(enabled: Boolean) {

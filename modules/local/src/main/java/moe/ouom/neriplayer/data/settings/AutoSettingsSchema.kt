@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.data.settings.appearance.EnhancedAdvancedBlurPreferen
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongCardColumns
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY
@@ -538,8 +539,108 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardBilibili = autoSetting(
-            titleRes = CoreCommonR.string.settings_home_card_bilibili,
-            descriptionRes = CoreCommonR.string.settings_home_card_bilibili_desc
+            titleRes = CoreCommonR.string.settings_home_card_bilibili
+        )
+
+        @AutoSetting(
+            key = "home_major_order",
+            type = SettingValueType.String,
+            defaultString = "continue,trending,radar,recommended,bilibili",
+            order = 71,
+            ui = SettingUiType.Custom
+        )
+        val homeMajorOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_major_order,
+            descriptionRes = CoreCommonR.string.settings_home_major_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_trending_order",
+            type = SettingValueType.String,
+            defaultString = "top_soaring,personalized_new_songs,top_hot,top_new",
+            order = 72,
+            ui = SettingUiType.Custom
+        )
+        val homeTrendingOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_trending_order,
+            descriptionRes = CoreCommonR.string.settings_home_trending_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_trending_hidden",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 73,
+            ui = SettingUiType.Custom
+        )
+        val homeTrendingHidden = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_trending_visible
+        )
+
+        @AutoSetting(
+            key = "home_radar_order",
+            type = SettingValueType.String,
+            defaultString = "personal_radar,radar_playlists,daily_recommend,private_fm",
+            order = 74,
+            ui = SettingUiType.Custom
+        )
+        val homeRadarOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_radar_order,
+            descriptionRes = CoreCommonR.string.settings_home_radar_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_radar_hidden",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 75,
+            ui = SettingUiType.Custom
+        )
+        val homeRadarHidden = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_radar_visible
+        )
+
+        @AutoSetting(
+            key = "home_recommended_order",
+            type = SettingValueType.String,
+            defaultString = "personalized,daily_resource,high_quality,hot_playlists,acg_playlists",
+            order = 76,
+            ui = SettingUiType.Custom
+        )
+        val homeRecommendedOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_recommended_order,
+            descriptionRes = CoreCommonR.string.settings_home_recommended_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_recommended_hidden",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 77,
+            ui = SettingUiType.Custom
+        )
+        val homeRecommendedHidden = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_recommended_visible
+        )
+
+        @AutoSetting(
+            key = "home_song_section_mode",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 78,
+            ui = SettingUiType.Custom
+        )
+        val homeSongSectionMode = autoSetting()
+
+        @AutoSetting(
+            key = "home_song_card_columns",
+            type = SettingValueType.Int,
+            defaultInt = HomeSongCardColumns.DEFAULT,
+            order = 79,
+            ui = SettingUiType.Custom
+        )
+        val homeSongCardColumns = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_song_card_columns
         )
     }
 
