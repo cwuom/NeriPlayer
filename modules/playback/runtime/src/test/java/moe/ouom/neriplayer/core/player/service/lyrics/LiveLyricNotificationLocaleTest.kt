@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.content.Context
 import android.os.Looper
 import moe.ouom.neriplayer.common.locale.LanguageManager
-import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import java.time.Duration
 import java.util.Locale
 import org.junit.After
@@ -20,7 +19,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], application = Application::class)
+@Config(sdk = [36], application = Application::class)
 class LiveLyricNotificationLocaleTest {
     private val context: Context = RuntimeEnvironment.getApplication()
     private val savedLanguage = LanguageManager.getCurrentLanguage(context)
@@ -40,16 +39,27 @@ class LiveLyricNotificationLocaleTest {
             NotificationChannel(channelId, "Existing", NotificationManager.IMPORTANCE_HIGH)
                 .apply { enableVibration(true) }
         )
-        val bridge = LiveLyricNotificationBridge(context)
+        val bridge = LiveLyricNotificationBridge(context, FakeLiveUpdatePromotionPort())
         bridge.setEnabled(true)
         for ((index, pair) in listOf(
-            LanguageManager.Language.ENGLISH to "Live Lyrics",
-            LanguageManager.Language.CHINESE to "Live 歌词",
-            LanguageManager.Language.ENGLISH to "Live Lyrics"
+            LanguageManager.Language.ENGLISH to "Live now playing",
+            LanguageManager.Language.CHINESE to "Live 正在播放",
+            LanguageManager.Language.ENGLISH to "Live now playing"
         ).withIndex()) {
             LanguageManager.setLanguage(context, pair.first)
-            bridge.sendLyric("用户的歌曲", LyricEntry("第${index}句歌词", 0L, 2_000L))
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(300))
+            bridge.publish(
+                LiveUpdateFrame(
+                    songKey = "song",
+                    songTitle = "用户的歌曲",
+                    artist = "",
+                    lyric = "第${index}句歌词",
+                    translation = null,
+                    playing = true,
+                    positionMs = 0L,
+                    durationMs = 2_000L,
+                )
+            )
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
             val channel = checkNotNull(manager.getNotificationChannel(channelId))
             assertEquals(pair.second, channel.name)
             assertEquals(NotificationManager.IMPORTANCE_HIGH, channel.importance)

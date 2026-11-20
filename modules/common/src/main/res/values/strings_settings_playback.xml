@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="notification_channel_live_lyrics">Live 歌词</string>
-    <string name="notification_channel_live_lyrics_description">显示当前歌曲歌词的 Android Live Updates 通知</string>
+    <string name="notification_channel_live_lyrics">Live 正在播放</string>
+    <string name="notification_channel_live_lyrics_description">以 Android Live Update 显示正在播放的歌曲、歌词、进度与播放控制</string>
     <!-- Settings / Playback & Lyrics -->
     <string name="settings_haptic">触感反馈</string>
     <string name="settings_haptic_desc">开启后点击按钮时会有震动反馈</string>
@@ -152,8 +152,14 @@
     <string name="settings_lyrics_offset_bili_cc_subtitle_desc">设置加载哔哩哔哩 CC 字幕歌词时的基础偏移</string>
     <string name="settings_lyrics_offset_reset">重置</string>
     <string name="settings_lyrics_offset_reset_all">全部重置</string>
-    <string name="settings_live_update_lyric_enabled">Live 通知歌词</string>
-    <string name="settings_live_update_lyric_enabled_desc">在 Android 16 的 Live Update 通知中显示当前歌词</string>
+    <string name="settings_live_update_lyric_enabled">Live 通知</string>
+    <string name="settings_live_update_lyric_enabled_desc">以 Android 16 Live Update 在状态栏胶囊、锁屏和息屏显示歌词、封面、进度与播放控制</string>
+    <string name="settings_live_update_status_unsupported">需要 Android 16 及以上系统</string>
+    <string name="settings_live_update_status_notifications_off">通知已关闭，点按前往开启</string>
+    <string name="settings_live_update_status_channel_off">“Live 正在播放”通知类别已关闭，点按前往开启</string>
+    <string name="settings_live_update_status_promotion_off">系统未允许本应用使用 Live Update，点按前往开启</string>
+    <string name="settings_live_update_status_declined">已允许，但系统没有把通知显示为 Live Update，当前系统版本或厂商可能不支持</string>
+    <string name="settings_live_update_status_ready">已就绪：播放时显示；应用在前台时系统会隐藏状态栏胶囊</string>
     <string name="settings_status_bar_lyrics_title">状态栏歌词</string>
     <string name="settings_status_bar_lyrics_summary">启用魅族状态栏歌词</string>
     <string name="settings_floating_lyrics_title">悬浮歌词</string>
