@@ -71,7 +71,7 @@
 
 NeriPlayer 功能面较宽，提交前优先保护以下链路。
 
-- **播放**：`PlayerManager`、播放解析策略、缓存、失败刷新与兜底、长音频进度记忆、BilibiliSponsorBlock 跳过、状态恢复、响度均衡、声道平衡、高解析输出、USB 独占 Native 链路、启动看门狗、前后台健康审计。
+- **播放**：`PlayerManager`、播放解析策略、缓存、失败刷新与兜底、长音频进度记忆、BilibiliSponsorBlock 跳过、状态恢复、响度均衡、声道平衡、高解析输出、USB 独占 Native 链路、DLNA / UPnP 投送链路、启动看门狗、前后台健康审计。
 - **下载**：`AudioDownloadManager`、`GlobalDownloadManager`、`DownloadTaskStore`、`DownloadLifecyclePolicies`、`ManagedDownloadStorage`、续传检查点、sidecar 文件、任务队列恢复、取消清理、SAF 目录迁移。
 - **同步**：GitHub / WebDAV 三路合并、删除记录、播放统计、缺字段快照清洗、JSON / ProtoBuf / Base64 格式兼容、WebDAV 并发保护。
 - **本地数据**：歌单 Room 事务、旧 JSON 升级与原子回退、本地元信息补全、配置导入导出、授权加密存储、DataStore 设置。
@@ -413,6 +413,10 @@ NeriPlayer 功能面较宽，提交前优先保护以下链路。
 - 支持 **UAC1.0** 与兼容 **UAC2.0 Type I PCM** 设备。
 - 覆盖 32-bit PCM、PCM float 软件转换、UAC2 显式反馈、协调式 AudioSink 重配置、动态传输缩放和背压卡顿恢复。
 
+**DLNA / UPnP 投送（`dlna/`）**
+
+- 按 `protocol/`、`server/`、`audio/`、`session/` 拆分设备发现、SOAP / GENA 控制、局域网 HTTP Range 媒体服务、音源与内嵌标签暂存和 `PlayerManager` 适配，共享模型位于 `:model` 的 `playback/dlna`，输出面板位于 app 的 `ui/screen/nowplaying/dlna/`。
+
 **`modules/download/runtime/src/main/java/moe/ouom/neriplayer/core/download/`**
 
 - `GlobalDownloadManager.kt` 维护全局下载任务与本地已下载列表。
@@ -609,6 +613,12 @@ NeriPlayer 功能面较宽，提交前优先保护以下链路。
 - 音量跟随普通媒体音量（`STREAM_MUSIC`），不使用 MediaSession 远程音量。后台锚点无法指定输出设备，Android 12+ 会把媒体音量设备切到扬声器。
 - USB 设备插入响应是独立设置。关闭时，Activity alias 和播放服务广播入口都跳过 `USB_DEVICE_ATTACHED`。
 - 前后台 USB runtime report 返回 `native_refresh_deferred` 时，播放器在有限次数内延迟重试，其他无效报告按 fail-closed 处理。
+
+#### DLNA / UPnP 投送
+
+- 依赖同一局域网内的 UPnP `AVTransport:1` 渲染器、前台服务、`WifiLock` / `MulticastLock` / `WakeLock` 及网络状态监听。
+- 在线音源先由本机凭授权解析并暂存至受控缓存区，仅向私有网段客户端暴露随机一次性 HTTP 路径，不向渲染器转发平台 Cookie 或签名参数。
+- 远端音量在连接时读取设备当前值，仅响应用户主动调节；切回本机时停止远端播放并继承当前进度。
 
 #### 一起听
 

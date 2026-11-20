@@ -334,6 +334,9 @@ private fun PlayerManager.prepareInitializationSession(app: Application, effecti
         "initialize(): maxCacheSize=$effectiveMaxCacheSize, app=${app.packageName}, stack=[${debugStackHint()}]"
     )
     application = app
+    moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.ensureInitialized(app)
+    moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.playerHost =
+        moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter
     _localPlaylistsReadyFlow.value = false
     FloatingLyricsOverlayManager.initialize(app)
     currentCacheSize = effectiveMaxCacheSize
@@ -1904,6 +1907,7 @@ private fun PlayerManager.stopPlaybackForRelease() {
 private fun PlayerManager.releaseUsbSessionsAndJobs() {
     playbackSoundOwner.cancelPersistenceForRelease()
     usbPlaybackRouteOwner.release()
+    moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.release()
 }
 
 private fun PlayerManager.releaseMediaJobsAndLyrics(): Unit = synchronized(this) {

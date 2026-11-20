@@ -1154,6 +1154,8 @@ fun LyricsScreen(
                 )
             }
 
+            val isDlnaActive = moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.castStateFlow
+                .collectAsStateWithLifecycle().value.isCastingActive
             var showVolumeSheet by remember { mutableStateOf(false) }
             HapticIconButton(onClick = { if (secondaryActionsEnabled) showVolumeSheet = true },
                 modifier = toolbarActionModifier.then(
@@ -1172,7 +1174,8 @@ fun LyricsScreen(
                 PlaybackOutputIcon(
                     roomActive = rememberPlaybackRoomActive(),
                     device = rememberAudioDeviceInfo(),
-                    modifier = Modifier.size(toolbarLayout.iconSize)
+                    modifier = Modifier.size(toolbarLayout.iconSize),
+                    tint = if (isDlnaActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                 )
             }
 

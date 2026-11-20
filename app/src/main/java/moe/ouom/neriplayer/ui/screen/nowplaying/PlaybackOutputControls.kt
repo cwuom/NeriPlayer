@@ -51,12 +51,14 @@ internal fun rememberPlaybackRoomActive(): Boolean {
 internal fun PlaybackOutputIcon(
     roomActive: Boolean,
     device: Pair<String, ImageVector>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    tint: androidx.compose.ui.graphics.Color = androidx.compose.material3.LocalContentColor.current
 ) {
     Icon(
         imageVector = if (roomActive) Icons.Outlined.WifiTethering else device.second,
         contentDescription = if (roomActive) stringResource(CoreR.string.lan_manage)
             else stringResource(CoreR.string.playback_output_and_listen_together, device.first),
+        tint = tint,
         modifier = modifier
     )
 }

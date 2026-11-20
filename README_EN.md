@@ -79,7 +79,7 @@ user-owned data.
 | :--- | :--- |
 | **Multi-Source & Self-Hosted** | NetEase Cloud Music, Bilibili, YouTube Music, local audio, and Navidrome / OpenSubsonic (Preview) in one shared queue |
 | **Lyrics** | Line- and word-synced LRC / YRC / TTML, Bilibili CC subtitles, translation, transliteration, and multi-source matching; floating, status-bar, Bluetooth / car, and system outputs |
-| **Audio & Visuals** | Media3 engine, self-built DSP, 10-band EQ, AutoEQ, 32-bit output, USB exclusive mode; Material You and Clean themes, fluid background, widgets, and launcher shortcuts |
+| **Audio & Visuals** | Media3 engine, self-built DSP, 10-band EQ, AutoEQ, 32-bit output, USB exclusive mode, DLNA / UPnP casting; Material You and Clean themes, fluid background, widgets, and launcher shortcuts |
 | **Local-First & User-Owned Sync** | Data stays on the device by default; optional metadata sync to your own GitHub repository or WebDAV remote |
 | **Built-In Recovery** | Offline mode, safe mode, JVM / Native crash logs, ANR traces, and debug probes |
 
@@ -139,6 +139,7 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 - **YouTube Music compatibility**: valid identity cookies are kept and rotated; if a cached `player.js` or playback candidate fails, playback falls back to EJS / HLS.
 - **Audio effects**: self-built DSP with built-in presets, a 10-band equalizer, AutoEQ import, loudness leveling, and 32-bit high-resolution output. Everything is bypassed when off.
 - **USB exclusive output**: bit-perfect output to UAC1.0 and UAC2.0 Type I PCM DACs; responding to USB attach events can be turned off.
+- **DLNA / UPnP casting**: scan or manually add LAN renderers from the Now Playing output sheet, with lossless FLAC pass-through, WAV compatibility fallback, and adaptive direct streaming.
 - **Background playback**: music keeps playing through the foreground media service after you switch apps or swipe NeriPlayer out of Recents.
 - **Floating-window keep-alive**: optional invisible 1-pixel window that makes it less likely for the system to freeze background playback.
 - **Playback behavior**: fade in/out, crossfade, pause on Bluetooth disconnect, mixing with other apps, and audio focus policy. Resume position and play mode are restored on launch.
@@ -409,6 +410,7 @@ Shipped work is tracked in [Releases](https://github.com/cwuom/NeriPlayer/releas
 ### Audio output
 
 - 32-bit high-resolution output bypasses loudness leveling, channel balance, audio visualization, and in-app playback speed. Turn it off when you need those features.
+- DLNA / UPnP casting requires the phone and renderer on the same LAN; while casting, decoding happens on the remote renderer so local DSP effects and playback speed are bypassed.
 
 ### Bluetooth car
 

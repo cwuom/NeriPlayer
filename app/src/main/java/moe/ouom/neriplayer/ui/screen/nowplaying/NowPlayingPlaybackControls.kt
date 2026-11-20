@@ -371,52 +371,7 @@ fun NowPlayingQualityOptionsDialog(
 
 @Composable
 fun VolumeControlSheetContent() {
-    val context = LocalContext.current
-    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-
-    val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
-    var currentVolume by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
-    DisposableEffect(context, audioManager) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-            }
-        }
-        ContextCompat.registerReceiver(context, receiver, IntentFilter("android.media.VOLUME_CHANGED_ACTION"),
-            ContextCompat.RECEIVER_NOT_EXPORTED)
-        currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        onDispose { context.unregisterReceiver(receiver) }
-    }
-
-    val audioDeviceInfo = rememberAudioDeviceInfo()
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .bottomSheetDragBlocker()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
-            .windowInsetsPadding(WindowInsets.navigationBars),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(audioDeviceInfo.first, style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Icon(imageVector = audioDeviceInfo.second, contentDescription = audioDeviceInfo.first)
-            Slider(
-                value = currentVolume.toFloat(),
-                onValueChange = {
-                    currentVolume = it.toInt()
-                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, currentVolume, 0)
-                },
-                valueRange = 0f..maxVolume.toFloat(),
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-    }
+    moe.ouom.neriplayer.ui.screen.nowplaying.dlna.DlnaOutputAndVolumeSheetContent()
 }
 
 @Composable
