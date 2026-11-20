@@ -57,10 +57,7 @@ class SettingsHomeStartPresentationTest {
             SettingsHomeCardCopy(
                 CoreCommonR.string.settings_home_card_netease_trending,
                 CoreCommonR.string.settings_home_card_netease_radar,
-                CoreCommonR.string.settings_home_card_netease_recommended,
-                CoreCommonR.string.settings_home_card_netease_trending_desc,
-                CoreCommonR.string.settings_home_card_netease_radar_desc,
-                CoreCommonR.string.settings_home_card_netease_recommended_desc
+                CoreCommonR.string.settings_home_card_netease_recommended
             ),
             domestic
         )
@@ -68,10 +65,7 @@ class SettingsHomeStartPresentationTest {
             SettingsHomeCardCopy(
                 CoreCommonR.string.home_ytmusic_guess_you_like,
                 CoreCommonR.string.home_ytmusic_daily_discover,
-                CoreCommonR.string.home_ytmusic_more_recommendations,
-                CoreCommonR.string.settings_home_card_ytmusic_guess_you_like_desc,
-                CoreCommonR.string.settings_home_card_ytmusic_daily_discover_desc,
-                CoreCommonR.string.settings_home_card_ytmusic_more_recommendations_desc
+                CoreCommonR.string.home_ytmusic_more_recommendations
             ),
             international
         )
