@@ -70,6 +70,8 @@ import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.home.HomeScreen
+import moe.ouom.neriplayer.ui.screen.tab.home.NeteaseHomePlaylistListScreen
+import moe.ouom.neriplayer.ui.screen.tab.home.NeteaseHomeSongListScreen
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
@@ -80,6 +82,9 @@ import moe.ouom.neriplayer.ui.navigation.shouldSuppressRestoredMainTabHostEntry
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.HomeSectionIdMapping
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -127,6 +132,18 @@ internal sealed class HomeSelectedItem {
     }
     object BiliMusicHot : HomeSelectedItem() {
         override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "biliMusicHot")
+    }
+    /**
+     * 首页网易云歌曲小模块的二级页。
+     */
+    data class NeteaseSongSection(val source: NeteaseHomeSongSource) : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "neteaseSongSection", "source" to source.name)
+    }
+    /**
+     * 首页网易云歌单分类的二级页（推荐歌单大模块下的五个分类）。
+     */
+    data class NeteasePlaylistSection(val source: NeteaseHomePlaylistSource) : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "neteasePlaylistSection", "source" to source.name)
     }
 }
 
@@ -296,6 +313,14 @@ internal fun HomeHostScreen(
                 runtimeState.pendingGridRestoreArmed = true
                 runtimeState.homeScrollAnchorIndexes = emptyMap()
             }
+        }
+    }
+
+    // 清理历史遗留的榜单「继续播放」条目
+    LaunchedEffect(homeUsageLoaded) {
+        if (!homeUsageLoaded) return@LaunchedEffect
+        HomeSectionIdMapping.chartPlaylistIds.forEach { playlistId ->
+            AppContainer.playlistUsageRepo.removeEntry(playlistId, "netease")
         }
     }
 
@@ -493,6 +518,16 @@ internal fun HomeHostScreen(
                                 },
                                 onBiliMusicHotPlay = { videos, index ->
                                     onPlayBiliAudioWithSourceRoute(videos, index, null)
+                                },
+                                onNeteaseSongSectionMore = { source ->
+                                    skipDetailCloseAnimation = false
+                                    captureHomeScrollPosition()
+                                    openHomeSelectedItem(HomeSelectedItem.NeteaseSongSection(source))
+                                },
+                                onNeteasePlaylistSectionMore = { source ->
+                                    skipDetailCloseAnimation = false
+                                    captureHomeScrollPosition()
+                                    openHomeSelectedItem(HomeSelectedItem.NeteasePlaylistSection(source))
                                 }
                             )
                         }
@@ -611,6 +646,30 @@ internal fun HomeHostScreen(
                                     offlineMode = offlineMode
                                 )
                             }
+
+                            is HomeSelectedItem.NeteaseSongSection -> {
+                                NeteaseHomeSongListScreen(
+                                    source = current.source,
+                                    onBack = { selected = null },
+                                    onSongClick = { songs, index ->
+                                        onSongClickWithSourceRoute(songs, index, null)
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            is HomeSelectedItem.NeteasePlaylistSection -> {
+                                NeteaseHomePlaylistListScreen(
+                                    source = current.source,
+                                    onBack = { selected = null },
+                                    onPlaylistClick = { playlist ->
+                                        skipDetailCloseAnimation = false
+                                        captureHomeScrollPosition()
+                                        openHomeSelectedItem(HomeSelectedItem.Netease(playlist))
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
                         }
                     }
                 }
@@ -632,7 +691,17 @@ private val homeSelectedItemRestorers: Map<String, (Map<String, Any?>) -> HomeSe
     "bili" to { saved -> restoreBiliPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::Bili) },
     "ytmusic" to { saved -> restoreYouTubeMusicPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::YouTubeMusic) },
     "biliMusicRank" to { _ -> HomeSelectedItem.BiliMusicRank },
-    "biliMusicHot" to { _ -> HomeSelectedItem.BiliMusicHot }
+    "biliMusicHot" to { _ -> HomeSelectedItem.BiliMusicHot },
+    "neteaseSongSection" to { saved ->
+        saved.savedNonBlankString("source")
+            ?.let { name -> NeteaseHomeSongSource.entries.firstOrNull { it.name == name } }
+            ?.let(HomeSelectedItem::NeteaseSongSection)
+    },
+    "neteasePlaylistSection" to { saved ->
+        saved.savedNonBlankString("source")
+            ?.let { name -> NeteaseHomePlaylistSource.entries.firstOrNull { it.name == name } }
+            ?.let(HomeSelectedItem::NeteasePlaylistSection)
+    }
 )
 
 private fun biliMusicRankTypeOf(cacheKey: String): BiliMusicRankType =
