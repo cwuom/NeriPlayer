@@ -145,10 +145,32 @@ internal sealed class HomeSelectedItem {
     data class NeteasePlaylistSection(val source: NeteaseHomePlaylistSource) : HomeSelectedItem() {
         override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "neteasePlaylistSection", "source" to source.name)
     }
+    /**
+     * 从「更多歌单」分类页点进某个歌单后的详情页。
+     *
+     * 单独拆一个类型而不是复用 [Netease]，是为了把父级分类页记在导航状态里：
+     * 否则分类页会被覆盖，从歌单详情返回时会直接回到首页，
+     * 丢掉分类页本身以及它的滚动位置。
+     */
+    data class NeteasePlaylistSectionDetail(
+        val playlist: PlaylistSummary,
+        val parentSource: NeteaseHomePlaylistSource
+    ) : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(
+            SAVED_TYPE_KEY to "neteasePlaylistSectionDetail",
+            "playlist" to playlist.toSaveMap(),
+            "source" to parentSource.name
+        )
+    }
 }
 
 private val HomeSelectedItem?.navigationDepth: Int
-    get() = if (this == null) 0 else 1
+    get() = when {
+        this == null -> 0
+        // 歌单详情比分类页多一层，用来区分前进 / 返回的转场方向。
+        this is HomeSelectedItem.NeteasePlaylistSectionDetail -> 2
+        else -> 1
+    }
 
 @Stable
 class HomeHostRuntimeState {
@@ -173,7 +195,21 @@ class HomeHostRuntimeState {
     var pendingRadarPlaylistRestoreOffset by mutableIntStateOf(0)
     var homeScrollAnchorIndexes by mutableStateOf<Map<String, Int>>(emptyMap())
     var continuePagerPage by mutableIntStateOf(0)
+    /**
+     * 「更多歌单」分类页的列表滚动状态，按分类缓存。
+     *
+     * 从分类页进入歌单详情再返回时，分类页会离开 Composition 再重新挂载，
+     * 若不把滚动状态提到这里，返回后列表就会跳回顶部。
+     */
+    val playlistSectionGridStates = mutableMapOf<NeteaseHomePlaylistSource, LazyGridState>()
 }
+
+/**
+ * 取（并在缺失时创建）某个歌单分类页的列表滚动状态。
+ */
+internal fun HomeHostRuntimeState.playlistSectionGridState(
+    source: NeteaseHomePlaylistSource
+): LazyGridState = playlistSectionGridStates.getOrPut(source) { LazyGridState() }
 
 @Composable
 fun rememberHomeHostRuntimeState(): HomeHostRuntimeState {
@@ -286,6 +322,9 @@ internal fun HomeHostScreen(
             is HomeSelectedItem.NeteaseAlbumList -> {
                 openAfterNeteaseCoverWarmup(item.album.picUrl, item)
             }
+            is HomeSelectedItem.NeteasePlaylistSectionDetail -> {
+                openAfterNeteaseCoverWarmup(item.playlist.picUrl, item)
+            }
             else -> {
                 cancelPendingNeteaseCoverWarmup()
                 ensureHomeScrollPositionCaptured()
@@ -297,7 +336,10 @@ internal fun HomeHostScreen(
     fun closeSelectedDetail() {
         cancelPendingNeteaseCoverWarmup()
         skipDetailCloseAnimation = false
-        selected = null
+        // 从「更多歌单」分类页进入的歌单详情，返回时先回到分类页，
+        // 而不是直接退回首页，避免丢掉分类列表与它的滚动位置。
+        val parent = (selected as? HomeSelectedItem.NeteasePlaylistSectionDetail)?.parentSource
+        selected = parent?.let { HomeSelectedItem.NeteasePlaylistSection(it) }
     }
 
     fun closeDeletedLocalPlaylist() {
@@ -324,10 +366,16 @@ internal fun HomeHostScreen(
         }
     }
 
+    // 从歌单详情返回时，预测性返回手势的目标是父级分类页而不是首页。
+    val backTargetState = remember(selected) {
+        (selected as? HomeSelectedItem.NeteasePlaylistSectionDetail)?.let {
+            HomeSelectedItem.NeteasePlaylistSection(it.parentSource)
+        }
+    }
     val navigationTransition = rememberHostPredictiveBackTransition(
         targetState = selected,
         backEnabled = selected != null,
-        backTargetState = null,
+        backTargetState = backTargetState,
         onBack = { closeSelectedDetail() },
         label = "home_host_switch"
     )
@@ -662,10 +710,31 @@ internal fun HomeHostScreen(
                                 NeteaseHomePlaylistListScreen(
                                     source = current.source,
                                     onBack = { selected = null },
+                                    gridState = runtimeState.playlistSectionGridState(current.source),
                                     onPlaylistClick = { playlist ->
                                         skipDetailCloseAnimation = false
                                         captureHomeScrollPosition()
-                                        openHomeSelectedItem(HomeSelectedItem.Netease(playlist))
+                                        openHomeSelectedItem(
+                                            HomeSelectedItem.NeteasePlaylistSectionDetail(
+                                                playlist = playlist,
+                                                parentSource = current.source
+                                            )
+                                        )
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            is HomeSelectedItem.NeteasePlaylistSectionDetail -> {
+                                NeteasePlaylistDetailScreen(
+                                    playlist = current.playlist,
+                                    onBack = { closeSelectedDetail() },
+                                    onSongClick = { songs, index ->
+                                        onSongClickWithSourceRoute(
+                                            songs,
+                                            index,
+                                            neteasePlaylistSourceRoute(current.playlist)
+                                        )
                                     },
                                     offlineMode = offlineMode
                                 )
@@ -701,6 +770,19 @@ private val homeSelectedItemRestorers: Map<String, (Map<String, Any?>) -> HomeSe
         saved.savedNonBlankString("source")
             ?.let { name -> NeteaseHomePlaylistSource.entries.firstOrNull { it.name == name } }
             ?.let(HomeSelectedItem::NeteasePlaylistSection)
+    },
+    "neteasePlaylistSectionDetail" to { saved ->
+        val playlist = restorePlaylistSummary(saved.savedMap("playlist"))
+        val parentSource = saved.savedNonBlankString("source")
+            ?.let { name -> NeteaseHomePlaylistSource.entries.firstOrNull { it.name == name } }
+        if (playlist != null && parentSource != null) {
+            HomeSelectedItem.NeteasePlaylistSectionDetail(
+                playlist = playlist,
+                parentSource = parentSource
+            )
+        } else {
+            null
+        }
     }
 )
 

@@ -1080,9 +1080,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private suspend fun parseRecommendOnWorker(raw: String): List<PlaylistSummary> =
+    private suspend fun parseRecommendOnWorker(
+        raw: String,
+        limit: Int = HOME_NETEASE_PLAYLIST_LIMIT
+    ): List<PlaylistSummary> =
         withContext(Dispatchers.Default) {
-            parseNeteaseHomePlaylists(raw, limit = HOME_NETEASE_PLAYLIST_LIMIT)
+            parseNeteaseHomePlaylists(raw, limit = limit)
         }
 
     private suspend fun parseSongsOnWorker(
@@ -1193,38 +1196,69 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * 拉取某个首页歌单分类的完整列表，供二级页使用。
+     *
+     * 与首页那份截断列表不同，这里按 [HOME_FULL_PLAYLIST_LIMIT] 请求并解析，
+     * 否则会拿到上百条数据却只保留首页用的 30 条。
      */
     suspend fun fetchFullPlaylistSection(
         source: NeteaseHomePlaylistSource
     ): Result<List<PlaylistSummary>> {
         return runCatching {
             val raw = withContext(Dispatchers.IO) {
-                when (source) {
-                    NeteaseHomePlaylistSource.PERSONALIZED -> client.getRecommendedPlaylists(
+                fetchFullPlaylistSourceRaw(source)
+            }
+            parseRecommendOnWorker(raw, limit = HOME_FULL_PLAYLIST_LIMIT)
+        }.recoverCatching { error ->
+            // 与首页加载保持一致：cookie 过期导致 301 / 50000005 时退回匿名请求，
+            // 否则用户在首页能正常看到该模块，点进二级页却只会看到错误页。
+            if (
+                error is ApiCodeException &&
+                source == NeteaseHomePlaylistSource.PERSONALIZED &&
+                hasRecommendLogin &&
+                shouldFallbackRecommend(error.code)
+            ) {
+                NPLogger.w(
+                    TAG,
+                    "fetchFullPlaylistSection fallback to anonymous due to api_code=${error.code}"
+                )
+                val fallbackRaw = withContext(Dispatchers.IO) {
+                    client.getRecommendedPlaylists(
                         limit = HOME_FULL_PLAYLIST_LIMIT,
-                        usePersistedCookies = hasRecommendLogin
-                    )
-                    NeteaseHomePlaylistSource.DAILY_RESOURCE -> client.getDailyRecommendedPlaylists()
-                    NeteaseHomePlaylistSource.HIGH_QUALITY -> client.getHighQualityPlaylists(
-                        cat = "全部",
-                        limit = HOME_FULL_PLAYLIST_LIMIT,
-                        before = 0L
-                    )
-                    NeteaseHomePlaylistSource.HOT_PLAYLISTS -> client.getTopPlaylists(
-                        cat = "全部",
-                        order = "hot",
-                        limit = HOME_FULL_PLAYLIST_LIMIT,
-                        usePersistedCookies = hasRecommendLogin
-                    )
-                    NeteaseHomePlaylistSource.ACG_PLAYLISTS -> client.getTopPlaylists(
-                        cat = "ACG",
-                        order = "hot",
-                        limit = HOME_FULL_PLAYLIST_LIMIT,
-                        usePersistedCookies = hasRecommendLogin
+                        usePersistedCookies = false
                     )
                 }
+                parseRecommendOnWorker(fallbackRaw, limit = HOME_FULL_PLAYLIST_LIMIT)
+            } else {
+                throw error
             }
-            parseRecommendOnWorker(raw)
+        }
+    }
+
+    /** 二级页使用的完整歌单来源请求参数，比首页那份截断列表取更多。 */
+    private fun fetchFullPlaylistSourceRaw(source: NeteaseHomePlaylistSource): String {
+        return when (source) {
+            NeteaseHomePlaylistSource.PERSONALIZED -> client.getRecommendedPlaylists(
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                usePersistedCookies = hasRecommendLogin
+            )
+            NeteaseHomePlaylistSource.DAILY_RESOURCE -> client.getDailyRecommendedPlaylists()
+            NeteaseHomePlaylistSource.HIGH_QUALITY -> client.getHighQualityPlaylists(
+                cat = "全部",
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                before = 0L
+            )
+            NeteaseHomePlaylistSource.HOT_PLAYLISTS -> client.getTopPlaylists(
+                cat = "全部",
+                order = "hot",
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                usePersistedCookies = hasRecommendLogin
+            )
+            NeteaseHomePlaylistSource.ACG_PLAYLISTS -> client.getTopPlaylists(
+                cat = "ACG",
+                order = "hot",
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                usePersistedCookies = hasRecommendLogin
+            )
         }
     }
 

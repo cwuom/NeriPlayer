@@ -22,6 +22,7 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2026/11/20
  */
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,8 +88,10 @@ import moe.ouom.neriplayer.ui.screen.playlist.FavoriteSongLookup
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistModernListItemSurface
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistModernPlaybackActions
 import moe.ouom.neriplayer.ui.screen.playlist.SongRow
+import moe.ouom.neriplayer.ui.screen.playlist.resolvePlaylistPlaybackStartIndex
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
+import kotlin.random.Random
 
 /**
  * 通用歌曲列表页。
@@ -151,6 +154,20 @@ fun NeteaseHomeSongListScreen(
 
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
+    val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsStateWithLifecycle()
+    val repeatMode by PlayerManager.repeatModeFlow.collectAsStateWithLifecycle()
+
+    fun playSection(shuffle: Boolean) {
+        if (songs.isEmpty()) return
+        val startIndex = resolvePlaylistPlaybackStartIndex(
+            songCount = songs.size,
+            shuffleEnabled = shuffle,
+            randomIndex = Random.nextInt(songs.size)
+        )
+        if (startIndex < 0) return
+        PlayerManager.setShuffle(shuffle)
+        onSongClick(songs, startIndex)
+    }
 
     val favoriteAddedText = stringResource(CoreCommonR.string.favorite_added)
     val favoriteRemovedText = stringResource(CoreCommonR.string.favorite_removed)
@@ -304,12 +321,16 @@ fun NeteaseHomeSongListScreen(
                         item(key = "home-song-list-actions") {
                             PlaylistModernPlaybackActions(
                                 songCount = songs.size,
-                                shuffleEnabled = false,
-                                repeatMode = 0,
-                                onPlayInOrder = { onSongClick(songs, 0) },
-                                onShufflePlay = { onSongClick(songs, 0) },
-                                onToggleShuffle = {},
-                                onCycleRepeatMode = {},
+                                shuffleEnabled = shuffleEnabled,
+                                repeatMode = repeatMode,
+                                onPlayInOrder = { playSection(shuffle = false) },
+                                onShufflePlay = { playSection(shuffle = true) },
+                                onToggleShuffle = {
+                                    PlayerManager.setShuffle(!shuffleEnabled)
+                                },
+                                onCycleRepeatMode = {
+                                    PlayerManager.cycleRepeatMode()
+                                },
                                 onExportToLocalPlaylist = { showExportAllSheet = true }
                             )
                         }
@@ -434,6 +455,9 @@ fun NeteaseHomeSongListScreen(
             }
         )
     }
+
+        // 多选模式下返回键优先退出多选，而不是直接返回上一页。
+        BackHandler(enabled = selectionMode) { exitSelection() }
 
         NeriOverlaySnackbarHost(
             hostState = snackbarHostState,

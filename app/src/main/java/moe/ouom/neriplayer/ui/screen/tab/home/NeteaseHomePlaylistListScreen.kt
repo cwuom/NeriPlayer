@@ -28,8 +28,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
@@ -79,6 +81,7 @@ fun NeteaseHomePlaylistListScreen(
     source: NeteaseHomePlaylistSource,
     onBack: () -> Unit = {},
     onPlaylistClick: (PlaylistSummary) -> Unit = {},
+    gridState: LazyGridState = rememberLazyGridState(),
     offlineMode: Boolean = false
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -198,6 +201,7 @@ fun NeteaseHomePlaylistListScreen(
                 else -> {
                     LazyVerticalGrid(
                         columns = gridColumns,
+                        state = gridState,
                         contentPadding = PaddingValues(
                             start = 16.dp,
                             end = 16.dp,

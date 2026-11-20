@@ -25,18 +25,23 @@ package moe.ouom.neriplayer.ui.screen.tab.home
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** 榜单卡片的封面宽度上限。 */
-private const val HomeSongChartCardMaxWidthDp = 140f
+/**
+ * 榜单卡片的封面宽度上限。
+ *
+ * 该上限只用于避免平板等超宽容器下单张卡片过大；
+ * 每行的卡片数量始终由用户设置的「并排数量」决定。
+ */
+private const val HomeSongChartCardMaxWidthDp = 200f
 
 /**
  * 卡片之间的间距。
@@ -60,6 +65,9 @@ internal data class HomeSongChartCardData(
 
 /**
  * 歌曲类小模块的「榜单卡片」模式。
+ *
+ * 卡片按用户设置的「并排数量」分行排列，每行固定 N 张，
+ * 不再使用横向滚动列表，避免 1 列设置下因为固定宽度上限而露出多张卡片。
  */
 @Composable
 internal fun HomeSongChartCardStrip(
@@ -72,27 +80,52 @@ internal fun HomeSongChartCardStrip(
     val safeColumns = columns.coerceIn(1, 3)
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val spacing = HomeSongChartCardSpacingDp.dp
-        val cardWidth = resolveHomeContinueCardWidthDp(
+        val horizontalPadding = HomeSongChartCardHorizontalPaddingDp.dp
+        val cardWidth = resolveHomeSongChartCardWidthDp(
             containerWidthDp = maxWidth.value,
-            cardsPerPage = safeColumns
-        ).coerceAtMost(HomeSongChartCardMaxWidthDp).dp
-        LazyRow(
+            columns = safeColumns
+        ).dp
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = HomeSongChartCardHorizontalPaddingDp.dp),
-            horizontalArrangement = Arrangement.spacedBy(spacing)
+            verticalArrangement = Arrangement.spacedBy(spacing)
         ) {
-            items(
-                items = cards,
-                key = { card -> card.id }
-            ) { card ->
-                HomeSongChartCard(
-                    card = card,
-                    width = cardWidth,
-                    onClick = { onCardClick(card) }
-                )
+            cards.chunked(safeColumns).forEach { rowCards ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = horizontalPadding),
+                    horizontalArrangement = Arrangement.spacedBy(spacing)
+                ) {
+                    rowCards.forEach { card ->
+                        HomeSongChartCard(
+                            card = card,
+                            width = cardWidth,
+                            onClick = { onCardClick(card) }
+                        )
+                    }
+                }
             }
         }
     }
+}
+
+/**
+ * 计算单张榜单卡片的宽度。
+ *
+ * 宽度由「容器宽度 / 并排数量」直接决定，保证每行恰好放下指定数量的卡片；
+ * 超宽容器下会额外收窄卡片，避免单张卡片铺满整行。
+ */
+internal fun resolveHomeSongChartCardWidthDp(
+    containerWidthDp: Float,
+    columns: Int
+): Float {
+    val slots = columns.coerceAtLeast(1)
+    val availableWidth = (containerWidthDp -
+        HomeSongChartCardHorizontalPaddingDp * 2f -
+        HomeSongChartCardSpacingDp * (slots - 1))
+        .coerceAtLeast(0f)
+    val width = availableWidth / slots
+    return width.coerceAtMost(HomeSongChartCardMaxWidthDp)
 }
 
 /**

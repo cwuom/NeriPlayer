@@ -41,7 +41,7 @@
     <string name="settings_always_use_new_tab_style">始终使用新版 TAB 样式</string>
     <string name="settings_always_use_new_tab_style_desc">无背景图时也使用新版 TAB 样式</string>
     <string name="settings_home_card_netease_trending">热力与榜单</string>
-    <string name="settings_home_card_netease_radar">私人雷达与雷达歌单</string>
+    <string name="settings_home_card_netease_radar">雷达</string>
     <string name="settings_home_card_netease_recommended">推荐歌单</string>
     <string name="settings_personalization_start_section">启动与输入</string>
     <string name="settings_personalization_start_section_desc">设置默认入口和键盘弹出</string>
