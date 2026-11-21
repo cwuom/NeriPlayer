@@ -68,6 +68,7 @@ import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -96,7 +97,7 @@ fun NeteaseHomePlaylistListScreen(
     var refreshToken by remember(source) { mutableIntStateOf(0) }
     val loadFailedTemplate = stringResource(CoreCommonR.string.home_section_load_failed)
 
-    LaunchedEffect(source, refreshToken) {
+    LaunchedEffect(source, refreshToken, offlineMode) {
         // 离线时不得发起远程请求：分类页可以被进程恢复重新挂载，
         // 此时离线状态不应表现为网络错误。
         if (offlineMode) {
@@ -114,6 +115,9 @@ fun NeteaseHomePlaylistListScreen(
                 errorText = null
             }
             .onFailure { error ->
+                // 请求被下一次刷新取消时不是失败：否则第二次刷新成功后
+                // 页面仍会显示上一次请求的取消错误。
+                if (error is CancellationException) throw error
                 val message = error.message ?: error::class.java.simpleName
                 errorText = message
                 // 已有旧歌单时保留列表，只用 Snackbar 提示刷新失败，
