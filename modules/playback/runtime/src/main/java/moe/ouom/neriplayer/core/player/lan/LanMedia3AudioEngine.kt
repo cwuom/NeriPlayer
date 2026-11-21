@@ -13,6 +13,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.lan.LanAction
 import moe.ouom.neriplayer.lanltw.audio.LanAudioState
 import okhttp3.HttpUrl
@@ -49,11 +51,14 @@ internal class LanMedia3AudioEngine(
     private val calls = LanProgressiveCalls(http)
     private val player = ExoPlayer.Builder(context, DefaultRenderersFactory(context)
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON))
-        .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(3_000, 15_000, 600, 1_200).build())
+        .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(
+            REFILL_THRESHOLD_MS, DefaultLoadControl.DEFAULT_MAX_BUFFER_MS, START_BUFFER_MS, REBUFFER_RESUME_MS
+        ).build())
         .setAudioAttributes(AudioAttributes.DEFAULT, handleAudioFocus)
         .build()
     private var generation = 0L
     private var preparing = false
+    private val stalls = LanAudioStallDiagnostics()
     private var activeSource: String? = null
     private var reportedAudioFormat: Format? = null
     val mediaId: String? get() = player.currentMediaItem?.mediaId
@@ -66,6 +71,12 @@ internal class LanMedia3AudioEngine(
     init {
         player.addListener(object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) {
+                if (activeSource != null && stalls.reportRebuffer(
+                        playing = player.isPlaying,
+                        playWhenReady = player.playWhenReady,
+                        buffering = player.playbackState == Player.STATE_BUFFERING
+                    )
+                ) NPLogger.w(LOG_TAG, "media rebuffer ${diagnostics()}")
                 publish()
                 if (activeSource != null && events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && player.playbackState == Player.STATE_ENDED &&
                     player.playWhenReady) {
@@ -84,6 +95,19 @@ internal class LanMedia3AudioEngine(
                 }
             }
         })
+        player.addAnalyticsListener(object : AnalyticsListener {
+            override fun onAudioUnderrun(
+                eventTime: AnalyticsListener.EventTime,
+                bufferSize: Int,
+                bufferSizeMs: Long,
+                elapsedSinceLastFeedMs: Long
+            ) {
+                if (activeSource == null || !stalls.reportUnderrun()) return
+                val sinkBufferMs = bufferSizeMs.takeUnless { it == C.TIME_UNSET }
+                NPLogger.w(LOG_TAG, "audio sink underrun sinkBytes=$bufferSize sinkBufferMs=$sinkBufferMs " +
+                    "elapsedSinceFeedMs=$elapsedSinceLastFeedMs ${diagnostics()}")
+            }
+        })
         scope.launch {
             while (isActive) {
                 if (player.isPlaying) publish()
@@ -96,6 +120,7 @@ internal class LanMedia3AudioEngine(
 
     suspend fun prepare(id: String, url: HttpUrl, bearer: String, mime: String, positionMs: Long): Boolean {
         val ticket = ++generation
+        stalls.resetPlaybackTransition()
         preparing = true
         try {
             player.pause()
@@ -175,6 +200,7 @@ internal class LanMedia3AudioEngine(
         if (target > 0 && player.playbackState == Player.STATE_READY && !seekable) return false
         val current = player.currentPosition
         if (abs(current - target) <= SEEK_TOLERANCE_MS && player.playbackState != Player.STATE_ENDED) return true
+        stalls.resetPlaybackTransition()
         if (target > player.bufferedPosition || target < current - SEEK_TOLERANCE_MS) {
             calls.replaceLoading { player.seekTo(target) }
         } else player.seekTo(target)
@@ -209,7 +235,9 @@ internal class LanMedia3AudioEngine(
         http.connectionPool.evictAll()
     }
 
-    fun diagnostics(): String = "[media3 state=${player.playbackState} playing=${player.isPlaying} positionMs=${player.currentPosition} bufferedMs=${player.bufferedPosition}]"
+    fun diagnostics(): String = "[media3 state=${player.playbackState} playWhenReady=${player.playWhenReady} " +
+        "playing=${player.isPlaying} positionMs=${player.currentPosition} bufferedMs=${player.totalBufferedDuration} " +
+        "rebuffers=${stalls.rebuffers} underruns=${stalls.underruns}]"
 
     private fun publish() {
         if (activeSource == null) return
@@ -227,6 +255,11 @@ internal class LanMedia3AudioEngine(
     private fun now(): Long = SystemClock.elapsedRealtime()
 
     companion object {
+        private const val LOG_TAG = "NERI-LanAudio"
+        // 首播保持低延迟，播放中提前补充数据，断流后积累足够余量再恢复
+        private const val REFILL_THRESHOLD_MS = 15_000
+        private const val START_BUFFER_MS = 600
+        private const val REBUFFER_RESUME_MS = 5_000
         private const val PREPARE_TIMEOUT_MS = 20_000L
         private const val READY_POLL_MS = 20L
         private const val SEEK_TOLERANCE_MS = 20L

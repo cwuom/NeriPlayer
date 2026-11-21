@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.lan.relay
 
 import java.io.ByteArrayInputStream
+import java.io.DataInputStream
 import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
@@ -16,6 +17,48 @@ import org.junit.Test
 
 class LanRelayWindowTest {
     private val bytes = ByteArray(350_123) { (it * 13).toByte() }
+
+    @Test fun twoMembersReadingDifferentRangesKeepTheirSequentialUpstreamConnections() {
+        val block = 64 * 1024
+        val gap = 68 * block
+        val source = ByteArray(gap + 11 * block) { ((it / block + it) % 251).toByte() }
+        val reopened = mutableListOf<Long>()
+        LanRelayWindow(source.size.toLong(), source.inputStream()) { offset ->
+            reopened.add(offset)
+            ByteArrayInputStream(source, offset.toInt(), source.size - offset.toInt())
+        }.use { relay ->
+            DataInputStream(relay.open(0, null).stream).use { first ->
+                DataInputStream(relay.open(gap.toLong(), null).stream).use { second ->
+                    val buffer = ByteArray(block)
+                    repeat(10) { index ->
+                        val at = index * block
+                        first.readFully(buffer)
+                        assertArrayEquals(source.copyOfRange(at, at + block), buffer)
+                        second.readFully(buffer)
+                        assertArrayEquals(source.copyOfRange(gap + at, gap + at + block), buffer)
+                    }
+                }
+            }
+            assertEquals(listOf(gap.toLong()), reopened)
+        }
+    }
+
+    @Test fun repeatedSeeksEvictIdleConnectionsAndRoomCloseReleasesTheRest() {
+        val ranges = 12
+        val block = 64 * 1024
+        val source = ByteArray(2 * ranges * block)
+        val closes = CountDownLatch(ranges)
+        fun open(offset: Int) = object : ByteArrayInputStream(source, offset, source.size - offset) {
+            override fun close() { closes.countDown() }
+        }
+        LanRelayWindow(source.size.toLong(), open(0)) { at -> open(at.toInt()) }.use { relay ->
+            repeat(ranges) { index ->
+                relay.open(2L * index * block, 1).stream.use { assertEquals(0, it.read()) }
+            }
+            assertTrue(closes.count in 1L..4L)
+        }
+        assertTrue(closes.await(5, TimeUnit.SECONDS))
+    }
 
     @Test fun concurrentMembersShareInitialBytesAndSeekWithoutFinishingTheTrack() {
         val consumed = AtomicInteger()

@@ -19,8 +19,8 @@ internal class LanRelayWindow(
     private val stopUpstream: () -> Unit = {},
     private val reopen: (Long) -> InputStream
 ) : Closeable {
-    private data class Cursor(val at: Long, val input: InputStream)
-    private var cursor: Cursor? = Cursor(0L, initial)
+    // 成员的预读位置可能不同，各自顺序读取时可以接着使用原来的上游连接
+    private val cursors = linkedMapOf(0L to initial)
     @Volatile private var length = initialLength
     private var minimumLength = 0L
     private val blocks = LinkedHashMap<Long, ByteArray>(64, .75f, true)
@@ -121,7 +121,7 @@ internal class LanRelayWindow(
         if (wanted == 0) return byteArrayOf()
         val input = synchronized(lock) {
             if (closed) throw IOException("LOCAL_TRANSFER")
-            cursor?.takeIf { it.at == at }?.also { cursor = null }?.input
+            cursors.remove(at)
         } ?: reopen(at)
         var keepOpen = false
         try {
@@ -138,14 +138,15 @@ internal class LanRelayWindow(
             }
             if (expected != null && count < wanted) throw EOFException("LOCAL_TRANSFER")
             val displaced = synchronized(lock) {
-                val old = cursor
                 if (count > 0) minimumLength = maxOf(minimumLength, at + count)
                 if (length == null && count < wanted && at + count == minimumLength) length = minimumLength
                 if (!closed && count == wanted && at + count < (length ?: Long.MAX_VALUE)) {
-                    cursor = Cursor(at + count, input)
                     keepOpen = true
-                }
-                if (keepOpen) old?.input else null
+                    val next = at + count
+                    val previous = cursors.remove(next)
+                    cursors[next] = input
+                    if (cursors.size > WORKERS) cursors.remove(cursors.keys.first()) else previous
+                } else null
             }
             runCatching { displaced?.close() }
             return if (count == wanted) bytes else bytes.copyOf(count)
@@ -159,8 +160,8 @@ internal class LanRelayWindow(
             if (closed) return
             closed = true
             blocks.clear()
-            (cursor?.input to pending.values.toList()).also {
-                cursor = null
+            (cursors.values.toList() to pending.values.toList()).also {
+                cursors.clear()
                 pending.clear()
             }
         }
@@ -169,7 +170,7 @@ internal class LanRelayWindow(
             stopUpstream()
         } finally {
             workers.queue.clear()
-            if (idle != null) workers.execute { runCatching { idle.close() } }
+            if (idle.isNotEmpty()) workers.execute { idle.forEach { runCatching { it.close() } } }
             workers.shutdown()
         }
     }
