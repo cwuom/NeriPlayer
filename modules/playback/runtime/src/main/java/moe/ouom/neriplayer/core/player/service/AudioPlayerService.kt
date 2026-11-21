@@ -987,6 +987,16 @@ class AudioPlayerService : Service() {
                 refreshLyricMetadata()
             }
         }
+        // 「蓝牙外接设备翻译歌词」开关变化时 payload 未必变化: 灵动岛等其它功能开着时
+        // payload 一直带翻译, 收集器不会发新值, 车机上的译文就留着旧的。这里直接观察
+        // 开关本身, 让开关立刻生效。
+        serviceScope.launch {
+            PlayerManager.externalBluetoothTranslationEnabledFlow.collectSafely(
+                "externalBluetoothTranslationEnabledFlow"
+            ) {
+                updateMetadata()
+            }
+        }
         serviceScope.observeColorOsLyricMetadata(
             PlayerManager.colorOsLyricTimelineFlow, PlayerManager.colorOsLockscreenLyricsEnabledFlow,
         ) { refreshLyricMetadata() }

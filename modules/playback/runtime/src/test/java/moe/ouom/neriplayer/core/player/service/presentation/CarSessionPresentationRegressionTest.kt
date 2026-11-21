@@ -22,17 +22,22 @@ import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.anyList
 import org.mockito.ArgumentMatchers.nullable
 import org.mockito.Mockito.RETURNS_SELF
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockConstruction
 import org.mockito.Mockito.mockingDetails
+import org.mockito.Mockito.reset
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
@@ -273,6 +278,70 @@ class CarSessionPresentationRegressionTest {
             val fixture = fixture(source, backgroundScope)
             fixture.owner.updateMetadata()
             assertEquals(0, queueOverrides(fixture.port).size)
+        }
+    }
+
+    /**
+     * 从蓝牙切回扬声器时, 会话队列当前项要恢复成歌名/歌手。
+     * 否则控制器会一直看到上一行歌词, 与随后发布的普通 metadata 对不上。
+     */
+    @Test
+    fun `leaving bluetooth restores the session queue current item to the song title`() = runTest {
+        MetadataBuilders().use { builders ->
+            val current = song(1)
+            val source = FakeSource(playback(listOf(current), 0)).apply {
+                metadataInputs = bluetoothLyrics()
+            }
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
+
+            // 切回扬声器: 路由不再是蓝牙
+            source.metadataInputs = source.metadataInputs.copy(audioDeviceType = null)
+            fixture.owner.updateMetadata()
+
+            val overrides = queueOverrides(fixture.port)
+            assertTrue("切回扬声器后应重新下发队列", overrides.size >= 2)
+            // 最后一次发布不再带覆盖值, 队列当前项回落到歌名/歌手
+            assertNull(overrides.last().first)
+            assertNull(overrides.last().second)
+        }
+    }
+
+    /**
+     * 队列发布失败时, 期望的覆盖值要保留下来。
+     * 下一次队列变化会用这份最新的期望覆盖值重试, 否则会拿旧值重新下发, 队列又和 metadata 对不上。
+     */
+    @Test
+    fun `a failed queue publish keeps the latest override for the next attempt`() = runTest {
+        MetadataBuilders().use {
+            val source = FakeSource(playback(listOf(song(1)), 0)).apply {
+                metadataInputs = bluetoothLyrics()
+            }
+            val fixture = fixture(source, backgroundScope)
+            val port = fixture.port
+            // 第一次发布直接失败
+            doThrow(IllegalStateException("queue rejected"))
+                .`when`(port)
+                .setQueue(anyList(), anyInt(), nullable(String::class.java), nullable(String::class.java))
+
+            fixture.owner.updateMetadata()
+            val failedAttempt = queueOverrides(port).lastOrNull()
+            assertNotNull("失败时应该尝试过发布队列", failedAttempt)
+            val attempt = failedAttempt!!
+            assertNotNull("失败前也应带上期望覆盖值", attempt.first)
+
+            // 之后队列发布恢复正常, 重试时不带显式覆盖值
+            reset(port)
+            fixture.owner.publishCarQueue(
+                songs = listOf(song(1)),
+                selectedIndex = 0,
+            )
+
+            val overrides = queueOverrides(port)
+            assertTrue("失败后应重新发布队列", overrides.isNotEmpty())
+            // 重试时用的是失败前记住的期望覆盖值, 不是 null
+            assertEquals(attempt.first, overrides.last().first)
+            assertEquals(attempt.second, overrides.last().second)
         }
     }
 

@@ -399,8 +399,21 @@ internal class PlaybackServicePresentationOwner(
     ) {
         val bluetoothRoute = audioDeviceType != null && isBluetoothOutputType(audioDeviceType)
         if (!bluetoothRoute) {
+            // 离开蓝牙后要把队列当前项恢复成歌名/歌手, 否则会话里残留着上一行歌词,
+            // 控制器看到的内容与随后发布的普通 metadata 不一致。
+            val hadOverride = queueOverrideTitle != null || queueOverrideSubtitle != null
             queueOverrideTitle = null
             queueOverrideSubtitle = null
+            if (hadOverride) {
+                runCatching {
+                    publishCarQueue(
+                        songs = queue,
+                        selectedIndex = queueIndex,
+                    )
+                }.onFailure { failure ->
+                    logQueueFailureOnce("failed to restore media session queue after leaving bluetooth", failure)
+                }
+            }
             return
         }
         // 队列当前项跟随 metadata 的实际写入值
@@ -439,6 +452,10 @@ internal class PlaybackServicePresentationOwner(
         }
         if (title == lastPublishedQueueTitle && subtitle == lastPublishedQueueSubtitle &&
             lastPublishedQueueSongs === songs && lastPublishedQueueIndex == selectedIndex) return
+        // 覆盖值在发布前就要记住: 发布失败时 lastPublishedQueue* 不更新, 下一次队列变化
+        // 会用这份最新的期望覆盖值重试, 否则会拿旧值重新下发, 队列又和 metadata 对不上。
+        queueOverrideTitle = title
+        queueOverrideSubtitle = subtitle
         port.setQueue(
             songs = songs,
             selectedIndex = selectedIndex,
@@ -446,8 +463,6 @@ internal class PlaybackServicePresentationOwner(
             currentItemSubtitleOverride = subtitle,
         )
         lastPublishedQueueSession = session
-        queueOverrideTitle = title
-        queueOverrideSubtitle = subtitle
         lastPublishedQueueTitle = title
         lastPublishedQueueSubtitle = subtitle
         lastPublishedQueueSongs = songs

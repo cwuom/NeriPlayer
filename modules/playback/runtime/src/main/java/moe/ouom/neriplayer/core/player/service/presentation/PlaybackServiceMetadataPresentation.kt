@@ -52,7 +52,7 @@ internal fun serviceMetadataText(
         payload = effectivePayload,
         useBluetoothLyrics = shouldUseExternalBluetoothLyrics(audioDeviceType, effectivePayload, forceSendLyrics),
         normalAlbum = normalAlbum ?: serviceMetadataAlbum(song),
-        mode = if (audioDeviceType?.let(::isBluetoothOutputType) == true) mode else BluetoothMetadataMode.Lyrics,
+        mode = if (bluetoothRoute) mode else BluetoothMetadataMode.Lyrics,
     )
     return if (colorOsLyricsEnabled) text.copy(
         title = serviceNotificationTitle(song), artist = serviceMetadataArtist(song),

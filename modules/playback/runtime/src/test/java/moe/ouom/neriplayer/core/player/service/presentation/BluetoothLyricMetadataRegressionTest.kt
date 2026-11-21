@@ -75,6 +75,62 @@ class BluetoothLyricMetadataRegressionTest {
         assertFalse(title.contains('\uFFFD'))
     }
 
+    /**
+     * 蓝牙输出时, 「蓝牙外接设备翻译歌词」关闭后 metadata 里不能带翻译。
+     * 开关变化要立刻反映到 metadata, 不能等下一行歌词。
+     */
+    @Test
+    fun `disabling the bluetooth translation switch strips the translation from the metadata`() {
+        val payload = ExternalBluetoothLyricPayload("line", "译文")
+
+        val withTranslation = serviceMetadataText(
+            song = song,
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            forceSendLyrics = true,
+            bluetoothTranslationEnabled = true,
+        )
+        val withoutTranslation = serviceMetadataText(
+            song = song,
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            forceSendLyrics = true,
+            bluetoothTranslationEnabled = false,
+        )
+
+        assertTrue(withTranslation.title.contains("译文"))
+        assertFalse(withoutTranslation.title.contains("译文"))
+        // 歌词本身要保留
+        assertTrue(withoutTranslation.title.contains("line"))
+    }
+
+    /**
+     * 非蓝牙输出时, 翻译开关不影响 metadata: 灵动岛、锁屏歌词等展示面仍然要带翻译。
+     * 非蓝牙时标题只放歌词本身, 译文落在 artist 上, 所以两处都要查。
+     */
+    @Test
+    fun `the bluetooth translation switch does not affect non bluetooth output`() {
+        val payload = ExternalBluetoothLyricPayload("line", "译文")
+
+        val withTranslation = serviceMetadataText(
+            song = song,
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            forceSendLyrics = true,
+            bluetoothTranslationEnabled = true,
+        )
+        val withoutTranslation = serviceMetadataText(
+            song = song,
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            forceSendLyrics = true,
+            bluetoothTranslationEnabled = false,
+        )
+
+        assertTrue(withTranslation.title.contains("译文") || withTranslation.artist.contains("译文"))
+        assertTrue(withoutTranslation.title.contains("译文") || withoutTranslation.artist.contains("译文"))
+    }
+
     private fun metadata(
         payload: ExternalBluetoothLyricPayload,
         route: Int = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,

@@ -462,7 +462,10 @@ object PlayerManager {
     internal var biliCcSubtitleAiOnlyEnabled = true
     internal var statusBarLyricsEnable = false
     internal var externalBluetoothLyricsEnabled = false
-    internal var externalBluetoothTranslationEnabled = false
+    internal val externalBluetoothTranslationEnabledFlow = MutableStateFlow(false)
+    internal var externalBluetoothTranslationEnabled: Boolean
+        get() = externalBluetoothTranslationEnabledFlow.value
+        set(value) { externalBluetoothTranslationEnabledFlow.value = value }
     internal var dynamicIslandLyricsEnabled = false
     internal val colorOsLockscreenLyricsEnabledFlow = MutableStateFlow(false)
     internal var colorOsLockscreenLyricsEnabled: Boolean
