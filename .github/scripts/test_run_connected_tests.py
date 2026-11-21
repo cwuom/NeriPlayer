@@ -417,6 +417,35 @@ class FlakyRetryTest(ConnectedTestsFixture):
                     self.assertEqual(self.run_fixture(runner.main), result)
                 self.assertEqual(status.read_text(), verdict + "\n")
 
+    def test_confirmed_test_failure_stays_failed_when_the_emulator_drops_afterwards(self):
+        status = self.root / runner.LANE_STATUS
+        lane = runner.run_connected_tests
+
+        def then_drop_emulator(root, env):
+            try:
+                return lane(root, env)
+            finally:
+                self.device_state = ""
+
+        first = (1, [self.case(BUSINESS, "flaky"), self.case(name="other")], None)
+        unlink = lambda: (self.output() / "TEST-result.xml").unlink()
+        scenarios = {
+            "over limit": ([(1, [self.case(BUSINESS, name) for name in "abcd"], None)], 1, "failed"),
+            "unsafe identity": ([(1, [self.case(BUSINESS, "flaky[0]")], None)], 1, "failed"),
+            "retry failed": ([first, (1, [self.case(BUSINESS, "flaky")], None)], 2, "failed"),
+            "retry skipped": ([first, (0, [self.case(ASSUMPTION, "flaky")], None)], 2, "failed"),
+            "retry lost its report": ([first, (1, [self.case(name="flaky")], unlink)], 2, "device-lost"),
+        }
+        for label, (attempts, app_runs, verdict) in scenarios.items():
+            with self.subTest(label):
+                self.app_runs = 0
+                self.device_state = "device"
+                self.attempts = attempts
+                with patch.object(runner, "run_connected_tests", side_effect=then_drop_emulator):
+                    self.assertNotEqual(self.run_fixture(runner.main), 0)
+                self.assertEqual(self.app_runs, app_runs)
+                self.assertEqual(status.read_text(), verdict + "\n")
+
 
 if __name__ == "__main__":
     unittest.main()

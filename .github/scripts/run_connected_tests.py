@@ -160,6 +160,13 @@ def device_online(root: Path, env: dict[str, str], serial: str) -> bool:
     return state.returncode == 0 and (state.stdout or "").strip() == "device"
 
 
+def confirm_test_failure(root: Path):
+    # 报告已证明测试本身失败；之后即使模拟器掉线也不能再升级为整道重跑
+    status = root / LANE_STATUS
+    status.parent.mkdir(parents=True, exist_ok=True)
+    status.write_text("failed\n", encoding="utf-8")
+
+
 def recovery_commands(serial: str) -> list[list[str]]:
     return [
         ["adb", "-s", serial, "shell", "am", "force-stop", "moe.ouom.neriplayer.debug"],
@@ -220,7 +227,10 @@ def retry_failed_cases(root: Path, env: dict[str, str], modules: list[str], orig
             cases = read_cases(root, ["app"])
             if set(cases) != {identity}:
                 raise ValueError(f"Isolated retry did not run exactly {class_name}#{name}")
-            case_is_skipped(cases[identity][1], allow_skipped=False)
+            case = cases[identity][1]
+            if any(case.find(tag) is not None for tag in ("failure", "error", "skipped")):
+                confirm_test_failure(root)
+            case_is_skipped(case, allow_skipped=False)
             if result:
                 return result
             retried[identity] = copy.deepcopy(cases[identity][1])
@@ -273,13 +283,15 @@ def run_connected_tests(root: Path, env: dict[str, str]) -> int:
         if not failures_are_focus_only(original):
             print("Lane failure is not exclusively a recognized window-focus readiness failure", flush=True)
             failed = failed_cases(original)
-            if not failed or len(failed) > flaky_retry_limit:
-                return result
-            if not all(TEST_CLASS.fullmatch(class_name) and TEST_METHOD.fullmatch(name)
-                       for _, class_name, name in failed):
+            if not failed:
                 return result
             if not device_online(root, env, serial):
                 print("Emulator is no longer online; isolated retry is not possible", flush=True)
+                return result
+            if len(failed) > flaky_retry_limit or not all(
+                    TEST_CLASS.fullmatch(class_name) and TEST_METHOD.fullmatch(name)
+                    for _, class_name, name in failed):
+                confirm_test_failure(root)
                 return result
             return retry_failed_cases(root, env, modules, original, failed, command)
 
@@ -319,6 +331,8 @@ def main(root: Path, env: dict[str, str]) -> int:
     serial = env.get("ANDROID_SERIAL", "")
     if not result:
         verdict = "passed"
+    elif status.read_text(encoding="utf-8").strip() == "failed":
+        verdict = "failed"
     elif re.fullmatch(r"emulator-\d+", serial) and not device_online(root, env, serial):
         # 工作流只对模拟器丢失的情况整道重跑，测试断言失败保持红灯
         verdict = "device-lost"
