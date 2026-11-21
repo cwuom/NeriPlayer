@@ -3,19 +3,22 @@ package moe.ouom.neriplayer.ui.component.overlay
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import androidx.core.graphics.createBitmap
+import android.graphics.Canvas
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.PixelCopy
 import android.view.Window
+import android.view.WindowManager
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +36,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -42,6 +46,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.core.graphics.createBitmap
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 
 /** 截图按 1/4 分辨率采样，磨砂会抹平细节，换来很小的内存与带宽开销 */
@@ -49,11 +56,7 @@ private const val FrostedDownscale = 0.25f
 private const val FrostedSaturation = 1.8f
 private const val FrostedRevealMillis = 160
 
-/**
- * One capture of the window behind a floating card, used to frost only the card's own area.
- * [originOnScreen] is where the captured window starts on screen; [downscale] maps screen px to
- * capture px
- */
+/** 保留采样时的屏幕原点和缩放比，以便按卡片位置裁剪 */
 @Immutable
 internal class FrostedSnapshot(
     val image: ImageBitmap,
@@ -61,62 +64,54 @@ internal class FrostedSnapshot(
     val downscale: Float
 )
 
-/**
- * Captures the window hosting the caller once when [enabled] turns on (and again for every new
- * [captureKey]). Returns null below Android 12, where RenderEffect blur is unavailable, while the
- * capture is pending, and when it fails; callers then draw a solid card
- */
+/** 按 [captureKey] 采样一次背景，采样不可用时由卡片绘制底色 */
 @Composable
 internal fun rememberFrostedSnapshot(enabled: Boolean, captureKey: Any? = Unit): FrostedSnapshot? {
+    if (!enabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
     val view = LocalView.current
-    var snapshot by remember { mutableStateOf<FrostedSnapshot?>(null) }
-    val active = enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    DisposableEffect(view, active, captureKey) {
-        var disposed = false
-        if (active) {
-            val window = view.findOverlayDialogWindow() ?: view.context.findActivity()?.window
-            if (window != null) {
-                captureFrostedSnapshot(window) { result -> if (!disposed) snapshot = result }
+    val activityWindow = LocalActivity.current?.window ?: view.context.findActivity()?.window ?: return null
+    var snapshot by remember(view, activityWindow, captureKey) { mutableStateOf<FrostedSnapshot?>(null) }
+    LaunchedEffect(view, activityWindow, captureKey) {
+        val dialogWindow = view.findOverlayDialogWindow()
+        val backdrop = captureFrostedSnapshot(activityWindow) ?: return@LaunchedEffect
+        if (dialogWindow != null && dialogWindow !== activityWindow) {
+            val overlay = captureFrostedSnapshot(dialogWindow) ?: return@LaunchedEffect
+            // 面板上方是透明的，需要先合成下方页面，再一起模糊
+            val canvas = Canvas(backdrop.image.asAndroidBitmap())
+            val attributes = dialogWindow.attributes
+            if (attributes.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0) {
+                canvas.drawColor(android.graphics.Color.argb(attributes.dimAmount, 0f, 0f, 0f))
             }
-        } else {
-            snapshot = null
+            val offset = (overlay.originOnScreen - backdrop.originOnScreen) * backdrop.downscale
+            canvas.drawBitmap(overlay.image.asAndroidBitmap(), offset.x, offset.y, null)
         }
-        onDispose { disposed = true }
+        snapshot = backdrop
     }
-    return if (active) snapshot else null
+    return snapshot
 }
 
-private fun captureFrostedSnapshot(window: Window, onResult: (FrostedSnapshot?) -> Unit) {
+private suspend fun captureFrostedSnapshot(window: Window): FrostedSnapshot? {
+    if (window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0) return null
     val decor = window.decorView
     val width = (decor.width * FrostedDownscale).roundToInt()
     val height = (decor.height * FrostedDownscale).roundToInt()
     if (width <= 0 || height <= 0 || !decor.isAttachedToWindow) {
-        onResult(null)
-        return
+        return null
     }
     val location = IntArray(2)
     decor.getLocationOnScreen(location)
     val bitmap = createBitmap(width, height)
     val origin = Offset(location[0].toFloat(), location[1].toFloat())
-    try {
-        PixelCopy.request(
-            window,
-            bitmap,
-            { result ->
-                onResult(
-                    if (result == PixelCopy.SUCCESS) {
-                        FrostedSnapshot(bitmap.asImageBitmap(), origin, FrostedDownscale)
-                    } else {
-                        null
-                    }
-                )
-            },
-            Handler(Looper.getMainLooper())
-        )
+    val result: Int = try {
+        suspendCancellableCoroutine { continuation ->
+            PixelCopy.request(window, bitmap, { continuation.resume(it) }, Handler(Looper.getMainLooper()))
+        }
     } catch (_: IllegalArgumentException) {
         // 窗口尚未有可用 Surface 时 PixelCopy 直接抛出，按纯色卡片处理
-        onResult(null)
+        return null
     }
+    if (result != PixelCopy.SUCCESS) return null
+    return FrostedSnapshot(bitmap.asImageBitmap(), origin, FrostedDownscale)
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
@@ -154,6 +149,7 @@ internal fun BoxScope.FrostedCardBackground(
             Box(
                 Modifier
                     .matchParentSize()
+                    .background(solidColor.copy(alpha = 1f))
                     .graphicsLayer {
                         val radius = blurRadius.toPx()
                         renderEffect = BlurEffect(radius, radius, TileMode.Clamp)
