@@ -147,12 +147,84 @@ class CommentRichTextTest {
         )
     }
 
+    @Test
+    fun `timestamp h m s converts to milliseconds`() {
+        assertEquals(4_341_000L, commentTimestampMs("1", "12", "21"))
+        assertEquals(4_343_000L, commentTimestampMs("01", "12", "23"))
+        assertEquals(3_723_000L, commentTimestampMs("1", "2", "3"))
+    }
+
+    @Test
+    fun `two part timestamp is interpreted as minutes and seconds`() {
+        assertEquals(754_000L, commentTimestampMs("12", "34", null))
+        assertEquals(83_000L, commentTimestampMs("1", "23", null))
+    }
+
+    @Test
+    fun `out of range timestamp is rejected`() {
+        assertEquals(null, commentTimestampMs("12", "75", null))
+        assertEquals(null, commentTimestampMs("1", "12", "88"))
+    }
+
+    @Test
+    fun `h m s timestamp in the middle splits into three segments`() {
+        assertEquals(
+            listOf<CommentTextSegment>(
+                textSegment("高潮在"),
+                timestampSegment("1:12:21", 4_341_000L),
+                textSegment("这里")
+            ),
+            splitCommentContent("高潮在1:12:21这里", emptyList())
+        )
+    }
+
+    @Test
+    fun `plain m s timestamp yields a single timestamp segment`() {
+        assertEquals(
+            listOf<CommentTextSegment>(timestampSegment("12:34", 754_000L)),
+            splitCommentContent("12:34", emptyList())
+        )
+        assertEquals(
+            listOf<CommentTextSegment>(timestampSegment("1:2:3", 3_723_000L)),
+            splitCommentContent("1:2:3", emptyList())
+        )
+    }
+
+    @Test
+    fun `timestamp mixes with emote into alternating segments`() {
+        assertEquals(
+            listOf<CommentTextSegment>(
+                textSegment("前面"),
+                emoteSegment("[doge]"),
+                timestampSegment("1:23", 83_000L),
+                textSegment("后面")
+            ),
+            splitCommentContent("前面[doge]1:23后面", listOf(emoteOf("[doge]")))
+        )
+    }
+
+    @Test
+    fun `invalid or embedded digits are kept as plain text`() {
+        assertEquals(
+            listOf<CommentTextSegment>(textSegment("12:75")),
+            splitCommentContent("12:75", emptyList())
+        )
+        assertEquals(
+            listOf<CommentTextSegment>(textSegment("123:456")),
+            splitCommentContent("123:456", emptyList())
+        )
+    }
+
     /** 构造测试用表情: 标记形如 `[doge]`, 地址由标记推导以便逐条区分 */
     private fun emoteOf(marker: String): CommentEmote =
         CommentEmote(marker, "https://cdn.example.com/${marker.trim('[', ']')}.png")
 
     /** 期望值里的文本段 */
     private fun textSegment(value: String): CommentTextSegment = CommentTextSegment.Text(value)
+
+    /** 期望值里的时间坐标段 */
+    private fun timestampSegment(value: String, positionMs: Long): CommentTextSegment =
+        CommentTextSegment.Timestamp(value, positionMs)
 
     /** 期望值里的表情段, 地址规则与 [emoteOf] 一致 */
     private fun emoteSegment(marker: String): CommentTextSegment =

@@ -1852,7 +1852,16 @@ fun NowPlayingScreen(
                             CommentSheet(
                                 source = commentSource,
                                 offlineMode = offlineMode,
-                                onDismissRequest = { showCommentSheet = false }
+                                onDismissRequest = { showCommentSheet = false },
+                                onTimestampClick = { positionMs ->
+                                    // 复用歌词跳转的越界收敛: 暂停态点击只跳转不恢复播放,
+                                    // 播放态点击保持播放 (seekTo 本身不改变 playWhenReady)
+                                    seekToLyricSafely(
+                                        positionMs = positionMs,
+                                        playbackDurationMs = durationMs,
+                                        songDurationMs = currentSong?.durationMs ?: 0L
+                                    )
+                                }
                             )
                         }
 
