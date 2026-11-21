@@ -59,11 +59,9 @@ internal fun LocalPlaylistBiliPartsPicker(
     onPlayOriginal: () -> Unit,
     onPlayPart: (VideoBasicInfo, Int) -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var video by remember(bvid) { mutableStateOf<VideoBasicInfo?>(null) }
-    var failed by remember(bvid) { mutableStateOf(false) }
+    var failedAttempt by remember(bvid) { mutableStateOf<Int?>(null) }
     var attempt by remember(bvid) { mutableIntStateOf(0) }
-    val dismiss by rememberUpdatedState(onDismiss)
     val playOriginal by rememberUpdatedState(onPlayOriginal)
 
     LaunchedEffect(bvid, attempt) {
@@ -78,22 +76,21 @@ internal fun LocalPlaylistBiliPartsPicker(
         currentCoroutineContext().ensureActive()
         when {
             // 接口业务失败时可能返回一个没有 aid 的空对象
-            info == null || info.aid <= 0L -> failed = true
-            info.pages.size <= 1 -> {
-                dismiss()
-                playOriginal()
-            }
+            info == null || info.aid <= 0L -> failedAttempt = attempt
+            info.pages.size <= 1 -> playOriginal()
             else -> video = info
         }
     }
 
+    val info = video
+    if (info == null && failedAttempt == null) return
+
     DensityScaledModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         sheetGesturesEnabled = false
     ) {
         Column(Modifier.bottomSheetScrollGuard().padding(bottom = 12.dp)) {
-            val info = video
             BiliVideoPartsTitle(info?.title?.ifBlank { title } ?: title)
             HorizontalDivider()
             if (info != null) {
@@ -110,12 +107,9 @@ internal fun LocalPlaylistBiliPartsPicker(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (failed) {
+                    if (failedAttempt == attempt) {
                         Text(stringResource(AppR.string.bili_get_parts_failed))
-                        HapticTextButton(onClick = {
-                            failed = false
-                            attempt++
-                        }) {
+                        HapticTextButton(onClick = { attempt++ }) {
                             Text(stringResource(CoreCommonR.string.action_retry))
                         }
                     } else {
