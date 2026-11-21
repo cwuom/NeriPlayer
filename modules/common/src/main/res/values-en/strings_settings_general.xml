@@ -58,6 +58,10 @@
     <string name="settings_home_trending_visible">Trending and Charts Items</string>
     <string name="settings_home_radar_visible">Radar Items</string>
     <string name="settings_home_recommended_visible">Recommended Playlist Items</string>
+    <string name="settings_home_song_section_mode_default">List</string>
+    <string name="settings_home_song_section_mode_card">Card</string>
+    <string name="settings_home_song_card_columns">Chart Cards per Row</string>
+    <string name="settings_home_song_card_columns_option">%1$d</string>
     <string name="settings_home_sub_section_expand">Expand %1$s sub-sections</string>
     <string name="settings_home_sub_section_collapse">Collapse %1$s sub-sections</string>
     <string name="settings_personalization_playback_info_section">Now Playing Info</string>

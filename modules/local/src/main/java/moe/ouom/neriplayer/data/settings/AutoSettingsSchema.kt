@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.data.settings.appearance.EnhancedAdvancedBlurPreferen
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongCardColumns
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY
@@ -620,6 +621,26 @@ object AutoSettingsSchema {
         )
         val homeRecommendedHidden = autoSetting(
             titleRes = CoreCommonR.string.settings_home_recommended_visible
+        )
+
+        @AutoSetting(
+            key = "home_song_section_mode",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 78,
+            ui = SettingUiType.Custom
+        )
+        val homeSongSectionMode = autoSetting()
+
+        @AutoSetting(
+            key = "home_song_card_columns",
+            type = SettingValueType.Int,
+            defaultInt = HomeSongCardColumns.DEFAULT,
+            order = 79,
+            ui = SettingUiType.Custom
+        )
+        val homeSongCardColumns = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_song_card_columns
         )
     }
 

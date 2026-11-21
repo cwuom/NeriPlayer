@@ -466,7 +466,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     radarHidden = radarHidden
                 )
             }
-            combine(
+            val layoutFlow = combine(
                 sectionOrder,
                 settingsRepo.homeRecommendedOrderFlow,
                 settingsRepo.homeRecommendedHiddenFlow
@@ -474,6 +474,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 layout.copy(
                     recommendedOrder = recommended,
                     recommendedHidden = hidden
+                )
+            }
+            combine(
+                layoutFlow,
+                settingsRepo.homeSongSectionModesFlow,
+                settingsRepo.homeSongCardColumnsFlow
+            ) { layout, songModes, songColumns ->
+                layout.copy(
+                    songSectionModes = songModes,
+                    songCardColumns = songColumns
                 )
             }.collect { layout ->
                 _uiState.update { state -> state.copy(layout = layout) }

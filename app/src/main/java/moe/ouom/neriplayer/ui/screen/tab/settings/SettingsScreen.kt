@@ -576,6 +576,10 @@ internal fun SettingsScreen(
                                     homeStartAvailable = homeStartAvailable,
                                     state = otherState.homeCards,
                                     actions = homeActions,
+                                    songSectionModes = otherState.homeCards.songSectionModes,
+                                    onSetSongSectionMode = homeActions.onSetHomeSongSectionMode,
+                                    songCardColumns = otherState.homeCards.songCardColumns,
+                                    onSetSongCardColumns = homeActions.onSetHomeSongCardColumns,
                                     highlightTargetId = settingsHighlightTargetId,
                                     highlightPulse = settingsHighlightPulse,
                                     onHighlightFinished = onSettingsHighlightFinished

@@ -55,6 +55,17 @@ internal const val HomeScrollKeyNeteaseRadarPlaylists = "home:netease:radar-play
 internal const val HomeScrollKeyNeteaseRadarPlaylistsHeader = "$HomeScrollKeyNeteaseRadarPlaylists:header"
 internal const val HomeScrollKeyNeteaseRadarPlaylistsContent = "$HomeScrollKeyNeteaseRadarPlaylists:content"
 
+/** 处于「榜单卡片」模式的歌曲小模块卡片条。 */
+internal const val HomeScrollKeyNeteaseSongChartCards = "home:netease:song-chart-cards"
+
+/**
+ * 同一个大模块内的歌曲小模块共用一条卡片条。
+ *
+ * 被列表小模块隔开的卡片区间各自成带，因此 key 里带上区间序号。
+ */
+internal fun homeSongChartCardsScrollKey(group: String, runIndex: Int): String =
+    "$HomeScrollKeyNeteaseSongChartCards:$group:$runIndex"
+
 /**
  * 首页 Clean 风格的手机网格：至少两列，避免 20dp 页边距下自适应格只剩一列。
  */

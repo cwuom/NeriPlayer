@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionDisplayMode
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
@@ -377,6 +378,14 @@ internal class AppHomeSettingsActions(
 
     override fun reorderSub(parentId: String, order: List<String>) {
         scope.launch { subOrder.getValue(parentId)(order) }
+    }
+
+    val onSetHomeSongSectionMode: (String, HomeSongSectionDisplayMode) -> Unit = { id, mode ->
+        scope.launch { repo.setHomeSongSectionMode(id, mode) }
+    }
+
+    val onSetHomeSongCardColumns: (Int) -> Unit = { columns ->
+        scope.launch { repo.setHomeSongCardColumns(columns) }
     }
 }
 

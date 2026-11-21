@@ -58,6 +58,10 @@
     <string name="settings_home_trending_visible">热力与榜单显示项</string>
     <string name="settings_home_radar_visible">私人雷达显示项</string>
     <string name="settings_home_recommended_visible">推荐歌单显示项</string>
+    <string name="settings_home_song_section_mode_default">列表</string>
+    <string name="settings_home_song_section_mode_card">卡片</string>
+    <string name="settings_home_song_card_columns">榜单卡片并排数量</string>
+    <string name="settings_home_song_card_columns_option">%1$d 张</string>
     <string name="settings_home_sub_section_expand">展开%1$s子栏目</string>
     <string name="settings_home_sub_section_collapse">收起%1$s子栏目</string>
     <string name="settings_personalization_playback_info_section">播放页信息</string>

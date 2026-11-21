@@ -108,11 +108,15 @@ import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettingsCodec
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongCardColumns
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionDisplayMode
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionHidden
 import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionOrder
+import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSongSectionModes
 import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionHidden
 import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionOrder
+import moe.ouom.neriplayer.data.model.settings.home.parseHomeSongSectionModes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.playback.toAudioEffectsSettings
@@ -610,6 +614,18 @@ class SettingsRepository(private val context: Context) {
     val homeRecommendedHiddenFlow: Flow<Set<String>> =
         autoSettingsRepository.homeRecommendedHiddenFlow.map { raw ->
             parseHomeSectionHidden(raw, HomeRecommendedSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    /** 歌曲类小模块的展示模式（默认列表 / 榜单卡片）。 */
+    val homeSongSectionModesFlow: Flow<Map<String, HomeSongSectionDisplayMode>> =
+        autoSettingsRepository.homeSongSectionModeFlow.map { raw ->
+            parseHomeSongSectionModes(raw)
+        }.distinctUntilChanged()
+
+    /** 榜单卡片并排数量，固定 1 / 2 / 3 三档。 */
+    val homeSongCardColumnsFlow: Flow<Int> =
+        autoSettingsRepository.homeSongCardColumnsFlow.map { raw ->
+            HomeSongCardColumns.normalize(raw)
         }.distinctUntilChanged()
 
     val playbackFadeInFlow: Flow<Boolean> =
@@ -1452,6 +1468,30 @@ class SettingsRepository(private val context: Context) {
             if (visible) hidden.remove(id) else hidden.add(id)
             prefs[key] = encodeHomeSectionHidden(hidden)
         }
+    }
+
+    /**
+     * 原子更新某个歌曲小模块的展示模式。
+     *
+     * 读改写必须放在同一个 DataStore 事务里：否则连续修改两个小模块时，
+     * 两个协程可能读到同一份旧映射，后一次写入会把前一次的选择覆盖掉。
+     */
+    suspend fun setHomeSongSectionMode(id: String, mode: HomeSongSectionDisplayMode) {
+        context.dataStore.edit { prefs ->
+            val current = parseHomeSongSectionModes(
+                prefs[AutoSettingsKeys.HOME_SONG_SECTION_MODE]
+            ).toMutableMap()
+            if (mode == HomeSongSectionDisplayMode.DEFAULT) {
+                current.remove(id)
+            } else {
+                current[id] = mode
+            }
+            prefs[AutoSettingsKeys.HOME_SONG_SECTION_MODE] = encodeHomeSongSectionModes(current)
+        }
+    }
+
+    suspend fun setHomeSongCardColumns(columns: Int) {
+        autoSettingsRepository.setHomeSongCardColumns(HomeSongCardColumns.normalize(columns))
     }
 
     suspend fun setPlaybackFadeIn(enabled: Boolean) {

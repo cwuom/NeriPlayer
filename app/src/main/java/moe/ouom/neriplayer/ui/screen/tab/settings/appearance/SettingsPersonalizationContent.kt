@@ -4,12 +4,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DragHandle
@@ -51,7 +55,11 @@ import moe.ouom.neriplayer.data.model.settings.home.mergeVisibleHomeSectionOrder
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongCardColumns
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionDisplayMode
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.homeSongSectionDisplayModeOf
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.settings.SettingsRepository
@@ -65,6 +73,7 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
@@ -188,6 +197,10 @@ internal fun SettingsPersonalizationHomeCard(
     homeStartAvailable: Boolean,
     state: AppHomeCardsSettingsState,
     actions: HomeSectionSettingsActions,
+    songSectionModes: Map<String, HomeSongSectionDisplayMode> = emptyMap(),
+    onSetSongSectionMode: (String, HomeSongSectionDisplayMode) -> Unit = { _, _ -> },
+    songCardColumns: Int = HomeSongCardColumns.DEFAULT,
+    onSetSongCardColumns: (Int) -> Unit = {},
     highlightTargetId: String?,
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
@@ -219,9 +232,22 @@ internal fun SettingsPersonalizationHomeCard(
                 )
             }
             if (expanded) {
-                row.children?.let { HomeSubSectionList(id, it, actions) }
+                row.children?.let {
+                    HomeSubSectionList(
+                        parentId = id,
+                        sections = it,
+                        actions = actions,
+                        songSectionModes = songSectionModes,
+                        onSetSongSectionMode = onSetSongSectionMode
+                    )
+                }
             }
         }
+
+        HomeSongCardColumnsSetting(
+            columns = songCardColumns,
+            onColumnsChange = onSetSongCardColumns
+        )
 
         LazyAnimatedVisibility(visible = !homeStartAvailable) {
             Text(
@@ -251,7 +277,13 @@ private val homeSubSectionTitles = mapOf(
 )
 
 @Composable
-private fun HomeSubSectionList(parentId: String, sections: HomeSubSections, actions: HomeSectionSettingsActions) {
+private fun HomeSubSectionList(
+    parentId: String,
+    sections: HomeSubSections,
+    actions: HomeSectionSettingsActions,
+    songSectionModes: Map<String, HomeSongSectionDisplayMode> = emptyMap(),
+    onSetSongSectionMode: (String, HomeSongSectionDisplayMode) -> Unit = { _, _ -> }
+) {
     val editor = sections.editor(parentId, actions)
     HomeReorderableColumn(
         items = editor.order,
@@ -260,16 +292,44 @@ private fun HomeSubSectionList(parentId: String, sections: HomeSubSections, acti
     ) { index, id, _ ->
         val visible = id !in sections.hidden
         val title = stringResource(homeSubSectionTitles.getValue(id))
+        val isSongSection = id in HomeSongSectionIds.ALL
         ReorderableItem {
             ListItem(
-                leadingContent = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) },
+                leadingContent = {
+                    Box(
+                        // ListItem 的 leadingContent 槽位自带 16dp 左边距，
+                        // 子模块手柄只有 32dp 宽，这段留白会让手柄与标题离得过远，
+                        // 这里左移半个槽位宽度把间距收回来。
+                        modifier = Modifier.offset(x = (-8).dp)
+                    ) {
+                        HomeReorderHandleIcon(
+                            title = title,
+                            items = editor.order,
+                            index = index,
+                            onReorder = editor.reorder,
+                            nested = true
+                        )
+                    }
+                },
                 headlineContent = {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (visible) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (visible) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        // 歌曲类小模块额外支持「列表 / 卡片」两种展示形态。
+                        if (isSongSection) {
+                            HomeSongSectionDisplayModeSelector(
+                                mode = homeSongSectionDisplayModeOf(songSectionModes, id),
+                                onModeChange = { onSetSongSectionMode(id, it) }
+                            )
+                        }
+                    }
                 },
                 trailingContent = {
                     MiuixSettingsSwitch(
@@ -281,6 +341,72 @@ private fun HomeSubSectionList(parentId: String, sections: HomeSubSections, acti
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
         }
+    }
+}
+
+/**
+ * 歌曲小模块的展示形态选择器。
+ */
+@Composable
+private fun HomeSongSectionDisplayModeSelector(
+    mode: HomeSongSectionDisplayMode,
+    onModeChange: (HomeSongSectionDisplayMode) -> Unit
+) {
+    val labels = listOf(
+        stringResource(CoreCommonR.string.settings_home_song_section_mode_default),
+        stringResource(CoreCommonR.string.settings_home_song_section_mode_card)
+    )
+    val selectedIndex = if (mode == HomeSongSectionDisplayMode.CARD) 1 else 0
+    MiuixSettingsSegmentedTabs(
+        labels = labels,
+        selectedIndex = selectedIndex,
+        onSelectedIndexChange = { index ->
+            onModeChange(
+                if (index == 1) {
+                    HomeSongSectionDisplayMode.CARD
+                } else {
+                    HomeSongSectionDisplayMode.DEFAULT
+                }
+            )
+        },
+        // 固定宽度而不是自适应：分段控件内部按权重平分标签，
+        // 宽度不确定时标签会被压缩成一个圆角小块。
+        modifier = Modifier.width(128.dp),
+        fillWidth = false,
+        unselectedContentColor = MaterialTheme.colorScheme.primary,
+        height = 36.dp
+    )
+}
+
+/**
+ * 榜单卡片的并排数量设置。
+ */
+@Composable
+private fun HomeSongCardColumnsSetting(
+    columns: Int,
+    onColumnsChange: (Int) -> Unit
+) {
+    val safeColumns = HomeSongCardColumns.normalize(columns)
+    val labels = (HomeSongCardColumns.MIN..HomeSongCardColumns.MAX).map { value ->
+        stringResource(CoreCommonR.string.settings_home_song_card_columns_option, value)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+    ) {
+        Text(
+            text = stringResource(CoreCommonR.string.settings_home_song_card_columns),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        MiuixSettingsSegmentedTabs(
+            labels = labels,
+            selectedIndex = safeColumns - HomeSongCardColumns.MIN,
+            onSelectedIndexChange = { index ->
+                onColumnsChange(index + HomeSongCardColumns.MIN)
+            },
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+        )
     }
 }
 
