@@ -81,9 +81,25 @@ class HomeRadarSubSectionOrderTest {
         val personalRadarTop = headerTop(
             moe.ouom.neriplayer.common.R.string.recommend_radar
         )
+        val dailyRecommendTop = headerTop(
+            moe.ouom.neriplayer.common.R.string.home_netease_daily_songs
+        )
+        val privateFmTop = headerTop(
+            moe.ouom.neriplayer.common.R.string.home_netease_private_fm
+        )
         assertTrue(
             "雷达歌单应排在私人雷达之后，实际 radarPlaylist=$radarPlaylistTop personalRadar=$personalRadarTop",
             radarPlaylistTop > personalRadarTop
+        )
+        // 只比较私人雷达是不够的：如果渲染仍然把雷达歌单放在默认第二位，
+        // 上面的断言仍会通过。这里同时确认它位于全部三个歌曲分区之后。
+        assertTrue(
+            "雷达歌单应排在每日推荐之后，实际 radarPlaylist=$radarPlaylistTop dailyRecommend=$dailyRecommendTop",
+            radarPlaylistTop > dailyRecommendTop
+        )
+        assertTrue(
+            "雷达歌单应排在私人 FM 之后，实际 radarPlaylist=$radarPlaylistTop privateFm=$privateFmTop",
+            radarPlaylistTop > privateFmTop
         )
     }
 
@@ -99,9 +115,23 @@ class HomeRadarSubSectionOrderTest {
         val personalRadarTop = headerTop(
             moe.ouom.neriplayer.common.R.string.recommend_radar
         )
+        val dailyRecommendTop = headerTop(
+            moe.ouom.neriplayer.common.R.string.home_netease_daily_songs
+        )
+        val privateFmTop = headerTop(
+            moe.ouom.neriplayer.common.R.string.home_netease_private_fm
+        )
         assertTrue(
             "雷达歌单应排在私人雷达之前，实际 radarPlaylist=$radarPlaylistTop personalRadar=$personalRadarTop",
             radarPlaylistTop < personalRadarTop
+        )
+        assertTrue(
+            "雷达歌单应排在每日推荐之前，实际 radarPlaylist=$radarPlaylistTop dailyRecommend=$dailyRecommendTop",
+            radarPlaylistTop < dailyRecommendTop
+        )
+        assertTrue(
+            "雷达歌单应排在私人 FM 之前，实际 radarPlaylist=$radarPlaylistTop privateFm=$privateFmTop",
+            radarPlaylistTop < privateFmTop
         )
     }
 
