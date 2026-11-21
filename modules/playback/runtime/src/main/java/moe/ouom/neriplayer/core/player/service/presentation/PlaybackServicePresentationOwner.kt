@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.core.player.presentation.widget.shouldPartiallyUpdate
 import moe.ouom.neriplayer.core.player.service.car.carQueueItemId
 import moe.ouom.neriplayer.core.player.service.car.CAR_ACTION_TOGGLE_SHUFFLE
 import moe.ouom.neriplayer.core.player.service.car.CAR_ACTION_CYCLE_REPEAT
+import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import moe.ouom.neriplayer.common.R as CoreCommonR
 
@@ -126,9 +127,21 @@ internal class PlaybackServicePresentationOwner(
     private val playbackStateThrottler = MediaSessionPlaybackStateThrottler()
     private val notificationPublication = PlaybackNotificationPublicationOwner(scope, port, ::withShareUrl)
     private var lastMetadataSnapshot: PlaybackMetadataSnapshot? = null
+    // 上次发布 metadata 时的音频路由, 用于检测路由变化
+    private var lastMetadataAudioDeviceType: Int? = null
+    // 队列当前项的覆盖值, 蓝牙输出下跟随歌词; 非蓝牙输出时为 null
+    private var queueOverrideTitle: String? = null
+    private var queueOverrideSubtitle: String? = null
+    // 已发布到会话队列的内容, 用于跳过重复发布
+    private var lastPublishedQueueTitle: String? = null
+    private var lastPublishedQueueSubtitle: String? = null
+    private var lastPublishedQueueSongs: List<SongItem>? = null
+    private var lastPublishedQueueIndex = -1
+    private var lastPublishedQueueSession: Any? = null
     // 会话拒收过位图的封面, 同一封面后续只发布 URI, 避免每行歌词都重复失败的 Binder 事务
     private var rejectedArtworkCoverSource: String? = null
     private var metadataFailureLogged = false
+    private var queueFailureLogged = false
     private var lyricNotificationRepostPending = false
     private var lastWidgetState: PlaybackWidgetState? = null
     private var favoriteSongKeys: Set<String> = emptySet()
@@ -157,12 +170,23 @@ internal class PlaybackServicePresentationOwner(
 
     fun releaseSessionAfterForegroundFailure(reason: String) {
         stopNotificationUpdates()
+        resetPublishedQueueState()
         port.releaseSessionAfterForegroundFailure(reason)
     }
 
     fun releaseSessionForDestroy() {
         stopNotificationUpdates()
+        resetPublishedQueueState()
         port.releaseSessionForDestroy()
+    }
+
+    /** 会话被释放后, 已发布的队列状态作废, 新会话要重新下发。 */
+    private fun resetPublishedQueueState() {
+        lastPublishedQueueSession = null
+        lastPublishedQueueTitle = null
+        lastPublishedQueueSubtitle = null
+        lastPublishedQueueSongs = null
+        lastPublishedQueueIndex = -1
     }
 
     fun stopNotificationUpdates() = notificationPublication.cancel()
@@ -334,6 +358,7 @@ internal class PlaybackServicePresentationOwner(
             mode = bluetoothMode,
             normalAlbum = metadataInputs.album,
             colorOsLyricsEnabled = metadataInputs.colorOsLyricsEnabled,
+            bluetoothTranslationEnabled = metadataInputs.bluetoothTranslationEnabled,
         )
         val snapshot = serviceMetadataSnapshot(
             song, text, artworkSnapshot, playback.queue.size, playback.queueIndex,
@@ -341,10 +366,92 @@ internal class PlaybackServicePresentationOwner(
             serviceMetadataMediaId(song, playback.queue, playback.queueIndex),
             metadataInputs.colorOsLyricInfo.takeIf { metadataInputs.colorOsLyricsEnabled },
         )
-        if (snapshot == lastMetadataSnapshot) return false
+        // 音频路由变化时 metadata 内容可能不变, 但队列当前项要不要跟随歌词取决于路由,
+        // 所以路由变化要重新对齐一次队列。
+        val routeChanged = metadataInputs.audioDeviceType != lastMetadataAudioDeviceType
+        lastMetadataAudioDeviceType = metadataInputs.audioDeviceType
+        if (snapshot == lastMetadataSnapshot && !routeChanged) return false
         lastMetadataSnapshot = snapshot
+        // 队列要先于 metadata 发布: AOSP 蓝牙栈用队列当前项的 title/artist 判断 metadata
+        // 是否已同步, 不一致时会把这次更新拖进 2 秒超时, 期间的歌词都被丢弃。
+        syncCarQueueCurrentItem(
+            snapshot = snapshot,
+            queue = playback.queue,
+            queueIndex = playback.queueIndex,
+            audioDeviceType = metadataInputs.audioDeviceType,
+        )
         publishMetadata(snapshot, artworkSnapshot)
         return true
+    }
+
+    /**
+     * 蓝牙输出时, 让会话队列当前项与 metadata 的 TITLE/ARTIST 保持一致。
+     *
+     * AOSP 蓝牙栈 MediaPlayerWrapper.isMetadataSynced() 比较队列当前项与当前 metadata 的
+     * title/artist, 不一致时走 CALLBACK_TIMEOUT_MS(2 秒) 超时路径, 期间的所有 metadata 更新
+     * 都被丢弃。
+     */
+    private fun syncCarQueueCurrentItem(
+        snapshot: PlaybackMetadataSnapshot,
+        queue: List<SongItem>,
+        queueIndex: Int,
+        audioDeviceType: Int?,
+    ) {
+        val bluetoothRoute = audioDeviceType != null && isBluetoothOutputType(audioDeviceType)
+        if (!bluetoothRoute) {
+            queueOverrideTitle = null
+            queueOverrideSubtitle = null
+            return
+        }
+        // 队列当前项跟随 metadata 的实际写入值
+        // 队列发布失败不能挡住 metadata, 否则歌词这一行就彻底丢了。
+        runCatching {
+            publishCarQueue(
+                songs = queue,
+                selectedIndex = queueIndex,
+                currentItemTitleOverride = snapshot.title,
+                currentItemSubtitleOverride = snapshot.artist,
+            )
+        }.onFailure { failure ->
+            logQueueFailureOnce("failed to sync media session queue current item", failure)
+        }
+    }
+
+    /**
+     * 发布会话队列。队列当前项的标题在蓝牙输出下要跟随歌词, 这里统一持有覆盖值,
+     * 避免其它路径(换歌、队列变化)把当前项覆盖回歌名。
+     */
+    fun publishCarQueue(
+        songs: List<SongItem>,
+        selectedIndex: Int,
+        currentItemTitleOverride: String? = null,
+        currentItemSubtitleOverride: String? = null,
+    ) {
+        val title = currentItemTitleOverride ?: queueOverrideTitle
+        val subtitle = currentItemSubtitleOverride ?: queueOverrideSubtitle
+        val session = port.sessionIdentity()
+        if (session != null && session !== lastPublishedQueueSession) {
+            // 换了会话, 队列要重新下发。
+            lastPublishedQueueSongs = null
+            lastPublishedQueueIndex = -1
+            lastPublishedQueueTitle = null
+            lastPublishedQueueSubtitle = null
+        }
+        if (title == lastPublishedQueueTitle && subtitle == lastPublishedQueueSubtitle &&
+            lastPublishedQueueSongs === songs && lastPublishedQueueIndex == selectedIndex) return
+        port.setQueue(
+            songs = songs,
+            selectedIndex = selectedIndex,
+            currentItemTitleOverride = title,
+            currentItemSubtitleOverride = subtitle,
+        )
+        lastPublishedQueueSession = session
+        queueOverrideTitle = title
+        queueOverrideSubtitle = subtitle
+        lastPublishedQueueTitle = title
+        lastPublishedQueueSubtitle = subtitle
+        lastPublishedQueueSongs = songs
+        lastPublishedQueueIndex = selectedIndex
     }
 
     private fun publishMetadata(snapshot: PlaybackMetadataSnapshot, artworkSnapshot: PlaybackArtworkSnapshot) {
@@ -364,6 +471,12 @@ internal class PlaybackServicePresentationOwner(
     private fun logMetadataFailureOnce(message: String, failure: Throwable) {
         if (metadataFailureLogged) return
         metadataFailureLogged = true
+        NPLogger.w("NERI-APS", message, failure)
+    }
+
+    private fun logQueueFailureOnce(message: String, failure: Throwable) {
+        if (queueFailureLogged) return
+        queueFailureLogged = true
         NPLogger.w("NERI-APS", message, failure)
     }
 

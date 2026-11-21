@@ -79,7 +79,13 @@ class BluetoothLyricMetadataRegressionTest {
         payload: ExternalBluetoothLyricPayload,
         route: Int = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
     ): MediaMetadata {
-        val text = serviceMetadataText(song, payload, route, forceSendLyrics = true)
+        val text = serviceMetadataText(
+            song = song,
+            payload = payload,
+            audioDeviceType = route,
+            forceSendLyrics = true,
+            bluetoothTranslationEnabled = true,
+        )
         val mediaId = serviceMetadataMediaId(song, listOf(song), 0)
         val snapshot = serviceMetadataSnapshot(song, text, artwork, 1, 0, mediaId = mediaId)
         return serviceMediaMetadata(snapshot, artwork)

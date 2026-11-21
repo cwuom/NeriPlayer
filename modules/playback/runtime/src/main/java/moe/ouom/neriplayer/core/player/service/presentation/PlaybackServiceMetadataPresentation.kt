@@ -34,12 +34,23 @@ internal fun serviceMetadataText(
     mode: BluetoothMetadataMode = BluetoothMetadataMode.SongAndLyrics,
     normalAlbum: String? = null,
     colorOsLyricsEnabled: Boolean = false,
+    bluetoothTranslationEnabled: Boolean = false,
 ): ExternalBluetoothMetadataText {
+    // payload 的翻译由多个歌词展示功能共用(灵动岛、锁屏歌词、悬浮歌词等),
+    // 其他功能开着时 payload 里也会带翻译。车机是否显示翻译只由
+    // 「蓝牙外接设备翻译歌词」决定, 否则开关关掉也关不掉。
+    // 非蓝牙输出(手机扬声器、灵动岛等)不受这个开关影响。
+    val bluetoothRoute = audioDeviceType?.let(::isBluetoothOutputType) == true
+    val effectivePayload = if (bluetoothRoute && !bluetoothTranslationEnabled) {
+        payload.copy(translation = null)
+    } else {
+        payload
+    }
     val text = resolveExternalBluetoothMetadataText(
         normalTitle = serviceNotificationTitle(song),
         normalArtist = serviceMetadataArtist(song),
-        payload = payload,
-        useBluetoothLyrics = shouldUseExternalBluetoothLyrics(audioDeviceType, payload, forceSendLyrics),
+        payload = effectivePayload,
+        useBluetoothLyrics = shouldUseExternalBluetoothLyrics(audioDeviceType, effectivePayload, forceSendLyrics),
         normalAlbum = normalAlbum ?: serviceMetadataAlbum(song),
         mode = if (audioDeviceType?.let(::isBluetoothOutputType) == true) mode else BluetoothMetadataMode.Lyrics,
     )
