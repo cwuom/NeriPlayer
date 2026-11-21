@@ -1450,38 +1450,51 @@ fun PlaylistCard(
 
     val unfavoritedText = stringResource(CoreCommonR.string.home_unfavorited)
     val favoriteSuccessText = stringResource(CoreCommonR.string.favorite_success)
+    val cleanStyle = NeriDesign.isClean
+    val cardShape = if (cleanStyle) NeriDesign.tokens.cardShape else neriRoundedShape(8.dp)
+    val coverRequest = remember(context, playlist.picUrl, offlineMode) {
+        fastScrollableImageRequest(
+            context = context,
+            data = playlist.picUrl,
+            sizePx = 384,
+            offlineMode = offlineMode
+        )
+    }
 
     Column(
         modifier = Modifier
-            .clip(neriRoundedShape(8.dp))
+            .clip(cardShape)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { showMenu = true }
             )
     ) {
-        if (NeriDesign.isClean) {
+        if (cleanStyle) {
+            val backdropRequest = remember(context, playlist.picUrl, offlineMode) {
+                if (playlist.picUrl.isBlank()) {
+                    null
+                } else {
+                    homeFeaturedLabelBackdropRequest(
+                        context = context,
+                        data = playlist.picUrl,
+                        offlineMode = offlineMode
+                    )
+                }
+            }
             HomeFeaturedArtwork(
-                model = fastScrollableImageRequest(
-                    context = context,
-                    data = playlist.picUrl,
-                    sizePx = 384,
-                    offlineMode = offlineMode
-                ),
+                model = coverRequest,
+                backdropModel = backdropRequest,
                 title = playlist.name,
                 subtitle = stringResource(
                     CoreCommonR.string.home_play_count_format,
                     formatPlayCount(context, playlist.playCount),
                     playlist.trackCount
-                )
+                ),
+                clipToCardShape = false
             )
         } else {
             AsyncImage(
-                model = fastScrollableImageRequest(
-                    context = context,
-                    data = playlist.picUrl,
-                    sizePx = 384,
-                    offlineMode = offlineMode
-                ),
+                model = coverRequest,
                 contentDescription = playlist.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

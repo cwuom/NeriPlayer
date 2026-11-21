@@ -1,6 +1,12 @@
 package moe.ouom.neriplayer.ui.theme
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.materialkolor.PaletteStyle
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
@@ -9,7 +15,6 @@ import moe.ouom.neriplayer.ui.effect.glass.resolveLiquidGlassDeviceAllowed
 import moe.ouom.neriplayer.ui.theme.reveal.AppThemeRevealPresentation
 import moe.ouom.neriplayer.ui.theme.reveal.appThemeRevealPresentation
 import moe.ouom.neriplayer.ui.theme.reveal.shouldReverseThemeReveal
-import androidx.compose.ui.geometry.Offset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -82,5 +87,12 @@ class PreviewThemePolicyTest {
         assertFalse(neriDesignTokensFor(UiStyle.Material).isClean)
         assertTrue(neriDesignTokensFor(UiStyle.Clean).isClean)
         assertTrue(neriDesignTokensFor(UiStyle.Clean).pressScaleEnabled)
+        assertTrue(CleanDesignTokens.cardShape is RoundedCornerShape)
+        val outline = CleanDesignTokens.cardShape.createOutline(
+            Size(700f, 912f),
+            LayoutDirection.Ltr,
+            Density(1f)
+        )
+        assertTrue("Scrolling card shape must use analytic Outline.Rounded", outline is Outline.Rounded)
     }
 }

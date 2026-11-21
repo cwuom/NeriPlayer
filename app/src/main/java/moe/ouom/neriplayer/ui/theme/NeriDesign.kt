@@ -63,7 +63,7 @@ internal val MaterialDesignTokens = NeriDesignTokens(
 
 internal val CleanDesignTokens = NeriDesignTokens(
     style = UiStyle.Clean,
-    cardShape = ContinuousRoundedCornerShape(20.dp),
+    cardShape = RoundedCornerShape(20.dp),
     groupShape = ContinuousRoundedCornerShape(22.dp),
     controlShape = CircleShape,
     chipShape = CircleShape,

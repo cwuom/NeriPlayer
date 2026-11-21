@@ -26,12 +26,17 @@ internal fun cleanCornerRadiusFor(materialRadius: Dp): Dp = when {
     else -> materialRadius
 }
 
-/** Style-aware replacement for `RoundedCornerShape(radius)` on pages that support both styles. */
+/**
+ * Style-aware replacement for `RoundedCornerShape(radius)` on pages that support both styles.
+ * Clean style scales up small radii while keeping analytic [RoundedCornerShape] outlines so
+ * scrolling lists stay on the GPU clip fast path instead of triggering per-frame software path
+ * mask uploads under Skia/OpenGL.
+ */
 @Composable
 @ReadOnlyComposable
 fun neriRoundedShape(radius: Dp): CornerBasedShape =
     if (LocalNeriDesign.current.isClean) {
-        ContinuousRoundedCornerShape(cleanCornerRadiusFor(radius))
+        RoundedCornerShape(cleanCornerRadiusFor(radius))
     } else {
         RoundedCornerShape(radius)
     }
@@ -45,7 +50,7 @@ fun neriRoundedShape(
     bottomStart: Dp = 0.dp
 ): CornerBasedShape =
     if (LocalNeriDesign.current.isClean) {
-        ContinuousRoundedCornerShape(
+        RoundedCornerShape(
             topStart = cleanCornerRadiusFor(topStart),
             topEnd = cleanCornerRadiusFor(topEnd),
             bottomEnd = cleanCornerRadiusFor(bottomEnd),
