@@ -236,6 +236,7 @@ fun HomeScreen(
     val downloadedPlaybackCoverCandidates = remember(downloadedSongs) {
         homeLocalFilesCoverCandidates(downloadedSongs)
     }
+    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
     val favoriteKeys = remember(favorites) {
         favorites.mapTo(mutableSetOf()) { "${it.source}:${it.id}" }
     }
@@ -598,6 +599,7 @@ fun HomeScreen(
                                     title = guessYouLikeTitle,
                                     onSongClick = onSongClick,
                                     favoriteSongLookup = favoriteSongLookup,
+                                    downloadPresenceVersion = downloadPresenceVersion,
                                     onFavoriteToggle = ::toggleHomeSongFavorite,
                                     onShowSnackbar = showHomeSnackbar,
                                     offlineMode = offlineMode
@@ -613,6 +615,7 @@ fun HomeScreen(
                                     title = dailyDiscoverTitle,
                                     onSongClick = onSongClick,
                                     favoriteSongLookup = favoriteSongLookup,
+                                    downloadPresenceVersion = downloadPresenceVersion,
                                     onFavoriteToggle = ::toggleHomeSongFavorite,
                                     onShowSnackbar = showHomeSnackbar,
                                     offlineMode = offlineMode
@@ -688,6 +691,7 @@ fun HomeScreen(
                                                     title = shelf.title,
                                                     onSongClick = onSongClick,
                                                     favoriteSongLookup = favoriteSongLookup,
+                                                    downloadPresenceVersion = downloadPresenceVersion,
                                                     onFavoriteToggle = ::toggleHomeSongFavorite,
                                                     onShowSnackbar = showHomeSnackbar,
                                                     offlineMode = offlineMode
@@ -804,6 +808,7 @@ fun HomeScreen(
                                         loadingText = homeLoadingText,
                                         onSongClick = onSongClick,
                                         favoriteSongLookup = favoriteSongLookup,
+                                        downloadPresenceVersion = downloadPresenceVersion,
                                         onFavoriteToggle = ::toggleHomeSongFavorite,
                                         onShowSnackbar = showHomeSnackbar,
                                         offlineMode = offlineMode
@@ -861,6 +866,7 @@ fun HomeScreen(
                                             loadingText = homeLoadingText,
                                             onSongClick = onSongClick,
                                             favoriteSongLookup = favoriteSongLookup,
+                                            downloadPresenceVersion = downloadPresenceVersion,
                                             onFavoriteToggle = ::toggleHomeSongFavorite,
                                             onShowSnackbar = showHomeSnackbar,
                                             offlineMode = offlineMode
@@ -887,6 +893,7 @@ fun HomeScreen(
                                         loadingText = homeLoadingText,
                                         onSongClick = onSongClick,
                                         favoriteSongLookup = favoriteSongLookup,
+                                        downloadPresenceVersion = downloadPresenceVersion,
                                         onFavoriteToggle = ::toggleHomeSongFavorite,
                                         onShowSnackbar = showHomeSnackbar,
                                         offlineMode = offlineMode
@@ -969,6 +976,7 @@ private fun LazyGridScope.addNeteaseSongSection(
     loadingText: String,
     onSongClick: (List<SongItem>, Int) -> Unit,
     favoriteSongLookup: FavoriteSongLookup,
+    downloadPresenceVersion: Int,
     onFavoriteToggle: (SongItem, Boolean) -> Unit,
     onShowSnackbar: (String) -> Unit,
     offlineMode: Boolean
@@ -999,6 +1007,7 @@ private fun LazyGridScope.addNeteaseSongSection(
                 songs = sectionState.section.items,
                 onSongClick = onSongClick,
                 favoriteSongLookup = favoriteSongLookup,
+                downloadPresenceVersion = downloadPresenceVersion,
                 onFavoriteToggle = onFavoriteToggle,
                 onShowSnackbar = onShowSnackbar,
                 offlineMode = offlineMode
@@ -1114,12 +1123,25 @@ private fun SectionErrorState(detail: String) {
     }
 }
 
+internal fun shouldUseHomeOnlineRemoteCoverFastPath(
+    directCover: String?,
+    hasDownloadedCopy: Boolean
+): Boolean = !hasDownloadedCopy &&
+    !directCover.isNullOrBlank() &&
+    isRemoteImageSource(directCover)
+
 @Composable
-private fun rememberHomeOnlineSongCoverUrl(song: SongItem): String? {
+private fun rememberHomeOnlineSongCoverUrl(
+    song: SongItem,
+    downloadPresenceVersion: Int
+): String? {
     val directCover = remember(song.customCoverUrl, song.coverUrl, song.originalCoverUrl) {
         song.displayCoverUrl()?.trim()?.takeIf(String::isNotBlank)
     }
-    return if (directCover != null && isRemoteImageSource(directCover)) {
+    val hasDownloadedCopy = remember(song, downloadPresenceVersion) {
+        GlobalDownloadManager.hasDownloadedSongCached(song)
+    }
+    return if (shouldUseHomeOnlineRemoteCoverFastPath(directCover, hasDownloadedCopy)) {
         directCover
     } else {
         rememberSongDisplayCoverUrl(song)
@@ -1132,12 +1154,13 @@ private fun SongRowMini(
     song: SongItem,
     onClick: () -> Unit,
     isFavorite: Boolean,
+    downloadPresenceVersion: Int,
     onFavoriteToggle: (SongItem, Boolean) -> Unit,
     onShowSnackbar: (String) -> Unit,
     offlineMode: Boolean
 ) {
     val context = LocalContext.current
-    val coverUrl = rememberHomeOnlineSongCoverUrl(song)
+    val coverUrl = rememberHomeOnlineSongCoverUrl(song, downloadPresenceVersion)
     val coverRequest = remember(context, coverUrl, offlineMode) {
         coverUrl?.let { url ->
             fastScrollableImageRequest(
@@ -1773,6 +1796,7 @@ private fun LazyGridScope.addYouTubeMusicSongShelfSection(
     title: String,
     onSongClick: (List<SongItem>, Int) -> Unit,
     favoriteSongLookup: FavoriteSongLookup,
+    downloadPresenceVersion: Int,
     onFavoriteToggle: (SongItem, Boolean) -> Unit,
     onShowSnackbar: (String) -> Unit,
     offlineMode: Boolean
@@ -1812,6 +1836,7 @@ private fun LazyGridScope.addYouTubeMusicSongShelfSection(
             songs = songs,
             onSongClick = onSongClick,
             favoriteSongLookup = favoriteSongLookup,
+            downloadPresenceVersion = downloadPresenceVersion,
             onFavoriteToggle = onFavoriteToggle,
             onShowSnackbar = onShowSnackbar,
             offlineMode = offlineMode
@@ -1824,6 +1849,7 @@ private fun ResponsiveSongPagerList(
     songs: List<SongItem>,
     onSongClick: (List<SongItem>, Int) -> Unit,
     favoriteSongLookup: FavoriteSongLookup,
+    downloadPresenceVersion: Int,
     onFavoriteToggle: (SongItem, Boolean) -> Unit,
     onShowSnackbar: (String) -> Unit,
     offlineMode: Boolean
@@ -1868,6 +1894,7 @@ private fun ResponsiveSongPagerList(
                                 song = song,
                                 onClick = { onSongClick(songs, absoluteIndex) },
                                 isFavorite = favoriteSongLookup.contains(song),
+                                downloadPresenceVersion = downloadPresenceVersion,
                                 onFavoriteToggle = onFavoriteToggle,
                                 onShowSnackbar = onShowSnackbar,
                                 offlineMode = offlineMode

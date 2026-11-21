@@ -10,6 +10,7 @@ import coil.request.CachePolicy
 import coil.size.Size
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -93,5 +94,33 @@ class HomeCleanComponentsTest {
         assertEquals(CachePolicy.ENABLED, online.networkCachePolicy)
         assertEquals(CachePolicy.DISABLED, offline.networkCachePolicy)
         assertTrue(HomeFeaturedBackdropBlurTransformation.cacheKey.isNotBlank())
+    }
+
+    @Test
+    fun remoteCoverFastPathSkipsDownloadedAndLocalCovers() {
+        assertTrue(
+            shouldUseHomeOnlineRemoteCoverFastPath(
+                directCover = "https://example.com/cover.jpg",
+                hasDownloadedCopy = false
+            )
+        )
+        assertFalse(
+            shouldUseHomeOnlineRemoteCoverFastPath(
+                directCover = "https://example.com/cover.jpg",
+                hasDownloadedCopy = true
+            )
+        )
+        assertFalse(
+            shouldUseHomeOnlineRemoteCoverFastPath(
+                directCover = "content://media/external/audio/albumart/1",
+                hasDownloadedCopy = false
+            )
+        )
+        assertFalse(
+            shouldUseHomeOnlineRemoteCoverFastPath(
+                directCover = null,
+                hasDownloadedCopy = false
+            )
+        )
     }
 }
