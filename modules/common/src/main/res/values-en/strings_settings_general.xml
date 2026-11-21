@@ -41,7 +41,7 @@
     <string name="settings_always_use_new_tab_style">Always Use the New Tab Style</string>
     <string name="settings_always_use_new_tab_style_desc">Use the new tab style even without a background image.</string>
     <string name="settings_home_card_netease_trending">Trending and Charts</string>
-    <string name="settings_home_card_netease_radar">Personal Radar and Radar Playlists</string>
+    <string name="settings_home_card_netease_radar">Radar</string>
     <string name="settings_home_card_netease_recommended">Recommended Playlists</string>
     <string name="settings_personalization_start_section">Start and Input</string>
     <string name="settings_personalization_start_section_desc">Set the default entry and keyboard behavior.</string>
@@ -62,6 +62,8 @@
     <string name="settings_home_song_section_mode_card">Chart Card</string>
     <string name="settings_home_song_card_columns">Chart Cards per Row</string>
     <string name="settings_home_song_card_columns_option">%1$d</string>
+    <string name="settings_home_sub_section_expand">Expand %1$s sub-sections</string>
+    <string name="settings_home_sub_section_collapse">Collapse %1$s sub-sections</string>
     <string name="settings_personalization_playback_info_section">Now Playing Info</string>
     <string name="settings_personalization_playback_info_section_desc">Control title, source, cover lyrics, and progress info.</string>
     <string name="settings_personalization_playback_controls_section">Now Playing Controls</string>

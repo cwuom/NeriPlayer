@@ -358,9 +358,14 @@ internal fun HomeHostScreen(
         }
     }
 
-    // 清理历史遗留的榜单「继续播放」条目
+    // 清理历史遗留的榜单「继续播放」条目。
+    // 旧版本从首页歌曲小模块钻取到歌单详情页时会把榜单写进「继续播放」，
+    // 现在钻取统一走通用歌曲列表页，不再写入，因此存量条目需要清一次。
+    // 清理必须是一次性的，否则用户后续主动打开榜单产生的记录会被反复删除。
     LaunchedEffect(homeUsageLoaded) {
         if (!homeUsageLoaded) return@LaunchedEffect
+        val pending = AppContainer.settingsRepo.consumeHomeChartUsageCleanupFlag()
+        if (!pending) return@LaunchedEffect
         HomeSectionIdMapping.chartPlaylistIds.forEach { playlistId ->
             AppContainer.playlistUsageRepo.removeEntry(playlistId, "netease")
         }
@@ -709,7 +714,12 @@ internal fun HomeHostScreen(
                             is HomeSelectedItem.NeteasePlaylistSection -> {
                                 NeteaseHomePlaylistListScreen(
                                     source = current.source,
-                                    onBack = { selected = null },
+                                    onBack = {
+                                        // 顶栏返回也要取消未完成的封面预热，
+                                        // 否则预热完成后会把歌单详情页重新打开。
+                                        cancelPendingNeteaseCoverWarmup()
+                                        selected = null
+                                    },
                                     gridState = runtimeState.playlistSectionGridState(current.source),
                                     onPlaylistClick = { playlist ->
                                         skipDetailCloseAnimation = false

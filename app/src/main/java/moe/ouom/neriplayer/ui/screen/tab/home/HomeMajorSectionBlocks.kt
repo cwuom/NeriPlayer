@@ -120,7 +120,7 @@ internal fun HomeNeteaseSongSectionState.toChartCardDraft(id: String): HomeSongC
 /**
  * 一个大模块内所有「榜单卡片」形态的小模块。
  *
- * 榜单卡片最终渲染为一条整体卡片带，因此需要先知道哪些小模块是卡片形态，
+ * 榜单卡片最终渲染成一条整体卡片带，因此需要先知道哪些小模块是卡片形态，
  * 才能把这条卡片带放到「第一个卡片形态小模块」所处的位置，从而保证用户配置的
  * 小模块顺序被真正遵守。
  */
@@ -129,6 +129,8 @@ internal data class HomeSongChartCardGroup(
     val cardIds: Set<String>,
     /** 按配置顺序排列的卡片数据。 */
     val cards: List<HomeSongChartCardData>,
+    /** 卡片 id 到卡片数据的映射。 */
+    val cardsById: Map<String, HomeSongChartCardData>,
     /** 卡片 id 到对应网易云来源的映射。 */
     val sources: Map<String, NeteaseHomeSongSource>
 )
@@ -144,20 +146,53 @@ internal fun collectHomeSongChartCardGroup(
 ): HomeSongChartCardGroup {
     val cardIds = LinkedHashSet<String>()
     val cards = mutableListOf<HomeSongChartCardData>()
+    val cardsById = mutableMapOf<String, HomeSongChartCardData>()
     val sources = mutableMapOf<String, NeteaseHomeSongSource>()
     visibleIds.forEach { id ->
         if (!isChartCardMode(id)) return@forEach
         val source = sourceOf(id) ?: return@forEach
         val sectionState = sectionStateOf(source) ?: return@forEach
         cardIds += id
-        cards += sectionState.toChartCardDraft(id)
+        val card = sectionState.toChartCardDraft(id)
+        cards += card
+        cardsById[id] = card
         sources[id] = source
     }
     return HomeSongChartCardGroup(
         cardIds = cardIds,
         cards = cards,
+        cardsById = cardsById,
         sources = sources
     )
+}
+
+/**
+ * 把可见小模块按「连续卡片区间」切分。
+ *
+ * 卡片带只能合并相邻的卡片形态小模块：若两个卡片小模块之间隔了列表形态的小模块
+ * （例如「私人雷达（卡片）→ 雷达歌单 → 每日推荐（卡片）」），把它们并到同一条卡片带
+ * 会让其中一个卡片越过中间的小模块，破坏用户配置的顺序。
+ *
+ * 返回的每一段都是一段连续的卡片 id，且段内顺序与 [visibleIds] 一致。
+ */
+internal fun splitHomeSongChartCardRuns(
+    visibleIds: List<String>,
+    cardIds: Set<String>
+): List<List<String>> {
+    val runs = mutableListOf<List<String>>()
+    var current = mutableListOf<String>()
+    visibleIds.forEach { id ->
+        if (cardIds.contains(id)) {
+            current += id
+            return@forEach
+        }
+        if (current.isNotEmpty()) {
+            runs += current
+            current = mutableListOf()
+        }
+    }
+    if (current.isNotEmpty()) runs += current
+    return runs
 }
 
 /**
@@ -236,25 +271,30 @@ internal fun LazyGridScope.addHomeTrendingBlock(env: HomeMajorSectionEnv) {
             env.ui.trendingSongSections.firstOrNull { it.source == source }
         }
     )
-    var cardStripRendered = false
+    // 卡片带只合并相邻的卡片形态小模块：被列表模块隔开的卡片要各自成带，
+    // 否则卡片会越过中间的小模块，破坏用户配置的顺序。
+    val cardRuns = splitHomeSongChartCardRuns(visibleIds, cardGroup.cardIds)
+    val runIndexById = cardRuns.flatMapIndexed { index, run ->
+        run.map { it to index }
+    }.toMap()
     visibleIds.forEach { id ->
-        val source = HomeSectionIdMapping.trendingSourceOf(id) ?: return@forEach
-        val sectionState = env.ui.trendingSongSections.firstOrNull { it.source == source }
-            ?: return@forEach
-        if (cardGroup.cardIds.contains(id)) {
-            // 榜单卡片统一渲染成一条卡片带，放在第一个卡片形态小模块所在的位置，
-            // 这样用户配置的小模块顺序才能被真正遵守。
-            if (!cardStripRendered) {
-                cardStripRendered = true
+        val runIndex = runIndexById[id]
+        if (runIndex != null) {
+            // 榜单卡片统一渲染成一条卡片带，放在该连续区间首个卡片小模块所在的位置。
+            if (id == cardRuns[runIndex].first()) {
                 addHomeSongChartCardBlock(
                     env = env,
                     group = "trending",
-                    cards = cardGroup.cards,
+                    runIndex = runIndex,
+                    cards = cardRuns[runIndex].mapNotNull { cardGroup.cardsById[it] },
                     sources = cardGroup.sources
                 )
             }
             return@forEach
         }
+        val source = HomeSectionIdMapping.trendingSourceOf(id) ?: return@forEach
+        val sectionState = env.ui.trendingSongSections.firstOrNull { it.source == source }
+            ?: return@forEach
         addNeteaseSongSection(
             sectionKey = homeNeteaseSongSectionKey(group = "trending", source = source),
             registerKey = env.registerKey,
@@ -267,14 +307,6 @@ internal fun LazyGridScope.addHomeTrendingBlock(env: HomeMajorSectionEnv) {
             onShowSnackbar = env.onShowSnackbar,
             offlineMode = env.offlineMode,
             onHeaderClick = { env.onSongSectionMore(source) }
-        )
-    }
-    if (!cardStripRendered) {
-        addHomeSongChartCardBlock(
-            env = env,
-            group = "trending",
-            cards = cardGroup.cards,
-            sources = cardGroup.sources
         )
     }
 }
@@ -297,29 +329,34 @@ internal fun LazyGridScope.addHomeRadarBlock(env: HomeMajorSectionEnv) {
             env.ui.radarSongSections.firstOrNull { it.source == source }
         }
     )
-    var cardStripRendered = false
+    // 卡片带只合并相邻的卡片形态小模块：被列表模块隔开的卡片要各自成带，
+    // 否则卡片会越过中间的小模块（例如「雷达歌单」），破坏用户配置的顺序。
+    val cardRuns = splitHomeSongChartCardRuns(visibleIds, cardGroup.cardIds)
+    val runIndexById = cardRuns.flatMapIndexed { index, run ->
+        run.map { it to index }
+    }.toMap()
     visibleIds.forEach { id ->
         if (id == HomeRadarSubSectionIds.RADAR_PLAYLISTS) {
             addHomeRadarPlaylistBlock(env)
             return@forEach
         }
-        val source = HomeSectionIdMapping.radarSourceOf(id) ?: return@forEach
-        val sectionState = env.ui.radarSongSections.firstOrNull { it.source == source }
-            ?: return@forEach
-        if (cardGroup.cardIds.contains(id)) {
-            // 榜单卡片统一渲染成一条卡片带，放在第一个卡片形态小模块所在的位置，
-            // 这样用户配置的小模块顺序才能被真正遵守。
-            if (!cardStripRendered) {
-                cardStripRendered = true
+        val runIndex = runIndexById[id]
+        if (runIndex != null) {
+            // 榜单卡片统一渲染成一条卡片带，放在该连续区间首个卡片小模块所在的位置。
+            if (id == cardRuns[runIndex].first()) {
                 addHomeSongChartCardBlock(
                     env = env,
                     group = "radar",
-                    cards = cardGroup.cards,
+                    runIndex = runIndex,
+                    cards = cardRuns[runIndex].mapNotNull { cardGroup.cardsById[it] },
                     sources = cardGroup.sources
                 )
             }
             return@forEach
         }
+        val source = HomeSectionIdMapping.radarSourceOf(id) ?: return@forEach
+        val sectionState = env.ui.radarSongSections.firstOrNull { it.source == source }
+            ?: return@forEach
         addNeteaseSongSection(
             sectionKey = homeNeteaseSongSectionKey(group = "radar", source = source),
             registerKey = env.registerKey,
@@ -334,14 +371,6 @@ internal fun LazyGridScope.addHomeRadarBlock(env: HomeMajorSectionEnv) {
             onHeaderClick = { env.onSongSectionMore(source) }
         )
     }
-    if (!cardStripRendered) {
-        addHomeSongChartCardBlock(
-            env = env,
-            group = "radar",
-            cards = cardGroup.cards,
-            sources = cardGroup.sources
-        )
-    }
 }
 
 /**
@@ -350,12 +379,13 @@ internal fun LazyGridScope.addHomeRadarBlock(env: HomeMajorSectionEnv) {
 internal fun LazyGridScope.addHomeSongChartCardBlock(
     env: HomeMajorSectionEnv,
     group: String,
+    runIndex: Int,
     cards: List<HomeSongChartCardData>,
     sources: Map<String, NeteaseHomeSongSource>
 ) {
     if (cards.isEmpty()) return
     item(
-        key = env.registerKey(homeSongChartCardsScrollKey(group)),
+        key = env.registerKey(homeSongChartCardsScrollKey(group, runIndex)),
         span = { GridItemSpan(maxLineSpan) }
     ) {
         HomeSongChartCardStrip(

@@ -244,10 +244,22 @@ internal fun SettingsPersonalizationHomeCard(
                     },
                     trailingExtra = if (hasSubs) {
                         {
+                            val expandDescription = stringResource(
+                                CoreCommonR.string.settings_home_sub_section_expand,
+                                title
+                            )
+                            val collapseDescription = stringResource(
+                                CoreCommonR.string.settings_home_sub_section_collapse,
+                                title
+                            )
                             IconButton(onClick = { expanded = !expanded }) {
                                 androidx.compose.material3.Icon(
                                     imageVector = Icons.Filled.ExpandMore,
-                                    contentDescription = null,
+                                    contentDescription = if (expanded) {
+                                        collapseDescription
+                                    } else {
+                                        expandDescription
+                                    },
                                     modifier = Modifier.graphicsLayer {
                                         rotationZ = if (expanded) 180f else 0f
                                     }

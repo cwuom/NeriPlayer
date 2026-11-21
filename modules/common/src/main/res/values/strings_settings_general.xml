@@ -41,7 +41,7 @@
     <string name="settings_always_use_new_tab_style">始终使用新版 TAB 样式</string>
     <string name="settings_always_use_new_tab_style_desc">无背景图时也使用新版 TAB 样式</string>
     <string name="settings_home_card_netease_trending">热力与榜单</string>
-    <string name="settings_home_card_netease_radar">私人雷达与雷达歌单</string>
+    <string name="settings_home_card_netease_radar">雷达</string>
     <string name="settings_home_card_netease_recommended">推荐歌单</string>
     <string name="settings_personalization_start_section">启动与输入</string>
     <string name="settings_personalization_start_section_desc">设置默认入口和键盘弹出</string>
@@ -62,6 +62,8 @@
     <string name="settings_home_song_section_mode_card">榜单卡片</string>
     <string name="settings_home_song_card_columns">榜单卡片并排数量</string>
     <string name="settings_home_song_card_columns_option">%1$d 张</string>
+    <string name="settings_home_sub_section_expand">展开%1$s子栏目</string>
+    <string name="settings_home_sub_section_collapse">收起%1$s子栏目</string>
     <string name="settings_personalization_playback_info_section">播放页信息</string>
     <string name="settings_personalization_playback_info_section_desc">控制标题、来源、封面歌词和进度条信息</string>
     <string name="settings_personalization_playback_controls_section">播放页控制</string>

@@ -364,7 +364,11 @@ private val PersonalizationHomeTargets = setOf(
     "setting:home_card_trending",
     "setting:home_card_radar",
     "setting:home_card_recommended",
-    "setting:home_card_bilibili"
+    "setting:home_card_bilibili",
+    // 榜单卡片列数与歌曲小模块展示模式都属于首页卡片配置，
+    // 缺少映射时搜索会定位到索引 0 的「启动卡片」。
+    "setting:home_song_card_columns",
+    "setting:home_song_section_mode"
 )
 
 private val PersonalizationPlaybackInfoTargets = setOf(
