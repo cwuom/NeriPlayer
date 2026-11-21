@@ -149,14 +149,8 @@ internal fun YtMusicPlaylistCard(
     offlineMode: Boolean
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
-    val playlistFavoriteId = remember(playlist.playlistId, playlist.browseId) {
-        playlist.favoriteId()
-    }
     var showMenu by remember { mutableStateOf(false) }
-    val unfavoritedText = stringResource(CoreCommonR.string.home_unfavorited)
-    val favoriteSuccessText = stringResource(CoreCommonR.string.favorite_success)
+    var menuMounted by remember { mutableStateOf(false) }
     val cleanStyle = NeriDesign.isClean
     val cardShape = if (cleanStyle) NeriDesign.tokens.cardShape else neriRoundedShape(8.dp)
     val coverRequest = remember(context, playlist.coverUrl, offlineMode) {
@@ -173,7 +167,10 @@ internal fun YtMusicPlaylistCard(
             .clip(cardShape)
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = { showMenu = true }
+                onLongClick = {
+                    menuMounted = true
+                    showMenu = true
+                }
             )
     ) {
         if (cleanStyle) {
@@ -224,52 +221,13 @@ internal fun YtMusicPlaylistCard(
             }
         }
 
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false }
-        ) {
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        if (isFavorite) {
-                            stringResource(CoreCommonR.string.home_unfavorite_playlist)
-                        } else {
-                            stringResource(CoreCommonR.string.home_favorite_playlist)
-                        }
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = if (isFavorite) {
-                            Icons.Filled.Favorite
-                        } else {
-                            Icons.Outlined.FavoriteBorder
-                        },
-                        contentDescription = null
-                    )
-                },
-                onClick = {
-                    showMenu = false
-                    scope.launch {
-                        if (isFavorite) {
-                            favoriteRepo.removeFavorite(playlistFavoriteId, "youtubeMusic")
-                            onShowSnackbar(unfavoritedText)
-                        } else {
-                            favoriteRepo.addFavorite(
-                                id = playlistFavoriteId,
-                                name = playlist.title,
-                                coverUrl = playlist.coverUrl,
-                                trackCount = playlist.trackCount,
-                                source = "youtubeMusic",
-                                browseId = playlist.browseId,
-                                playlistId = playlist.playlistId,
-                                subtitle = playlist.subtitle,
-                                songs = emptyList()
-                            )
-                            onShowSnackbar(favoriteSuccessText)
-                        }
-                    }
-                }
+        if (menuMounted || showMenu) {
+            YtMusicPlaylistFavoriteMenu(
+                expanded = showMenu,
+                playlist = playlist,
+                isFavorite = isFavorite,
+                onDismiss = { showMenu = false },
+                onShowSnackbar = onShowSnackbar
             )
         }
     }
@@ -284,15 +242,17 @@ internal fun YtMusicHomeItemCard(
     offlineMode: Boolean
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val playlist = remember(item) { item.toPlaylist() }
-    val playlistFavoriteId = remember(playlist?.playlistId, playlist?.browseId) {
-        playlist?.favoriteId()
+    val coverRequest = remember(context, item.coverUrl, offlineMode) {
+        fastScrollableImageRequest(
+            context = context,
+            data = item.coverUrl,
+            sizePx = 384,
+            offlineMode = offlineMode
+        )
     }
     var showMenu by remember { mutableStateOf(false) }
-    val unfavoritedText = stringResource(CoreCommonR.string.home_unfavorited)
-    val favoriteSuccessText = stringResource(CoreCommonR.string.favorite_success)
+    var menuMounted by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -301,18 +261,14 @@ internal fun YtMusicHomeItemCard(
                 onClick = onClick,
                 onLongClick = {
                     if (playlist != null) {
+                        menuMounted = true
                         showMenu = true
                     }
                 }
             )
     ) {
         AsyncImage(
-            model = fastScrollableImageRequest(
-                context = context,
-                data = item.coverUrl,
-                sizePx = 384,
-                offlineMode = offlineMode
-            ),
+            model = coverRequest,
             contentDescription = item.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -338,56 +294,80 @@ internal fun YtMusicHomeItemCard(
             }
         }
 
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false }
-        ) {
-            playlist?.let { resolvedPlaylist ->
-                val favoriteId = playlistFavoriteId ?: return@let
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            if (isFavorite) {
-                                stringResource(CoreCommonR.string.home_unfavorite_playlist)
-                            } else {
-                                stringResource(CoreCommonR.string.home_favorite_playlist)
-                            }
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (isFavorite) {
-                                Icons.Filled.Favorite
-                            } else {
-                                Icons.Outlined.FavoriteBorder
-                            },
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        showMenu = false
-                        scope.launch {
-                            if (isFavorite) {
-                                favoriteRepo.removeFavorite(favoriteId, "youtubeMusic")
-                                onShowSnackbar(unfavoritedText)
-                            } else {
-                                favoriteRepo.addFavorite(
-                                    id = favoriteId,
-                                    name = resolvedPlaylist.title,
-                                    coverUrl = resolvedPlaylist.coverUrl,
-                                    trackCount = resolvedPlaylist.trackCount,
-                                    source = "youtubeMusic",
-                                    browseId = resolvedPlaylist.browseId,
-                                    playlistId = resolvedPlaylist.playlistId,
-                                    subtitle = resolvedPlaylist.subtitle,
-                                    songs = emptyList()
-                                )
-                                onShowSnackbar(favoriteSuccessText)
-                            }
-                        }
+        if ((menuMounted || showMenu) && playlist != null) {
+            YtMusicPlaylistFavoriteMenu(
+                expanded = showMenu,
+                playlist = playlist,
+                isFavorite = isFavorite,
+                onDismiss = { showMenu = false },
+                onShowSnackbar = onShowSnackbar
+            )
+        }
+    }
+}
+
+@Composable
+private fun YtMusicPlaylistFavoriteMenu(
+    expanded: Boolean,
+    playlist: YouTubeMusicPlaylist,
+    isFavorite: Boolean,
+    onDismiss: () -> Unit,
+    onShowSnackbar: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val playlistFavoriteId = remember(playlist.playlistId, playlist.browseId) {
+        playlist.favoriteId()
+    }
+    val unfavoritedText = stringResource(CoreCommonR.string.home_unfavorited)
+    val favoriteSuccessText = stringResource(CoreCommonR.string.favorite_success)
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss
+    ) {
+        DropdownMenuItem(
+            text = {
+                Text(
+                    if (isFavorite) {
+                        stringResource(CoreCommonR.string.home_unfavorite_playlist)
+                    } else {
+                        stringResource(CoreCommonR.string.home_favorite_playlist)
                     }
                 )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = if (isFavorite) {
+                        Icons.Filled.Favorite
+                    } else {
+                        Icons.Outlined.FavoriteBorder
+                    },
+                    contentDescription = null
+                )
+            },
+            onClick = {
+                onDismiss()
+                scope.launch {
+                    if (isFavorite) {
+                        favoriteRepo.removeFavorite(playlistFavoriteId, "youtubeMusic")
+                        onShowSnackbar(unfavoritedText)
+                    } else {
+                        favoriteRepo.addFavorite(
+                            id = playlistFavoriteId,
+                            name = playlist.title,
+                            coverUrl = playlist.coverUrl,
+                            trackCount = playlist.trackCount,
+                            source = "youtubeMusic",
+                            browseId = playlist.browseId,
+                            playlistId = playlist.playlistId,
+                            subtitle = playlist.subtitle,
+                            songs = emptyList()
+                        )
+                        onShowSnackbar(favoriteSuccessText)
+                    }
+                }
             }
-        }
+        )
     }
 }

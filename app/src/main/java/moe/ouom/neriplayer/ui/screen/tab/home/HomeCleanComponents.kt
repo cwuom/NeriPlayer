@@ -32,7 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -331,13 +330,16 @@ private const val ScrollEdgeFadeMillis = 180
 
 /**
  * iOS-style scroll edge for the clean home: once content slides under the pinned title and
- * search, its top edge fades into the page instead of being cut by the grid bounds. A single
- * gradient rect drawn over the grid, skipped over custom background images where a solid fade
- * would not match what is behind it
+ * search, its top edge fades into the page instead of being cut by the grid bounds. Isolated
+ * in a fixed-height overlay composable so `canScrollBackward` toggles never recompose the grid
+ * and `LargeTopAppBar` height changes never invalidate the gradient brush cache.
  */
 @Composable
-internal fun Modifier.homeScrollEdgeFade(gridState: LazyGridState): Modifier {
-    if (!NeriDesign.isClean || LocalHasCustomBackground.current) return this
+internal fun HomeScrollEdgeFadeOverlay(
+    gridState: LazyGridState,
+    modifier: Modifier = Modifier
+) {
+    if (!NeriDesign.isClean || LocalHasCustomBackground.current) return
     val scrolled by remember(gridState) { derivedStateOf { gridState.canScrollBackward } }
     val alpha = animateFloatAsState(
         targetValue = if (scrolled) 1f else 0f,
@@ -345,13 +347,20 @@ internal fun Modifier.homeScrollEdgeFade(gridState: LazyGridState): Modifier {
         label = "home-scroll-edge"
     )
     val color = MaterialTheme.colorScheme.background
-    return this.drawWithCache {
-        val height = ScrollEdgeFadeHeight.toPx().coerceAtMost(size.height)
-        val fade = Brush.verticalGradient(0f to color, 1f to color.copy(alpha = 0f), endY = height)
-        onDrawWithContent {
-            drawContent()
-            val visible = alpha.value
-            if (visible > 0.01f) drawRect(fade, size = Size(size.width, height), alpha = visible)
-        }
-    }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(ScrollEdgeFadeHeight)
+            .drawWithCache {
+                val fade = Brush.verticalGradient(
+                    0f to color,
+                    1f to color.copy(alpha = 0f),
+                    endY = size.height
+                )
+                onDrawBehind {
+                    val visible = alpha.value
+                    if (visible > 0.01f) drawRect(fade, size = size, alpha = visible)
+                }
+            }
+    )
 }
