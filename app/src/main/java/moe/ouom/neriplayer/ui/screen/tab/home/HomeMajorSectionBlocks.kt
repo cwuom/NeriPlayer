@@ -196,6 +196,52 @@ internal fun splitHomeSongChartCardRuns(
 }
 
 /**
+ * 一个大模块内最终的渲染条目顺序。
+ *
+ * 列表形态的小模块各自成一个条目；卡片形态的小模块按连续区间合并，
+ * 每个区间成一个「卡片带」条目，位置落在该区间的首个小模块上。
+ */
+internal sealed interface HomeSongSectionRenderEntry {
+    /** 列表形态的小模块。 */
+    data class ListSection(val id: String) : HomeSongSectionRenderEntry
+
+    /** 一条榜单卡片带。[runIndex] 是该大模块内的区间序号。 */
+    data class ChartCardStrip(
+        val runIndex: Int,
+        val ids: List<String>
+    ) : HomeSongSectionRenderEntry
+}
+
+/**
+ * 按用户配置的顺序算出大模块内的渲染条目。
+ *
+ * 卡片带只能合并相邻的卡片形态小模块：被列表小模块隔开的卡片要各自成带，
+ * 否则卡片会越过中间的小模块，破坏用户配置的顺序。
+ */
+internal fun resolveHomeSongSectionRenderEntries(
+    visibleIds: List<String>,
+    cardIds: Set<String>
+): List<HomeSongSectionRenderEntry> {
+    val runs = splitHomeSongChartCardRuns(visibleIds, cardIds)
+    val runIndexById = runs.flatMapIndexed { index, run ->
+        run.map { it to index }
+    }.toMap()
+    val entries = mutableListOf<HomeSongSectionRenderEntry>()
+    visibleIds.forEach { id ->
+        val runIndex = runIndexById[id]
+        if (runIndex != null) {
+            // 卡片带落在该连续区间的首个小模块位置。
+            if (id == runs[runIndex].first()) {
+                entries += HomeSongSectionRenderEntry.ChartCardStrip(runIndex, runs[runIndex])
+            }
+            return@forEach
+        }
+        entries += HomeSongSectionRenderEntry.ListSection(id)
+    }
+    return entries
+}
+
+/**
  * 渲染「继续播放」大模块。
  */
 internal fun LazyGridScope.addHomeContinueBlock(env: HomeMajorSectionEnv) {
@@ -273,41 +319,35 @@ internal fun LazyGridScope.addHomeTrendingBlock(env: HomeMajorSectionEnv) {
     )
     // 卡片带只合并相邻的卡片形态小模块：被列表模块隔开的卡片要各自成带，
     // 否则卡片会越过中间的小模块，破坏用户配置的顺序。
-    val cardRuns = splitHomeSongChartCardRuns(visibleIds, cardGroup.cardIds)
-    val runIndexById = cardRuns.flatMapIndexed { index, run ->
-        run.map { it to index }
-    }.toMap()
-    visibleIds.forEach { id ->
-        val runIndex = runIndexById[id]
-        if (runIndex != null) {
-            // 榜单卡片统一渲染成一条卡片带，放在该连续区间首个卡片小模块所在的位置。
-            if (id == cardRuns[runIndex].first()) {
-                addHomeSongChartCardBlock(
-                    env = env,
-                    group = "trending",
-                    runIndex = runIndex,
-                    cards = cardRuns[runIndex].mapNotNull { cardGroup.cardsById[it] },
-                    sources = cardGroup.sources
+    resolveHomeSongSectionRenderEntries(visibleIds, cardGroup.cardIds).forEach { entry ->
+        when (entry) {
+            is HomeSongSectionRenderEntry.ChartCardStrip -> addHomeSongChartCardBlock(
+                env = env,
+                group = "trending",
+                runIndex = entry.runIndex,
+                cards = entry.ids.mapNotNull { cardGroup.cardsById[it] },
+                sources = cardGroup.sources
+            )
+
+            is HomeSongSectionRenderEntry.ListSection -> {
+                val source = HomeSectionIdMapping.trendingSourceOf(entry.id) ?: return@forEach
+                val sectionState = env.ui.trendingSongSections.firstOrNull { it.source == source }
+                    ?: return@forEach
+                addNeteaseSongSection(
+                    sectionKey = homeNeteaseSongSectionKey(group = "trending", source = source),
+                    registerKey = env.registerKey,
+                    sectionState = sectionState,
+                    icon = neteaseSongSectionIcon(source),
+                    loadingText = env.loadingText,
+                    onSongClick = env.onSongClick,
+                    favoriteSongLookup = env.favoriteSongLookup,
+                    onFavoriteToggle = env.onFavoriteToggle,
+                    onShowSnackbar = env.onShowSnackbar,
+                    offlineMode = env.offlineMode,
+                    onHeaderClick = { env.onSongSectionMore(source) }
                 )
             }
-            return@forEach
         }
-        val source = HomeSectionIdMapping.trendingSourceOf(id) ?: return@forEach
-        val sectionState = env.ui.trendingSongSections.firstOrNull { it.source == source }
-            ?: return@forEach
-        addNeteaseSongSection(
-            sectionKey = homeNeteaseSongSectionKey(group = "trending", source = source),
-            registerKey = env.registerKey,
-            sectionState = sectionState,
-            icon = neteaseSongSectionIcon(source),
-            loadingText = env.loadingText,
-            onSongClick = env.onSongClick,
-            favoriteSongLookup = env.favoriteSongLookup,
-            onFavoriteToggle = env.onFavoriteToggle,
-            onShowSnackbar = env.onShowSnackbar,
-            offlineMode = env.offlineMode,
-            onHeaderClick = { env.onSongSectionMore(source) }
-        )
     }
 }
 
@@ -331,45 +371,39 @@ internal fun LazyGridScope.addHomeRadarBlock(env: HomeMajorSectionEnv) {
     )
     // 卡片带只合并相邻的卡片形态小模块：被列表模块隔开的卡片要各自成带，
     // 否则卡片会越过中间的小模块（例如「雷达歌单」），破坏用户配置的顺序。
-    val cardRuns = splitHomeSongChartCardRuns(visibleIds, cardGroup.cardIds)
-    val runIndexById = cardRuns.flatMapIndexed { index, run ->
-        run.map { it to index }
-    }.toMap()
-    visibleIds.forEach { id ->
-        if (id == HomeRadarSubSectionIds.RADAR_PLAYLISTS) {
-            addHomeRadarPlaylistBlock(env)
-            return@forEach
-        }
-        val runIndex = runIndexById[id]
-        if (runIndex != null) {
-            // 榜单卡片统一渲染成一条卡片带，放在该连续区间首个卡片小模块所在的位置。
-            if (id == cardRuns[runIndex].first()) {
-                addHomeSongChartCardBlock(
-                    env = env,
-                    group = "radar",
-                    runIndex = runIndex,
-                    cards = cardRuns[runIndex].mapNotNull { cardGroup.cardsById[it] },
-                    sources = cardGroup.sources
+    resolveHomeSongSectionRenderEntries(visibleIds, cardGroup.cardIds).forEach { entry ->
+        when (entry) {
+            is HomeSongSectionRenderEntry.ChartCardStrip -> addHomeSongChartCardBlock(
+                env = env,
+                group = "radar",
+                runIndex = entry.runIndex,
+                cards = entry.ids.mapNotNull { cardGroup.cardsById[it] },
+                sources = cardGroup.sources
+            )
+
+            is HomeSongSectionRenderEntry.ListSection -> {
+                if (entry.id == HomeRadarSubSectionIds.RADAR_PLAYLISTS) {
+                    addHomeRadarPlaylistBlock(env)
+                    return@forEach
+                }
+                val source = HomeSectionIdMapping.radarSourceOf(entry.id) ?: return@forEach
+                val sectionState = env.ui.radarSongSections.firstOrNull { it.source == source }
+                    ?: return@forEach
+                addNeteaseSongSection(
+                    sectionKey = homeNeteaseSongSectionKey(group = "radar", source = source),
+                    registerKey = env.registerKey,
+                    sectionState = sectionState,
+                    icon = neteaseSongSectionIcon(source),
+                    loadingText = env.loadingText,
+                    onSongClick = env.onSongClick,
+                    favoriteSongLookup = env.favoriteSongLookup,
+                    onFavoriteToggle = env.onFavoriteToggle,
+                    onShowSnackbar = env.onShowSnackbar,
+                    offlineMode = env.offlineMode,
+                    onHeaderClick = { env.onSongSectionMore(source) }
                 )
             }
-            return@forEach
         }
-        val source = HomeSectionIdMapping.radarSourceOf(id) ?: return@forEach
-        val sectionState = env.ui.radarSongSections.firstOrNull { it.source == source }
-            ?: return@forEach
-        addNeteaseSongSection(
-            sectionKey = homeNeteaseSongSectionKey(group = "radar", source = source),
-            registerKey = env.registerKey,
-            sectionState = sectionState,
-            icon = neteaseSongSectionIcon(source),
-            loadingText = env.loadingText,
-            onSongClick = env.onSongClick,
-            favoriteSongLookup = env.favoriteSongLookup,
-            onFavoriteToggle = env.onFavoriteToggle,
-            onShowSnackbar = env.onShowSnackbar,
-            offlineMode = env.offlineMode,
-            onHeaderClick = { env.onSongSectionMore(source) }
-        )
     }
 }
 

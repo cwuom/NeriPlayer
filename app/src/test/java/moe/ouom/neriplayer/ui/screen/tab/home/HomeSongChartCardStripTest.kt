@@ -84,6 +84,60 @@ class HomeSongChartCardStripTest {
     }
 
     @Test
+    fun `chart card strip sits at the position of its first card section`() {
+        // 「私人雷达（卡片）→ 雷达歌单（列表）→ 每日推荐（卡片）」
+        // 渲染顺序必须是：卡片带 → 雷达歌单 → 卡片带。
+        // 卡片带不能越过中间的列表小模块。
+        val entries = resolveHomeSongSectionRenderEntries(
+            visibleIds = listOf("personal_radar", "radar_playlists", "daily_recommend"),
+            cardIds = setOf("personal_radar", "daily_recommend")
+        )
+
+        assertEquals(
+            listOf(
+                HomeSongSectionRenderEntry.ChartCardStrip(0, listOf("personal_radar")),
+                HomeSongSectionRenderEntry.ListSection("radar_playlists"),
+                HomeSongSectionRenderEntry.ChartCardStrip(1, listOf("daily_recommend"))
+            ),
+            entries
+        )
+    }
+
+    @Test
+    fun `adjacent card sections are merged into one strip at the first position`() {
+        // 「热力飙升（卡片）→ 热歌榜（卡片）→ 推荐新歌（列表）」
+        // 前两个卡片合成一条带，落在热力飙升的位置。
+        val entries = resolveHomeSongSectionRenderEntries(
+            visibleIds = listOf("top_soaring", "top_hot", "personalized_new_songs"),
+            cardIds = setOf("top_soaring", "top_hot")
+        )
+
+        assertEquals(
+            listOf(
+                HomeSongSectionRenderEntry.ChartCardStrip(0, listOf("top_soaring", "top_hot")),
+                HomeSongSectionRenderEntry.ListSection("personalized_new_songs")
+            ),
+            entries
+        )
+    }
+
+    @Test
+    fun `a list only module keeps one entry per section`() {
+        val entries = resolveHomeSongSectionRenderEntries(
+            visibleIds = listOf("personalized_new_songs", "top_new"),
+            cardIds = emptySet()
+        )
+
+        assertEquals(
+            listOf(
+                HomeSongSectionRenderEntry.ListSection("personalized_new_songs"),
+                HomeSongSectionRenderEntry.ListSection("top_new")
+            ),
+            entries
+        )
+    }
+
+    @Test
     fun `card width is divided evenly so the column count is honored`() {
         val containerWidthDp = 360f
         listOf(1, 2, 3).forEach { columns ->
