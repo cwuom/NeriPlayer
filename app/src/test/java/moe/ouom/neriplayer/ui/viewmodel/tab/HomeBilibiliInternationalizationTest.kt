@@ -22,6 +22,10 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicHotVideo
+import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
 import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankPeriod
 import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankSong
 import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankType
@@ -86,6 +90,22 @@ class HomeBilibiliInternationalizationTest {
         `when`(settingsRepo.homeCardBilibiliFlow).thenReturn(savedBilibiliEnabled)
         `when`(settingsRepo.internationalizationEnabledFlow).thenReturn(internationalEnabled)
         `when`(settingsRepo.youtubeEnabledFlow).thenReturn(MutableStateFlow(false))
+        // 首页模块顺序/隐藏集合：默认按 HomeLayoutState 的默认值给出
+        `when`(settingsRepo.homeMajorOrderFlow).thenReturn(
+            MutableStateFlow(HomeMajorSectionIds.DEFAULT_ORDER)
+        )
+        `when`(settingsRepo.homeTrendingOrderFlow).thenReturn(
+            MutableStateFlow(HomeTrendingSubSectionIds.DEFAULT_ORDER)
+        )
+        `when`(settingsRepo.homeTrendingHiddenFlow).thenReturn(MutableStateFlow(emptySet<String>()))
+        `when`(settingsRepo.homeRadarOrderFlow).thenReturn(
+            MutableStateFlow(HomeRadarSubSectionIds.DEFAULT_ORDER)
+        )
+        `when`(settingsRepo.homeRadarHiddenFlow).thenReturn(MutableStateFlow(emptySet<String>()))
+        `when`(settingsRepo.homeRecommendedOrderFlow).thenReturn(
+            MutableStateFlow(HomeRecommendedSubSectionIds.DEFAULT_ORDER)
+        )
+        `when`(settingsRepo.homeRecommendedHiddenFlow).thenReturn(MutableStateFlow(emptySet<String>()))
         val youtubeAuthRepo = mock(YouTubeAuthRepository::class.java)
         `when`(youtubeAuthRepo.getAuthOnce()).thenReturn(YouTubeAuthBundle())
         `when`(youtubeAuthRepo.authFlow).thenReturn(MutableStateFlow(YouTubeAuthBundle()))

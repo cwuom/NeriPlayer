@@ -5,10 +5,17 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.History
@@ -27,17 +34,24 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.settings.home.mergeVisibleHomeSectionOrder
+import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.settings.SettingsRepository
@@ -57,6 +71,11 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
+import moe.ouom.neriplayer.data.model.settings.home.applyHomeSectionOrder
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.SettingsHomeCardCopy
+import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
+import moe.ouom.neriplayer.ui.settings.route.HomeSectionSettingsActions
+import sh.calvin.reorderable.ReorderableItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.PlaybackControlLayoutSettings
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -116,100 +135,92 @@ internal fun SettingsPersonalizationStartCard(
     }
 }
 
+private class HomeSectionOrderEditor(val order: List<String>, val reorder: (List<String>) -> Unit)
+
+private class HomeSubSections(defaults: List<String>, order: List<String>, val hidden: Set<String>) {
+    private val order = applyHomeSectionOrder(defaults, order, emptySet())
+
+    fun editor(parentId: String, actions: HomeSectionSettingsActions) =
+        HomeSectionOrderEditor(order) { actions.reorderSub(parentId, it) }
+}
+
+private class HomeMajorRow(
+    val titleRes: Int,
+    val icon: ImageVector,
+    val checked: Boolean,
+    val children: HomeSubSections? = null
+)
+
+private fun AppHomeCardsSettingsState.homeRows(copy: SettingsHomeCardCopy, international: Boolean) = mapOf(
+    HomeMajorSectionIds.CONTINUE to HomeMajorRow(
+        CoreCommonR.string.player_continue, Icons.Outlined.History, showHomeContinueCard
+    ),
+    HomeMajorSectionIds.RADAR to HomeMajorRow(
+        copy.radarLabelRes, homeRadarIcon(international), showHomeRadarCard,
+        HomeSubSections(HomeRadarSubSectionIds.DEFAULT_ORDER, radarOrder, radarHidden)
+    ),
+    HomeMajorSectionIds.TRENDING to HomeMajorRow(
+        copy.trendingLabelRes, Icons.Outlined.Bolt, showHomeTrendingCard,
+        HomeSubSections(HomeTrendingSubSectionIds.DEFAULT_ORDER, trendingOrder, trendingHidden)
+    ),
+    HomeMajorSectionIds.RECOMMENDED to HomeMajorRow(
+        copy.recommendedLabelRes, Icons.Outlined.Star, showHomeRecommendedCard,
+        HomeSubSections(HomeRecommendedSubSectionIds.DEFAULT_ORDER, recommendedOrder, recommendedHidden)
+    ),
+    HomeMajorSectionIds.BILIBILI to HomeMajorRow(
+        CoreCommonR.string.settings_home_card_bilibili, Icons.Outlined.LiveTv, showHomeBilibiliCard
+    )
+)
+
+private fun AppHomeCardsSettingsState.majorOrderEditor(
+    international: Boolean,
+    actions: HomeSectionSettingsActions
+): HomeSectionOrderEditor {
+    val hidden = if (international) setOf(HomeMajorSectionIds.BILIBILI) else emptySet()
+    val visible = applyHomeSectionOrder(HomeMajorSectionIds.DEFAULT_ORDER, majorOrder, hidden)
+    return HomeSectionOrderEditor(visible) { actions.reorderMajor(mergeVisibleHomeSectionOrder(majorOrder, it)) }
+}
+
 @Composable
 internal fun SettingsPersonalizationHomeCard(
     internationalEnabled: Boolean,
-    homeTrendingLabelRes: Int,
-    homeRadarLabelRes: Int,
-    homeRecommendedLabelRes: Int,
-    homeTrendingSupportingRes: Int?,
-    homeRadarSupportingRes: Int?,
-    homeRecommendedSupportingRes: Int?,
+    copy: SettingsHomeCardCopy,
     homeStartAvailable: Boolean,
-    showHomeContinueCard: Boolean,
-    onShowHomeContinueCardChange: (Boolean) -> Unit,
-    showHomeTrendingCard: Boolean,
-    onShowHomeTrendingCardChange: (Boolean) -> Unit,
-    showHomeRadarCard: Boolean,
-    onShowHomeRadarCardChange: (Boolean) -> Unit,
-    showHomeRecommendedCard: Boolean,
-    onShowHomeRecommendedCardChange: (Boolean) -> Unit,
-    showHomeBilibiliCard: Boolean,
-    onShowHomeBilibiliCardChange: (Boolean) -> Unit,
+    state: AppHomeCardsSettingsState,
+    actions: HomeSectionSettingsActions,
     highlightTargetId: String?,
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
 ) {
+    val rows = state.homeRows(copy, internationalEnabled)
+    val editor = state.majorOrderEditor(internationalEnabled, actions)
     PersonalizationCardContainer {
         MiuixSettingsSectionIntro(
             title = stringResource(CoreCommonR.string.settings_personalization_home_section),
             description = stringResource(CoreCommonR.string.settings_personalization_home_section_desc)
         )
-        SettingsHomeCardSwitch(
-            title = stringResource(CoreCommonR.string.player_continue),
-            icon = Icons.Outlined.History,
-            checked = showHomeContinueCard,
-            onCheckedChange = onShowHomeContinueCardChange,
-            description = null,
-            enabled = true,
-            targetId = "setting:home_card_continue",
-            highlightTargetId = highlightTargetId,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        )
-
-        SettingsHomeCardSwitch(
-            title = stringResource(homeTrendingLabelRes),
-            description = optionalStringResource(homeTrendingSupportingRes),
-            icon = Icons.Outlined.Bolt,
-            checked = showHomeTrendingCard,
-            onCheckedChange = onShowHomeTrendingCardChange,
-            enabled = true,
-            targetId = "setting:home_card_trending",
-            highlightTargetId = highlightTargetId,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        )
-
-        SettingsHomeCardSwitch(
-            title = stringResource(homeRadarLabelRes),
-            description = optionalStringResource(homeRadarSupportingRes),
-            icon = homeRadarIcon(internationalEnabled),
-            checked = showHomeRadarCard,
-            onCheckedChange = onShowHomeRadarCardChange,
-            enabled = true,
-            targetId = "setting:home_card_radar",
-            highlightTargetId = highlightTargetId,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        )
-
-        SettingsHomeCardSwitch(
-            title = stringResource(homeRecommendedLabelRes),
-            description = optionalStringResource(homeRecommendedSupportingRes),
-            icon = Icons.Outlined.Star,
-            checked = showHomeRecommendedCard,
-            onCheckedChange = onShowHomeRecommendedCardChange,
-            enabled = true,
-            targetId = "setting:home_card_recommended",
-            highlightTargetId = highlightTargetId,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        )
-
-        if (!internationalEnabled) {
-            SettingsHomeCardSwitch(
-                title = stringResource(CoreCommonR.string.settings_home_card_bilibili),
-                description = stringResource(CoreCommonR.string.settings_home_card_bilibili_desc),
-                icon = Icons.Outlined.LiveTv,
-                checked = showHomeBilibiliCard,
-                onCheckedChange = onShowHomeBilibiliCardChange,
-                enabled = true,
-                targetId = "setting:home_card_bilibili",
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
+        HomeReorderableColumn(items = editor.order, onReorder = editor.reorder) { index, id, _ ->
+            val row = rows.getValue(id)
+            val title = stringResource(row.titleRes)
+            var expanded by remember(id) { mutableStateOf(false) }
+            ReorderableItem {
+                SettingsHomeCardSwitch(
+                    title = title,
+                    icon = row.icon,
+                    checked = row.checked,
+                    onCheckedChange = { actions.setMajorVisible(id, it) },
+                    expanded = expanded,
+                    onToggleExpanded = row.children?.let { { expanded = !expanded } },
+                    targetId = "setting:home_card_$id",
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished,
+                    leadingExtra = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) }
+                )
+            }
+            if (expanded) {
+                row.children?.let { HomeSubSectionList(id, it, actions) }
+            }
         }
 
         LazyAnimatedVisibility(visible = !homeStartAvailable) {
@@ -223,8 +234,55 @@ internal fun SettingsPersonalizationHomeCard(
     }
 }
 
+private val homeSubSectionTitles = mapOf(
+    HomeTrendingSubSectionIds.TOP_SOARING to CoreCommonR.string.recommend_trending,
+    HomeTrendingSubSectionIds.PERSONALIZED_NEW_SONGS to CoreCommonR.string.home_netease_new_songs,
+    HomeTrendingSubSectionIds.TOP_HOT to CoreCommonR.string.home_netease_hot_rank,
+    HomeTrendingSubSectionIds.TOP_NEW to CoreCommonR.string.home_netease_new_rank,
+    HomeRadarSubSectionIds.PERSONAL_RADAR to CoreCommonR.string.recommend_radar,
+    HomeRadarSubSectionIds.RADAR_PLAYLISTS to CoreCommonR.string.home_netease_radar_playlists,
+    HomeRadarSubSectionIds.DAILY_RECOMMEND to CoreCommonR.string.home_netease_daily_songs,
+    HomeRadarSubSectionIds.PRIVATE_FM to CoreCommonR.string.home_netease_private_fm,
+    HomeRecommendedSubSectionIds.PERSONALIZED to CoreCommonR.string.recommend_for_you,
+    HomeRecommendedSubSectionIds.DAILY_RESOURCE to CoreCommonR.string.home_netease_daily_playlists,
+    HomeRecommendedSubSectionIds.HIGH_QUALITY to CoreCommonR.string.home_netease_high_quality_playlists,
+    HomeRecommendedSubSectionIds.HOT_PLAYLISTS to CoreCommonR.string.home_netease_hot_playlists,
+    HomeRecommendedSubSectionIds.ACG_PLAYLISTS to CoreCommonR.string.home_netease_acg_playlists
+)
+
 @Composable
-private fun optionalStringResource(resId: Int?): String? = resId?.let { stringResource(it) }
+private fun HomeSubSectionList(parentId: String, sections: HomeSubSections, actions: HomeSectionSettingsActions) {
+    val editor = sections.editor(parentId, actions)
+    HomeReorderableColumn(
+        items = editor.order,
+        onReorder = editor.reorder,
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp)
+    ) { index, id, _ ->
+        val visible = id !in sections.hidden
+        val title = stringResource(homeSubSectionTitles.getValue(id))
+        ReorderableItem {
+            ListItem(
+                leadingContent = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) },
+                headlineContent = {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (visible) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingContent = {
+                    MiuixSettingsSwitch(
+                        checked = visible,
+                        onCheckedChange = { actions.setSubVisible(parentId, id, it) },
+                        modifier = Modifier.semantics { contentDescription = title }
+                    )
+                },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
+        }
+    }
+}
 
 private fun homeRadarIcon(internationalEnabled: Boolean): ImageVector =
     if (internationalEnabled) Icons.Outlined.Explore else Icons.Outlined.Radar
@@ -898,12 +956,13 @@ private fun SettingsHomeCardSwitch(
     icon: ImageVector,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    description: String?,
-    enabled: Boolean,
+    expanded: Boolean,
+    onToggleExpanded: (() -> Unit)?,
     targetId: String,
     highlightTargetId: String?,
     highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?
+    onHighlightFinished: (() -> Unit)?,
+    leadingExtra: @Composable () -> Unit
 ) {
     ListItem(
         modifier = Modifier
@@ -913,44 +972,47 @@ private fun SettingsHomeCardSwitch(
                 highlightPulse = highlightPulse,
                 onHighlightFinished = onHighlightFinished
             )
-            .homeCardInteractionModifier(enabled, checked, onCheckedChange),
+            .then(if (onToggleExpanded == null) Modifier.settingsItemClickable { onCheckedChange(!checked) } else Modifier),
         leadingContent = {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                leadingExtra()
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
         },
-        headlineContent = { Text(title) },
-        supportingContent = homeCardSupportingContent(description),
+        headlineContent = {
+            if (onToggleExpanded == null) {
+                Text(title)
+            } else {
+                Row(
+                    modifier = Modifier.settingsItemClickable(onClick = onToggleExpanded).heightIn(min = 48.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(title, modifier = Modifier.weight(1f, fill = false))
+                    Icon(
+                        imageVector = Icons.Filled.ExpandMore,
+                        contentDescription = stringResource(
+                            if (expanded) CoreCommonR.string.settings_home_sub_section_collapse
+                            else CoreCommonR.string.settings_home_sub_section_expand,
+                            title
+                        ),
+                        modifier = Modifier.graphicsLayer { rotationZ = if (expanded) 180f else 0f }
+                    )
+                }
+            }
+        },
         trailingContent = {
             MiuixSettingsSwitch(
                 checked = checked,
-                enabled = enabled,
-                onCheckedChange = onCheckedChange
+                onCheckedChange = onCheckedChange,
+                modifier = Modifier.semantics { contentDescription = title }
             )
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
-
-private fun Modifier.homeCardInteractionModifier(
-    enabled: Boolean,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-): Modifier = if (enabled) {
-    settingsItemClickable { onCheckedChange(!checked) }
-} else {
-    alpha(0.5f)
-}
-
-private fun homeCardSupportingContent(description: String?): (@Composable () -> Unit)? =
-    description?.let { text ->
-        {
-            Text(
-                text = text,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }

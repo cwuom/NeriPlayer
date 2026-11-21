@@ -5,13 +5,13 @@ import androidx.compose.runtime.Composable
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R as AppR
 
+/**
+ * 设置页首页卡片区需要的文案。
+ */
 internal data class SettingsHomeCardCopy(
     val trendingLabelRes: Int,
     val radarLabelRes: Int,
-    val recommendedLabelRes: Int,
-    val trendingSupportingRes: Int,
-    val radarSupportingRes: Int,
-    val recommendedSupportingRes: Int
+    val recommendedLabelRes: Int
 )
 
 internal fun settingsHomeCardCopy(internationalEnabled: Boolean): SettingsHomeCardCopy =
@@ -19,19 +19,13 @@ internal fun settingsHomeCardCopy(internationalEnabled: Boolean): SettingsHomeCa
         SettingsHomeCardCopy(
             trendingLabelRes = CoreCommonR.string.home_ytmusic_guess_you_like,
             radarLabelRes = CoreCommonR.string.home_ytmusic_daily_discover,
-            recommendedLabelRes = CoreCommonR.string.home_ytmusic_more_recommendations,
-            trendingSupportingRes = CoreCommonR.string.settings_home_card_ytmusic_guess_you_like_desc,
-            radarSupportingRes = CoreCommonR.string.settings_home_card_ytmusic_daily_discover_desc,
-            recommendedSupportingRes = CoreCommonR.string.settings_home_card_ytmusic_more_recommendations_desc
+            recommendedLabelRes = CoreCommonR.string.home_ytmusic_more_recommendations
         )
     } else {
         SettingsHomeCardCopy(
             trendingLabelRes = CoreCommonR.string.settings_home_card_netease_trending,
             radarLabelRes = CoreCommonR.string.settings_home_card_netease_radar,
-            recommendedLabelRes = CoreCommonR.string.settings_home_card_netease_recommended,
-            trendingSupportingRes = CoreCommonR.string.settings_home_card_netease_trending_desc,
-            radarSupportingRes = CoreCommonR.string.settings_home_card_netease_radar_desc,
-            recommendedSupportingRes = CoreCommonR.string.settings_home_card_netease_recommended_desc
+            recommendedLabelRes = CoreCommonR.string.settings_home_card_netease_recommended
         )
     }
 

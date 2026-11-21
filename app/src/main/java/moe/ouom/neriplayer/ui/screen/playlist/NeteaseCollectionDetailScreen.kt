@@ -75,6 +75,7 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
@@ -246,6 +247,11 @@ fun NeteasePlaylistDetailScreen(
                 vm.retry(offlineMode = offlineMode, owner = pageOwner)
             }
         },
+        onRefresh = {
+            if (!offlineMode && isNeteaseCollectionHeaderForRoute(vm.uiState.value.header, playlist.id, "netease")) {
+                vm.retry(offlineMode = offlineMode, owner = pageOwner)
+            }
+        },
         onBack = { vm.stop(pageOwner); onBack() },
         onSongClick = onSongClick,
         offlineMode = offlineMode
@@ -311,6 +317,11 @@ fun NeteaseAlbumDetailScreen(
                 vm.retry(offlineMode = offlineMode, owner = pageOwner)
             }
         },
+        onRefresh = {
+            if (!offlineMode && isNeteaseCollectionHeaderForRoute(vm.uiState.value.header, album.id, "neteaseAlbum")) {
+                vm.retry(offlineMode = offlineMode, owner = pageOwner)
+            }
+        },
         onBack = { vm.stop(pageOwner); onBack() },
         onSongClick = onSongClick,
         offlineMode = offlineMode
@@ -325,6 +336,8 @@ fun DetailScreen(
     playlistSource: String,
     initialCoverUrl: String? = null,
     onRetry: () -> Unit,
+    /** 顶栏「强制刷新」入口，为 null 时不显示刷新按钮。 */
+    onRefresh: (() -> Unit)? = null,
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     offlineMode: Boolean = false
@@ -626,6 +639,19 @@ fun DetailScreen(
                                         contentDescription = if (isFavorite) stringResource(CoreCommonR.string.action_unfavorite) else stringResource(CoreCommonR.string.action_favorite_playlist),
                                         tint = playlistTopBarContentColor
                                     )
+                                }
+
+                                if (onRefresh != null) {
+                                    HapticIconButton(
+                                        enabled = !offlineMode && !ui.loading,
+                                        onClick = onRefresh
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Refresh,
+                                            contentDescription = stringResource(CoreCommonR.string.recommend_refresh),
+                                            tint = playlistTopBarContentColor
+                                        )
+                                    }
                                 }
 
                                 if (hasDownloadManagerEntry) {

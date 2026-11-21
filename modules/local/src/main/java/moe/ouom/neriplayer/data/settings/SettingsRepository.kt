@@ -87,6 +87,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
@@ -104,6 +105,15 @@ import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettingsCodec
+import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionHidden
+import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionOrder
+import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionHidden
+import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionOrder
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.playback.toAudioEffectsSettings
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
@@ -566,6 +576,41 @@ class SettingsRepository(private val context: Context) {
 
     val homeCardBilibiliFlow: Flow<Boolean> =
         autoSettingsRepository.homeCardBilibiliFlow
+
+    val homeMajorOrderFlow: Flow<List<String>> =
+        autoSettingsRepository.homeMajorOrderFlow.map { raw ->
+            parseHomeSectionOrder(raw, HomeMajorSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeTrendingOrderFlow: Flow<List<String>> =
+        autoSettingsRepository.homeTrendingOrderFlow.map { raw ->
+            parseHomeSectionOrder(raw, HomeTrendingSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeTrendingHiddenFlow: Flow<Set<String>> =
+        autoSettingsRepository.homeTrendingHiddenFlow.map { raw ->
+            parseHomeSectionHidden(raw, HomeTrendingSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeRadarOrderFlow: Flow<List<String>> =
+        autoSettingsRepository.homeRadarOrderFlow.map { raw ->
+            parseHomeSectionOrder(raw, HomeRadarSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeRadarHiddenFlow: Flow<Set<String>> =
+        autoSettingsRepository.homeRadarHiddenFlow.map { raw ->
+            parseHomeSectionHidden(raw, HomeRadarSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeRecommendedOrderFlow: Flow<List<String>> =
+        autoSettingsRepository.homeRecommendedOrderFlow.map { raw ->
+            parseHomeSectionOrder(raw, HomeRecommendedSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
+
+    val homeRecommendedHiddenFlow: Flow<Set<String>> =
+        autoSettingsRepository.homeRecommendedHiddenFlow.map { raw ->
+            parseHomeSectionHidden(raw, HomeRecommendedSubSectionIds.DEFAULT_ORDER)
+        }.distinctUntilChanged()
 
     val playbackFadeInFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_FADE_IN] ?: true }
@@ -1343,6 +1388,70 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setHomeCardBilibili(enabled: Boolean) {
         autoSettingsRepository.setHomeCardBilibili(enabled)
+    }
+
+    suspend fun setHomeMajorOrder(order: List<String>) {
+        autoSettingsRepository.setHomeMajorOrder(
+            encodeHomeSectionOrder(order.ifEmpty { HomeMajorSectionIds.DEFAULT_ORDER })
+        )
+    }
+
+    suspend fun setHomeTrendingOrder(order: List<String>) {
+        autoSettingsRepository.setHomeTrendingOrder(
+            encodeHomeSectionOrder(order.ifEmpty { HomeTrendingSubSectionIds.DEFAULT_ORDER })
+        )
+    }
+
+    suspend fun setHomeRadarOrder(order: List<String>) {
+        autoSettingsRepository.setHomeRadarOrder(
+            encodeHomeSectionOrder(order.ifEmpty { HomeRadarSubSectionIds.DEFAULT_ORDER })
+        )
+    }
+
+    suspend fun setHomeRecommendedOrder(order: List<String>) {
+        autoSettingsRepository.setHomeRecommendedOrder(
+            encodeHomeSectionOrder(order.ifEmpty { HomeRecommendedSubSectionIds.DEFAULT_ORDER })
+        )
+    }
+
+    suspend fun setHomeTrendingSubSectionVisible(id: String, visible: Boolean) {
+        updateHomeSectionHiddenAtomically(
+            key = AutoSettingsKeys.HOME_TRENDING_HIDDEN,
+            defaults = HomeTrendingSubSectionIds.DEFAULT_ORDER,
+            id = id,
+            visible = visible
+        )
+    }
+
+    suspend fun setHomeRadarSubSectionVisible(id: String, visible: Boolean) {
+        updateHomeSectionHiddenAtomically(
+            key = AutoSettingsKeys.HOME_RADAR_HIDDEN,
+            defaults = HomeRadarSubSectionIds.DEFAULT_ORDER,
+            id = id,
+            visible = visible
+        )
+    }
+
+    suspend fun setHomeRecommendedSubSectionVisible(id: String, visible: Boolean) {
+        updateHomeSectionHiddenAtomically(
+            key = AutoSettingsKeys.HOME_RECOMMENDED_HIDDEN,
+            defaults = HomeRecommendedSubSectionIds.DEFAULT_ORDER,
+            id = id,
+            visible = visible
+        )
+    }
+
+    private suspend fun updateHomeSectionHiddenAtomically(
+        key: Preferences.Key<String>,
+        defaults: List<String>,
+        id: String,
+        visible: Boolean
+    ) {
+        context.dataStore.edit { prefs ->
+            val hidden = parseHomeSectionHidden(prefs[key], defaults).toMutableSet()
+            if (visible) hidden.remove(id) else hidden.add(id)
+            prefs[key] = encodeHomeSectionHidden(hidden)
+        }
     }
 
     suspend fun setPlaybackFadeIn(enabled: Boolean) {

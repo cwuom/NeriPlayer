@@ -105,8 +105,19 @@ class NeteaseHomeResponseShapeTest {
     }
 
     @Test
-    fun `appending songs deduplicates by audio id or a channel id name fallback`() {
-        val current = listOf(
+    fun `playlist parsing honours a larger limit for the full page`() {
+        val rows = (1..40).joinToString(",") { index ->
+            """{"id":$index,"name":"Playlist $index"}"""
+        }
+        val raw = """{"code":200,"playlists":[$rows]}"""
+
+        // 首页只取 30 条，二级页请求 100 条时不应再被截断到 30。
+        assertEquals(30, parseNeteaseHomePlaylists(raw, limit = 30).size)
+        assertEquals(40, parseNeteaseHomePlaylists(raw, limit = 100).size)
+    }
+
+    @Test
+    fun `appending songs deduplicates by audio id or a channel id name fallback`() {        val current = listOf(
             song(id = 1L, audioId = "a1"),
             song(id = 2L, audioId = null)
         )
