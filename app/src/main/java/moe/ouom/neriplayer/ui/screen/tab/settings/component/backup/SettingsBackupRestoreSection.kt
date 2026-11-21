@@ -71,7 +71,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
-import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -1375,8 +1375,8 @@ private fun PlayHistoryModeOption(
     )
 }
 
-private val BackupGlyphShape = ContinuousRoundedCornerShape(9.dp)
-private val BackupActionShape = ContinuousRoundedCornerShape(16.dp)
+private val BackupGlyphShape = RoundedCornerShape(9.dp)
+private val BackupActionShape = RoundedCornerShape(16.dp)
 
 /**
  * One backup subject with its two directions side by side. Export always points out of the

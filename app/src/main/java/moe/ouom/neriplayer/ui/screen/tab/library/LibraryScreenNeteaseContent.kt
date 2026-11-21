@@ -364,14 +364,17 @@ internal fun NeteasePlaylistRow(
             },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             leadingContent = {
-                AsyncImage(
-                    model = offlineCachedImageRequest(
+                val coverRequest = remember(context, playlist.picUrl, offlineMode) {
+                    offlineCachedImageRequest(
                         context = context,
                         data = playlist.picUrl,
                         sizePx = 192,
-                        allowHardware = false,
+                        allowHardware = true,
                         offlineMode = offlineMode
-                    ),
+                    )
+                }
+                AsyncImage(
+                    model = coverRequest,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -414,14 +417,17 @@ internal fun NeteaseAlbumRow(
             },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             leadingContent = {
-                AsyncImage(
-                    model = offlineCachedImageRequest(
+                val coverRequest = remember(context, album.picUrl, offlineMode) {
+                    offlineCachedImageRequest(
                         context = context,
                         data = album.picUrl,
                         sizePx = 192,
-                        allowHardware = false,
+                        allowHardware = true,
                         offlineMode = offlineMode
-                    ),
+                    )
+                }
+                AsyncImage(
+                    model = coverRequest,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -574,14 +580,17 @@ internal fun NeteaseAlbumList(
                         containerColor = Color.Transparent
                     ),
                     leadingContent = {
-                        AsyncImage(
-                            model = offlineCachedImageRequest(
+                        val coverRequest = remember(context, pl.picUrl, offlineMode) {
+                            offlineCachedImageRequest(
                                 context = context,
                                 data = pl.picUrl,
                                 sizePx = 192,
-                                allowHardware = false,
+                                allowHardware = true,
                                 offlineMode = offlineMode
-                            ),
+                            )
+                        }
+                        AsyncImage(
+                            model = coverRequest,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier

@@ -59,7 +59,7 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
-import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import moe.ouom.neriplayer.common.format.formatFileSize
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -501,7 +501,7 @@ private fun StorageUsageItemRow(item: StorageUsageItem) {
         Box(
             modifier = Modifier
                 .size(36.dp)
-                .clip(ContinuousRoundedCornerShape(11.dp))
+                .clip(RoundedCornerShape(11.dp))
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.09f)),
             contentAlignment = Alignment.Center
         ) {
