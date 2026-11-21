@@ -9,6 +9,8 @@ import moe.ouom.neriplayer.ui.util.toSaveMap
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import org.junit.Assert.assertEquals
@@ -170,7 +172,13 @@ class HostSelectedItemSaversTest {
             HomeSelectedItem.Netease(playlist),
             HomeSelectedItem.NeteaseAlbumList(album),
             HomeSelectedItem.Bili(bili),
-            HomeSelectedItem.YouTubeMusic(youtube)
+            HomeSelectedItem.YouTubeMusic(youtube),
+            HomeSelectedItem.NeteaseSongSection(NeteaseHomeSongSource.TOP_SOARING),
+            HomeSelectedItem.NeteasePlaylistSection(NeteaseHomePlaylistSource.PERSONALIZED),
+            HomeSelectedItem.NeteasePlaylistSectionDetail(
+                playlist = playlist,
+                parentSource = NeteaseHomePlaylistSource.HOT_PLAYLISTS
+            )
         )
 
         items.forEach { item -> assertEquals(item, roundTrip(homeSelectedItemSaver, item)) }
@@ -178,6 +186,22 @@ class HostSelectedItemSaversTest {
         assertNull(restore(homeSelectedItemSaver, mapOf("type" to "hot", "monthly" to true)))
         assertNull(restore(homeSelectedItemSaver, mapOf("type" to "localArtist", "artistName" to "")))
         assertNull(restore(homeSelectedItemSaver, mapOf("type" to "local")))
+    }
+
+    @Test
+    fun `home saver rejects playlist section detail without a parent source`() {
+        assertNull(
+            restore(
+                homeSelectedItemSaver,
+                mapOf("type" to "neteasePlaylistSectionDetail", "playlist" to playlist.toSaveMap())
+            )
+        )
+        assertNull(
+            restore(
+                homeSelectedItemSaver,
+                mapOf("type" to "neteasePlaylistSectionDetail", "source" to "PERSONALIZED")
+            )
+        )
     }
 
     @Test

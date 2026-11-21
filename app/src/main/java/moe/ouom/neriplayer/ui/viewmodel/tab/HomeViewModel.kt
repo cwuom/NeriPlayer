@@ -67,6 +67,9 @@ import kotlin.time.Duration.Companion.milliseconds
 private const val TAG = "NERI-HomeVM"
 private const val HOME_NETEASE_SONG_LIMIT = 30
 private const val HOME_NETEASE_PLAYLIST_LIMIT = 30
+/** 二级页每次进入都重新请求，取比首页更多的条目。 */
+private const val HOME_FULL_SONG_LIMIT = 100
+private const val HOME_FULL_PLAYLIST_LIMIT = 100
 private const val HOME_PRIVATE_FM_MAX_BATCHES = 10
 private const val HOME_MAX_FAILURE_BEFORE_WARNING = 3
 private const val HOME_YT_MUSIC_PLAYLIST_LIMIT = 24
@@ -221,7 +224,9 @@ data class HomeUiState(
     val biliMusicHot: HomeSectionState<BiliMusicHotVideo> = HomeSectionState(),
     val biliMusicHomeEnabled: Boolean = false,
     val hasLogin: Boolean = false,
-    val internationalizationEnabled: Boolean = false
+    val internationalizationEnabled: Boolean = false,
+    /** 大/小模块的顺序与隐藏设置，来自设置页。 */
+    val layout: HomeLayoutState = HomeLayoutState()
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -440,6 +445,38 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     return@collect
                 }
                 refreshYtMusicHome()
+            }
+        }
+
+        // 观察首页模块布局设置
+        viewModelScope.launch {
+            val settingsRepo = AppContainer.settingsRepo
+            val sectionOrder = combine(
+                settingsRepo.homeMajorOrderFlow,
+                settingsRepo.homeTrendingOrderFlow,
+                settingsRepo.homeTrendingHiddenFlow,
+                settingsRepo.homeRadarOrderFlow,
+                settingsRepo.homeRadarHiddenFlow
+            ) { major, trending, trendingHidden, radar, radarHidden ->
+                HomeLayoutState(
+                    majorOrder = major,
+                    trendingOrder = trending,
+                    trendingHidden = trendingHidden,
+                    radarOrder = radar,
+                    radarHidden = radarHidden
+                )
+            }
+            combine(
+                sectionOrder,
+                settingsRepo.homeRecommendedOrderFlow,
+                settingsRepo.homeRecommendedHiddenFlow
+            ) { layout, recommended, hidden ->
+                layout.copy(
+                    recommendedOrder = recommended,
+                    recommendedHidden = hidden
+                )
+            }.collect { layout ->
+                _uiState.update { state -> state.copy(layout = layout) }
             }
         }
 
@@ -1044,14 +1081,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private suspend fun parseRecommendOnWorker(raw: String): List<PlaylistSummary> =
+    private suspend fun parseRecommendOnWorker(
+        raw: String,
+        limit: Int = HOME_NETEASE_PLAYLIST_LIMIT
+    ): List<PlaylistSummary> =
         withContext(Dispatchers.Default) {
-            parseNeteaseHomePlaylists(raw, limit = HOME_NETEASE_PLAYLIST_LIMIT)
+            parseNeteaseHomePlaylists(raw, limit = limit)
         }
 
-    private suspend fun parseSongsOnWorker(raw: String): List<SongItem> =
+    private suspend fun parseSongsOnWorker(
+        raw: String,
+        limit: Int = HOME_NETEASE_SONG_LIMIT
+    ): List<SongItem> =
         withContext(Dispatchers.Default) {
-            parseNeteaseHomeSongs(raw, limit = HOME_NETEASE_SONG_LIMIT)
+            parseNeteaseHomeSongs(raw, limit = limit)
         }
 
     private suspend fun fetchSongSection(
@@ -1131,6 +1174,126 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     section = HomeSectionState(error = buildHomeErrorText(result.throwable))
                 )
             }
+        }
+    }
+
+    /**
+     * 拉取某个首页歌曲小模块的完整列表，供二级页使用。
+     */
+    suspend fun fetchFullSongSection(
+        source: NeteaseHomeSongSource
+    ): Result<List<SongItem>> {
+        return runCatching {
+            if (source == NeteaseHomeSongSource.PRIVATE_FM) {
+                fetchPrivateFmSongs()
+            } else {
+                val raw = withContext(Dispatchers.IO) {
+                    fetchFullSongSourceRaw(source)
+                }
+                parseSongsOnWorker(raw, limit = HOME_FULL_SONG_LIMIT)
+            }
+        }
+    }
+
+    /**
+     * 拉取某个首页歌单分类的完整列表，供二级页使用。
+     *
+     * 与首页那份截断列表不同，这里按 [HOME_FULL_PLAYLIST_LIMIT] 请求并解析，
+     * 否则会拿到上百条数据却只保留首页用的 30 条。
+     */
+    suspend fun fetchFullPlaylistSection(
+        source: NeteaseHomePlaylistSource
+    ): Result<List<PlaylistSummary>> {
+        return runCatching {
+            val raw = withContext(Dispatchers.IO) {
+                fetchFullPlaylistSourceRaw(source)
+            }
+            parseRecommendOnWorker(raw, limit = HOME_FULL_PLAYLIST_LIMIT)
+        }.recoverCatching { error ->
+            // 与首页加载保持一致：cookie 过期导致 301 / 50000005 时退回匿名请求，
+            // 否则用户在首页能正常看到该模块，点进二级页却只会看到错误页。
+            if (
+                error is ApiCodeException &&
+                source == NeteaseHomePlaylistSource.PERSONALIZED &&
+                hasRecommendLogin &&
+                shouldFallbackRecommend(error.code)
+            ) {
+                NPLogger.w(
+                    TAG,
+                    "fetchFullPlaylistSection fallback to anonymous due to api_code=${error.code}"
+                )
+                val fallbackRaw = withContext(Dispatchers.IO) {
+                    client.getRecommendedPlaylists(
+                        limit = HOME_FULL_PLAYLIST_LIMIT,
+                        usePersistedCookies = false
+                    )
+                }
+                parseRecommendOnWorker(fallbackRaw, limit = HOME_FULL_PLAYLIST_LIMIT)
+            } else {
+                throw error
+            }
+        }
+    }
+
+    /** 二级页使用的完整歌单来源请求参数，比首页那份截断列表取更多。 */
+    private fun fetchFullPlaylistSourceRaw(source: NeteaseHomePlaylistSource): String {
+        return when (source) {
+            NeteaseHomePlaylistSource.PERSONALIZED -> client.getRecommendedPlaylists(
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                usePersistedCookies = hasRecommendLogin
+            )
+            NeteaseHomePlaylistSource.DAILY_RESOURCE -> client.getDailyRecommendedPlaylists()
+            NeteaseHomePlaylistSource.HIGH_QUALITY -> client.getHighQualityPlaylists(
+                cat = "全部",
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                before = 0L
+            )
+            NeteaseHomePlaylistSource.HOT_PLAYLISTS -> client.getTopPlaylists(
+                cat = "全部",
+                order = "hot",
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                usePersistedCookies = hasRecommendLogin
+            )
+            NeteaseHomePlaylistSource.ACG_PLAYLISTS -> client.getTopPlaylists(
+                cat = "ACG",
+                order = "hot",
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                usePersistedCookies = hasRecommendLogin
+            )
+        }
+    }
+
+    /** 二级页使用的完整歌曲来源请求参数，比首页那份截断列表取更多。 */
+    private fun fetchFullSongSourceRaw(source: NeteaseHomeSongSource): String {
+        return when (source) {
+            NeteaseHomeSongSource.TOP_SOARING -> client.getPlaylistDetail(
+                playlistId = NETEASE_TOPLIST_SOARING_ID,
+                n = HOME_FULL_SONG_LIMIT,
+                s = 0
+            )
+            NeteaseHomeSongSource.PERSONAL_RADAR -> client.getPlaylistDetail(
+                playlistId = NETEASE_PRIVATE_RADAR_PLAYLIST_ID,
+                n = HOME_FULL_SONG_LIMIT,
+                s = 0
+            )
+            NeteaseHomeSongSource.DAILY_RECOMMEND -> client.getDailyRecommendedSongs(
+                afresh = true
+            )
+            NeteaseHomeSongSource.PRIVATE_FM -> client.getPersonalFmSongs()
+            NeteaseHomeSongSource.PERSONALIZED_NEW_SONGS -> client.getPersonalizedNewSongs(
+                limit = HOME_FULL_SONG_LIMIT,
+                usePersistedCookies = hasRecommendLogin
+            )
+            NeteaseHomeSongSource.TOP_HOT -> client.getPlaylistDetail(
+                playlistId = NETEASE_TOPLIST_HOT_ID,
+                n = HOME_FULL_SONG_LIMIT,
+                s = 0
+            )
+            NeteaseHomeSongSource.TOP_NEW -> client.getPlaylistDetail(
+                playlistId = NETEASE_TOPLIST_NEW_ID,
+                n = HOME_FULL_SONG_LIMIT,
+                s = 0
+            )
         }
     }
 

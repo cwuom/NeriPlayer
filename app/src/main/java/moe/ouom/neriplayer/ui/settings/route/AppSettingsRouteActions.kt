@@ -356,6 +356,34 @@ internal class AppHomeSettingsActions(
     val onShowHomeBilibiliCardChange: (Boolean) -> Unit = { enabled ->
             scope.launch { repo.setHomeCardBilibili(enabled) }
         }
+
+    val onReorderHomeMajorSection: (List<String>) -> Unit = { order ->
+            scope.launch { repo.setHomeMajorOrder(order) }
+        }
+
+    val onReorderHomeTrendingSection: (List<String>) -> Unit = { order ->
+            scope.launch { repo.setHomeTrendingOrder(order) }
+        }
+
+    val onReorderHomeRadarSection: (List<String>) -> Unit = { order ->
+            scope.launch { repo.setHomeRadarOrder(order) }
+        }
+
+    val onReorderHomeRecommendedSection: (List<String>) -> Unit = { order ->
+            scope.launch { repo.setHomeRecommendedOrder(order) }
+        }
+
+    val onSetHomeTrendingVisible: (String, Boolean) -> Unit = { id, visible ->
+        scope.launch { repo.setHomeTrendingSubSectionVisible(id, visible) }
+    }
+
+    val onSetHomeRadarVisible: (String, Boolean) -> Unit = { id, visible ->
+        scope.launch { repo.setHomeRadarSubSectionVisible(id, visible) }
+    }
+
+    val onSetHomeRecommendedVisible: (String, Boolean) -> Unit = { id, visible ->
+        scope.launch { repo.setHomeRecommendedSubSectionVisible(id, visible) }
+    }
 }
 
 internal class AppStorageSettingsActions(
