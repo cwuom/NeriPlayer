@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -19,8 +20,13 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.lan.LanSharedLyricLine
+import moe.ouom.neriplayer.data.model.lan.LanSharedPresentation
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.WordTiming
 import moe.ouom.neriplayer.data.model.server.isServerSong
 import moe.ouom.neriplayer.platform.subsonic.api.subsonicErrorMessageRes
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
@@ -32,7 +38,8 @@ internal data class NowPlayingLyricsLoadRequest(
     val currentMediaUrl: String?,
     val preferWordTimedLyrics: Boolean,
     val defaultLyricSource: LyricSourcePreference,
-    val cachedPreferredLyrics: PreferredLyricSourceResult?
+    val cachedPreferredLyrics: PreferredLyricSourceResult?,
+    val sharedPresentation: LanSharedPresentation? = null,
 )
 
 internal data class NowPlayingLyricsRefreshVersions(
@@ -197,16 +204,8 @@ internal class NowPlayingLyricsLoadOwner(
         request: NowPlayingLyricsLoadRequest,
         forceReplace: Boolean
     ) {
-        moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore.forSong(request.song)?.let { shared ->
-            fun lines(values: List<moe.ouom.neriplayer.data.model.lan.LanSharedLyricLine>) = values.map { line ->
-                moe.ouom.neriplayer.data.model.lyrics.LyricEntry(line.text, line.startTimeMs, line.endTimeMs,
-                    line.words?.map { moe.ouom.neriplayer.data.model.lyrics.WordTiming(it.startTimeMs, it.endTimeMs, it.charCount) }, line.translation)
-            }
-            val original = lines(shared.lyrics)
-            val translated = lines(shared.translations)
-            val romanized = lines(shared.romanized)
-            publish(generation, request.song, LoadedLyricsState(null, null, null, original, translated,
-                romanized, original, translated, romanized), "background", true)
+        request.sharedPresentation?.let { shared ->
+            publish(generation, request.song, shared.toLoadedLyricsState(), "background", true)
             markSecondaryResolved(generation)
             return
         }
@@ -295,9 +294,10 @@ internal fun rememberNowPlayingLyricsOwner(
     initial: LoadedLyricsState,
     scope: CoroutineScope,
     stages: NowPlayingLyricsStages,
-    initialSecondaryResolved: Boolean = false
+    initialSecondaryResolved: Boolean = false,
+    sharedPresentation: LanSharedPresentation? = null,
 ): NowPlayingLyricsLoadOwner {
-    val owner = remember(song?.stableKey(), defaultLyricSource, song?.lyricSyncRevision, song?.lyricSyncEdited, stages) {
+    val owner = remember(song?.stableKey(), defaultLyricSource, song?.lyricSyncRevision, song?.lyricSyncEdited, stages, sharedPresentation) {
         NowPlayingLyricsLoadOwner(initial, scope, stages, initialSecondaryResolved)
     }
     DisposableEffect(owner) { onDispose(owner::dispose) }
@@ -311,11 +311,14 @@ internal fun rememberNowPlayingLyricsLoadOwner(
     stages: NowPlayingLyricsStages = DefaultNowPlayingLyricsStages
 ): NowPlayingLyricsLoadOwner {
     val scope = rememberCoroutineScope()
+    val sharedEntry by LanSharedPresentationStore.state.collectAsState()
+    val shared = LanSharedPresentationStore.forSong(request.song, sharedEntry)
+    val effectiveRequest = request.copy(sharedPresentation = shared)
     val cacheGeneration = stages.cacheGeneration
-    val snapshotKey = nowPlayingLyricsSnapshotKey(request, versions, cacheGeneration)
-    val restored = rememberNowPlayingLyricsRestorePoint(request, versions, stages, snapshotKey)
+    val snapshotKey = nowPlayingLyricsSnapshotKey(effectiveRequest, versions, cacheGeneration)
+    val restored = rememberNowPlayingLyricsRestorePoint(effectiveRequest, versions, stages, snapshotKey)
     val owner = rememberNowPlayingLyricsOwner(request.song, request.defaultLyricSource,
-        restored.state, scope, stages, restored.secondaryResolved)
+        restored.state, scope, stages, restored.secondaryResolved, shared)
     val reloadKey = NowPlayingLyricsReloadTrigger(
         nowPlayingLyricsReloadKey(request.song),
         resolveNowPlayingLyricsMediaReloadKey(request.song, request.currentMediaUrl),
@@ -323,7 +326,7 @@ internal fun rememberNowPlayingLyricsLoadOwner(
     )
     LaunchedEffect(owner, reloadKey, stages, cacheGeneration) {
         owner.reload(
-            request = request.copy(cachedPreferredLyrics = restored.initial.cachedPreferredLyrics),
+            request = effectiveRequest.copy(cachedPreferredLyrics = restored.initial.cachedPreferredLyrics),
             key = snapshotKey,
             preferenceRevision = versions.lyricsPreferenceRevision
         )
@@ -344,6 +347,10 @@ private fun rememberNowPlayingLyricsRestorePoint(
     stages: NowPlayingLyricsStages,
     snapshotKey: NowPlayingLyricsSnapshotKey?
 ): NowPlayingLyricsRestorePoint {
+    request.sharedPresentation?.let { shared ->
+        val state = remember(shared, request.song) { overlayConfirmedUserLyrics(request.song, shared.toLoadedLyricsState()) }
+        return NowPlayingLyricsRestorePoint(NowPlayingInitialLyricsResult(null, state), state, true)
+    }
     val reusable = stages.snapshotCache?.reusable(snapshotKey)
     // 完整快照可直接恢复，避免在播放页首帧再次同步解析同一份歌词
     val initial = if (reusable == null) {
@@ -357,4 +364,15 @@ private fun rememberNowPlayingLyricsRestorePoint(
         cached?.state ?: initial.state,
         cached?.secondaryResolved == true
     )
+}
+
+private fun LanSharedPresentation.toLoadedLyricsState(): LoadedLyricsState {
+    fun lines(values: List<LanSharedLyricLine>) = values.map { line ->
+        val words = line.words?.map { WordTiming(it.startTimeMs, it.endTimeMs, it.charCount) }
+        LyricEntry(line.text, line.startTimeMs, line.endTimeMs, words, line.translation)
+    }
+    val original = lines(lyrics)
+    val translated = lines(translations)
+    val phonetic = lines(romanized)
+    return LoadedLyricsState(null, null, null, original, translated, phonetic, original, translated, phonetic)
 }

@@ -5,10 +5,12 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const manifest=JSON.parse((await readFile(`${root}js/upstream/UPSTREAM.json`,'utf8')).replace(/^\uFEFF/,''));
+// the pinned source hashes use CRLF even when Git checks out LF on this platform
+const readUpstream=async file=>(await readFile(`${root}js/upstream/${file}`,'utf8')).replace(/\r?\n/g,'\r\n');
 for(const f of manifest.files) {
- if(createHash('sha256').update(await readFile(`${root}js/upstream/${f.file}`)).digest('hex')!==f.sha256) throw Error(`Source changed: ${f.file}`);
+ if(createHash('sha256').update(await readUpstream(f.file)).digest('hex')!==f.sha256) throw Error(`Source changed: ${f.file}`);
 }
-const source=await readFile(`${root}js/upstream/global.tsx`,'utf8');
+const source=await readUpstream('global.tsx');
 const ast=parse(source,{sourceType:'module',plugins:['typescript','jsx']});
 const names=['schedulePlay','schedulePause','playAudio','pauseAudio','getCurrentTrackPosition'];
 const helpers=['getAudioPlayer','getSocket','MAX_TRUSTWORTHY_OUTPUT_LATENCY_MS','getFilteredOutputLatencyMs','getWaitTimeSeconds'];

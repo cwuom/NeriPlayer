@@ -1,21 +1,12 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package moe.ouom.neriplayer.core.player.lan
 
-import java.io.File
-import moe.ouom.neriplayer.core.player.url.listenTogetherQualityKeyFromStreamUrl
+import androidx.media3.common.Format
 import moe.ouom.neriplayer.core.player.url.buildListenTogetherFallbackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.deriveCodecLabel
-
-internal data class LanAudioFile(
-    val file: File?, val format: LanAudioFormat,
-    val source: moe.ouom.neriplayer.lanltw.media.LanReadableMedia = moe.ouom.neriplayer.lanltw.media.LanReadableMedia.file(checkNotNull(file)),
-    val originalUri: android.net.Uri = android.net.Uri.fromFile(checkNotNull(file))
-)
-internal data class LanAudioFormat(
-    val mime: String?, val bitrateKbps: Int?, val sampleRateHz: Int?,
-    val channels: Int?, val bitDepth: Int?
-)
 
 /** Source is authoritative room metadata; quality comes from the selected host candidate. */
 internal fun lanAudioSource(channelId: String): PlaybackAudioSource = when (channelId) {
@@ -23,18 +14,22 @@ internal fun lanAudioSource(channelId: String): PlaybackAudioSource = when (chan
     "netease" -> PlaybackAudioSource.NETEASE
     "bilibili" -> PlaybackAudioSource.BILIBILI
     "youtubeMusic" -> PlaybackAudioSource.YOUTUBE_MUSIC
+    "subsonic" -> PlaybackAudioSource.SUBSONIC
     else -> error("SOURCE")
 }
 
-internal fun lanAudioMetadata(
-    channelId: String, selectedUrl: String, format: LanAudioFormat, localized: (Int) -> String
+internal fun lanStreamingAudioMetadata(
+    channelId: String, qualityKey: String?, format: Format, localized: (Int) -> String,
 ): PlaybackAudioInfo {
     val source = lanAudioSource(channelId)
-    val quality = listenTogetherQualityKeyFromStreamUrl(selectedUrl, source)
-    val base = quality?.let { buildListenTogetherFallbackAudioInfo(source, it, localized) }
+    val base = qualityKey?.let { buildListenTogetherFallbackAudioInfo(source, it, localized) }
         ?: PlaybackAudioInfo(source)
-    return base.copy(qualityOptions = emptyList(),
-        codecLabel = deriveCodecLabel(format.mime), mimeType = format.mime,
-        bitrateKbps = format.bitrateKbps, sampleRateHz = format.sampleRateHz,
-        channelCount = format.channels, bitDepth = format.bitDepth)
+    return base.copy(
+        qualityOptions = emptyList(),
+        codecLabel = deriveCodecLabel(format.sampleMimeType),
+        mimeType = format.sampleMimeType,
+        bitrateKbps = format.bitrate.takeIf { it > 0 }?.div(1_000),
+        sampleRateHz = format.sampleRate.takeIf { it > 0 },
+        channelCount = format.channelCount.takeIf { it > 0 },
+    )
 }

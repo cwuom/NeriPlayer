@@ -16,7 +16,9 @@ class AudioContext {
 }
 const context=vm.createContext({performance:{now:()=>perf},AudioContext,navigator:{userAgent:'Android test',maxTouchPoints:0},console:{log(){},warn(){},error(){}},setInterval:()=>1,clearInterval(){},setTimeout:()=>1,
  fetch:async()=>({ok:true,arrayBuffer:async()=>({byteLength:encodedLength})}),LanAudioHost:{nowMs:()=>perf+40000,post:s=>messages.push(JSON.parse(s))}});
-context.window=context;vm.runInContext(bundle,context);let id=0,checks=0;
+context.window=context;
+vm.runInContext('delete globalThis.globalThis',context);
+vm.runInContext(bundle,context);let id=0,checks=0;
 async function command(op,data={}){const n=++id;await context.NeriBeatSyncAudio.dispatch({id:n,op,data});const reply=messages.find(m=>m.event==='reply'&&m.id===n);assert.ok(reply,op);if(reply.error)throw Error(reply.error);return reply.result;}
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
 const action=(extra={})=>({type:'PLAY',key:'song',revision:1,positionSeconds:5,serverTimeMs:perf+40500,offsetMs:0,nudgeMs:0,...extra});
@@ -38,6 +40,11 @@ pendingDecode=null;await assert.rejects(command('load',{key:'song',url:'https://
 await command('load',{key:'song',url:'https://local/test',expectedDurationMs:120000});
 // 终点/越界 seek 不再拒绝：收敛到最后可播放帧后照常调度（Codex 评审修复）
 await command('schedule',action({revision:8,positionSeconds:999}));near(starts.at(-1).offset,120-0.05);checks++;
+const startsBeforeLateEnd=starts.length;
+const lateEnd=await command('schedule',action({revision:9,positionSeconds:119.9,serverTimeMs:perf+39500}));
+assert.equal(lateEnd.accepted,false);
+assert.equal(lateEnd.playing,false);
+assert.equal(starts.length,startsBeforeLateEnd);checks++;
 await command('resetNtp');
 for(let group=0;group<16;group++){
  const t0=1000+group*50;

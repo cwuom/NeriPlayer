@@ -23,4 +23,27 @@ class LanPlaybackBindingTest {
         LanPlaybackBinding.clear()
         assertFalse(LanPlaybackBinding.route("PAUSE", PlaybackCommandSource.LOCAL, null, 0.0))
     }
+
+    @Test fun clearingTheHostQueuePausesTheRoom() {
+        val requests = mutableListOf<String>()
+        LanPlaybackBinding.isHost = { true }
+        LanPlaybackBinding.command = { intent, _, _ -> requests += intent }
+
+        LanPlaybackBinding.onQueueCleared()
+
+        assertEquals(listOf("PAUSE"), requests)
+    }
+
+    @Test fun clearingAGuestQueueInterruptsOnlyTheLocalAudio() {
+        val requests = mutableListOf<String>()
+        var interrupted = 0
+        LanPlaybackBinding.externalAudio = true
+        LanPlaybackBinding.command = { intent, _, _ -> requests += intent }
+        LanPlaybackBinding.interruptAudio = { interrupted++ }
+
+        LanPlaybackBinding.onQueueCleared()
+
+        assertEquals(1, interrupted)
+        assertTrue(requests.isEmpty())
+    }
 }

@@ -3,7 +3,7 @@ import {upstreamActions,getFilteredOutputLatencyMs} from '../generated/audio-ups
 import * as ntp from '../upstream/ntp';
 import {epochNow} from './shared';
 declare const LanAudioHost:{nowMs():number;post(message:string):void};
-const host=globalThis as any;
+const host=window as any;
 let loadGeneration=0,revision=-1,closed=false,timer=0;
 let samples:any[]=[],buffer:AudioBuffer|null=null,stopAt:number|null=null,clockRtt=Infinity;
 const diagnostics:any[]=[];
@@ -57,14 +57,20 @@ async function load(d:any){
  buffer=decoded;state.duration=decoded.duration;state.audioSources=[{source:{url:d.key},status:'loaded',buffer:decoded}];
  diagnostic('decoded',{key:d.key,duration:decoded.duration,sampleRate:decoded.sampleRate,channels:decoded.numberOfChannels});return {key:d.key,durationSeconds:decoded.duration};
 }
-function schedule(d:any){
+async function schedule(d:any){
  if(d.revision<revision)return {accepted:false};
  if(!buffer||state.selectedAudioUrl!==d.key)throw Error('LOADING');
  synchronizeClock();if(!audioContextManager.isReady())throw Error('AUDIO_SUSPENDED');
  revision=d.revision;state.offsetEstimate=d.offsetMs;state.nudgeOffsetMs=d.nudgeMs;
  if(d.type==='PLAY'){
   const position=Math.min(Math.max(0,d.positionSeconds),Math.max(0,buffer.duration-0.05));stopAt=null;
-  actions.schedulePlay({audioSource:d.key,trackTimeSeconds:position,targetServerTime:d.serverTimeMs});
+  const previousNode=state.audioPlayer.sourceNode;
+  await actions.schedulePlay({audioSource:d.key,trackTimeSeconds:position,targetServerTime:d.serverTimeMs});
+  if(state.audioPlayer.sourceNode===previousNode){
+   state.currentTime=snapshot().positionSeconds;
+   stopNode();
+   return {accepted:false,...snapshot()};
+  }
  }else{
   if(!state.isPlaying&&stopAt===null){state.currentTime=d.positionSeconds;return {accepted:true,...snapshot()};}
   const ctx=audioContextManager.getContext();stopAt=ctx.currentTime+Math.max(0,Math.max(0,d.serverTimeMs-epochNow()-d.offsetMs-d.nudgeMs)-getFilteredOutputLatencyMs())/1000;

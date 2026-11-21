@@ -16,6 +16,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore
+import moe.ouom.neriplayer.data.model.lan.LanSharedLyricLine
+import moe.ouom.neriplayer.data.model.lan.LanSharedPresentation
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LoadedLyricsState
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingFastLyricsResult
@@ -44,6 +47,29 @@ class NowPlayingLyricsRefreshComposeTest {
     private var versions by mutableStateOf(NowPlayingLyricsRefreshVersions(0L, 0, 0L))
     private var visible by mutableStateOf(true)
     private val stages = ControlledStages()
+
+    @Test
+    fun `shared lyrics replace cached captions on arrival and disappear on leaving`() {
+        song = checkNotNull(song).copy(channelId = "netease", audioId = "41")
+        try {
+            render()
+            assertCaption("CC original", "CC translation")
+
+            composeRule.runOnIdle {
+                LanSharedPresentationStore.publish("netease:41", LanSharedPresentation(
+                    "Current", "Artist", "Album",
+                    lyrics = listOf(LanSharedLyricLine("Room original", 1000, 2000)),
+                    translations = listOf(LanSharedLyricLine("Room translation", 1000, 2000)),
+                ))
+            }
+            assertCaption("Room original", "Room translation")
+
+            composeRule.runOnIdle { LanSharedPresentationStore.clear() }
+            assertCaption("CC original", "CC translation")
+        } finally {
+            LanSharedPresentationStore.clear()
+        }
+    }
 
     @Test
     fun `opening an empty queue with default sources has no caption tracks`() {

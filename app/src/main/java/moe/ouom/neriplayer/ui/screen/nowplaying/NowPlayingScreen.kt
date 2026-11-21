@@ -494,12 +494,14 @@ fun NowPlayingScreen(
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
+    val lanControls = moe.ouom.neriplayer.ui.component.playback.lan.rememberLanPlaybackControls()
     val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow.collectAsStateWithLifecycle()
     val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
     val isPlaybackWaiting = resolvePlaybackWaiting(
         playbackRequested = isPlaybackControlPlaying,
         isPlaying = isPlaying,
-        usbPlaybackPreparing = usbPlaybackPreparing
+        usbPlaybackPreparing = usbPlaybackPreparing,
+        lanPreparing = lanControls.preparing
     )
     val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsStateWithLifecycle()
     val repeatMode by PlayerManager.repeatModeFlow.collectAsStateWithLifecycle()
@@ -531,8 +533,7 @@ fun NowPlayingScreen(
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
     val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsStateWithLifecycle()
     val listenTogetherRoomState by listenTogetherSessionManager.roomState.collectAsStateWithLifecycle()
-    val lanControls = moe.ouom.neriplayer.ui.component.playback.lan.rememberLanPlaybackControls()
-    val playbackProgressSeekEnabled = lanControls.seek && resolveListenTogetherProgressSeekEnabled(
+    val playbackProgressSeekEnabled = lanControls.permissions.seek && resolveListenTogetherProgressSeekEnabled(
         sessionUserUuid = listenTogetherSessionState.userUuid,
         fallbackRole = listenTogetherSessionState.role,
         roomId = listenTogetherSessionState.roomId,
@@ -765,7 +766,6 @@ fun NowPlayingScreen(
 
     // 控制音量弹窗的显示
     var showVolumeSheet by remember { mutableStateOf(false) }
-    val volumeSheetState = rememberModalBottomSheetState()
 
     val currentLyricSourceKey = currentSong?.stableKey()
     val lyricsLoadOwner = rememberNowPlayingLyricsLoadOwner(
@@ -1327,7 +1327,7 @@ fun NowPlayingScreen(
 
                                         HapticIconButton(
                                             onClick = { PlayerManager.previous() },
-                                            enabled = lanControls.next,
+                                            enabled = lanControls.permissions.next,
                                             modifier = Modifier
                                                 .sharedElement(
                                                     rememberSharedContentState(
@@ -1347,7 +1347,7 @@ fun NowPlayingScreen(
 
                                         HapticFilledIconButton(
                                             onClick = { PlayerManager.togglePlayPause() },
-                                            enabled = !usbPlaybackPreparing && lanControls.playPause,
+                                            enabled = !usbPlaybackPreparing && lanControls.permissions.playPause,
                                             modifier = Modifier
                                                 .nowPlayingLongPress(toggleImmersiveMode)
                                                 .sharedElement(
@@ -1374,7 +1374,7 @@ fun NowPlayingScreen(
 
                                         HapticIconButton(
                                             onClick = { PlayerManager.next() },
-                                            enabled = lanControls.next,
+                                            enabled = lanControls.permissions.next,
                                             modifier = Modifier
                                                 .sharedElement(
                                                     rememberSharedContentState(
@@ -1828,15 +1828,8 @@ fun NowPlayingScreen(
                             }
                         }
 
-                        // 音量控制弹窗
                         if (showVolumeSheet) {
-                            ModalBottomSheet(
-                                onDismissRequest = { showVolumeSheet = false },
-                                sheetState = volumeSheetState,
-                                sheetGesturesEnabled = false
-                            ) {
-                                VolumeControlSheetContent()
-                            }
+                            PlaybackOutputSheet(onDismiss = { showVolumeSheet = false })
                         }
 
                         if (artistPickerCandidates.isNotEmpty()) {

@@ -1840,7 +1840,7 @@ object AutoSettingsSchema {
     object playback : PlaybackSettingsSection() {
         @AutoSetting(order = 991, ui = SettingUiType.Custom)
         val lanHostPermissions = autoIntSetting(
-            key = "lan_listen_host_permissions", defaultValue = 0,
+            key = "lan_listen_host_permissions", defaultValue = 7,
             titleRes = CoreCommonR.string.lan_permissions, icon = AutoSettingIcon.Bolt
         )
 

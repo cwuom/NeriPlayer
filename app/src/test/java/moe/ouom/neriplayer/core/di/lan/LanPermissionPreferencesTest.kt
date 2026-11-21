@@ -17,14 +17,14 @@ class LanPermissionPreferencesTest {
     @Test fun oneSettingPreservesIndependentGrantsAcrossPreferenceOwners() = runBlocking {
         val repository = mock(SettingsRepository::class.java)
         val setting = AutoSettingsSchema.playback.lanHostPermissions
-        val stored = MutableStateFlow(0)
+        val stored = MutableStateFlow(setting.defaultValue)
         `when`(repository.settingFlow(setting)).thenReturn(stored)
         doAnswer { invocation -> stored.value = invocation.getArgument(1); Unit }
             .`when`(repository).setSetting(eq(setting) ?: setting, anyInt())
         val preferences = LanPermissionPreferences(repository)
-        assertEquals(LanPermissions(), preferences.load())
+        assertEquals(LanPermissions(true, true, true), preferences.load())
         for ((value, bits) in listOf(LanPermissions(true, false, true) to 5,
-            LanPermissions(false, true, false) to 2, LanPermissions() to 0)) {
+            LanPermissions(false, true, false) to 2, LanPermissions(false, false, false) to 0)) {
             preferences.save(value)
             assertEquals(bits, stored.value)
             assertEquals(value, LanPermissionPreferences(repository).load())

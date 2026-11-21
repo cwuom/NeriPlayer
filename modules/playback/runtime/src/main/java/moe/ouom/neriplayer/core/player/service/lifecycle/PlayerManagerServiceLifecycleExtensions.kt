@@ -9,9 +9,9 @@ import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 internal fun PlayerManager.suspendPlaybackForServiceRestart(reason: String) {
     if (!isPlayerInitialized() || currentSongFlow.value == null) return
     val shouldResume = isTransportActiveWithoutInitialization()
-    val positionMs = player.currentPositionMsOr(
-        playbackPositionFlow.value.coerceAtLeast(0L)
-    )
+    val reportedPositionMs = playbackPositionFlow.value.coerceAtLeast(0L)
+    val positionMs = if (player.currentMediaItem == null) reportedPositionMs
+        else player.currentPositionMsOr(reportedPositionMs)
 
     playbackRequestToken += 1L
     playJob?.cancel()

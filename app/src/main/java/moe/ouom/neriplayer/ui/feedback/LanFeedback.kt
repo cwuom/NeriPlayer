@@ -8,10 +8,12 @@ internal fun lanErrorText(code: String): Int = when (code) {
     "LOCAL_TRANSFER" -> CoreR.string.lan_error_transfer
     "MEMORY_LIMIT" -> CoreR.string.lan_error_memory
     "AUDIO_FORMAT" -> CoreR.string.lan_error_audio_format
+    "AUDIO_NOT_SEEKABLE" -> CoreR.string.lan_error_not_seekable
     "AUDIO_SUSPENDED", "AUDIO_ENGINE", "CLOCK" -> CoreR.string.lan_error_audio_engine
     "LOAD_TIMEOUT" -> CoreR.string.lan_error_load_timeout
     "FULL_AUDIO_REQUIRED" -> CoreR.string.lan_error_full_audio
-    "AUDIO_DURATION", "AUDIO_CONTENT" -> CoreR.string.lan_error_duration
+    "AUDIO_DURATION" -> CoreR.string.lan_error_duration
+    "AUDIO_CONTENT" -> CoreR.string.lan_error_content
     "SOURCE" -> CoreR.string.lan_error_source
     "DENIED" -> CoreR.string.lan_error_denied
     "LOADING" -> CoreR.string.lan_error_loading

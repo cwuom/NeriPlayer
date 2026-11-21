@@ -2,12 +2,17 @@ package moe.ouom.neriplayer.core.player.lyrics
 
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
+import moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore
+import moe.ouom.neriplayer.core.player.lan.isLanTemporaryServerSong
 import moe.ouom.neriplayer.core.player.metadata.BiliSubtitleLyricsOptions
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
+
+private fun lanPresentationForLyrics(song: SongItem, useLanPresentation: Boolean) =
+    if (useLanPresentation) LanSharedPresentationStore.forSong(song) else null
 
 internal suspend fun PlayerManager.getNeteaseLyricsImpl(songId: Long): List<LyricEntry> {
     return PlayerLyricsProvider.getNeteaseLyrics(songId, neteaseClient, neteaseLyricsCache)
@@ -47,11 +52,13 @@ internal suspend fun PlayerManager.getPreferredNeteaseRomanizedLyricContentImpl(
 
 internal suspend fun PlayerManager.getTranslatedLyricsImpl(
     song: SongItem,
-    skipPreferredSource: Boolean = false
+    skipPreferredSource: Boolean = false,
+    useLanPresentation: Boolean = true,
 ): List<LyricEntry> {
-    moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore.forSong(song)?.let { shared ->
+    lanPresentationForLyrics(song, useLanPresentation)?.let { shared ->
         return shared.translations.map { moe.ouom.neriplayer.core.player.lan.restoreLanLyricLine(it) }
     }
+    if (isLanTemporaryServerSong(song)) return emptyList()
     return PlayerLyricsProvider.getTranslatedLyrics(
         song = song,
         application = application,
@@ -75,10 +82,11 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(
     )
 }
 
-internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem): List<LyricEntry> {
-    moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore.forSong(song)?.let { shared ->
+internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem, useLanPresentation: Boolean = true): List<LyricEntry> {
+    lanPresentationForLyrics(song, useLanPresentation)?.let { shared ->
         return shared.romanized.map { moe.ouom.neriplayer.core.player.lan.restoreLanLyricLine(it) }
     }
+    if (isLanTemporaryServerSong(song)) return emptyList()
     return PlayerLyricsProvider.getRomanizedLyrics(
         song = song,
         application = application,
@@ -93,11 +101,13 @@ internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem): List<
 
 internal suspend fun PlayerManager.getLyricsImpl(
     song: SongItem,
-    skipPreferredSource: Boolean = false
+    skipPreferredSource: Boolean = false,
+    useLanPresentation: Boolean = true,
 ): List<LyricEntry> {
-    moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore.forSong(song)?.let { shared ->
+    lanPresentationForLyrics(song, useLanPresentation)?.let { shared ->
         return shared.lyrics.map { moe.ouom.neriplayer.core.player.lan.restoreLanLyricLine(it) }
     }
+    if (isLanTemporaryServerSong(song)) return emptyList()
     return PlayerLyricsProvider.getLyrics(
         song = song,
         application = application,
@@ -128,11 +138,14 @@ internal suspend fun PlayerManager.getLyricsImpl(
 internal suspend fun PlayerManager.getPreferredLyricSourceResultImpl(
     song: SongItem,
     preference: LyricSourcePreference
-): PreferredLyricSourceResult? = PlayerLyricsProvider.tryGetPreferredLyricSourceResult(
-    song = song,
-    preference = preference,
-    preferWordTimed = preferWordTimedLyrics,
-    editableLyricsMatcher = PlayerDependencies.repositories.editableLyricsMatcher,
-    neteaseClient = neteaseClient,
-    neteaseLyricsCache = neteaseLyricsCache
-)
+): PreferredLyricSourceResult? {
+    if (isLanTemporaryServerSong(song)) return null
+    return PlayerLyricsProvider.tryGetPreferredLyricSourceResult(
+        song = song,
+        preference = preference,
+        preferWordTimed = preferWordTimedLyrics,
+        editableLyricsMatcher = PlayerDependencies.repositories.editableLyricsMatcher,
+        neteaseClient = neteaseClient,
+        neteaseLyricsCache = neteaseLyricsCache,
+    )
+}

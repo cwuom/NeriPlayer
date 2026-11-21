@@ -400,14 +400,16 @@ internal data class ShareableListenTogetherStreamResolution(
 )
 
 internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrls(
-    song: SongItem
+    song: SongItem,
+    progressiveRelay: Boolean = false,
+    firstQualityOnly: Boolean = false
 ): ShareableListenTogetherStreamResolution {
     val track = song.toListenTogetherTrackOrNull()
         ?: return ShareableListenTogetherStreamResolution(emptyList(), isPreviewOnly = false)
     val resolution = when {
-        isYouTubeMusicTrack(song) -> resolveYouTubeListenTogetherShareableStreams(song)
+        isYouTubeMusicTrack(song) -> resolveYouTubeListenTogetherShareableStreams(song, progressiveRelay, firstQualityOnly)
         isBiliTrack(song) -> resolveBiliListenTogetherShareableStreams(song)
-        else -> resolveNeteaseListenTogetherShareableStreams(song)
+        else -> resolveNeteaseListenTogetherShareableStreams(song, firstQualityOnly)
     }
     val trustedUrls = trustedListenTogetherStreamUrls(
         channelId = track.channelId,
@@ -421,7 +423,7 @@ internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrls(
 }
 
 private suspend fun PlayerManager.resolveNeteaseListenTogetherShareableStreams(
-    song: SongItem
+    song: SongItem, firstQualityOnly: Boolean
 ): ShareableListenTogetherStreamResolution = withContext(Dispatchers.IO) {
     if (isLocalSong(song)) {
         return@withContext ShareableListenTogetherStreamResolution(
@@ -434,7 +436,7 @@ private suspend fun PlayerManager.resolveNeteaseListenTogetherShareableStreams(
     var previewOnly = false
     val qualityGroups = buildListenTogetherNeteaseQualityGroups(effectiveNeteaseQuality())
     for (qualityGroup in qualityGroups) {
-        if (streamUrls.size >= MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES) break
+        if (streamUrls.size >= MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES || (firstQualityOnly && streamUrls.isNotEmpty())) break
         for (requestedQuality in qualityGroup) {
             val response = runCatching {
                 neteaseClient.getSongDownloadUrl(song.id, level = requestedQuality)
@@ -552,20 +554,20 @@ internal fun buildBiliListenTogetherStreamUrls(
 }
 
 private suspend fun PlayerManager.resolveYouTubeListenTogetherShareableStreams(
-    song: SongItem
+    song: SongItem, progressiveRelay: Boolean, firstQualityOnly: Boolean
 ): ShareableListenTogetherStreamResolution {
     val streamUrls = linkedSetOf<String>()
     val resolvedQualityKeys = linkedSetOf<String>()
     val preferredQualityKey = effectiveYouTubeQuality()
     for (requestedQuality in buildListenTogetherYouTubeQualityOrder(preferredQualityKey)) {
-        if (streamUrls.size >= MAX_LISTEN_TOGETHER_YOUTUBE_STREAM_URL_CANDIDATES) break
+        if (streamUrls.size >= MAX_LISTEN_TOGETHER_YOUTUBE_STREAM_URL_CANDIDATES || (firstQualityOnly && streamUrls.isNotEmpty())) break
         val result = getYouTubeMusicAudioUrl(
             song = song,
             suppressError = true,
             forceRefresh = false,
             youtubeRecoveryStrategy = YouTubePlaybackRecoveryStrategy(
                 preferredQualityOverride = requestedQuality,
-                requireDirect = false,
+                requireDirect = progressiveRelay,
                 preferM4a = false
             ),
             sideEffects = RefreshResolverSideEffects(RefreshSideEffectGate { false })

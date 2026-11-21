@@ -5,6 +5,7 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import moe.ouom.neriplayer.data.model.lan.LAN_PROTOCOL_VERSION
 import moe.ouom.neriplayer.data.model.lan.LanDiscoveredRoom
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -23,7 +24,7 @@ class LanDiscovery(context: Context) {
     private val resolving = java.util.concurrent.atomic.AtomicBoolean(false)
     fun advertise(roomId: String, name: String, port: Int, onError: () -> Unit) {
         unregister()
-        val info = NsdServiceInfo().apply { serviceName = "Neri-${roomId.take(8)}"; serviceType = TYPE; setPort(port); setAttribute("room", roomId); setAttribute("name", name); setAttribute("version", "2") }
+        val info = NsdServiceInfo().apply { serviceName = "Neri-${roomId.take(8)}"; serviceType = TYPE; setPort(port); setAttribute("room", roomId); setAttribute("name", name); setAttribute("version", LAN_PROTOCOL_VERSION.toString()) }
         val listener = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(info: NsdServiceInfo) = Unit
             override fun onServiceUnregistered(info: NsdServiceInfo) = Unit
@@ -64,7 +65,7 @@ class LanDiscovery(context: Context) {
                 val id = resolved.attributes["room"]?.toString(Charsets.UTF_8) ?: return
                 val version = resolved.attributes["version"]?.toString(Charsets.UTF_8)
                 val address = resolved.host?.hostAddress ?: return
-                if (version != "2" || id.length > 64) return
+                if (version != LAN_PROTOCOL_VERSION.toString() || id.length > 64) return
                 val name = resolved.attributes["name"]?.toString(Charsets.UTF_8)?.take(24) ?: resolved.serviceName
                 rooms[resolved.serviceName] = LanDiscoveredRoom(id, name, address, resolved.port)
                 publish()

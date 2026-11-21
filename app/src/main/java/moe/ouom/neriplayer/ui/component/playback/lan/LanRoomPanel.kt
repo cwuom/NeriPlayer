@@ -8,7 +8,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.WifiTethering
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -25,6 +24,10 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.lan.*
 import moe.ouom.neriplayer.lanltw.session.LanSessionManager
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
+import moe.ouom.neriplayer.ui.component.playback.ListenTogetherPanel
+import moe.ouom.neriplayer.ui.component.playback.ListenTogetherPageTransition
+import moe.ouom.neriplayer.ui.component.playback.ListenTogetherTab
+import moe.ouom.neriplayer.ui.component.playback.PlaybackSheetTextField
 
 @Composable
 internal fun LanRoomEntry(showDescription: Boolean = false) {
@@ -41,7 +44,7 @@ internal fun LanRoomEntry(showDescription: Boolean = false) {
             onCreate = { manager.host(Build.MODEL.take(24)); show = true },
             onJoin = { show = true }, onManage = { show = true })
     }
-    if (show) LanSheet(manager, state) { show = false }
+    if (show) LanSheet { show = false }
 }
 
 @Composable
@@ -58,12 +61,11 @@ internal fun LanRoomEntryActions(active: Boolean, onCreate: () -> Unit, onJoin: 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LanSheet(manager: LanSessionManager, state: LanSessionState, dismiss: () -> Unit) {
-    DisposableEffect(manager) { manager.discovery.discover { manager.reportError("DISCOVERY") }; onDispose { manager.discovery.stop() } }
+private fun LanSheet(dismiss: () -> Unit) {
     DensityScaledModalBottomSheet(onDismissRequest = dismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), sheetGesturesEnabled = false) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            LanRoomPanelContent(manager, state, dismiss)
+            ListenTogetherPanel(initialTab = ListenTogetherTab.Lan, onDismiss = dismiss)
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -73,7 +75,12 @@ private fun JoinControls(manager: LanSessionManager) {
     var name by rememberSaveable { mutableStateOf(Build.MODEL.take(24)) }
     var address by rememberSaveable { mutableStateOf("") }
     val nearby by manager.discovery.nearby.collectAsState()
-    OutlinedTextField(value = name, onValueChange = { name = it.take(24) }, label = { Text(stringResource(CoreR.string.lan_name)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+    PlaybackSheetTextField(
+        value = name,
+        onValueChange = { name = it.take(24) },
+        label = stringResource(CoreR.string.lan_name),
+        modifier = Modifier.fillMaxWidth()
+    )
     Button(onClick = { manager.host(name) }, enabled = name.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text(stringResource(CoreR.string.lan_host)) }
     Text(stringResource(CoreR.string.lan_nearby), style = MaterialTheme.typography.titleMedium)
     if (nearby.isEmpty()) Text(stringResource(CoreR.string.lan_empty), style = MaterialTheme.typography.bodySmall)
@@ -81,7 +88,13 @@ private fun JoinControls(manager: LanSessionManager) {
         ListItem(headlineContent = { Text(room.name) }, supportingContent = { Text("${room.address}:${room.port}") },
             trailingContent = { TextButton(onClick = { val host = if (room.address.contains(':')) "[${room.address}]" else room.address; manager.join("$host:${room.port}", room.key, name) }) { Text(stringResource(CoreR.string.lan_join)) } })
     }
-    OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text(stringResource(CoreR.string.lan_address)) }, placeholder = { Text("192.168.1.2:39001") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+    PlaybackSheetTextField(
+        value = address,
+        onValueChange = { address = it },
+        label = stringResource(CoreR.string.lan_address),
+        placeholder = "192.168.1.2:39001",
+        modifier = Modifier.fillMaxWidth()
+    )
     OutlinedButton(onClick = { manager.join(address.trim(), null, name) }, enabled = address.isNotBlank() && name.isNotBlank()) { Text(stringResource(CoreR.string.lan_manual)) }
 }
 @Composable
@@ -93,17 +106,20 @@ private fun RoomControls(manager: LanSessionManager, state: LanSessionState, onD
     }
     SelectionContainer { Text("${state.address}:${state.port}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     val room = state.room
+    val playPauseIntent = lanRoomPlayPauseIntent(state)
+    val pauseRoom = playPauseIntent == "PAUSE"
     room?.playback?.track?.let { track -> Text(track.name + " · " + track.artist, style = MaterialTheme.typography.titleMedium, maxLines = 2) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { if (room?.playback?.playing == true) manager.requestPlayback("PAUSE", null, 0.0) else manager.requestPlayback("PLAY_PAUSE", room?.playback?.track, 0.0) }, enabled = lanPlaybackControls(state).playPause) {
-            Text(stringResource(if (room?.playback?.playing == true) CoreR.string.lan_pause else CoreR.string.lan_play))
+        Button(onClick = { manager.requestPlayback(playPauseIntent, room?.playback?.track, 0.0) },
+            enabled = lanPlaybackControls(state).playPause) {
+            Text(stringResource(if (pauseRoom) CoreR.string.lan_pause else CoreR.string.lan_play))
         }
         OutlinedButton(onClick = manager::sync, enabled = state.synced) { Text(stringResource(CoreR.string.lan_sync)) }
     }
     if (room != null) {
         if (state.hosting) {
             Text(stringResource(CoreR.string.lan_volume))
-            RoomVolumeSlider(room.volume) { manager.setVolume(it) }
+            LanGroupVolumeSlider(room.volume) { manager.setVolume(it) }
             Text(stringResource(CoreR.string.lan_permissions))
             LanPermissionsRow(room.permissions, manager::setPermissions)
         }
@@ -177,53 +193,39 @@ private fun status(state: LanSessionState): String = when (state.phase) {
 }
 
 @Composable
-internal fun LanRoomPanel() {
+internal fun LanRoomPanel(onDismiss: (() -> Unit)? = null) {
     val manager = remember { AppContainer.lanListenTogether }
     val state by manager.state.collectAsState()
     DisposableEffect(manager) {
         manager.discovery.discover { manager.reportError("DISCOVERY") }
         onDispose { manager.discovery.stop() }
     }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        LanRoomPanelContent(manager, state)
-    }
+    LanRoomPanelContent(manager, state, onDismiss)
 }
 
 @Composable
-private fun LanRoomPanelContent(manager: LanSessionManager, state: LanSessionState, dismiss: (() -> Unit)? = null) {
+internal fun LanRoomPanelContent(manager: LanSessionManager, state: LanSessionState, dismiss: (() -> Unit)? = null) {
     var deviceVolumes by rememberSaveable(state.room?.id) { mutableStateOf(false) }
     BackHandler(enabled = deviceVolumes) { deviceVolumes = false }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        if (deviceVolumes) IconButton(onClick = { deviceVolumes = false }) {
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreR.string.lan_back_room))
+    ListenTogetherPageTransition(showDetails = deviceVolumes) { showDevices ->
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                if (showDevices) IconButton(onClick = { deviceVolumes = false }) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreR.string.lan_back_room))
+                }
+                Text(stringResource(if (showDevices) CoreR.string.lan_device_volume else CoreR.string.lan_title),
+                    style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                if (dismiss != null) IconButton(onClick = dismiss) {
+                    Icon(Icons.Outlined.Close, contentDescription = stringResource(CoreR.string.lan_close))
+                }
+            }
+            state.error?.let { Text(stringResource(moe.ouom.neriplayer.ui.feedback.lanErrorText(it)), color = MaterialTheme.colorScheme.error) }
+            if (showDevices) LanDeviceVolumes(manager, state)
+            else if (state.active) RoomControls(manager, state) { deviceVolumes = true }
+            else {
+                JoinControls(manager)
+                Text(stringResource(CoreR.string.lan_limits), style = MaterialTheme.typography.bodySmall)
+            }
         }
-        Text(stringResource(if (deviceVolumes) CoreR.string.lan_device_volume else CoreR.string.lan_title),
-            style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-        if (dismiss != null) IconButton(onClick = dismiss) {
-            Icon(Icons.Outlined.Close, contentDescription = stringResource(CoreR.string.lan_close))
-        }
     }
-    state.error?.let { Text(stringResource(moe.ouom.neriplayer.ui.feedback.lanErrorText(it)), color = MaterialTheme.colorScheme.error) }
-    if (deviceVolumes) LanDeviceVolumes(manager, state)
-    else if (state.active) RoomControls(manager, state) { deviceVolumes = true }
-    else {
-        JoinControls(manager)
-        Text(stringResource(CoreR.string.lan_limits), style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-/** Active-room shortcut: open management directly without visiting More's subpages. */
-@Composable
-internal fun ActiveLanRoomMenu() {
-    val manager = remember { AppContainer.lanListenTogether }
-    val state by manager.state.collectAsState()
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    if (!state.active) return
-    FilledTonalButton(onClick = { expanded = true }) {
-        Icon(Icons.Outlined.WifiTethering, contentDescription = stringResource(CoreR.string.lan_title),
-            modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(stringResource(CoreR.string.lan_manage))
-    }
-    if (expanded) LanSheet(manager, state) { expanded = false }
 }

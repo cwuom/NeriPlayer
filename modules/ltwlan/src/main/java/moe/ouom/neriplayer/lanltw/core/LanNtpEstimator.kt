@@ -18,7 +18,8 @@ class LanNtpEstimator {
         val source = readSource()
         return BeatSyncRuntime(source).also { runtime = it }
     }
-    private fun readSource(): String = checkNotNull(LanNtpEstimator::class.java.classLoader.getResourceAsStream("beatsync/core.js")).bufferedReader().use { it.readText() }
+    private fun readSource(): String = checkNotNull(LanNtpEstimator::class.java.getResourceAsStream("/beatsync/core.js"))
+        .bufferedReader().use { it.readText() }
     private fun invoke(request: JsonObject): JsonElement = Json.parseToJsonElement(engine().invoke(JsonPrimitive(request.toString()).toString()))
     suspend fun reset() = withContext(dispatcher) {
         samples.clear(); invoke(buildJsonObject { put("op", "reset") }); Unit

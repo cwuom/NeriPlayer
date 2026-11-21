@@ -89,7 +89,7 @@ import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
-import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
+import moe.ouom.neriplayer.ui.component.playback.ListenTogetherPanel
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliCcSubtitleContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.MoreOptionsMainContent
@@ -342,7 +342,6 @@ internal enum class MoreOptionsPage {
     BILI_VIDEO_SKIP,
     BILI_CC_SUBTITLE,
     LISTEN_TOGETHER,
-    LAN_LISTEN_TOGETHER,
     ENCYCLOPEDIA
 }
 
@@ -388,7 +387,7 @@ internal class MoreOptionsSheetOwner(
         private set
 
     val sheetGesturesEnabled: Boolean
-        get() = page !in setOf(MoreOptionsPage.LISTEN_TOGETHER, MoreOptionsPage.LAN_LISTEN_TOGETHER) && !isEditSongSaving && !isMetadataApplicationBusy
+        get() = page != MoreOptionsPage.LISTEN_TOGETHER && !isEditSongSaving && !isMetadataApplicationBusy
 
     val onBack: () -> Unit = ::back
     val onDismissRequest: () -> Unit = ::dismiss
@@ -503,7 +502,6 @@ private class MoreOptionsMainActions(
     val onOpenBiliVideoSkip: () -> Unit = { owner.open(MoreOptionsPage.BILI_VIDEO_SKIP) }
     val onOpenBiliCcSubtitle: () -> Unit = { owner.open(MoreOptionsPage.BILI_CC_SUBTITLE) }
     val onOpenListenTogether: () -> Unit = { owner.open(MoreOptionsPage.LISTEN_TOGETHER) }
-    val onOpenLanListenTogether: () -> Unit = { owner.open(MoreOptionsPage.LAN_LISTEN_TOGETHER) }
     val onOpenEncyclopedia: () -> Unit = { owner.open(MoreOptionsPage.ENCYCLOPEDIA) }
     val onShowDetails: () -> Unit = { owner.dismiss { onShowSongDetails(originalSong) } }
     val onShowQuality: () -> Unit = { owner.dismiss(onShowQualitySwitch) }
@@ -812,7 +810,7 @@ internal fun MoreOptionsAnimatedPage(
 private fun MoreOptionsListenTogetherPage(
     targetState: MoreOptionsPage
 ) {
-    if (targetState !in setOf(MoreOptionsPage.LISTEN_TOGETHER, MoreOptionsPage.LAN_LISTEN_TOGETHER)) return
+    if (targetState != MoreOptionsPage.LISTEN_TOGETHER) return
     val listenTogetherScrollState = rememberScrollState()
     Column(
         Modifier
@@ -822,18 +820,8 @@ private fun MoreOptionsListenTogetherPage(
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .windowInsetsPadding(WindowInsets.navigationBars)
     ) {
-        MoreOptionsListenTogetherPanel(targetState)
+        ListenTogetherPanel(Modifier.fillMaxWidth())
     }
-}
-
-@Composable
-private fun MoreOptionsListenTogetherPanel(targetState: MoreOptionsPage) {
-    if (targetState == MoreOptionsPage.LAN_LISTEN_TOGETHER) {
-        moe.ouom.neriplayer.ui.component.playback.lan.LanRoomPanel()
-    } else ListenTogetherRoomPanel(
-        modifier = Modifier.fillMaxWidth(),
-        showBaseUrlEditor = false
-    )
 }
 
 @Composable
@@ -1210,7 +1198,6 @@ private fun MoreOptionsMainPageContent(
         onOpenBiliVideoSkip = actions.onOpenBiliVideoSkip,
         onOpenBiliCcSubtitle = actions.onOpenBiliCcSubtitle,
         onOpenListenTogether = actions.onOpenListenTogether,
-        onOpenLanListenTogether = actions.onOpenLanListenTogether,
         onOpenEncyclopedia = actions.onOpenEncyclopedia,
         onShowSongDetails = actions.onShowDetails,
         onShowQualitySwitch = actions.onShowQuality,

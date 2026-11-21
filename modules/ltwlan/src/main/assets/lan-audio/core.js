@@ -51,7 +51,7 @@ var NeriBeatSyncAudio = (() => {
   // js/audio/shared.ts
   var ClientActionEnum = { enum: { NTP_REQUEST: "NTP_REQUEST", SYNC: "SYNC" } };
   var epochNow = () => {
-    const host2 = globalThis;
+    const host2 = window;
     if (host2.__ntpReceiveAt !== void 0) return host2.__ntpReceiveAt;
     if (!Number.isFinite(host2.__nativeOffset)) throw Error("CLOCK");
     return performance.now() + host2.__nativeOffset;
@@ -697,7 +697,7 @@ var NeriBeatSyncAudio = (() => {
   }
 
   // js/audio/entry.ts
-  var host = globalThis;
+  var host = window;
   var loadGeneration = 0;
   var revision = -1;
   var closed = false;
@@ -829,7 +829,7 @@ var NeriBeatSyncAudio = (() => {
     diagnostic("decoded", { key: d.key, duration: decoded.duration, sampleRate: decoded.sampleRate, channels: decoded.numberOfChannels });
     return { key: d.key, durationSeconds: decoded.duration };
   }
-  function schedule(d) {
+  async function schedule(d) {
     if (d.revision < revision) return { accepted: false };
     if (!buffer || state.selectedAudioUrl !== d.key) throw Error("LOADING");
     synchronizeClock();
@@ -840,7 +840,13 @@ var NeriBeatSyncAudio = (() => {
     if (d.type === "PLAY") {
       const position = Math.min(Math.max(0, d.positionSeconds), Math.max(0, buffer.duration - 0.05));
       stopAt = null;
-      actions.schedulePlay({ audioSource: d.key, trackTimeSeconds: position, targetServerTime: d.serverTimeMs });
+      const previousNode = state.audioPlayer.sourceNode;
+      await actions.schedulePlay({ audioSource: d.key, trackTimeSeconds: position, targetServerTime: d.serverTimeMs });
+      if (state.audioPlayer.sourceNode === previousNode) {
+        state.currentTime = snapshot().positionSeconds;
+        stopNode();
+        return { accepted: false, ...snapshot() };
+      }
     } else {
       if (!state.isPlaying && stopAt === null) {
         state.currentTime = d.positionSeconds;

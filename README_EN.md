@@ -192,6 +192,7 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 
 ### 👥 Listen Together
 
+- **Unified entry**: switch between Cloud and LAN using the sliding tabs under Now Playing → More → Listen Together. The tablet mini-player and Settings use the same grouping.
 - **Rooms**: create or join a room with real-time WebSocket sync.
 - **Joining**: the first join needs an invite key; reconnects use a member key.
 - **Synced state**: host / listener roles, repeat and shuffle modes, clock-offset correction, and host offline recovery.

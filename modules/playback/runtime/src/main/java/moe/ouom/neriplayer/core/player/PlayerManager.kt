@@ -805,7 +805,9 @@ object PlayerManager {
 
     internal fun setCurrentSongForPlayback(song: SongItem?, syncLyricon: Boolean = true) {
         val previousSong = _currentSongFlow.value
-        playbackProgressOwner.persistPreviousSongProgress(previousSong, song)
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.guestPlayback == null) {
+            playbackProgressOwner.persistPreviousSongProgress(previousSong, song)
+        }
         publishCurrentSong(song)
         if (previousSong !== song) syncChangedSongOutputs(song, syncLyricon)
     }

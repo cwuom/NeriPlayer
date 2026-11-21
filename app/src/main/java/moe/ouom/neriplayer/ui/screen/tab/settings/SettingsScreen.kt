@@ -1170,6 +1170,8 @@ internal fun SettingsScreen(
                             miuixSettingsSectionCardItem("${selectedPage.name}:content") {
                                 SettingsListenTogetherSection(
                                     controller = listenTogetherSettings,
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .background(Color.Transparent)

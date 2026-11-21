@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.lanltw.media
 
 import java.io.File
 import java.io.IOException
+import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
 import moe.ouom.neriplayer.data.model.lan.LanLocalMedia
@@ -27,15 +29,23 @@ class LanMediaDownload(http: OkHttpClient) {
         require(media.valid(maxBytes) && port in 1..65535 && token.isNotBlank()) { "SOURCE" }
         val url = controlEndpoint.newBuilder().scheme("http").port(port).username("").password("")
             .encodedPath("/media/${media.mediaId}").query(null).fragment(null).build()
-        return withTimeout(300_000) {
+        val request = Request.Builder().url(url).header("Authorization", "Bearer $token")
+            .header("Accept-Encoding", "identity").build()
+        return withTimeoutOrNull(300_000) {
+            var connectionFailures = 0
             while (true) {
-                val result = attempt(Request.Builder().url(url).header("Authorization", "Bearer $token")
-                    .header("Accept-Encoding", "identity").build(), media, directory, progress)
-                if (result != null) return@withTimeout result
+                val result = try {
+                    attempt(request, media, directory, progress)
+                } catch (error: IOException) {
+                    ensureActive()
+                    if (++connectionFailures > 2) throw IllegalStateException("LOCAL_TRANSFER", error)
+                    null
+                }
+                if (result != null) return@withTimeoutOrNull result
                 delay(1000)
             }
             @Suppress("UNREACHABLE_CODE") error("SOURCE")
-        }
+        } ?: error("LOCAL_TRANSFER")
     }
     private suspend fun attempt(request: Request, media: LanFileResource, directory: File,
         progress: (Long, Long) -> Unit): File? {
@@ -46,11 +56,13 @@ class LanMediaDownload(http: OkHttpClient) {
             val cancellation = launch(start = CoroutineStart.UNDISPATCHED) {
                 try { awaitCancellation() } finally { call.cancel() }
             }
+            var receivedHeaders = false
             try {
                 call.execute().use { response ->
+                    receivedHeaders = true
                     if (response.code == 503) return@coroutineScope null
                     check(response.code == 200) { "LOCAL_TRANSFER" }
-                    val body = checkNotNull(response.body) { "LOCAL_TRANSFER" }
+                    val body = response.body
                     check(body.contentLength() == media.byteLength) { "AUDIO_CONTENT" }
                     var received = 0L
                     val snapshot = LanFileSnapshot.create(directory) {
@@ -73,6 +85,7 @@ class LanMediaDownload(http: OkHttpClient) {
                 }
             } catch (error: IOException) {
                 currentCoroutineContext().ensureActive()
+                if (!receivedHeaders || error is SocketException || error is SocketTimeoutException) throw error
                 throw IllegalStateException("LOCAL_TRANSFER", error)
             } finally { cancellation.cancelAndJoin() }
         }

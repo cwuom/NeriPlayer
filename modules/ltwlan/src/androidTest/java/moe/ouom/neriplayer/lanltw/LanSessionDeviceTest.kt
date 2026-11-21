@@ -1,13 +1,29 @@
 package moe.ouom.neriplayer.lanltw
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import moe.ouom.neriplayer.data.model.lan.LanFileResource
 import moe.ouom.neriplayer.data.model.lan.LanPermissions
+import moe.ouom.neriplayer.data.model.lan.LanSharedLyricLine
+import moe.ouom.neriplayer.data.model.lan.LanSharedPresentation
+import moe.ouom.neriplayer.data.model.lan.LanStreamResource
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
+import moe.ouom.neriplayer.lanltw.media.LanMediaDownload
+import moe.ouom.neriplayer.lanltw.media.LanMediaServer
+import moe.ouom.neriplayer.lanltw.media.LanPresentationCodec
+import moe.ouom.neriplayer.lanltw.media.LanReadableMedia
 import moe.ouom.neriplayer.lanltw.playback.LanPlaybackPort
+import moe.ouom.neriplayer.lanltw.playback.LanPreparedSource
 import moe.ouom.neriplayer.lanltw.session.LanSessionManager
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import org.junit.Assert.*
 import org.junit.Test
@@ -15,14 +31,31 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LanSessionDeviceTest {
+    private data class MediaEndpoint(val url: HttpUrl, val port: Int, val token: String)
+
     private val song = ListenTogetherTrack("netease:123", "netease", "123", name = "Synthetic test track", artist = "Test", durationMs = 120000)
-    private inner class Port : LanPlaybackPort {
+    private val stream = LanStreamResource("12345678-1234-1234-1234-123456789abc", "audio/mpeg")
+    private inner class Port(initiallyPlaying: Boolean = false) : LanPlaybackPort {
+        override val preparedMediaId: String = stream.mediaId
         val plays = MutableStateFlow(0)
         val gain = MutableStateFlow(1f)
-        var playing = false
+        val receivedPresentation = MutableStateFlow<LanSharedPresentation?>(null)
+        val presentationUpdates = MutableStateFlow<LanSharedPresentation?>(null)
+        val endpoint = CompletableDeferred<MediaEndpoint>()
+        var mediaServer: LanMediaServer? = null
+        var playing = initiallyPlaying
         var position = 0.0
-        var ended = false
-        override suspend fun resolveSharedAudioSources(track: ListenTogetherTrack) = listOf("https://m.music.126.net/synthetic.mp3")
+        var ended = true
+        override suspend fun prepareSharedSource(track: ListenTogetherTrack, refresh: Boolean) = LanPreparedSource(track, stream)
+        override fun sharedPresentationUpdates(track: ListenTogetherTrack, mediaId: String) =
+            presentationUpdates.filterNotNull()
+        override fun sharedPresentation(track: ListenTogetherTrack, presentation: LanSharedPresentation?) {
+            receivedPresentation.value = presentation
+        }
+        override fun hostMediaServer(server: LanMediaServer) { mediaServer = server }
+        override fun mediaEndpoint(controlUrl: String, port: Int, token: String) {
+            endpoint.complete(MediaEndpoint(controlUrl.toHttpUrl(), port, token))
+        }
         override fun currentTrack() = song
         override fun positionSeconds() = position
         override fun isPlaying() = playing
@@ -33,23 +66,41 @@ class LanSessionDeviceTest {
         override fun pause() { playing = false }
         override fun seek(positionSeconds: Double) { position = positionSeconds }
         override suspend fun setMediaVolume(value: Float) { gain.value = value }
-        override fun begin(onCommand: (String, ListenTogetherTrack?, Double) -> Unit, onStop: () -> Unit) { ended = false }
-        override fun end() { playing = false; ended = true }
+        override fun begin(onCommand: (String, ListenTogetherTrack?, Double) -> Unit, onStop: () -> Unit) {
+            ended = false
+            playing = false
+        }
+        override fun end() {
+            if (ended) return
+            playing = false
+            ended = true
+        }
     }
     private fun main(block: () -> Unit) = InstrumentationRegistry.getInstrumentation().runOnMainSync(block)
     @Test fun hostAndMemberConvergeEnforcePermissionsAndReleaseResources() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val http = OkHttpClient()
-        val hostPort = Port(); val memberPort = Port()
-        val host = LanSessionManager(context, http, hostPort, { false }, {})
+        val hostPort = Port().apply { position = 31.0 }
+        val memberPort = Port()
+        val host = LanSessionManager(context, http, hostPort, { false }, {},
+            loadPermissions = { LanPermissions(false, false, false) })
         val member = LanSessionManager(context, http, memberPort, { false }, {})
         try {
             main { host.host("Host") }
             val hosting = withTimeout(30000) { host.state.first { it.synced && it.room != null } }
             main { member.join("127.0.0.1:${hosting.port}", hosting.room!!.id, "Member") }
-            val joined = withTimeout(30000) { member.state.first { it.synced && it.room?.members?.size == 2 } }
+            withTimeout(30000) { member.state.first { it.synced && it.room?.members?.size == 2 } }
+            val prepared = withTimeout(15000) { member.state.mapNotNull { it.room?.playback }.first {
+                it.track?.stableKey == song.stableKey && !it.preparing
+            } }
+            assertFalse(prepared.playing)
+            assertEquals(31.0, prepared.positionSeconds, .001)
+            assertEquals(0, hostPort.plays.value)
+            assertEquals(0, memberPort.plays.value)
+            main { host.requestPlayback("PLAY_PAUSE", song, 31.0) }
             withTimeout(15000) { hostPort.plays.first { it > 0 }; memberPort.plays.first { it > 0 } }
-            val previousRevision = joined.room!!.playback.revision
+            val playing = withTimeout(5000) { member.state.first { it.room?.playback?.playing == true } }
+            val previousRevision = checkNotNull(playing.room).playback.revision
             main { member.requestPlayback("SEEK", song, 10.0) }
             withTimeout(5000) { member.state.first { it.error == "DENIED" } }
             assertEquals(previousRevision, member.state.value.room!!.playback.revision)
@@ -68,6 +119,74 @@ class LanSessionDeviceTest {
             withTimeout(10000) { member.state.first { !it.active }; host.state.first { !it.active } }
             assertTrue(memberPort.ended); assertTrue(hostPort.ended)
             http.dispatcher.executorService.shutdown(); http.connectionPool.evictAll()
+        }
+    }
+
+    @Test fun lateCoverReachesPlayingMemberAndLateJoinerThroughAuthorizedHttp() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val http = OkHttpClient()
+        val hostPort = Port(initiallyPlaying = true)
+        val memberPort = Port()
+        val latePort = Port()
+        val host = LanSessionManager(context, http, hostPort, { false }, {})
+        val member = LanSessionManager(context, http, memberPort, { false }, {})
+        val late = LanSessionManager(context, http, latePort, { false }, {})
+        val directory = File(context.cacheDir, "lan-cover-test-${UUID.randomUUID()}")
+        try {
+            main { host.host("Host") }
+            val hosting = withTimeout(30_000) { host.state.first { it.synced && it.room != null } }
+            val roomId = checkNotNull(hosting.room).id
+            val address = "127.0.0.1:${hosting.port}"
+            main { member.join(address, roomId, "Member") }
+            withTimeout(15_000) { memberPort.plays.first { it > 0 } }
+
+            val initial = LanSharedPresentation(song.name, song.artist, "",
+                lyrics = listOf(LanSharedLyricLine("Opening line", 0, 1500)))
+            main { hostPort.presentationUpdates.value = initial }
+            withTimeout(15_000) { memberPort.receivedPresentation.first { it == initial } }
+
+            val coverBytes = coverPng()
+            val (source, digest) = LanReadableMedia.fingerprint { coverBytes.inputStream() }
+            val cover = LanFileResource(UUID.randomUUID().toString(), digest, source.byteLength, "image/png")
+            val updated = initial.copy(cover = cover)
+            main {
+                checkNotNull(hostPort.mediaServer).publishBorrowed(cover.mediaId, source, cover.mimeType)
+                hostPort.presentationUpdates.value = updated
+            }
+            suspend fun verifyCover(port: Port) = withTimeout(15_000) {
+                port.receivedPresentation.first { it == updated }
+                assertArrayEquals(coverBytes, fetchCover(http, port.endpoint.await(), cover, directory))
+            }
+            verifyCover(memberPort)
+            main { late.join(address, roomId, "Late") }
+            verifyCover(latePort)
+        } finally {
+            main { late.leave(); member.leave(); host.leave() }
+            withTimeout(10_000) {
+                for (session in listOf(late, member, host)) session.state.first { !it.active }
+            }
+            directory.deleteRecursively()
+            http.dispatcher.executorService.shutdown()
+            http.connectionPool.evictAll()
+        }
+    }
+
+    private suspend fun fetchCover(http: OkHttpClient, endpoint: MediaEndpoint, cover: LanFileResource, directory: File): ByteArray {
+        val file = LanMediaDownload(http).fetchResource(endpoint.url, endpoint.port, endpoint.token,
+            cover, directory, LanPresentationCodec.MAX_BYTES)
+        return try { withContext(Dispatchers.IO) { file.readBytes() } } finally { file.delete() }
+    }
+
+    private fun coverPng(): ByteArray {
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(Color.BLUE)
+            return ByteArrayOutputStream().use {
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+                it.toByteArray()
+            }
+        } finally {
+            bitmap.recycle()
         }
     }
 }

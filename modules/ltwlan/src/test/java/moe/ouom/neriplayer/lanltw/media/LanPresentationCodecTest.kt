@@ -5,6 +5,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LanPresentationCodecTest {
+    @Test fun oversizedOrInvalidLyricsDoNotBlockCoverTransfer() {
+        val cover = LanFileResource("828e9f4d-c65d-4638-abf2-6a1ea63442e6", "a".repeat(64), 100, "image/png")
+        val presentation = LanSharedPresentation("Song", "Artist", "Album", cover = cover)
+        val longLine = LanSharedLyricLine("字".repeat(16_000), 0, 1000)
+        val oversized = presentation.copy(lyrics = List(180) { longLine })
+        val invalid = presentation.copy(translations = listOf(longLine.copy(startTimeMs = -1)))
+        for (value in listOf(oversized, invalid)) {
+            assertEquals(presentation, LanPresentationCodec.decode(LanPresentationCodec.encodeForTransfer(value)))
+        }
+    }
+
     @Test fun roundTripRetainsResolvedUserMetadataAndWordTimings() {
         val line = LanSharedLyricLine("custom lyric", 100, 500,
             listOf(LanSharedWordTiming(100, 500, 12)), "translation")

@@ -1,7 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioManager
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -373,6 +377,17 @@ fun VolumeControlSheetContent() {
 
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
     var currentVolume by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
+    DisposableEffect(context, audioManager) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            }
+        }
+        ContextCompat.registerReceiver(context, receiver, IntentFilter("android.media.VOLUME_CHANGED_ACTION"),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
+        currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
 
     val audioDeviceInfo = rememberAudioDeviceInfo()
 

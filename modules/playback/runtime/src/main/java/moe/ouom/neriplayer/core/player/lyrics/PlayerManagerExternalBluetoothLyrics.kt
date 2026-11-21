@@ -10,6 +10,8 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
+import moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore
+import moe.ouom.neriplayer.core.player.lan.restoreLanLyricLine
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.findExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.msUntilNextExternalLyricLine
@@ -135,6 +137,7 @@ private fun PlayerManager.startExternalBluetoothTranslationLoad(
 private suspend fun PlayerManager.loadExternalLyrics(
     song: SongItem
 ): Pair<List<LyricEntry>, LyricSourcePreference?> {
+    LanSharedPresentationStore.forSong(song)?.let { return it.lyrics.map(::restoreLanLyricLine) to null }
     return try {
         val preferred = getPreferredLyricSourceResult(song, defaultLyricSource)
         (preferred?.lyrics ?: getLyrics(song, skipPreferredSource = true)) to preferred?.source

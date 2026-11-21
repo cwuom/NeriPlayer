@@ -2,7 +2,13 @@ plugins {
     id("build-logic.android.feature-library")
     id("build-logic.android.module-quality")
 }
-android { namespace = "moe.ouom.neriplayer.lanltw"; defaultConfig.testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+android {
+    namespace = "moe.ouom.neriplayer.lanltw"
+    defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles("consumer-rules.pro")
+    }
+}
 dependencies {
     api(project(":model"))
     implementation(project(":common"))

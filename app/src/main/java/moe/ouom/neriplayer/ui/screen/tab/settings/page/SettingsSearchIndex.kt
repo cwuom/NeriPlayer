@@ -163,7 +163,7 @@ internal fun AutoSettingInfo.searchTokens(
 }
 
 internal fun AutoSettingInfo.searchTargetId(): String {
-    if (keyName == "lan_listen_nudge_ms") return "page:ListenTogether"
+    if (keyName == "lan_listen_nudge_ms") return "manual:lan_listen_together"
     val targetKey = when (keyName) {
         "playback_fade_in_duration_ms",
         "playback_fade_out_duration_ms" -> "playback_fade_in"
@@ -761,7 +761,7 @@ internal fun manualSettingsSearchEntries(resources: Resources): List<SettingsSea
             descriptionRes = CoreCommonR.string.lan_description,
             id = "lan_listen_together",
             aliases = listOf("LAN", "Wi-Fi", "局域网", "nudge", "偏移"),
-            targetId = "page:ListenTogether"
+            targetId = "manual:lan_listen_together"
         ),
         entry(
             page = SettingsPage.ListenTogether,

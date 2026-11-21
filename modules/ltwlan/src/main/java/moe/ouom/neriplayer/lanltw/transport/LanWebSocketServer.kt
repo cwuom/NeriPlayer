@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.lanltw.transport
 
+import moe.ouom.neriplayer.data.model.lan.LAN_PROTOCOL_VERSION
 import moe.ouom.neriplayer.data.model.lan.LanMessage
 import moe.ouom.neriplayer.lanltw.core.LanClock
 import moe.ouom.neriplayer.lanltw.protocol.LanCodec
@@ -43,7 +44,11 @@ class LanWebSocketServer(
     }
     private fun hello(socket: WebSocket, peer: Peer, m: LanMessage) {
         val name = m.name
-        if (m.type != "HELLO" || m.protocolVersion != 2 || (m.roomId != null && m.roomId != roomId) || name.isNullOrBlank() || name.length > 24) {
+        if (m.type == "HELLO" && m.protocolVersion != LAN_PROTOCOL_VERSION) {
+            socket.send(LanCodec.encode(LanMessage("LAN_ERROR", code = "VERSION")))
+            socket.close(1008, "Version mismatch"); return
+        }
+        if (m.type != "HELLO" || (m.roomId != null && m.roomId != roomId) || name.isNullOrBlank() || name.length > 24) {
             socket.close(1008, "Handshake rejected"); return
         }
         peer.joined = true

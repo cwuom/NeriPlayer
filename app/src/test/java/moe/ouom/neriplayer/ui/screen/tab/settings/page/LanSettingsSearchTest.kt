@@ -17,6 +17,9 @@ class LanSettingsSearchTest {
         assertTrue(searchSettingsEntries(entries, "局域网").any { it.page == SettingsPage.ListenTogether })
         val setting = AutoSettingsMetadata.settings.single { it.keyName == "lan_listen_nudge_ms" }
         assertEquals(SettingsPage.ListenTogether, setting.settingsPage())
-        assertEquals("page:ListenTogether", setting.searchTargetId())
+        assertEquals("manual:lan_listen_together", setting.searchTargetId())
+        assertTrue(searchSettingsEntries(entries, "LAN").any {
+            it.page == SettingsPage.ListenTogether && it.targetId == "manual:lan_listen_together"
+        })
     }
 }

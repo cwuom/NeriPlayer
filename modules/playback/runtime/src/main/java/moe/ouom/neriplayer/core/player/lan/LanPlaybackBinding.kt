@@ -16,6 +16,7 @@ internal object LanPlaybackBinding {
     var stopped: (() -> Unit)? = null
     var isHost: () -> Boolean = { false }
     var offeredQueue: List<SongItem>? = null
+    @Volatile var guestPlayback: LanGuestPlaybackSnapshot? = null
     val active: Boolean get() = command != null
     fun interrupt(): Boolean {
         if (!externalAudio) return false
@@ -38,14 +39,15 @@ internal object LanPlaybackBinding {
     /** 服务销毁回调转发，保持 LanPlaybackBinding 与服务生命周期的单向依赖。 */
     fun notifyServiceStopped() { stopped?.invoke() }
     fun toggle(): Boolean = externalAudio && route(
-        if (PlayerManager.isPlayingFlow.value) "PAUSE" else "PLAY_PAUSE", PlaybackCommandSource.LOCAL)
+        if (PlayerManager.playbackControlPlayingFlow.value) "PAUSE" else "PLAY_PAUSE", PlaybackCommandSource.LOCAL)
     fun playExternal(song: SongItem, source: PlaybackCommandSource): Boolean {
         if (!externalAudio) return false
         route("NEXT", source, song, 0.0)
         return true
     }
     fun track(song: SongItem?): ListenTogetherTrack? = song?.let {
-        LanLocalIdentity.track(it) ?: with(PlayerListenTogetherSongMapper) { it.toListenTogetherTrackOrNull(includeLocal = false) }
+        lanServerTrack(it) ?: LanLocalIdentity.track(it)
+            ?: with(PlayerListenTogetherSongMapper) { it.toListenTogetherTrackOrNull(includeLocal = false) }
     }?.copy(streamUrl = null, streamUrls = emptyList(), mediaUri = null)
     fun route(intent: String, source: PlaybackCommandSource, song: SongItem? = PlayerManager.currentSongFlow.value, position: Double = PlayerManager.playbackPositionFlow.value / 1000.0): Boolean {
         if (source != PlaybackCommandSource.LOCAL) return false
@@ -72,11 +74,22 @@ internal object LanPlaybackBinding {
         if (!active) return false
         if (isHost()) {
             val queue = PlayerManager.currentQueueFlow.value
-            val plan = PlayerQueueNavigationOwner.listenTogetherFinishPlan(queue.size, PlayerManager.currentIndex, PlayerManager.repeatModeSetting)
-            if (plan.shouldAdvance) route("NEXT", PlaybackCommandSource.LOCAL, queue.getOrNull(plan.nextIndex), 0.0)
-            else route("PAUSE", PlaybackCommandSource.LOCAL)
+            val plan = queue.takeIf { it.isNotEmpty() }?.let {
+                PlayerQueueNavigationOwner.listenTogetherFinishPlan(it.size, PlayerManager.currentIndex, PlayerManager.repeatModeSetting)
+            }
+            val next = plan?.takeIf { it.shouldAdvance }?.let { queue.getOrNull(it.nextIndex) }
+            if (next != null) route("NEXT", PlaybackCommandSource.LOCAL, next, 0.0)
+            else route("FINISHED", PlaybackCommandSource.LOCAL, position = 0.0)
         }
         return true
     }
-    fun clear() { LanLocalIdentity.clear(); LanSharedPresentationStore.clear(); externalAudio = false; interruptAudio = null; command = null; stopped = null; isHost = { false }; offeredQueue = null }
+
+    fun onQueueCleared() {
+        if (!active) return
+        if (isHost()) pauseRoomForEmptyQueue() else interrupt()
+    }
+
+    private fun pauseRoomForEmptyQueue(): Boolean = route("PAUSE", PlaybackCommandSource.LOCAL, null, 0.0)
+
+    fun clear() { LanLocalIdentity.clear(); LanSharedPresentationStore.clear(); externalAudio = false; interruptAudio = null; command = null; stopped = null; isHost = { false }; offeredQueue = null; guestPlayback = null }
 }

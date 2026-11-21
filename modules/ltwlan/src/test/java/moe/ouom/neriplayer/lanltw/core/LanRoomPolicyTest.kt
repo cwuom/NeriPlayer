@@ -20,7 +20,8 @@ class LanRoomPolicyTest {
         for (intent in listOf("NEXT", "SEEK", "PLAY_PAUSE")) {
             assertTrue(LanRoomPolicy.allowed(true, LanPermissions(), intent, false))
             assertTrue(LanRoomPolicy.allowed(false, all, intent, false))
-            assertFalse(LanRoomPolicy.allowed(false, LanPermissions(), intent, false))
+            assertTrue(LanRoomPolicy.allowed(false, LanPermissions(), intent, false))
+            assertFalse(LanRoomPolicy.allowed(false, LanPermissions(false, false, false), intent, false))
         }
         assertFalse(LanRoomPolicy.allowed(true, all, "UNKNOWN", false))
         assertFalse(LanRoomPolicy.allowed(true, all, "PLAY_PAUSE", true))

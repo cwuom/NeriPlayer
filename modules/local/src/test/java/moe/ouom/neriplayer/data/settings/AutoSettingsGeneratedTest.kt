@@ -431,7 +431,7 @@ class AutoSettingsGeneratedTest {
 
         assertEquals(43, settings.size)
         assertEquals(43, settings.map { it.keyName }.toSet().size)
-        assertEquals(0, AutoSettingsSchema.playback.lanHostPermissions.defaultValue)
+        assertEquals(7, AutoSettingsSchema.playback.lanHostPermissions.defaultValue)
         assertEquals(0, AutoSettingsSchema.playback.lanNudgeMs.defaultValue)
         assertEquals("playback_fade_in", settings.first().keyName)
         assertEquals(

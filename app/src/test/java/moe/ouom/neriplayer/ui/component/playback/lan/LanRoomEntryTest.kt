@@ -31,11 +31,14 @@ class LanRoomEntryTest {
         val next = compose.onNodeWithText(app.getString(R.string.lan_permission_next_short))
         val play = compose.onNodeWithText(app.getString(R.string.lan_permission_play_short))
         val seek = compose.onNodeWithText(app.getString(R.string.lan_permission_seek_short))
-        next.performClick().assertIsSelected()
-        play.assertIsNotSelected()
-        seek.performClick().assertIsSelected()
-        play.performClick().assertIsSelected()
+        next.assertIsSelected()
+        play.assertIsSelected()
+        seek.assertIsSelected()
         next.performClick().assertIsNotSelected()
+        play.performClick().assertIsNotSelected()
+        seek.performClick().assertIsNotSelected()
+        play.performClick().assertIsSelected()
+        seek.performClick().assertIsSelected()
         compose.runOnIdle { assertEquals(LanPermissions(false, true, true), permissions.value) }
     }
     @Test fun createAndJoinAreVisibleAndActiveRoomUsesManage() {

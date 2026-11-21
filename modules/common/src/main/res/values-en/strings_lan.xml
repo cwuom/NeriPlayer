@@ -1,4 +1,5 @@
 <resources>
+    <string name="playback_output_and_listen_together">%1$s, volume and Listen Together</string>
     <string name="lan_title">Listen together on LAN</string>
     <string name="lan_description">Host or join on the same Wi-Fi using full audio shared by the host</string>
     <string name="lan_name">Nickname (up to 24 characters)</string>
@@ -29,9 +30,9 @@
     <string name="lan_host_badge">Host</string>
     <string name="lan_limits">The host shares online sources or local songs for this session. Local audio is fully downloaded before synchronized playback. Audio limit: 200 MiB; decoded memory limit: 512 MiB. Segmented streams and USB exclusive output are not supported.</string>
     <string name="lan_error_network">Connection unavailable. Check the network and host.</string>
-    <string name="lan_error_source">This track is unsupported or could not load locally. Check the account and source.</string>
+    <string name="lan_error_source">The host could not open this track. Check the source on the host and retry.</string>
     <string name="lan_error_denied">The host has not allowed this action.</string>
-    <string name="lan_error_loading">Loading audio; synchronization will retry shortly.</string>
+    <string name="lan_error_loading">Buffering room audio. Synchronization will retry shortly.</string>
     <string name="lan_error_output">This output is not supported. Turn off USB exclusive output.</string>
     <string name="lan_error_cloud">Leave the cloud listening room first.</string>
     <string name="lan_error_name">Enter a nickname of 1–24 characters.</string>
@@ -42,15 +43,15 @@
     <string name="lan_create">Create room</string>
     <string name="lan_join_room">Join room</string>
     <string name="lan_manage">Manage listening</string>
-    <string name="lan_preparing">Receiving and decoding audio; playback starts when everyone is ready…</string>
+    <string name="lan_preparing">Buffering room audio…</string>
     <string name="lan_error_memory">Audio exceeds the synchronized playback memory budget. Choose a shorter track.</string>
-    <string name="lan_error_audio_format">This source cannot be fully decoded. Its format or segmented stream is not supported.</string>
+    <string name="lan_error_audio_format">The player cannot read this format. Select another source on the host.</string>
     <string name="lan_error_audio_engine">The audio engine was interrupted. Rejoin to restore synchronized playback.</string>
     <string name="lan_error_load_timeout">Audio preparation timed out. Retry or choose another track.</string>
     <string name="lan_error_full_audio">The host could not obtain full audio. Preview clips cannot be synchronized.</string>
-    <string name="lan_error_duration">Audio duration does not match the room track. Loading stopped to avoid playing a preview.</string>
+    <string name="lan_error_duration">Audio duration differs from the track information. Check the source on the host.</string>
     <string name="lan_error_local">Cannot read the local song or its metadata. Check file access and available storage.</string>
-    <string name="lan_error_transfer">Local file transfer failed. Check the connection to the host and retry.</string>
+    <string name="lan_error_transfer">Audio transfer was interrupted. Check the LAN connection to the host and retry.</string>
     <string name="lan_device_volume">Device volumes</string>
     <string name="lan_back_room">Back to room</string>
     <string name="lan_permission_next_short">Skip</string>
@@ -58,4 +59,6 @@
     <string name="lan_permission_seek_short">Seek</string>
     <string name="lan_host_preparing">Preparing audio and waiting for devices to be ready…</string>
     <string name="lan_error_source_changed">The original file changed or is no longer readable. Select the song again.</string>
+    <string name="lan_error_content">The room audio source has changed. Sync again.</string>
+    <string name="lan_error_not_seekable">This audio source cannot seek to the requested position.</string>
 </resources>

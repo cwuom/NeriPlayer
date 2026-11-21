@@ -4,8 +4,12 @@ import moe.ouom.neriplayer.data.model.lan.*
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 import moe.ouom.neriplayer.data.model.ltw.track.listenTogetherTrackKey
 
+internal const val LAN_AUDIO_NOT_SEEKABLE = "AUDIO_NOT_SEEKABLE"
+
 /** Input authorization and media identity rules, independent of room mutation. */
 object LanRoomPolicy {
+    private val channels = setOf("netease", "bilibili", "youtubeMusic", "local", "subsonic")
+    private val subsonicAlias = Regex("[a-f0-9]{64}")
     data class PlayDecision(val track: ListenTogetherTrack? = null, val position: Double = 0.0, val error: String? = null)
     fun play(host: Boolean, permissions: LanPermissions, current: LanPlayback, currentPosition: Double, message: LanMessage): PlayDecision {
         val track = message.track ?: current.track ?: return PlayDecision(error = "SOURCE")
@@ -21,18 +25,24 @@ object LanRoomPolicy {
         return when (intent) { "NEXT" -> permissions.next; "SEEK" -> permissions.seek; else -> permissions.playPause }
     }
     fun validIdentity(track: ListenTogetherTrack): Boolean =
-        track.channelId in setOf("netease", "bilibili", "youtubeMusic", "local") &&
+        track.channelId in channels && validProviderId(track) &&
             track.stableKey == listenTogetherTrackKey(track.channelId, track.audioId, track.subAudioId, track.playlistContextId)
+    private fun validProviderId(track: ListenTogetherTrack): Boolean =
+        track.channelId != "subsonic" || subsonicAlias.matches(track.audioId)
     fun validMetadata(track: ListenTogetherTrack): Boolean =
         track.stableKey.length in 1..512 && track.audioId.length in 1..256 && track.name.length <= 512 && track.durationMs >= 0
     private fun position(track: ListenTogetherTrack, intent: String, requested: Double?, current: Double): PlayDecision {
         val position = when (intent) { "NEXT" -> 0.0; "SEEK" -> requested; else -> resumePosition(track, current) }
         if (position == null || !position.isFinite() || position < 0) return PlayDecision(error = "INVALID")
         val bounded = if (track.durationMs > 0) position.coerceAtMost(track.durationMs / 1000.0) else position
-        return PlayDecision(track.copy(streamUrl = null, streamUrls = emptyList(), mediaUri = null), bounded)
+        return PlayDecision(track.copy(streamUrl = null, streamUrls = emptyList(), mediaUri = null, coverUrl = null), bounded)
     }
     private fun resumePosition(track: ListenTogetherTrack, current: Double): Double =
         if (track.durationMs > 0 && current >= track.durationMs / 1000.0) 0.0 else current
+    fun initialPosition(track: ListenTogetherTrack, position: Double?): Double {
+        if (position == null || !position.isFinite() || position < 0) return 0.0
+        return resumePosition(track, position)
+    }
     fun volume(value: Float?): Float? {
         if (value == null) return null
         return if (value.isFinite() && value in 0f..1f) value else null
