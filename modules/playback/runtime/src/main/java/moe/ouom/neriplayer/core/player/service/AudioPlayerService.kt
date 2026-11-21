@@ -991,11 +991,11 @@ class AudioPlayerService : Service() {
         // payload 一直带翻译, 收集器不会发新值, 车机上的译文就留着旧的。这里直接观察
         // 开关本身, 让开关立刻生效。
         serviceScope.launch {
-            PlayerManager.externalBluetoothTranslationEnabledFlow.collectSafely(
-                "externalBluetoothTranslationEnabledFlow"
-            ) {
-                updateMetadata()
-            }
+            PlayerDependencies.repositories.settingsRepo.externalBluetoothTranslationEnabledFlow
+                .distinctUntilChanged()
+                .collectSafely("externalBluetoothTranslationEnabledFlow") {
+                    updateMetadata()
+                }
         }
         serviceScope.observeColorOsLyricMetadata(
             PlayerManager.colorOsLyricTimelineFlow, PlayerManager.colorOsLockscreenLyricsEnabledFlow,
