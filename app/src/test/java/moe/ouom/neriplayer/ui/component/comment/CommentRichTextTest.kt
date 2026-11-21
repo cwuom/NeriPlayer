@@ -147,12 +147,125 @@ class CommentRichTextTest {
         )
     }
 
+    @Test
+    fun `timestamp h m s converts to milliseconds`() {
+        assertEquals(4_341_000L, commentTimestampMs("1", "12", "21"))
+        assertEquals(4_343_000L, commentTimestampMs("01", "12", "23"))
+        assertEquals(3_723_000L, commentTimestampMs("1", "2", "3"))
+    }
+
+    @Test
+    fun `two part timestamp is interpreted as minutes and seconds`() {
+        assertEquals(754_000L, commentTimestampMs("12", "34", null))
+        assertEquals(83_000L, commentTimestampMs("1", "23", null))
+    }
+
+    @Test
+    fun `out of range timestamp is rejected`() {
+        assertEquals(null, commentTimestampMs("12", "75", null))
+        assertEquals(null, commentTimestampMs("1", "12", "88"))
+    }
+
+    @Test
+    fun `two part timestamp rejects minute overflow`() {
+        // 60:00 不是合法的「分:秒」写法, 不能被误判成刚好一小时
+        assertEquals(null, commentTimestampMs("60", "00", null))
+        assertEquals(null, commentTimestampMs("99", "30", null))
+        // 上界之内仍然正常换算
+        assertEquals(3_599_000L, commentTimestampMs("59", "59", null))
+    }
+
+    @Test
+    fun `minute overflow stays plain text in the comment body`() {
+        assertEquals(
+            listOf<CommentTextSegment>(textSegment("60:00 处开始")),
+            splitCommentContent("60:00 处开始", emptyList())
+        )
+    }
+
+    @Test
+    fun `three part timestamp keeps the wider hour range`() {
+        // 三段是「时:分:秒」, 小时字段不受 59 限制
+        assertEquals(216_000_000L, commentTimestampMs("60", "00", "00"))
+    }
+
+    @Test
+    fun `clamp keeps in range positions untouched`() {
+        assertEquals(83_000L, clampCommentTimestampPosition(83_000L, 240_000L))
+        assertEquals(0L, clampCommentTimestampPosition(0L, 240_000L))
+    }
+
+    @Test
+    fun `clamp pulls timestamps beyond the duration back to the last playable position`() {
+        // 4 分钟的歌点了 12:34, 应落在 duration - 1 而不是被静默丢弃
+        assertEquals(239_999L, clampCommentTimestampPosition(754_000L, 240_000L))
+    }
+
+    @Test
+    fun `clamp leaves positions alone when the duration is unknown`() {
+        assertEquals(754_000L, clampCommentTimestampPosition(754_000L, 0L))
+        assertEquals(0L, clampCommentTimestampPosition(-1L, 0L))
+    }
+
+    @Test
+    fun `h m s timestamp in the middle splits into three segments`() {
+        assertEquals(
+            listOf<CommentTextSegment>(
+                textSegment("高潮在"),
+                timestampSegment("1:12:21", 4_341_000L),
+                textSegment("这里")
+            ),
+            splitCommentContent("高潮在1:12:21这里", emptyList())
+        )
+    }
+
+    @Test
+    fun `plain m s timestamp yields a single timestamp segment`() {
+        assertEquals(
+            listOf<CommentTextSegment>(timestampSegment("12:34", 754_000L)),
+            splitCommentContent("12:34", emptyList())
+        )
+        assertEquals(
+            listOf<CommentTextSegment>(timestampSegment("1:2:3", 3_723_000L)),
+            splitCommentContent("1:2:3", emptyList())
+        )
+    }
+
+    @Test
+    fun `timestamp mixes with emote into alternating segments`() {
+        assertEquals(
+            listOf<CommentTextSegment>(
+                textSegment("前面"),
+                emoteSegment("[doge]"),
+                timestampSegment("1:23", 83_000L),
+                textSegment("后面")
+            ),
+            splitCommentContent("前面[doge]1:23后面", listOf(emoteOf("[doge]")))
+        )
+    }
+
+    @Test
+    fun `invalid or embedded digits are kept as plain text`() {
+        assertEquals(
+            listOf<CommentTextSegment>(textSegment("12:75")),
+            splitCommentContent("12:75", emptyList())
+        )
+        assertEquals(
+            listOf<CommentTextSegment>(textSegment("123:456")),
+            splitCommentContent("123:456", emptyList())
+        )
+    }
+
     /** 构造测试用表情: 标记形如 `[doge]`, 地址由标记推导以便逐条区分 */
     private fun emoteOf(marker: String): CommentEmote =
         CommentEmote(marker, "https://cdn.example.com/${marker.trim('[', ']')}.png")
 
     /** 期望值里的文本段 */
     private fun textSegment(value: String): CommentTextSegment = CommentTextSegment.Text(value)
+
+    /** 期望值里的时间坐标段 */
+    private fun timestampSegment(value: String, positionMs: Long): CommentTextSegment =
+        CommentTextSegment.Timestamp(value, positionMs)
 
     /** 期望值里的表情段, 地址规则与 [emoteOf] 一致 */
     private fun emoteSegment(marker: String): CommentTextSegment =
