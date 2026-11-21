@@ -39,12 +39,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.core.startup.StartupStage
+import moe.ouom.neriplayer.ui.onboarding.StartupStep
 import kotlin.time.Duration.Companion.milliseconds
 import moe.ouom.neriplayer.R as AppR
 
 internal const val STARTUP_STAGE_ENTER_DURATION_MILLIS = 620
 internal const val STARTUP_STAGE_CONTENT_DELAY_MILLIS = 520L
 private const val STARTUP_STAGE_CONTENT_FADE_DURATION_MILLIS = 260
+
+// 免责声明已并入引导流程, 两个阶段共用内容键, 阶段切换不再整屏重建
+internal fun startupStageContentKey(stage: StartupStage): StartupStage = when (stage) {
+    StartupStage.Disclaimer, StartupStage.Onboarding -> StartupStage.Onboarding
+    else -> stage
+}
 
 internal fun shouldDeferStartupStageContent(
     stage: StartupStage,
@@ -169,7 +176,7 @@ private fun StartupStageTransitionPlaceholder(stage: StartupStage) {
                     )
                     Spacer(Modifier.height(18.dp))
                     LinearProgressIndicator(
-                        progress = { 1f / 9f },
+                        progress = { 1f / StartupStep.entries.size },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(4.dp)

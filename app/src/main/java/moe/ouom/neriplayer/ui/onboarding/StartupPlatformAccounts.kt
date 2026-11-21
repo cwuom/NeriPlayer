@@ -178,12 +178,6 @@ internal fun StartupPlatformAccountsContent(
     modifier: Modifier = Modifier
 ) {
     Column(modifier.fillMaxWidth().testTag("startupPlatformAccounts")) {
-        StepHeader(
-            icon = Icons.Outlined.Tune,
-            title = stringResource(AppR.string.onboarding_platforms_title),
-            description = stringResource(AppR.string.onboarding_platforms_desc)
-        )
-        Spacer(Modifier.height(18.dp))
         inlineMessage?.let {
             InlineMessage(text = it, onClose = { onInlineMessageChange(null) })
             Spacer(Modifier.height(14.dp))

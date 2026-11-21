@@ -1,5 +1,16 @@
 package moe.ouom.neriplayer.ui.onboarding
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,6 +72,10 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.foundation.shape.CircleShape
+import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -95,8 +110,20 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayo
 import kotlin.math.roundToInt
 import moe.ouom.neriplayer.R as AppR
 
-internal val OnboardingCardShape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
-internal val OnboardingControlShape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+private val MaterialOnboardingCardShape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+private val MaterialOnboardingControlShape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+private val CleanOnboardingCardShape = ContinuousRoundedCornerShape(22.dp)
+
+// 引导页卡片随界面风格切换: Material 大圆角, 简洁风格连续曲率圆角与胶囊控件
+internal val OnboardingCardShape: Shape
+    @Composable
+    @ReadOnlyComposable
+    get() = if (NeriDesign.isClean) CleanOnboardingCardShape else MaterialOnboardingCardShape
+
+internal val OnboardingControlShape: Shape
+    @Composable
+    @ReadOnlyComposable
+    get() = if (NeriDesign.isClean) CircleShape else MaterialOnboardingControlShape
 
 @Composable
 internal fun OnboardingGlassSurface(
@@ -171,14 +198,8 @@ internal fun StartupPermissionContent(
     onRequestNotificationPermission: () -> Unit,
     onRequestLocalMediaPermission: () -> Unit
 ) {
-    OnboardingSectionHeader(
-        icon = Icons.Outlined.Info,
-        title = stringResource(AppR.string.onboarding_permissions_title),
-        description = stringResource(AppR.string.onboarding_permissions_desc)
-    )
-    Spacer(Modifier.height(18.dp))
     PermissionGuidanceItem(
-        icon = Icons.Outlined.Info,
+        icon = Icons.Rounded.NotificationsActive,
         title = stringResource(AppR.string.onboarding_permission_notification_title),
         description = stringResource(
             if (notificationPermissionSupported) {
@@ -216,12 +237,6 @@ internal fun StartupPlaybackSourceContent(
     val fallbackEnabled = autoSourceSwitchEnabled && localSourceFallbackEnabled
     val partiallyEnabled = autoSourceSwitchEnabled.xor(localSourceFallbackEnabled)
 
-    OnboardingSectionHeader(
-        icon = Icons.Outlined.Tune,
-        title = stringResource(AppR.string.onboarding_playback_sources_title),
-        description = stringResource(AppR.string.onboarding_playback_sources_desc)
-    )
-    Spacer(Modifier.height(18.dp))
     OnboardingGlassSurface(
         modifier = Modifier.fillMaxWidth(),
         shape = OnboardingCardShape,
@@ -309,12 +324,6 @@ internal fun StartupPlaybackSourceContent(
 
 @Composable
 internal fun StartupLearningGuideContent() {
-    OnboardingSectionHeader(
-        icon = Icons.Outlined.Info,
-        title = stringResource(AppR.string.onboarding_learning_title),
-        description = stringResource(AppR.string.onboarding_learning_desc)
-    )
-    Spacer(Modifier.height(18.dp))
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         LearningGuideItem(
             icon = Icons.Filled.PlayArrow,
@@ -430,12 +439,6 @@ internal fun StartupPlaybackControlsContent(
         onPreferencesChange(linkedPreferences)
     }
 
-    OnboardingSectionHeader(
-        icon = Icons.Outlined.Tune,
-        title = stringResource(AppR.string.onboarding_controls_title),
-        description = stringResource(AppR.string.onboarding_controls_desc)
-    )
-    Spacer(Modifier.height(18.dp))
     PlaybackLayoutPreview(
         preferences = previewPreferences,
         coverLyricFontScale = pendingCoverLyricFontScale
@@ -534,12 +537,6 @@ internal fun StartupLyricsContent(
         onPreferencesChange(previewPreferences)
     }
 
-    OnboardingSectionHeader(
-        icon = Icons.Outlined.LibraryMusic,
-        title = stringResource(AppR.string.onboarding_lyrics_title),
-        description = stringResource(AppR.string.onboarding_lyrics_desc)
-    )
-    Spacer(Modifier.height(18.dp))
     ControlSection(
         title = stringResource(AppR.string.onboarding_lyrics_page_preview_title),
         description = stringResource(AppR.string.onboarding_lyrics_page_preview_desc)
@@ -836,45 +833,6 @@ private fun PlaybackPlacementChoice(
 }
 
 @Composable
-private fun OnboardingSectionHeader(
-    icon: ImageVector,
-    title: String,
-    description: String
-) {
-    val colors = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            modifier = Modifier.size(48.dp),
-            shape = OnboardingControlShape,
-            color = colors.primaryContainer,
-            contentColor = colors.onPrimaryContainer
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null)
-            }
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodyLarge,
-                color = colors.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
 private fun PermissionGuidanceItem(
     icon: ImageVector,
     title: String,
@@ -893,12 +851,34 @@ private fun PermissionGuidanceItem(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (granted) colors.primary else colors.onSurfaceVariant,
-                modifier = Modifier.size(24.dp)
+            val tile by animateColorAsState(
+                targetValue = if (granted) colors.primary else colors.primaryContainer,
+                animationSpec = tween(320),
+                label = "startup_permission_tile"
             )
+            // 授权后图标位换成对勾, 卡片本身就能看出状态
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(tile, OnboardingControlShape),
+                contentAlignment = Alignment.Center
+            ) {
+                AnimatedContent(
+                    targetState = granted,
+                    transitionSpec = {
+                        (fadeIn(tween(200)) + scaleIn(spring(0.5f, 500f), initialScale = 0.5f))
+                            .togetherWith(fadeOut(tween(120)))
+                    },
+                    label = "startup_permission_icon"
+                ) { isGranted ->
+                    Icon(
+                        imageVector = if (isGranted) Icons.Rounded.Check else icon,
+                        contentDescription = null,
+                        tint = if (isGranted) colors.onPrimary else colors.onPrimaryContainer,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
