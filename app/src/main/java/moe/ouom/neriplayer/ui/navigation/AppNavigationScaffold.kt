@@ -82,6 +82,7 @@ import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.BottomBarLayoutInsets
+import moe.ouom.neriplayer.ui.shouldExtendContentBehindBottomBar
 import moe.ouom.neriplayer.ui.banner.MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD
 import moe.ouom.neriplayer.ui.banner.MANAGED_LIBRARY_PROCESSING_REVEAL_EDGE
 import moe.ouom.neriplayer.ui.banner.MANAGED_LIBRARY_PROCESSING_Z_INDEX
@@ -203,7 +204,10 @@ internal fun AppNavigationScaffold(
                 )
                 val layoutInsets = resolveAppNavigationLayoutInsets(
                     useNavigationRail = useNavigationRail,
-                    baseBlurRequested = baseBlurRequested,
+                    baseBlurRequested = shouldExtendContentBehindBottomBar(
+                        baseBlurRequested = baseBlurRequested,
+                        floatingBottomBar = NeriDesign.isClean
+                    ),
                     bottomBarInset = innerPadding.calculateBottomPadding().coerceAtLeast(0.dp),
                     reservedMiniPlayerHeight = pageReservedMiniPlayerHeight
                 )

@@ -154,12 +154,12 @@ class AppNavigationScaffoldComposeTest {
     }
 
     @Test
-    fun cleanImeReleasesOpaquePageReserveWithoutASong() {
+    fun cleanImeReleasesFloatingPageReserveWithEffectsOffWithoutASong() {
         assertImeLayoutContract(UiStyle.Clean, hasSong = false, baseBlurRequested = false)
     }
 
     @Test
-    fun cleanImeReleasesOpaquePageAndMiniPlayerReserves() {
+    fun cleanImeReleasesFloatingPageAndMiniPlayerReservesWithEffectsOff() {
         assertImeLayoutContract(UiStyle.Clean, hasSong = true, baseBlurRequested = false)
     }
 
@@ -367,12 +367,14 @@ class AppNavigationScaffoldComposeTest {
 
     private fun assertVisiblePageReserve(frame: LayoutFrame, style: UiStyle, hasSong: Boolean, blur: Boolean) {
         val expectedMiniPlayerHeight = if (hasSong) 64.dp else 0.dp
-        val bottomBarInset = if (blur) frame.insets.miniPlayerBottomPadding else frame.insets.navContentBottomPadding
+        // Clean 底栏始终悬浮, 关闭模糊时内容也要延伸到底栏后面
+        val behind = shouldExtendContentBehindBottomBar(blur, style == UiStyle.Clean)
+        val bottomBarInset = if (behind) frame.insets.miniPlayerBottomPadding else frame.insets.navContentBottomPadding
         assertTrue("显示中的底栏必须实际占用空间: $frame", bottomBarInset > 0.dp)
         if (style == UiStyle.Clean) assertEquals("无系统导航栏insets的Clean底栏为64dp加16dp边距", 80.dp, bottomBarInset)
-        assertEquals(if (blur) 0.dp else bottomBarInset, frame.insets.navContentBottomPadding)
-        assertEquals(expectedMiniPlayerHeight + if (blur) bottomBarInset else 0.dp, frame.insets.screenBottomInset)
-        assertEquals(if (blur) bottomBarInset else 0.dp, frame.insets.miniPlayerBottomPadding)
+        assertEquals(if (behind) 0.dp else bottomBarInset, frame.insets.navContentBottomPadding)
+        assertEquals(expectedMiniPlayerHeight + if (behind) bottomBarInset else 0.dp, frame.insets.screenBottomInset)
+        assertEquals(if (behind) bottomBarInset else 0.dp, frame.insets.miniPlayerBottomPadding)
         assertEquals(frame.insets.screenBottomInset, frame.miniPlayerHeight)
         assertEquals("内容槽边界必须反映实际底栏裁切: $frame",
             frame.insets.navContentBottomPadding.value * frame.density,

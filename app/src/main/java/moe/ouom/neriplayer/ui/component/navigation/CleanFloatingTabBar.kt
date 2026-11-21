@@ -65,7 +65,6 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.effect.glass.enhancedGlassRim
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
-import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import kotlin.math.roundToInt
 
@@ -89,7 +88,6 @@ internal fun CleanFloatingTabBar(
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     val dark = colors.surface.luminance() < 0.5f
-    val overBackground = LocalHasCustomBackground.current
     val enhanced = NeriDesign.tokens.enhancedEffects
     val selectedIndex = items.indexOfFirst { (dest, _) ->
         isNeriNavigationDestinationSelected(currentDestination, dest)
@@ -145,7 +143,8 @@ internal fun CleanFloatingTabBar(
                     shape = CircleShape
                 )),
             shape = CircleShape,
-            fallbackColor = colors.surfaceContainerLow.copy(alpha = if (overBackground) 0.62f else 0.9f),
+            // 无模糊时内容会从悬浮底栏后面滚过, 半透明底色会透出杂乱内容, 直接用纯色
+            fallbackColor = colors.surfaceContainerLow,
             tintColor = colors.surfaceContainerLow
         ) {
             Row(
