@@ -482,14 +482,17 @@ private fun BiliMusicRankDetailRow(
         val rankThumbnailUrl = remember(song.videoCover) {
             buildBiliThumbnailUrl(imageUrl = song.videoCover, width = 192, height = 108)
         }
-        AsyncImage(
-            model = offlineCachedImageRequest(
+        val coverRequest = remember(context, rankThumbnailUrl, offlineMode) {
+            offlineCachedImageRequest(
                 context = context,
                 data = rankThumbnailUrl,
                 sizePx = 192,
-                allowHardware = false,
+                allowHardware = true,
                 offlineMode = offlineMode
-            ),
+            )
+        }
+        AsyncImage(
+            model = coverRequest,
             contentDescription = song.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -569,14 +572,17 @@ private fun BiliMusicHotDetailRow(
         val hotThumbnailUrl = remember(video.coverUrl) {
             buildBiliThumbnailUrl(imageUrl = video.coverUrl, width = 192, height = 108)
         }
-        AsyncImage(
-            model = offlineCachedImageRequest(
+        val coverRequest = remember(context, hotThumbnailUrl, offlineMode) {
+            offlineCachedImageRequest(
                 context = context,
                 data = hotThumbnailUrl,
                 sizePx = 192,
-                allowHardware = false,
+                allowHardware = true,
                 offlineMode = offlineMode
-            ),
+            )
+        }
+        AsyncImage(
+            model = coverRequest,
             contentDescription = video.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier

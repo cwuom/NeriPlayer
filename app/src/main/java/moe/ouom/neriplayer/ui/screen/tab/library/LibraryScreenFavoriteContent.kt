@@ -608,14 +608,17 @@ internal fun FavoritePlaylistList(
                             ),
                             leadingContent = {
                                 if (!favorite.coverUrl.isNullOrEmpty()) {
-                                    AsyncImage(
-                                        model = offlineCachedImageRequest(
+                                    val coverRequest = remember(context, favorite.coverUrl, offlineMode) {
+                                        offlineCachedImageRequest(
                                             context = context,
                                             data = favorite.coverUrl,
                                             sizePx = 192,
-                                            allowHardware = false,
+                                            allowHardware = true,
                                             offlineMode = offlineMode
-                                        ),
+                                        )
+                                    }
+                                    AsyncImage(
+                                        model = coverRequest,
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier

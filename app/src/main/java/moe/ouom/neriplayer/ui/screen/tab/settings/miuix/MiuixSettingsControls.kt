@@ -79,7 +79,6 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import moe.ouom.neriplayer.ui.component.overlay.DialogButtonSlot
 import moe.ouom.neriplayer.ui.component.overlay.LocalDialogButtonSlot
-import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.ui.window.DialogProperties
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
@@ -95,7 +94,7 @@ import androidx.compose.ui.geometry.Size
 private val MiuixControlShape = RoundedCornerShape(16.dp)
 private val MiuixDialogShape = RoundedCornerShape(28.dp)
 private val MiuixInnerShape = RoundedCornerShape(12.dp)
-private val CleanFieldShape = ContinuousRoundedCornerShape(16.dp)
+private val CleanFieldShape = RoundedCornerShape(16.dp)
 
 private val buttonShape: Shape
     @Composable get() = if (NeriDesign.isClean) CircleShape else MiuixControlShape

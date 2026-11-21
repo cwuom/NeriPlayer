@@ -88,11 +88,26 @@ class PreviewThemePolicyTest {
         assertTrue(neriDesignTokensFor(UiStyle.Clean).isClean)
         assertTrue(neriDesignTokensFor(UiStyle.Clean).pressScaleEnabled)
         assertTrue(CleanDesignTokens.cardShape is RoundedCornerShape)
-        val outline = CleanDesignTokens.cardShape.createOutline(
-            Size(700f, 912f),
-            LayoutDirection.Ltr,
-            Density(1f)
-        )
-        assertTrue("Scrolling card shape must use analytic Outline.Rounded", outline is Outline.Rounded)
+        assertTrue(CleanDesignTokens.groupShape is RoundedCornerShape)
+        assertTrue(CleanDesignTokens.miniPlayerShape is RoundedCornerShape)
+        assertTrue(CleanDesignTokens.coverSmallShape is ContinuousRoundedCornerShape)
+        assertTrue(CleanDesignTokens.coverLargeShape is ContinuousRoundedCornerShape)
+        listOf(
+            CleanDesignTokens.cardShape,
+            CleanDesignTokens.groupShape,
+            CleanDesignTokens.miniPlayerShape,
+            CleanShapes.extraSmall,
+            CleanShapes.small,
+            CleanShapes.medium,
+            CleanShapes.large,
+            CleanShapes.extraLarge
+        ).forEach { shape ->
+            val outline = shape.createOutline(
+                Size(700f, 912f),
+                LayoutDirection.Ltr,
+                Density(1f)
+            )
+            assertTrue("Scrolling/chrome shape must use analytic Outline.Rounded: $shape", outline is Outline.Rounded)
+        }
     }
 }

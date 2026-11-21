@@ -104,7 +104,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 /** Per-setting symbol on its own hue; makes each row recognizable at a glance in clean style. */
 internal data class SettingGlyph(val icon: ImageVector, val tint: Color)
@@ -272,7 +272,7 @@ internal fun SettingGlyphTile(
     Box(
         modifier = modifier
             .size(size)
-            .clip(ContinuousRoundedCornerShape(size * 0.28f))
+            .clip(RoundedCornerShape(size * 0.28f))
             .background(glyph.tint),
         contentAlignment = Alignment.Center
     ) {
