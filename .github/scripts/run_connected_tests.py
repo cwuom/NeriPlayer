@@ -20,6 +20,7 @@ from verify_instrumentation import case_is_skipped, is_assumption_failure
 # 测试仓库与主仓库共用脚本，未显式开启时保持严格模式
 FLAKY_RETRY_LIMIT_ENV = "INSTRUMENTATION_FLAKY_RETRY_LIMIT"
 LANE_STATUS = "build/reports/emulator-host/connected-lane-status.txt"
+LOG_ONLY = "-Pandroid.testInstrumentationRunnerArguments.log=true"
 TEST_CLASS = re.compile(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*")
 TEST_METHOD = re.compile(r"[A-Za-z_$][\w$]*")
 
@@ -206,8 +207,18 @@ def report_flaky_cases(env: dict[str, str], retried: dict):
             output.writelines(f"- `{name}`\n" for name in names)
 
 
+def app_inventory(root: Path, app_arguments: list[str], command) -> set[tuple]:
+    """List every app test the lane selects without running them."""
+    clear_reports(root, ["app"])
+    result = command(["./gradlew", ":app:connectedDebugAndroidTest", *app_arguments, LOG_ONLY, *GRADLE_FLAGS])
+    archive_reports(root, ["app"], "flaky-retry-inventory.zip")
+    if result:
+        raise ValueError("Could not list the complete app test inventory of the lane")
+    return set(read_cases(root, ["app"]))
+
+
 def retry_failed_cases(root: Path, env: dict[str, str], modules: list[str], original: dict,
-                       failed: list[tuple], command) -> int:
+                       failed: list[tuple], app_arguments: list[str], command) -> int:
     first_attempt = archive_reports(root, modules, "flaky-retry-attempt-1.zip")
     print(f"Retrying {len(failed)} failed testcase(s) once in isolation", flush=True)
     for arguments in recovery_commands(env["ANDROID_SERIAL"]):
@@ -216,6 +227,10 @@ def retry_failed_cases(root: Path, env: dict[str, str], modules: list[str], orig
             return recovery_result
     retried = {}
     try:
+        # 插桩进程崩溃会截断首轮，未执行的用例不会出现在报告里，必须先证明首轮覆盖了整道清单
+        if app_inventory(root, app_arguments, command) != {identity for identity in original if identity[0] == "app"}:
+            confirm_test_failure(root)
+            raise ValueError("First attempt did not run the complete app test inventory of the lane")
         for index, identity in enumerate(failed, start=1):
             _, class_name, name = identity
             clear_reports(root, ["app"])
@@ -293,7 +308,7 @@ def run_connected_tests(root: Path, env: dict[str, str]) -> int:
                     for _, class_name, name in failed):
                 confirm_test_failure(root)
                 return result
-            return retry_failed_cases(root, env, modules, original, failed, command)
+            return retry_failed_cases(root, env, modules, original, failed, app_arguments, command)
 
         archive_reports(root, modules)
         print("Recovering emulator foreground once; replaying the complete unchanged test lane", flush=True)

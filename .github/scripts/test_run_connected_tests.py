@@ -48,6 +48,9 @@ class ConnectedTestsFixture(unittest.TestCase):
         self.module_result = 0
         self.recovery_result = 0
         self.device_state = "device"
+        self.inventory = None
+        self.inventory_result = 0
+        self.inventory_runs = 0
 
     def output(self, module="app"):
         return self.root / module / "build/outputs/androidTest-results/connected/debug"
@@ -77,6 +80,11 @@ class ConnectedTestsFixture(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0 if self.device_state else 1, stdout=self.device_state)
         if command[0] == "adb":
             return subprocess.CompletedProcess(command, self.recovery_result)
+        if runner.LOG_ONLY in command:
+            self.inventory_runs += 1
+            listed = self.inventory or [(c, n) for c, n, _ in self.attempts[0][1]]
+            self.write_report([(c, n, None) for c, n in listed])
+            return subprocess.CompletedProcess(command, self.inventory_result)
         if ":app:connectedDebugAndroidTest" not in command:
             self.module_runs += 1
             self.write_report([self.case(name="libraryCase")], "modules/database")
@@ -303,7 +311,7 @@ class FlakyRetryTest(ConnectedTestsFixture):
         self.env[runner.FLAKY_RETRY_LIMIT_ENV] = "3"
 
     def app_commands(self):
-        return [c for c in self.commands if ":app:connectedDebugAndroidTest" in c]
+        return [c for c in self.commands if ":app:connectedDebugAndroidTest" in c and runner.LOG_ONLY not in c]
 
     def final_cases(self):
         report = ET.parse(self.output() / "TEST-result.xml").getroot()
@@ -320,7 +328,9 @@ class FlakyRetryTest(ConnectedTestsFixture):
                               self.case(ASSUMPTION, "tablet")], evidence),
                          (0, [self.case(name="flaky")], None)]
         self.assertEqual(self.run_fixture(), 0)
-        self.assertEqual(self.app_runs, 2)
+        self.assertEqual((self.app_runs, self.inventory_runs), (2, 1))
+        inventory = next(c for c in self.commands if runner.LOG_ONLY in c)
+        self.assertIn("-Pandroid.testInstrumentationRunnerArguments.shardIndex=2", inventory)
         retry = self.app_commands()[1]
         self.assertIn(CLASS_FILTER + "ExampleTest#flaky", retry)
         self.assertFalse(any("shardIndex" in argument for argument in retry))
@@ -340,6 +350,8 @@ class FlakyRetryTest(ConnectedTestsFixture):
         with zipfile.ZipFile(host / "flaky-retry-attempt-1.zip") as first:
             original = ET.fromstring(first.read("app/build/outputs/androidTest-results/connected/debug/TEST-result.xml"))
             self.assertEqual(original.find("testcase/failure").text, BUSINESS)
+        with zipfile.ZipFile(host / "flaky-retry-inventory.zip") as listed:
+            self.assertEqual(listed.namelist(), ["app/build/outputs/androidTest-results/connected/debug/TEST-result.xml"])
         with zipfile.ZipFile(host / "flaky-retry-attempt-2.zip") as second:
             self.assertEqual(second.namelist(),
                              ["case-1/app/build/outputs/androidTest-results/connected/debug/TEST-result.xml"])
@@ -398,6 +410,37 @@ class FlakyRetryTest(ConnectedTestsFixture):
                 self.assertNotEqual(self.run_fixture(), 0)
                 self.assertEqual(self.app_runs, 1)
                 self.assertNotIn(runner.recovery_commands("emulator-5554")[0], self.commands)
+
+    def test_retry_requires_proof_that_the_first_attempt_ran_the_complete_lane(self):
+        status = self.root / runner.LANE_STATUS
+        lane = runner.run_connected_tests
+
+        def then_drop_emulator(root, env):
+            try:
+                return lane(root, env)
+            finally:
+                self.device_state = ""
+
+        complete = [("ExampleTest", "flaky"), ("ExampleTest", "other")]
+        for label, inventory, inventory_result, verdict in [
+            ("crash truncated the lane", [*complete, ("ExampleTest", "later")], 0, "failed"),
+            ("lane ran an unlisted case", complete[:1], 0, "failed"),
+            ("inventory could not be listed", complete, 1, "device-lost"),
+        ]:
+            with self.subTest(label):
+                self.app_runs = self.inventory_runs = 0
+                self.device_state = "device"
+                self.inventory, self.inventory_result = inventory, inventory_result
+                self.attempts = [(1, [self.case(BUSINESS, "flaky"), self.case(name="other")], None),
+                                 (0, [self.case(name="flaky")], None)]
+                with patch.object(runner, "run_connected_tests", side_effect=then_drop_emulator):
+                    self.assertNotEqual(self.run_fixture(runner.main), 0)
+                self.assertEqual((self.app_runs, self.inventory_runs), (1, 1))
+                self.assertEqual(status.read_text(), verdict + "\n")
+                _, cases = self.final_cases()
+                self.assertEqual(set(cases), {"flaky", "other"})
+                self.assertEqual(cases["flaky"].find("failure").text, BUSINESS)
+                self.assertNotIn("::warning", self.stdout.getvalue())
 
     def test_invalid_retry_limit_fails_before_any_command(self):
         self.env[runner.FLAKY_RETRY_LIMIT_ENV] = "three"
