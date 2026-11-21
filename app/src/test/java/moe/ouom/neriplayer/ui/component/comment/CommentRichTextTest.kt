@@ -167,6 +167,47 @@ class CommentRichTextTest {
     }
 
     @Test
+    fun `two part timestamp rejects minute overflow`() {
+        // 60:00 不是合法的「分:秒」写法, 不能被误判成刚好一小时
+        assertEquals(null, commentTimestampMs("60", "00", null))
+        assertEquals(null, commentTimestampMs("99", "30", null))
+        // 上界之内仍然正常换算
+        assertEquals(3_599_000L, commentTimestampMs("59", "59", null))
+    }
+
+    @Test
+    fun `minute overflow stays plain text in the comment body`() {
+        assertEquals(
+            listOf<CommentTextSegment>(textSegment("60:00 处开始")),
+            splitCommentContent("60:00 处开始", emptyList())
+        )
+    }
+
+    @Test
+    fun `three part timestamp keeps the wider hour range`() {
+        // 三段是「时:分:秒」, 小时字段不受 59 限制
+        assertEquals(216_000_000L, commentTimestampMs("60", "00", "00"))
+    }
+
+    @Test
+    fun `clamp keeps in range positions untouched`() {
+        assertEquals(83_000L, clampCommentTimestampPosition(83_000L, 240_000L))
+        assertEquals(0L, clampCommentTimestampPosition(0L, 240_000L))
+    }
+
+    @Test
+    fun `clamp pulls timestamps beyond the duration back to the last playable position`() {
+        // 4 分钟的歌点了 12:34, 应落在 duration - 1 而不是被静默丢弃
+        assertEquals(239_999L, clampCommentTimestampPosition(754_000L, 240_000L))
+    }
+
+    @Test
+    fun `clamp leaves positions alone when the duration is unknown`() {
+        assertEquals(754_000L, clampCommentTimestampPosition(754_000L, 0L))
+        assertEquals(0L, clampCommentTimestampPosition(-1L, 0L))
+    }
+
+    @Test
     fun `h m s timestamp in the middle splits into three segments`() {
         assertEquals(
             listOf<CommentTextSegment>(

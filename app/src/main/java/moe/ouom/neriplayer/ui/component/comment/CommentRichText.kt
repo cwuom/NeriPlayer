@@ -80,11 +80,27 @@ internal fun commentTimestampMs(first: String, second: String, third: String?): 
     val b = second.toLongOrNull() ?: return null
     if (b !in 0..59) return null
     if (third == null) {
+        // 两段按「分:秒」解释, 分钟同样是 0..59 的有限字段:
+        // 不设上界会让 60:00 这种非法写法变成一小时的可点击链接
+        if (a !in 0..59) return null
         return (a * 60L + b) * 1000L
     }
     val c = third.toLongOrNull() ?: return null
     if (c !in 0..59) return null
     return (a * 3600L + b * 60L + c) * 1000L
+}
+
+/**
+ * 把评论里的时间坐标收敛到当前曲目的可播放范围内。
+ *
+ * 评论作者按自己看到的进度写坐标, 可能超出正在播放的曲目时长。直接交给 seek 会被
+ * 歌词入口的越界拒绝策略静默丢弃 (点了没反应), 因此这里先夹到 `[0, durationMs - 1]`,
+ * 让点击至少落到一个有效位置。时长未知 (`<= 0`) 时只保证非负, 不做上界裁剪。
+ */
+internal fun clampCommentTimestampPosition(positionMs: Long, durationMs: Long): Long {
+    val safePositionMs = positionMs.coerceAtLeast(0L)
+    if (durationMs <= 0L) return safePositionMs
+    return safePositionMs.coerceAtMost(durationMs - 1L)
 }
 
 /**
