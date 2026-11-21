@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -24,7 +25,6 @@ import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -37,11 +37,12 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -220,7 +221,8 @@ internal fun SettingsPersonalizationHomeCard(
                     icon = icon,
                     checked = checked,
                     onCheckedChange = onChecked,
-                    enabled = true,
+                    expanded = expanded,
+                    onToggleExpanded = if (hasSubs) ({ expanded = !expanded }) else null,
                     targetId = "setting:home_card_$majorId",
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
@@ -229,32 +231,7 @@ internal fun SettingsPersonalizationHomeCard(
                         HomeReorderHandleIcon(title, normalizedMajor, index) {
                             onReorderMajor(mergeVisibleHomeSectionOrder(majorOrder, it))
                         }
-                    },
-                    trailingExtra = if (hasSubs) {
-                        {
-                            val expandDescription = stringResource(
-                                CoreCommonR.string.settings_home_sub_section_expand,
-                                title
-                            )
-                            val collapseDescription = stringResource(
-                                CoreCommonR.string.settings_home_sub_section_collapse,
-                                title
-                            )
-                            IconButton(onClick = { expanded = !expanded }) {
-                                androidx.compose.material3.Icon(
-                                    imageVector = Icons.Filled.ExpandMore,
-                                    contentDescription = if (expanded) {
-                                        collapseDescription
-                                    } else {
-                                        expandDescription
-                                    },
-                                    modifier = Modifier.graphicsLayer {
-                                        rotationZ = if (expanded) 180f else 0f
-                                    }
-                                )
-                            }
-                        }
-                    } else null
+                    }
                 )
             }
             if (hasSubs && expanded) {
@@ -342,24 +319,27 @@ private fun HomeSubSectionList(
             onReorder = onReorder
         ) { index, id, _ ->
             val visible = !hidden.contains(id)
+            val title = stringResource(titleResOf(id))
             ReorderableItem {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                ) {
-                    HomeReorderHandleIcon(stringResource(titleResOf(id)), normalized, index, onReorder)
-                    Text(
-                        text = stringResource(titleResOf(id)),
-                        modifier = Modifier.weight(1f).padding(start = 8.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (visible) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    MiuixSettingsSwitch(
-                        checked = visible,
-                        onCheckedChange = { onSetVisible(id, it) }
-                    )
-                }
+                ListItem(
+                    leadingContent = { HomeReorderHandleIcon(title, normalized, index, onReorder) },
+                    headlineContent = {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (visible) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingContent = {
+                        MiuixSettingsSwitch(
+                            checked = visible,
+                            onCheckedChange = { onSetVisible(id, it) },
+                            modifier = Modifier.semantics { contentDescription = title }
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
             }
         }
     }
@@ -1037,14 +1017,13 @@ private fun SettingsHomeCardSwitch(
     icon: ImageVector,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    description: String? = null,
-    enabled: Boolean,
+    expanded: Boolean,
+    onToggleExpanded: (() -> Unit)?,
     targetId: String,
     highlightTargetId: String?,
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?,
-    leadingExtra: (@Composable () -> Unit)? = null,
-    trailingExtra: (@Composable () -> Unit)? = null
+    leadingExtra: @Composable () -> Unit
 ) {
     ListItem(
         modifier = Modifier
@@ -1054,50 +1033,47 @@ private fun SettingsHomeCardSwitch(
                 highlightPulse = highlightPulse,
                 onHighlightFinished = onHighlightFinished
             )
-            .homeCardInteractionModifier(enabled, checked, onCheckedChange),
+            .then(if (onToggleExpanded == null) Modifier.settingsItemClickable { onCheckedChange(!checked) } else Modifier),
         leadingContent = {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                leadingExtra?.invoke()
+                leadingExtra()
                 Icon(
                     imageVector = icon,
-                    contentDescription = title,
+                    contentDescription = null,
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             }
         },
-        headlineContent = { Text(title) },
-        supportingContent = homeCardSupportingContent(description),
-        trailingContent = {
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                trailingExtra?.invoke()
-                MiuixSettingsSwitch(
-                    checked = checked,
-                    enabled = enabled,
-                    onCheckedChange = onCheckedChange
-                )
+        headlineContent = {
+            if (onToggleExpanded == null) {
+                Text(title)
+            } else {
+                Row(
+                    modifier = Modifier.settingsItemClickable(onClick = onToggleExpanded).heightIn(min = 48.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(title, modifier = Modifier.weight(1f, fill = false))
+                    Icon(
+                        imageVector = Icons.Filled.ExpandMore,
+                        contentDescription = stringResource(
+                            if (expanded) CoreCommonR.string.settings_home_sub_section_collapse
+                            else CoreCommonR.string.settings_home_sub_section_expand,
+                            title
+                        ),
+                        modifier = Modifier.graphicsLayer { rotationZ = if (expanded) 180f else 0f }
+                    )
+                }
             }
+        },
+        trailingContent = {
+            MiuixSettingsSwitch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                modifier = Modifier.semantics { contentDescription = title }
+            )
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
-
-private fun Modifier.homeCardInteractionModifier(
-    enabled: Boolean,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-): Modifier = if (enabled) {
-    settingsItemClickable { onCheckedChange(!checked) }
-} else {
-    alpha(0.5f)
-}
-
-private fun homeCardSupportingContent(description: String?): (@Composable () -> Unit)? =
-    description?.let { text ->
-        {
-            Text(
-                text = text,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
