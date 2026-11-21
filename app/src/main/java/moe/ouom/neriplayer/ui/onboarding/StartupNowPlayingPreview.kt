@@ -575,10 +575,18 @@ internal data class StartupPreviewLyricPreferences(
  * 把进出场透明度乘到玻璃层上, 模糊和内容一起出现和消失
  */
 @Composable
-internal fun AnimatedVisibilityScope.rememberStartupGlassOpacity(enterMillis: Int, exitMillis: Int): () -> Float {
+internal fun AnimatedVisibilityScope.rememberStartupGlassOpacity(
+    enterMillis: Int,
+    exitMillis: Int,
+    enterDelayMillis: Int = 0
+): () -> Float {
     val alpha = transition.animateFloat(
         transitionSpec = {
-            if (targetState == EnterExitState.Visible) tween(durationMillis = enterMillis) else tween(durationMillis = exitMillis)
+            if (targetState == EnterExitState.Visible) {
+                tween(durationMillis = enterMillis, delayMillis = enterDelayMillis)
+            } else {
+                tween(durationMillis = exitMillis)
+            }
         },
         label = "startup_glass_opacity"
     ) { state -> if (state == EnterExitState.Visible) 1f else 0f }

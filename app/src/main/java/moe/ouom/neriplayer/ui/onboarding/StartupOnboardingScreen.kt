@@ -113,6 +113,7 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassHost
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneLayer
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassNavigationOwner
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassSceneOpacity
 import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.isAdvancedGlassBackendSupported
 import moe.ouom.neriplayer.ui.effect.glass.rememberAdvancedGlassBackdrop
@@ -860,8 +861,16 @@ fun StartupOnboardingScreen(
                                             }
                                         ) { index ->
                                             val step = steps[index]
+                                            // 卡片模糊由宿主统一绘制, 不跟随页面淡入淡出; 按页面进出场同步玻璃透明度
+                                            // 否则旧页文字已经消失, 空的模糊板还停在原地, 新页也会先冒出空模糊板
+                                            val stepGlassOpacity = rememberStartupGlassOpacity(
+                                                enterMillis = STARTUP_STEP_GLASS_ENTER_MILLIS,
+                                                exitMillis = STARTUP_STEP_GLASS_EXIT_MILLIS,
+                                                enterDelayMillis = STARTUP_STEP_GLASS_ENTER_DELAY_MILLIS
+                                            )
                                             CompositionLocalProvider(
                                                 LocalStartupStepVisibility provides this,
+                                                LocalAdvancedGlassSceneOpacity provides stepGlassOpacity,
                                                 LocalAdvancedGlassNavigationOwner provides step,
                                                 LocalStartupSharedViewport provides sharedViewport.takeUnless { twoPane }
                                             ) {
@@ -1224,3 +1233,8 @@ internal fun StartupNotificationPermissionWarningDialog(
 
 // 完整说明收起后再留一帧余量, 确保收起动画的最后一帧已经画出
 private const val STARTUP_POLICY_CONSENT_GAP_MILLIS = 32L
+
+// 与步骤内容的淡入淡出对齐: 页面在 90ms 后开始淡入, 正文再用约 220ms 淡完; 退场 90ms
+private const val STARTUP_STEP_GLASS_ENTER_DELAY_MILLIS = 90
+private const val STARTUP_STEP_GLASS_ENTER_MILLIS = 220
+private const val STARTUP_STEP_GLASS_EXIT_MILLIS = 90
