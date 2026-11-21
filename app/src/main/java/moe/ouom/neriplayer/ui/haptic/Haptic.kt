@@ -27,6 +27,7 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material3.*
@@ -143,6 +144,7 @@ fun HapticButton(
     shape: Shape = ButtonDefaults.shape,
     colors: ButtonColors = ButtonDefaults.buttonColors(),
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit
 ) {
     Button(
@@ -152,6 +154,7 @@ fun HapticButton(
         shape = shape,
         colors = colors,
         contentPadding = contentPadding,
+        interactionSource = interactionSource,
         content = content
     )
 }

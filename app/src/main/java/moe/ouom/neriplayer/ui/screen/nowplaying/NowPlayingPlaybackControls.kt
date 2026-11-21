@@ -49,7 +49,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackQualityOption
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
@@ -438,10 +437,11 @@ internal fun NowPlayingProgressSection(
     tabletLandscape: Boolean = false,
     progressRowModifier: Modifier = Modifier
 ) {
+    val playbackSource = LocalNowPlayingPlaybackSource.current
     val owner = remember(songKey) {
-        NowPlayingProgressOwner(PlayerManager.playbackPositionFlow.value)
+        NowPlayingProgressOwner(playbackSource.playbackPositionFlow.value)
     }
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
+    val currentPosition by playbackSource.playbackPositionFlow.collectAsStateWithLifecycle()
     val effectivePreviewPositionMs = owner.previewPositionMs(currentPosition)
     val previewOverridePositionMs = owner.previewOverrideMs(currentPosition)
     val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
@@ -547,18 +547,19 @@ private fun rememberNowPlayingSeekActions(
     owner: NowPlayingProgressOwner,
     lyricSeekHaptic: LyricSeekHapticFeedback
 ): NowPlayingSeekActionOwner {
-    return bindNowPlayingSeekActions(owner, lyricSeekHaptic, LocalContext.current)
+    return bindNowPlayingSeekActions(owner, lyricSeekHaptic, LocalContext.current, LocalNowPlayingPlaybackSource.current)
 }
 
 private fun bindNowPlayingSeekActions(
     owner: NowPlayingProgressOwner,
     lyricSeekHaptic: LyricSeekHapticFeedback,
-    context: Context
+    context: Context,
+    playbackSource: NowPlayingPlaybackSource
 ): NowPlayingSeekActionOwner = owner.bindSeekActions(
     lyricSeekHaptic::onSeekStart,
     lyricSeekHaptic::onSeekMove,
     lyricSeekHaptic::onSeekEnd,
-    { PlayerManager.seekTo(it) },
+    { playbackSource.seekTo(it) },
     context::performHapticFeedback
 )
 

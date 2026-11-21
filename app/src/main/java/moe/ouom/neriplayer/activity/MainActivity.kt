@@ -730,6 +730,7 @@ class MainActivity : ComponentActivity() {
 
                                 enter togetherWith exit using SizeTransform(clip = false)
                             },
+                            contentKey = ::startupStageContentKey,
                             label = "AppStageTransition"
                         ) { current ->
                             StartupStageContentGate(
@@ -751,10 +752,12 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
 
-                                    StartupStage.Disclaimer -> {
+                                    // 同意使用说明是引导中的一步, 两个阶段共用同一屏, 共享元素和背景不中断
+                                    StartupStage.Disclaimer, StartupStage.Onboarding -> {
                                         val scope = rememberCoroutineScope()
-                                        DisclaimerScreen(
-                                            onAgree = {
+                                        StartupOnboardingScreen(
+                                            disclaimerAccepted = current == StartupStage.Onboarding,
+                                            onAcceptDisclaimer = {
                                                 pendingDisclaimerAccepted = true
                                                 scope.launch {
                                                     runCatching {
@@ -770,12 +773,8 @@ class MainActivity : ComponentActivity() {
                                                         )
                                                     }
                                                 }
-                                            }
-                                        )
-                                    }
-
-                                    StartupStage.Onboarding -> {
-                                        StartupOnboardingScreen(
+                                            },
+                                            initialUiStyle = startupThemeSnapshot.uiStyle,
                                             onLanguageChanged = { selectedAppLanguage = it }
                                         )
                                     }
@@ -1876,16 +1875,5 @@ private fun StartupCrashReportDialog(
             }
         },
         dismissButton = null
-    )
-}
-
-@Composable
-fun DisclaimerScreen(
-    onAgree: () -> Unit,
-    initialCountdownSeconds: Int = 5
-) {
-    StartupDisclaimerContent(
-        onAgree = onAgree,
-        initialCountdownSeconds = initialCountdownSeconds
     )
 }

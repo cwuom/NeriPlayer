@@ -15,7 +15,6 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
-import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -31,7 +30,6 @@ import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
 import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.lyrics.MIN_LYRIC_FONT_SCALE
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -57,9 +55,7 @@ class StartupOnboardingExtrasComposeTest {
         composeRule.waitForIdle()
     }
 
-    // The playback previews run an endless waveform animation, so they need a manually driven clock.
-    private fun setStep(hasEndlessAnimation: Boolean = false, content: @Composable () -> Unit) {
-        composeRule.mainClock.autoAdvance = !hasEndlessAnimation
+    private fun setStep(content: @Composable () -> Unit) {
         composeRule.setContent {
             hostView = LocalView.current
             Column {
@@ -83,9 +79,6 @@ class StartupOnboardingExtrasComposeTest {
         composeRule.onNodeWithText(text).performClick()
         settle()
     }
-
-    private fun topOf(text: String): Float =
-        composeRule.onNodeWithText(text).getBoundsInRoot().top.value
 
     private fun setLyricScaleSlider(to: Float) {
         composeRule.onNode(
@@ -216,23 +209,23 @@ class StartupOnboardingExtrasComposeTest {
     fun `playback controls step links lyric size while it follows the now playing size`() {
         val changes = mutableListOf<PlaybackControlLayoutPreferences>()
         val scales = mutableListOf<Float>()
-        setStep(hasEndlessAnimation = true) {
+        var previewRequests = 0
+        setStep {
             StartupPlaybackControlsContent(
                 preferences = PlaybackControlLayoutPreferences(),
                 coverLyricFontScale = 1f,
                 onCoverLyricFontScaleChange = { scales += it },
-                onPreferencesChange = { changes += it }
+                onPreferencesChange = { changes += it },
+                onOpenPreview = { previewRequests += 1 }
             )
         }
 
-        val previewLyric = string(AppR.string.onboarding_controls_preview_lyric_2)
-        assertTrue(topOf(PROGRESS_ELAPSED) < topOf(previewLyric))
+        clickText(string(AppR.string.onboarding_preview_hint_open))
+        assertEquals(1, previewRequests)
 
         clickText(string(CoreCommonR.string.settings_playback_control_size_large))
         clickText(string(CoreCommonR.string.settings_nowplaying_control_placement_bottom))
-        assertTrue(topOf(PROGRESS_ELAPSED) < topOf(previewLyric))
         clickText(string(CoreCommonR.string.settings_nowplaying_control_placement_bottom_with_progress))
-        assertTrue(topOf(PROGRESS_ELAPSED) > topOf(previewLyric))
         drawHost()
 
         assertEquals(
@@ -257,10 +250,30 @@ class StartupOnboardingExtrasComposeTest {
     }
 
     @Test
+    fun `playback controls step toggles immersive mode from the whole card`() {
+        val changes = mutableListOf<Boolean>()
+        setStep {
+            StartupPlaybackControlsContent(
+                preferences = PlaybackControlLayoutPreferences(),
+                coverLyricFontScale = 1f,
+                onCoverLyricFontScaleChange = {},
+                onPreferencesChange = {},
+                immersiveMode = false,
+                onImmersiveModeChange = { changes += it }
+            )
+        }
+
+        clickText(string(CoreCommonR.string.settings_nowplaying_immersive_mode))
+        clickText(string(CoreCommonR.string.settings_nowplaying_immersive_mode))
+
+        assertEquals(listOf(true, false), changes)
+    }
+
+    @Test
     fun `playback controls step keeps a custom lyric size and commits the cover lyric scale`() {
         val changes = mutableListOf<PlaybackControlLayoutPreferences>()
         val scales = mutableListOf<Float>()
-        setStep(hasEndlessAnimation = true) {
+        setStep {
             StartupPlaybackControlsContent(
                 preferences = PlaybackControlLayoutPreferences(lyricsSize = PlaybackControlSize.SMALL),
                 coverLyricFontScale = 0.6f,
@@ -293,7 +306,7 @@ class StartupOnboardingExtrasComposeTest {
     fun `lyrics step warns before diverging from the now playing control size`() {
         val changes = mutableListOf<PlaybackControlLayoutPreferences>()
         val scales = mutableListOf<Float>()
-        setStep(hasEndlessAnimation = true) {
+        setStep {
             StartupLyricsContent(
                 preferences = PlaybackControlLayoutPreferences(),
                 lyricFontScale = 1f,
@@ -329,7 +342,4 @@ class StartupOnboardingExtrasComposeTest {
             .assertExists()
     }
 
-    private companion object {
-        const val PROGRESS_ELAPSED = "1:18"
-    }
 }

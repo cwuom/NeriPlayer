@@ -30,4 +30,12 @@ class NeriAppBottomBarLayoutPolicyTest {
         assertEquals(144.dp, insets.screenBottomInset)
         assertEquals(80.dp, insets.miniPlayerBottomPadding)
     }
+
+    @Test
+    fun cleanFloatingBarKeepsContentBehindItEvenWithEffectsOff() {
+        // 动效全关时简洁风格底栏仍然悬浮, 不能退回成占位的纯色底栏
+        assertEquals(true, shouldExtendContentBehindBottomBar(baseBlurRequested = false, floatingBottomBar = true))
+        assertEquals(true, shouldExtendContentBehindBottomBar(baseBlurRequested = true, floatingBottomBar = false))
+        assertEquals(false, shouldExtendContentBehindBottomBar(baseBlurRequested = false, floatingBottomBar = false))
+    }
 }

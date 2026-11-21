@@ -73,6 +73,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -492,7 +493,9 @@ fun NeriMiniPlayer(
     visualCoverIdentityKey: String? = null,
     hasCurrentSong: Boolean = true,
     tabletControls: MiniPlayerTabletControls? = null,
-    clearCover: Boolean = false
+    clearCover: Boolean = false,
+    // 不贴底栏单独悬浮时传入完整圆角外形, 玻璃层和裁切共用同一个形状
+    containerShape: Shape? = null
 ) {
     val context = LocalContext.current
     val smallestScreenWidthDp = LocalConfiguration.current.smallestScreenWidthDp
@@ -506,7 +509,7 @@ fun NeriMiniPlayer(
     } else {
         MaterialTheme.colorScheme.onSecondaryContainer
     }
-    val shape = when {
+    val shape = containerShape ?: when {
         useTabletControls -> RectangleShape
         cleanStyle -> NeriDesign.tokens.miniPlayerShape
         else -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)

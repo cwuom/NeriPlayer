@@ -298,7 +298,10 @@ Package-level calculation domains are isolated by the compiled-bytecode gate.
 
 **`app/src/main/java/moe/ouom/neriplayer/ui/onboarding/`**
 
-- First-run onboarding: language, platform accounts, permission guidance, playback controls, GitHub sync, and personalization.
+- First-run onboarding, in order: language, UI style, a motion preset recommended for the device, terms and privacy, platform accounts, playback-source fallback, permission guidance, playback controls, lyrics, personalization, GitHub / WebDAV sync, and a feature guide.
+- Platform account and sync sessions are created only after the terms are accepted; sign-in state is not read before that.
+- The live previews in the playback-controls and lyrics steps reuse the real `AppNowPlayingOverlay`, `NowPlayingScreen`, and `LyricsScreen`. `StartupPreviewPlaybackSource` plays an in-memory demo song and never touches the real player, queue, history, or audio focus.
+- The Now Playing and lyrics screens read and drive playback through `LocalNowPlayingPlaybackSource`; the default implementation forwards to `PlayerManager`. Add new playback reads or actions for these screens to that interface instead of calling `PlayerManager` from the screen. Entry points that change real data (queue, sleep timer, volume, add to playlist, comments, more options, lyric sharing) are gated by `secondaryActionsEnabled`.
 
 **`modules/platform/src/main/java/moe/ouom/neriplayer/platform/`**
 

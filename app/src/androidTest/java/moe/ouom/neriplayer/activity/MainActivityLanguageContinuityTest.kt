@@ -18,6 +18,7 @@ import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.SemanticsMatcher
@@ -29,9 +30,11 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.espresso.Espresso
@@ -44,10 +47,12 @@ import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.locale.LanguageManager.Language
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.core.startup.debug.debugBuildWarningDataStore
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.appearance.PreviewThemePromptRepository
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.ui.onboarding.StartupStep
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsPageTransitionSceneTag
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.buildSettingsSearchEntries
@@ -90,7 +95,7 @@ class MainActivityLanguageContinuityTest {
                 capture("onboarding-${language.code}")
 
                 clickText(AppR.string.onboarding_action_next, language)
-                waitForText(label(AppR.string.onboarding_platforms_title, language))
+                waitForText(label(AppR.string.onboarding_style_title, language))
                 assertStep(language, 2)
                 assertSameActivity(scenario, originalActivity)
                 clickText(CoreCommonR.string.action_back, language)
@@ -98,9 +103,17 @@ class MainActivityLanguageContinuityTest {
                 assertStep(language, 1)
             }
 
-            clickText(AppR.string.onboarding_action_next, Language.CHINESE)
-            waitForText(label(AppR.string.onboarding_platforms_title, Language.CHINESE))
-            assertStep(Language.CHINESE, 2)
+            // 外观三步和已同意的使用说明之后才到平台连接
+            listOf(
+                AppR.string.onboarding_style_title,
+                AppR.string.onboarding_motion_title,
+                AppR.string.disclaimer_title,
+                AppR.string.onboarding_platforms_title
+            ).forEachIndexed { index, title ->
+                clickText(AppR.string.onboarding_action_next, Language.CHINESE)
+                waitForText(label(title, Language.CHINESE))
+                assertStep(Language.CHINESE, index + 2)
+            }
             clickText(AppR.string.onboarding_action_next, Language.CHINESE)
             awaitUi {
                 composeRule.onAllNodes(isDialog()).fetchSemanticsNodes().isNotEmpty() ||
@@ -111,7 +124,7 @@ class MainActivityLanguageContinuityTest {
                 assertDialogText(AppR.string.onboarding_platforms_no_login_desc)
                 clickText(AppR.string.onboarding_platforms_no_login_connect, Language.CHINESE)
                 waitForText(label(AppR.string.onboarding_platforms_title, Language.CHINESE))
-                assertStep(Language.CHINESE, 2)
+                assertStep(Language.CHINESE, StartupStep.Platforms.ordinal + 1)
             } else {
                 // 已有授权时使用播放源说明弹窗，不点击连接、管理或退出账号
                 composeRule.onNode(isToggleable()).performScrollTo().performClick()
@@ -119,12 +132,39 @@ class MainActivityLanguageContinuityTest {
                 assertDialogText(AppR.string.onboarding_playback_sources_confirm_title)
                 assertDialogText(AppR.string.onboarding_playback_sources_confirm_desc)
                 clickText(CoreCommonR.string.action_cancel, Language.CHINESE)
-                assertStep(Language.CHINESE, 3)
+                assertStep(Language.CHINESE, StartupStep.PlaybackSources.ordinal + 1)
             }
             assertSameActivity(scenario, originalActivity)
             assertFalse(runBlocking {
                 SettingsRepository(context).startupOnboardingCompletedFlow.filterNotNull().first()
             })
+        }
+
+    @Test
+    fun onboardingStyleCardsSwitchBackAndForthWithRealTaps() =
+        withPreparedActivity(onboarding = true) { _, _ ->
+            val settings = SettingsRepository(context)
+            waitForText(label(AppR.string.onboarding_language_title, Language.CHINESE))
+            clickText(AppR.string.onboarding_action_next, Language.CHINESE)
+            waitForText(label(AppR.string.onboarding_style_title, Language.CHINESE))
+            val start = runBlocking { settings.uiStyleFlow.first() }
+            val other = if (start == UiStyle.Clean) UiStyle.Material else UiStyle.Clean
+            // 必须用真实触摸, 并先点一下已选中的卡片: 这一下不会触发重组, 之后切回原风格曾经毫无反应
+            listOf(start, other, start, other).forEach { target ->
+                val card = if (target == UiStyle.Clean) {
+                    label(AppR.string.onboarding_style_clean, Language.CHINESE)
+                } else {
+                    context.getString(AppR.string.onboarding_style_material)
+                }
+                composeRule.onNodeWithContentDescription(card).performTouchInput {
+                    down(center)
+                    advanceEventTime(60L)
+                    up()
+                }
+                awaitUi { runBlocking { settings.uiStyleFlow.first() } == target }
+                // 等圆形揭示播完, 揭示进行中会忽略新的切换请求
+                Thread.sleep(StyleRevealSettleMillis)
+            }
         }
 
     @Test
@@ -302,6 +342,10 @@ class MainActivityLanguageContinuityTest {
         val savedDestination = runBlocking { settings.defaultStartDestinationFlow.first() }
         val savedAutoSource = runBlocking { settings.neteaseAutoSourceSwitchFlow.first() }
         val savedLocalFallback = runBlocking { settings.neteaseLocalSourceFallbackFlow.first() }
+        // 引导经过动效一步时会写入推荐配置, 结束后按原值还原
+        val savedMotion = runBlocking { context.dataStore.data.first() }.let { prefs ->
+            MotionBooleanKeys.associateWith { prefs[it] } to prefs[MotionQualityKey]
+        }
         val previewKey = booleanPreferencesKey("preview_theme_prompt_answered")
         val warningKey = booleanPreferencesKey("acknowledged")
         val savedPreview = runBlocking { context.dataStore.data.first()[previewKey] }
@@ -340,6 +384,13 @@ class MainActivityLanguageContinuityTest {
                     if (onboarding) {
                         settings.setNeteaseAutoSourceSwitch(savedAutoSource)
                         settings.setNeteaseLocalSourceFallback(savedLocalFallback)
+                        context.dataStore.edit { prefs ->
+                            savedMotion.first.forEach { (key, value) ->
+                                if (value == null) prefs.remove(key) else prefs[key] = value
+                            }
+                            val quality = savedMotion.second
+                            if (quality == null) prefs.remove(MotionQualityKey) else prefs[MotionQualityKey] = quality
+                        }
                     } else settings.setDefaultStartDestination(savedDestination)
                     context.dataStore.edit {
                         if (savedPreview == null) it.remove(previewKey) else it[previewKey] = savedPreview
@@ -379,7 +430,7 @@ class MainActivityLanguageContinuityTest {
 
     private fun assertStep(language: Language, step: Int) {
         val localized = localizedContext(language)
-        composeRule.onNodeWithText(localized.getString(AppR.string.onboarding_step_counter, step, 9))
+        composeRule.onNodeWithText(localized.getString(AppR.string.onboarding_step_counter, step, StartupStep.entries.size))
             .assertIsDisplayed()
     }
 
@@ -417,6 +468,18 @@ class MainActivityLanguageContinuityTest {
 
     private companion object {
         const val BluetoothSearchQuery = "blueto"
+        const val StyleRevealSettleMillis = 1_600L
         val LanguageRoundTrips = listOf(Language.ENGLISH, Language.CHINESE, Language.ENGLISH, Language.CHINESE)
+        val MotionBooleanKeys = listOf(
+            "advanced_blur_enabled",
+            "enhanced_advanced_blur_enabled",
+            "liquid_glass_enabled",
+            "enhanced_visual_effects_enabled",
+            "nowplaying_dynamic_background_enabled",
+            "nowplaying_audio_reactive_enabled",
+            "lyric_blur_enabled",
+            "prefer_high_refresh_rate"
+        ).map(::booleanPreferencesKey)
+        val MotionQualityKey = stringPreferencesKey("advanced_blur_quality")
     }
 }

@@ -482,34 +482,35 @@ fun NowPlayingScreen(
 ) {
     val coverLyricFontScale = lyricFontScales.coverLyric
     val coverTranslationFontScale = lyricFontScales.coverTranslation
-    val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
-    val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
-    val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
+    val playbackSource = LocalNowPlayingPlaybackSource.current
+    val currentSong by playbackSource.currentSongFlow.collectAsStateWithLifecycle()
+    val isPlaying by playbackSource.isPlayingFlow.collectAsStateWithLifecycle()
+    val isPlaybackControlPlaying by playbackSource.playbackControlPlayingFlow.collectAsStateWithLifecycle()
     val lanControls = moe.ouom.neriplayer.ui.component.playback.lan.rememberLanPlaybackControls()
-    val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow.collectAsStateWithLifecycle()
-    val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
+    val isAudioRouteMuted by playbackSource.audioRouteMuteSuppressedFlow.collectAsStateWithLifecycle()
+    val usbPlaybackPreparing by playbackSource.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
     val isPlaybackWaiting = resolvePlaybackWaiting(
         playbackRequested = isPlaybackControlPlaying,
         isPlaying = isPlaying,
         usbPlaybackPreparing = usbPlaybackPreparing,
         lanPreparing = lanControls.preparing
     )
-    val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsStateWithLifecycle()
-    val repeatMode by PlayerManager.repeatModeFlow.collectAsStateWithLifecycle()
-    val durationMs by PlayerManager.playbackDurationFlow.collectAsStateWithLifecycle()
-    val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsStateWithLifecycle()
-    val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsStateWithLifecycle()
-    val preferredQualityKeys by PlayerManager.preferredQualityKeys.collectAsStateWithLifecycle()
-    val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsStateWithLifecycle()
+    val shuffleEnabled by playbackSource.shuffleModeFlow.collectAsStateWithLifecycle()
+    val repeatMode by playbackSource.repeatModeFlow.collectAsStateWithLifecycle()
+    val durationMs by playbackSource.playbackDurationFlow.collectAsStateWithLifecycle()
+    val sleepTimerState by playbackSource.sleepTimerStateFlow.collectAsStateWithLifecycle()
+    val currentPlaybackAudioInfo by playbackSource.currentPlaybackAudioInfoFlow.collectAsStateWithLifecycle()
+    val preferredQualityKeys by playbackSource.preferredQualityKeys.collectAsStateWithLifecycle()
+    val playbackSoundState by playbackSource.playbackSoundStateFlow.collectAsStateWithLifecycle()
     val settingsRepo = remember { AppContainer.settingsRepo }
     val themeSeedColorHex by settingsRepo.themeSeedColorFlow.collectAsStateWithLifecycle(
         initialValue = ThemeDefaults.DEFAULT_SEED_COLOR_HEX
     )
     val preferWordTimedLyrics by settingsRepo.preferWordTimedLyricsFlow
-        .collectAsStateWithLifecycle(initialValue = PlayerManager.preferWordTimedLyrics)
+        .collectAsStateWithLifecycle(initialValue = playbackSource.preferWordTimedLyrics)
     val defaultLyricSource by settingsRepo.defaultLyricSourceFlow
-        .collectAsStateWithLifecycle(initialValue = PlayerManager.defaultLyricSource)
-    val lyricsPreferenceRevision by PlayerManager.lyricsPreferenceRevisionFlow
+        .collectAsStateWithLifecycle(initialValue = playbackSource.defaultLyricSource)
+    val lyricsPreferenceRevision by playbackSource.lyricsPreferenceRevisionFlow
         .collectAsStateWithLifecycle()
     val targetNowPlayingColorScheme = LocalNeriTargetColorScheme.current
     val targetNowPlayingActiveIconColor = resolveNowPlayingActiveIconColor(
@@ -570,7 +571,7 @@ fun NowPlayingScreen(
         .collectAsStateWithLifecycle(initialValue = false)
 
     // 订阅当前播放链接
-    val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsStateWithLifecycle()
+    val currentMediaUrl by playbackSource.currentMediaUrlFlow.collectAsStateWithLifecycle()
     val isFromNeteaseTag =
         currentSong?.album?.startsWith(PlayerManager.NETEASE_SOURCE_TAG) == true
     val isFromBiliTag =
@@ -590,8 +591,8 @@ fun NowPlayingScreen(
     }
     var playbackSourceType by remember { mutableStateOf<PlaybackSourceType?>(null) }
 
-    val playlists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
-    val localPlaylistsReady by PlayerManager.localPlaylistsReadyFlow.collectAsStateWithLifecycle()
+    val playlists by playbackSource.playlistsFlow.collectAsStateWithLifecycle()
+    val localPlaylistsReady by playbackSource.localPlaylistsReadyFlow.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val composeResources = LocalResources.current
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
@@ -656,8 +657,8 @@ fun NowPlayingScreen(
     }
     val isFavorite = favOverride ?: isFavoriteComputed
 
-    val queue by PlayerManager.currentQueueFlow.collectAsStateWithLifecycle()
-    val queueDisplayRevision by PlayerManager.currentQueueDisplayRevisionFlow.collectAsStateWithLifecycle()
+    val queue by playbackSource.currentQueueFlow.collectAsStateWithLifecycle()
+    val queueDisplayRevision by playbackSource.currentQueueDisplayRevisionFlow.collectAsStateWithLifecycle()
 
     var showAddSheet by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
@@ -769,7 +770,8 @@ fun NowPlayingScreen(
         request = NowPlayingLyricsLoadRequest(context, currentSong, currentMediaUrl,
             preferWordTimedLyrics, defaultLyricSource, cachedPreferredLyrics = null),
         versions = NowPlayingLyricsRefreshVersions(lyricsPreferenceRevision,
-            downloadPresenceVersion, downloadedLyricsRefreshVersion)
+            downloadPresenceVersion, downloadedLyricsRefreshVersion),
+        stages = playbackSource.lyricsStages
     )
     val loadedLyricsState = lyricsLoadOwner.state
     val secondaryLyricsResolved = lyricsLoadOwner.secondaryResolved
@@ -964,7 +966,7 @@ fun NowPlayingScreen(
     }
     val queueDisplayState = if (showQueueSheet || showMoreOptions || lyricShareInitialLine != null) {
         remember(queue, currentSong, shuffleEnabled, queueDisplayRevision) {
-            PlayerManager.currentQueueDisplaySnapshot()
+            playbackSource.currentQueueDisplaySnapshot()
         }
     } else {
         PlayerQueueDisplayState.EMPTY
@@ -1072,7 +1074,7 @@ fun NowPlayingScreen(
         repository = settingsRepo,
         song = currentSong,
         preferredSource = loadedPreferredLyricSource,
-        isBiliCcSubtitleLyrics = PlayerManager.isBiliCcSubtitleLyricsActive(currentSong)
+        isBiliCcSubtitleLyrics = playbackSource.isBiliCcSubtitleLyricsActive(currentSong)
     )
     val progressInfoPresentation = remember(
         currentPlaybackAudioInfo,
@@ -1301,7 +1303,7 @@ fun NowPlayingScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         HapticIconButton(
-                                            onClick = { PlayerManager.setShuffle(!shuffleEnabled) },
+                                            onClick = { playbackSource.setShuffle(!shuffleEnabled) },
                                             modifier = Modifier.size(controlsLayout.secondaryButtonSize)
                                         ) {
                                             Icon(
@@ -1317,7 +1319,7 @@ fun NowPlayingScreen(
                                         }
 
                                         HapticIconButton(
-                                            onClick = { PlayerManager.previous() },
+                                            onClick = { playbackSource.previous() },
                                             enabled = lanControls.permissions.seek,
                                             modifier = Modifier
                                                 .sharedElement(
@@ -1337,7 +1339,7 @@ fun NowPlayingScreen(
                                         }
 
                                         HapticFilledIconButton(
-                                            onClick = { PlayerManager.togglePlayPause() },
+                                            onClick = { playbackSource.togglePlayPause() },
                                             enabled = !usbPlaybackPreparing && lanControls.permissions.playPause,
                                             modifier = Modifier
                                                 .nowPlayingLongPress(toggleImmersiveMode)
@@ -1364,7 +1366,7 @@ fun NowPlayingScreen(
                                         }
 
                                         HapticIconButton(
-                                            onClick = { PlayerManager.next() },
+                                            onClick = { playbackSource.next() },
                                             enabled = lanControls.permissions.seek,
                                             modifier = Modifier
                                                 .sharedElement(
@@ -1384,7 +1386,7 @@ fun NowPlayingScreen(
                                         }
 
                                         HapticIconButton(
-                                            onClick = { PlayerManager.cycleRepeatMode() },
+                                            onClick = { playbackSource.cycleRepeatMode() },
                                             modifier = Modifier.size(controlsLayout.secondaryButtonSize)
                                         ) {
                                             Icon(
@@ -1449,7 +1451,7 @@ fun NowPlayingScreen(
                                         warnForLocalSync = shouldConfirmFavoriteSync(song, willFav, context)
                                     ) {
                                         favOverride = willFav
-                                        PlayerManager.toggleCurrentFavorite()
+                                        playbackSource.toggleCurrentFavorite()
                                     }
                                 }
                             }
@@ -1463,29 +1465,33 @@ fun NowPlayingScreen(
                             val onEmbeddedLyricClick: (LyricEntry) -> Unit = { entry ->
                                 onLyricSeek(entry.startTimeMs)
                             }
+                            // 引导预览不开放会改动真实数据的二级入口
+                            val secondaryActionsEnabled = playbackSource.secondaryActionsEnabled
+                            fun secondaryAction(action: () -> Unit): () -> Unit =
+                                if (secondaryActionsEnabled) action else ({})
                             val onEmbeddedLyricLongClick: (LyricEntry) -> Unit = { entry ->
-                                lyricShareInitialLine = entry
+                                if (secondaryActionsEnabled) lyricShareInitialLine = entry
                             }
-                            val onCoverComment: () -> Unit = { showCommentSheet = true }
-                            val onCoverMoreOptions: () -> Unit = {
+                            val onCoverComment: () -> Unit = secondaryAction { showCommentSheet = true }
+                            val onCoverMoreOptions: () -> Unit = secondaryAction {
                                 startMoreOptionsWithLyricBehavior = false
                                 showMoreOptions = true
                             }
                             val coverToolbarActions = NowPlayingCoverToolbarActions(
-                                onQueue = { showQueueSheet = true },
-                                onSleepTimer = { showSleepTimerDialog = true },
-                                onVolume = { showVolumeSheet = true },
+                                onQueue = secondaryAction { showQueueSheet = true },
+                                onSleepTimer = secondaryAction { showSleepTimerDialog = true },
+                                onVolume = secondaryAction { showVolumeSheet = true },
                                 onLyrics = if (immersiveMode && !tabletLandscape) {
                                     { onShowLyricsScreenChange(!showLyricsScreen) }
                                 } else resolveNowPlayingLyricsToolbarAction(
                                     lyricsAdjustBehavior = lyricsAdjustBehavior,
-                                    onAdjust = {
+                                    onAdjust = secondaryAction {
                                         startMoreOptionsWithLyricBehavior = true
                                         showMoreOptions = true
                                     },
                                     onSwitchPage = { onShowLyricsScreenChange(!showLyricsScreen) }
                                 ),
-                                onAddToPlaylist = { showAddSheet = true }
+                                onAddToPlaylist = secondaryAction { showAddSheet = true }
                             )
 
                             val coverTopBar: @Composable () -> Unit = {
@@ -1624,7 +1630,7 @@ fun NowPlayingScreen(
                                 blurAmount = lyricBlurAmount
                             )
                             val embeddedLyricPlayback = NowPlayingSyncedLyricPlayback(
-                                positionFlow = PlayerManager.playbackPositionFlow,
+                                positionFlow = playbackSource.playbackPositionFlow,
                                 previewPositionMs = previewPositionOverrideMs,
                                 isPlaying = isPlaying,
                                 speed = playbackSoundState.speed
@@ -1866,7 +1872,7 @@ fun NowPlayingScreen(
                                 options = currentPlaybackAudioInfo?.qualityOptions.orEmpty(),
                                 onDismiss = { showQualitySwitchDialog = false },
                                 onSelect = { option ->
-                                    PlayerManager.changeCurrentPlaybackQuality(option.key)
+                                    playbackSource.changeCurrentPlaybackQuality(option.key)
                                     showQualitySwitchDialog = false
                                 }
                             )
@@ -1897,7 +1903,7 @@ fun NowPlayingScreen(
                                                         warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(pl, context) ||
                                                             shouldConfirmFavoriteSync(currentSong, adding = true, context = context)
                                                     ) {
-                                                        PlayerManager.addCurrentToPlaylist(pl.id)
+                                                        playbackSource.addCurrentToPlaylist(pl.id)
                                                         showAddSheet = false
                                                     }
                                                 }
