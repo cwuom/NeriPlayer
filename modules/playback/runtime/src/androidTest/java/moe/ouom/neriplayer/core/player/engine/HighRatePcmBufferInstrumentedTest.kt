@@ -23,32 +23,52 @@ import java.nio.ByteBuffer
 class HighRatePcmBufferInstrumentedTest {
     @Test(timeout = 15_000L)
     fun fullBufferSpansRecordedPcmWriteGap() {
+        assertBuffersAcrossGap(sampleRate = 192_000, gapMs = 1_490, previousFloorMs = 640)
+    }
+
+    @Test(timeout = 15_000L)
+    fun halfFullNormalRateBufferSpansRecordedFeedGap() {
+        assertBuffersAcrossGap(sampleRate = 96_000, gapMs = 449, waitForHalfBuffer = true)
+    }
+
+    private fun assertBuffersAcrossGap(
+        sampleRate: Int,
+        gapMs: Long,
+        previousFloorMs: Int = 0,
+        waitForHalfBuffer: Boolean = false
+    ) {
         assumeTrue(InstrumentationRegistry.getArguments().getString("runPcmGapProbe") == "true")
-        val platformMinimum = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_MASK, ENCODING)
-        assertTrue("192 kHz PCM output must be supported", platformMinimum > 0)
+        val platformMinimum = AudioTrack.getMinBufferSize(sampleRate, CHANNEL_MASK, ENCODING)
+        assertTrue("$sampleRate Hz PCM output must be supported", platformMinimum > 0)
         val defaultBufferBytes = DefaultAudioSink.AudioTrackBufferSizeProvider.DEFAULT.getBufferSizeInBytes(
             platformMinimum, C.ENCODING_PCM_16BIT, DefaultAudioSink.OUTPUT_MODE_PCM,
-            FRAME_BYTES, SAMPLE_RATE, C.RATE_UNSET_INT, 1.0
+            FRAME_BYTES, sampleRate, C.RATE_UNSET_INT, 1.0
         )
-        val oldBufferBytes = maxOf(defaultBufferBytes, SAMPLE_RATE * FRAME_BYTES * 640 / 1_000)
+        val oldBufferBytes = maxOf(defaultBufferBytes, sampleRate * FRAME_BYTES * previousFloorMs / 1_000)
         val newBufferBytes = SystemAudioTrackBufferSizeProvider.getBufferSizeInBytes(
             platformMinimum, C.ENCODING_PCM_16BIT, DefaultAudioSink.OUTPUT_MODE_PCM,
-            FRAME_BYTES, SAMPLE_RATE, C.RATE_UNSET_INT, 1.0
+            FRAME_BYTES, sampleRate, C.RATE_UNSET_INT, 1.0
         )
-        val oldOutput = measureWriteGap(oldBufferBytes)
-        val newOutput = measureWriteGap(newBufferBytes)
+        val oldOutput = measureWriteGap(sampleRate, oldBufferBytes, gapMs, waitForHalfBuffer)
+        val newOutput = measureWriteGap(sampleRate, newBufferBytes, gapMs, waitForHalfBuffer)
 
         assertTrue("Expected the previous buffer to underrun: $oldOutput", oldOutput.underruns > 0)
         assertEquals("Expected no underrun: $newOutput", 0, newOutput.underruns)
-        assertTrue("Output did not advance through the gap: $newOutput", newOutput.advancedFrames >= SAMPLE_RATE)
+        val minimumAdvance = sampleRate * gapMs / 1_000 * 3 / 4
+        assertTrue("Output did not advance through the gap: $newOutput", newOutput.advancedFrames >= minimumAdvance)
     }
 
-    private fun measureWriteGap(bufferBytes: Int): GapResult {
+    private fun measureWriteGap(
+        sampleRate: Int,
+        bufferBytes: Int,
+        gapMs: Long,
+        waitForHalfBuffer: Boolean
+    ): GapResult {
         val track = AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build())
             .setAudioFormat(
                 AudioFormat.Builder().setEncoding(ENCODING).setChannelMask(CHANNEL_MASK)
-                    .setSampleRate(SAMPLE_RATE).build()
+                    .setSampleRate(sampleRate).build()
             )
             .setTransferMode(AudioTrack.MODE_STREAM)
             .setBufferSizeInBytes(bufferBytes)
@@ -57,16 +77,17 @@ class HighRatePcmBufferInstrumentedTest {
             val frames = track.bufferSizeInFrames
             val pcm = ByteBuffer.allocateDirect(frames * FRAME_BYTES)
             assertEquals(pcm.remaining(), track.write(pcm, pcm.remaining(), AudioTrack.WRITE_NON_BLOCKING))
-            val underrunsBefore = track.underrunCount
             track.play()
-            val deadline = SystemClock.elapsedRealtime() + 1_000
-            while (track.playbackHeadPosition == 0 && SystemClock.elapsedRealtime() < deadline) {
+            val targetFrame = if (waitForHalfBuffer) frames / 2 else 1
+            val deadline = SystemClock.elapsedRealtime() + 2_000
+            while (track.playbackHeadPosition < targetFrame && SystemClock.elapsedRealtime() < deadline) {
                 SystemClock.sleep(5)
             }
             val startFrame = track.playbackHeadPosition
-            assertTrue("AudioTrack did not start", startFrame > 0)
+            assertTrue("AudioTrack did not reach frame $targetFrame", startFrame >= targetFrame)
+            val underrunsBefore = track.underrunCount
             val gapStartedMs = SystemClock.elapsedRealtime()
-            SystemClock.sleep(1_490)
+            SystemClock.sleep(gapMs)
             return GapResult(
                 bufferFrames = frames,
                 gapMs = SystemClock.elapsedRealtime() - gapStartedMs,
@@ -86,7 +107,6 @@ class HighRatePcmBufferInstrumentedTest {
     )
 
     private companion object {
-        const val SAMPLE_RATE = 192_000
         const val CHANNEL_MASK = AudioFormat.CHANNEL_OUT_STEREO
         const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
         const val FRAME_BYTES = 4
