@@ -2,6 +2,8 @@
 <resources>
     <!-- Listen Together -->
     <string name="listen_together_title">一起听</string>
+    <string name="listen_together_tab_cloud">云端</string>
+    <string name="listen_together_tab_lan">局域网</string>
     <string name="listen_together_worker_base_url">Worker Base URL</string>
     <string name="listen_together_nickname">当前昵称</string>
     <string name="listen_together_user_uuid">身份 UUID</string>

@@ -22,7 +22,7 @@ Thank you for contributing to NeriPlayer. This document describes the current An
 | Document | Purpose |
 | --- | --- |
 | [README](README_EN.md) | For users and new contributors: scope, key features, feature boundaries, installation and builds, sync, privacy. |
-| [Implementation notes](docs/implementation_EN.md) | Build versions, the 14 owned libraries, entry points and navigation, playback and caching, data sources, downloads and backup. |
+| [Implementation notes](docs/implementation_EN.md) | Build versions, the 15 owned libraries, entry points and navigation, playback and caching, data sources, downloads and backup. |
 | [Contribution guide](CONTRIBUTING_EN.md) | For developers: module boundaries, extension paths, tests, PR requirements. |
 | [Kotlin helpers](docs/kotlin-helpers_EN.md) | Usage and boundaries of helpers for request generations, units, player reads, and coroutine results. |
 | [Music server API](docs/music-server-api.md) | **Preview feature, not sufficiently tested.** HTTP endpoints, authentication, source identity, and cache contracts (Chinese). |
@@ -158,7 +158,7 @@ Security requirements:
 
 The [implementation notes](docs/implementation_EN.md#module-layout) hold the complete module map.
 
-- `gradle/owned-modules.txt` registers all 14 owned libraries. Builds, lint, and structure checks read the same registry.
+- `gradle/owned-modules.txt` registers all 15 owned libraries. Builds, lint, and structure checks read the same registry.
 - Coverage is collected only for libraries with Kotlin / Java production sources.
 - `:native` uses independent host tests and four-ABI compilation.
 - Top-level directories express business domains, and remote sources are consolidated in `:platform`.
@@ -193,11 +193,12 @@ Library responsibilities:
   - Transport and calculation packages have separate dependency allowlists.
   - Local repository adapters live in `:local`.
   - Deletion records and mutation versions commit atomically.
-- **Listen Together**: `:listentogether` owns protocol, transport, identity rules, and client sessions.
+- **Listen Together**: `:listentogether` owns the cloud room protocol, transport, identity rules, and client sessions.
   - Protocol code uses only models, serialization, and the standard library.
   - Host interfaces provide playback, resources, and Android services.
+- **LAN Listen Together**: `:ltwlan` owns room discovery, audio sharing, and BeatSync scheduling.
 - **App and tooling**: `:app` owns Android entry points, Compose screens, and dependency assembly.
-  - KSP tools, the upstream lyrics submodule, `build-logic`, and the Listen Together server are outside the 14-library count.
+  - KSP tools, the upstream lyrics submodule, `build-logic`, and the Listen Together server are outside the 15-library count.
   - The vendored Miuix source and docs tree is outside the app build.
 
 Dependency rules:

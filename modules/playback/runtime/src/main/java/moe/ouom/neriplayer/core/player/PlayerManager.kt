@@ -161,15 +161,15 @@ import moe.ouom.neriplayer.core.player.persistence.addCurrentToPlaylistImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueEndImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueNextImpl
 import moe.ouom.neriplayer.core.player.persistence.applyRemoteQueueUpdateImpl
-import moe.ouom.neriplayer.core.player.persistence.getLyricsImpl
-import moe.ouom.neriplayer.core.player.persistence.getPreferredLyricSourceResultImpl
-import moe.ouom.neriplayer.core.player.persistence.getNeteaseLyricsImpl
-import moe.ouom.neriplayer.core.player.persistence.getNeteaseRomanizedLyricsImpl
-import moe.ouom.neriplayer.core.player.persistence.getNeteaseTranslatedLyricsImpl
-import moe.ouom.neriplayer.core.player.persistence.getPreferredNeteaseLyricContentImpl
-import moe.ouom.neriplayer.core.player.persistence.getPreferredNeteaseRomanizedLyricContentImpl
-import moe.ouom.neriplayer.core.player.persistence.getRomanizedLyricsImpl
-import moe.ouom.neriplayer.core.player.persistence.getTranslatedLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getPreferredLyricSourceResultImpl
+import moe.ouom.neriplayer.core.player.lyrics.getNeteaseLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getNeteaseRomanizedLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getNeteaseTranslatedLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getPreferredNeteaseLyricContentImpl
+import moe.ouom.neriplayer.core.player.lyrics.getPreferredNeteaseRomanizedLyricContentImpl
+import moe.ouom.neriplayer.core.player.lyrics.getRomanizedLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getTranslatedLyricsImpl
 import moe.ouom.neriplayer.core.player.persistence.hasItemsImpl
 import moe.ouom.neriplayer.core.player.persistence.hydrateSongMetadataImpl
 import moe.ouom.neriplayer.core.player.persistence.persistStateImpl
@@ -784,11 +784,15 @@ object PlayerManager {
     var sleepTimerManager: SleepTimerManager = createSleepTimerManager()
         internal set
 
+    /** 局域网睡眠定时器仅停止本机发声 */
+    internal fun pauseForSleepTimer() =
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.interrupt("SLEEP_TIMER")) Unit else pause()
+
     internal fun createSleepTimerManager(): SleepTimerManager {
         return SleepTimerManager(
             scope = mainScope,
             onTimerExpired = {
-                pause()
+                pauseForSleepTimer()
                 sleepTimerManager.cancel()
             },
             onTimerStateChanged = {
@@ -801,7 +805,9 @@ object PlayerManager {
 
     internal fun setCurrentSongForPlayback(song: SongItem?, syncLyricon: Boolean = true) {
         val previousSong = _currentSongFlow.value
-        playbackProgressOwner.persistPreviousSongProgress(previousSong, song)
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.guestPlayback == null) {
+            playbackProgressOwner.persistPreviousSongProgress(previousSong, song)
+        }
         publishCurrentSong(song)
         if (previousSong !== song) syncChangedSongOutputs(song, syncLyricon)
     }
@@ -1058,10 +1064,12 @@ object PlayerManager {
     internal fun activeListenTogetherSessionState() = PlayerDependencies.listenTogether.sessionState.value
 
     internal fun isListenTogetherActive(): Boolean {
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.active) return true
         return !activeListenTogetherSessionState().roomId.isNullOrBlank()
     }
 
     internal fun isCurrentUserControllerInListenTogether(): Boolean {
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.active) return moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.isHost()
         val session = activeListenTogetherSessionState()
         val room = activeListenTogetherRoomState()
         return resolveListenTogetherSessionRole(
@@ -1277,6 +1285,7 @@ object PlayerManager {
     }
 
     internal fun shouldBlockLocalSongSwitch(song: SongItem, commandSource: PlaybackCommandSource): Boolean {
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.active) return false
         if (commandSource != PlaybackCommandSource.LOCAL) return false
         if (!isListenTogetherActive()) return false
         if (!isLocalSong(song)) return false
@@ -1388,6 +1397,7 @@ object PlayerManager {
     }
 
     fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.blockSpeedChange(persist)) return
         ensureInitialized()
         playbackSoundOwner.setSpeed(speed, persist)
     }
@@ -1398,6 +1408,7 @@ object PlayerManager {
     }
 
     fun setPlaybackSpeedAndPitch(speed: Float, pitch: Float, persist: Boolean = true) {
+        if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.blockSpeedChange(persist)) return
         ensureInitialized()
         playbackSoundOwner.setSpeedAndPitch(speed, pitch, persist)
     }

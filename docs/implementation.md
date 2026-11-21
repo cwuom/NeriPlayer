@@ -27,7 +27,7 @@
 
 ## 模块结构
 
-自有 Android 库共 14 个，按业务域组织，由 [gradle/owned-modules.txt](../gradle/owned-modules.txt) 统一登记。
+自有 Android 库共 15 个，按业务域组织，由 [gradle/owned-modules.txt](../gradle/owned-modules.txt) 统一登记。
 
 - 一级领域使用 `modules/<领域>`。
 - 播放和下载各拆为规则（`logic`）与运行实现（`runtime`）两个构建边界。
@@ -48,10 +48,11 @@
 | [`:lyrics`](../modules/lyrics/README.md) | LRC/YRC/TTML 解析、转换、时间轴、翻译对齐、时间偏移，以及词幕（Lyricon）和 SuperLyric 接入。 |
 | [`:platform`](../modules/platform/README.md) | Bilibili、网易云、YouTube 与 Subsonic 自建音乐服务器（预览版，缺乏充分测试）的协议、账号、缓存和业务能力，跨平台评论，以及歌词来源、元数据搜索、匹配与回退。 |
 | [`:local`](../modules/local/README.md) | 本地设置、媒体、歌单、历史与统计、备份、流量、存储统计与缓存清理，以及 Android 同步宿主适配。 |
+| [`:ltwlan`](../modules/ltwlan/README.md) | 局域网房间、BeatSync 对时、发现、权限和设备媒体音量。 |
 | [`:sync`](../modules/sync/README.md) | GitHub/WebDAV 传输、加密凭据状态、会话、兼容编解码、合并、并发保护与 Worker 策略。 |
 | [`:listentogether`](../modules/listentogether/README.md) | 一起听协议、HTTP/WebSocket 传输、身份规则、会话、连接恢复、控制与播放同步。 |
 
-非自有库的构建单元不计入这 14 个：
+非自有库的构建单元不计入这 15 个：
 
 - `:app`：Android 入口、Compose 页面和跨领域依赖组装。
 - `:ksp-annotations` / `:ksp-processor`：设置项生成。

@@ -31,7 +31,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.playback.MiniPlayerTabletControls
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
-import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
+import moe.ouom.neriplayer.ui.component.playback.ListenTogetherPanel
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingQueueSheet
 import moe.ouom.neriplayer.ui.screen.nowplaying.VolumeControlSheetContent
 import moe.ouom.neriplayer.ui.screen.playback.resolveListenTogetherProgressSeekEnabled
@@ -65,7 +65,8 @@ internal fun rememberMiniPlayerTabletActions(
     val sessionManager = remember { AppContainer.listenTogetherSessionManager }
     val session by sessionManager.sessionState.collectAsStateWithLifecycle()
     val room by sessionManager.roomState.collectAsStateWithLifecycle()
-    val seekEnabled = resolveListenTogetherProgressSeekEnabled(
+    val lanControls = moe.ouom.neriplayer.ui.component.playback.lan.rememberLanPlaybackControls()
+    val seekEnabled = lanControls.permissions.seek && resolveListenTogetherProgressSeekEnabled(
         sessionUserUuid = session.userUuid,
         fallbackRole = session.role,
         roomId = session.roomId,
@@ -95,7 +96,7 @@ internal fun rememberMiniPlayerTabletActions(
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                         .windowInsetsPadding(WindowInsets.navigationBars)
-                ) { ListenTogetherRoomPanel(Modifier.fillMaxWidth()) }
+                ) { ListenTogetherPanel(Modifier.fillMaxWidth()) }
             }
             MiniPlayerSheet.Queue -> MiniPlayerQueueSheet(
                 seekEnabled = seekEnabled,

@@ -22,7 +22,7 @@
 | 文档 | 用途 |
 | --- | --- |
 | [README](README.md) | 面向用户和新贡献者：项目定位、核心特性、能力边界、安装构建、同步与隐私。 |
-| [实现概览](docs/implementation.md) | 构建版本、14 个自有库职责、入口与导航、播放与缓存、数据来源、下载备份。 |
+| [实现概览](docs/implementation.md) | 构建版本、15 个自有库职责、入口与导航、播放与缓存、数据来源、下载备份。 |
 | [贡献指南](CONTRIBUTING.md) | 面向开发者：模块边界、扩展路径、测试和提交要求。 |
 | [Kotlin 辅助工具](docs/kotlin-helpers.md) | 请求代次、单位、播放器读取和协程结果等辅助工具的用法与边界。 |
 | [音乐服务器 API](docs/music-server-api.md) | **预览版本，缺乏充分测试。** HTTP 接口、认证、来源身份与缓存约定。 |
@@ -158,7 +158,7 @@ NeriPlayer 功能面较宽，提交前优先保护以下链路。
 
 自有库的入口与完整职责见 [docs/implementation.md](docs/implementation.md#模块结构)。
 
-- 14 个库由 `gradle/owned-modules.txt` 统一登记，构建、lint 和结构检查读取同一份登记。
+- 15 个库由 `gradle/owned-modules.txt` 统一登记，构建、lint 和结构检查读取同一份登记。
 - 覆盖率只收集包含 Kotlin / Java 生产源码的库。
 - `:native` 使用独立的 host 测试与四 ABI 编译。
 - 一级目录表达业务领域，远程来源集中在 `:platform`。
@@ -193,11 +193,12 @@ NeriPlayer 功能面较宽，提交前优先保护以下链路。
   - 传输和计算组件受各自依赖白名单约束。
   - 本地仓库适配位于 `:local`。
   - 删除记录与 mutation version 原子提交。
-- **一起听**：`:listentogether` 维护协议、传输、身份规则和客户端会话。
+- **一起听**：`:listentogether` 维护云端房间协议、传输、身份规则和客户端会话。
   - 协议只使用模型、序列化与标准库。
   - 业务通过宿主接口接入播放器、资源和 Android 服务。
+- **局域网一起听**：`:ltwlan` 维护房间发现、音源共享和 BeatSync 同步调度。
 - **应用与工具**：`:app` 维护 Android 入口、Compose 页面和依赖组装。
-  - KSP 工具、上游歌词子模块、`build-logic` 和一起听服务端不计入 14 个库。
+  - KSP 工具、上游歌词子模块、`build-logic` 和一起听服务端不计入 15 个库。
   - Miuix 的上游源码与文档树不参与主应用构建。
 
 依赖规则：

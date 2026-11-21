@@ -194,6 +194,7 @@ private fun PlayerManager.applyRemovalWithoutPlaybackContinuation(action: Remove
 private fun PlayerManager.stopAfterQueueRemoval() {
     stopPlaybackPreservingQueue(clearMediaUrl = true)
     emitQueueUpdateCommand(shouldPlay = false)
+    if (currentPlaylist.isEmpty()) moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.onQueueCleared()
 }
 
 internal fun PlayerManager.reorderQueueImpl(

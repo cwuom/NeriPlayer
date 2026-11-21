@@ -26,8 +26,10 @@ package moe.ouom.neriplayer.core.player.engine.datasource
 import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import android.net.Uri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -96,9 +98,16 @@ class ConditionalHttpDataSourceFactory(
         }
     }
 
-    override fun createDataSource(): HttpDataSource {
+    override fun createDataSource(): HttpDataSource = createDataSource(baseFactory)
+
+    internal fun forLanRelay(calls: okhttp3.Call.Factory): DataSource.Factory {
+        val relayFactory = OkHttpDataSource.Factory(calls)
+        return DataSource.Factory { createDataSource(relayFactory) }
+    }
+
+    private fun createDataSource(upstream: HttpDataSource.Factory): HttpDataSource {
         val dataSource = ServerAwareHttpDataSource(ResumableChunkedHttpDataSource(
-            upstreamFactory = baseFactory,
+            upstreamFactory = upstream,
             transformDataSpec = { dataSpec ->
                 val host = normalizeTrustedHost(dataSpec.uri.host)
                 when {

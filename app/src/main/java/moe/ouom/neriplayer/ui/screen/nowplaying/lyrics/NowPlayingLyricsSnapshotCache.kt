@@ -23,6 +23,7 @@ internal fun nowPlayingLyricsSnapshotKey(
     versions: NowPlayingLyricsRefreshVersions,
     cacheGeneration: Long
 ): NowPlayingLyricsSnapshotKey? {
+    if (request.sharedPresentation != null) return null
     // 本地文件需沿用每次打开时的侧载和嵌入歌词检查
     val song = request.song?.takeUnless { it.isLocalSong() } ?: return null
     return NowPlayingLyricsSnapshotKey(song.stableKey(), checkNotNull(nowPlayingLyricsReloadKey(song)),

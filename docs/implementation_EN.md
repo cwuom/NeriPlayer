@@ -27,7 +27,7 @@ This document continues from [README_EN.md](../README_EN.md) and covers build ve
 
 ## Module layout
 
-The project owns 14 Android libraries, organized by business domain and registered in [gradle/owned-modules.txt](../gradle/owned-modules.txt).
+The project owns 15 Android libraries, organized by business domain and registered in [gradle/owned-modules.txt](../gradle/owned-modules.txt).
 
 - Top-level domains live under `modules/<domain>`.
 - Playback and downloads are each split into a rules build (`logic`) and a runtime build (`runtime`).
@@ -48,10 +48,11 @@ The project owns 14 Android libraries, organized by business domain and register
 | [`:lyrics`](../modules/lyrics/README.md) | LRC/YRC/TTML parsing, transforms, timelines, translation alignment, time offsets, and Lyricon/SuperLyric output coordination. |
 | [`:platform`](../modules/platform/README.md) | Protocols, accounts, caches and business services for Bilibili, NetEase, YouTube and Subsonic music server (preview; not sufficiently tested), plus comments, lyric sources, metadata search, matching, and fallback. |
 | [`:local`](../modules/local/README.md) | Settings, local media/playlists, history/statistics, backups, traffic, storage accounting, scans, cleanup, and Android sync host adapters. |
+| [`:ltwlan`](../modules/ltwlan/README.md) | LAN rooms, BeatSync timing, discovery, permissions, and device media volume. |
 | [`:sync`](../modules/sync/README.md) | GitHub/WebDAV transport, encrypted credential state, sessions, compatible codecs, merges, concurrency protection, and Worker policies. |
 | [`:listentogether`](../modules/listentogether/README.md) | Protocol, HTTP/WebSocket transport, identity rules, sessions, reconnects, controls, and playback synchronization. |
 
-These build units are not counted among the 14 owned libraries:
+These build units are not counted among the 15 owned libraries:
 
 - `:app`: Android entry points, Compose screens and cross-domain assembly.
 - `:ksp-annotations` / `:ksp-processor`: settings metadata generation.

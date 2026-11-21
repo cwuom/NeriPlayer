@@ -519,6 +519,7 @@ private fun AppMiniPlayerOverlay(
     onBoundsChanged: (Rect) -> Unit
 ) {
     val controls = rememberMiniPlayerPlaybackControls()
+    val lanControls = moe.ouom.neriplayer.ui.component.playback.lan.rememberLanPlaybackControls()
     val resources = LocalResources.current
     val miniPlayerVisible = floatingPlaybackChromeVisible(
         requested = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying)
@@ -554,7 +555,8 @@ private fun AppMiniPlayerOverlay(
                 hasCurrentSong = miniPlayer.hasSong,
                 clearCover = miniPlayer.song.hasKnownEmptyLocalCover(),
                 isPlaying = controls.playbackRequested,
-                playPauseEnabled = !controls.usbPreparing,
+                playPauseEnabled = !controls.usbPreparing && lanControls.permissions.playPause,
+                skipEnabled = lanControls.permissions.seek,
                 modifier = Modifier.testTag("appMiniPlayer")
                     .onGloballyPositioned { coordinates ->
                         onBoundsChanged(coordinates.boundsInRoot())
@@ -568,7 +570,8 @@ private fun AppMiniPlayerOverlay(
                 isPlaybackWaiting = resolvePlaybackWaiting(
                     playbackRequested = controls.playbackRequested,
                     isPlaying = controls.playing,
-                    usbPlaybackPreparing = controls.usbPreparing
+                    usbPlaybackPreparing = controls.usbPreparing,
+                    lanPreparing = lanControls.preparing
                 ),
                 isAudioRouteMuted = controls.routeMuted,
                 tabletControls = tabletControls

@@ -165,7 +165,8 @@ internal fun resolvePlaybackControlContentDescription(
 internal fun resolvePlaybackWaiting(
     playbackRequested: Boolean,
     isPlaying: Boolean,
-    usbPlaybackPreparing: Boolean
+    usbPlaybackPreparing: Boolean,
+    lanPreparing: Boolean = false
 ): Boolean {
-    return playbackRequested && (!isPlaying || usbPlaybackPreparing)
+    return lanPreparing || (playbackRequested && (!isPlaying || usbPlaybackPreparing))
 }

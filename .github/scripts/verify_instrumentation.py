@@ -23,7 +23,7 @@ GLASS_CASES = {
     "sameSessionUpdatesDoNotPollutePreviouslyBoundEffects",
     "frozenOracleRespondsToCoverageBlurAndLiquidTieOrder",
 }
-LIBRARY_MODULES = {"modules/database", "modules/local", "modules/playback/runtime"}
+LIBRARY_MODULES = {"modules/database", "modules/local", "modules/ltwlan", "modules/playback/runtime"}
 ASSUMPTION_TYPES = {
     "org.junit.AssumptionViolatedException",
     "org.junit.internal.AssumptionViolatedException",
