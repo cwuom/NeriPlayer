@@ -94,8 +94,17 @@ fun NeteaseHomePlaylistListScreen(
     var refreshing by remember(source) { mutableStateOf(false) }
     var errorText by remember(source) { mutableStateOf<String?>(null) }
     var refreshToken by remember(source) { mutableIntStateOf(0) }
+    val loadFailedTemplate = stringResource(CoreCommonR.string.home_section_load_failed)
 
     LaunchedEffect(source, refreshToken) {
+        // 离线时不得发起远程请求：分类页可以被进程恢复重新挂载，
+        // 此时离线状态不应表现为网络错误。
+        if (offlineMode) {
+            loading = false
+            refreshing = false
+            errorText = null
+            return@LaunchedEffect
+        }
         val isFirstLoad = playlists.isEmpty()
         if (isFirstLoad) loading = true else refreshing = true
         errorText = null
@@ -105,7 +114,17 @@ fun NeteaseHomePlaylistListScreen(
                 errorText = null
             }
             .onFailure { error ->
-                errorText = error.message ?: error::class.java.simpleName
+                val message = error.message ?: error::class.java.simpleName
+                errorText = message
+                // 已有旧歌单时保留列表，只用 Snackbar 提示刷新失败，
+                // 否则用户只会看到原列表，不知道刷新已经失败。
+                if (playlists.isNotEmpty()) {
+                    scope.launch {
+                        snackbarHostState.showNeriSnackbar(
+                            loadFailedTemplate.format(message)
+                        )
+                    }
+                }
             }
         loading = false
         refreshing = false
@@ -181,10 +200,23 @@ fun NeteaseHomePlaylistListScreen(
                                 text = stringResource(CoreCommonR.string.home_section_load_failed, errorText.orEmpty()),
                                 color = MaterialTheme.colorScheme.error
                             )
-                            TextButton(onClick = { refreshToken += 1 }) {
+                            TextButton(
+                                onClick = { refreshToken += 1 },
+                                enabled = !offlineMode
+                            ) {
                                 Text(stringResource(CoreCommonR.string.home_retry_hint))
                             }
                         }
+                    }
+                }
+
+                offlineMode && playlists.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = stringResource(CoreCommonR.string.home_section_offline_unavailable),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 

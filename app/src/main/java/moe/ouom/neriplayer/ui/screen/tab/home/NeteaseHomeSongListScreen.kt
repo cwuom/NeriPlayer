@@ -115,8 +115,19 @@ fun NeteaseHomeSongListScreen(
     var refreshing by remember(source) { mutableStateOf(false) }
     var errorText by remember(source) { mutableStateOf<String?>(null) }
     var refreshToken by remember(source) { mutableIntStateOf(0) }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    val loadFailedTemplate = stringResource(CoreCommonR.string.home_section_load_failed)
 
     LaunchedEffect(source, refreshToken) {
+        // 离线时不得发起远程请求：歌曲页可以被进程恢复重新挂载，
+        // 此时离线状态不应表现为网络错误。
+        if (offlineMode) {
+            loading = false
+            refreshing = false
+            errorText = null
+            return@LaunchedEffect
+        }
         val isFirstLoad = songs.isEmpty()
         if (isFirstLoad) loading = true else refreshing = true
         errorText = null
@@ -124,9 +135,22 @@ fun NeteaseHomeSongListScreen(
             .onSuccess { loaded ->
                 songs = loaded
                 errorText = null
+                // 刷新后只保留仍存在于新列表中的选中项，
+                // 否则计数与下载 / 导出会按已经不存在的歌曲执行。
+                selectedIds = selectedIds.intersect(loaded.map { it.id }.toSet())
             }
             .onFailure { error ->
-                errorText = error.message ?: error::class.java.simpleName
+                val message = error.message ?: error::class.java.simpleName
+                errorText = message
+                // 已有旧歌曲时保留列表，只用 Snackbar 提示刷新失败，
+                // 否则用户只会看到原列表，不知道刷新已经失败。
+                if (songs.isNotEmpty()) {
+                    scope.launch {
+                        snackbarHostState.showNeriSnackbar(
+                            loadFailedTemplate.format(message)
+                        )
+                    }
+                }
             }
         loading = false
         refreshing = false
@@ -140,8 +164,6 @@ fun NeteaseHomeSongListScreen(
     val favoriteSongLookup = remember(allPlaylists, context) {
         FavoriteSongLookup(FavoritesPlaylist.firstOrNull(allPlaylists, context)?.songs.orEmpty())
     }
-    var selectionMode by remember { mutableStateOf(false) }
-    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
     var showExportAllSheet by remember { mutableStateOf(false) }
 
@@ -295,10 +317,23 @@ fun NeteaseHomeSongListScreen(
                                 text = stringResource(CoreCommonR.string.home_section_load_failed, errorText.orEmpty()),
                                 color = MaterialTheme.colorScheme.error
                             )
-                            androidx.compose.material3.TextButton(onClick = { refreshToken += 1 }) {
+                            androidx.compose.material3.TextButton(
+                                onClick = { refreshToken += 1 },
+                                enabled = !offlineMode
+                            ) {
                                 Text(stringResource(CoreCommonR.string.home_retry_hint))
                             }
                         }
+                    }
+                }
+
+                offlineMode && songs.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = stringResource(CoreCommonR.string.home_section_offline_unavailable),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
