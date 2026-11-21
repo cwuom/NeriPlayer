@@ -232,8 +232,100 @@ class CarSessionPresentationRegressionTest {
         }
     }
 
-    private data class Fixture(val owner: PlaybackServicePresentationOwner, val port: PlaybackServicePresentationPort)
+    /**
+     * 队列当前项的 title/artist 必须和 metadata 一致,
+     * 否则 AOSP 蓝牙栈的 isMetadataSynced() 不通过, 歌词更新会被拖进 2 秒超时。
+     */
+    @Test
+    fun `bluetooth lyric metadata keeps the session queue current item in sync`() = runTest {
+        MetadataBuilders().use { builders ->
+            val source = FakeSource(playback(listOf(song(1)), 0)).apply {
+                metadataInputs = bluetoothLyrics()
+            }
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
 
+            val queueCalls = queueOverrides(fixture.port)
+            assertEquals(1, queueCalls.size)
+            val (title, subtitle) = queueCalls.first()
+            assertEquals(builders.string(0, MediaMetadata.METADATA_KEY_TITLE), title)
+            assertEquals(builders.string(0, MediaMetadata.METADATA_KEY_ARTIST), subtitle)
+
+            // 歌词变了, 队列当前项要跟着变
+            source.metadataInputs = bluetoothLyrics().copy(
+                payload = ExternalBluetoothLyricPayload("next line", null),
+            )
+            fixture.owner.updateMetadata()
+
+            val updated = queueOverrides(fixture.port)
+            assertEquals(2, updated.size)
+            assertEquals(builders.string(1, MediaMetadata.METADATA_KEY_TITLE), updated.last().first)
+            assertEquals(builders.string(1, MediaMetadata.METADATA_KEY_ARTIST), updated.last().second)
+            assertTrue(updated.last().first != title)
+        }
+    }
+
+    /** 非蓝牙输出时不应改写队列当前项的标题 */
+    @Test
+    fun `non bluetooth output leaves the session queue current item untouched`() = runTest {
+        MetadataBuilders().use {
+            val source = FakeSource(playback(listOf(song(1)), 0))
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
+            assertEquals(0, queueOverrides(fixture.port).size)
+        }
+    }
+
+    /**
+     * 换歌时队列会被重新下发, 这时不能把当前项的标题覆盖回歌名,
+     * 否则蓝牙栈又不认这次 metadata, 歌词会丢一行。
+     */
+    @Test
+    fun `queue republish keeps the bluetooth lyric override on the current item`() = runTest {
+        MetadataBuilders().use { builders ->
+            val source = FakeSource(playback(listOf(song(1)), 0)).apply {
+                metadataInputs = bluetoothLyrics()
+            }
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
+
+            // 换歌路径: 队列重新发布, 不带覆盖值
+            fixture.owner.publishCarQueue(
+                songs = listOf(song(1)),
+                selectedIndex = 0,
+            )
+
+            val overrides = queueOverrides(fixture.port)
+            assertTrue(overrides.size >= 2)
+            // 最后一次发布的当前项仍然是歌词, 不是歌名
+            assertEquals(builders.string(0, MediaMetadata.METADATA_KEY_TITLE), overrides.last().first)
+            assertEquals(builders.string(0, MediaMetadata.METADATA_KEY_ARTIST), overrides.last().second)
+        }
+    }
+
+    /** 路由切到蓝牙时, 即使 metadata 内容没变也要重新对齐队列当前项 */
+    @Test
+    fun `switching to bluetooth re-aligns the queue current item`() = runTest {
+        MetadataBuilders().use {
+            val source = FakeSource(playback(listOf(song(1)), 0))
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
+            assertEquals(0, queueOverrides(fixture.port).size)
+
+            source.metadataInputs = bluetoothLyrics()
+            fixture.owner.updateMetadata()
+
+            assertEquals(1, queueOverrides(fixture.port).size)
+        }
+    }
+
+    private fun queueOverrides(port: PlaybackServicePresentationPort): List<Pair<String?, String?>> =
+        mockingDetails(port).invocations.filter { it.method.name == "setQueue" }.map { invocation ->
+            val args = invocation.arguments
+            args[2] as String? to args[3] as String?
+        }
+
+    private data class Fixture(val owner: PlaybackServicePresentationOwner, val port: PlaybackServicePresentationPort)
     private fun fixture(source: FakeSource, scope: CoroutineScope): Fixture {
         val port = mock(PlaybackServicePresentationPort::class.java)
         val artwork = mock(PlaybackArtworkOwner::class.java)
@@ -261,7 +353,10 @@ class CarSessionPresentationRegressionTest {
     private fun song(id: Long) = SongItem(id, "Song $id", "Artist", "Album", 1, 10_000, null)
 
     private fun bluetoothLyrics() = PlaybackServiceMetadataInputs(
-        ExternalBluetoothLyricPayload("line", "translation"), AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, false
+        ExternalBluetoothLyricPayload("line", "translation"),
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        false,
+        bluetoothTranslationEnabled = true,
     )
 
     private fun calls(port: PlaybackServicePresentationPort, method: String): Int =

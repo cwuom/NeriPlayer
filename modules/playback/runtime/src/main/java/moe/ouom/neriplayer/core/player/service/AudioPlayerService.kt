@@ -129,7 +129,6 @@ import moe.ouom.neriplayer.core.player.service.car.CarMediaSessionCallback
 import moe.ouom.neriplayer.core.player.service.car.CarMediaSessionControlPort
 import moe.ouom.neriplayer.core.player.service.car.CarPlaybackBindingOwner
 import moe.ouom.neriplayer.core.player.service.car.androidCarMediaLibrary
-import moe.ouom.neriplayer.core.player.service.car.carMediaSessionQueue
 import moe.ouom.neriplayer.core.player.service.car.carQueueIndex
 import moe.ouom.neriplayer.core.player.service.car.clearCarQueueIdentityCache
 import moe.ouom.neriplayer.core.player.service.car.library.CarPlaybackSelection
@@ -560,13 +559,10 @@ class AudioPlayerService : Service() {
     private val carPlaybackBinding = CarPlaybackBindingOwner {
         presentationOwner.sessionOrNull()?.sessionToken
     }
-    private var lastCarQueueSession: MediaSession? = null
-    private var lastCarQueueSongs: List<SongItem>? = null
-    private var lastCarQueueIndex = -1
+    private var keepPlayerRuntimeAfterServiceStop = false
     private val pendingStartCommands = ArrayDeque<PendingStartCommand>()
     private val pendingPlayerActions = ArrayDeque<() -> Unit>()
     private var latestStartId = 0
-    private var keepPlayerRuntimeAfterServiceStop = false
     private val idleShutdownCoordinator = PlaybackServiceIdleShutdownCoordinator(
         scope = serviceScope,
         delayMs = PlaybackServiceIdleShutdownPreference.delayMs(
@@ -783,15 +779,15 @@ class AudioPlayerService : Service() {
     }
 
     private fun updateCarQueue() {
-        val session = presentationOwner.sessionOrNull() ?: return
+        // 没有会话时不用下发队列
+        if (presentationOwner.sessionOrNull() == null) return
         val queue = PlayerManager.currentQueueSnapshot()
-        // 队列和当前歌曲分别通知同一快照，只发布一次车机会话队列
-        if (lastCarQueueSession === session && lastCarQueueSongs === queue.playlist &&
-            lastCarQueueIndex == queue.currentIndex) return
-        session.setQueue(carMediaSessionQueue(this, queue.playlist, queue.currentIndex))
-        lastCarQueueSession = session
-        lastCarQueueSongs = queue.playlist
-        lastCarQueueIndex = queue.currentIndex
+        // 队列当前项的标题在蓝牙输出下要跟随歌词, 交给 owner 统一发布,
+        // 避免这里把 owner 刚同步的当前项覆盖回歌名。
+        presentationOwner.publishCarQueue(
+            songs = queue.playlist,
+            selectedIndex = queue.currentIndex,
+        )
     }
 
     private fun dispatchMediaButtonIntent(intent: Intent?) {
@@ -1626,9 +1622,6 @@ class AudioPlayerService : Service() {
 
     private fun releaseMediaSessionForDestroy() {
         if (presentationOwnerDelegate.isInitialized()) presentationOwner.releaseSessionForDestroy()
-        lastCarQueueSession = null
-        lastCarQueueSongs = null
-        lastCarQueueIndex = -1
     }
 
     private fun releasePlayerRuntimeAfterServiceStop(preservePlaybackForRestart: Boolean) {
@@ -1765,9 +1758,6 @@ class AudioPlayerService : Service() {
         if (presentationOwnerDelegate.isInitialized()) {
             presentationOwner.releaseSessionAfterForegroundFailure(reason)
         }
-        lastCarQueueSession = null
-        lastCarQueueSongs = null
-        lastCarQueueIndex = -1
     }
 
     private fun releasePlayerAfterForegroundFailure(reason: String, preservePlayerRuntime: Boolean) {

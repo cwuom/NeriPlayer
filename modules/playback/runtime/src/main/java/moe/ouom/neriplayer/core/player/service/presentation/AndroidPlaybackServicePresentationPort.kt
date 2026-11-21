@@ -44,6 +44,7 @@ import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.util.media.IsLandHelp
 import moe.ouom.neriplayer.util.media.isShareablePublicHttpUrl
 import moe.ouom.neriplayer.core.player.service.car.artwork.CarArtworkProvider
+import moe.ouom.neriplayer.core.player.service.car.carMediaSessionQueue
 import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState
 import java.util.UUID
 
@@ -95,6 +96,21 @@ internal interface PlaybackServicePresentationPort {
     fun publishWidget(state: PlaybackWidgetState, artwork: Bitmap?)
     fun publishWidgetProgress(state: PlaybackWidgetState)
     fun setMetadata(metadata: MediaMetadata)
+    /**
+     * 更新会话队列。
+     *
+     * AOSP 蓝牙栈的 MediaPlayerWrapper.isMetadataSynced() 会比较队列当前项与当前 metadata 的
+     * title/artist, 不一致时不立即下发, 而是等 CALLBACK_TIMEOUT_MS(2 秒), 期间的所有更新都会被丢弃。
+     * 蓝牙歌词下 metadata 的 TITLE 是随进度变化的歌词, 队列当前项必须跟着变。
+     */
+    fun setQueue(
+        songs: List<SongItem>,
+        selectedIndex: Int,
+        currentItemTitleOverride: String?,
+        currentItemSubtitleOverride: String?,
+    )
+    /** 当前媒体会话的身份, 用于判断会话是否被替换过 */
+    fun sessionIdentity(): Any? = null
     fun artworkUri(song: SongItem): String?
     suspend fun publishArtwork(song: SongItem, bitmap: Bitmap, source: String?): String?
     fun setPlaybackState(state: PlaybackState)
@@ -219,6 +235,23 @@ internal class AndroidPlaybackServicePresentationPort(
         requireSession().setMetadata(metadata)
     }
 
+    override fun setQueue(
+        songs: List<SongItem>,
+        selectedIndex: Int,
+        currentItemTitleOverride: String?,
+        currentItemSubtitleOverride: String?,
+    ) {
+        requireSession().setQueue(
+            carMediaSessionQueue(
+                context = context,
+                songs = songs,
+                selectedIndex = selectedIndex,
+                currentItemTitleOverride = currentItemTitleOverride,
+                currentItemSubtitleOverride = currentItemSubtitleOverride,
+            )
+        )
+    }
+
     override fun artworkUri(song: SongItem): String = CarArtworkProvider.uriFor(context, song).toString()
 
     override suspend fun publishArtwork(song: SongItem, bitmap: Bitmap, source: String?): String? =
@@ -253,6 +286,8 @@ internal class AndroidPlaybackServicePresentationPort(
     }
 
     private fun requireSession(): MediaSession = checkNotNull(mediaSession)
+
+    override fun sessionIdentity(): Any? = mediaSession
 
     override fun buildNotification(inputs: PlaybackServiceNotificationRenderInputs): Notification {
         ensureNotificationChannel()
