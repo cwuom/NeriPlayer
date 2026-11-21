@@ -7,7 +7,6 @@ import android.os.Build
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.State
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionDisplayMode
@@ -393,27 +392,15 @@ internal class AppHomeSettingsActions(
         }
 
     val onSetHomeTrendingVisible: (String, Boolean) -> Unit = { id, visible ->
-            scope.launch {
-                val hidden = repo.homeTrendingHiddenFlow.first().toMutableSet()
-                if (visible) hidden.remove(id) else hidden.add(id)
-                repo.setHomeTrendingHidden(hidden)
-            }
-        }
+        scope.launch { repo.setHomeTrendingSubSectionVisible(id, visible) }
+    }
 
     val onSetHomeRadarVisible: (String, Boolean) -> Unit = { id, visible ->
-            scope.launch {
-                val hidden = repo.homeRadarHiddenFlow.first().toMutableSet()
-                if (visible) hidden.remove(id) else hidden.add(id)
-                repo.setHomeRadarHidden(hidden)
-            }
-        }
+        scope.launch { repo.setHomeRadarSubSectionVisible(id, visible) }
+    }
 
     val onSetHomeRecommendedVisible: (String, Boolean) -> Unit = { id, visible ->
-        scope.launch {
-            val hidden = repo.homeRecommendedHiddenFlow.first().toMutableSet()
-            if (visible) hidden.remove(id) else hidden.add(id)
-            repo.setHomeRecommendedHidden(hidden)
-        }
+        scope.launch { repo.setHomeRecommendedSubSectionVisible(id, visible) }
     }
 
     val onSetHomeSongSectionMode: (String, HomeSongSectionDisplayMode) -> Unit = { id, mode ->

@@ -117,6 +117,7 @@ import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSongSectionModes
 import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionHidden
 import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionOrder
 import moe.ouom.neriplayer.data.model.settings.home.parseHomeSongSectionModes
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.playback.toAudioEffectsSettings
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
@@ -132,6 +133,16 @@ private val LYRICS_CONTROL_SIZE =
     intPreferencesKey("lyrics_control_size")
 private val XIAOMI_SUPER_ISLAND_SETTINGS =
     stringPreferencesKey("xiaomi_super_island_settings")
+
+/**
+ * 首页榜单「继续播放」条目的一次性清理标记。
+ *
+ * 旧版本从首页歌曲小模块钻取时会用榜单歌单 id 写入「继续播放」，
+ * 新版本改为通用歌曲列表页，不再写入。存量条目需要清一次，
+ * 但清理必须是一次性的：否则用户后续主动打开榜单产生的记录会被反复删除。
+ */
+private val HOME_CHART_USAGE_CLEANUP_DONE =
+    booleanPreferencesKey("home_chart_usage_cleanup_done")
 
 class SettingsRepository(private val context: Context) {
     private val autoSettingsRepository = AutoSettingsRepository(context)
@@ -1417,18 +1428,10 @@ class SettingsRepository(private val context: Context) {
         )
     }
 
-    suspend fun setHomeTrendingHidden(hidden: Set<String>) {
-        autoSettingsRepository.setHomeTrendingHidden(encodeHomeSectionHidden(hidden))
-    }
-
     suspend fun setHomeRadarOrder(order: List<String>) {
         autoSettingsRepository.setHomeRadarOrder(
             encodeHomeSectionOrder(order.ifEmpty { HomeRadarSubSectionIds.DEFAULT_ORDER })
         )
-    }
-
-    suspend fun setHomeRadarHidden(hidden: Set<String>) {
-        autoSettingsRepository.setHomeRadarHidden(encodeHomeSectionHidden(hidden))
     }
 
     suspend fun setHomeRecommendedOrder(order: List<String>) {
@@ -1437,18 +1440,87 @@ class SettingsRepository(private val context: Context) {
         )
     }
 
-    suspend fun setHomeRecommendedHidden(hidden: Set<String>) {
-        autoSettingsRepository.setHomeRecommendedHidden(encodeHomeSectionHidden(hidden))
+    /**
+     * 原子更新某个歌曲小模块的展示模式。
+     *
+     * 读改写必须放在同一个 DataStore 事务里：否则连续修改两个小模块时，
+     * 两个协程可能读到同一份旧映射，后一次写入会把前一次的选择覆盖掉。
+     */
+    suspend fun setHomeSongSectionMode(id: String, mode: HomeSongSectionDisplayMode) {
+        context.dataStore.edit { prefs ->
+            val current = parseHomeSongSectionModes(
+                prefs[AutoSettingsKeys.HOME_SONG_SECTION_MODE]
+            ).toMutableMap()
+            if (mode == HomeSongSectionDisplayMode.DEFAULT) {
+                current.remove(id)
+            } else {
+                current[id] = mode
+            }
+            prefs[AutoSettingsKeys.HOME_SONG_SECTION_MODE] = encodeHomeSongSectionModes(current)
+        }
     }
 
-    suspend fun setHomeSongSectionMode(id: String, mode: HomeSongSectionDisplayMode) {
-        val current = homeSongSectionModesFlow.first().toMutableMap()
-        if (mode == HomeSongSectionDisplayMode.DEFAULT) {
-            current.remove(id)
-        } else {
-            current[id] = mode
+    /**
+     * 原子更新某个小模块的隐藏状态。
+     *
+     * 与展示模式同理，隐藏集合必须在同一个事务内读改写，
+     * 避免连续隐藏同组两个小模块时后一次写入覆盖前一次选择。
+     */
+    suspend fun setHomeTrendingSubSectionVisible(id: String, visible: Boolean) {
+        updateHomeSectionHiddenAtomically(
+            key = AutoSettingsKeys.HOME_TRENDING_HIDDEN,
+            defaults = HomeTrendingSubSectionIds.DEFAULT_ORDER,
+            id = id,
+            visible = visible
+        )
+    }
+
+    suspend fun setHomeRadarSubSectionVisible(id: String, visible: Boolean) {
+        updateHomeSectionHiddenAtomically(
+            key = AutoSettingsKeys.HOME_RADAR_HIDDEN,
+            defaults = HomeRadarSubSectionIds.DEFAULT_ORDER,
+            id = id,
+            visible = visible
+        )
+    }
+
+    suspend fun setHomeRecommendedSubSectionVisible(id: String, visible: Boolean) {
+        updateHomeSectionHiddenAtomically(
+            key = AutoSettingsKeys.HOME_RECOMMENDED_HIDDEN,
+            defaults = HomeRecommendedSubSectionIds.DEFAULT_ORDER,
+            id = id,
+            visible = visible
+        )
+    }
+
+    private suspend fun updateHomeSectionHiddenAtomically(
+        key: Preferences.Key<String>,
+        defaults: List<String>,
+        id: String,
+        visible: Boolean
+    ) {
+        context.dataStore.edit { prefs ->
+            val hidden = parseHomeSectionHidden(prefs[key], defaults).toMutableSet()
+            if (visible) hidden.remove(id) else hidden.add(id)
+            prefs[key] = encodeHomeSectionHidden(hidden)
         }
-        autoSettingsRepository.setHomeSongSectionMode(encodeHomeSongSectionModes(current))
+    }
+
+    /**
+     * 取出「首页榜单继续播放条目已清理」的标记。
+     *
+     * 首次返回 true 表示还需要执行清理；标记会在同一个事务里被写入，
+     * 因此并发调用也只会真正清理一次。
+     */
+    suspend fun consumeHomeChartUsageCleanupFlag(): Boolean {
+        var pending = false
+        context.dataStore.edit { prefs ->
+            if (prefs[HOME_CHART_USAGE_CLEANUP_DONE] != true) {
+                prefs[HOME_CHART_USAGE_CLEANUP_DONE] = true
+                pending = true
+            }
+        }
+        return pending
     }
 
     suspend fun setHomeSongCardColumns(columns: Int) {
