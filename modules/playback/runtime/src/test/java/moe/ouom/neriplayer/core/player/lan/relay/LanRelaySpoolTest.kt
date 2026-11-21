@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.player.lan.relay
 
 import java.io.EOFException
-import java.io.File
 import java.io.FilterInputStream
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
@@ -30,7 +29,7 @@ class LanRelaySpoolTest {
                 return super.read(b, off, len).also { count += it }
             }
         }
-        LanRelaySpool(temp.root, input, null).use { spool ->
+        LanRelaySpool(temp.root, input, null) { Long.MAX_VALUE }.use { spool ->
             try {
                 assertEquals(7, spool.cursor(0).read())
                 val ahead = pool.submit<Int> { spool.cursor(80 * 1024L).read() }
@@ -48,7 +47,7 @@ class LanRelaySpoolTest {
 
     @Test fun validatorsCannotBeSimulatedByJoiningAnIncompleteResponseToAnother() {
         val bytes = byteArrayOf(1, 2, 3)
-        LanRelaySpool(temp.root, bytes.inputStream(), 4).use { spool ->
+        LanRelaySpool(temp.root, bytes.inputStream(), 4) { Long.MAX_VALUE }.use { spool ->
             assertThrows(EOFException::class.java) { spool.cursor(3).read() }
             assertThrows(EOFException::class.java) { spool.cursor(3).read() }
             assertEquals(2, spool.cursor(1).read())
@@ -56,14 +55,28 @@ class LanRelaySpoolTest {
     }
 
     @Test fun aSeekBeyondFreeSpaceLeavesSequentialPlaybackReadableAndDoesNotDownloadTheGap() {
-        val directory = object : File(temp.root.path) {
-            override fun getUsableSpace() = 18L * 1024 * 1024
-        }
         val source = byteArrayOf(9, 8, 7).inputStream()
-        LanRelaySpool(directory, source, null).use { spool ->
-            val failure = assertThrows(IOException::class.java) { spool.cursor(80L * 1024 * 1024).read() }
+        val trackBytes = 8L * 1024 * 1024 * 1024
+        LanRelaySpool(temp.root, source, trackBytes) { 18L * 1024 * 1024 }.use { spool ->
+            assertEquals(trackBytes, spool.knownLength)
+            val failure = assertThrows(LanSpoolSeekOutOfSpace::class.java) { spool.cursor(trackBytes - 1).read() }
             assertEquals("LOCAL_STORAGE", failure.message)
             assertEquals(3, source.available())
+            assertEquals(9, spool.cursor(0).read())
+        }
+    }
+
+    @Test fun sequentialReadsKeepTheReserveWhenTheVolumeFills() {
+        val source = byteArrayOf(9, 8, 7).inputStream()
+        var freeBytes = 16L * 1024 * 1024 + 2
+        LanRelaySpool(temp.root, source, null) { freeBytes }.use { spool ->
+            val cursor = spool.cursor(0)
+            assertEquals(9, cursor.read())
+            freeBytes -= 2
+            assertEquals(8, cursor.read())
+            val failure = assertThrows(IOException::class.java) { cursor.read() }
+            assertEquals("LOCAL_STORAGE", failure.message)
+            assertEquals(1, source.available())
             assertEquals(9, spool.cursor(0).read())
         }
     }
@@ -83,7 +96,7 @@ class LanRelaySpoolTest {
                 return super.read(b, off, len)
             }
         }
-        LanRelaySpool(temp.root, input, null).use { spool ->
+        LanRelaySpool(temp.root, input, null) { Long.MAX_VALUE }.use { spool ->
             try {
                 val far = spool.cursor(5L * chunk)
                 val pending = pool.submit<Int> { far.read() }

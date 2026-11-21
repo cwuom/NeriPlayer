@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.lan.relay
 
+import android.os.StatFs
 import java.io.Closeable
 import java.io.EOFException
 import java.io.File
@@ -12,9 +13,10 @@ internal class LanSpoolReadCancelled : IOException("LOCAL_TRANSFER")
 
 /** 没有强校验器时只从一次 HTTP 响应取字节，成员回跳时读取已收到的部分 */
 internal class LanRelaySpool(
-    private val cacheDir: File,
+    cacheDir: File,
     private val input: InputStream,
     private val expected: Long?,
+    private val readAvailableBytes: () -> Long = { StatFs(cacheDir.absolutePath).availableBytes },
 ) : Closeable {
     private val path = File.createTempFile("lan-audio-", ".tmp", cacheDir)
     private val file = try {
@@ -112,10 +114,16 @@ internal class LanRelaySpool(
         }
     }
 
-    private fun availableSpace() = cacheDir.usableSpace - 16L * 1024 * 1024
+    // 临时中继只占用当前可用块，不驱逐其他缓存来给远端跳转腾空间
+    private fun availableSpace(): Long = try {
+        readAvailableBytes() - RESERVED_BYTES
+    } catch (error: IllegalArgumentException) {
+        throw IOException("LOCAL_STORAGE", error)
+    }
 
     private companion object {
         const val SPACE_CHECK_BYTES = 4L * 1024 * 1024
+        const val RESERVED_BYTES = 16L * 1024 * 1024
     }
 
     override fun close() {

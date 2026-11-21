@@ -326,7 +326,7 @@ internal fun rememberNowPlayingLyricsLoadOwner(
     )
     LaunchedEffect(owner, reloadKey, stages, cacheGeneration) {
         owner.reload(
-            request = effectiveRequest.copy(cachedPreferredLyrics = restored.initial.cachedPreferredLyrics),
+            request = effectiveRequest.copy(cachedPreferredLyrics = restored.cachedPreferredLyrics),
             key = snapshotKey,
             preferenceRevision = versions.lyricsPreferenceRevision
         )
@@ -335,7 +335,7 @@ internal fun rememberNowPlayingLyricsLoadOwner(
 }
 
 private data class NowPlayingLyricsRestorePoint(
-    val initial: NowPlayingInitialLyricsResult,
+    val cachedPreferredLyrics: PreferredLyricSourceResult?,
     val state: LoadedLyricsState,
     val secondaryResolved: Boolean
 )
@@ -347,24 +347,21 @@ private fun rememberNowPlayingLyricsRestorePoint(
     stages: NowPlayingLyricsStages,
     snapshotKey: NowPlayingLyricsSnapshotKey?
 ): NowPlayingLyricsRestorePoint {
-    request.sharedPresentation?.let { shared ->
-        val state = remember(shared, request.song) { overlayConfirmedUserLyrics(request.song, shared.toLoadedLyricsState()) }
-        return NowPlayingLyricsRestorePoint(NowPlayingInitialLyricsResult(null, state), state, true)
+    val shared = request.sharedPresentation
+    if (shared != null) return remember(shared, request.song) {
+        val state = overlayConfirmedUserLyrics(request.song, shared.toLoadedLyricsState())
+        NowPlayingLyricsRestorePoint(null, state, true)
     }
-    val reusable = stages.snapshotCache?.reusable(snapshotKey)
+    val cache = stages.snapshotCache
     // 完整快照可直接恢复，避免在播放页首帧再次同步解析同一份歌词
-    val initial = if (reusable == null) {
-        rememberNowPlayingInitialLyrics(request, versions.lyricsPreferenceRevision, stages)
-    } else {
-        NowPlayingInitialLyricsResult(request.cachedPreferredLyrics, reusable.state)
-    }
-    val cached = reusable ?: stages.snapshotCache?.find(snapshotKey)
-    return NowPlayingLyricsRestorePoint(
-        initial,
-        cached?.state ?: initial.state,
-        cached?.secondaryResolved == true
-    )
+    cache?.reusable(snapshotKey)?.let { return it.restorePoint(request.cachedPreferredLyrics) }
+    val initial = rememberNowPlayingInitialLyrics(request, versions.lyricsPreferenceRevision, stages)
+    return cache?.find(snapshotKey)?.restorePoint(initial.cachedPreferredLyrics)
+        ?: NowPlayingLyricsRestorePoint(initial.cachedPreferredLyrics, initial.state, false)
 }
+
+private fun NowPlayingLyricsSnapshot.restorePoint(preferred: PreferredLyricSourceResult?) =
+    NowPlayingLyricsRestorePoint(preferred, state, secondaryResolved)
 
 private fun LanSharedPresentation.toLoadedLyricsState(): LoadedLyricsState {
     fun lines(values: List<LanSharedLyricLine>) = values.map { line ->

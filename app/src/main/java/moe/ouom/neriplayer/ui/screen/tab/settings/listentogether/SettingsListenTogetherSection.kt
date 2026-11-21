@@ -44,13 +44,7 @@ internal fun SettingsListenTogetherSection(
         lanActive = lanState.active,
         cloudRoomId = cloudState.roomId,
         modifier = modifier,
-        requestedTab = when (highlightTargetId) {
-            "manual:lan_listen_together" -> ListenTogetherTab.Lan
-            "manual:listen_together_join_room",
-            "manual:listen_together_server",
-            "manual:listen_together_nickname" -> ListenTogetherTab.Cloud
-            else -> null
-        },
+        requestedTab = listenTogetherTabForSearchTarget(highlightTargetId),
         requestId = highlightPulse,
         cloudContent = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -62,6 +56,14 @@ internal fun SettingsListenTogetherSection(
         },
         lanContent = { LanListenTogetherSection() }
     )
+}
+
+internal fun listenTogetherTabForSearchTarget(targetId: String?): ListenTogetherTab? = when (targetId) {
+    "manual:lan_listen_together" -> ListenTogetherTab.Lan
+    "manual:listen_together_join_room",
+    "manual:listen_together_server",
+    "manual:listen_together_nickname" -> ListenTogetherTab.Cloud
+    else -> null
 }
 
 @Composable

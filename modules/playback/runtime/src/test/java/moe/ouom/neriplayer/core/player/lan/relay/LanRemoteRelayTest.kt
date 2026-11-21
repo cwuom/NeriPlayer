@@ -25,6 +25,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowStatFs
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -37,7 +38,10 @@ class LanRemoteRelayTest {
     private val offset = 2 * 65536
     private val tag = "\"track-v1\""
 
-    @Before fun start() = server.start(InetAddress.getByAddress("127.0.0.1", byteArrayOf(127, 0, 0, 1)), 0)
+    @Before fun start() {
+        ShadowStatFs.registerStats(temp.root, 100_000, 90_000, 80_000)
+        server.start(InetAddress.getByAddress("127.0.0.1", byteArrayOf(127, 0, 0, 1)), 0)
+    }
     @After fun stop() {
         server.close()
         client.connectionPool.evictAll()

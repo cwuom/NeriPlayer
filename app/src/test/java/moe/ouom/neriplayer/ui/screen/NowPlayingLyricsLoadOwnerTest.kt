@@ -17,9 +17,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.StandardTestDispatcher
+import moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.lan.LanSharedLyricLine
+import moe.ouom.neriplayer.data.model.lan.LanSharedPresentation
+import moe.ouom.neriplayer.data.model.lan.LanSharedWordTiming
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
@@ -50,6 +54,54 @@ import org.mockito.Mockito
 class NowPlayingLyricsLoadOwnerTest {
     private val context = Mockito.mock(Context::class.java)
     private val song = SongItem(41L, "Current", "Artist", "Album", 1L, 60_000L, null)
+
+    @Test
+    fun `room lyrics replace a cached provider on the first frame and leaving restores its snapshot`() = runTest {
+        var providerReads = 0
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override suspend fun onlineOriginal(song: SongItem): List<LyricEntry> {
+                providerReads++
+                return listOf(LyricEntry("provider", 1000, 2000))
+            }
+        }
+        val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        val input = request(song.copy(channelId = "netease", audioId = "41"))
+        val versions = NowPlayingLyricsRefreshVersions(0, 0, 0)
+        suspend fun openPlayer(check: (NowPlayingLyricsLoadOwner) -> Unit) {
+            val fixture = LyricsCompositionFixture(this)
+            try { check(fixture.compose(input, versions, stages)) } finally { fixture.close() }
+        }
+        val previous = LanSharedPresentationStore.state.value
+        try {
+            LanSharedPresentationStore.clear()
+            openPlayer { owner ->
+                runCurrent()
+                assertEquals("provider", owner.state.lyrics.single().text)
+            }
+            val line = LanSharedLyricLine("room", 1000, 2000, listOf(LanSharedWordTiming(1000, 1200, 1)))
+            LanSharedPresentationStore.publish("netease:41", LanSharedPresentation(song.name, song.artist, song.album,
+                lyrics = listOf(line), translations = listOf(line.copy(text = "translation")),
+                romanized = listOf(line.copy(text = "phonetic"))))
+            openPlayer { owner ->
+                assertTrue(owner.secondaryResolved)
+                assertEquals("room", owner.state.lyrics.single().text)
+                assertEquals(1200L, owner.state.lyrics.single().words!!.single().endTimeMs)
+                assertEquals("translation", owner.state.translatedLyrics.single().text)
+                assertEquals("phonetic", owner.state.phoneticLyrics.single().text)
+                runCurrent()
+                assertEquals("room", owner.state.lyrics.single().text)
+            }
+            LanSharedPresentationStore.clear()
+            openPlayer { owner ->
+                assertEquals("provider", owner.state.lyrics.single().text)
+                runCurrent()
+            }
+            assertEquals(1, providerReads)
+        } finally {
+            if (previous == null) LanSharedPresentationStore.clear()
+            else LanSharedPresentationStore.publish(previous.trackKey, previous.presentation)
+        }
+    }
 
     @Test
     fun `reopening production lyrics restores all tracks before loading and avoids repeated source reads`() = runTest {
