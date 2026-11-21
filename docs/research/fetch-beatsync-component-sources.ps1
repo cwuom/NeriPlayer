@@ -22,17 +22,21 @@ $docs = @(
     @{name='android-media3-hello';url='https://developer.android.com/media/media3/exoplayer/hello-world'},
     @{name='ktor-server-engines';url='https://ktor.io/docs/server-engines.html'},
     @{name='ktor-server-websockets';url='https://ktor.io/docs/server-websockets.html'},
-    @{name='ktor-supported-platforms';url='https://ktor.io/docs/supported-platforms.html'}
+    @{name='ktor-supported-platforms';url='https://ktor.io/docs/server-platforms.html'}
 )
 $docResults = $docs | ForEach-Object -Parallel {
     $item = $_
     $dest = $using:researchDir
     try {
         $html = (Invoke-WebRequest -Uri $item.url -Headers @{ 'User-Agent' = 'ListenTogether-component-research' } -TimeoutSec 30).Content
+        if ($html -match '(?is)<meta\b[^>]*\bhttp-equiv\s*=\s*["'']?refresh\b') {
+            throw 'Received an HTML redirect page instead of the requested documentation'
+        }
         $text = [regex]::Replace($html, '(?is)<(script|style)\b[^>]*>.*?</\1>', '')
         $text = [regex]::Replace($text, '(?i)</(p|div|li|h[1-6]|tr)>', "`n")
         $text = [System.Net.WebUtility]::HtmlDecode([regex]::Replace($text, '<[^>]+>', ' '))
         $text = [regex]::Replace($text, '[ \t]+', ' ')
+        if ([string]::IsNullOrWhiteSpace($text)) { throw 'Documentation response has no text' }
         $text | Set-Content -LiteralPath (Join-Path $dest ($item.name + '.txt')) -Encoding utf8
         [pscustomobject]@{name=$item.name;url=$item.url;file=($item.name+'.txt');fetchedAt=[DateTimeOffset]::UtcNow.ToString('o')}
     } catch { [pscustomobject]@{name=$item.name;url=$item.url;error=$_.Exception.Message} }
