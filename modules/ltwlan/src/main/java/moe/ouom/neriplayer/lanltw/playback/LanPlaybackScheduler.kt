@@ -30,6 +30,11 @@ class LanPlaybackScheduler(
     var mediaId: String? = null
         private set
     val playbackRevision: Long get() = revision
+    val playScheduled: Boolean get() {
+        val plan = pending ?: return false
+        return plan.scheduledAction?.type == "PLAY" &&
+            (action?.isActive == true || (plan.serverTimeToExecute ?: 0.0) > clock.nowMs() + offset())
+    }
     private var trackKey: String? = null
     private var requestedPresentation: LanFileResource? = null
     private var appliedPresentation: LanFileResource? = null
@@ -211,6 +216,16 @@ class LanPlaybackScheduler(
         retry = scope.launch { delay(1000); send(LanMessage("SYNC")) }
     }
     fun resetRecovery() { recoveryAttempts = 0 }
+    fun interruptPlayback() {
+        action?.cancel()
+        retry?.cancel()
+        pending = null
+        // 装载中的播放器已经暂停，保留这次读取以便房间收到就绪确认
+        if (loading?.isActive != true || port.isPlaying()) {
+            scheduledAudio?.cancelAudioSchedule()
+            port.pause()
+        }
+    }
     fun close() {
         action?.cancel(); loading?.cancel(); retry?.cancel(); gainJob?.cancel(); resetPresentation()
         pending = null; resetRecovery(); scheduledAudio?.cancelAudioSchedule(); port.pause()

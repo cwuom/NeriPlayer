@@ -10,7 +10,8 @@ class LanRoomEngine(
     initialPermissions: LanPermissions = LanPermissions(),
     private val send: (String, LanMessage) -> Unit
 ) {
-    private data class Peer(var member: LanMember, var timing: LanPeerTiming = LanPeerTiming(), var seen: Double)
+    private data class Peer(var member: LanMember, var timing: LanPeerTiming = LanPeerTiming(), var seen: Double,
+        val liveness: LanPeerLiveness = LanPeerLiveness(60_000.0))
     private data class Preparation(val track: ListenTogetherTrack, val position: Double, val playing: Boolean,
         val generation: Long, val deadline: Double, val readyMembers: MutableSet<String> = mutableSetOf(),
         val unavailableMembers: MutableSet<String> = mutableSetOf())
@@ -81,7 +82,14 @@ class LanRoomEngine(
         }
     }
     fun tick(): List<String> {
-        val expired = peers.filterValues { clock.nowMs() - it.seen > 60_000 }.keys.toList()
+        val now = clock.nowMs()
+        val expired = peers.toList().mapNotNull { (id, peer) ->
+            when (peer.liveness.check(now, peer.seen)) {
+                LanPeerLiveness.Status.PROBE -> { send(id, LanMessage("LIVENESS_PING")); null }
+                LanPeerLiveness.Status.EXPIRED -> id
+                LanPeerLiveness.Status.HEALTHY -> null
+            }
+        }
         expired.forEach(::leave)
         pendingPreparation()?.takeIf { clock.nowMs() >= it.deadline }?.let(::expirePreparation)
         broadcastState()
@@ -218,7 +226,7 @@ class LanRoomEngine(
         presentationResource = currentPresentation)
     private fun hostId(): String? = peers.entries.firstOrNull { it.value.member.host }?.key
     private fun requestStep(id: String, host: Boolean, m: LanMessage) {
-        if (!host && !permissions.next) return reject(id, "DENIED")
+        if (!host && !permissions.seek) return reject(id, "DENIED")
         if (m.audioSource != displayedPlayback().track?.stableKey) return reject(id, "STALE")
         if (m.trackTimeSeconds !in listOf(-1.0, 1.0)) return reject(id, "INVALID")
         val owner = hostId() ?: return reject(id, "STALE")

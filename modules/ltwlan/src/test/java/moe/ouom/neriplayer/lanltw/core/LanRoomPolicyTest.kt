@@ -16,12 +16,14 @@ class LanRoomPolicyTest {
             .forEach { assertFalse(LanRoomPolicy.validMetadata(it)) }
     }
     @Test fun intentPermissionMatrixAndChangedSourceAreIndependent() {
-        val all = LanPermissions(true, true, true)
+        val all = LanPermissions()
+        val playOnly = LanPermissions(seek = false)
+        val progressOnly = LanPermissions(playPause = false)
         for (intent in listOf("NEXT", "SEEK", "PLAY_PAUSE")) {
-            assertTrue(LanRoomPolicy.allowed(true, LanPermissions(), intent, false))
+            assertTrue(LanRoomPolicy.allowed(true, LanPermissions(playPause = false, seek = false), intent, false))
             assertTrue(LanRoomPolicy.allowed(false, all, intent, false))
-            assertTrue(LanRoomPolicy.allowed(false, LanPermissions(), intent, false))
-            assertFalse(LanRoomPolicy.allowed(false, LanPermissions(false, false, false), intent, false))
+            assertEquals(intent == "PLAY_PAUSE", LanRoomPolicy.allowed(false, playOnly, intent, false))
+            assertEquals(intent != "PLAY_PAUSE", LanRoomPolicy.allowed(false, progressOnly, intent, false))
         }
         assertFalse(LanRoomPolicy.allowed(true, all, "UNKNOWN", false))
         assertFalse(LanRoomPolicy.allowed(true, all, "PLAY_PAUSE", true))

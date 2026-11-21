@@ -6,13 +6,14 @@ import org.junit.Test
 class LanPlaybackBindingTest {
     @After fun cleanup() { LanPlaybackBinding.clear() }
     @Test fun safetyPauseInterruptsExternalAudioWithoutRoutingMemberCommands() {
-        var interrupted = 0
-        LanPlaybackBinding.interruptAudio = { interrupted++ }
+        val interruptions = mutableListOf<String>()
+        LanPlaybackBinding.interruptAudio = { interruptions += it }
         assertFalse(LanPlaybackBinding.interrupt())
         LanPlaybackBinding.externalAudio = true
         assertFalse(LanPlaybackBinding.safetyPause(PlaybackCommandSource.LOCAL))
         assertTrue(LanPlaybackBinding.safetyPause(PlaybackCommandSource.LOCAL_SAFETY))
-        assertEquals(1, interrupted)
+        assertTrue(LanPlaybackBinding.interrupt("OUTPUT"))
+        assertEquals(listOf("AUDIO_SUSPENDED", "OUTPUT"), interruptions)
     }
     @Test fun remoteScheduledCommandsNeverLoopBackIntoRoomRequests() {
         val requests = mutableListOf<String>()

@@ -51,8 +51,8 @@ class DebugLanReceiver : BroadcastReceiver() {
             "seek" -> manager.requestPlayback("SEEK", manager.state.value.room?.playback?.track, intent.getDoubleExtra("position", 0.0))
             "reset-nudge" -> manager.nudge(-manager.state.value.nudgeMs)
             "permissions" -> manager.setPermissions(moe.ouom.neriplayer.data.model.lan.LanPermissions(
-                next = intent.getBooleanExtra("next", false), playPause = intent.getBooleanExtra("playPause", false),
-                seek = intent.getBooleanExtra("seek", false)))
+                playPause = intent.getBooleanExtra("playPause", false),
+                seek = intent.getBooleanExtra("seek", false), volume = intent.getBooleanExtra("volume", false)))
             "status" -> Unit
             "diagnostics" -> File(context.filesDir, "lan-audio-diagnostics.json").writeText(manager.audioDiagnostics())
             else -> { resultCode = Activity.RESULT_CANCELED; return }
@@ -81,8 +81,8 @@ class DebugLanReceiver : BroadcastReceiver() {
             put("sampleRateHz", PlayerManager.currentPlaybackAudioInfoFlow.value?.sampleRateHz)
             put("bitrateKbps", PlayerManager.currentPlaybackAudioInfoFlow.value?.bitrateKbps)
             put("permissions", buildJsonObject {
-                put("next", state.room?.permissions?.next); put("playPause", state.room?.permissions?.playPause)
-                put("seek", state.room?.permissions?.seek)
+                put("playPause", state.room?.permissions?.playPause); put("seek", state.room?.permissions?.seek)
+                put("volume", state.room?.permissions?.volume)
             })
         }.toString()
         File(context.filesDir, "lan-debug-status.json").writeText(result)

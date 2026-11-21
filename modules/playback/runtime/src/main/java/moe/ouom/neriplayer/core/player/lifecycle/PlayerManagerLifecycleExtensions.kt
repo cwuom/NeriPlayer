@@ -1758,7 +1758,7 @@ internal fun PlayerManager.handleAudioBecomingNoisyImpl(): Boolean =
     moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.interruptOr { audioDeviceRouteOwner.onAudioBecomingNoisy() }
 
 private fun PlayerManager.handleUsbExclusivePlaybackSettingChanged(enabled: Boolean) {
-    if (enabled) moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.interrupt()
+    if (enabled) moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.interrupt("OUTPUT")
     usbPlaybackRouteOwner.changeSetting(enabled)
 }
 

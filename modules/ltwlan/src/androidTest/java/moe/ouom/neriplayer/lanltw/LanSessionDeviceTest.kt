@@ -46,6 +46,8 @@ class LanSessionDeviceTest {
         var playing = initiallyPlaying
         var position = 0.0
         var ended = true
+        var audioFailure: (String) -> Unit = {}
+        override fun watchAudioFailure(handler: (String) -> Unit) { audioFailure = handler }
         override suspend fun prepareSharedSource(track: ListenTogetherTrack, refresh: Boolean) = LanPreparedSource(track, stream)
         override fun sharedPresentationUpdates(track: ListenTogetherTrack, mediaId: String) =
             presentationUpdates.filterNotNull()
@@ -77,13 +79,80 @@ class LanSessionDeviceTest {
         }
     }
     private fun main(block: () -> Unit) = InstrumentationRegistry.getInstrumentation().runOnMainSync(block)
+    @Test fun systemAudioInterruptionsPreserveTheRoomAndResumeOnlyAfterLocalInput() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val http = OkHttpClient()
+        val hostPort = Port()
+        val guestPort = Port()
+        val host = LanSessionManager(context, http, hostPort, { false }, {},
+            loadPermissions = { LanPermissions(playPause = false) })
+        val guest = LanSessionManager(context, http, guestPort, { false }, {})
+        try {
+            main { host.host("Host") }
+            val hosting = withTimeout(30_000) {
+                host.state.first { state ->
+                    val playback = state.room?.playback
+                    state.synced && playback?.track?.stableKey == song.stableKey && !playback.preparing
+                }
+            }
+            val roomId = checkNotNull(hosting.room).id
+            main { guest.join("127.0.0.1:${hosting.port}", roomId, "Member") }
+            withTimeout(30_000) { guest.state.first { it.synced && it.room?.members?.size == 2 } }
+            main {
+                hostPort.audioFailure("AUDIO_SUSPENDED")
+                guestPort.audioFailure("AUDIO_SUSPENDED")
+                host.setVolume(.4f)
+            }
+            withTimeout(5_000) { guestPort.gain.first { it == .4f } }
+            assertFalse(host.state.value.audioSuspended)
+            assertFalse(guest.state.value.audioSuspended)
+            main { host.requestPlayback("PLAY_PAUSE", song, 0.0) }
+            withTimeout(10_000) { hostPort.plays.first { it == 1 }; guestPort.plays.first { it == 1 } }
+
+            main {
+                guestPort.audioFailure("AUDIO_SUSPENDED")
+                guestPort.audioFailure("AUDIO_SUSPENDED")
+            }
+            withTimeout(5_000) { guest.state.first { it.synced && it.audioSuspended } }
+            main {
+                assertTrue(hostPort.playing)
+                assertFalse(guestPort.playing)
+                host.requestPlayback("PAUSE", song, 0.0)
+            }
+            withTimeout(5_000) { guest.state.first { it.room?.playback?.playing == false } }
+            main { host.requestPlayback("PLAY_PAUSE", song, 0.0) }
+            withTimeout(10_000) { hostPort.plays.first { it == 2 } }
+            assertNull(withTimeoutOrNull(1_000) { guestPort.plays.first { it > 1 } })
+            val revision = checkNotNull(host.state.value.room).playback.revision
+            main { guest.requestPlayback("PLAY_PAUSE", song, 0.0) }
+            withTimeout(10_000) { guestPort.plays.first { it == 2 } }
+            assertEquals(revision, checkNotNull(host.state.value.room).playback.revision)
+
+            main { hostPort.audioFailure("AUDIO_SUSPENDED") }
+            withTimeout(10_000) {
+                guest.state.first { it.synced && it.room?.playback?.playing == false }
+                while (withContext(Dispatchers.Main) { guestPort.playing }) delay(20)
+            }
+            assertTrue(host.state.value.audioSuspended)
+            assertEquals(roomId, checkNotNull(guest.state.value.room).id)
+            assertEquals(2, checkNotNull(host.state.value.room).members.size)
+            main { host.requestPlayback("PLAY_PAUSE", song, 0.0) }
+            withTimeout(10_000) { hostPort.plays.first { it == 3 }; guestPort.plays.first { it == 3 } }
+            assertFalse(host.state.value.audioSuspended)
+        } finally {
+            main { guest.leave(); host.leave() }
+            withTimeout(10_000) { guest.state.first { !it.active }; host.state.first { !it.active } }
+            http.dispatcher.executorService.shutdown()
+            http.connectionPool.evictAll()
+        }
+    }
     @Test fun hostAndMemberConvergeEnforcePermissionsAndReleaseResources() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val http = OkHttpClient()
         val hostPort = Port().apply { position = 31.0 }
         val memberPort = Port()
         val host = LanSessionManager(context, http, hostPort, { false }, {},
-            loadPermissions = { LanPermissions(false, false, false) })
+            loadPermissions = { LanPermissions(playPause = false, seek = false) })
         val member = LanSessionManager(context, http, memberPort, { false }, {})
         try {
             main { host.host("Host") }

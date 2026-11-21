@@ -54,10 +54,10 @@
     <string name="lan_error_transfer">Audio transfer was interrupted. Check the LAN connection to the host and retry.</string>
     <string name="lan_device_volume">Device volumes</string>
     <string name="lan_back_room">Back to room</string>
-    <string name="lan_permission_next_short">Skip</string>
     <string name="lan_permission_play_short">Play/pause</string>
-    <string name="lan_permission_seek_short">Seek</string>
+    <string name="lan_permission_seek_short">Progress</string>
     <string name="lan_permission_volume_short">Volume</string>
+    <string name="lan_audio_suspended">Audio was interrupted on this device. Tap Synchronize to follow the room again.</string>
     <string name="lan_host_preparing">Preparing audio and waiting for devices to be ready…</string>
     <string name="lan_error_source_changed">The original file changed or is no longer readable. Select the song again.</string>
     <string name="lan_error_content">The room audio source has changed. Sync again.</string>

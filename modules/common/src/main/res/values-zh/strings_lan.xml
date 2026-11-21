@@ -54,10 +54,10 @@
     <string name="lan_error_transfer">音频传输中断，请检查与主控的局域网连接后重试</string>
     <string name="lan_device_volume">设备音量</string>
     <string name="lan_back_room">返回房间</string>
-    <string name="lan_permission_next_short">切歌</string>
     <string name="lan_permission_play_short">播放</string>
     <string name="lan_permission_seek_short">进度</string>
     <string name="lan_permission_volume_short">音量</string>
+    <string name="lan_audio_suspended">本机音频已中断，点「重新同步」可再次跟随房间播放。</string>
     <string name="lan_host_preparing">正在准备音源，等待设备就绪…</string>
     <string name="lan_error_source_changed">原文件已变更或不可读取，请重新选择歌曲。</string>
     <string name="lan_error_content">房间音源已更新，请重新同步</string>

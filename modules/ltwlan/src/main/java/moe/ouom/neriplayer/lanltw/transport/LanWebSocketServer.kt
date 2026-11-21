@@ -20,13 +20,15 @@ class LanWebSocketServer(
     private val onLeave: (String) -> Unit,
     private val onFatal: () -> Unit
 ) : WebSocketServer(InetSocketAddress(0), 2, listOf(Draft_6455(emptyList(), LanCodec.MAX_BYTES))) {
-    private data class Peer(val id: String, val connectedAt: Double, @Volatile var joined: Boolean = false, var window: Double = connectedAt, var count: Int = 0, var backlog: Double = 0.0)
+    private data class Peer(val id: String, val connectedAt: Double, @Volatile var joined: Boolean = false, var window: Double = connectedAt, var count: Int = 0, var backlog: Double? = null, var lastSendAt: Double = connectedAt)
     private val peers = ConcurrentHashMap<WebSocket, Peer>()
+    private val closing = ConcurrentHashMap<WebSocket, Double>()
     val ready = CompletableDeferred<Int>()
-    init { connectionLostTimeout = 15; isReuseAddr = true }
+    // 房间通过探测和应答判活，库的独立计时器会在进程刚恢复调度时提前关闭连接
+    init { connectionLostTimeout = 0; isReuseAddr = true }
     override fun onStart() { ready.complete(port) }
     override fun onOpen(socket: WebSocket, handshake: ClientHandshake) {
-        if (peers.size >= 20) { socket.close(1008, "Room full"); return }
+        if (peers.size + closing.size >= 20) { socket.closeConnection(1008, "Room full"); return }
         peers[socket] = Peer(UUID.randomUUID().toString(), clock.nowMs())
     }
     override fun onMessage(socket: WebSocket, text: String) {
@@ -51,20 +53,45 @@ class LanWebSocketServer(
         if (m.type != "HELLO" || (m.roomId != null && m.roomId != roomId) || name.isNullOrBlank() || name.length > 24) {
             socket.close(1008, "Handshake rejected"); return
         }
-        peer.joined = true
-        onJoin(peer.id, name, m.hostToken == hostToken, m.volume?.coerceIn(0f, 1f) ?: 1f)
+        synchronized(socket) {
+            if (peers[socket] !== peer) return
+            peer.joined = true
+            onJoin(peer.id, name, m.hostToken == hostToken, m.volume?.coerceIn(0f, 1f) ?: 1f)
+        }
     }
     fun sendTo(id: String, message: LanMessage) {
         val socket = peers.entries.firstOrNull { it.value.id == id }?.key ?: return
         val peer = peers[socket] ?: return
+        val now = clock.nowMs()
+        if (now - peer.lastSendAt > CLOSE_TIMEOUT_MS) peer.backlog = null
+        peer.lastSendAt = now
         if (socket.hasBufferedData()) {
-            if (peer.backlog == 0.0) peer.backlog = clock.nowMs()
-            if (clock.nowMs() - peer.backlog > 2000) { socket.close(1008, "Slow peer"); return }
-        } else peer.backlog = 0.0
+            val since = peer.backlog ?: now.also { peer.backlog = it }
+            if (now - since > 2000) { socket.closeConnection(1008, "Slow peer"); return }
+        } else peer.backlog = null
         runCatching { socket.send(LanCodec.encode(message)) }.onFailure { socket.close(1011, "Send failed") }
     }
-    fun disconnect(id: String) { peers.entries.firstOrNull { it.value.id == id }?.key?.close(1008, "Session closed") }
-    fun expireHandshakes() { peers.entries.filter { !it.value.joined && clock.nowMs() - it.value.connectedAt > 5000 }.forEach { it.key.close(1008, "Handshake timeout") } }
-    override fun onClose(socket: WebSocket, code: Int, reason: String, remote: Boolean) { peers.remove(socket)?.takeIf { it.joined }?.let { onLeave(it.id) } }
+    fun disconnect(id: String) { peers.entries.firstOrNull { it.value.id == id }?.key?.closeConnection(1008, "Session closed") }
+    fun expireHandshakes() {
+        val now = clock.nowMs()
+        peers.forEach { (socket, peer) ->
+            if (!peer.joined && now - peer.connectedAt > CLOSE_TIMEOUT_MS) socket.closeConnection(1008, "Handshake timeout")
+        }
+        closing.forEach { (socket, since) ->
+            if (now - since >= CLOSE_TIMEOUT_MS) socket.closeConnection(1006, "Close timeout")
+        }
+    }
+    override fun onClosing(socket: WebSocket, code: Int, reason: String, remote: Boolean) {
+        val peer = peers.remove(socket) ?: return
+        // 关闭帧可能被积压数据挡住，先撤销成员资格并给正常连接留出发送时间
+        closing[socket] = clock.nowMs()
+        if (peer.joined) onLeave(peer.id)
+    }
+    override fun onClose(socket: WebSocket, code: Int, reason: String, remote: Boolean) {
+        closing.remove(socket)
+        peers.remove(socket)?.takeIf { it.joined }?.let { onLeave(it.id) }
+    }
     override fun onError(socket: WebSocket?, error: Exception) { if (socket == null) { ready.completeExceptionally(error); onFatal() } else socket.close(1011, "Transport error") }
+
+    private companion object { const val CLOSE_TIMEOUT_MS = 5_000.0 }
 }

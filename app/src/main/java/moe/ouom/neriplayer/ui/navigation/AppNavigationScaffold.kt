@@ -556,7 +556,7 @@ private fun AppMiniPlayerOverlay(
                 clearCover = miniPlayer.song.hasKnownEmptyLocalCover(),
                 isPlaying = controls.playbackRequested,
                 playPauseEnabled = !controls.usbPreparing && lanControls.permissions.playPause,
-                skipEnabled = lanControls.permissions.next,
+                skipEnabled = lanControls.permissions.seek,
                 modifier = Modifier.testTag("appMiniPlayer")
                     .onGloballyPositioned { coordinates ->
                         onBoundsChanged(coordinates.boundsInRoot())

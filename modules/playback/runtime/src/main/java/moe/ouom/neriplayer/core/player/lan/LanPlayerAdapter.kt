@@ -280,7 +280,7 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
             PlayerManager.localPlaylistPlaybackSource = null
         }
         LanPlaybackBinding.externalAudio = true
-        LanPlaybackBinding.interruptAudio = { pause(); audioFailure("AUDIO_SUSPENDED") }
+        LanPlaybackBinding.interruptAudio = { reason -> audioFailure(reason) }
         engine = LanMedia3AudioEngine(PlayerManager.application, !PlayerManager.allowMixedPlaybackEnabled,
             presentation::update, ::updateAudioFormat, { LanPlaybackBinding.ended() }, { audioFailure("SOURCE") },
             { audioFailure("AUDIO_SUSPENDED") }, { preparationError = "AUDIO_NOT_SEEKABLE" })

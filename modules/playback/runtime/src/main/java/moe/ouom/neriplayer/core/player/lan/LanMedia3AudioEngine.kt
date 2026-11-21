@@ -90,7 +90,14 @@ internal class LanMedia3AudioEngine(
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 if (activeSource != null && !playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS) {
-                    cancelSchedule()
+                    onInterrupted()
+                }
+            }
+
+            override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
+                if (activeSource != null && player.playWhenReady &&
+                    playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS) {
+                    player.pause()
                     onInterrupted()
                 }
             }

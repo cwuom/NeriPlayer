@@ -408,15 +408,6 @@ internal fun hasCachedLocalDownload(song: SongItem): Boolean {
     return hasPublishedManagedDownload(song)
 }
 
-private fun seekToLyricSafely(
-    positionMs: Long,
-    playbackDurationMs: Long,
-    songDurationMs: Long
-) {
-    val knownDurationMs = maxOf(playbackDurationMs, songDurationMs)
-    resolveLyricSeekPosition(positionMs, knownDurationMs)?.let(PlayerManager::seekTo)
-}
-
 @Composable
 private fun NowPlayingImmersivePortraitLayout(
     modifier: Modifier,
@@ -541,6 +532,12 @@ fun NowPlayingScreen(
         controllerUserId = listenTogetherRoomState?.controllerUserId,
         allowMemberControl = listenTogetherRoomState?.settings?.allowMemberControl
     )
+    val onLyricSeek: (Long) -> Unit = { positionMs ->
+        if (lanControls.permissions.seek) {
+            val knownDurationMs = maxOf(durationMs, currentSong?.durationMs ?: 0L)
+            resolveLyricSeekPosition(positionMs, knownDurationMs)?.let(PlayerManager::seekTo)
+        }
+    }
     val showProgressQualitySwitch by settingsRepo
         .nowPlayingProgressShowQualitySwitchFlow
         .collectAsStateWithLifecycle(initialValue = true)
@@ -1181,13 +1178,7 @@ fun NowPlayingScreen(
                                 onLyricFontScaleChange = onLyricFontScaleChange,
                                 onExitNowPlaying = onNavigateUp,
                                 onNavigateBack = { onShowLyricsScreenChange(false) },
-                                onSeekTo = { position ->
-                                    seekToLyricSafely(
-                                        positionMs = position,
-                                        playbackDurationMs = durationMs,
-                                        songDurationMs = currentSong?.durationMs ?: 0L
-                                    )
-                                },
+                                onSeekTo = onLyricSeek,
                                 progressSeekEnabled = playbackProgressSeekEnabled,
                                 advancedLyricsEnabled = advancedLyricsEnabled,
                                 translatedLyrics = translatedLyrics,
@@ -1327,7 +1318,7 @@ fun NowPlayingScreen(
 
                                         HapticIconButton(
                                             onClick = { PlayerManager.previous() },
-                                            enabled = lanControls.permissions.next,
+                                            enabled = lanControls.permissions.seek,
                                             modifier = Modifier
                                                 .sharedElement(
                                                     rememberSharedContentState(
@@ -1374,7 +1365,7 @@ fun NowPlayingScreen(
 
                                         HapticIconButton(
                                             onClick = { PlayerManager.next() },
-                                            enabled = lanControls.permissions.next,
+                                            enabled = lanControls.permissions.seek,
                                             modifier = Modifier
                                                 .sharedElement(
                                                     rememberSharedContentState(
@@ -1470,11 +1461,7 @@ fun NowPlayingScreen(
                                 }
                             }
                             val onEmbeddedLyricClick: (LyricEntry) -> Unit = { entry ->
-                                seekToLyricSafely(
-                                    positionMs = entry.startTimeMs,
-                                    playbackDurationMs = durationMs,
-                                    songDurationMs = currentSong?.durationMs ?: 0L
-                                )
+                                onLyricSeek(entry.startTimeMs)
                             }
                             val onEmbeddedLyricLongClick: (LyricEntry) -> Unit = { entry ->
                                 lyricShareInitialLine = entry
@@ -1725,13 +1712,7 @@ fun NowPlayingScreen(
                                         playback = embeddedLyricPlayback,
                                         lowPowerRendering = lowPowerLyricsRendering,
                                         actions = embeddedLyricActions,
-                                        onSeekTo = { position ->
-                                            seekToLyricSafely(
-                                                positionMs = position,
-                                                playbackDurationMs = durationMs,
-                                                songDurationMs = currentSong?.durationMs ?: 0L
-                                            )
-                                        }
+                                        onSeekTo = onLyricSeek
                                     )
                                 }
                                 Box(modifier = contentModifier) {

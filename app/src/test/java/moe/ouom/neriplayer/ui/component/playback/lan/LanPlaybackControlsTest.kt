@@ -5,14 +5,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LanPlaybackControlsTest {
-    private val all = LanPermissions(true, true, true)
-    private val none = LanPermissions(false, false, false)
+    private val all = LanPermissions()
+    private val none = LanPermissions(playPause = false, seek = false)
     private val member = LanSessionState(phase = "CONNECTED", synced = true, room = LanRoom("r", "Room"))
     @Test fun idleAndHostKeepControlsWhileMembersFollowEachPermission() {
         assertEquals(all, lanPlaybackControls(LanSessionState()))
         assertEquals(all, lanPlaybackControls(member.copy(hosting = true)))
         assertEquals(LanPermissions(), lanPlaybackControls(member))
-        for (permissions in listOf(none, none.copy(next = true), none.copy(playPause = true), none.copy(seek = true), all)) {
+        for (permissions in listOf(none, none.copy(playPause = true), none.copy(seek = true), none.copy(volume = true), all)) {
             val granted = member.copy(room = member.room!!.copy(permissions = permissions))
             assertEquals(permissions, lanPlaybackControls(granted))
             assertEquals(LanPermissions(), lanPlaybackControls(granted.copy(room = member.room)))
@@ -27,6 +27,7 @@ class LanPlaybackControlsTest {
     @Test fun failedStreamCanBeRetriedEvenIfRoomStillReportsPlaying() {
         val playing = member.copy(room = member.room!!.copy(playback = LanPlayback(playing = true)))
         assertEquals("PAUSE", lanRoomPlayPauseIntent(playing))
+        assertEquals("PLAY_PAUSE", lanRoomPlayPauseIntent(playing.copy(audioSuspended = true)))
         assertEquals("PLAY_PAUSE", lanRoomPlayPauseIntent(playing.copy(error = "SOURCE")))
     }
 

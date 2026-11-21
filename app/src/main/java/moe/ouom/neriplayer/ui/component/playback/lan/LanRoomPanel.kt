@@ -106,12 +106,13 @@ private fun RoomControls(manager: LanSessionManager, state: LanSessionState, onD
     }
     SelectionContainer { Text("${state.address}:${state.port}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     val room = state.room
+    if (state.audioSuspended) Text(stringResource(CoreR.string.lan_audio_suspended))
     val playPauseIntent = lanRoomPlayPauseIntent(state)
     val pauseRoom = playPauseIntent == "PAUSE"
     room?.playback?.track?.let { track -> Text(track.name + " · " + track.artist, style = MaterialTheme.typography.titleMedium, maxLines = 2) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = { manager.requestPlayback(playPauseIntent, room?.playback?.track, 0.0) },
-            enabled = lanPlaybackControls(state).playPause) {
+            enabled = lanPlaybackControls(state).playPause || (state.synced && state.audioSuspended && room?.playback?.playing == true)) {
             Text(stringResource(if (pauseRoom) CoreR.string.lan_pause else CoreR.string.lan_play))
         }
         OutlinedButton(onClick = manager::sync, enabled = state.synced) { Text(stringResource(CoreR.string.lan_sync)) }
@@ -162,9 +163,6 @@ private fun RoomVolumeSlider(value: Float, commit: (Float) -> Unit) {
 @Composable
 internal fun LanPermissionsRow(permissions: LanPermissions, change: (LanPermissions) -> Unit) {
     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        LanPermissionChip(permissions.next, stringResource(CoreR.string.lan_permission_next_short)) {
-            change(permissions.copy(next = !permissions.next))
-        }
         LanPermissionChip(permissions.playPause, stringResource(CoreR.string.lan_permission_play_short)) {
             change(permissions.copy(playPause = !permissions.playPause))
         }

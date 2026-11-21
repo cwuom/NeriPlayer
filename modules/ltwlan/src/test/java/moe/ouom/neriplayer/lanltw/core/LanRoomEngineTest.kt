@@ -36,7 +36,7 @@ class LanRoomEngineTest {
         room.join("host", "Host", true)
         room.join("member", "Member", false)
         assertTrue(messages.filter { it.type == "WELCOME" }.all { it.room?.permissions == saved })
-        room.request("member", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions(true, true, true)))
+        room.request("member", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions()))
         assertEquals(saved, room.snapshot().permissions)
         room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions()))
         assertEquals(LanPermissions(), room.snapshot().permissions)
@@ -56,7 +56,7 @@ class LanRoomEngineTest {
         assertEquals(1f, f.room.snapshot().volume)
         assertEquals(1f, deviceVolume("host"))
 
-        val granted = LanPermissions(next = false, playPause = false, seek = false, volume = true)
+        val granted = LanPermissions(playPause = false, seek = false, volume = true)
         f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = granted))
         f.room.request("member", group)
         assertEquals(.5f, f.room.snapshot().volume)
@@ -84,7 +84,7 @@ class LanRoomEngineTest {
     private class Fixture {
         var now = 1000.0
         val sent = mutableListOf<Pair<String, LanMessage>>()
-        val room = LanRoomEngine("r", "room", LanClock { now }, LanPermissions(false, false, false)) { peer, message -> sent += peer to message }
+        val room = LanRoomEngine("r", "room", LanClock { now }, LanPermissions(playPause = false, seek = false)) { peer, message -> sent += peer to message }
         val song = ListenTogetherTrack("netease:1", "netease", "1", name = "Track", artist = "Artist", durationMs = 120_000)
         val stream = LanStreamResource("12345678-1234-1234-1234-123456789abc", "audio/mpeg")
         init { room.join("host", "Host", true); room.join("member", "Member", false); sent.clear() }
@@ -152,7 +152,7 @@ class LanRoomEngineTest {
     @Test fun volumePermissionsAndHostIdentityAreServerOwned() {
         val f = Fixture()
         assertFalse(f.room.join("other", "Other", true))
-        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions(true, true, true)))
+        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions()))
         f.room.request("host", LanMessage("SET_GLOBAL_VOLUME", volume = .5f))
         f.room.request("host", LanMessage("LAN_MEMBER_VOLUME", clientId = "member", volume = .4f))
         assertEquals(.5f, f.room.snapshot().volume)
@@ -160,14 +160,31 @@ class LanRoomEngineTest {
         f.room.request("member", LanMessage("PLAY", intent = "NEXT", track = f.song))
         assertEquals("LAN_HOST_PLAY", f.sent.last().second.type)
     }
-    @Test fun nextPermissionCannotBeUsedToSeekAndPlayPermissionCannotSwitchTracks() {
+    @Test fun revokingProgressBlocksBothQueueDirectionsTrackSelectionAndSeekButAllowsPlayPause() {
         val f = Fixture(); f.play(); f.loaded("host"); f.loaded("member")
-        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions(next = true, playPause = false, seek = false)))
-        f.room.request("member", LanMessage("PLAY", intent = "SEEK", track = f.song, trackTimeSeconds = 30.0))
+        val changed = f.song.copy(stableKey = "netease:2", audioId = "2")
+        val seek = LanMessage("PLAY", intent = "SEEK", track = f.song, trackTimeSeconds = 30.0)
+        val steps = listOf(-1.0, 1.0).map { LanMessage("LAN_REQUEST_STEP", audioSource = f.song.stableKey, trackTimeSeconds = it) }
+        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions(playPause = false)))
+        for (step in steps) {
+            f.room.request("member", step)
+            assertEquals("host" to LanMessage("LAN_HOST_STEP", trackTimeSeconds = step.trackTimeSeconds), f.sent.last())
+        }
+        f.room.request("member", LanMessage("PAUSE"))
         assertEquals("DENIED", f.sent.last().second.code)
-        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions(next = false, playPause = true, seek = false)))
-        f.room.request("member", LanMessage("PLAY", intent = "PLAY_PAUSE", track = f.song.copy(stableKey = "netease:2", audioId = "2")))
-        assertEquals("DENIED", f.sent.last().second.code)
+        f.room.request("member", seek)
+        f.loaded("host", 2); f.loaded("member", 2)
+        assertEquals(30.0, f.room.snapshot().playback.positionSeconds, .0001)
+
+        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions(seek = false)))
+        for (request in steps + listOf(seek, LanMessage("PLAY", intent = "NEXT", track = changed),
+                LanMessage("PLAY", intent = "PLAY_PAUSE", track = changed))) {
+            f.sent.clear()
+            f.room.request("member", request)
+            assertEquals("DENIED", f.sent.single().second.code)
+        }
+        f.room.request("member", LanMessage("PAUSE"))
+        assertFalse(f.room.snapshot().playback.playing)
     }
     @Test fun pauseIsScheduledAndLateJoinGetsTrackAndPosition() {
         val f = Fixture(); f.play(); f.loaded("host"); f.loaded("member"); f.now = 5000.0
@@ -236,7 +253,7 @@ class LanRoomEngineTest {
         val f = Fixture(); f.play(); f.loaded("host"); f.loaded("member")
         val request = LanMessage("LAN_REQUEST_STEP", audioSource = f.song.stableKey, trackTimeSeconds = 1.0)
         f.room.request("member", request); assertEquals("DENIED", f.sent.last().second.code)
-        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions(next = true, playPause = false, seek = false)))
+        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions(playPause = false)))
         f.room.request("member", request.copy(audioSource = "stale")); assertEquals("STALE", f.sent.last().second.code)
         f.room.request("member", request.copy(trackTimeSeconds = 4.0)); assertEquals("INVALID", f.sent.last().second.code)
         f.room.request("member", request)
@@ -261,8 +278,33 @@ class LanRoomEngineTest {
         val f = Fixture(); assertFalse(f.room.join("x", " ", false))
         assertFalse(f.room.join("x", "x".repeat(25), false))
         repeat(14) { assertTrue(f.room.join("p$it", "Peer", false)) }; assertFalse(f.room.join("overflow", "Peer", false))
-        f.now += 60_001; assertEquals(16, f.room.tick().size)
-        assertTrue(f.room.snapshot().members.isEmpty())
+        f.now += 60_001
+        assertTrue("the first tick after sleep must give connected peers time to reply", f.room.tick().isEmpty())
+        assertEquals(16, f.sent.count { it.second.type == "LIVENESS_PING" })
+        f.room.request("host", LanMessage("LIVENESS_PONG"))
+        f.now += 2_500
+        assertTrue(f.room.tick().isEmpty())
+        f.now += 2_500
+        assertEquals(15, f.room.tick().size)
+        assertEquals(listOf("host"), f.room.snapshot().members.map { it.id })
+    }
+    @Test fun aPeerCanDisconnectDuringAProbeWithoutSkippingOtherMembers() {
+        var now = 0.0
+        lateinit var room: LanRoomEngine
+        val probed = mutableListOf<String>()
+        room = LanRoomEngine("r", "Room", LanClock { now }) { id, message ->
+            if (message.type == "LIVENESS_PING") {
+                probed.add(id)
+                if (id == "member") room.leave(id)
+            }
+        }
+        room.join("host", "Host", true)
+        room.join("member", "Member", false)
+        room.join("other", "Other", false)
+        now = 90_000.0
+        assertTrue(room.tick().isEmpty())
+        assertEquals(listOf("host", "member", "other"), probed)
+        assertEquals(listOf("host", "other"), room.snapshot().members.map { it.id })
     }
     @Test fun lateJoinReceivesTheCanonicalRelayIdentityWithoutAFileHash() {
         val f = Fixture(); f.play(); f.loaded("host"); f.loaded("member")
@@ -299,10 +341,10 @@ class LanRoomEngineTest {
         }
     }
 
-    @Test fun seekOnlyMemberCanMovePausedPositionWithoutStartingPlayback() {
+    @Test fun progressOnlyMemberCanMovePausedPositionWithoutStartingPlayback() {
         val f = Fixture(); f.play(); f.loaded("host"); f.loaded("member")
         f.room.request("host", LanMessage("PAUSE"))
-        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions(false, false, true)))
+        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions(playPause = false)))
         f.room.request("member", LanMessage("PLAY", intent = "SEEK", track = f.song, trackTimeSeconds = 25.0))
         assertEquals(1, f.sent.count { it.second.type == "LAN_HOST_PLAY" })
         assertEquals(f.stream, f.loads().last().second.event?.streamResource)

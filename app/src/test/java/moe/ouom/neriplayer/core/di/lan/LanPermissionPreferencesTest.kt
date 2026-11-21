@@ -23,17 +23,15 @@ class LanPermissionPreferencesTest {
             .`when`(repository).setSetting(eq(setting) ?: setting, anyInt())
         val preferences = LanPermissionPreferences(repository)
         assertEquals(7, setting.defaultValue)
-        assertEquals(LanPermissions(true, true, true, false), preferences.load())
-        for ((value, bits) in listOf(
-            LanPermissions(false, false, false, true) to 8,
-            LanPermissions(true, true, true, true) to 15,
-            LanPermissions(true, false, true, false) to 5,
-            LanPermissions(false, true, false, false) to 2,
-            LanPermissions(false, false, false, false) to 0
-        )) {
-            preferences.save(value)
-            assertEquals(bits, stored.value)
-            assertEquals(value, LanPermissionPreferences(repository).load())
+        assertEquals(LanPermissions(), preferences.load())
+        for (oldBits in 0..15) {
+            stored.value = oldBits
+            val progress = oldBits and 1 != 0 && oldBits and 4 != 0
+            val expected = LanPermissions(playPause = oldBits and 2 != 0, seek = progress, volume = oldBits and 8 != 0)
+            assertEquals("legacy settings $oldBits", expected, preferences.load())
+            preferences.save(expected)
+            assertEquals(if (progress) oldBits else oldBits and 10, stored.value)
+            assertEquals(expected, LanPermissionPreferences(repository).load())
         }
     }
 }

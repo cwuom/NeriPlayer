@@ -22,7 +22,7 @@ object LanRoomPolicy {
         if (intent !in setOf("NEXT", "SEEK", "PLAY_PAUSE")) return false
         if (changed && intent != "NEXT") return false
         if (host) return true
-        return when (intent) { "NEXT" -> permissions.next; "SEEK" -> permissions.seek; else -> permissions.playPause }
+        return if (intent == "PLAY_PAUSE") permissions.playPause else permissions.seek
     }
     fun validIdentity(track: ListenTogetherTrack): Boolean =
         track.channelId in channels && validProviderId(track) &&

@@ -10,14 +10,14 @@ import moe.ouom.neriplayer.lanltw.session.LanSessionManager
 
 /** Keep the UI closed while joining/reconnecting, until the authoritative room arrives. */
 internal fun lanPlaybackControls(state: LanSessionState): LanPermissions = when {
-    !state.active -> LanPermissions(true, true, true)
-    !state.synced || state.room == null -> LanPermissions(false, false, false)
-    state.hosting -> LanPermissions(true, true, true)
+    !state.active -> LanPermissions()
+    !state.synced || state.room == null -> LanPermissions(playPause = false, seek = false)
+    state.hosting -> LanPermissions()
     else -> requireNotNull(state.room).permissions
 }
 
 internal fun lanRoomPlayPauseIntent(state: LanSessionState): String =
-    if (state.room?.playback?.playing == true && !LanSessionManager.canRetryPlayback(state.error)) "PAUSE" else "PLAY_PAUSE"
+    if (state.room?.playback?.playing == true && !state.audioSuspended && !LanSessionManager.canRetryPlayback(state.error)) "PAUSE" else "PLAY_PAUSE"
 
 internal data class LanPlayerControls(val permissions: LanPermissions, val preparing: Boolean)
 

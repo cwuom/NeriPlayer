@@ -1,13 +1,16 @@
 package moe.ouom.neriplayer.data.model.lan
 
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 
 const val LAN_PROTOCOL_VERSION = 4
 
-@Serializable data class LanPermissions(
-    val next: Boolean = true,
+@Serializable(with = LanPermissionsSerializer::class)
+data class LanPermissions(
     val playPause: Boolean = true,
     val seek: Boolean = true,
     val volume: Boolean = false
@@ -15,6 +18,31 @@ const val LAN_PROTOCOL_VERSION = 4
     fun allowsMemberDeviceVolume(selfId: String?, target: LanMember): Boolean =
         selfId != null && (target.id == selfId || (volume && target.host))
 }
+
+internal object LanPermissionsSerializer : KSerializer<LanPermissions> {
+    @Serializable
+    private data class WirePermissions(
+        val next: Boolean = true,
+        val playPause: Boolean = true,
+        val seek: Boolean = true,
+        val volume: Boolean = false
+    )
+
+    private val wire = WirePermissions.serializer()
+    override val descriptor = wire.descriptor
+
+    override fun serialize(encoder: Encoder, value: LanPermissions) {
+        val flags = WirePermissions(next = value.seek, playPause = value.playPause, seek = value.seek, volume = value.volume)
+        encoder.encodeSerializableValue(wire, flags)
+    }
+
+    override fun deserialize(decoder: Decoder): LanPermissions {
+        val flags = decoder.decodeSerializableValue(wire)
+        // 旧版房主可以分别关闭切歌和拖动进度，合并时保留任一限制
+        return LanPermissions(playPause = flags.playPause, seek = flags.next && flags.seek, volume = flags.volume)
+    }
+}
+
 @Serializable data class LanMember(@SerialName("clientId") val id: String, @SerialName("username") val name: String, @SerialName("isAdmin") val host: Boolean = false, @SerialName("rtt") val rttMs: Double = 0.0, val volume: Float = 1f)
 @Serializable data class LanPlayback(val track: ListenTogetherTrack? = null, val positionSeconds: Double = 0.0, val playing: Boolean = false, val executeAtMs: Double = 0.0, val revision: Long = 0, val preparing: Boolean = false)
 @Serializable data class LanRoom(val id: String, val name: String, val members: List<LanMember> = emptyList(), val permissions: LanPermissions = LanPermissions(), val volume: Float = 1f, val playback: LanPlayback = LanPlayback())
@@ -63,5 +91,5 @@ data class LanSessionState(
     val hosting: Boolean = false, val address: String = "", val port: Int = 0,
     val synced: Boolean = false, val rttMs: Double = 0.0, val nudgeMs: Int = 0,
     val error: String? = null, val preparing: Boolean = false,
-    val receivedBytes: Long = 0, val totalBytes: Long = 0
+    val receivedBytes: Long = 0, val totalBytes: Long = 0, val audioSuspended: Boolean = false
 ) { val active: Boolean get() = phase != "IDLE" }

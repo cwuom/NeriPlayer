@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -39,23 +41,22 @@ class LanRoomEntryTest {
                 }
             }
         }
-        val next = compose.onNodeWithText(app.getString(R.string.lan_permission_next_short))
+        compose.onAllNodes(hasClickAction()).assertCountEquals(3)
         val play = compose.onNodeWithText(app.getString(R.string.lan_permission_play_short))
         val seek = compose.onNodeWithText(app.getString(R.string.lan_permission_seek_short))
         val volume = compose.onNodeWithText(app.getString(R.string.lan_permission_volume_short))
-        next.assertIsSelected()
         play.assertIsSelected()
         seek.assertIsSelected()
         volume.assertIsDisplayed().assertIsNotSelected()
         volume.performClick().assertIsSelected()
-        next.performClick().assertIsNotSelected()
-        play.performClick().assertIsNotSelected()
         seek.performClick().assertIsNotSelected()
-        play.performClick().assertIsSelected()
+        compose.runOnIdle { assertEquals(LanPermissions(seek = false, volume = true), permissions.value) }
+        play.performClick().assertIsNotSelected()
         seek.performClick().assertIsSelected()
-        compose.runOnIdle { assertEquals(LanPermissions(false, true, true, volume = true), permissions.value) }
+        compose.runOnIdle { assertEquals(LanPermissions(playPause = false, volume = true), permissions.value) }
+        play.performClick().assertIsSelected()
         volume.performClick().assertIsNotSelected()
-        compose.runOnIdle { assertEquals(LanPermissions(false, true, true), permissions.value) }
+        compose.runOnIdle { assertEquals(LanPermissions(), permissions.value) }
     }
     @Test fun createAndJoinAreVisibleAndActiveRoomUsesManage() {
         val app = ApplicationProvider.getApplicationContext<Application>()

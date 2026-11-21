@@ -12,15 +12,15 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 internal object LanPlaybackBinding {
     @Volatile var externalAudio: Boolean = false
     var command: ((String, ListenTogetherTrack?, Double) -> Unit)? = null
-    var interruptAudio: (() -> Unit)? = null
+    var interruptAudio: ((String) -> Unit)? = null
     var stopped: (() -> Unit)? = null
     var isHost: () -> Boolean = { false }
     var offeredQueue: List<SongItem>? = null
     @Volatile var guestPlayback: LanGuestPlaybackSnapshot? = null
     val active: Boolean get() = command != null
-    fun interrupt(): Boolean {
+    fun interrupt(reason: String = "AUDIO_SUSPENDED"): Boolean {
         if (!externalAudio) return false
-        interruptAudio?.invoke()
+        interruptAudio?.invoke(reason)
         return true
     }
     fun safetyPause(source: PlaybackCommandSource): Boolean =

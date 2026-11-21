@@ -43,6 +43,22 @@ class LanPlaybackSchedulerTest {
         assertEquals(1, p.plays); assertTrue(p.pauses > 0)
         owner.close()
     }
+    @Test fun safetyPauseCancelsFuturePlaybackButLetsRoomPreparationFinish() = runTest {
+        val p = Port().apply { prepareDelay = 100 }
+        val sent = mutableListOf<LanMessage>()
+        val owner = LanPlaybackScheduler(this, p, LanClock { testScheduler.currentTime.toDouble() },
+            { 0.0 }, { 0 }, { true }, { sent += it }, {})
+        owner.load(LanMessage("ROOM_EVENT", revision = 1, track = track, streamResource = stream, loadGeneration = 1))
+        owner.schedule(action("PLAY", 1, 1000.0))
+        runCurrent()
+        assertTrue(owner.playScheduled)
+        owner.interruptPlayback()
+        assertFalse(owner.playScheduled)
+        advanceUntilIdle()
+        assertEquals(0, p.plays)
+        assertEquals(listOf("AUDIO_SOURCE_READY"), sent.map { it.type })
+        owner.close()
+    }
     @Test fun staleActionsAndCancelledLoadsNeverPlayOrAcknowledge() = runTest {
         val p = Port().apply { prepareDelay = 100 }
         val sent = mutableListOf<LanMessage>()

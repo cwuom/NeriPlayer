@@ -971,7 +971,7 @@ fun LyricsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 HapticIconButton(onClick = { PlayerManager.previous() },
-                    enabled = lanControls.permissions.next,
+                    enabled = lanControls.permissions.seek,
                     modifier = Modifier
                     .then(
                         if (sharedTransitionScope != null && animatedContentScope != null) {
@@ -1028,7 +1028,7 @@ fun LyricsScreen(
                 }
 
                 HapticIconButton(onClick = { PlayerManager.next() },
-                    enabled = lanControls.permissions.next,
+                    enabled = lanControls.permissions.seek,
                     modifier = Modifier
                         .then(
                             if (sharedTransitionScope != null && animatedContentScope != null) {
