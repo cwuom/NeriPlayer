@@ -70,17 +70,10 @@ internal fun StartupLanguageStepBody(
             )
         }
         LanguageManager.Language.entries.forEach { language ->
-            val selected = language == selectedLanguage
-            val handle = if (selected) {
-                rememberStartupSharedHandle(StartupSharedKeys.choice(StartupChoice.Language))
-            } else {
-                null
-            }
             StartupLanguageCard(
                 language = language,
-                selected = selected,
-                onClick = { onSelectLanguage(language) },
-                modifier = Modifier.startupSharedBounds(handle, zIndexInOverlay = 3f)
+                selected = language == selectedLanguage,
+                onClick = { onSelectLanguage(language) }
             )
         }
     }
@@ -107,7 +100,7 @@ private fun StartupLanguageCard(
         targetValue = when {
             clean -> colors.surfaceContainerHigh
             selected -> colors.secondaryContainer
-            else -> colors.surfaceContainerHigh.copy(alpha = 0.72f)
+            else -> colors.surfaceContainerLow
         },
         animationSpec = tween(260),
         label = "startup_language_container"

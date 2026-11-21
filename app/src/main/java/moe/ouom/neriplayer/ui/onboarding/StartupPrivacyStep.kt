@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,7 +37,6 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.PhonelinkLock
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.TouchApp
@@ -118,7 +118,6 @@ internal fun StartupPrivacyStepBody(
                 }
             }
         }
-        StartupPrivacyChangesCard()
         StartupPrivacyPolicyEntry(policyOpen = policyOpen, onOpenPolicy = onOpenPolicy)
     }
 }
@@ -186,50 +185,6 @@ private fun StartupPrivacyPrincipleCard(
 }
 
 @Composable
-private fun StartupPrivacyChangesCard() {
-    val colors = MaterialTheme.colorScheme
-    val clean = NeriDesign.isClean
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = OnboardingCardShape,
-        color = if (clean) colors.tertiary.copy(alpha = 0.08f) else colors.tertiaryContainer.copy(alpha = 0.7f),
-        contentColor = if (clean) colors.onSurface else colors.onTertiaryContainer
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Rounded.NewReleases, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(20.dp))
-                Text(
-                    text = stringResource(AppR.string.disclaimer_changes_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            listOf(
-                AppR.string.disclaimer_changes_item1,
-                AppR.string.disclaimer_changes_item2,
-                AppR.string.disclaimer_changes_item3
-            ).forEach { item ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 8.dp)
-                            .size(5.dp)
-                            .background(colors.tertiary, CircleShape)
-                    )
-                    Text(text = stringResource(item), style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun StartupPrivacyPolicyEntry(
     policyOpen: Boolean,
     onOpenPolicy: () -> Unit
@@ -252,7 +207,7 @@ private fun StartupPrivacyPolicyEntry(
                 onClick = onOpenPolicy,
                 modifier = Modifier
                     .onSizeChanged { size -> if (size.height > 0) entryHeightPx = size.height }
-                    .startupSharedBounds(handle, zIndexInOverlay = 4f, opaqueContainer = true)
+                    .startupContainerTransform(handle, zIndexInOverlay = 4f)
             )
         }
     }
@@ -366,7 +321,8 @@ internal fun StartupPrivacyPolicyOverlay(
     agreeLabel: String,
     agreeEnabled: Boolean,
     agreeProgress: Float?,
-    onAgree: () -> Unit
+    onAgree: () -> Unit,
+    collapseToEntry: Boolean = true
 ) {
     val colors = MaterialTheme.colorScheme
     val tokens = NeriDesign.tokens
@@ -387,12 +343,20 @@ internal fun StartupPrivacyPolicyOverlay(
                 )
         )
     }
+    // 同意后会立即切到下一步, 入口卡片随旧页一起退场, 这时再收回去会找不到落点而卡住
+    // 所以同意时改为自身淡出缩小, 只有留在本页关闭时才收回到入口卡片
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(1)),
-        exit = fadeOut(tween(1))
+        exit = if (collapseToEntry) {
+            fadeOut(tween(1))
+        } else {
+            fadeOut(tween(STARTUP_POLICY_DISMISS_MILLIS)) +
+                scaleOut(tween(STARTUP_POLICY_DISMISS_MILLIS), targetScale = 0.96f)
+        }
     ) {
         val handle = rememberStartupSharedHandle(StartupSharedKeys.PrivacyPolicy, this)
+            .takeIf { collapseToEntry }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -404,7 +368,7 @@ internal fun StartupPrivacyPolicyOverlay(
                 modifier = Modifier
                     .widthIn(max = 720.dp)
                     .fillMaxSize()
-                    .startupSharedBounds(handle, zIndexInOverlay = 4f, opaqueContainer = true)
+                    .startupContainerTransform(handle, zIndexInOverlay = 4f)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -514,3 +478,5 @@ internal fun startupPrivacyAgreeLabel(accepted: Boolean, remainingSeconds: Int):
     remainingSeconds > 0 -> stringResource(AppR.string.disclaimer_read_countdown, remainingSeconds)
     else -> stringResource(AppR.string.disclaimer_agree_countdown)
 }
+
+internal const val STARTUP_POLICY_DISMISS_MILLIS = 200

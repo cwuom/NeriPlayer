@@ -18,6 +18,7 @@ import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.SemanticsMatcher
@@ -29,6 +30,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -45,6 +47,7 @@ import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.locale.LanguageManager.Language
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.core.startup.debug.debugBuildWarningDataStore
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.appearance.PreviewThemePromptRepository
 import moe.ouom.neriplayer.data.settings.dataStore
@@ -135,6 +138,33 @@ class MainActivityLanguageContinuityTest {
             assertFalse(runBlocking {
                 SettingsRepository(context).startupOnboardingCompletedFlow.filterNotNull().first()
             })
+        }
+
+    @Test
+    fun onboardingStyleCardsSwitchBackAndForthWithRealTaps() =
+        withPreparedActivity(onboarding = true) { _, _ ->
+            val settings = SettingsRepository(context)
+            waitForText(label(AppR.string.onboarding_language_title, Language.CHINESE))
+            clickText(AppR.string.onboarding_action_next, Language.CHINESE)
+            waitForText(label(AppR.string.onboarding_style_title, Language.CHINESE))
+            val start = runBlocking { settings.uiStyleFlow.first() }
+            val other = if (start == UiStyle.Clean) UiStyle.Material else UiStyle.Clean
+            // 必须用真实触摸, 并先点一下已选中的卡片: 这一下不会触发重组, 之后切回原风格曾经毫无反应
+            listOf(start, other, start, other).forEach { target ->
+                val card = if (target == UiStyle.Clean) {
+                    label(AppR.string.onboarding_style_clean, Language.CHINESE)
+                } else {
+                    context.getString(AppR.string.onboarding_style_material)
+                }
+                composeRule.onNodeWithContentDescription(card).performTouchInput {
+                    down(center)
+                    advanceEventTime(60L)
+                    up()
+                }
+                awaitUi { runBlocking { settings.uiStyleFlow.first() } == target }
+                // 等圆形揭示播完, 揭示进行中会忽略新的切换请求
+                Thread.sleep(StyleRevealSettleMillis)
+            }
         }
 
     @Test
@@ -438,6 +468,7 @@ class MainActivityLanguageContinuityTest {
 
     private companion object {
         const val BluetoothSearchQuery = "blueto"
+        const val StyleRevealSettleMillis = 1_600L
         val LanguageRoundTrips = listOf(Language.ENGLISH, Language.CHINESE, Language.ENGLISH, Language.CHINESE)
         val MotionBooleanKeys = listOf(
             "advanced_blur_enabled",

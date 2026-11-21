@@ -1,27 +1,28 @@
 package moe.ouom.neriplayer.ui.onboarding
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
-import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
 
 class StartupOnboardingProgressTest {
 
     @Test
-    fun lyricPreviewKeepsActiveLineAtViewportCenter() {
-        val lineHeights = listOf(20, 28, 20, 20, 20)
-        val spacing = 6
-        val offset = resolveOnboardingLyricActiveCenterOffset(
-            viewportHeightPx = 160,
-            lineHeightsPx = lineHeights,
-            lineSpacingPx = spacing,
-            activeIndex = 2
+    fun stepTransitionKeepsBothPagesGlassActive() {
+        // 旧页卡片在淡出期间必须保留玻璃底板, 否则前进后退会闪一下
+        assertEquals(
+            setOf<Any>(StartupStep.Privacy, StartupStep.Platforms),
+            resolveStartupGlassNavigationOwners(StartupStep.Privacy, StartupStep.Platforms)
         )
-        val firstTop = ((160 - (lineHeights.sum() + spacing * 4)) / 2)
-            .coerceAtLeast(0)
-        val activeTop = firstTop + lineHeights.take(2).sum() + spacing * 2 + offset
-        assertEquals(160 / 2, activeTop + lineHeights[2] / 2)
+        assertEquals(
+            setOf<Any>(StartupStep.Platforms, StartupStep.Privacy),
+            resolveStartupGlassNavigationOwners(StartupStep.Platforms, StartupStep.Privacy)
+        )
+        assertEquals(
+            setOf<Any>(StartupStep.Lyrics),
+            resolveStartupGlassNavigationOwners(StartupStep.Lyrics, StartupStep.Lyrics)
+        )
     }
 
     @Test
@@ -76,26 +77,27 @@ class StartupOnboardingProgressTest {
     }
 
     @Test
-    fun navigationIsBlockedWhileTransitioningOrFinishing() {
+    fun forwardTapsAreOnlyGuardedRightAfterAStepChange() {
+        // 连续点按继续不能被吞掉: 守卫只覆盖切页后的极短窗口, 与动画是否收尾无关
         assertEquals(
             true,
             canNavigateStartupOnboardingStep(
                 finishing = false,
-                transitionRunning = false
+                millisSinceLastStepChange = STARTUP_STEP_TAP_GUARD_MILLIS
             )
         )
         assertEquals(
             false,
             canNavigateStartupOnboardingStep(
                 finishing = false,
-                transitionRunning = true
+                millisSinceLastStepChange = STARTUP_STEP_TAP_GUARD_MILLIS - 1
             )
         )
         assertEquals(
             false,
             canNavigateStartupOnboardingStep(
                 finishing = true,
-                transitionRunning = false
+                millisSinceLastStepChange = 10_000L
             )
         )
         assertEquals(true, canNavigateStartupOnboardingBack(finishing = false, stepIndex = 2))
@@ -160,32 +162,6 @@ class StartupOnboardingProgressTest {
     }
 
     @Test
-    fun coverPreviewShowsMoreLinesWhenLyricsAreSmaller() {
-        assertEquals(8, resolveOnboardingCoverPreviewLineCount(0.5f))
-        assertEquals(3, resolveOnboardingCoverPreviewLineCount(1.0f))
-        assertEquals(3, resolveOnboardingCoverPreviewLineCount(1.6f))
-    }
-
-    @Test
-    fun playbackPreviewKeepsThreeDefaultLinesWithRoomForTheLyricArea() {
-        assertEquals(
-            112f,
-            resolveOnboardingPlaybackPreviewLyricHeight(1.0f).value,
-            0.001f
-        )
-        assertEquals(
-            472f,
-            resolveOnboardingPlaybackPreviewHeight(1.0f).value,
-            0.001f
-        )
-        assertEquals(
-            136f,
-            resolveOnboardingPlaybackPreviewLyricHeight(0.5f).value,
-            0.001f
-        )
-    }
-
-    @Test
     fun playbackSourceFallbackRequiresConfirmationOnlyWhenEnabling() {
         assertEquals(true, shouldConfirmStartupPlaybackSourceFallback(true, false))
         assertEquals(false, shouldConfirmStartupPlaybackSourceFallback(false, true))
@@ -221,45 +197,21 @@ class StartupOnboardingProgressTest {
     }
 
     @Test
-    fun coverPreviewKeepsTheActiveLyricCenteredAsLinesShrink() {
-        val defaultWindow = resolveOnboardingCoverPreviewWindow(
-            totalLineCount = 12,
-            lineCount = 3
-        )
-        val compact = resolveOnboardingCoverPreviewWindow(
-            totalLineCount = 12,
-            lineCount = 8
-        )
-        val medium = resolveOnboardingCoverPreviewWindow(
-            totalLineCount = 12,
-            lineCount = 6
-        )
-
-        assertEquals(1, defaultWindow.activeIndex)
-        assertEquals(0, defaultWindow.startIndex)
-        assertEquals(0, compact.startIndex)
-        assertEquals(4, compact.activeIndex)
-        assertEquals(0, medium.startIndex)
-        assertEquals(3, medium.activeIndex)
+    fun simulatedPlaybackLoopsInsideTheLyricWindow() {
+        // 预览一直开着也要有歌词在走, 越过最后一句就回到第一句
+        assertEquals(1_500L, advanceStartupPreviewPosition(1_000L, 500L, loopStartMs = 0L, loopEndMs = 10_000L))
+        assertEquals(500L, advanceStartupPreviewPosition(9_800L, 700L, loopStartMs = 0L, loopEndMs = 10_000L))
+        assertEquals(2_000L, advanceStartupPreviewPosition(500L, 0L, loopStartMs = 2_000L, loopEndMs = 6_000L))
+        assertEquals(1_000L, advanceStartupPreviewPosition(1_000L, -50L, loopStartMs = 0L, loopEndMs = 10_000L))
+        assertEquals(42L, advanceStartupPreviewPosition(42L, 100L, loopStartMs = 5L, loopEndMs = 5L))
     }
 
     @Test
-    fun playbackPreviewKeepsToolbarHeightScaledWithControlSize() {
-        assertEquals(
-            64f,
-            resolveOnboardingPlaybackToolbarHeight(
-                controlSize = PlaybackControlSize.MEDIUM,
-                docked = true
-            ).value,
-            0.001f
-        )
-        assertEquals(
-            69.6f,
-            resolveOnboardingPlaybackToolbarHeight(
-                controlSize = PlaybackControlSize.LARGE,
-                docked = false
-            ).value,
-            0.001f
-        )
+    fun simulatedLyricsStartPlayingFromTheFirstLine() {
+        val lyrics = buildStartupPreviewLyrics(listOf("a", "b", "c"))
+        assertEquals(3, lyrics.size)
+        assertTrue(STARTUP_PREVIEW_START_MS in lyrics.first().startTimeMs until lyrics.first().endTimeMs)
+        lyrics.zipWithNext { previous, next -> assertEquals(previous.endTimeMs, next.startTimeMs) }
+        assertTrue(lyrics.last().endTimeMs < STARTUP_PREVIEW_DURATION_MS)
     }
 }

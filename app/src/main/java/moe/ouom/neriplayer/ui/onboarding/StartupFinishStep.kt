@@ -74,14 +74,12 @@ internal fun StartupFinishStepBody(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             summaries.forEach { summary ->
-                val handle = rememberStartupSharedHandle(StartupSharedKeys.choice(summary.choice))
                 StartupFinishChoiceTile(
                     summary = summary,
                     onClick = { onChoiceClick(summary.choice) },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .startupSharedBounds(handle, zIndexInOverlay = 3f)
                 )
             }
         }

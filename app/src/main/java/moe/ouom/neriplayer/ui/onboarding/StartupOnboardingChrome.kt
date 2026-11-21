@@ -17,6 +17,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -39,6 +40,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,8 +54,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +65,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -81,6 +86,7 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.ui.haptic.HapticButton
@@ -127,7 +133,6 @@ internal fun StartupAmbientBackdrop(
     val drift = spring<Offset>(dampingRatio = 1f, stiffness = 18f)
     val first by animateOffsetAsState(anchors.first, drift, label = "startup_ambient_first")
     val second by animateOffsetAsState(anchors.second, drift, label = "startup_ambient_second")
-    val third by animateOffsetAsState(anchors.third, drift, label = "startup_ambient_third")
     val phase by rememberInfiniteTransition(label = "startup_ambient").animateFloat(
         initialValue = 0f,
         targetValue = 2f * PI.toFloat(),
@@ -135,11 +140,12 @@ internal fun StartupAmbientBackdrop(
         label = "startup_ambient_phase"
     )
     val strength = if (hasCustomBackground) 0.45f else 1f
+    // 同色相的两层光晕, 不混入第三种色相, 避免 Material 下颜色叠成灰紫色
     val palette = when {
-        clean && dark -> listOf(colors.primary.copy(alpha = 0.2f), colors.tertiary.copy(alpha = 0.1f), colors.primary.copy(alpha = 0.08f))
-        clean -> listOf(colors.primary.copy(alpha = 0.13f), colors.tertiary.copy(alpha = 0.07f), colors.primary.copy(alpha = 0.06f))
-        dark -> listOf(colors.primary.copy(alpha = 0.22f), colors.tertiary.copy(alpha = 0.18f), colors.secondary.copy(alpha = 0.14f))
-        else -> listOf(colors.primaryContainer.copy(alpha = 0.85f), colors.tertiaryContainer.copy(alpha = 0.7f), colors.secondaryContainer.copy(alpha = 0.7f))
+        clean && dark -> listOf(colors.primary.copy(alpha = 0.18f), colors.primary.copy(alpha = 0.07f))
+        clean -> listOf(colors.primary.copy(alpha = 0.1f), colors.primary.copy(alpha = 0.045f))
+        dark -> listOf(colors.primary.copy(alpha = 0.16f), colors.secondary.copy(alpha = 0.08f))
+        else -> listOf(colors.primaryContainer.copy(alpha = 0.55f), colors.secondaryContainer.copy(alpha = 0.32f))
     }.map { color -> color.copy(alpha = color.alpha * strength) }
     Box(
         modifier = modifier
@@ -167,7 +173,6 @@ internal fun StartupAmbientBackdrop(
                 }
                 blob(first, palette[0], if (clean) 0.62f else 0.58f, 0f)
                 blob(second, palette[1], if (clean) 0.48f else 0.5f, 2.1f)
-                blob(third, palette[2], 0.46f, 4.2f)
             }
     )
 }
@@ -288,24 +293,37 @@ internal fun StartupChoiceRail(
     onChoiceClick: (StartupChoice) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val scroll = rememberScrollState()
+    val visibleCount = summaries.count { isStartupChoiceInRail(it.choice, currentStep) }
+    LaunchedEffect(visibleCount) {
+        // 新的选择展开时跟着滑到末尾, 窄屏或大字号下最新一项也能完整露出来
+        withTimeoutOrNull(STARTUP_CHOICE_RAIL_FOLLOW_MILLIS) {
+            snapshotFlow { scroll.maxValue }.collect { scroll.scrollTo(it) }
+        }
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
+            .startupHorizontalEdgeFade(
+                startStrength = { if (scroll.canScrollBackward) 1f else 0f },
+                endStrength = { if (scroll.canScrollForward) 1f else 0f }
+            )
+            .horizontalScroll(scroll),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         summaries.forEach { summary ->
             AnimatedVisibility(
                 visible = isStartupChoiceInRail(summary.choice, currentStep),
-                enter = fadeIn(tween(220)) + expandHorizontally(spring(0.9f, 400f)),
-                exit = fadeOut(tween(160)) + shrinkHorizontally(tween(260))
+                // 宽度展开时内容按自身宽度测量再裁切, 文字不会被挤压省略
+                enter = expandHorizontally(spring(0.9f, 420f), expandFrom = Alignment.Start) +
+                    fadeIn(tween(200, delayMillis = 80)) + scaleIn(spring(0.6f, 520f), initialScale = 0.7f),
+                exit = fadeOut(tween(120)) + shrinkHorizontally(tween(220), shrinkTowards = Alignment.Start)
             ) {
-                val handle = rememberStartupSharedHandle(StartupSharedKeys.choice(summary.choice), this)
                 StartupChoicePill(
                     summary = summary,
                     onClick = { onChoiceClick(summary.choice) },
-                    modifier = Modifier.startupSharedBounds(handle, zIndexInOverlay = 3f)
+                    modifier = Modifier.wrapContentWidth(Alignment.Start, unbounded = true)
                 )
             }
         }
@@ -369,10 +387,12 @@ internal fun StartupActionBar(
     ) {
         AnimatedVisibility(
             visible = showBack,
-            enter = fadeIn(tween(200)) + expandHorizontally(spring(0.86f, 380f)),
-            exit = fadeOut(tween(140)) + shrinkHorizontally(tween(220))
+            enter = expandHorizontally(spring(0.86f, 380f), expandFrom = Alignment.Start) + fadeIn(tween(180, delayMillis = 60)),
+            exit = fadeOut(tween(110)) + shrinkHorizontally(tween(220), shrinkTowards = Alignment.Start)
         ) {
-            StartupBackButton(enabled = backEnabled, onClick = onBack)
+            Box(modifier = Modifier.wrapContentWidth(Alignment.Start, unbounded = true)) {
+                StartupBackButton(enabled = backEnabled, onClick = onBack)
+            }
         }
         StartupPrimaryButton(
             label = primaryLabel,
@@ -465,8 +485,9 @@ private fun StartupPrimaryButton(
             AnimatedContent(
                 targetState = label,
                 transitionSpec = {
-                    (slideInVertically(spring(0.86f, 420f)) { height -> height / 2 } + fadeIn(tween(180)))
-                        .togetherWith(slideOutVertically(tween(160)) { height -> -height / 2 } + fadeOut(tween(120)))
+                    // 旧文字先离场再进新文字, 避免两行字叠在一起
+                    (slideInVertically(spring(0.86f, 420f)) { height -> height / 2 } + fadeIn(tween(160, delayMillis = 80)))
+                        .togetherWith(slideOutVertically(tween(140)) { height -> -height / 2 } + fadeOut(tween(80)))
                         .using(SizeTransform(clip = false))
                 },
                 label = "startup_primary_label"
@@ -510,33 +531,42 @@ internal fun Modifier.startupEdgeFade(
 ): Modifier = graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
     .drawWithContent {
         drawContent()
-        val top = topStrength().coerceIn(0f, 1f)
-        if (top > 0f) {
-            val height = topHeight.toPx()
-            drawRect(
-                brush = Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 1f - top),
-                    1f to Color.Black,
-                    startY = 0f,
-                    endY = height
-                ),
-                size = Size(size.width, height),
-                blendMode = BlendMode.DstIn
-            )
-        }
-        val bottom = bottomStrength().coerceIn(0f, 1f)
-        if (bottom > 0f) {
-            val height = bottomHeight.toPx()
-            drawRect(
-                brush = Brush.verticalGradient(
-                    0f to Color.Black,
-                    1f to Color.Black.copy(alpha = 1f - bottom),
-                    startY = size.height - height,
-                    endY = size.height
-                ),
-                topLeft = Offset(0f, size.height - height),
-                size = Size(size.width, height),
-                blendMode = BlendMode.DstIn
-            )
-        }
+        drawStartupEdgeFade(horizontal = false, leading = true, strength = topStrength(), length = topHeight.toPx())
+        drawStartupEdgeFade(horizontal = false, leading = false, strength = bottomStrength(), length = bottomHeight.toPx())
     }
+
+/** 横向滚动行两端还有内容时渐隐, 提示可以继续滑动, 不再硬截断 */
+internal fun Modifier.startupHorizontalEdgeFade(
+    startStrength: () -> Float,
+    endStrength: () -> Float,
+    width: Dp = 24.dp
+): Modifier = graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        drawStartupEdgeFade(horizontal = true, leading = true, strength = startStrength(), length = width.toPx())
+        drawStartupEdgeFade(horizontal = true, leading = false, strength = endStrength(), length = width.toPx())
+    }
+
+private fun DrawScope.drawStartupEdgeFade(horizontal: Boolean, leading: Boolean, strength: Float, length: Float) {
+    val amount = strength.coerceIn(0f, 1f)
+    if (amount <= 0f) return
+    val extent = if (horizontal) size.width else size.height
+    val from = if (leading) 0f else extent - length
+    val to = if (leading) length else extent
+    val faded = Color.Black.copy(alpha = 1f - amount)
+    val first = if (leading) faded else Color.Black
+    val last = if (leading) Color.Black else faded
+    val brush = if (horizontal) {
+        Brush.horizontalGradient(0f to first, 1f to last, startX = from, endX = to)
+    } else {
+        Brush.verticalGradient(0f to first, 1f to last, startY = from, endY = to)
+    }
+    drawRect(
+        brush = brush,
+        topLeft = if (horizontal) Offset(from, 0f) else Offset(0f, from),
+        size = if (horizontal) Size(length, size.height) else Size(size.width, length),
+        blendMode = BlendMode.DstIn
+    )
+}
+
+private const val STARTUP_CHOICE_RAIL_FOLLOW_MILLIS = 700L

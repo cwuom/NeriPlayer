@@ -91,6 +91,10 @@
     <string name="onboarding_controls_desc">选择控件大小和位置，预览会立即反映你的选择</string>
     <string name="onboarding_controls_preview_song">夜航</string>
     <string name="onboarding_controls_preview_artist">NeriPlayer</string>
+    <string name="onboarding_preview_hint_title">实机预览</string>
+    <string name="onboarding_preview_hint_controls_desc">点按或上滑下方的迷你播放器，打开和应用里一模一样的播放页，调整会实时生效</string>
+    <string name="onboarding_preview_hint_lyrics_desc">点按下方的迷你播放器会直接进入歌词页，和应用里一模一样，调整会实时生效</string>
+    <string name="onboarding_preview_hint_open">打开</string>
     <string name="onboarding_controls_preview_lyric_1">昨夜小楼又东风</string>
     <string name="onboarding_controls_preview_lyric_2">恰似一江春水向东流</string>
     <string name="onboarding_controls_preview_lyric_3">问君能有几多愁</string>
@@ -105,8 +109,6 @@
     <string name="onboarding_lyrics_size_value">当前：%1$d%%</string>
     <string name="onboarding_lyrics_title">预览歌词页</string>
     <string name="onboarding_lyrics_desc">分别调整封面页和歌词页的歌词字号，预览会实时更新</string>
-    <string name="onboarding_lyrics_page_preview_title">歌词页预览</string>
-    <string name="onboarding_lyrics_page_preview_desc">这里模拟真实歌词页的顶部歌曲信息、中央滚动歌词和底部播放控件</string>
     <string name="onboarding_lyrics_page_size_title">歌词页歌词大小</string>
     <string name="onboarding_lyrics_page_size_desc">只影响全屏歌词页，不会改变封面页歌词</string>
     <string name="onboarding_lyrics_control_size_title">歌词页控件大小</string>
@@ -218,10 +220,6 @@
     <string name="disclaimer_summary_permission_title">权限按需申请</string>
     <string name="disclaimer_summary_permission_body">系统授权只会在你点按后出现，可以跳过，之后也能随时修改。</string>
     <string name="onboarding_privacy_accepted">已同意</string>
-    <string name="disclaimer_changes_title">本次更新</string>
-    <string name="disclaimer_changes_item1">新增动效推荐说明：设备信息只在本机计算，不会上传</string>
-    <string name="disclaimer_changes_item2">补充歌词、封面与片段跳过服务会收到的信息</string>
-    <string name="disclaimer_changes_item3">补充一起听、崩溃报告与 Android 16 实时活动的数据处理方式</string>
     <string name="disclaimer_details_entry_desc">9 个章节，约 3 分钟读完</string>
     <string name="onboarding_finish_title">一切就绪</string>
     <string name="onboarding_finish_desc">你的偏好已经保存，随时可以在设置中再调整</string>
@@ -240,5 +238,6 @@
     <string name="onboarding_language_short_en" translatable="false">English</string>
     <string name="onboarding_welcome_greetings" translatable="false">你好|Hello|こんにちは|Bonjour|안녕하세요|Hola</string>
     <string name="onboarding_style_material" translatable="false">Material You</string>
+    <string name="onboarding_lyrics_scale_glyph" translatable="false">Aa</string>
     <string name="disclaimer_section_number" translatable="false">%1$02d</string>
 </resources>

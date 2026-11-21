@@ -70,11 +70,13 @@ internal fun shouldAdvanceStartupOnboarding(
     permissionNavigationBlocked: Boolean
 ): Boolean = !permissionRequestActive && !permissionNavigationBlocked
 
-// 前进按钮在切页动画期间锁住, 避免连点越过需要确认的步骤
+internal const val STARTUP_STEP_TAP_GUARD_MILLIS = 250L
+
+// 只拦截切页后极短时间内的重复点按, 防止双击越过一步; 不等动画收尾, 连续点按都会生效
 internal fun canNavigateStartupOnboardingStep(
     finishing: Boolean,
-    transitionRunning: Boolean
-): Boolean = !finishing && !transitionRunning
+    millisSinceLastStepChange: Long
+): Boolean = !finishing && millisSinceLastStepChange >= STARTUP_STEP_TAP_GUARD_MILLIS
 
 // 返回允许打断动画, 切页本身可逆
 internal fun canNavigateStartupOnboardingBack(
@@ -132,3 +134,10 @@ internal fun shouldPromptStartupEnhancedAdvancedBlur(
     enhancedAdvancedBlurEnabled: Boolean,
     backgroundImageImported: Boolean
 ): Boolean = advancedBlurAvailable && backgroundImageImported && !enhancedAdvancedBlurEnabled
+
+/**
+ * 步骤切换时新旧两页的玻璃卡片都要保持活跃
+ * 只激活目标页会让旧页卡片在淡出前先失去底板, 前进后退时看起来一闪
+ */
+internal fun resolveStartupGlassNavigationOwners(currentStep: StartupStep, targetStep: StartupStep): Set<Any> =
+    linkedSetOf(currentStep, targetStep)

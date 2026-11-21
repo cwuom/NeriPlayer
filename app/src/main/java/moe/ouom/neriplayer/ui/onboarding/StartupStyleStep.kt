@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -143,20 +144,12 @@ internal fun StartupStyleStepBody(
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             listOf(UiStyle.Material, UiStyle.Clean).forEach { style ->
-                val selected = style == selectedStyle
-                val handle = if (selected) {
-                    rememberStartupSharedHandle(StartupSharedKeys.choice(StartupChoice.Style))
-                } else {
-                    null
-                }
                 StartupStylePreviewCard(
                     style = style,
-                    selected = selected,
+                    selected = style == selectedStyle,
                     themeInputs = themeInputs,
                     onSelect = { origin, radius -> onSelectStyle(style, origin, radius) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .startupSharedBounds(handle, zIndexInOverlay = 3f)
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
@@ -197,6 +190,8 @@ private fun StartupStylePreviewCard(
     )
     val frameShape = RoundedCornerShape(26.dp)
     val label = startupStyleLabel(style)
+    // 手势协程只按 style 重启, 直接捕获 onSelect 会一直拿着第一次组合时的回调和当时的风格
+    val latestOnSelect by rememberUpdatedState(onSelect)
     Column(
         modifier = modifier
             .onGloballyPositioned { coordinates ->
@@ -227,7 +222,7 @@ private fun StartupStylePreviewCard(
                         scope.launch { tiltY.animateTo(0f, spring(0.45f, 260f)) }
                         scope.launch { tiltX.animateTo(0f, spring(0.45f, 260f)) }
                     },
-                    onTap = { position -> onSelect(cardOrigin + position, startRadius) }
+                    onTap = { position -> latestOnSelect(cardOrigin + position, startRadius) }
                 )
             }
             .graphicsLayer {

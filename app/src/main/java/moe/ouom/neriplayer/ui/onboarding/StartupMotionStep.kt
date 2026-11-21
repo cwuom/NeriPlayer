@@ -400,21 +400,14 @@ private fun StartupPresetSelector(
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         StartupMotionPreset.entries.forEach { preset ->
-            val isSelected = preset == selected
-            val handle = if (isSelected) {
-                rememberStartupSharedHandle(StartupSharedKeys.choice(StartupChoice.Motion))
-            } else {
-                null
-            }
             StartupPresetCard(
                 preset = preset,
-                selected = isSelected,
+                selected = preset == selected,
                 recommended = preset == recommended,
                 onClick = { onSelect(preset) },
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .startupSharedBounds(handle, zIndexInOverlay = 3f)
             )
         }
     }
@@ -441,7 +434,7 @@ private fun StartupPresetCard(
             selected && clean -> colors.primary.copy(alpha = 0.12f)
             selected -> colors.secondaryContainer
             clean -> colors.surfaceContainerHigh
-            else -> colors.surfaceContainerHigh.copy(alpha = 0.72f)
+            else -> colors.surfaceContainerLow
         },
         animationSpec = tween(240),
         label = "startup_preset_container"

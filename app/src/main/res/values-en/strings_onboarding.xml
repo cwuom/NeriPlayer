@@ -91,6 +91,10 @@
     <string name="onboarding_controls_desc">Choose the control size and placement. The preview updates immediately.</string>
     <string name="onboarding_controls_preview_song">Night Flight</string>
     <string name="onboarding_controls_preview_artist">NeriPlayer</string>
+    <string name="onboarding_preview_hint_title">Live preview</string>
+    <string name="onboarding_preview_hint_controls_desc">Tap or swipe up the mini player below to open the same player you get in the app. Changes apply instantly.</string>
+    <string name="onboarding_preview_hint_lyrics_desc">Tap the mini player below to jump straight into the real lyrics page. Changes apply instantly.</string>
+    <string name="onboarding_preview_hint_open">Open</string>
     <string name="onboarding_controls_preview_lyric_1">Last night the east wind blew</string>
     <string name="onboarding_controls_preview_lyric_2">It feels like a river flowing east</string>
     <string name="onboarding_controls_preview_lyric_3">How much sorrow can the heart hold</string>
@@ -105,8 +109,6 @@
     <string name="onboarding_lyrics_size_value">Current: %1$d%%</string>
     <string name="onboarding_lyrics_title">Preview the lyrics page</string>
     <string name="onboarding_lyrics_desc">Tune cover and full lyrics page text separately, with a live preview for each.</string>
-    <string name="onboarding_lyrics_page_preview_title">Lyrics page preview</string>
-    <string name="onboarding_lyrics_page_preview_desc">This mirrors the song header, centered scrolling lyrics, and playback controls from the real lyrics page.</string>
     <string name="onboarding_lyrics_page_size_title">Lyrics page lyric size</string>
     <string name="onboarding_lyrics_page_size_desc">Only changes the full lyrics page. The cover page lyric size stays independent.</string>
     <string name="onboarding_lyrics_control_size_title">Lyrics page control size</string>
@@ -219,10 +221,6 @@
     <string name="disclaimer_summary_permission_title">Permissions on demand</string>
     <string name="disclaimer_summary_permission_body">System prompts appear only after you tap. You can skip them and change them later.</string>
     <string name="onboarding_privacy_accepted">Accepted</string>
-    <string name="disclaimer_changes_title">What changed</string>
-    <string name="disclaimer_changes_item1">Added the motion recommendation: device details are computed on-device and never uploaded</string>
-    <string name="disclaimer_changes_item2">Clarified what lyric, artwork, and segment-skipping services receive</string>
-    <string name="disclaimer_changes_item3">Clarified data handling for Listen Together, crash reports, and Android 16 Live Updates</string>
     <string name="disclaimer_details_entry_desc">9 sections, about a 3-minute read</string>
     <string name="onboarding_finish_title">You are all set</string>
     <string name="onboarding_finish_desc">Your preferences are saved and can be changed in Settings any time.</string>

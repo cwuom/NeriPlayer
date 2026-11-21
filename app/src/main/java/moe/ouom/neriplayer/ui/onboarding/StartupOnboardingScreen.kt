@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -39,7 +41,6 @@ import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.CloudSync
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
@@ -56,6 +57,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,6 +67,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -99,6 +104,8 @@ import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
+import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
+import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.component.overlay.ApplyOverlayWindowNavigationBarPolicy
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
@@ -111,6 +118,9 @@ import moe.ouom.neriplayer.ui.effect.glass.isAdvancedGlassBackendSupported
 import moe.ouom.neriplayer.ui.effect.glass.rememberAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.rememberVisualEffectsDeviceProfile
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayBackground
+import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
+import moe.ouom.neriplayer.ui.resolveNowPlayingBackgroundMode
 import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
@@ -388,6 +398,39 @@ fun StartupOnboardingScreen(
     // 隐私说明: 只在同意前倒计时, 同意动作交给宿主写入
     var privacyCountdown by rememberSaveable { mutableIntStateOf(STARTUP_PRIVACY_COUNTDOWN_SECONDS) }
     var policyOpen by rememberSaveable { mutableStateOf(false) }
+    var policyCollapseToEntry by remember { mutableStateOf(true) }
+    val previewLyricTexts = startupPreviewLyricTexts()
+    val previewLyrics = remember(previewLyricTexts) { buildStartupPreviewLyrics(previewLyricTexts) }
+    val previewCover = rememberStartupPreviewCover()
+    val previewSource = rememberStartupPreviewPlaybackSource(previewLyrics, previewCover)
+    val previewCoverSeed = rememberStartupPreviewCoverSeed(previewCover)
+    val previewCoverFlight = remember { SharedCoverFlightState() }
+    val previewCoverBlurEnabled by repo.nowPlayingCoverBlurBackgroundEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
+    val previewCoverBlurAmount by repo.nowPlayingCoverBlurAmountFlow.collectAsStateWithLifecycle(initialValue = 1.5f)
+    val previewCoverBlurDarken by repo.nowPlayingCoverBlurDarkenFlow.collectAsStateWithLifecycle(initialValue = 0.2f)
+    val previewLyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
+    val previewLyricBlurAmount by repo.lyricBlurAmountFlow.collectAsStateWithLifecycle(initialValue = 1.5f)
+    val previewAdvancedLyrics by repo.advancedLyricsEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
+    val previewLyricTranslation by repo.showLyricTranslationFlow.collectAsStateWithLifecycle(initialValue = true)
+    val nowPlayingImmersiveMode by repo.nowPlayingImmersiveModeFlow.collectAsStateWithLifecycle(initialValue = false)
+    fun setNowPlayingImmersiveMode(enabled: Boolean) {
+        scope.launch { repo.setNowPlayingImmersiveMode(enabled) }
+    }
+    var nowPlayingPreviewOpen by remember { mutableStateOf(false) }
+    val miniPlayerAnchor = remember { StartupMiniPlayerAnchor() }
+    var nowPlayingPreviewLyrics by remember { mutableStateOf(false) }
+    val previewStepActive = currentStep == StartupStep.PlaybackControls || currentStep == StartupStep.Lyrics
+    LaunchedEffect(previewStepActive) {
+        // 离开播放相关步骤时收起预览并暂停模拟播放, 不在后台一直跑帧
+        if (!previewStepActive) {
+            nowPlayingPreviewOpen = false
+            previewSource.setPlaying(false)
+        }
+    }
+    fun openNowPlayingPreview() {
+        nowPlayingPreviewLyrics = currentStep == StartupStep.Lyrics
+        nowPlayingPreviewOpen = true
+    }
     var awaitingConsent by remember { mutableStateOf(false) }
     LaunchedEffect(currentStep, privacyCountdown, disclaimerAccepted) {
         if (currentStep != StartupStep.Privacy || disclaimerAccepted || privacyCountdown <= 0) {
@@ -404,12 +447,15 @@ fun StartupOnboardingScreen(
     val reveal = rememberStartupRevealController(activity)
 
     val stepTransition = updateTransition(targetState = stepIndex, label = "startup_step")
+    val sharedViewport = remember { StartupSharedViewport() }
+    var lastStepChangeAt by remember { mutableLongStateOf(0L) }
 
     fun transitionToStep(targetIndex: Int) {
         val nextIndex = targetIndex.coerceIn(0, steps.lastIndex)
         if (finishing || nextIndex == stepIndex) return
         if (!canEnterStartupStep(steps[nextIndex], latestDisclaimerAccepted)) return
         policyOpen = false
+        lastStepChangeAt = SystemClock.uptimeMillis()
         stepIndex = nextIndex
     }
     LaunchedEffect(disclaimerAccepted) {
@@ -485,7 +531,7 @@ fun StartupOnboardingScreen(
     }
 
     fun goNextStep(origin: Offset? = null) {
-        if (!canNavigateStartupOnboardingStep(finishing, stepTransition.isRunning)) return
+        if (!canNavigateStartupOnboardingStep(finishing, SystemClock.uptimeMillis() - lastStepChangeAt)) return
         if (!shouldAdvanceStartupOnboarding(permissionRequestActive, permissionNavigationBlocked)) return
         when (currentStep) {
             StartupStep.Style -> answerPreviewThemePrompt()
@@ -493,8 +539,18 @@ fun StartupOnboardingScreen(
             StartupStep.Privacy -> if (!canLeaveStartupStepForward(currentStep, disclaimerAccepted)) {
                 if (privacyCountdown > 0 || awaitingConsent) return
                 awaitingConsent = true
-                policyOpen = false
-                onAcceptDisclaimer()
+                if (policyOpen) {
+                    // 同意后会切到下一步, 完整说明不再收回到即将退场的入口卡片
+                    policyCollapseToEntry = false
+                    policyOpen = false
+                    // 同意后要创建平台会话, 那一帧比较重; 先让完整说明收完, 不和收起动画抢主线程
+                    scope.launch {
+                        delay((STARTUP_POLICY_DISMISS_MILLIS + STARTUP_POLICY_CONSENT_GAP_MILLIS).milliseconds)
+                        onAcceptDisclaimer()
+                    }
+                } else {
+                    onAcceptDisclaimer()
+                }
                 return
             }
             StartupStep.Permissions -> if (
@@ -524,7 +580,7 @@ fun StartupOnboardingScreen(
         if (!canNavigateStartupOnboardingBack(finishing, stepIndex)) return
         transitionToStep(stepIndex - 1)
     }
-    BackHandler(enabled = stepIndex > 0 && !finishing && !policyOpen, onBack = ::goBackStep)
+    BackHandler(enabled = stepIndex > 0 && !finishing && !policyOpen && !nowPlayingPreviewOpen, onBack = ::goBackStep)
 
     // 玻璃
     val visualEffectsDeviceProfile = rememberVisualEffectsDeviceProfile()
@@ -590,7 +646,10 @@ fun StartupOnboardingScreen(
             StartupStep.Privacy -> StartupPrivacyStepBody(
                 accepted = disclaimerAccepted,
                 policyOpen = policyOpen,
-                onOpenPolicy = { policyOpen = true }
+                onOpenPolicy = {
+                    policyCollapseToEntry = true
+                    policyOpen = true
+                }
             )
             StartupStep.Platforms -> session?.let { StartupPlatformsStepBody(it, isActive = sceneActive) }
             StartupStep.PlaybackSources -> StartupPlaybackSourceContent(
@@ -617,7 +676,10 @@ fun StartupOnboardingScreen(
                 },
                 onPreferencesChange = { preferences ->
                     scope.launch { repo.setPlaybackControlLayoutPreferences(preferences) }
-                }
+                },
+                onOpenPreview = ::openNowPlayingPreview,
+                immersiveMode = nowPlayingImmersiveMode,
+                onImmersiveModeChange = ::setNowPlayingImmersiveMode
             )
             StartupStep.Lyrics -> StartupLyricsContent(
                 preferences = playbackControlLayoutPreferences,
@@ -627,7 +689,8 @@ fun StartupOnboardingScreen(
                 },
                 onPreferencesChange = { preferences ->
                     scope.launch { repo.setPlaybackControlLayoutPreferences(preferences) }
-                }
+                },
+                onOpenPreview = ::openNowPlayingPreview
             )
             StartupStep.Personalize -> StartupPersonalizeStepBody(
                 pendingUiScale = appliedPendingUiScale,
@@ -691,17 +754,23 @@ fun StartupOnboardingScreen(
             LocalHasCustomBackground provides (backgroundImageUri != null)
         ) {
             val colors = MaterialTheme.colorScheme
-            val activeOwners = setOf<Any>(steps[stepTransition.targetState])
-            val prewarmedOwners = linkedSetOf<Any>(steps[stepTransition.currentState], steps[stepTransition.targetState])
+            val glassOwners = resolveStartupGlassNavigationOwners(
+                steps[stepTransition.currentState],
+                steps[stepTransition.targetState]
+            )
             AdvancedGlassHost(
                 controller = advancedGlassController,
                 backgroundBackdrop = backgroundGlassBackdrop,
                 contentBackdrop = contentGlassBackdrop,
-                activeNavigationOwners = activeOwners,
-                prewarmedNavigationOwners = prewarmedOwners,
+                activeNavigationOwners = glassOwners,
+                prewarmedNavigationOwners = glassOwners,
                 disableStretchOverscroll = backgroundImageUri != null
             ) {
-                SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
+                SharedTransitionLayout(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onGloballyPositioned { sharedViewport.layoutOffsetInRoot = it.positionInRoot() }
+                ) {
                     CompositionLocalProvider(LocalStartupSharedTransition provides this) {
                         AdvancedGlassNavigationHandoff(enabled = stepTransition.isRunning) {
                             Box(modifier = Modifier.fillMaxSize()) {
@@ -757,6 +826,10 @@ fun StartupOnboardingScreen(
                                             }
                                         },
                                         actions = {
+                                            StartupMiniPlayerSlot(
+                                                visible = previewStepActive && !finishing,
+                                                anchor = miniPlayerAnchor
+                                            )
                                             StartupActionBar(
                                                 showBack = stepIndex > 0,
                                                 backEnabled = canNavigateStartupOnboardingBack(finishing, stepIndex),
@@ -779,7 +852,9 @@ fun StartupOnboardingScreen(
                                     ) {
                                         val twoPane = LocalStartupOnboardingTwoPane.current
                                         stepTransition.AnimatedContent(
-                                            modifier = Modifier.fillMaxSize(),
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .onGloballyPositioned { sharedViewport.viewportInRoot = it.boundsInRoot() },
                                             transitionSpec = {
                                                 startupStepContentTransform(forward = targetState > initialState, clean = clean)
                                             }
@@ -787,7 +862,8 @@ fun StartupOnboardingScreen(
                                             val step = steps[index]
                                             CompositionLocalProvider(
                                                 LocalStartupStepVisibility provides this,
-                                                LocalAdvancedGlassNavigationOwner provides step
+                                                LocalAdvancedGlassNavigationOwner provides step,
+                                                LocalStartupSharedViewport provides sharedViewport.takeUnless { twoPane }
                                             ) {
                                                 AdvancedGlassSceneLayer(
                                                     controller = advancedGlassController,
@@ -805,6 +881,8 @@ fun StartupOnboardingScreen(
                                                                 bottomStrength = { if (stepScroll.canScrollForward) 1f else 0f }
                                                             )
                                                             .verticalScroll(stepScroll)
+                                                            // 顶部留白给徽记阴影和描边, 不被滚动容器裁掉
+                                                            .padding(top = 10.dp)
                                                     ) {
                                                         if (!twoPane) {
                                                             StepHero(
@@ -820,8 +898,8 @@ fun StartupOnboardingScreen(
                                                         }
                                                         Column(
                                                             modifier = Modifier.animateEnterExit(
-                                                                enter = fadeIn(tween(320, delayMillis = 120)) +
-                                                                    slideInVertically(spring(0.85f, 260f)) { it / 10 },
+                                                                enter = fadeIn(tween(220, delayMillis = 60)) +
+                                                                    slideInVertically(spring(0.86f, 300f)) { it / 14 },
                                                                 exit = fadeOut(tween(120))
                                                             )
                                                         ) {
@@ -837,6 +915,16 @@ fun StartupOnboardingScreen(
                                         }
                                     }
                                 }
+                                CompositionLocalProvider(LocalSharedCoverFlight provides previewCoverFlight) {
+                                    StartupFloatingMiniPlayerLayer(
+                                        visible = previewStepActive && !finishing,
+                                        expanded = nowPlayingPreviewOpen,
+                                        cover = previewCover,
+                                        source = previewSource,
+                                        anchor = miniPlayerAnchor,
+                                        onExpand = ::openNowPlayingPreview
+                                    )
+                                }
                                 StartupPrivacyPolicyOverlay(
                                     visible = policyOpen && currentStep == StartupStep.Privacy,
                                     onClose = { policyOpen = false },
@@ -849,12 +937,56 @@ fun StartupOnboardingScreen(
                                     },
                                     onAgree = {
                                         if (disclaimerAccepted) {
+                                            policyCollapseToEntry = true
                                             policyOpen = false
                                         } else {
                                             goNextStep()
                                         }
-                                    }
+                                    },
+                                    collapseToEntry = policyCollapseToEntry
                                 )
+                                CompositionLocalProvider(LocalSharedCoverFlight provides previewCoverFlight) {
+                                    StartupNowPlayingPreviewHost(
+                                        visible = nowPlayingPreviewOpen && previewStepActive,
+                                        showLyrics = nowPlayingPreviewLyrics,
+                                        onShowLyricsChange = { nowPlayingPreviewLyrics = it },
+                                        onClose = { nowPlayingPreviewOpen = false },
+                                        source = previewSource,
+                                        cover = previewCover,
+                                        // 背景与取色沿用真实播放页的设置, 动效步骤选的预设会直接体现在这里
+                                        theme = NowPlayingOverlayTheme(
+                                            dynamicColorEnabled = themeInputs.dynamicColor,
+                                            activeCoverSeedHex = previewCoverSeed,
+                                            seedColorHex = themeInputs.seedColorHex,
+                                            paletteStyle = themeInputs.paletteStyle,
+                                            colorSpec = themeInputs.colorSpec,
+                                            uiStyle = uiStyle,
+                                            liquidGlass = advancedGlassController.isLiquidGlassEnabled,
+                                            enhancedEffects = enhancedEffectsActive
+                                        ),
+                                        background = NowPlayingOverlayBackground(
+                                            blurEnabled = previewCoverBlurEnabled,
+                                            blurAmount = previewCoverBlurAmount,
+                                            blurDarken = previewCoverBlurDarken,
+                                            dynamicEnabled = resolveNowPlayingBackgroundMode(
+                                                dynamicBackgroundEnabled,
+                                                previewCoverBlurEnabled,
+                                                audioReactiveEnabled
+                                            ).dynamic,
+                                            offlineMode = false
+                                        ),
+                                        lyrics = StartupPreviewLyricPreferences(
+                                            blurEnabled = previewLyricBlurEnabled,
+                                            blurAmount = previewLyricBlurAmount,
+                                            fontScales = lyricFontScales,
+                                            advancedEnabled = previewAdvancedLyrics,
+                                            showTranslation = previewLyricTranslation
+                                        ),
+                                        onLyricFontScaleChange = { target, scale ->
+                                            scope.launch { repo.setLyricFontScale(target, scale) }
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -910,7 +1042,7 @@ fun StartupOnboardingScreen(
 @Composable
 private fun startupHeroSpec(step: StartupStep): StartupHeroSpec = when (step) {
     StartupStep.Language -> StartupHeroSpec(
-        Icons.Rounded.GraphicEq, 9,
+        null, 9,
         stringResource(AppR.string.onboarding_title), stringResource(AppR.string.onboarding_subtitle)
     )
     StartupStep.Style -> StartupHeroSpec(
@@ -1089,3 +1221,6 @@ internal fun StartupNotificationPermissionWarningDialog(
         }
     )
 }
+
+// 完整说明收起后再留一帧余量, 确保收起动画的最后一帧已经画出
+private const val STARTUP_POLICY_CONSENT_GAP_MILLIS = 32L
