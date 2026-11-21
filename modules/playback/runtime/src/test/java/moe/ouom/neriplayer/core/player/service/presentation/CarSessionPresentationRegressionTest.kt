@@ -388,6 +388,28 @@ class CarSessionPresentationRegressionTest {
         }
     }
 
+    /**
+     * 翻译开关变化时用收集到的值直接刷新。
+     * PlayerManager 的状态由另一个收集器写入, 两者没有先后保证,
+     * 这里必须用收集到的值, 不能去读可能还是旧值的状态。
+     */
+    @Test
+    fun `the translation override wins over the state read from the source`() = runTest {
+        MetadataBuilders().use { builders ->
+            // 来源里的翻译开关是开的, 但收集器发来的值是关的
+            val source = FakeSource(playback(listOf(song(1)), 0)).apply {
+                metadataInputs = bluetoothLyrics()
+            }
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
+
+            fixture.owner.updateMetadata(bluetoothTranslationOverride = false)
+
+            val titles = builders.titles()
+            assertTrue("关闭翻译后不应再带译文", titles.last().contains("译文").not())
+        }
+    }
+
     private fun queueOverrides(port: PlaybackServicePresentationPort): List<Pair<String?, String?>> =
         mockingDetails(port).invocations.filter { it.method.name == "setQueue" }.map { invocation ->
             val args = invocation.arguments
@@ -460,6 +482,11 @@ class CarSessionPresentationRegressionTest {
         fun builder(index: Int): MediaMetadata.Builder = construction.constructed()[index]
 
         fun string(index: Int, key: String): String? = arguments(index, "putString", key)[1] as String?
+
+        /** 每次构建写入的标题, 顺序与构建顺序一致 */
+        fun titles(): List<String> = results.indices.mapNotNull { index ->
+            string(index, MediaMetadata.METADATA_KEY_TITLE)
+        }
 
         fun long(index: Int, key: String): Long = arguments(index, "putLong", key)[1] as Long
 

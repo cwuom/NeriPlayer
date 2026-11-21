@@ -990,11 +990,13 @@ class AudioPlayerService : Service() {
         // 「蓝牙外接设备翻译歌词」开关变化时 payload 未必变化: 灵动岛等其它功能开着时
         // payload 一直带翻译, 收集器不会发新值, 车机上的译文就留着旧的。这里直接观察
         // 开关本身, 让开关立刻生效。
+        // 收集到的值直接用上: PlayerManager 的状态由另一个收集器写入, 两者没有先后保证,
+        // 这里若去读它可能拿到旧值, 开关就白切了。
         serviceScope.launch {
             PlayerDependencies.repositories.settingsRepo.externalBluetoothTranslationEnabledFlow
                 .distinctUntilChanged()
-                .collectSafely("externalBluetoothTranslationEnabledFlow") {
-                    updateMetadata()
+                .collectSafely("externalBluetoothTranslationEnabledFlow") { enabled ->
+                    updateMetadata(enabled)
                 }
         }
         serviceScope.observeColorOsLyricMetadata(
@@ -1512,6 +1514,11 @@ class AudioPlayerService : Service() {
 
     private fun updateMetadata() {
         presentationOwner.updateMetadata()
+    }
+
+    /** 翻译开关变化时用收集到的值直接刷新, 不等 PlayerManager 的状态同步 */
+    private fun updateMetadata(bluetoothTranslationEnabled: Boolean) {
+        presentationOwner.updateMetadata(bluetoothTranslationEnabled)
     }
 
     private fun refreshLyricMetadata() {

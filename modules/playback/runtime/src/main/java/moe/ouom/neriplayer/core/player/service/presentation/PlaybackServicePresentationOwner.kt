@@ -345,7 +345,15 @@ internal class PlaybackServicePresentationOwner(
     }
 
     /** @return 是否向媒体会话发布了新的元数据快照 */
-    fun updateMetadata(): Boolean {
+    fun updateMetadata(): Boolean = updateMetadata(null)
+
+    /**
+     * @param bluetoothTranslationOverride 翻译开关的已知新值。
+     * 开关变化时收集器拿到的就是这个新值, 直接用它算 metadata,
+     * 不必等 PlayerManager 的状态被另一个收集器同步过来。
+     * @return 是否向媒体会话发布了新的元数据快照
+     */
+    fun updateMetadata(bluetoothTranslationOverride: Boolean?): Boolean {
         val playback = source.playback()
         val song = playback.song
         val artworkSnapshot = artwork.observe(song)
@@ -358,7 +366,8 @@ internal class PlaybackServicePresentationOwner(
             mode = bluetoothMode,
             normalAlbum = metadataInputs.album,
             colorOsLyricsEnabled = metadataInputs.colorOsLyricsEnabled,
-            bluetoothTranslationEnabled = metadataInputs.bluetoothTranslationEnabled,
+            bluetoothTranslationEnabled = bluetoothTranslationOverride
+                ?: metadataInputs.bluetoothTranslationEnabled,
         )
         val snapshot = serviceMetadataSnapshot(
             song, text, artworkSnapshot, playback.queue.size, playback.queueIndex,
