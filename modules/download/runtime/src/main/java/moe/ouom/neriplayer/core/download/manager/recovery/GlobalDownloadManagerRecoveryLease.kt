@@ -37,6 +37,7 @@ internal suspend fun GlobalDownloadManager.claimArtifactForRecovery(
     context: Context,
     song: SongItem,
     operationId: String?,
+    expectedAttemptId: Long? = null,
     database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
 ): ManagedDownloadArtifactRecoveryClaim? {
     val appContext = context.applicationContext
@@ -57,6 +58,9 @@ internal suspend fun GlobalDownloadManager.claimArtifactForRecovery(
                     )
                 }
                 ?.takeIf { persisted -> persisted.song.stableKey() == stableKey }
+            if (expectedAttemptId != null && request?.attemptId != expectedAttemptId) {
+                return@withTransaction null
+            }
             val claim = managedDownloadArtifactCoordinator.claim(
                 context = appContext,
                 song = song,

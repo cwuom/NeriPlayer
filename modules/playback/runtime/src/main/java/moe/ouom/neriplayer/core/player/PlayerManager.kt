@@ -153,6 +153,7 @@ import moe.ouom.neriplayer.core.player.playback.togglePlayPauseImpl
 import moe.ouom.neriplayer.core.player.runtime.stats.trackEndDeduplicationKey
 import moe.ouom.neriplayer.core.player.persistence.LocalSongAssetEmbedding
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStatePreload
 import moe.ouom.neriplayer.core.player.persistence.embedLocalSongAssetsImpl
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.core.player.persistence.addCurrentToFavoritesImpl
@@ -160,15 +161,15 @@ import moe.ouom.neriplayer.core.player.persistence.addCurrentToPlaylistImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueEndImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueNextImpl
 import moe.ouom.neriplayer.core.player.persistence.applyRemoteQueueUpdateImpl
-import moe.ouom.neriplayer.core.player.persistence.getLyricsImpl
-import moe.ouom.neriplayer.core.player.persistence.getPreferredLyricSourceResultImpl
-import moe.ouom.neriplayer.core.player.persistence.getNeteaseLyricsImpl
-import moe.ouom.neriplayer.core.player.persistence.getNeteaseRomanizedLyricsImpl
-import moe.ouom.neriplayer.core.player.persistence.getNeteaseTranslatedLyricsImpl
-import moe.ouom.neriplayer.core.player.persistence.getPreferredNeteaseLyricContentImpl
-import moe.ouom.neriplayer.core.player.persistence.getPreferredNeteaseRomanizedLyricContentImpl
-import moe.ouom.neriplayer.core.player.persistence.getRomanizedLyricsImpl
-import moe.ouom.neriplayer.core.player.persistence.getTranslatedLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getPreferredLyricSourceResultImpl
+import moe.ouom.neriplayer.core.player.lyrics.getNeteaseLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getNeteaseRomanizedLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getNeteaseTranslatedLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getPreferredNeteaseLyricContentImpl
+import moe.ouom.neriplayer.core.player.lyrics.getPreferredNeteaseRomanizedLyricContentImpl
+import moe.ouom.neriplayer.core.player.lyrics.getRomanizedLyricsImpl
+import moe.ouom.neriplayer.core.player.lyrics.getTranslatedLyricsImpl
 import moe.ouom.neriplayer.core.player.persistence.hasItemsImpl
 import moe.ouom.neriplayer.core.player.persistence.hydrateSongMetadataImpl
 import moe.ouom.neriplayer.core.player.persistence.persistStateImpl
@@ -253,7 +254,6 @@ import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
-import moe.ouom.neriplayer.core.player.playback.stopPlaybackImmediatelyImpl
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -571,6 +571,7 @@ object PlayerManager {
     internal var playbackPositionGeneration: Long = 0L
     internal var lastUrlRefreshKey: String? = null
     internal var lastUrlRefreshAtMs: Long = 0L
+    internal var biliHttpErrorRefreshRequestToken: Long? = null
     internal var currentMediaUrlResolvedAtMs: Long = 0L
     internal var currentPlaybackDemandCacheKey: String? = null
     // One-shot retry position for the current server track, independent of restart preferences.
@@ -1656,7 +1657,8 @@ object PlayerManager {
         app = app,
         maxCacheSize = startupPlaybackPreferences.maxCacheSizeBytes,
         startupPlaybackPreferences = startupPlaybackPreferences,
-        restoredStateSnapshot = restoredStateSnapshot
+        restorationPreload = restoredStateSnapshot?.let { RestoredPlayerStatePreload.Completed(it) }
+            ?: RestoredPlayerStatePreload.NeedsFallback
     )
 
     suspend fun clearCache(
@@ -1796,11 +1798,6 @@ object PlayerManager {
     ) = this.applyListenTogetherPlaybackModeImpl(repeatMode, shuffleEnabled)
 
     internal fun stopProgressUpdates() = this.stopProgressUpdatesImpl()
-
-    internal fun stopPlaybackImmediately(
-        reason: String,
-        forcePersist: Boolean = true
-    ) = this.stopPlaybackImmediatelyImpl(reason, forcePersist)
 
     internal fun stopPlaybackPreservingQueue(clearMediaUrl: Boolean = false) =
         this.stopPlaybackPreservingQueueImpl(clearMediaUrl)

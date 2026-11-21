@@ -53,13 +53,17 @@ vec4 main(vec2 fragCoord){
     vec2  center = vec2(0.5);
     uv = (uv - center) / zoom + center;
 
-    float beatWave = sin((vUv.y + uAnimTime * 0.12) * 6.2832) *
-        cos((vUv.x - uAnimTime * 0.10) * 6.2832);
-    float radialPulse = sin((distance(vUv, center) * 5.5 - uAnimTime * 0.18) * 6.2832);
-    float ribbonWave = sin(((vUv.x * 1.7 + vUv.y * 2.3) - uAnimTime * 0.12) * 6.2832);
-    uv += beatEase * 0.0110 * vec2(beatWave, -beatWave);
-    uv += beatEase * 0.0085 * normalize(vUv - center + vec2(1e-4)) * radialPulse;
-    uv += motionEase * 0.0062 * vec2(ribbonWave, -ribbonWave * 0.75);
+    if (beatEase > 0.0) {
+        float beatWave = sin((vUv.y + uAnimTime * 0.12) * 6.2832) *
+            cos((vUv.x - uAnimTime * 0.10) * 6.2832);
+        float radialPulse = sin((distance(vUv, center) * 5.5 - uAnimTime * 0.18) * 6.2832);
+        uv += beatEase * 0.0110 * vec2(beatWave, -beatWave);
+        uv += beatEase * 0.0085 * normalize(vUv - center + vec2(1e-4)) * radialPulse;
+    }
+    if (motionEase > 0.0) {
+        float ribbonWave = sin(((vUv.x * 1.7 + vUv.y * 2.3) - uAnimTime * 0.12) * 6.2832);
+        uv += motionEase * 0.0062 * vec2(ribbonWave, -ribbonWave * 0.75);
+    }
     uv += uGlobalMotion;
 
     uv.xy -= uBound.xy;

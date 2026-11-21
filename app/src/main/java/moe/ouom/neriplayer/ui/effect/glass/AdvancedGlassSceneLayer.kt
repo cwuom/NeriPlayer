@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -33,6 +34,7 @@ internal fun AdvancedGlassSceneLayer(
     if (fixedBackground) {
         Box(
             modifier = modifier
+                .sceneShift(motion)
                 .fillMaxSize()
                 .clipToBounds()
                 .clipSceneReveal(motion.revealTopFraction)
@@ -64,6 +66,7 @@ internal fun AdvancedGlassSceneLayer(
     ) {
         Box(
             modifier = modifier
+                .sceneShift(motion)
                 .fillMaxSize()
                 .clipToBounds()
         ) {
@@ -102,4 +105,19 @@ private fun Modifier.clipSceneReveal(revealTopFraction: Float): Modifier = drawW
     clipRect(top = revealTop) {
         this@drawWithContent.drawContent()
     }
+}
+
+/**
+ * Moves the whole scene, its own background included, so a pushed page never shows the page
+ * beneath through its content; glass inside the scene shifts together with what it samples
+ */
+private fun Modifier.sceneShift(motion: AdvancedGlassSceneMotion): Modifier {
+    val shift = motion.sceneTranslationXFraction.coerceIn(-1f, 1f)
+    val dim = motion.sceneDim.coerceIn(0f, 1f)
+    if (shift == 0f && dim <= 0.001f) return this
+    return graphicsLayer { translationX = size.width * shift }
+        .drawWithContent {
+            drawContent()
+            if (dim > 0.001f) drawRect(Color.Black, alpha = dim)
+        }
 }

@@ -12,10 +12,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
+import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.stats.PlaybackStatsCapturedState
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -35,11 +38,92 @@ import org.mockito.Mockito.`when`
 class BackupManagerRoundTripTest {
     @get:Rule val temporary = TemporaryFolder()
 
+    @Test fun exportAndReadBackThirteenLyricRichPlaylistsBeyondSixtyFourMiBytes() = runBlocking {
+        CoverUrlMapper.installForTest(CoverUrlMapper.createForTest())
+        try {
+            Fixture().use { fixture ->
+                val lyrics = listOf("matched", "translated", "romanized", "original", "original-translated", "original-romanized")
+                    .map { "$it\n" + "l".repeat(16 * 1024) }
+                val source = (1L..13L).map { playlistId ->
+                    LocalPlaylist(playlistId, "playlist $playlistId", (1L..64L).map { songId ->
+                        SongItem(playlistId * 100 + songId, "song $songId", "artist", "netease", 1, 100, null,
+                            matchedLyric = lyrics[0], matchedTranslatedLyric = lyrics[1], matchedRomanizedLyric = lyrics[2],
+                            originalLyric = lyrics[3], originalTranslatedLyric = lyrics[4], originalRomanizedLyric = lyrics[5])
+                    }.toMutableList())
+                }
+                `when`(fixture.playlists.playlists).thenReturn(MutableStateFlow(source))
+                `when`(fixture.history.syncSnapshot()).thenReturn(listOf(entry(2000).copy(originalLyric = lyrics[3])))
+                val legacy = SyncSong(id = 2001, originalLyric = "legacy\n" + lyrics[3])
+                val override = SyncSong(id = 2002, matchedLyric = "edited\n" + lyrics[0], lyricSyncEdited = true, lyricSyncRevision = 1)
+                `when`(fixture.storage.getLegacyLyricCandidates()).thenReturn(listOf(legacy))
+                `when`(fixture.storage.getLyricOverrides()).thenReturn(listOf(override))
+
+                val result = fixture.manager.exportPlaylists(fixture.uri)
+                assertTrue("Expected a complete backup, got ${result.exceptionOrNull()}", result.isSuccess)
+                val json = fixture.output.toString(Charsets.UTF_8.name())
+                assertTrue(fixture.output.size() > 64 * 1024 * 1024)
+                BackupJsonReader(fixture.store()).read(json.reader()).use { content ->
+                    val playlists = content.data.playlists.orEmpty()
+                    assertEquals(source.map { it.id }, playlists.map { it.id })
+                    source.zip(playlists).forEach { (expected, restored) ->
+                        assertEquals(expected.songs.map { it.id }, restored.songs.map { it.id })
+                        restored.songs.forEach { song ->
+                            assertEquals(lyrics, listOf(song.matchedLyric, song.matchedTranslatedLyric, song.matchedRomanizedLyric,
+                                song.originalLyric, song.originalTranslatedLyric, song.originalRomanizedLyric))
+                        }
+                    }
+                    assertEquals(lyrics[3], content.data.recentPlays.orEmpty().single().song.originalLyric)
+                    assertEquals(listOf(legacy), content.data.legacyLyricCandidates)
+                    assertEquals(listOf(override), content.data.lyricOverrides)
+                }
+                assertTrue(fixture.cache.walkTopDown().none { it.isFile })
+            }
+        } finally {
+            CoverUrlMapper.installForTest(null)
+        }
+    }
+
     @Test fun oversizedMetadataFailsBeforeAnyLocalRepositoryOrLyricStorageIsApplied() = runBlocking {
-        Fixture(BackupJsonLimits(maxMetadataCharacters = 64)).use { fixture ->
+        Fixture(BackupJsonLimits(maxMetadataBytes = 64)).use { fixture ->
             fixture.input = """{"version":"2.3","playlists":[{"id":9,"name":"existing","songs":[]}],"lyricOverrides":[{"id":7,"originalLyric":"${"x".repeat(256)}"}]}""".toByteArray()
             clearInvocations(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
             assertTrue(fixture.manager.importPlaylists(fixture.uri).isFailure)
+            verifyNoInteractions(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
+            assertTrue(fixture.cache.walkTopDown().none { it.isFile })
+        }
+    }
+
+    @Test fun largeBackupExportsButRestoreAndPreviewUseCurrentHeapHeadroom() = runBlocking {
+        var headroom = 8L * 1024
+        Fixture(heapHeadroomBytes = { headroom }).use { fixture ->
+            val lyrics = "lyric\n".repeat(512)
+            `when`(fixture.storage.getLegacyLyricCandidates())
+                .thenReturn(listOf(SyncSong(id = 7, originalLyric = lyrics)))
+            fixture.manager.exportPlaylists(fixture.uri).getOrThrow()
+            fixture.input = fixture.output.toByteArray()
+
+            clearInvocations(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
+            assertEquals("Backup metadata byte budget exceeded",
+                fixture.manager.analyzeDifferences(fixture.uri).exceptionOrNull()?.message)
+            assertEquals("Backup metadata byte budget exceeded",
+                fixture.manager.importPlaylists(fixture.uri).exceptionOrNull()?.message)
+            verifyNoInteractions(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
+            assertTrue(fixture.cache.walkTopDown().none { it.isFile })
+
+            headroom = 128L * 1024
+            assertEquals(0, fixture.manager.analyzeDifferences(fixture.uri).getOrThrow().totalMissingSongs)
+            assertEquals(1, fixture.manager.importPlaylists(fixture.uri).getOrThrow().totalCount)
+        }
+    }
+
+    @Test fun restoreHeapBudgetAlsoCountsCompactMetadataObjects() = runBlocking {
+        Fixture(heapHeadroomBytes = { 8L * 1024 }).use { fixture ->
+            val songs = (1..9).joinToString(",") { """{"id":$it}""" }
+            fixture.input = """{"playlists":[{"id":9,"name":"existing","songs":[$songs]}]}""".toByteArray()
+            clearInvocations(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
+
+            assertEquals("Backup metadata object budget exceeded",
+                fixture.manager.importPlaylists(fixture.uri).exceptionOrNull()?.message)
             verifyNoInteractions(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
             assertTrue(fixture.cache.walkTopDown().none { it.isFile })
         }
@@ -103,7 +187,10 @@ class BackupManagerRoundTripTest {
     private fun entry(id: Long) = PlayedEntry(id = id, name = "song $id", artist = "artist", album = "netease",
         albumId = 1, durationMs = 100, coverUrl = null, playedAt = id)
 
-    private inner class Fixture(limits: BackupJsonLimits = BackupJsonLimits()) : Closeable {
+    private inner class Fixture(
+        limits: BackupJsonLimits = BackupJsonLimits(),
+        heapHeadroomBytes: () -> Long = { 1024L * 1024 * 1024 }
+    ) : Closeable {
         val cache = temporary.newFolder()
         val uri = mock(Uri::class.java)
         val output = ByteArrayOutputStream()
@@ -122,7 +209,7 @@ class BackupManagerRoundTripTest {
             replaceSingleton(PlaybackStatsRepository::class.java, stats)
         )
         val storage = mock(SecureTokenStorage::class.java)
-        val manager = BackupManager(context, limits) { storage }
+        val manager = BackupManager(context, limits, heapHeadroomBytes) { storage }
 
         init {
             `when`(context.cacheDir).thenReturn(cache)

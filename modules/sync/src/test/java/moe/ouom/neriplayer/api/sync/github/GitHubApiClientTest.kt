@@ -1,9 +1,11 @@
 package moe.ouom.neriplayer.api.sync.github
 
+import com.google.gson.JsonParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.api.sync.testing.SyncHttpFixture
 import okhttp3.OkHttpClient
+import okio.Buffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,12 +28,24 @@ class GitHubApiClientTest {
 
     @Test
     fun `create and check repository preserve shared repository contract`() = runTest {
-        val body = """{"id":1,"name":"repo","full_name":"owner/repo","private":true,"default_branch":"main"}""".toByteArray()
-        val fixture = SyncHttpFixture(content = body)
-        assertEquals("owner/repo", api(fixture).createRepository("repo").getOrThrow().fullName)
-        assertEquals("main", api(fixture).checkRepository("owner", "repo").getOrThrow().defaultBranch)
-        assertEquals("POST", fixture.requests.first().method)
-        assertEquals("Bearer token", fixture.requests.first().header("Authorization"))
+        val response = """{"id":1,"name":"neriplayer-backup","full_name":"owner/neriplayer-backup","private":true,"default_branch":"main"}"""
+        val fixture = SyncHttpFixture(content = response.toByteArray())
+        assertEquals("owner/neriplayer-backup", api(fixture).createRepository("neriplayer-backup").getOrThrow().fullName)
+        assertEquals("main", api(fixture).checkRepository("owner", "neriplayer-backup").getOrThrow().defaultBranch)
+
+        val request = fixture.requests.first()
+        val body = Buffer()
+        requireNotNull(request.body).writeTo(body)
+
+        assertEquals("POST", request.method)
+        assertEquals("/user/repos", request.url.encodedPath)
+        assertEquals("Bearer token", request.header("Authorization"))
+        assertEquals(
+            JsonParser.parseString(
+                """{"name":"neriplayer-backup","description":"NeriPlayer backup data","private":true,"auto_init":true}"""
+            ),
+            JsonParser.parseString(body.readUtf8())
+        )
     }
 
     @Test

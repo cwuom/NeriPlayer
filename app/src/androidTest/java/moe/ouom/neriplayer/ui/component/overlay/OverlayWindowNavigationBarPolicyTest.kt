@@ -475,12 +475,17 @@ class OverlayWindowNavigationBarPolicyTest {
 
     private fun dismissImmersivePrompt() {
         val root = instrumentation.uiAutomation.rootInActiveWindow ?: return
-        if (root.packageName?.toString() == "android" &&
-            root.findAccessibilityNodeInfosByViewId("android:id/immersive_cling_title").any { it.isVisibleToUser }
+        val owner = root.packageName?.toString()
+        if (owner != "android" && owner != "com.android.systemui") return
+        if (root.findAccessibilityNodeInfosByViewId("$owner:id/immersive_cling_title")
+                .any { it.isVisibleToUser && it.packageName?.toString() == owner }
         ) {
-            root.findAccessibilityNodeInfosByViewId("android:id/ok")
-                .singleOrNull { it.isVisibleToUser && it.isEnabled && it.isClickable }
-                ?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            val button = root.findAccessibilityNodeInfosByViewId("$owner:id/ok")
+                .singleOrNull { it.isVisibleToUser && it.isEnabled && it.isClickable &&
+                    it.packageName?.toString() == owner }
+            if (button?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
+                Log.i("OverlayWindowNavigation", "Dismissed immersive education owned by $owner")
+            }
         }
     }
 

@@ -2,14 +2,11 @@
 
 # Kotlin Helper Usage Guidelines
 
-Helpers handle repetitive mechanical operations. Business call sites remain
-responsible for deciding when requests become stale, how errors fall back, and
-when to switch playback paths.
+Helpers handle repetitive mechanical work. Call sites decide when a request becomes stale, how errors fall back, and when to switch playback paths.
 
 ## Request generations
 
-[`RequestGeneration`](../modules/common/src/main/java/moe/ouom/neriplayer/common/concurrent/RequestGeneration.kt)
-checks whether an asynchronous result still belongs to the current request generation.
+[`RequestGeneration`](../modules/common/src/main/java/moe/ouom/neriplayer/common/concurrent/RequestGeneration.kt) tells whether an asynchronous result still belongs to the current request generation.
 
 ```kotlin
 private val requests = RequestGeneration()
@@ -25,30 +22,20 @@ fun refresh() {
 }
 ```
 
-- `advance()` starts a new generation and invalidates all tickets previously issued
-  by that instance. When also canceling old jobs, advance the generation first so
-  their cleanup cannot change the new state.
-- `capture()` returns the current generation's ticket without invalidating other
-  requests. Pagination, likes, and replies on the comments page share one generation.
-- Use separate instances for independent business flows. Tickets use object
-  identity; they do not reuse numeric identifiers and must not be serialized to
-  disk or sent over the network.
-- Ticket reads are visible across threads, but checking `isCurrent` and then
-  writing state is not atomic. State commits must still follow the existing
-  main-thread or locking requirements.
-- This helper does not cancel coroutines, detect duplicate requests, or commit
-  state. Keep using `SongMetadataRequestCoordinator` for grouping requests by
-  song and prioritizing manual actions, and `ManualSearchRequestCoordinator` for
-  search deduplication.
+- `advance()` starts a new generation and invalidates every ticket the instance has issued.
+- When also canceling the old job, call `advance()` first so the old job's cleanup cannot overwrite the new state.
+- `capture()` returns a ticket for the current generation without invalidating other requests. Pagination, likes, and replies on the comments page share one generation.
+- Independent business flows use separate instances.
+- Tickets are distinguished by object identity, never reuse numbers, and are not serialized to disk or the network.
+- Ticket reads are visible across threads, but checking `isCurrent` and then writing state is not atomic. State commits must stay on the main thread or under a lock.
+- The helper only checks generations. It does not cancel coroutines, deduplicate requests, or commit state.
+- Use `SongMetadataRequestCoordinator` for per-song grouping and manual priority, and `ManualSearchRequestCoordinator` for search deduplication.
 
-See [`CommentViewModel`](../app/src/main/java/moe/ouom/neriplayer/ui/viewmodel/CommentViewModel.kt)
-and [`NowPlayingViewModel`](../app/src/main/java/moe/ouom/neriplayer/ui/viewmodel/NowPlayingViewModel.kt)
-for actual call sites.
+For call sites, see [`CommentViewModel`](../app/src/main/java/moe/ouom/neriplayer/ui/viewmodel/CommentViewModel.kt) and [`NowPlayingViewModel`](../app/src/main/java/moe/ouom/neriplayer/ui/viewmodel/NowPlayingViewModel.kt).
 
 ## Time and capacity
 
-[`MeasureUnits`](../modules/common/src/main/java/moe/ouom/neriplayer/common/units/MeasureUnits.kt)
-provides singular time extensions. Prefer this form in ordinary Kotlin expressions:
+[`MeasureUnits`](../modules/common/src/main/java/moe/ouom/neriplayer/common/units/MeasureUnits.kt) provides singular time extensions for ordinary expressions:
 
 ```kotlin
 val timeoutMs = 5.minute
@@ -58,26 +45,22 @@ val maxAgeMs = 7.day
 val totalMillis = minutes.coerceAtLeast(0).minute
 ```
 
-The extensions accept an `Int` count and return a `Long` in milliseconds. They
-convert to `Long` before multiplying to avoid `Int` multiplication overflow.
-Negative values are converted as signed time differences; the call site decides
-whether they are allowed. A `day` is always 24 hours, not a calendar day.
+- The extensions take an `Int` count and return a `Long` in milliseconds.
+- The value is converted to `Long` before multiplying, so `Int` cannot overflow.
+- Negative values convert as signed time differences. The call site decides whether they are allowed.
+- A `day` is always 24 hours, not a calendar day.
 
-`const val` declarations and annotation default values require compile-time
-constants. Keep using the unit constants in those contexts:
+`const val` and annotation defaults need compile-time constants, so use the unit constants:
 
 ```kotlin
 private const val RETRY_WINDOW_MS = 2 * MINUTE_MS
 private const val CHUNK_SIZE_BYTES = 4 * MEBIBYTE_BYTES
 ```
 
-Keep unit suffixes such as `Ms`, `Nanos`, and `Bytes` on variables and parameters.
-Business defaults belong to their corresponding policies; for example, use
-`CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES` for the default cache capacity.
+- Variable and parameter names carry unit suffixes such as `Ms`, `Nanos`, and `Bytes`.
+- Business defaults live in their own policy, for example `CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES` for the default cache capacity.
 
-The input to
-[`elapsedMillisSince`](../modules/common/src/main/java/moe/ouom/neriplayer/common/time/MonotonicTime.kt)
-must come from `System.nanoTime()`.
+The input of [`elapsedMillisSince`](../modules/common/src/main/java/moe/ouom/neriplayer/common/time/MonotonicTime.kt) must come from `System.nanoTime()`.
 
 ```kotlin
 val startedAtNanos = System.nanoTime()
@@ -85,34 +68,38 @@ performOperation()
 val elapsedMs = elapsedMillisSince(startedAtNanos)
 ```
 
-Do not pass `currentTimeMillis()`, `elapsedRealtime()`, or a value already converted
-to milliseconds. The call site decides whether to clamp negative results to zero.
+- Do not pass `currentTimeMillis()`, `elapsedRealtime()`, or a value already converted to milliseconds.
+- The call site decides whether to clamp negative results to zero.
 
 ## Player reads
 
-[`PlayerReadExtensions`](../modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/PlayerReadExtensions.kt)
-provides `currentPositionMsOr(fallbackMs)`, `durationMsOr(fallbackMs)`, and properties
-that default to a zero fallback.
-These extensions are `internal` to `:playback:runtime`; app and other libraries
-read state through the existing player host interfaces.
+[`PlayerReadExtensions`](../modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/PlayerReadExtensions.kt) provides:
+
+- `currentPositionMsOr(fallbackMs)`
+- `durationMsOr(fallbackMs)`
+- Properties of the same names with a fallback of 0
+
+These extensions are `internal` to `:playback:runtime`. The app and other libraries read state through the player host interfaces.
 
 ```kotlin
 val positionMs = player.currentPositionMsOr(-1L)
 val durationMs = player.durationMsOr(previousDurationMs)
 ```
 
-Successful reads clamp negative values to zero. The caller's fallback is returned
-only when the read throws. Diagnostic code that needs the player's original
-negative values should keep reading them directly. These extensions do not switch
-threads; callers must still follow the Player's application-thread requirements.
+- A successful read clamps negative values to zero.
+- A read that throws returns the caller's fallback.
+- Diagnostic code that needs the raw negative value reads the Player directly.
+- The extensions do not switch threads. Callers must run on the thread the Player requires.
 
 ## Coroutine results
 
-[`runCatchingNonCancellation`](../modules/common/src/main/java/moe/ouom/neriplayer/common/coroutines/RunCatchingNonCancellation.kt)
-converts ordinary `Exception` instances into a `Result`, propagates
-`CancellationException`, and does not catch `Error`.
-Both the helper and its block are `suspend`, so call it from a coroutine or another
-suspending function. It does not switch dispatchers itself.
+[`runCatchingNonCancellation`](../modules/common/src/main/java/moe/ouom/neriplayer/common/coroutines/RunCatchingNonCancellation.kt) handles exceptions as follows:
+
+- An ordinary `Exception` becomes a `Result`.
+- `CancellationException` propagates.
+- `Error` is not caught.
+
+Both the helper and its block are `suspend`, so call it from a coroutine or suspending function. It does not switch dispatchers.
 
 ```kotlin
 return runCatchingNonCancellation {
@@ -123,34 +110,31 @@ return runCatchingNonCancellation {
 }
 ```
 
-Call sites provide logging, fallbacks, retries, and dispatchers. Keep explicit
-`try/catch/finally` when the code has a specific recovery order, resource cleanup,
-or distinct exception categories.
+- The call site supplies logging, fallbacks, retries, and the dispatcher.
+- Code with a specific recovery order, resource cleanup, or exception categories uses an explicit `try/catch/finally`.
 
 ## PCM requirements
 
-[`pcmAudioRequirements`](../modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/policy/offload/PlaybackAudioOffloadPolicy.kt)
-maps the existing source compatibility rules and audio processing conditions to a
-`Set<PcmAudioRequirement>`. Callers use `isNotEmpty()` to decide whether to disable
-audio offload and can log all reasons.
+[`pcmAudioRequirements`](../modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/policy/offload/PlaybackAudioOffloadPolicy.kt) maps source compatibility rules and audio processing conditions to a `Set<PcmAudioRequirement>`.
 
-When adding a condition, update the corresponding rule in
-[`PcmAudioRequirements`](../modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/policy/offload/PcmAudioRequirements.kt),
-keep `pcmAudioRequirements` as the common entry point for returning reasons, and
-add tests for the corresponding reason. An empty set only means the current policy
-has no PCM requirement; actual offload support still depends on Media3 and the device.
-Playback call sites retain the ordering of audio path changes.
+- Callers use `isNotEmpty()` to decide whether to disable offload, and can log every reason.
+- An empty set means the current policy has no PCM requirement. Actual offload support is decided by Media3 and the device.
+- The playback call site decides the order of audio path switches.
 
-Current reasons also include `AUDIO_EFFECTS` and `OFFLOAD_STALL_FALLBACK`. The latter
-keeps PCM active after silent offload recovery for the current playback session;
-do not clear it by recomputing only user settings. The caller supplies
-`audioEffectsActive` to indicate whether effects actually require processing.
+To add a condition:
+
+1. Update the check in the matching rule of [`PcmAudioRequirements`](../modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/policy/offload/PcmAudioRequirements.kt).
+2. Return the reason through `pcmAudioRequirements`.
+3. Add a test for that reason.
+
+Existing reasons include `AUDIO_EFFECTS` and `OFFLOAD_STALL_FALLBACK`:
+
+- `AUDIO_EFFECTS`: the caller passes `audioEffectsActive` to say whether effects actually take effect.
+- `OFFLOAD_STALL_FALLBACK`: keeps PCM active after a silent offload recovery in the current playback session. Recomputing from user settings alone must not clear it.
 
 ## JSON object array mapping
 
-[`mapObjectsNotNull`](../modules/common/src/main/java/moe/ouom/neriplayer/common/json/JsonArrayExtensions.kt)
-is for JSON arrays where skipping non-object elements is allowed. It centralizes
-indexed iteration and the `optJSONObject` check.
+[`mapObjectsNotNull`](../modules/common/src/main/java/moe/ouom/neriplayer/common/json/JsonArrayExtensions.kt) serves JSON arrays whose non-object members may be skipped. It centralizes indexed iteration and the `optJSONObject` check.
 
 ```kotlin
 val artists = array.mapObjectsNotNull { item ->
@@ -161,37 +145,27 @@ val artists = array.mapObjectsNotNull { item ->
 }
 ```
 
-JSON nulls, strings, numbers, and nested arrays are skipped. Objects reach the
-mapping function in their original order, and a null mapping result omits that
-record. Duplicate objects are preserved. Exceptions thrown by the mapping
-function propagate instead of disguising API errors as an empty list.
-
-Required-field validation, defaults, deduplication, and pagination rules stay at
-the call site. The caller also decides whether a missing array should become an
-empty list. Keep strict parsing for protocols or persistence formats that require
-every record to be valid.
+- JSON nulls, strings, numbers, and nested arrays are skipped.
+- Objects reach the mapping function in order. A null result omits the entry, and duplicate objects are kept.
+- Exceptions from the mapping function propagate, so API errors never turn into an empty list.
+- Required-field validation, defaults, deduplication, and pagination rules belong to the call site.
+- The caller decides whether a missing array becomes an empty list.
+- Protocols or persistence formats that require every record to be valid use strict parsing.
 
 ## Merging lists by identity
 
-[`mergeDistinctBy`](../modules/common/src/main/java/moe/ouom/neriplayer/common/collections/CollectionMerge.kt)
-reads the existing list before the incoming list and keeps the first item for
-each identity key supplied by the caller.
+[`mergeDistinctBy`](../modules/common/src/main/java/moe/ouom/neriplayer/common/collections/CollectionMerge.kt) reads the existing list, then the incoming list, and keeps the first item for each identity key the caller supplies.
 
 ```kotlin
 val merged = existing.mergeDistinctBy(incoming, limit = 100) { it.id }
 ```
 
-- The first item for an identity wins, including duplicates within the existing
-  list. The function does not modify its inputs.
-- `limit` bounds the number of distinct results. Reading stops as soon as the
-  limit is reached. Zero produces an empty result; a negative value throws
-  `IllegalArgumentException`.
-- Call sites still own the next-page flag, server totals, empty-page handling,
-  and identity-key selection.
-- Keep the business-specific merge strategy when duplicates must be preserved or
-  new data must update existing items. Duplicate songs in a playback queue have
-  their own meaning, so this helper does not apply there.
+- The first item of an identity wins, including duplicates inside the existing list.
+- The function does not modify its inputs.
+- `limit` caps the number of distinct results, and reading stops once it is reached.
+- A `limit` of 0 returns an empty result, and a negative value throws `IllegalArgumentException`.
+- The call site owns the next-page flag, server totals, empty-page handling, and identity-key choice.
+- When duplicates must be kept or new data must update old items, use the business-specific merge strategy.
+- Duplicate songs in a playback queue have their own meaning, so this helper does not apply to them.
 
-Comments, NetEase home recommendations, and Bilibili favorites pagination already
-use this helper. Explore search retains its existing rules for handling items
-already present.
+Comments, NetEase home songs, and Bilibili favorites pagination use this helper. Explore search applies its own rules for items already present.

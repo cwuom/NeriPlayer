@@ -10,7 +10,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -20,7 +22,6 @@ import moe.ouom.neriplayer.core.player.host.PlayerEnvironment
 import moe.ouom.neriplayer.core.player.host.PlayerListenTogetherAccess
 import moe.ouom.neriplayer.core.player.host.PlayerPresentationHost
 import moe.ouom.neriplayer.core.player.host.PlayerRepositoryDependencies
-import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.runtime.service.PlaybackServiceIdleShutdownCoordinator
 import moe.ouom.neriplayer.core.player.timer.SleepTimerManager
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -36,6 +37,7 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Answers
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockStatic
@@ -156,6 +158,42 @@ class AudioPlayerServiceRestoreFailureTest {
         assertPendingProgressUnchanged()
     }
 
+    @Test
+    fun `removing the task during track loading keeps the playback request and foreground service`() = withFixture {
+        manager.clearRestoredPlayback()
+        val playRequest = Job()
+        manager.playJob = playRequest
+        assertTrue(manager.isTransportActiveWithoutInitialization())
+
+        removeTask()
+
+        assertForegroundServiceRetained()
+        assertSame(playRequest, manager.playJob)
+        assertTrue(playRequest.isActive)
+        assertEquals(listOf(true), persistedResumeIntent)
+    }
+
+    @Test
+    fun `removing the task with a paused queue leaves playback paused`() = withFixture {
+        manager.setRestoredPlayback(PositionMs, false)
+
+        removeTask()
+
+        assertForegroundServiceRetained()
+        assertFalse(manager.isTransportActiveWithoutInitialization())
+        assertFalse(manager.restoredShouldResumePlayback)
+        assertEquals(PositionMs, manager.playbackPositionFlow.value)
+        assertEquals(listOf(false), persistedResumeIntent)
+    }
+
+    @Test
+    fun `removing the task while playback restore is pending preserves its checkpoint`() = withFixture {
+        removeTask()
+
+        assertServiceStillRunning()
+        assertPendingProgressUnchanged()
+    }
+
     private fun withFixture(block: RestoreFailureFixture.() -> Unit) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
@@ -163,13 +201,16 @@ class AudioPlayerServiceRestoreFailureTest {
                 val persistenceClass = Class.forName(
                     "moe.ouom.neriplayer.core.player.persistence.PlayerManagerStatePersistenceExtensionsKt"
                 )
-                mockStatic(persistenceClass).use { persistence ->
-                    persistence.`when`<Unit> {
-                        fixture.manager.scheduleStatePersist(PositionMs, false, 0L)
-                    }.thenAnswer {
-                        fixture.persistedResumeIntent += false
-                        null
+                mockStatic(persistenceClass) { call ->
+                    when (call.method.name) {
+                        "scheduleStatePersist\$default" -> call.callRealMethod()
+                        "scheduleStatePersist" -> {
+                            fixture.persistedResumeIntent += call.getArgument<Boolean>(2)
+                            null
+                        }
+                        else -> Answers.RETURNS_DEFAULTS.answer(call)
                     }
+                }.use {
                     fixture.block()
                 }
             }
@@ -178,7 +219,7 @@ class AudioPlayerServiceRestoreFailureTest {
         }
     }
 
-    private class RestoreFailureFixture(scope: CoroutineScope) : AutoCloseable {
+    private class RestoreFailureFixture(private val scope: TestScope) : AutoCloseable {
         val manager = PlayerManager
         private val applicationField = managerField("application")
         private val previousApplication = applicationField.get(null)
@@ -257,6 +298,11 @@ class AudioPlayerServiceRestoreFailureTest {
 
         fun stopUnavailableSource() = invokeService("stopServiceForUnavailableRestoredSource", StartId)
 
+        fun removeTask() {
+            service.onTaskRemoved(null)
+            scope.runCurrent()
+        }
+
         fun invokeService(name: String, argument: Any) {
             val type = when (argument) {
                 is Int -> Int::class.javaPrimitiveType
@@ -276,6 +322,11 @@ class AudioPlayerServiceRestoreFailureTest {
             .getDeclaredField("shutdownJob").apply { isAccessible = true }.get(idleShutdown) as Job?
 
         fun assertServiceStillRunning(receivedStart: Boolean = true) {
+            assertForegroundServiceRetained(receivedStart)
+            assertTrue(persistedResumeIntent.isEmpty())
+        }
+
+        fun assertForegroundServiceRetained(receivedStart: Boolean = true) {
             assertFalse(shadow.isStoppedBySelf)
             assertFalse(shadow.isForegroundStopped)
             assertTrue(shadow.isLastForegroundNotificationAttached)
@@ -284,7 +335,6 @@ class AudioPlayerServiceRestoreFailureTest {
             assertTrue(serviceFlag("isForegroundStarted"))
             assertTrue(AudioPlayerService.isForegroundActiveForDiagnostics())
             assertFalse(serviceFlag("keepPlayerRuntimeAfterServiceStop"))
-            assertTrue(persistedResumeIntent.isEmpty())
         }
 
         fun assertPendingProgressUnchanged() {

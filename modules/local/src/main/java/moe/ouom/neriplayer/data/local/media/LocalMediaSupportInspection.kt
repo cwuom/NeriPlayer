@@ -583,7 +583,9 @@ internal fun LocalMediaSupport.resolveMediaStoreDocumentNavigation(
         ?.trim('/')
         ?.takeIf(String::isNotBlank)
         ?: return null
-    val treeUri = resolveExternalStorageTreeUri(context, relativePath) ?: return null
+    val treeUri = resolveExternalStorageTreeUri(
+        context, relativePath, volumeId = mediaStoreDocumentVolumeId(sourceUri)
+    ) ?: return null
     val treeDocumentId = try {
         DocumentsContract.getTreeDocumentId(treeUri)
     } catch (error: SecurityException) {
@@ -634,7 +636,8 @@ internal fun LocalMediaSupport.isWritableDocumentUri(context: Context, uri: Uri)
 internal fun LocalMediaSupport.resolveExternalStorageTreeUri(
     context: Context,
     relativePath: String,
-    requireWrite: Boolean = false
+    requireWrite: Boolean = false,
+    volumeId: String? = null
 ): Uri? {
     val persisted = context.contentResolver.persistedUriPermissions
     val candidates = buildList {
@@ -659,9 +662,18 @@ internal fun LocalMediaSupport.resolveExternalStorageTreeUri(
         } catch (_: Exception) {
             null
         }
+        if (volumeId != null && !treeId?.substringBefore(':').equals(volumeId, ignoreCase = true)) {
+            return@firstOrNull false
+        }
         val rootSegments = documentPathSegments(treeId)
         rootSegments.isEmpty() || relativeSegments.startsWithSegments(rootSegments)
     }
+}
+
+internal fun mediaStoreDocumentVolumeId(uri: Uri): String? = when (val volume = uri.pathSegments.firstOrNull()) {
+    MediaStore.VOLUME_EXTERNAL_PRIMARY -> "primary"
+    MediaStore.VOLUME_EXTERNAL -> null
+    else -> volume
 }
 
 internal fun LocalMediaSupport.documentPathSegments(value: String?): List<String> {

@@ -23,6 +23,70 @@ class BootstrapSettingsStartupReadTest {
     private val mirror get() = preferences[BOOTSTRAP_MIRROR]
 
     @Test
+    fun `persisting the same bootstrap snapshot does not submit another editor`() {
+        val snapshot = BootstrapSettingsSnapshot(bypassProxy = false, downloadParallelism = 2)
+        persistBootstrapSettingsSnapshot(context, snapshot)
+        val commits = mirror.commitCount
+
+        persistBootstrapSettingsSnapshot(context, snapshot)
+
+        assertEquals(commits, mirror.commitCount)
+        assertFalse(readBootstrapSettingsSnapshotSync(context).bypassProxy)
+        assertEquals(2, readBootstrapDownloadParallelism(context))
+    }
+
+    @Test
+    fun `persisting a previous bootstrap snapshot repairs a later write from another caller`() {
+        val snapshot = BootstrapSettingsSnapshot(bypassProxy = false, downloadParallelism = 2)
+        persistBootstrapSettingsSnapshot(context, snapshot)
+        persistBootstrapSettingsSnapshot(
+            context,
+            BootstrapSettingsSnapshot(bypassProxy = true, downloadParallelism = 3)
+        )
+        val commits = mirror.commitCount
+        assertTrue(readBootstrapSettingsSnapshotSync(context).bypassProxy)
+
+        persistBootstrapSettingsSnapshot(context, snapshot)
+
+        assertEquals(commits + 1, mirror.commitCount)
+        assertFalse(readBootstrapSettingsSnapshotSync(context).bypassProxy)
+        assertEquals(2, readBootstrapDownloadParallelism(context))
+    }
+
+    @Test
+    fun `persisting an unchanged bootstrap snapshot repairs a missing ready marker`() {
+        val snapshot = BootstrapSettingsSnapshot(bypassProxy = false, downloadParallelism = 2)
+        persistBootstrapSettingsSnapshot(context, snapshot)
+        mirror.edit().remove("ready").commit()
+        val commits = mirror.commitCount
+
+        persistBootstrapSettingsSnapshot(context, snapshot)
+
+        assertEquals(commits + 1, mirror.commitCount)
+        assertTrue(mirror.getBoolean("ready", false))
+        assertFalse(readBootstrapSettingsSnapshotSync(context).bypassProxy)
+        assertEquals(2, readBootstrapDownloadParallelism(context))
+    }
+
+    @Test
+    fun `persisting an unchanged bootstrap snapshot restores each missing completeness field`() {
+        val snapshot = BootstrapSettingsSnapshot()
+        for (missingKey in listOf("download_parallelism", "download_follow_playback_audio_quality")) {
+            persistBootstrapSettingsSnapshot(context, snapshot)
+            mirror.edit().remove(missingKey).commit()
+            val commits = mirror.commitCount
+
+            persistBootstrapSettingsSnapshot(context, snapshot)
+
+            assertEquals(commits + 1, mirror.commitCount)
+            assertTrue(mirror.contains("download_parallelism"))
+            assertTrue(mirror.contains("download_follow_playback_audio_quality"))
+            assertEquals(DEFAULT_DOWNLOAD_PARALLELISM, readBootstrapDownloadParallelism(context))
+            assertTrue(readBootstrapSettingsSnapshotSync(context).downloadFollowPlaybackAudioQuality)
+        }
+    }
+
+    @Test
     fun `complete startup mirror is served without rewriting it`() {
         persistBootstrapSettingsSnapshot(
             context,

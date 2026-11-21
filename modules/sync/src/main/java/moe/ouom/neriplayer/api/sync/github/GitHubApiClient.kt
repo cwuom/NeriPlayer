@@ -77,9 +77,9 @@ class GitHubApiClient(
 
     /** GitHub API请求 - 创建仓库 */
     private data class GitHubCreateRepoRequest(
-        val name: String,
-        val description: String = "NeriPlayer backup data",
-        val private: Boolean = true,
+        @SerializedName("name") val name: String,
+        @SerializedName("description") val description: String = "NeriPlayer backup data",
+        @SerializedName("private") val private: Boolean = true,
         @SerializedName("auto_init") val autoInit: Boolean = true
     )
 

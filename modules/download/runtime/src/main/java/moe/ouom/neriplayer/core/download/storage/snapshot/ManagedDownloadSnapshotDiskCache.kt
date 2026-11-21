@@ -20,7 +20,7 @@ internal object ManagedDownloadSnapshotDiskCache {
         context: Context,
         expectedKey: String? = null
     ): Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>? {
-        val rawPayload = runCatching {
+        return runCatching {
             val currentFile = cacheFile(context)
             // 当前文件存在时不回退旧快照，避免损坏或根目录切换后复活过期索引
             val sourceFile = if (currentFile.exists()) {
@@ -28,15 +28,11 @@ internal object ManagedDownloadSnapshotDiskCache {
             } else {
                 File(context.filesDir, SNAPSHOT_CACHE_FILE_NAME)
             }
-            sourceFile.takeIf(File::exists)?.readText(Charsets.UTF_8)
+            sourceFile.takeIf(File::exists)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+                ManagedDownloadSnapshotJsonCodec.read(reader, expectedKey)
+            }
         }.onFailure {
-            NPLogger.w(TAG, "读取下载索引缓存失败: ${it.message}")
-        }.getOrNull() ?: return null
-
-        return runCatching {
-            ManagedDownloadSnapshotIndex.deserializePayload(rawPayload, expectedKey)
-        }.onFailure {
-            NPLogger.w(TAG, "解析下载索引缓存失败: ${it.message}")
+            NPLogger.w(TAG, "恢复下载索引缓存失败: ${it.message}")
         }.getOrNull()
     }
 

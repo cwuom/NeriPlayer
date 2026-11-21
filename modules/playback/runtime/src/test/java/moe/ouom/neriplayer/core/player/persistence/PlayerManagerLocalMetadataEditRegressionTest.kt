@@ -19,12 +19,13 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.resetMain
@@ -75,6 +76,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -102,6 +104,8 @@ import java.io.FileDescriptor
 import java.net.URI
 import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.CoroutineContext
 
 @RunWith(RobolectricTestRunner::class)
@@ -888,6 +892,39 @@ class PlayerManagerLocalMetadataEditRegressionTest {
     }
 
     @Test
+    fun `app-only manual acquisition saves the match when the audio tree is read only`() = runTest {
+        val tree = DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", "primary:Music")
+        val document = DocumentsContract.buildDocumentUriUsingTree(tree, "primary:Music/song.mp3")
+        val resolver = mock(ContentResolver::class.java)
+        val permission = mock(UriPermission::class.java)
+        doReturn(resolver).`when`(application).contentResolver
+        doReturn(listOf(permission)).`when`(resolver).persistedUriPermissions
+        doReturn(tree).`when`(permission).uri
+        doReturn(true).`when`(permission).isReadPermission
+        val song = localSong(document.toString()).copy(
+            durationMs = 120_000L,
+            originalLyric = "original lyrics", originalTranslatedLyric = "", originalRomanizedLyric = ""
+        )
+        val selected = configureManualSelection()
+        manager.publishCurrentQueue(listOf(song), 0)
+
+        assertTrue(manager.applyManualMetadataSelection(
+            song, selected,
+            SongMetadataApplyOptions(lyricSources = setOf(EditableLyricMatchSource.KUGOU), romanizedLyrics = false),
+            isLatestRequest = { true }, onProgress = {}
+        ))
+
+        val applied = manager.currentPlaylist.single()
+        assertEquals(song.mediaUri, applied.mediaUri)
+        assertEquals("Selected", applied.customName)
+        assertEquals("Singer", applied.customArtist)
+        assertEquals("[00:01.00]selected lyric", applied.matchedLyric)
+        assertEquals("[00:01.00]selected translation", applied.matchedTranslatedLyric)
+        assertEquals("original lyrics", applied.originalLyric)
+        assertTrue(applied.lyricSyncEdited == true)
+    }
+
+    @Test
     fun `superseded manual acquisition does not commit its prepared metadata`() = runTest {
         val audio = temporaryFolder.newFile("manual-stale.mp3").apply { writeText("audio") }
         val song = localSong(audio.path).copy(
@@ -949,20 +986,32 @@ class PlayerManagerLocalMetadataEditRegressionTest {
         manager.publishCurrentQueue(listOf(song), 0)
 
         withSuccessfulAssetWrite { writes ->
-            lateinit var request: Deferred<Boolean>
-            request = async(start = CoroutineStart.LAZY) {
-                manager.applyManualMetadataSelection(
-                    song, selected, SongMetadataApplyOptions(lyricSources = emptySet(), writeLocalMetadata = true),
-                    isLatestRequest = { true },
-                    onProgress = { if (it == SongMetadataApplyStage.APPLYING) request.cancel() }
-                )
-            }
-            request.start()
-            request.join()
+            coroutineScope {
+                val writeFixtureThread = Thread.currentThread()
+                val applyingEntered = CountDownLatch(1)
+                // 静态替身绑定线程，提交协程必须沿用当前 IO 上下文立即开始
+                val request = async(start = CoroutineStart.UNDISPATCHED) {
+                    val requestJob = checkNotNull(currentCoroutineContext()[Job])
+                    manager.applyManualMetadataSelection(
+                        song, selected, SongMetadataApplyOptions(lyricSources = emptySet(), writeLocalMetadata = true),
+                        isLatestRequest = { true },
+                        onProgress = {
+                            if (it == SongMetadataApplyStage.APPLYING) {
+                                applyingEntered.countDown()
+                                assertSame("the commit must retain its thread-bound static file-write fixture",
+                                    writeFixtureThread, Thread.currentThread())
+                                requestJob.cancel()
+                            }
+                        }
+                    )
+                }
+                assertTrue("the request must reach the commit boundary", applyingEntered.await(5, TimeUnit.SECONDS))
+                request.join()
 
-            assertTrue(request.isCancelled)
-            assertEquals(1, writes.size)
-            assertEquals("Selected", manager.currentPlaylist.single().customName)
+                assertTrue(request.isCancelled)
+                assertEquals(1, writes.size)
+                assertEquals("Selected", manager.currentPlaylist.single().customName)
+            }
         }
     }
 

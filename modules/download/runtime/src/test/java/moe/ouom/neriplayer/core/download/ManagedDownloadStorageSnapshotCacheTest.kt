@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import android.content.Context
+import java.io.StringWriter
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -18,6 +19,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotCacheStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
+import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotJsonCodec
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotPersistenceStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotRoomMapper
 import moe.ouom.neriplayer.data.model.SongItem
@@ -494,13 +496,12 @@ class ManagedDownloadStorageSnapshotCacheTest {
             )
         )
 
-        val payload = ManagedDownloadStorage.serializeSnapshotCachePayload(
-            cacheKey = "tree:test",
-            snapshot = snapshot
-        )
+        val payload = StringWriter().also { writer ->
+            ManagedDownloadSnapshotJsonCodec.write(writer, "tree:test", snapshot)
+        }.toString()
 
-        val restored = ManagedDownloadStorage.deserializeSnapshotCachePayload(
-            raw = payload,
+        val restored = ManagedDownloadSnapshotJsonCodec.read(
+            input = payload.reader(),
             expectedKey = "tree:test"
         )
 

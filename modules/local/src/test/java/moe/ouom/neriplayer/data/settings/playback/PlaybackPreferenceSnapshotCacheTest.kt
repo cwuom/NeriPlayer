@@ -19,6 +19,63 @@ class PlaybackPreferenceSnapshotCacheTest {
     private val context = IsolatedSettingsDataStore.context(preferences)
 
     @Test
+    fun `persisting the same playback snapshot does not submit another editor`() {
+        val snapshot = PlaybackPreferenceSnapshot(audioQuality = "lossless", allowMixedPlayback = true)
+        persistPlaybackPreferenceSnapshot(context, snapshot)
+        val commits = preferences[PLAYBACK_CACHE].commitCount
+
+        persistPlaybackPreferenceSnapshot(context, snapshot)
+
+        assertEquals(commits, preferences[PLAYBACK_CACHE].commitCount)
+        val cached = readPlaybackPreferenceSnapshotCached(context)!!
+        assertEquals("lossless", cached.audioQuality)
+        assertTrue(cached.allowMixedPlayback)
+    }
+
+    @Test
+    fun `persisting a previous playback snapshot repairs a later write from another caller`() {
+        val snapshot = PlaybackPreferenceSnapshot(audioQuality = "lossless")
+        persistPlaybackPreferenceSnapshot(context, snapshot)
+        persistPlaybackPreferenceSnapshot(context, PlaybackPreferenceSnapshot(audioQuality = "high"))
+        val commits = preferences[PLAYBACK_CACHE].commitCount
+        assertEquals("high", readPlaybackPreferenceSnapshotCached(context)!!.audioQuality)
+
+        persistPlaybackPreferenceSnapshot(context, snapshot)
+
+        assertEquals(commits + 1, preferences[PLAYBACK_CACHE].commitCount)
+        assertEquals("lossless", readPlaybackPreferenceSnapshotCached(context)!!.audioQuality)
+    }
+
+    @Test
+    fun `persisting an unchanged playback snapshot repairs a missing ready marker`() {
+        val snapshot = PlaybackPreferenceSnapshot(audioQuality = "lossless")
+        persistPlaybackPreferenceSnapshot(context, snapshot)
+        preferences[PLAYBACK_CACHE].edit().remove("ready").commit()
+        val commits = preferences[PLAYBACK_CACHE].commitCount
+        assertNull(readPlaybackPreferenceSnapshotCached(context))
+
+        persistPlaybackPreferenceSnapshot(context, snapshot)
+
+        assertEquals(commits + 1, preferences[PLAYBACK_CACHE].commitCount)
+        assertTrue(preferences[PLAYBACK_CACHE].getBoolean("ready", false))
+        assertEquals("lossless", readPlaybackPreferenceSnapshotCached(context)!!.audioQuality)
+    }
+
+    @Test
+    fun `persisting an unchanged playback snapshot replaces an older cache schema`() {
+        val snapshot = PlaybackPreferenceSnapshot(audioQuality = "lossless")
+        persistPlaybackPreferenceSnapshot(context, snapshot)
+        preferences[PLAYBACK_CACHE].edit().putInt("schema_version", 4).commit()
+        val commits = preferences[PLAYBACK_CACHE].commitCount
+        assertNull(readPlaybackPreferenceSnapshotCached(context))
+
+        persistPlaybackPreferenceSnapshot(context, snapshot)
+
+        assertEquals(commits + 1, preferences[PLAYBACK_CACHE].commitCount)
+        assertEquals("lossless", readPlaybackPreferenceSnapshotCached(context)!!.audioQuality)
+    }
+
+    @Test
     fun `suspending read loads settings and refreshes the startup cache`() = runTest {
         IsolatedSettingsDataStore.withEmptySettings(
             context,

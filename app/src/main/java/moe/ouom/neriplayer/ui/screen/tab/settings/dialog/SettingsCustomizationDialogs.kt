@@ -74,7 +74,9 @@ import androidx.core.graphics.toColorInt
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
-import moe.ouom.neriplayer.ui.component.settings.HsvPicker
+import moe.ouom.neriplayer.ui.component.settings.ThemeColorPicker
+import moe.ouom.neriplayer.ui.component.settings.ThemeColorPickerColor
+import moe.ouom.neriplayer.ui.component.settings.rememberThemeColorPickerState
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
@@ -82,6 +84,10 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import java.util.Locale
 
+/**
+ * 主题色取色对话框：预设色板、自定义色板与 HSV/RGB/HEX 取色器
+ * 色板内的非预设色支持长按或角标删除，取色结果需点确认按钮才写入
+ */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun ColorPickerDialog(
@@ -93,6 +99,11 @@ internal fun ColorPickerDialog(
     onRemoveColor: (String) -> Unit
 ) {
     var pickedHex by remember(currentHex) { mutableStateOf(currentHex.uppercase(Locale.ROOT)) }
+    val pickerState = rememberThemeColorPickerState()
+
+    // 按钮读取颜色前先落地输入框草稿, 用户可能没按键盘 Done 就点了应用或加入色板
+    fun currentPickedHex(): String =
+        pickerState.commitPendingInput()?.uppercase(Locale.ROOT) ?: pickedHex
 
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
@@ -136,13 +147,17 @@ internal fun ColorPickerDialog(
                         stringResource(CoreCommonR.string.settings_custom_color),
                         style = MaterialTheme.typography.titleSmall
                     )
-                    HsvPicker(
+                    ThemeColorPicker(
                         initialHex = currentHex,
+                        state = pickerState,
                         onColorChanged = { pickedHex = it.uppercase(Locale.ROOT) }
                     )
                 }
 
                 val existsInPalette = palette.any { it.equals(pickedHex, ignoreCase = true) }
+                // 按钮可用性以"归一后的草稿"为准, 避免输满 6 位后按钮仍按旧颜色判断
+                val draftHex = ThemeColorPickerColor.normalizeHex(pickerState.draftHex.orEmpty())
+                val effectivePickedHex = draftHex ?: pickedHex
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                     val useVerticalButtons = maxWidth < 360.dp
                     if (useVerticalButtons) {
@@ -151,8 +166,8 @@ internal fun ColorPickerDialog(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             MiuixSettingsOutlinedButton(
-                                onClick = { onAddColor(pickedHex) },
-                                enabled = !existsInPalette && !ThemeDefaults.PRESET_SET.contains(pickedHex),
+                                onClick = { onAddColor(currentPickedHex()) },
+                                enabled = !existsInPalette && !ThemeDefaults.PRESET_SET.contains(effectivePickedHex),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
@@ -164,7 +179,7 @@ internal fun ColorPickerDialog(
                                 )
                             }
                             MiuixSettingsButton(
-                                onClick = { onColorSelected(pickedHex) },
+                                onClick = { onColorSelected(currentPickedHex()) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
@@ -183,8 +198,8 @@ internal fun ColorPickerDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             MiuixSettingsOutlinedButton(
-                                onClick = { onAddColor(pickedHex) },
-                                enabled = !existsInPalette && !ThemeDefaults.PRESET_SET.contains(pickedHex),
+                                onClick = { onAddColor(currentPickedHex()) },
+                                enabled = !existsInPalette && !ThemeDefaults.PRESET_SET.contains(effectivePickedHex),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(
@@ -196,7 +211,7 @@ internal fun ColorPickerDialog(
                                 )
                             }
                             MiuixSettingsButton(
-                                onClick = { onColorSelected(pickedHex) },
+                                onClick = { onColorSelected(currentPickedHex()) },
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(

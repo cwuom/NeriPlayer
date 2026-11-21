@@ -45,6 +45,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -1303,12 +1305,18 @@ class LocalPlaylistRepository private constructor(
         return neteasePlaylistSync.syncSongsToNeteaseLiked(client, songs)
     }
 
+    private val changedNeteasePlaylists = MutableSharedFlow<Long>()
+    val neteasePlaylistChanges = changedNeteasePlaylists.asSharedFlow()
+
+    /** 歌曲实际加入后，通知已打开的目标歌单刷新曲目。 */
     suspend fun syncSongsToNeteasePlaylist(
         client: NeteaseClient,
         targetPlaylistId: Long,
         songs: List<SongItem>
     ): NeteaseLikeSyncResult {
-        return neteasePlaylistSync.syncSongsToNeteasePlaylist(client, targetPlaylistId, songs)
+        val result = neteasePlaylistSync.syncSongsToNeteasePlaylist(client, targetPlaylistId, songs)
+        if (result.added > 0) changedNeteasePlaylists.emit(targetPlaylistId)
+        return result
     }
 
     companion object {

@@ -18,7 +18,7 @@ import java.util.Locale
 
 @RunWith(RobolectricTestRunner::class)
 @Config(
-    sdk = [28, 32],
+    sdk = [28, 31, 32],
     application = Application::class,
     qualifiers = "en-rUS-sw360dp-w360dp-h800dp-normal-port-notnight-560dpi"
 )

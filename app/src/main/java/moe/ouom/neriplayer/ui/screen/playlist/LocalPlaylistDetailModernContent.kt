@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.component.playlist.NeteaseRemotePlaylistPickerDialog
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.stableKey
 import androidx.activity.compose.BackHandler
@@ -56,8 +57,8 @@ import androidx.compose.material.icons.outlined.Sync
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton

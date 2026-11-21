@@ -108,7 +108,8 @@ private class AdvancedGlassRuntimeShaderSession(
             "Advanced glass supports at most $ADVANCED_GLASS_MAX_REGIONS visible regions"
         }
         val activeBackend = backend ?: AdvancedGlassRuntimeShaderBackend.Session(
-            maskShaderSource = shaderSource.load()
+            maskShaderSource = shaderSource.load(),
+            inverseMaskShaderSource = shaderSource.loadInverse()
         ).also { backend = it }
         return activeBackend.update(radiusPx, regions, lens)
     }
@@ -117,7 +118,8 @@ private class AdvancedGlassRuntimeShaderSession(
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 private object AdvancedGlassRuntimeShaderBackend {
     class Session(
-        private val maskShaderSource: String
+        private val maskShaderSource: String,
+        private val inverseMaskShaderSource: String
     ) {
         private var cachedBlurRadiusPx = Float.NaN
         private var cachedBlurEffect: AndroidRenderEffect? = null
@@ -197,7 +199,7 @@ private object AdvancedGlassRuntimeShaderBackend {
                 ChildShaderUniform
             )
             val outsideOriginalEffect = AndroidRenderEffect.createRuntimeShaderEffect(
-                createMaskShader(regionUniforms, invertMask = true),
+                createInverseMaskShader(regionUniforms),
                 ChildShaderUniform
             )
             val maskedBlurEffect = AndroidRenderEffect.createChainEffect(maskEffect, blurEffect)
@@ -219,6 +221,15 @@ private object AdvancedGlassRuntimeShaderBackend {
             setFloatUniform(RegionLensUniform, regionUniforms.lens)
             setFloatUniform(LensParamsUniform, regionUniforms.lensParams)
             setFloatUniform(InvertMaskUniform, if (invertMask) 1f else 0f)
+        }
+
+        private fun createInverseMaskShader(
+            regionUniforms: AdvancedGlassRegionUniforms
+        ) = RuntimeShader(inverseMaskShaderSource).apply {
+            setFloatUniform(RegionCountUniform, regionUniforms.count.toFloat())
+            setFloatUniform(RegionBoundsUniform, regionUniforms.bounds)
+            setFloatUniform(CornerRadiiUniform, regionUniforms.cornerRadii)
+            setFloatUniform(RegionOpacityUniform, regionUniforms.opacity)
         }
 
         private class AdvancedGlassRegionUniforms(

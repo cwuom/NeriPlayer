@@ -57,6 +57,8 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material3.*
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1044,77 +1046,35 @@ fun BiliPlaylistDetailScreen(
                         }
 
                         AnimatedVisibility(visible = !partsSelectionMode) {
-                            Text(
-                                text = currentPartsInfo.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            BiliVideoPartsTitle(currentPartsInfo.title)
                         }
 
                         HorizontalDivider()
 
-                        LazyColumn {
-                            val originalVideoItem = displayedVideos.find { it.bvid == currentPartsInfo.bvid }
-
-                            itemsIndexed(currentPartsInfo.pages, key = { _, page -> page.page }) { index, page ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .combinedClickable(
-                                            onClick = {
-                                                if (partsSelectionMode) {
-                                                    selectedParts = if (selectedParts.contains(page.page)) {
-                                                        selectedParts - page.page
-                                                    } else {
-                                                        selectedParts + page.page
-                                                    }
-                                                } else {
-                                                    onPlayParts(currentPartsInfo, index, originalVideoItem?.coverUrl ?: "")
-                                                    scope.launch { partsSheetState.hide() }.invokeOnCompletion {
-                                                        if (!partsSheetState.isVisible) showPartsSheet = false
-                                                    }
-                                                }
-                                            },
-                                            onLongClick = {
-                                                if (!partsSelectionMode) {
-                                                    partsSelectionMode = true
-                                                    selectedParts = setOf(page.page)
-                                                }
-                                            }
-                                        )
-                                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (partsSelectionMode) {
-                                        Checkbox(
-                                            checked = selectedParts.contains(page.page),
-                                            onCheckedChange = {
-                                                selectedParts = if (selectedParts.contains(page.page)) {
-                                                    selectedParts - page.page
-                                                } else {
-                                                    selectedParts + page.page
-                                                }
-                                            }
-                                        )
-                                        Spacer(Modifier.width(16.dp))
-                                    }
-
-                                    Text(
-                                        text = "P${page.page}",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.width(48.dp)
-                                    )
-                                    Text(
-                                        text = page.part,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                        BiliVideoPartsList(
+                            pages = currentPartsInfo.pages,
+                            selectedParts = selectedParts.takeIf { partsSelectionMode },
+                            onTogglePart = { page ->
+                                selectedParts = if (page in selectedParts) {
+                                    selectedParts - page
+                                } else {
+                                    selectedParts + page
+                                }
+                            },
+                            onLongPressPart = { page ->
+                                if (!partsSelectionMode) {
+                                    partsSelectionMode = true
+                                    selectedParts = setOf(page)
+                                }
+                            },
+                            onPlayPart = { index ->
+                                val originalVideoItem = displayedVideos.find { it.bvid == currentPartsInfo.bvid }
+                                onPlayParts(currentPartsInfo, index, originalVideoItem?.coverUrl.orEmpty())
+                                scope.launch { partsSheetState.hide() }.invokeOnCompletion {
+                                    if (!partsSheetState.isVisible) showPartsSheet = false
                                 }
                             }
-                        }
+                        )
                     }
                 }
             }

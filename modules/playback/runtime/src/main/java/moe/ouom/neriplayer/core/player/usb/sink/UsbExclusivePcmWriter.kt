@@ -93,8 +93,8 @@ internal class UsbExclusivePcmWriter(
     }
 
     private var directScratch: ByteBuffer? = null
-    private var planningReport: String? = null
-    private var planningMetrics: UsbExclusiveRuntimeMetrics? = null
+    private var lastRuntimeReport: String? = null
+    private var lastRuntimeMetrics: UsbExclusiveRuntimeMetrics? = null
     private var softwareFloatInputFormat: PreparedUsbInputPcmFormat? = null
     private var softwareFloatConversionLogged = false
     private var lastNativeBackpressureRefreshAtMs = 0L
@@ -115,6 +115,8 @@ internal class UsbExclusivePcmWriter(
 
     fun release() {
         directScratch = null
+        lastRuntimeReport = null
+        lastRuntimeMetrics = null
         clearSoftwareFloatConversionState()
         resetBackpressureObservation()
     }
@@ -301,18 +303,18 @@ internal class UsbExclusivePcmWriter(
     }
 
     private fun currentWritePlanningMetrics(handle: Long): UsbExclusiveRuntimeMetrics {
-        val metrics = parsedPlanningMetrics(port.runtimeReport(handle))
+        val metrics = runtimeMetrics(port.runtimeReport(handle))
         val liveFreeBytes = port.freeBytes(handle) ?: return metrics
         return metrics.withLivePcmFreeBytes(liveFreeBytes)
     }
 
-    /** 报告只在刷新时换新字符串，一次回调内多次补写复用同一份解析结果 */
-    private fun parsedPlanningMetrics(report: String): UsbExclusiveRuntimeMetrics {
-        val cached = planningMetrics
-        if (cached != null && report === planningReport) return cached
+    // native 报告只在刷新时换新字符串，写入规划和恢复检查共用解析结果
+    fun runtimeMetrics(report: String): UsbExclusiveRuntimeMetrics {
+        val cached = lastRuntimeMetrics
+        if (cached != null && report === lastRuntimeReport) return cached
         return report.usbRuntimeMetrics().also {
-            planningReport = report
-            planningMetrics = it
+            lastRuntimeReport = report
+            lastRuntimeMetrics = it
         }
     }
 
@@ -353,7 +355,7 @@ internal class UsbExclusivePcmWriter(
 
     fun refreshRuntimeAfterStalledWrite(handle: Long, nowMs: Long): String {
         val cachedReport = port.runtimeReport(handle)
-        val cachedMetrics = cachedReport.usbRuntimeMetrics()
+        val cachedMetrics = runtimeMetrics(cachedReport)
         val shouldRefresh = !cachedMetrics.isBenignBackpressure ||
             nowMs - lastNativeBackpressureRefreshAtMs >= BACKPRESSURE_REFRESH_INTERVAL_MS
         if (!shouldRefresh) return cachedReport
@@ -445,7 +447,7 @@ internal class UsbExclusivePcmWriter(
 
     fun parkForBackpressure(runtimeReport: String, forceYield: Boolean, sampleRate: Int, frameBytes: Int) {
         if (!port.mayParkCurrentThread()) return
-        val metrics = runtimeReport.usbRuntimeMetrics()
+        val metrics = runtimeMetrics(runtimeReport)
         val freeBytes = metrics.pcmFreeBytes ?: return
         if (!shouldParkForBackpressure(freeBytes, forceYield, sampleRate, frameBytes)) return
         val backpressureUs = metrics.pcmBackpressureCurrentMs?.coerceAtLeast(0L)?.times(1_000L) ?: 0L

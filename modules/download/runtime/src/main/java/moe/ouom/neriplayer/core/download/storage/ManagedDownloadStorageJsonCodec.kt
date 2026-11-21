@@ -153,6 +153,10 @@ internal object ManagedDownloadStorageJsonCodec {
         }
     }
 
+    fun storedEntryToJson(entry: ManagedDownloadStorage.StoredEntry): JSONObject = entry.toJson()
+
+    fun storedEntryFromJson(root: JSONObject): ManagedDownloadStorage.StoredEntry? = root.toStoredEntry()
+
     private fun ManagedDownloadStorage.StoredEntry.toJson(): JSONObject {
         return JSONObject().apply {
             put("name", name)

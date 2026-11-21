@@ -14,6 +14,12 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneLayer
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassSceneZIndex
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassVisibilitySceneMotion
 
+/** Renders a main-tab host scene from its navigation motion and depth. */
+internal typealias HostSceneRenderer =
+    @Composable (motion: AdvancedGlassSceneMotion, sceneDepth: Int, content: @Composable () -> Unit) -> Unit
+
+internal val PassThroughHostSceneRenderer: HostSceneRenderer = { _, _, content -> content() }
+
 internal class AppNavigationSceneRenderer(
     private val advancedGlassController: AdvancedGlassController,
     private val backgroundImageUri: String?,
@@ -24,11 +30,10 @@ internal class AppNavigationSceneRenderer(
     private val visibleNavigationRoutes: Set<String?>,
     private val mainTabNavigationMotion: () -> MainTabNavigationMotionState
 ) {
+    // 整组动画参数打包成一个值传入：Compose 会为每个带默认值的参数生成分支，拆开传参会推高复杂度
     @Composable
     fun RenderNavigationScene(
-        revealTopFraction: Float,
-        contentTranslationYFraction: Float,
-        contentScale: Float,
+        motion: AdvancedGlassSceneMotion,
         navigationDepth: Int,
         fixedBackground: Boolean,
         content: @Composable () -> Unit
@@ -36,11 +41,7 @@ internal class AppNavigationSceneRenderer(
         AdvancedGlassSceneLayer(
             controller = advancedGlassController,
             modifier = Modifier.advancedGlassSceneZIndex(navigationDepth),
-            motion = AdvancedGlassSceneMotion(
-                revealTopFraction = revealTopFraction,
-                contentTranslationYFraction = contentTranslationYFraction,
-                contentScale = contentScale
-            ),
+            motion = motion,
             disableStretchOverscroll = backgroundImageUri != null,
             fixedBackground = fixedBackground,
             background = {
@@ -76,11 +77,35 @@ internal class AppNavigationSceneRenderer(
             label = "nav_scene_${sceneRoute.orEmpty()}"
         )
         RenderNavigationScene(
-            revealTopFraction = motion.revealTopFraction,
-            contentTranslationYFraction = motion.contentTranslationYFraction,
-            contentScale = motion.contentScale,
+            motion = motion,
             navigationDepth = intent.sceneDepth,
             fixedBackground = false,
+            content = content
+        )
+    }
+
+    @Composable
+    fun RenderMainTabNavigationScene(
+        motion: AdvancedGlassSceneMotion,
+        sceneDepth: Int,
+        content: @Composable () -> Unit
+    ) {
+        val presentation = mainTabScenePresentation(
+            motion.contentTranslationYFraction,
+            motion.contentScale,
+            sceneDepth,
+            backgroundImageUri != null,
+            mainTabNavigationMotion()
+        )
+        RenderNavigationScene(
+            motion = motion.copy(
+                contentTranslationYFraction = presentation.translationYFraction,
+                contentScale = presentation.scale
+            ),
+            navigationDepth = sceneDepth,
+            // 只有 tab 根列表 (sceneDepth 0) 走固定背景, 横滑切 tab 时壁纸不动
+            // 嵌套详情必须保留不透明自背景, 靠揭示裁剪盖住退出列表, 否则两页内容互透叠印
+            fixedBackground = presentation.fixedBackground,
             content = content
         )
     }
@@ -92,25 +117,11 @@ internal class AppNavigationSceneRenderer(
         contentScale: Float,
         sceneDepth: Int,
         content: @Composable () -> Unit
-    ) {
-        val presentation = mainTabScenePresentation(
-            contentTranslationYFraction,
-            contentScale,
-            sceneDepth,
-            backgroundImageUri != null,
-            mainTabNavigationMotion()
-        )
-        RenderNavigationScene(
-            revealTopFraction = revealTopFraction,
-            contentTranslationYFraction = presentation.translationYFraction,
-            contentScale = presentation.scale,
-            navigationDepth = sceneDepth,
-            // 只有 tab 根列表 (sceneDepth 0) 走固定背景, 横滑切 tab 时壁纸不动
-            // 嵌套详情必须保留不透明自背景, 靠揭示裁剪盖住退出列表, 否则两页内容互透叠印
-            fixedBackground = presentation.fixedBackground,
-            content = content
-        )
-    }
+    ) = RenderMainTabNavigationScene(
+        motion = AdvancedGlassSceneMotion(revealTopFraction, contentTranslationYFraction, contentScale),
+        sceneDepth = sceneDepth,
+        content = content
+    )
 }
 
 internal data class AppNavHostSceneMotionIntent(

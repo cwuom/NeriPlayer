@@ -932,6 +932,7 @@ private val PageSearchAliases = mapOf(
 
 private val SettingSearchAliases = mapOf(
     "coloros_lockscreen_lyrics_enabled" to listOf("ColorOS", "OPlus", "OxygenOS", "root", "shizuku", "锁屏岛", "锁屏歌词"),
+    "live_update_lyric_enabled" to listOf("Live Update", "Live Activity", "Now Bar", "实时活动", "灵动岛", "胶囊", "状态栏歌词"),
     "dynamic_color" to listOf("material you", "monet", "auto color", "quse", "xitongquse"),
     "haptic_feedback_enabled" to listOf("vibration", "touch", "zhendong", "chugan"),
     "playback_service_idle_shutdown_minutes" to listOf("notification", "foreground", "idle", "tuichu"),
@@ -981,6 +982,17 @@ private val SettingSearchAliases = mapOf(
     "always_use_new_tab_style" to listOf("tab", "bottom bar", "new ui"),
     "ui_style" to listOf("style", "theme", "clean", "apple", "ios", "material", "fengge", "jianjie", "风格", "简洁"),
     "liquid_glass_enabled" to listOf("liquid glass", "glass", "refraction", "yetai boli", "液态玻璃"),
+    "enhanced_visual_effects_enabled" to listOf(
+        "visual effects",
+        "ios",
+        "menu",
+        "popup",
+        "dialog blur",
+        "zengqiang shijue",
+        "视觉效果",
+        "弹窗",
+        "菜单"
+    ),
     "predictive_back_preview_enabled" to listOf("predictive back", "back gesture", "preview", "yuce fanhui", "预测性返回"),
     "nowplaying_immersive_mode" to listOf("immersive", "fullscreen", "status bar", "chenjin", "沉浸"),
     "nowplaying_song_title_marquee_enabled" to listOf(

@@ -51,9 +51,14 @@
     <string name="common_coming_soon">敬请期待</string>
     <string name="common_drag_handle">拖拽手柄</string>
     <string name="common_album_detail">专辑详情</string>
+    <string name="color_picker_hsv">HSV</string>
+    <string name="color_picker_rgb">RGB</string>
     <string name="color_hue">色相 Hue</string>
     <string name="color_saturation">饱和度 Saturation</string>
     <string name="color_value">明度 Value</string>
+    <string name="color_red">红色 Red</string>
+    <string name="color_green">绿色 Green</string>
+    <string name="color_blue">蓝色 Blue</string>
     <string name="time_just_now">刚刚</string>
     <string name="time_zero_minutes">0分钟</string>
     <string name="number_hundred_million">%.1f亿</string>

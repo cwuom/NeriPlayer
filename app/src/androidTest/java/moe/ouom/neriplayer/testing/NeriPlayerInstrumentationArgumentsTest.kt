@@ -15,6 +15,7 @@ class NeriPlayerInstrumentationArgumentsTest {
         val original = Bundle().apply {
             putString("notClass", "example.ExternalLyricsTest")
             putString("neriplayerAdditionalExcludedClass", "example.RotationTest")
+            putString("neriplayerAdditionalExcludedClass2", "example.GlassTest")
             putString("numShards", "2")
             putString("shardIndex", "1")
             putString("notAnnotation", "example.ManualTest")
@@ -22,13 +23,15 @@ class NeriPlayerInstrumentationArgumentsTest {
 
         val result = withAdditionalExcludedTestClass(original)
 
-        assertEquals("example.ExternalLyricsTest,example.RotationTest", result.getString("notClass"))
+        assertEquals("example.ExternalLyricsTest,example.RotationTest,example.GlassTest", result.getString("notClass"))
         assertEquals("2", result.getString("numShards"))
         assertEquals("1", result.getString("shardIndex"))
         assertEquals("example.ManualTest", result.getString("notAnnotation"))
         assertFalse(result.containsKey("neriplayerAdditionalExcludedClass"))
+        assertFalse(result.containsKey("neriplayerAdditionalExcludedClass2"))
         assertEquals("example.ExternalLyricsTest", original.getString("notClass"))
         assertEquals("example.RotationTest", original.getString("neriplayerAdditionalExcludedClass"))
+        assertEquals("example.GlassTest", original.getString("neriplayerAdditionalExcludedClass2"))
     }
 
     @Test
@@ -41,14 +44,26 @@ class NeriPlayerInstrumentationArgumentsTest {
     }
 
     @Test
+    fun secondAdditionalExclusionWorksWithoutTheFirstAdditionalExclusion() {
+        val result = withAdditionalExcludedTestClass(Bundle().apply {
+            putString("neriplayerAdditionalExcludedClass2", " example.GlassTest ")
+        })
+
+        assertEquals("example.GlassTest", result.getString("notClass"))
+        assertFalse(result.containsKey("neriplayerAdditionalExcludedClass2"))
+    }
+
+    @Test
     fun duplicateExclusionIsNotAddedAgain() {
         val result = withAdditionalExcludedTestClass(Bundle().apply {
             putString("notClass", "example.ExternalLyricsTest,example.RotationTest")
             putString("neriplayerAdditionalExcludedClass", "example.RotationTest")
+            putString("neriplayerAdditionalExcludedClass2", "example.RotationTest")
         })
 
         assertEquals("example.ExternalLyricsTest,example.RotationTest", result.getString("notClass"))
         assertFalse(result.containsKey("neriplayerAdditionalExcludedClass"))
+        assertFalse(result.containsKey("neriplayerAdditionalExcludedClass2"))
     }
 
     @Test
@@ -57,11 +72,13 @@ class NeriPlayerInstrumentationArgumentsTest {
         val original = Bundle().apply { putString("class", "example.RotationTest") }
         assertEquals("example.RotationTest", withAdditionalExcludedTestClass(original).getString("class"))
         original.putString("neriplayerAdditionalExcludedClass", " ")
+        original.putString("neriplayerAdditionalExcludedClass2", " ")
 
         val result = withAdditionalExcludedTestClass(original)
 
         assertEquals("example.RotationTest", result.getString("class"))
         assertFalse(result.containsKey("notClass"))
         assertFalse(result.containsKey("neriplayerAdditionalExcludedClass"))
+        assertFalse(result.containsKey("neriplayerAdditionalExcludedClass2"))
     }
 }

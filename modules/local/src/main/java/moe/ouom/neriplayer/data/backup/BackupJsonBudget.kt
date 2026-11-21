@@ -10,7 +10,8 @@ import java.io.StringReader
 import java.io.Writer
 
 internal data class BackupJsonLimits(
-    val maxMetadataCharacters: Long = 16L * 1024 * 1024,
+    // 歌单备份导出保留歌词全文，读取时按堆余量传入累计预算
+    val maxMetadataBytes: Long? = null,
     val maxMetadataObjects: Long = 65_536,
     val maxTokenCharacters: Long = 10L * 1024 * 1024,
     val maxStatisticsRecordCharacters: Long = 10L * 1024 * 1024,
@@ -18,8 +19,8 @@ internal data class BackupJsonLimits(
     val maxStatisticsRecordBytes: Long = 10L * 1024 * 1024
 ) {
     init {
-        listOf(
-            maxMetadataCharacters to "metadata character",
+        listOfNotNull(
+            maxMetadataBytes?.let { it to "metadata byte" },
             maxMetadataObjects to "metadata object",
             maxTokenCharacters to "token character",
             maxStatisticsRecordCharacters to "statistics record character",
@@ -93,7 +94,8 @@ private class BackupJsonBudget(private val limits: BackupJsonLimits) {
     private var metadataField = false
     private var statisticsField = false
     private var metadataValue = false
-    private var metadataCharacters = 0L
+    private var metadataBytes = 0L
+    private var previousMetadataHighSurrogate = false
     private var metadataObjects = 0L
     private var rootFields = 0L
     private var rootNameCharacters = 0L
@@ -149,12 +151,16 @@ private class BackupJsonBudget(private val limits: BackupJsonLimits) {
         rootPosition = RootPosition.AFTER_VALUE
     }
 
+    /** 只为启用了字节预算的元数据原始 JSON 值累计大小，忽略字符串之外的空白 */
     private fun countMetadata(character: Char) {
+        val limit = limits.maxMetadataBytes ?: return
         if (!metadataValue) return
         if (!tokens.inString && character.isWhitespace()) return
         if (!tokens.inString && depth == 1 && (character == ',' || character == '}')) return
-        if (metadataCharacters == limits.maxMetadataCharacters) throw IOException("Backup metadata character budget exceeded")
-        metadataCharacters++
+        val size = utf8Size(character, previousMetadataHighSurrogate)
+        if (metadataBytes > limit - size) throw IOException("Backup metadata byte budget exceeded")
+        metadataBytes += size
+        previousMetadataHighSurrogate = character.isHighSurrogate()
     }
 
     private fun acceptStructure(character: Char) {
@@ -242,20 +248,24 @@ private class BackupStatisticsRecordBudget(private val limits: BackupJsonLimits)
         countBytes(character)
     }
 
+    /** 单独检查 JSON 记录字节，避免多字节内容绕过按字符计数的上限 */
     private fun countBytes(character: Char) {
-        val size = utf8Size(character)
+        val size = utf8Size(character, previousHighSurrogate)
         if (bytes > limits.maxStatisticsRecordBytes - size) throw IOException("Backup statistics record byte budget exceeded")
         bytes += size
-        // 高代理位先占三个字节，紧邻低代理位补一个，跨读取或写入分块也计为四个
         previousHighSurrogate = character.isHighSurrogate()
     }
+}
 
-    private fun utf8Size(character: Char): Long = when {
-        character <= '\u007f' -> 1L
-        character <= '\u07ff' -> 2L
-        previousHighSurrogate && character.isLowSurrogate() -> 1L
-        else -> 3L
-    }
+private val utf8ReplacementBytes = Charsets.UTF_8.newEncoder().replacement().size.toLong()
+
+/** 高代理项先按写入器的替换长度计数，配对的低代理项再补足四个字节 */
+private fun utf8Size(character: Char, previousHighSurrogate: Boolean): Long = when {
+    character <= '\u007f' -> 1L
+    character <= '\u07ff' -> 2L
+    previousHighSurrogate && character.isLowSurrogate() -> 4L - utf8ReplacementBytes
+    character.isSurrogate() -> utf8ReplacementBytes
+    else -> 3L
 }
 
 private class BackupTokenBudget(private val limit: Long) {

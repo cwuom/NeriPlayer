@@ -4,11 +4,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
 @Composable
-fun HsvPicker(
+fun ThemeColorPicker(
     onColorChanged: (String) -> Unit,
     initialHex: String = "0061A4"
 ) {
-    moe.ouom.neriplayer.ui.component.settings.HsvPicker(
+    moe.ouom.neriplayer.ui.component.settings.ThemeColorPicker(
         onColorChanged = onColorChanged,
         initialHex = initialHex
     )

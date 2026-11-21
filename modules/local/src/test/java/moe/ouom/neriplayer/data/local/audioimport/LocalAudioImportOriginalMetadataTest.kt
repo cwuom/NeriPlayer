@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import android.content.ContentResolver
 import android.content.Context
+import android.content.UriPermission
+import android.provider.DocumentsContract
 import java.io.File
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.inspectMetadataOnlyImpl
@@ -11,6 +14,7 @@ import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
 import moe.ouom.neriplayer.data.model.download.DownloadLibraryEntry
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import org.junit.After
 import org.junit.Before
 import org.junit.Assert.assertEquals
@@ -52,6 +56,73 @@ class LocalAudioImportOriginalMetadataTest {
         assertEquals("edited", hydrated.matchedLyric)
         assertEquals("original", hydrated.originalLyric)
         assertEquals("", hydrated.originalTranslatedLyric)
+    }
+
+    @Test
+    fun `hydration keeps app edited lyrics over existing file lyrics`() {
+        val edited = song().copy(
+            matchedLyric = "app lyrics", matchedTranslatedLyric = "", lyricSyncEdited = true,
+            matchedLyricSource = MusicPlatform.QQ_MUSIC, matchedSongId = "42"
+        )
+        File(directory.root, "song.lrc").writeText("file lyrics")
+        File(directory.root, "song_trans.lrc").writeText("file translation")
+        val detailed = edited.copy(matchedLyric = "file lyrics", matchedTranslatedLyric = "file translation")
+
+        for (hydrated in listOf(hydrate(edited), LocalAudioImportManager.mergeImportedSongMetadata(edited, detailed))) {
+            assertEquals("app lyrics", hydrated.matchedLyric)
+            assertEquals("", hydrated.matchedTranslatedLyric)
+            assertEquals(MusicPlatform.QQ_MUSIC, hydrated.matchedLyricSource)
+            assertEquals("42", hydrated.matchedSongId)
+        }
+    }
+
+    @Test
+    fun `folder hydration keeps app metadata after a read only tree becomes writable`() {
+        val tree = DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", "primary:Music")
+        val document = DocumentsContract.buildDocumentUriUsingTree(tree, "primary:Music/song.flac")
+        val resolver = mock(ContentResolver::class.java)
+        val permission = mock(UriPermission::class.java)
+        doReturn(resolver).`when`(mockContext).contentResolver
+        doReturn(listOf(permission)).`when`(resolver).persistedUriPermissions
+        doReturn(tree).`when`(permission).uri
+        doReturn(true).`when`(permission).isReadPermission
+        doReturn(false).`when`(permission).isWritePermission
+        val edited = song().copy(
+            mediaUri = document.toString(),
+            localFilePath = null,
+            customName = "App title",
+            customArtist = "App artist",
+            customCoverUrl = "/saved/app.jpg"
+        )
+        val metadata = directory.newFile("song.flac.npmeta.json").apply {
+            writeText(
+                """{"customName":"Old title","customArtist":"Old artist","customCoverUrl":"/saved/old.jpg"}"""
+            )
+        }
+
+        val hydrated = LocalAudioImportManager.hydrateLocalSongFromIndexedMetadataSidecar(
+            mockContext, edited, metadata.absolutePath
+        )
+
+        assertEquals(edited.customName, hydrated.customName)
+        assertEquals(edited.customArtist, hydrated.customArtist)
+        assertEquals(edited.customCoverUrl, hydrated.customCoverUrl)
+
+        doReturn(true).`when`(permission).isWritePermission
+        val writable = LocalAudioImportManager.hydrateLocalSongFromIndexedMetadataSidecar(
+            mockContext, edited, metadata.absolutePath
+        )
+        assertEquals(edited.customName, writable.customName)
+        assertEquals(edited.customArtist, writable.customArtist)
+        assertEquals(edited.customCoverUrl, writable.customCoverUrl)
+
+        val freshImport = edited.copy(customName = null, customArtist = null, customCoverUrl = null)
+        val fromSidecar = LocalAudioImportManager.hydrateLocalSongFromIndexedMetadataSidecar(
+            mockContext, freshImport, metadata.absolutePath
+        )
+        assertEquals("Old title", fromSidecar.customName)
+        assertEquals("Old artist", fromSidecar.customArtist)
+        assertEquals("/saved/old.jpg", fromSidecar.customCoverUrl)
     }
 
     @Test

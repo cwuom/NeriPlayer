@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.ui.theme.reveal
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Handler
@@ -11,6 +13,7 @@ import android.view.ViewTreeObserver
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.createBitmap
+import androidx.lifecycle.findViewTreeLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -102,12 +105,27 @@ private fun View.drawScaledThemeRevealBitmapOrNull(): Bitmap? {
 
 internal suspend fun captureThemeRevealSnapshot(
     activity: Activity?,
-    fallbackView: View
-): ImageBitmap? = captureOptionalWindowThemeRevealSnapshot(activity)?.asImageBitmap()
-    ?: captureThemeRevealFallbackSnapshot(fallbackView)
+    fallbackView: View,
+    windowCapture: suspend (Activity) -> Bitmap? = ::captureWindowThemeRevealSnapshot
+): ImageBitmap? {
+    val captureActivity = activity ?: fallbackView.findAttachedThemeRevealActivity()
+    return captureActivity?.let { windowCapture(it) }?.asImageBitmap()
+        ?: captureThemeRevealFallbackSnapshot(fallbackView)
+}
 
-private suspend fun captureOptionalWindowThemeRevealSnapshot(activity: Activity?): Bitmap? =
-    activity?.let { captureWindowThemeRevealSnapshot(it) }
+private fun View.findAttachedThemeRevealActivity(): Activity? {
+    if (!isAttachedToWindow) return null
+    // DecorView 的 Context 可能不含 Activity，只接受当前窗口树的宿主
+    val activity = rootView.findViewTreeLifecycleOwner() as? Activity
+        ?: context.findThemeRevealActivity()
+    return activity?.takeIf { it.window.decorView.rootView === rootView }
+}
+
+private tailrec fun Context.findThemeRevealActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findThemeRevealActivity()
+    else -> null
+}
 
 private suspend fun captureWindowThemeRevealSnapshot(activity: Activity): Bitmap? =
     suspendCancellableCoroutine { continuation ->
@@ -129,16 +147,25 @@ private suspend fun captureWindowThemeRevealSnapshot(activity: Activity): Bitmap
         PixelCopy.request(
             activity.window,
             bitmap,
-            { result -> continuation.resume(pixelCopyBitmapOrNull(result, bitmap)) },
+            { result ->
+                continuation.resume(pixelCopyBitmapOrNull(result, bitmap)) { _, abandonedBitmap, _ ->
+                    abandonedBitmap?.recycle()
+                }
+            },
             Handler(Looper.getMainLooper())
         )
     }
 
-private fun pixelCopyBitmapOrNull(result: Int, bitmap: Bitmap): Bitmap? =
-    if (result == PixelCopy.SUCCESS) bitmap else null
+private fun pixelCopyBitmapOrNull(result: Int, bitmap: Bitmap): Bitmap? {
+    if (result == PixelCopy.SUCCESS) return bitmap
+    bitmap.recycle()
+    return null
+}
 
 private suspend fun captureThemeRevealFallbackSnapshot(view: View): ImageBitmap? {
     return withContext(Dispatchers.Main.immediate) {
+        // hardware images require window capture; a failed copy leaves the live page visible
+        if (view.isHardwareAccelerated) return@withContext null
         runCatching { view.drawScaledThemeRevealBitmap()?.asImageBitmap() }.getOrNull()
     }
 }

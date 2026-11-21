@@ -35,6 +35,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -380,13 +382,15 @@ class NeteaseCollectionDetailViewModel internal constructor(
     application: Application,
     private val client: NeteaseClient,
     private val cookieRepo: NeteaseCookieRepository,
-    private val playlistCacheRepo: NeteasePlaylistCacheRepository
+    private val playlistCacheRepo: NeteasePlaylistCacheRepository,
+    playlistChanges: Flow<Long>
 ) : AndroidViewModel(application) {
     constructor(application: Application) : this(
         application,
         AppContainer.neteaseClient,
         AppContainer.neteaseCookieRepo,
-        AppContainer.neteasePlaylistCacheRepo
+        AppContainer.neteasePlaylistCacheRepo,
+        LocalPlaylistRepository.getInstance(application).neteasePlaylistChanges
     )
     private val responseErrors = NeteaseCollectionResponseErrors(
         apiCode = { code -> getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) },
@@ -406,6 +410,13 @@ class NeteaseCollectionDetailViewModel internal constructor(
     private val initialRadarCacheContext = neteaseRadarCacheContext(cookieRepo.getCookiesOnce())
 
     init {
+        viewModelScope.launch {
+            playlistChanges.collect { changedId ->
+                if (currentPlaylist?.id == changedId && !currentOfflineMode) {
+                    retry()
+                }
+            }
+        }
         viewModelScope.launch {
             var isFirstRadarContextEmission = true
             cookieRepo.cookieFlow

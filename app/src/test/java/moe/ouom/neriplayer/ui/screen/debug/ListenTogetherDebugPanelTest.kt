@@ -2,14 +2,19 @@ package moe.ouom.neriplayer.ui.screen.debug
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.res.Configuration
+import android.os.LocaleList
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
@@ -37,6 +42,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
+import java.util.Locale
 import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
@@ -319,6 +325,44 @@ class ListenTogetherDebugPanelTest {
         assertSame(activity, activity.findComponentActivity())
         assertSame(activity, ContextWrapper(ContextWrapper(activity)).findComponentActivity())
         assertNull(context.findComponentActivity())
+    }
+
+    @Test
+    fun `host activity survives the localized context provided to sheets`() {
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        val localizedContext = activity.createConfigurationContext(
+            Configuration().apply { setLocales(LocaleList(Locale.forLanguageTag("zh"))) }
+        )
+        assertNull(localizedContext.findComponentActivity())
+
+        var resolved: ComponentActivity? = null
+        composeRule.setContent {
+            CompositionLocalProvider(
+                LocalActivity provides activity,
+                LocalContext provides localizedContext
+            ) {
+                resolved = rememberListenTogetherHostActivity()
+            }
+        }
+
+        composeRule.runOnIdle { assertSame(activity, resolved) }
+    }
+
+    @Test
+    fun `host activity falls back to the context chain without LocalActivity`() {
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+
+        var resolved: ComponentActivity? = null
+        composeRule.setContent {
+            CompositionLocalProvider(
+                LocalActivity provides null,
+                LocalContext provides ContextWrapper(activity)
+            ) {
+                resolved = rememberListenTogetherHostActivity()
+            }
+        }
+
+        composeRule.runOnIdle { assertSame(activity, resolved) }
     }
 
     @Test

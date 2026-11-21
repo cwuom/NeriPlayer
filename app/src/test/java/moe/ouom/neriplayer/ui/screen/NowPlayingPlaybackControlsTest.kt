@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen
 
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.snapshots.SnapshotStateObserver
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
@@ -147,6 +149,95 @@ class NowPlayingPlaybackControlsTest {
         assertNull(owner.previewOverrideMs(5900L))
         owner.observePlaybackPosition(6100L)
         assertEquals(6100L, owner.sliderPosition.toLong())
+    }
+
+    @Test
+    fun `live progress reads ignore mirrored slider position changes`() {
+        val owner = NowPlayingProgressOwner(1000L)
+        var invalidations = 0
+        val observer = SnapshotStateObserver { it() }
+        observer.start()
+        try {
+            Snapshot.sendApplyNotifications()
+            observer.observeReads(Any(), { _: Any -> invalidations++ }) {
+                assertEquals(1000L, owner.previewPositionMs(1000L))
+                assertNull(owner.previewOverrideMs(1000L))
+            }
+
+            owner.observePlaybackPosition(2000L)
+            Snapshot.sendApplyNotifications()
+
+            assertEquals(0, invalidations)
+            assertEquals(2000L, owner.sliderPosition.toLong())
+            assertEquals(2000L, owner.previewPositionMs(2000L))
+            assertNull(owner.previewOverrideMs(2000L))
+        } finally {
+            observer.stop()
+            observer.clear()
+        }
+    }
+
+    @Test
+    fun `dragged progress reads follow slider position changes`() {
+        val owner = NowPlayingProgressOwner(1000L)
+        owner.startDrag(0.6f, 10000L)
+        var invalidations = 0
+        val observer = SnapshotStateObserver { it() }
+        observer.start()
+        try {
+            Snapshot.sendApplyNotifications()
+            observer.observeReads(Any(), { _: Any -> invalidations++ }) {
+                assertEquals(6000L, owner.previewPositionMs(1000L))
+                assertEquals(6000L, owner.previewOverrideMs(1000L))
+            }
+
+            owner.observePlaybackPosition(2000L)
+            Snapshot.sendApplyNotifications()
+            assertEquals(0, invalidations)
+
+            owner.moveDrag(0.7f, 10000L)
+            Snapshot.sendApplyNotifications()
+
+            assertEquals(1, invalidations)
+            assertEquals(7000L, owner.previewPositionMs(2000L))
+            assertEquals(7000L, owner.previewOverrideMs(2000L))
+        } finally {
+            observer.stop()
+            observer.clear()
+        }
+    }
+
+    @Test
+    fun `pending progress reads invalidate when playback reaches the seek preview`() {
+        val owner = NowPlayingProgressOwner(1000L)
+        owner.startDrag(0.6f, 10000L)
+        owner.finishDrag()
+        var invalidations = 0
+        val observer = SnapshotStateObserver { it() }
+        observer.start()
+        try {
+            Snapshot.sendApplyNotifications()
+            observer.observeReads(Any(), { _: Any -> invalidations++ }) {
+                assertEquals(6000L, owner.previewPositionMs(1000L))
+                assertEquals(6000L, owner.previewOverrideMs(1000L))
+            }
+
+            owner.observePlaybackPosition(2000L)
+            Snapshot.sendApplyNotifications()
+            assertEquals(0, invalidations)
+            assertEquals(6000L, owner.previewPositionMs(2000L))
+
+            owner.observePlaybackPosition(5900L)
+            Snapshot.sendApplyNotifications()
+
+            assertEquals(1, invalidations)
+            assertNull(owner.pendingSeekPreviewPositionMs)
+            assertEquals(5900L, owner.previewPositionMs(5900L))
+            assertNull(owner.previewOverrideMs(5900L))
+        } finally {
+            observer.stop()
+            observer.clear()
+        }
     }
 
     @Test

@@ -634,7 +634,7 @@ private fun SuperIslandStatusRow(
 private fun notificationsAllowed(context: Context): Boolean =
     NotificationManagerCompat.from(context).areNotificationsEnabled()
 
-private fun openNotificationSettings(context: Context) {
+internal fun openNotificationSettings(context: Context) {
     val packageUri = "package:${context.packageName}".toUri()
     runCatching {
         context.startActivity(

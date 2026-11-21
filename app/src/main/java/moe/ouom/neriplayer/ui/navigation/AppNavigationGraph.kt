@@ -206,7 +206,7 @@ private fun NavGraphBuilder.registerLibraryAndUtilityRoutes(
     registerExploreLibraryTabsRoutes(presentation.coherentFeedbackEnabled)
     registerLibraryDetailRoutes(
         navController, presentation.coherentFeedbackEnabled, presentation.offlineMode,
-        mediaActions.playSongs, onSongClick, presentation.renderScene
+        mediaActions.playSongs, mediaActions.playBiliParts, onSongClick, presentation.renderScene
     )
     registerSettingsTabRoutes(presentation.coherentFeedbackEnabled)
     registerDownloadRoutes(
@@ -610,6 +610,7 @@ private fun NavGraphBuilder.registerLibraryDetailRoutes(
     coherentFeedbackEnabled: Boolean,
     offlineMode: Boolean,
     playSongs: (List<SongItem>, Int, String?) -> Unit,
+    playBiliParts: (VideoBasicInfo, Int, String, String?) -> Unit,
     onSongClick: (List<SongItem>, Int) -> Unit,
     renderScene: @Composable AnimatedContentScope.(String?, @Composable () -> Unit) -> Unit
 ) {
@@ -644,7 +645,10 @@ private fun NavGraphBuilder.registerLibraryDetailRoutes(
                         localPlaylistSourceRoute(id)
                     )
                 },
-                offlineMode = offlineMode
+                offlineMode = offlineMode,
+                onPlayBiliParts = { info, index, coverUrl ->
+                    playBiliParts(info, index, coverUrl, localPlaylistSourceRoute(id))
+                }
             )
         }
     }

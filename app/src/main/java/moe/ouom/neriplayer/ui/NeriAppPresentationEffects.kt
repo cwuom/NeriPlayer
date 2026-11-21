@@ -1,19 +1,15 @@
 package moe.ouom.neriplayer.ui
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import android.view.WindowManager
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -27,7 +23,8 @@ import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
 internal data class AppStylePreferences(
     val uiStyle: UiStyle,
     val liquidGlassEnabled: Boolean,
-    val predictiveBackPreviewEnabled: Boolean
+    val predictiveBackPreviewEnabled: Boolean,
+    val enhancedVisualEffectsEnabled: Boolean
 )
 
 internal data class NowPlayingBackgroundMode(val dynamic: Boolean, val audioReactive: Boolean)
@@ -48,13 +45,15 @@ internal fun rememberAppStylePreferences(
 ): AppStylePreferences {
     val uiStyle by repo.uiStyleFlow.collectAsStateWithLifecycle(initialValue = initialUiStyle)
     val liquidGlassEnabled by repo.liquidGlassEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
+    val enhancedVisualEffectsEnabled by repo.enhancedVisualEffectsEnabledFlow
+        .collectAsStateWithLifecycle(initialValue = true)
     val predictiveBackPreviewEnabled by repo.predictiveBackPreviewEnabledFlow
         .collectAsStateWithLifecycle(
             initialValue = AutoSettingsSchema.motion.predictiveBackPreviewEnabled.defaultValue
         )
     SideEffect { NeriMotionStyle.clean = uiStyle == UiStyle.Clean }
     return AppStylePreferences(
-        uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled
+        uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled, enhancedVisualEffectsEnabled
     )
 }
 
@@ -106,8 +105,16 @@ internal fun NowPlayingPresentationEffects(
         onDispose { PlayerManager.updateInteractiveNowPlayingVisible(false) }
     }
 
-    val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() }
+    NowPlayingKeepScreenOnEffect(showNowPlaying, lifecycleResumed, keepScreenOn)
+}
+
+@Composable
+internal fun NowPlayingKeepScreenOnEffect(
+    showNowPlaying: Boolean,
+    lifecycleResumed: Boolean,
+    keepScreenOn: Boolean
+) {
+    val activity = LocalActivity.current
     DisposableEffect(activity, showNowPlaying, keepScreenOn, lifecycleResumed) {
         val window = activity?.window
         val keepScreenOnFlag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
@@ -122,10 +129,4 @@ internal fun NowPlayingPresentationEffects(
             }
         }
     }
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }

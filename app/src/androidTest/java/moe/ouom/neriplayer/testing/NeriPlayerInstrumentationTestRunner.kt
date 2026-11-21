@@ -23,8 +23,12 @@ class NeriPlayerInstrumentationTestRunner : AndroidJUnitRunner() {
 
 internal fun withAdditionalExcludedTestClass(arguments: Bundle?): Bundle {
     val merged = arguments?.let(::Bundle) ?: Bundle()
-    val additional = merged.getString("neriplayerAdditionalExcludedClass").orEmpty().trim()
-    merged.remove("neriplayerAdditionalExcludedClass")
+    val additional = listOf("neriplayerAdditionalExcludedClass", "neriplayerAdditionalExcludedClass2")
+        .map { key ->
+            val value = merged.getString(key).orEmpty().trim()
+            merged.remove(key)
+            value
+        }.filter(String::isNotEmpty)
     if (additional.isNotEmpty()) {
         // AGP 会按逗号拆分参数，在设备端合并才能保留完整排除列表
         val excluded = merged.getString("notClass").orEmpty().split(',')

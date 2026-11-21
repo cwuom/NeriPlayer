@@ -10,6 +10,13 @@ SPEC = importlib.util.spec_from_file_location(
 verification = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(verification)
 
+GLASS_CLASS = "moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassInverseMaskParityTest"
+GLASS_CASES = {
+    "productionGraphMatchesFrozenGraphForOpaqueAndTransparentInputs",
+    "sameSessionUpdatesDoNotPollutePreviouslyBoundEffects",
+    "frozenOracleRespondsToCoverageBlurAndLiquidTieOrder",
+}
+
 
 class InstrumentationReportsTest(unittest.TestCase):
     def setUp(self):
@@ -22,6 +29,7 @@ class InstrumentationReportsTest(unittest.TestCase):
             self.write(0, module, [(f"{module}.Test", "libraryCase")])
         self.write(4, "app", [(verification.LYRICS_CLASS, name) for name in verification.LYRICS_CASES])
         self.write(5, "app", [(verification.ROTATION_CLASS, name) for name in verification.ROTATION_CASES])
+        self.write(6, "app", [(GLASS_CLASS, name) for name in GLASS_CASES])
 
     def write(self, shard, module, cases, skipped=False, result_tag=None, result_text=None, result_type=None):
         output = self.root / f"android-instrumented-test-reports-{shard}" / module
@@ -41,7 +49,7 @@ class InstrumentationReportsTest(unittest.TestCase):
 
     def test_accepts_complete_disjoint_test_routes(self):
         inventory = verification.validate_reports(self.root)
-        self.assertEqual(len(inventory["app"]), 9)
+        self.assertEqual(len(inventory["app"]), 12)
         self.assertEqual(len(inventory["libraries"]), 3)
 
     def test_counts_agp_assumption_failures_without_type_as_skipped(self):
@@ -51,7 +59,7 @@ class InstrumentationReportsTest(unittest.TestCase):
                    result_text="org.junit.internal.AssumptionViolatedException: got: <false>, expected: is <true>\n\tat org.junit.Assume.assumeTrue(Assume.java:50)")
         inventory = verification.validate_reports(self.root)
         self.assertEqual(inventory["skipped"], {"ExampleTest#case0", "modules/local:LocalTest#case"})
-        self.assertEqual(len(inventory["app"]), 9)
+        self.assertEqual(len(inventory["app"]), 12)
         self.assertEqual(len(inventory["libraries"]), 3)
 
     def test_explicit_assumption_type_is_authoritative(self):
@@ -81,10 +89,11 @@ class InstrumentationReportsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "did not pass"):
             verification.validate_reports(self.root)
 
-    def test_both_dedicated_hosts_must_execute_without_assumption_skips(self):
+    def test_all_dedicated_hosts_must_execute_without_assumption_skips(self):
         for shard, class_name, names in [
             (4, verification.LYRICS_CLASS, verification.LYRICS_CASES),
             (5, verification.ROTATION_CLASS, verification.ROTATION_CASES),
+            (6, GLASS_CLASS, GLASS_CASES),
         ]:
             with self.subTest(shard=shard):
                 self.write(shard, "app", [(class_name, name) for name in names], result_tag="failure",
@@ -126,6 +135,48 @@ class InstrumentationReportsTest(unittest.TestCase):
     def test_rejects_skipped_host_case(self):
         self.write(5, "app", [(verification.ROTATION_CLASS, name) for name in verification.ROTATION_CASES], skipped=True)
         with self.assertRaisesRegex(ValueError, "did not pass"):
+            verification.validate_reports(self.root)
+
+    def test_rejects_missing_glass_host_lane(self):
+        path = self.root / "android-instrumented-test-reports-6"
+        (path / "app/build/outputs/androidTest-results/connected/debug/TEST-result.xml").unlink()
+        with self.assertRaisesRegex(ValueError, "no app test"):
+            verification.validate_reports(self.root)
+
+    def test_rejects_each_missing_glass_method(self):
+        for missing in GLASS_CASES:
+            with self.subTest(missing=missing):
+                self.write(6, "app", [(GLASS_CLASS, name) for name in GLASS_CASES - {missing}])
+                with self.assertRaisesRegex(ValueError, "incomplete dedicated host"):
+                    verification.validate_reports(self.root)
+
+    def test_rejects_duplicate_glass_method(self):
+        cases = [(GLASS_CLASS, name) for name in GLASS_CASES]
+        self.write(6, "app", cases + [cases[0]])
+        with self.assertRaisesRegex(ValueError, "incomplete dedicated host|duplicate"):
+            verification.validate_reports(self.root)
+
+    def test_rejects_skipped_glass_methods(self):
+        self.write(6, "app", [(GLASS_CLASS, name) for name in GLASS_CASES], skipped=True)
+        with self.assertRaisesRegex(ValueError, "did not pass"):
+            verification.validate_reports(self.root)
+
+    def test_rejects_glass_failures_and_errors(self):
+        for result_tag in ["failure", "error"]:
+            with self.subTest(result_tag=result_tag):
+                self.write(6, "app", [(GLASS_CLASS, name) for name in GLASS_CASES],
+                           result_tag=result_tag, result_text="java.lang.AssertionError: pixels differ")
+                with self.assertRaisesRegex(ValueError, "did not pass"):
+                    verification.validate_reports(self.root)
+
+    def test_rejects_glass_class_in_shared_shards(self):
+        self.write(1, "app", [(GLASS_CLASS, "unexpected")])
+        with self.assertRaisesRegex(ValueError, "dedicated host"):
+            verification.validate_reports(self.root)
+
+    def test_rejects_unexpected_class_in_glass_host(self):
+        self.write(6, "app", [("ExampleTest", name) for name in GLASS_CASES])
+        with self.assertRaisesRegex(ValueError, "incomplete dedicated host"):
             verification.validate_reports(self.root)
 
     def test_rejects_library_tests_outside_first_shard(self):

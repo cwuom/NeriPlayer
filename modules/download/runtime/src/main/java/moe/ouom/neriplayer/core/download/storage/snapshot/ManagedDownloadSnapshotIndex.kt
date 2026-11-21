@@ -1,9 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.snapshot
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
-import org.json.JSONObject
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal object ManagedDownloadSnapshotIndex {
@@ -212,94 +210,6 @@ internal object ManagedDownloadSnapshotIndex {
         val byDeclaredAudioName: Map<String, DownloadedAudioMetadata>,
         val byReference: Map<String, DownloadedAudioMetadata>
     )
-
-    fun serializePayload(
-        cacheKey: String,
-        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
-    ): String {
-        return JSONObject().apply {
-            put("cacheKey", cacheKey)
-            put("audioEntries", ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(snapshot.audioEntries))
-            put(
-                "pendingAudioEntries",
-                ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(snapshot.pendingAudioEntries)
-            )
-            put(
-                "metadataEntries",
-                ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(
-                    snapshot.metadataEntriesByAudioName.values.toList()
-                )
-            )
-            put("metadataByAudioName", JSONObject().apply {
-                snapshot.metadataByAudioName.forEach { (audioName, metadata) ->
-                    put(audioName, ManagedDownloadStorageJsonCodec.downloadedAudioMetadataToJson(metadata))
-                }
-            })
-            put("pendingMetadataByAudioName", JSONObject().apply {
-                snapshot.pendingMetadataByAudioName.forEach { (audioName, metadata) ->
-                    put(audioName, ManagedDownloadStorageJsonCodec.downloadedAudioMetadataToJson(metadata))
-                }
-            })
-            put(
-                "coverEntries",
-                ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(snapshot.coverEntriesByName.values.toList())
-            )
-            put(
-                "lyricEntries",
-                ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(snapshot.lyricEntriesByName.values.toList())
-            )
-            put("rootEntriesComplete", snapshot.rootEntriesComplete)
-            put("sidecarEntriesComplete", snapshot.sidecarEntriesComplete)
-        }.toString()
-    }
-
-    fun deserializePayload(
-        raw: String,
-        expectedKey: String? = null
-    ): Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>? {
-        val root = JSONObject(raw)
-        val cacheKey = root.optString("cacheKey").takeIf(String::isNotBlank) ?: return null
-        if (expectedKey != null && expectedKey != cacheKey) {
-            return null
-        }
-
-        val audioEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(root.optJSONArray("audioEntries"))
-        val pendingAudioEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(
-            root.optJSONArray("pendingAudioEntries")
-        )
-        val metadataEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(
-            root.optJSONArray("metadataEntries")
-        )
-        val metadataRoot = root.optJSONObject("metadataByAudioName") ?: JSONObject()
-        val metadataByAudioName = buildMap {
-            metadataRoot.keys().forEach { audioName ->
-                metadataRoot.optJSONObject(audioName)
-                    ?.let(ManagedDownloadStorageJsonCodec::downloadedAudioMetadataFromJsonObject)
-                    ?.let { put(audioName, it) }
-                }
-        }
-        val pendingMetadataRoot = root.optJSONObject("pendingMetadataByAudioName") ?: JSONObject()
-        val pendingMetadataByAudioName = buildMap {
-            pendingMetadataRoot.keys().forEach { audioName ->
-                pendingMetadataRoot.optJSONObject(audioName)
-                    ?.let(ManagedDownloadStorageJsonCodec::downloadedAudioMetadataFromJsonObject)
-                    ?.let { put(audioName, it) }
-            }
-        }
-        val coverEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(root.optJSONArray("coverEntries"))
-        val lyricEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(root.optJSONArray("lyricEntries"))
-        return cacheKey to compose(
-            audioEntries = audioEntries,
-            metadataEntries = metadataEntries,
-            metadataByAudioName = metadataByAudioName,
-            coverEntries = coverEntries,
-            lyricEntries = lyricEntries,
-            rootEntriesComplete = root.optBoolean("rootEntriesComplete", true),
-            sidecarEntriesComplete = root.optBoolean("sidecarEntriesComplete", true),
-            pendingAudioEntries = pendingAudioEntries,
-            pendingMetadataByAudioName = pendingMetadataByAudioName
-        )
-    }
 
     fun applyMetadataWrite(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,

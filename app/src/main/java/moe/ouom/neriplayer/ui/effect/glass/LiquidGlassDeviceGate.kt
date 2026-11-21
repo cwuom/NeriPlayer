@@ -15,11 +15,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
-import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
+import moe.ouom.neriplayer.data.settings.appearance.currentBuildUsesDimensityBlurCompatibility
 
 /**
  * Liquid glass adds a lens pass on top of the frosted mask. It is skipped in battery saver,
- * on low-RAM devices, and on Dimensity GPUs unless the user explicitly chose High quality.
+ * on low-RAM devices, and under the existing Dimensity blur policy unless the user chose High quality
  */
 internal fun resolveLiquidGlassDeviceAllowed(
     powerSaveMode: Boolean,
@@ -29,8 +29,31 @@ internal fun resolveLiquidGlassDeviceAllowed(
 ): Boolean = !powerSaveMode && !lowRamDevice &&
     (!dimensityDevice || quality == AdvancedBlurQuality.High)
 
+/**
+ * Enhanced visual effects (menu springs, dialog window blur, deeper bar highlights) only add
+ * transient work, so they ignore the Dimensity blur policy but still back off in battery saver
+ * and on low-RAM devices
+ */
+internal fun resolveEnhancedVisualEffectsAllowed(
+    powerSaveMode: Boolean,
+    lowRamDevice: Boolean
+): Boolean = !powerSaveMode && !lowRamDevice
+
+/** Device-wide constraints shared by every optional visual effect, observed once per app root. */
+internal data class VisualEffectsDeviceProfile(
+    val powerSaveMode: Boolean,
+    val lowRamDevice: Boolean,
+    val dimensityBlurCompatibility: Boolean
+) {
+    fun liquidGlassAllowed(quality: AdvancedBlurQuality): Boolean =
+        resolveLiquidGlassDeviceAllowed(powerSaveMode, lowRamDevice, dimensityBlurCompatibility, quality)
+
+    val enhancedVisualEffectsAllowed: Boolean
+        get() = resolveEnhancedVisualEffectsAllowed(powerSaveMode, lowRamDevice)
+}
+
 @Composable
-internal fun rememberLiquidGlassDeviceAllowed(quality: AdvancedBlurQuality): Boolean {
+internal fun rememberVisualEffectsDeviceProfile(): VisualEffectsDeviceProfile {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
     val powerManager = remember(appContext) { appContext.getSystemService(PowerManager::class.java) }
@@ -54,6 +77,6 @@ internal fun rememberLiquidGlassDeviceAllowed(quality: AdvancedBlurQuality): Boo
     val lowRamDevice = remember(appContext) {
         appContext.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true
     }
-    val dimensityDevice = remember { isCurrentBuildDimensity() }
-    return resolveLiquidGlassDeviceAllowed(powerSaveMode, lowRamDevice, dimensityDevice, quality)
+    val dimensityBlurCompatibility = remember { currentBuildUsesDimensityBlurCompatibility() }
+    return VisualEffectsDeviceProfile(powerSaveMode, lowRamDevice, dimensityBlurCompatibility)
 }

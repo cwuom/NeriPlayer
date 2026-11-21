@@ -68,13 +68,9 @@ class ManagedDownloadSnapshotRoomStoreTest {
         ).allowMainThreadQueries().build()
         val cacheFile = File(context.filesDir, SNAPSHOT_CACHE_FILE_NAME)
         cacheFile.delete()
-        cacheFile.writeText(
-            ManagedDownloadSnapshotIndex.serializePayload(
-                cacheKey = "root-a",
-                snapshot = snapshot()
-            ),
-            Charsets.UTF_8
-        )
+        cacheFile.bufferedWriter(Charsets.UTF_8).use { writer ->
+            ManagedDownloadSnapshotJsonCodec.write(writer, "root-a", snapshot())
+        }
 
         try {
             val store = ManagedDownloadSnapshotRoomStore(context, database)

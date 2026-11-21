@@ -2,10 +2,12 @@ package moe.ouom.neriplayer.data.local.media
 
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaCompanionTransaction
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
-import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaUriCandidates
+import moe.ouom.neriplayer.data.local.media.metadata.canCreateSidecarTemporaryFile
+import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaTargets
 import moe.ouom.neriplayer.data.local.media.metadata.isStandaloneContentMetadataTarget
 import moe.ouom.neriplayer.data.local.media.metadata.logEditableMetadataWriteTiming
 import moe.ouom.neriplayer.data.local.media.metadata.resolveEditableSidecarFile
+import moe.ouom.neriplayer.data.local.media.metadata.sidecarDisplayName
 import moe.ouom.neriplayer.data.local.media.metadata.writeLocalCoverSidecar
 import moe.ouom.neriplayer.data.local.media.metadata.writeLocalLyricsSidecars
 import moe.ouom.neriplayer.data.local.media.sidecar.copyNearbyLyricSidecarsImpl
@@ -344,7 +346,8 @@ object LocalMediaSupport {
         requiredEmbeddedPropertyKeys: Set<String> = emptySet(),
         persistCompanionSidecars: Boolean = true,
         embeddedPropertyPlanFactory: ((PropertyMap) -> EmbeddedMetadataPropertyPlan)? = null,
-        candidates: List<Uri>
+        candidates: List<Uri>,
+        mediaStoreFile: File? = null
     ): LocalMediaMetadataWriteOutcome = withContext(Dispatchers.IO) {
         val startedAtMs = SystemClock.elapsedRealtime()
         if (candidates.isEmpty()) {
@@ -354,13 +357,17 @@ object LocalMediaSupport {
         var fallbackOutcome = LocalMediaMetadataWriteOutcome.NOT_WRITABLE
         candidates.forEach { sourceUri ->
             currentCoroutineContext().ensureActive()
+            val directSidecarFile = mediaStoreFile?.takeIf {
+                persistCompanionSidecars && sourceUri == candidates.first() && canCreateSidecarTemporaryFile(it)
+            }
+            val sidecarUri = directSidecarFile?.let(Uri::fromFile) ?: sourceUri
             val localFile = if (persistCompanionSidecars) {
-                resolveEditableSidecarFile(context, sourceUri)
+                directSidecarFile ?: resolveEditableSidecarFile(context, sidecarUri)
             } else {
                 null
             }
             val persistAvailableSidecars = persistCompanionSidecars &&
-                !isStandaloneContentMetadataTarget(context, sourceUri, localFile)
+                !isStandaloneContentMetadataTarget(context, sidecarUri, localFile)
             val stagedAttempted = embeddedPropertyPlanFactory != null || shouldUseTransactionalStagedWrite(sourceUri)
             val companionTransaction = if (persistAvailableSidecars) {
                 LocalMediaCompanionTransaction(context, sourceUri.toString())
@@ -427,20 +434,16 @@ object LocalMediaSupport {
                 }
                 // 嵌入标签和侧载文件是两条独立的恢复路径。TagLib 暂不支持某种
                 // 容器时仍必须保存 Lyrics 和 npmeta，不能让嵌入失败阻断侧载重建
-                // MediaStore 路径可能能通过 stat 但仍会被 scoped storage 拒绝读取
-                // 这类来源始终沿 SAF 引用写入
-                val displayName = song.localFileName
-                    ?.takeIf(String::isNotBlank)
-                    ?: sourceUri.lastPathSegment.orEmpty()
+                val displayName = song.sidecarDisplayName(sidecarUri)
                 val fastLyricsReferences = if (
                     writeLyrics && !writeCover && localFile == null
                 ) {
-                    resolveCachedEditableLyricsReferences(context, sourceUri, displayName)
+                    resolveCachedEditableLyricsReferences(context, sidecarUri, displayName)
                 } else null
                 val fastMetadataReference = fastLyricsReferences?.metadataReference ?: if (
                     !writeLyrics && !writeCover && localFile == null
                 ) {
-                    resolveCachedEditableMetadataReference(context, sourceUri, displayName)
+                    resolveCachedEditableMetadataReference(context, sidecarUri, displayName)
                 } else null
                 val knownSidecarReferences = if (fastLyricsReferences != null) {
                     fastLyricsReferences
@@ -452,7 +455,7 @@ object LocalMediaSupport {
                 } else {
                     resolveContentSidecarReferences(
                         context = context,
-                        sourceUri = sourceUri,
+                        sourceUri = sidecarUri,
                         file = localFile,
                         displayName = displayName,
                         forMutation = true,
@@ -463,7 +466,7 @@ object LocalMediaSupport {
                     currentCoroutineContext().ensureActive()
                     writeLocalLyricsSidecars(
                         context = context,
-                        sourceUri = sourceUri,
+                        sourceUri = sidecarUri,
                         file = localFile,
                         displayName = displayName,
                         song = song,
@@ -481,7 +484,7 @@ object LocalMediaSupport {
                     currentCoroutineContext().ensureActive()
                     writeLocalCoverSidecar(
                         context = context,
-                        sourceUri = sourceUri,
+                        sourceUri = sidecarUri,
                         file = localFile,
                         displayName = displayName,
                         coverReference = coverReference,
@@ -502,7 +505,7 @@ object LocalMediaSupport {
                 }
                 val metadataSidecarWritten = writeLocalLyricsMetadata(
                     context = context,
-                    sourceUri = sourceUri,
+                    sourceUri = sidecarUri,
                     file = localFile,
                     displayName = displayName,
                     song = song,
@@ -596,18 +599,17 @@ object LocalMediaSupport {
         persistMetadata: Boolean = false
     ): Boolean = withContext(Dispatchers.IO) {
         val startedAtMs = SystemClock.elapsedRealtime()
-        val candidates = editableLocalMediaUriCandidates(context, song)
+        val (candidates, recoveryReferences) = editableLocalMediaTargets(context, song, sidecarsOnly = true)
         if (candidates.isEmpty()) return@withContext false
         val written = LocalMediaMetadataRecoveryStore.withRecoveredTargets(
             context = context.applicationContext,
-            targetReferences = candidates.map(Uri::toString),
+            targetReferences = recoveryReferences,
             blockedResult = false
         ) {
             candidates.any { sourceUri ->
                 currentCoroutineContext().ensureActive()
                 val file = resolveEditableSidecarFile(context, sourceUri)
-                val displayName = song.localFileName?.takeIf(String::isNotBlank)
-                    ?: sourceUri.lastPathSegment.orEmpty()
+                val displayName = song.sidecarDisplayName(sourceUri)
                 val transaction = LocalMediaCompanionTransaction(context, sourceUri.toString())
                 var committed = false
                 var rollbackSucceeded = true
@@ -707,7 +709,7 @@ object LocalMediaSupport {
         writeCover: Boolean,
         stableIdentityKey: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
-        val candidates = editableLocalMediaUriCandidates(context, song)
+        val candidates = editableLocalMediaTargets(context, song, sidecarsOnly = true).candidates
         if (candidates.isEmpty() || !writeCover) return@withContext true
         val resolvedStableIdentityKey = stableIdentityKey
             ?.trim()
@@ -719,9 +721,7 @@ object LocalMediaSupport {
                 context = context,
                 sourceUri = sourceUri,
                 file = file,
-                displayName = song.localFileName
-                    ?.takeIf(String::isNotBlank)
-                    ?: sourceUri.lastPathSegment.orEmpty(),
+                displayName = song.sidecarDisplayName(sourceUri),
                 coverReference = coverReference,
                 stableIdentityKey = resolvedStableIdentityKey
             )

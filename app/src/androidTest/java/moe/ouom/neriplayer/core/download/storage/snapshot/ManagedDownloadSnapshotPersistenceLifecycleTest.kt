@@ -117,7 +117,7 @@ class ManagedDownloadSnapshotPersistenceLifecycleTest {
     fun capturedLegacyCleanupTargetsCannotAddressTheCurrentSnapshot() = runBlocking {
         val original = snapshot()
         val legacyFile = File(context.filesDir, SNAPSHOT_CACHE_FILE_NAME)
-        legacyFile.writeText(ManagedDownloadSnapshotIndex.serializePayload("root-a", original))
+        writeLegacySnapshot(legacyFile, original)
         database.syncMetadataDao().upsertMigrationMetadata(MigrationMetadataEntity(
             key = ManagedDownloadSnapshotRoomStore.CUTOVER_STATE_METADATA_KEY,
             value = ManagedDownloadSnapshotRoomStore.ROOM_PRIMARY_STATE,
@@ -144,7 +144,7 @@ class ManagedDownloadSnapshotPersistenceLifecycleTest {
     fun legacySnapshotRemainsReadableUntilExplicitInvalidation() = runBlocking {
         val original = snapshot()
         val legacyFile = File(context.filesDir, SNAPSHOT_CACHE_FILE_NAME)
-        legacyFile.writeText(ManagedDownloadSnapshotIndex.serializePayload("root-a", original))
+        writeLegacySnapshot(legacyFile, original)
         repeat(2) { assertSnapshot(original, checkNotNull(coldRestore("root-a"))) }
         assertTrue(legacyFile.isFile)
 
@@ -158,7 +158,7 @@ class ManagedDownloadSnapshotPersistenceLifecycleTest {
     @Test
     fun currentSnapshotNeverFallsBackToAnOlderLegacyPayload() = runBlocking {
         val legacyFile = File(context.filesDir, SNAPSHOT_CACHE_FILE_NAME)
-        legacyFile.writeText(ManagedDownloadSnapshotIndex.serializePayload("root-a", snapshot()))
+        writeLegacySnapshot(legacyFile, snapshot())
         val currentFile = ManagedDownloadSnapshotDiskCache.cacheFile(context)
         assertTrue(ManagedDownloadSnapshotRoomStore(context, database).persist("root-b", snapshot()))
 
@@ -198,7 +198,7 @@ class ManagedDownloadSnapshotPersistenceLifecycleTest {
         val cache = cacheStore()
         val original = snapshot()
         val legacyFile = File(context.filesDir, SNAPSHOT_CACHE_FILE_NAME)
-        legacyFile.writeText(ManagedDownloadSnapshotIndex.serializePayload("root-a", original))
+        writeLegacySnapshot(legacyFile, original)
         cache.putSnapshot(context, "root-a", original)
         awaitPersistence()
         assertSnapshot(original, checkNotNull(coldRestore("root-a")))
@@ -213,6 +213,12 @@ class ManagedDownloadSnapshotPersistenceLifecycleTest {
         cache.putSnapshot(context, "root-a", replacement)
         awaitPersistence()
         repeat(2) { assertSnapshot(replacement, checkNotNull(coldRestore("root-a"))) }
+    }
+
+    private fun writeLegacySnapshot(file: File, snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot) {
+        file.bufferedWriter(Charsets.UTF_8).use { writer ->
+            ManagedDownloadSnapshotJsonCodec.write(writer, "root-a", snapshot)
+        }
     }
 
     private suspend fun awaitPersistence() = withTimeout(10_000.milliseconds) {

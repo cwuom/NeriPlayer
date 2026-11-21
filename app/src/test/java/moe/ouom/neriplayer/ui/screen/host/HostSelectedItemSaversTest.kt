@@ -51,6 +51,7 @@ class HostSelectedItemSaversTest {
             LibrarySelectedItem.Hot(monthly = true),
             LibrarySelectedItem.Netease(playlist),
             LibrarySelectedItem.NeteaseAlbum(album),
+            LibrarySelectedItem.NeteaseCloud,
             LibrarySelectedItem.NeteaseArtist(artist),
             LibrarySelectedItem.NeteaseArtistAlbum(artist, album),
             LibrarySelectedItem.Bili(bili),
@@ -80,6 +81,10 @@ class HostSelectedItemSaversTest {
         assertEquals(
             mapOf("type" to "hot", "monthly" to false),
             LibrarySelectedItem.Hot(monthly = false).saveState()
+        )
+        assertEquals(
+            mapOf("type" to "neteaseCloud"),
+            LibrarySelectedItem.NeteaseCloud.saveState()
         )
         assertEquals(
             mapOf("type" to "serverAlbum", "profileId" to "server-a", "albumId" to "album / 中文",

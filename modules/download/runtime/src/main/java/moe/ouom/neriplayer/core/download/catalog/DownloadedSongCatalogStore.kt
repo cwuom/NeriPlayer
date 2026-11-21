@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import java.io.File
 import moe.ouom.neriplayer.common.io.writeTextAtomically
+import moe.ouom.neriplayer.common.io.writeUtf8Atomically
 
 internal class DownloadedSongCatalogStore(
     private val cacheFileName: String,
@@ -140,29 +141,22 @@ internal class DownloadedSongCatalogStore(
         rootKey: String = snapshotCacheKeyProvider(context.applicationContext)
     ): List<DownloadedSong>? {
         val file = File(context.applicationContext.filesDir, cacheFileName)
-        val rawPayload = runCatching {
-            file.takeIf(File::exists)?.readText(Charsets.UTF_8)
-        }.onFailure { error ->
-            NPLogger.w(loggerTag, "读取旧下载歌曲目录失败: ${error.message}")
-        }.getOrNull() ?: return null
-        if (rawPayload.isBlank()) return null
+        if (!file.exists()) return null
         return runCatching {
-            deserializeDownloadedSongsCatalog(
-                raw = rawPayload,
-                expectedCacheKey = rootKey,
-                includeOriginalLyrics = true
-            )
+            file.bufferedReader(Charsets.UTF_8).use { reader ->
+                readDownloadedSongsCatalog(reader, rootKey, includeOriginalLyrics = true)
+            }
         }.onFailure { error ->
-            NPLogger.w(loggerTag, "解析旧下载歌曲目录失败: ${error.message}")
+            NPLogger.w(loggerTag, "读取或解析旧下载歌曲目录失败: ${error.message}")
         }.getOrNull()
     }
 
     private fun writeLegacyCatalog(context: Context, songs: List<DownloadedSong>) {
         val appContext = context.applicationContext
         val rootKey = snapshotCacheKeyProvider(appContext)
-        File(appContext.filesDir, cacheFileName).writeTextAtomically(
-            serializeDownloadedSongsCatalog(rootKey, songs)
-        )
+        File(appContext.filesDir, cacheFileName).writeUtf8Atomically { writer ->
+            writeDownloadedSongsCatalog(writer, rootKey, songs)
+        }
         val backupFile = File(
             appContext.filesDir,
             "$cacheFileName$MANAGED_LIBRARY_CATALOG_BACKUP_SUFFIX"

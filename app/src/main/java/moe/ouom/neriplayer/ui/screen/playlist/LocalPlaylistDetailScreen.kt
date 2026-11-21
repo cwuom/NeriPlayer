@@ -140,6 +140,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalMetadataProcessingState
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatTotalDuration
@@ -325,7 +326,8 @@ fun LocalPlaylistDetailScreen(
     onBack: () -> Unit,
     onDeleted: () -> Unit = onBack,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
-    offlineMode: Boolean = false
+    offlineMode: Boolean = false,
+    onPlayBiliParts: (VideoBasicInfo, Int, String) -> Unit = PlayerManager::playBiliVideoParts
 ) {
     val context = LocalContext.current
     val vm: LocalPlaylistDetailViewModel = viewModel()
@@ -1539,6 +1541,9 @@ fun LocalPlaylistDetailScreen(
                 return@Surface
             }
 
+            var requestedBiliParts by remember(playlistId, offlineMode) {
+                mutableStateOf<Pair<SongItem, String>?>(null)
+            }
             val modernContentScope = LocalPlaylistDetailModernContentScope(
                 context = context,
                 composeResources = composeResources,
@@ -1546,7 +1551,16 @@ fun LocalPlaylistDetailScreen(
                 playlist = playlist,
                 playlistId = playlistId,
                 onBack = onBack,
-                onSongClick = onSongClick,
+                onSongClick = { songs, index ->
+                    val song = songs.getOrNull(index)
+                    val bvid = if (offlineMode) null else song?.biliPartsPickerBvidOrNull()
+                    if (song != null && bvid != null) {
+                        requestedBiliParts = song to bvid
+                    } else {
+                        requestedBiliParts = null
+                        onSongClick(songs, index)
+                    }
+                },
                 offlineMode = offlineMode,
                 isFavorites = isFavorites,
                 isLocalFilesPlaylist = isLocalFilesPlaylist,
@@ -1689,6 +1703,22 @@ fun LocalPlaylistDetailScreen(
                 )
             )
             LocalPlaylistDetailModernContent(modernContentScope)
+            requestedBiliParts?.takeIf { detailVisibilityState.targetState }?.let { (song, bvid) ->
+                LocalPlaylistBiliPartsPicker(
+                    bvid = bvid,
+                    title = song.name,
+                    loadVideo = { AppContainer.biliClient.getVideoBasicInfoByBvid(it) },
+                    onDismiss = { requestedBiliParts = null },
+                    onPlayOriginal = {
+                        val index = tabSongs.indexOfFirst { it.sameIdentityAs(song) }
+                        if (index >= 0) onSongClick(tabSongs, index)
+                    },
+                    onPlayPart = { info, index ->
+                        val coverUrl = song.coverUrl?.takeIf { it.isNotBlank() } ?: info.coverUrl
+                        onPlayBiliParts(info, index, coverUrl)
+                    }
+                )
+            }
         }
     }
 }

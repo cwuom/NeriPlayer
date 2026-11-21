@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.upsertDownloadedSongCatalog
 import moe.ouom.neriplayer.core.download.catalog.ManagedLibraryItemRoomStore
+import moe.ouom.neriplayer.core.download.manager.batch.cancellationOperationIdsForSong
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
@@ -64,11 +65,15 @@ internal suspend fun GlobalDownloadManager.awaitSongCancellationSettled(
         .map(String::trim)
         .filter(String::isNotBlank)
         .toSet()
+        .ifEmpty { cancellationOperationIdsForSong(songKey) }
     fun isTargetActive(): Boolean {
         return if (normalizedOperationIds.isEmpty()) {
             AudioDownloadManager.isSongDownloadActive(songKey)
         } else {
-            normalizedOperationIds.any(AudioDownloadManager::isOperationDownloadActive)
+            normalizedOperationIds.any { operationId ->
+                AudioDownloadManager.isOperationDownloadActive(operationId) ||
+                    assetEnrichmentCoordinator.isActive(operationId)
+            }
         }
     }
     if (!isSongCancelled(songKey) && !isTargetActive()) {
@@ -84,7 +89,18 @@ internal suspend fun GlobalDownloadManager.awaitSongCancellationSettled(
         )
     }
 
-    val deadlineAt = System.currentTimeMillis() + timeoutMs
+    val deadlineAt = System.currentTimeMillis() + timeoutMs.coerceAtLeast(1L)
+    // 传输退出后资产增强仍可能持有目录租约，必须等其不可取消写入和完成回调一起收敛
+    val enrichmentSettled = assetEnrichmentCoordinator.cancelAndJoin(
+        operationIds = normalizedOperationIds,
+        timeoutMs = timeoutMs
+    )
+    if (!enrichmentSettled) {
+        if (logProgress) {
+            NPLogger.w(TAG, "等待取消中的资产增强清理超时: songKey=$songKey")
+        }
+        return false
+    }
     while (isTargetActive() && System.currentTimeMillis() < deadlineAt) {
         delay(50.milliseconds)
     }

@@ -63,7 +63,8 @@ internal data class NowPlayingOverlayTheme(
     val paletteStyle: PaletteStyle,
     val colorSpec: ColorSpec.SpecVersion,
     val uiStyle: UiStyle = UiStyle.Material,
-    val liquidGlass: Boolean = false
+    val liquidGlass: Boolean = false,
+    val enhancedEffects: Boolean = false
 )
 
 internal data class NowPlayingThemeSelection(
@@ -163,6 +164,7 @@ internal fun AppNowPlayingOverlay(
             colorSpec = theme.colorSpec,
             uiStyle = theme.uiStyle,
             liquidGlass = theme.liquidGlass,
+            enhancedEffects = theme.enhancedEffects,
             // text sits on the cover-tinted backdrop, so keep the cover palette instead of greys
             neutralSurfaces = false
         ) {

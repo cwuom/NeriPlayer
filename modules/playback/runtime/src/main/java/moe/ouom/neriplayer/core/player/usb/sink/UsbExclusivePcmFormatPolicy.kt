@@ -6,6 +6,7 @@ import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import kotlin.math.max
+import moe.ouom.neriplayer.common.R as CoreCommonR
 
 internal fun isNativePcmFormat(format: Format): Boolean {
     return MimeTypes.AUDIO_RAW == format.sampleMimeType &&
@@ -22,6 +23,16 @@ internal fun isUsbNativePcmFormat(format: Format): Boolean {
 internal fun inputFormatDescription(format: Format): String {
     return "mime=${format.sampleMimeType ?: "unknown"} sampleRate=${format.sampleRate} " +
         "channels=${format.channelCount} encoding=${format.pcmEncoding}"
+}
+
+internal fun nativeFormatWarningMessageResId(reason: String): Int? = when {
+    reason.startsWith("sample_rate_unsupported") ->
+        CoreCommonR.string.settings_usb_exclusive_issue_sample_rate
+    reason.startsWith("bit_depth_unsupported") ->
+        CoreCommonR.string.settings_usb_exclusive_issue_bit_depth
+    reason.startsWith("channel_count_unsupported") ->
+        CoreCommonR.string.settings_usb_exclusive_issue_device
+    else -> null
 }
 
 internal fun pcmFrameBytes(encoding: Int, channels: Int): Int {
