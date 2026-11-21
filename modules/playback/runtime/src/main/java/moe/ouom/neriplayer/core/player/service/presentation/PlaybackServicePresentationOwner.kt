@@ -399,21 +399,7 @@ internal class PlaybackServicePresentationOwner(
     ) {
         val bluetoothRoute = audioDeviceType != null && isBluetoothOutputType(audioDeviceType)
         if (!bluetoothRoute) {
-            // 离开蓝牙后要把队列当前项恢复成歌名/歌手, 否则会话里残留着上一行歌词,
-            // 控制器看到的内容与随后发布的普通 metadata 不一致。
-            val hadOverride = queueOverrideTitle != null || queueOverrideSubtitle != null
-            queueOverrideTitle = null
-            queueOverrideSubtitle = null
-            if (hadOverride) {
-                runCatching {
-                    publishCarQueue(
-                        songs = queue,
-                        selectedIndex = queueIndex,
-                    )
-                }.onFailure { failure ->
-                    logQueueFailureOnce("failed to restore media session queue after leaving bluetooth", failure)
-                }
-            }
+            restoreCarQueueAfterLeavingBluetooth(queue, queueIndex)
             return
         }
         // 队列当前项跟随 metadata 的实际写入值
@@ -431,6 +417,25 @@ internal class PlaybackServicePresentationOwner(
     }
 
     /**
+     * 离开蓝牙后要把队列当前项恢复成歌名/歌手, 否则会话里残留着上一行歌词,
+     * 控制器看到的内容与随后发布的普通 metadata 不一致。
+     */
+    private fun restoreCarQueueAfterLeavingBluetooth(queue: List<SongItem>, queueIndex: Int) {
+        val hadOverride = queueOverrideTitle != null || queueOverrideSubtitle != null
+        queueOverrideTitle = null
+        queueOverrideSubtitle = null
+        if (!hadOverride) return
+        runCatching {
+            publishCarQueue(
+                songs = queue,
+                selectedIndex = queueIndex,
+            )
+        }.onFailure { failure ->
+            logQueueFailureOnce("failed to restore media session queue after leaving bluetooth", failure)
+        }
+    }
+
+    /**
      * 发布会话队列。队列当前项的标题在蓝牙输出下要跟随歌词, 这里统一持有覆盖值,
      * 避免其它路径(换歌、队列变化)把当前项覆盖回歌名。
      */
@@ -443,15 +448,8 @@ internal class PlaybackServicePresentationOwner(
         val title = currentItemTitleOverride ?: queueOverrideTitle
         val subtitle = currentItemSubtitleOverride ?: queueOverrideSubtitle
         val session = port.sessionIdentity()
-        if (session != null && session !== lastPublishedQueueSession) {
-            // 换了会话, 队列要重新下发。
-            lastPublishedQueueSongs = null
-            lastPublishedQueueIndex = -1
-            lastPublishedQueueTitle = null
-            lastPublishedQueueSubtitle = null
-        }
-        if (title == lastPublishedQueueTitle && subtitle == lastPublishedQueueSubtitle &&
-            lastPublishedQueueSongs === songs && lastPublishedQueueIndex == selectedIndex) return
+        resetPublishedQueueIfSessionChanged(session)
+        if (isPublishedQueueUnchanged(title, subtitle, songs, selectedIndex)) return
         // 覆盖值在发布前就要记住: 发布失败时 lastPublishedQueue* 不更新, 下一次队列变化
         // 会用这份最新的期望覆盖值重试, 否则会拿旧值重新下发, 队列又和 metadata 对不上。
         queueOverrideTitle = title
@@ -468,6 +466,32 @@ internal class PlaybackServicePresentationOwner(
         lastPublishedQueueSongs = songs
         lastPublishedQueueIndex = selectedIndex
     }
+
+    /** 换了会话, 队列要重新下发, 去重状态要跟着清掉 */
+    private fun resetPublishedQueueIfSessionChanged(session: Any?) {
+        if (session == null || session === lastPublishedQueueSession) return
+        lastPublishedQueueSongs = null
+        lastPublishedQueueIndex = -1
+        lastPublishedQueueTitle = null
+        lastPublishedQueueSubtitle = null
+    }
+
+    /** 队列内容与当前项标题都没变就不用重复下发 */
+    private fun isPublishedQueueUnchanged(
+        title: String?,
+        subtitle: String?,
+        songs: List<SongItem>,
+        selectedIndex: Int,
+    ): Boolean =
+        isPublishedCurrentItemUnchanged(title, subtitle) && isPublishedQueueUnchanged(songs, selectedIndex)
+
+    /** 当前项标题和上次下发的一致 */
+    private fun isPublishedCurrentItemUnchanged(title: String?, subtitle: String?): Boolean =
+        title == lastPublishedQueueTitle && subtitle == lastPublishedQueueSubtitle
+
+    /** 队列内容和选中位置和上次下发的一致 */
+    private fun isPublishedQueueUnchanged(songs: List<SongItem>, selectedIndex: Int): Boolean =
+        lastPublishedQueueSongs === songs && lastPublishedQueueIndex == selectedIndex
 
     private fun publishMetadata(snapshot: PlaybackMetadataSnapshot, artworkSnapshot: PlaybackArtworkSnapshot) {
         if (snapshot.coverSource == null || snapshot.coverSource != rejectedArtworkCoverSource) {

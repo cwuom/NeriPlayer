@@ -36,27 +36,80 @@ internal fun serviceMetadataText(
     colorOsLyricsEnabled: Boolean = false,
     bluetoothTranslationEnabled: Boolean = false,
 ): ExternalBluetoothMetadataText {
-    // payload 的翻译由多个歌词展示功能共用(灵动岛、锁屏歌词、悬浮歌词等),
-    // 其他功能开着时 payload 里也会带翻译。车机是否显示翻译只由
-    // 「蓝牙外接设备翻译歌词」决定, 否则开关关掉也关不掉。
-    // 非蓝牙输出(手机扬声器、灵动岛等)不受这个开关影响。
     val bluetoothRoute = audioDeviceType?.let(::isBluetoothOutputType) == true
-    val effectivePayload = if (bluetoothRoute && !bluetoothTranslationEnabled) {
-        payload.copy(translation = null)
-    } else {
-        payload
-    }
-    val text = resolveExternalBluetoothMetadataText(
-        normalTitle = serviceNotificationTitle(song),
-        normalArtist = serviceMetadataArtist(song),
-        payload = effectivePayload,
-        useBluetoothLyrics = shouldUseExternalBluetoothLyrics(audioDeviceType, effectivePayload, forceSendLyrics),
-        normalAlbum = normalAlbum ?: serviceMetadataAlbum(song),
-        mode = if (bluetoothRoute) mode else BluetoothMetadataMode.Lyrics,
+    val normalTitle = serviceNotificationTitle(song)
+    val normalArtist = serviceMetadataArtist(song)
+    val album = normalAlbum ?: serviceMetadataAlbum(song)
+    val effectiveMode = if (bluetoothRoute) mode else BluetoothMetadataMode.Lyrics
+    // AVRCP 面向车机的 TITLE/ARTIST 要按开关过滤翻译, 但灵动岛读的 DISPLAY_* 字段
+    // 不能跟着一起丢, 否则关掉车机翻译会连带关掉灵动岛的翻译。
+    val avrcpPayload = avrcpMetadataPayload(payload, bluetoothRoute, bluetoothTranslationEnabled)
+    val avrcpText = resolveExternalBluetoothMetadataText(
+        normalTitle = normalTitle,
+        normalArtist = normalArtist,
+        payload = avrcpPayload,
+        useBluetoothLyrics = shouldUseExternalBluetoothLyrics(audioDeviceType, avrcpPayload, forceSendLyrics),
+        normalAlbum = album,
+        mode = effectiveMode,
+    )
+    val text = withDisplayTranslation(
+        avrcpText = avrcpText,
+        payload = payload,
+        avrcpPayload = avrcpPayload,
+        normalTitle = normalTitle,
+        normalArtist = normalArtist,
+        album = album,
+        audioDeviceType = audioDeviceType,
+        forceSendLyrics = forceSendLyrics,
+        mode = effectiveMode,
     )
     return if (colorOsLyricsEnabled) text.copy(
-        title = serviceNotificationTitle(song), artist = serviceMetadataArtist(song),
+        title = normalTitle, artist = normalArtist,
     ) else text
+}
+
+/**
+ * 面向车机的 AVRCP payload: 蓝牙输出且翻译开关关闭时不带译文。
+ * 非蓝牙输出(手机扬声器、灵动岛等)不受这个开关影响。
+ */
+private fun avrcpMetadataPayload(
+    payload: ExternalBluetoothLyricPayload,
+    bluetoothRoute: Boolean,
+    bluetoothTranslationEnabled: Boolean,
+): ExternalBluetoothLyricPayload {
+    if (!bluetoothRoute || bluetoothTranslationEnabled) return payload
+    return payload.copy(translation = null)
+}
+
+/**
+ * 把未过滤的展示面字段合回 AVRCP 文本。
+ * 翻译开关只作用于车机, 系统展示面(灵动岛、锁屏歌词等)仍要显示译文。
+ */
+private fun withDisplayTranslation(
+    avrcpText: ExternalBluetoothMetadataText,
+    payload: ExternalBluetoothLyricPayload,
+    avrcpPayload: ExternalBluetoothLyricPayload,
+    normalTitle: String,
+    normalArtist: String,
+    album: String?,
+    audioDeviceType: Int?,
+    forceSendLyrics: Boolean,
+    mode: BluetoothMetadataMode,
+): ExternalBluetoothMetadataText {
+    if (avrcpPayload === payload) return avrcpText
+    val displayText = resolveExternalBluetoothMetadataText(
+        normalTitle = normalTitle,
+        normalArtist = normalArtist,
+        payload = payload,
+        useBluetoothLyrics = shouldUseExternalBluetoothLyrics(audioDeviceType, payload, forceSendLyrics),
+        normalAlbum = album,
+        mode = mode,
+    )
+    return avrcpText.copy(
+        displayTitle = displayText.displayTitle,
+        displaySubtitle = displayText.displaySubtitle,
+        displayDescription = displayText.displayDescription,
+    )
 }
 
 private fun serviceMetadataArtist(song: SongItem?): String = song?.displayArtist().orEmpty()
