@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.player.lan
+package moe.ouom.neriplayer.core.player.lan.track
 
 import java.security.MessageDigest
 import moe.ouom.neriplayer.data.local.media.displayArtist

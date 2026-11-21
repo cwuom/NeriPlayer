@@ -402,12 +402,13 @@ internal data class ShareableListenTogetherStreamResolution(
 internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrls(
     song: SongItem,
     progressiveRelay: Boolean = false,
-    firstQualityOnly: Boolean = false
+    firstQualityOnly: Boolean = false,
+    forceRefresh: Boolean = false,
 ): ShareableListenTogetherStreamResolution {
     val track = song.toListenTogetherTrackOrNull()
         ?: return ShareableListenTogetherStreamResolution(emptyList(), isPreviewOnly = false)
     val resolution = when {
-        isYouTubeMusicTrack(song) -> resolveYouTubeListenTogetherShareableStreams(song, progressiveRelay, firstQualityOnly)
+        isYouTubeMusicTrack(song) -> resolveYouTubeListenTogetherShareableStreams(song, progressiveRelay, firstQualityOnly, forceRefresh)
         isBiliTrack(song) -> resolveBiliListenTogetherShareableStreams(song)
         else -> resolveNeteaseListenTogetherShareableStreams(song, firstQualityOnly)
     }
@@ -554,7 +555,7 @@ internal fun buildBiliListenTogetherStreamUrls(
 }
 
 private suspend fun PlayerManager.resolveYouTubeListenTogetherShareableStreams(
-    song: SongItem, progressiveRelay: Boolean, firstQualityOnly: Boolean
+    song: SongItem, progressiveRelay: Boolean, firstQualityOnly: Boolean, forceRefresh: Boolean
 ): ShareableListenTogetherStreamResolution {
     val streamUrls = linkedSetOf<String>()
     val resolvedQualityKeys = linkedSetOf<String>()
@@ -564,7 +565,7 @@ private suspend fun PlayerManager.resolveYouTubeListenTogetherShareableStreams(
         val result = getYouTubeMusicAudioUrl(
             song = song,
             suppressError = true,
-            forceRefresh = false,
+            forceRefresh = forceRefresh,
             youtubeRecoveryStrategy = YouTubePlaybackRecoveryStrategy(
                 preferredQualityOverride = requestedQuality,
                 requireDirect = progressiveRelay,

@@ -44,11 +44,20 @@ class LanSessionDeviceTest {
         val endpoint = CompletableDeferred<MediaEndpoint>()
         var mediaServer: LanMediaServer? = null
         var playing = initiallyPlaying
+        var mutedForSleep = false
+        var completed: (ListenTogetherTrack?, Boolean) -> Unit = { _, _ -> }
+        val boundaries = MutableStateFlow<Boolean?>(null)
+        override fun muteHostForSleep(muted: Boolean) { mutedForSleep = muted }
+        override fun watchHostTrackEnd(handler: (ListenTogetherTrack?, Boolean) -> Unit) { completed = handler }
+        override fun roomTrackEnded(lastInPlaylist: Boolean) { boundaries.value = lastInPlaylist }
         var position = 0.0
         var ended = true
         var audioFailure: (String) -> Unit = {}
         override fun watchAudioFailure(handler: (String) -> Unit) { audioFailure = handler }
-        override suspend fun prepareSharedSource(track: ListenTogetherTrack, refresh: Boolean) = LanPreparedSource(track, stream)
+        var guestRefilled: (String) -> Unit = {}
+        override fun watchGuestRefill(handler: (String) -> Unit) { guestRefilled = handler }
+        var resolve: suspend (ListenTogetherTrack) -> LanPreparedSource = { LanPreparedSource(it, stream) }
+        override suspend fun prepareSharedSource(track: ListenTogetherTrack, refresh: Boolean) = resolve(track)
         override fun sharedPresentationUpdates(track: ListenTogetherTrack, mediaId: String) =
             presentationUpdates.filterNotNull()
         override fun sharedPresentation(track: ListenTogetherTrack, presentation: LanSharedPresentation?) {
@@ -79,6 +88,76 @@ class LanSessionDeviceTest {
         }
     }
     private fun main(block: () -> Unit) = InstrumentationRegistry.getInstrumentation().runOnMainSync(block)
+
+    @Test fun sleepingHostKeepsTheRoomPlayingAndReportsNaturalEndToGuests() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val http = OkHttpClient()
+        val hostPort = Port()
+        val memberPort = Port()
+        val host = LanSessionManager(context, http, hostPort, { false }, {})
+        val member = LanSessionManager(context, http, memberPort, { false }, {})
+        try {
+            main { host.host("Host") }
+            val ready = withTimeout(30_000) { host.state.first {
+                it.synced && it.room?.playback?.let { plan -> plan.track != null && !plan.preparing } == true
+            } }
+            main { member.join("127.0.0.1:${ready.port}", ready.room!!.id, "Member") }
+            withTimeout(30_000) { member.state.first { it.synced && it.room?.members?.size == 2 } }
+            main { host.requestPlayback("TOGGLE", song, 0.0) }
+            withTimeout(10_000) { hostPort.plays.first { it == 1 }; memberPort.plays.first { it == 1 } }
+            main {
+                hostPort.audioFailure("SLEEP_TIMER")
+                assertTrue(hostPort.mutedForSleep)
+                assertTrue(hostPort.playing)
+                hostPort.completed(song, false)
+            }
+            withTimeout(10_000) {
+                memberPort.boundaries.first { it == false }
+                hostPort.plays.first { it == 2 }
+                memberPort.plays.first { it == 2 }
+            }
+            main {
+                assertTrue(hostPort.mutedForSleep)
+                hostPort.completed(null, true)
+            }
+            withTimeout(10_000) {
+                memberPort.boundaries.first { it == true }
+                member.state.first { it.room?.playback?.playing == false }
+                host.state.first { it.room?.playback?.playing == false }
+            }
+            main { host.requestPlayback("TOGGLE", song, 0.0) }
+            withTimeout(10_000) { hostPort.plays.first { it == 3 } }
+            main { assertFalse(hostPort.mutedForSleep) }
+        } finally {
+            main { member.leave(); host.leave() }
+            withTimeout(10_000) { member.state.first { !it.active }; host.state.first { !it.active } }
+            http.dispatcher.executorService.shutdown()
+            http.connectionPool.evictAll()
+        }
+    }
+
+    @Test fun hostSurfacesProviderTimeoutImmediatelyAndCanRetry() = runBlocking {
+        val http = OkHttpClient()
+        val port = Port().apply { resolve = { withTimeout(50) { awaitCancellation() } } }
+        val host = LanSessionManager(InstrumentationRegistry.getInstrumentation().targetContext, http, port, { false }, {})
+        try {
+            main { host.host("Host") }
+            val failure = withTimeout(10_000) { host.state.first { it.error == "LOAD_TIMEOUT" } }
+            assertTrue(failure.active)
+            assertFalse(failure.preparing)
+            main {
+                port.resolve = { LanPreparedSource(it, stream) }
+                host.requestPlayback("PLAY_PAUSE", song, 0.0)
+            }
+            withTimeout(10_000) { port.plays.first { it > 0 } }
+            assertNull(host.state.value.error)
+        } finally {
+            main { host.leave() }
+            withTimeout(10_000) { host.state.first { !it.active } }
+            http.dispatcher.executorService.shutdown()
+            http.connectionPool.evictAll()
+        }
+    }
     @Test fun systemAudioInterruptionsPreserveTheRoomAndResumeOnlyAfterLocalInput() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val http = OkHttpClient()
@@ -117,6 +196,7 @@ class LanSessionDeviceTest {
             main {
                 assertTrue(hostPort.playing)
                 assertFalse(guestPort.playing)
+                guestPort.guestRefilled(stream.mediaId)
                 host.requestPlayback("PAUSE", song, 0.0)
             }
             withTimeout(5_000) { guest.state.first { it.room?.playback?.playing == false } }
@@ -166,10 +246,29 @@ class LanSessionDeviceTest {
             assertEquals(31.0, prepared.positionSeconds, .001)
             assertEquals(0, hostPort.plays.value)
             assertEquals(0, memberPort.plays.value)
+            main { memberPort.guestRefilled(stream.mediaId) }
             main { host.requestPlayback("PLAY_PAUSE", song, 31.0) }
             withTimeout(15000) { hostPort.plays.first { it > 0 }; memberPort.plays.first { it > 0 } }
             val playing = withTimeout(5000) { member.state.first { it.room?.playback?.playing == true } }
             val previousRevision = checkNotNull(playing.room).playback.revision
+            val guestPlays = memberPort.plays.value
+            val hostPlays = hostPort.plays.value
+            main {
+                hostPort.guestRefilled(stream.mediaId)
+                memberPort.guestRefilled("previous-media")
+            }
+            assertNull(withTimeoutOrNull(2_500) { memberPort.plays.first { it > guestPlays } })
+            main {
+                memberPort.playing = false
+                memberPort.position = 19.0
+                memberPort.guestRefilled(stream.mediaId)
+            }
+            withTimeout(10_000) { memberPort.plays.first { it > guestPlays } }
+            main {
+                assertTrue("member must resume at the advancing room position", memberPort.position > 31.0)
+                assertEquals(hostPlays, hostPort.plays.value)
+                assertEquals(previousRevision, member.state.value.room!!.playback.revision)
+            }
             main { member.requestPlayback("SEEK", song, 10.0) }
             withTimeout(5000) { member.state.first { it.error == "DENIED" } }
             assertEquals(previousRevision, member.state.value.room!!.playback.revision)

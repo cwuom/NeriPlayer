@@ -28,6 +28,7 @@ TEST_METHOD = re.compile(r"[A-Za-z_$][\w$]*")
 MODULE_TASKS = {
     ":database:connectedDebugAndroidTest": "modules/database",
     ":local:connectedDebugAndroidTest": "modules/local",
+    ":ltwlan:connectedDebugAndroidTest": "modules/ltwlan",
     ":playback:runtime:connectedDebugAndroidTest": "modules/playback/runtime",
 }
 GRADLE_FLAGS = [

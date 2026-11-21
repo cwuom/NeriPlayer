@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.player.lyrics
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.lan.LanSharedPresentationStore
-import moe.ouom.neriplayer.core.player.lan.isLanTemporaryServerSong
+import moe.ouom.neriplayer.core.player.lan.track.isLanTemporaryServerSong
 import moe.ouom.neriplayer.core.player.metadata.BiliSubtitleLyricsOptions
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult

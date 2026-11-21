@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 import java.io.PrintWriter
+import java.net.Socket
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
@@ -13,7 +14,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.SynchronousQueue
 
 /** Session-only resource server. Paths come exclusively from the private resource registry. */
-class LanMediaServer : NanoHTTPD(0) {
+class LanMediaServer internal constructor(maxHttpWorkers: Int) : NanoHTTPD(0) {
+    constructor() : this(MAX_HTTP_WORKERS)
     private data class Resource(
         val byteLength: Long?, val mime: String, val transfers: Semaphore, val storageBytes: Long,
         val progressive: Boolean, val open: (Long, Long?) -> LanMediaStreamInput, val cleanup: () -> Unit,
@@ -28,7 +30,7 @@ class LanMediaServer : NanoHTTPD(0) {
     private val progressiveTransfers = Semaphore(MAX_PROGRESSIVE_TRANSFERS)
     private var stopped = false
     private val retired = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Resource, Boolean>())
-    private val runner = BoundedRunner()
+    private val runner = BoundedRunner(maxHttpWorkers)
     init { setAsyncRunner(runner) }
 
     fun grant(peer: String): String {
@@ -246,15 +248,29 @@ class LanMediaServer : NanoHTTPD(0) {
         }
     }
 
-    private class BoundedRunner : AsyncRunner {
+    override fun createClientHandler(socket: Socket, inputStream: InputStream): ClientHandler = MediaClient(socket, inputStream)
+
+    private inner class MediaClient(private val socket: Socket, input: InputStream) : ClientHandler(input, socket) {
+        fun rejectBusy() {
+            try {
+                socket.getOutputStream().write(BUSY_RESPONSE)
+                socket.shutdownOutput()
+            } catch (_: java.io.IOException) {
+                // 客户端可能已经取消请求
+            } finally { close() }
+        }
+    }
+
+    private class BoundedRunner(maxHttpWorkers: Int) : AsyncRunner {
         private val clients = ConcurrentHashMap.newKeySet<ClientHandler>()
         // leave workers available for metadata and short backpressure replies in a full room
-        private val pool = ThreadPoolExecutor(0, MAX_HTTP_WORKERS, 20, TimeUnit.SECONDS, SynchronousQueue<Runnable>(),
+        private val pool = ThreadPoolExecutor(0, maxHttpWorkers, 20, TimeUnit.SECONDS, SynchronousQueue<Runnable>(),
             { task -> Thread(task, "lan-media").apply { isDaemon = true } })
         override fun exec(clientHandler: ClientHandler) {
             clients.add(clientHandler)
             try { pool.execute(clientHandler) } catch (_: java.util.concurrent.RejectedExecutionException) {
-                clients.remove(clientHandler); clientHandler.close()
+                clients.remove(clientHandler)
+                (clientHandler as MediaClient).rejectBusy()
             }
         }
         override fun closed(clientHandler: ClientHandler) { clients.remove(clientHandler) }
@@ -267,6 +283,7 @@ class LanMediaServer : NanoHTTPD(0) {
         const val MAX_PROGRESSIVE_TRANSFERS = 16
         const val MAX_STREAMS_PER_MEMBER = 2
         const val MAX_HTTP_WORKERS = 24
+        val BUSY_RESPONSE = "HTTP/1.1 503 Service Unavailable\r\nRetry-After: 1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII)
         const val SNAPSHOT_BUDGET = 2 * moe.ouom.neriplayer.data.model.lan.LanLocalMedia.MAX_BYTES + 32L * 1024 * 1024
     }
 }

@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.player.lan
+package moe.ouom.neriplayer.core.player.lan.track
 
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack

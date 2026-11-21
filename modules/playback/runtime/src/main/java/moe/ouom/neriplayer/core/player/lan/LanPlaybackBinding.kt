@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.lan
 
+import moe.ouom.neriplayer.core.player.lan.track.LanLocalIdentity
+import moe.ouom.neriplayer.core.player.lan.track.lanServerTrack
 import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueNavigationOwner
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -14,8 +16,9 @@ internal object LanPlaybackBinding {
     var command: ((String, ListenTogetherTrack?, Double) -> Unit)? = null
     var interruptAudio: ((String) -> Unit)? = null
     var stopped: (() -> Unit)? = null
+    var hostTrackEnded: ((ListenTogetherTrack?, Boolean) -> Unit)? = null
     var isHost: () -> Boolean = { false }
-    var offeredQueue: List<SongItem>? = null
+    val queueOffers = LanQueueOffers()
     @Volatile var guestPlayback: LanGuestPlaybackSnapshot? = null
     val active: Boolean get() = command != null
     fun interrupt(reason: String = "AUDIO_SUSPENDED"): Boolean {
@@ -38,8 +41,7 @@ internal object LanPlaybackBinding {
     }
     /** 服务销毁回调转发，保持 LanPlaybackBinding 与服务生命周期的单向依赖。 */
     fun notifyServiceStopped() { stopped?.invoke() }
-    fun toggle(): Boolean = externalAudio && route(
-        if (PlayerManager.playbackControlPlayingFlow.value) "PAUSE" else "PLAY_PAUSE", PlaybackCommandSource.LOCAL)
+    fun toggle(): Boolean = externalAudio && route("TOGGLE", PlaybackCommandSource.LOCAL)
     fun playExternal(song: SongItem, source: PlaybackCommandSource): Boolean {
         if (!externalAudio) return false
         route("NEXT", source, song, 0.0)
@@ -52,13 +54,16 @@ internal object LanPlaybackBinding {
     fun route(intent: String, source: PlaybackCommandSource, song: SongItem? = PlayerManager.currentSongFlow.value, position: Double = PlayerManager.playbackPositionFlow.value / 1000.0): Boolean {
         if (source != PlaybackCommandSource.LOCAL) return false
         val callback = command ?: return false
+        if (intent == "NEXT") queueOffers.clear()
         callback(intent, track(song), position)
         return true
     }
-    fun playlist(songs: List<SongItem>, index: Int, source: PlaybackCommandSource): Boolean {
+    fun playlist(songs: List<SongItem>, index: Int, source: PlaybackCommandSource, fromCurrentQueue: Boolean = false): Boolean {
         if (!active || source != PlaybackCommandSource.LOCAL) return false
-        offeredQueue = songs.toList()
-        return route("NEXT", source, songs.getOrNull(index), 0.0)
+        val selected = track(songs.getOrNull(index))
+        if (selected != null && isHost()) queueOffers.offer(songs, index, selected, fromCurrentQueue)
+        command?.invoke("NEXT", selected, 0.0)
+        return true
     }
     fun step(direction: Int, source: PlaybackCommandSource, force: Boolean = false): Boolean {
         if (!active || source != PlaybackCommandSource.LOCAL) return false
@@ -66,30 +71,45 @@ internal object LanPlaybackBinding {
         val queue = PlayerManager.currentQueueFlow.value
         val index = if (direction > 0) PlayerQueueNavigationOwner.nextStep(queue.size, PlayerManager.currentIndex, PlayerManager.repeatModeSetting, force)?.index
             else PlayerQueueNavigationOwner.previousIndex(queue.size, PlayerManager.currentIndex, PlayerManager.repeatModeSetting)
-        val next = index?.let(queue::getOrNull)
-        if (next != null) route("NEXT", source, next, 0.0) else route("PAUSE", source)
+        if (index != null && index in queue.indices) playlist(queue, index, source, fromCurrentQueue = true) else route("PAUSE", source)
         return true
     }
     fun ended(): Boolean {
         if (!active) return false
         if (isHost()) {
             val queue = PlayerManager.currentQueueFlow.value
+            val lastInPlaylist = PlayerManager.currentIndex >= queue.lastIndex
+            checkEndTimer(lastInPlaylist)
             val plan = queue.takeIf { it.isNotEmpty() }?.let {
                 PlayerQueueNavigationOwner.listenTogetherFinishPlan(it.size, PlayerManager.currentIndex, PlayerManager.repeatModeSetting)
             }
-            val next = plan?.takeIf { it.shouldAdvance }?.let { queue.getOrNull(it.nextIndex) }
-            if (next != null) route("NEXT", PlaybackCommandSource.LOCAL, next, 0.0)
-            else route("FINISHED", PlaybackCommandSource.LOCAL, position = 0.0)
+            val index = plan?.takeIf { it.shouldAdvance }?.nextIndex
+            val next = index?.let { nextIndex ->
+                track(queue.getOrNull(nextIndex))?.also { queueOffers.offerNavigation(queue, nextIndex, it) }
+            }
+            hostTrackEnded?.invoke(next, lastInPlaylist)
+        } else {
+            // 成员只有临时单曲队列，整张列表的末尾由房主报告
+            checkEndTimer(lastInPlaylist = false)
         }
         return true
     }
 
+    fun checkEndTimer(lastInPlaylist: Boolean) {
+        val timer = PlayerManager.sleepTimerManager
+        if (timer.shouldStopOnTrackEnd(lastInPlaylist)) {
+            interrupt("SLEEP_TIMER")
+            timer.cancel()
+        }
+    }
+
     fun onQueueCleared() {
         if (!active) return
+        queueOffers.clear()
         if (isHost()) pauseRoomForEmptyQueue() else interrupt()
     }
 
     private fun pauseRoomForEmptyQueue(): Boolean = route("PAUSE", PlaybackCommandSource.LOCAL, null, 0.0)
 
-    fun clear() { LanLocalIdentity.clear(); LanSharedPresentationStore.clear(); externalAudio = false; interruptAudio = null; command = null; stopped = null; isHost = { false }; offeredQueue = null; guestPlayback = null }
+    fun clear() { LanLocalIdentity.clear(); LanSharedPresentationStore.clear(); externalAudio = false; interruptAudio = null; command = null; stopped = null; hostTrackEnded = null; isHost = { false }; queueOffers.clear(); guestPlayback = null }
 }

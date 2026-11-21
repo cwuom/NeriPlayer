@@ -1,5 +1,5 @@
 {
-  "checks": 19,
+  "checks": 20,
   "status": "passed",
   "scope": "Unmodified extracted functions with simulated Web Audio. No acoustic accuracy claim."
 }

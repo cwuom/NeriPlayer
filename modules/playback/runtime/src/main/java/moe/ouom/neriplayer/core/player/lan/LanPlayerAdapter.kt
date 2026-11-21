@@ -2,13 +2,16 @@
 
 package moe.ouom.neriplayer.core.player.lan
 
+import moe.ouom.neriplayer.core.player.lan.track.lanStreamSessionSong
 import android.os.Looper
 import androidx.media3.common.Format
 import androidx.media3.common.Player
 import java.io.File
 import kotlin.math.roundToLong
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
@@ -55,8 +58,11 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
     private var engine: LanMedia3AudioEngine? = null
     private var ntp: LanNtpEstimator? = null
     private var incoming: Incoming? = null
+    private var displayedMediaId: String? = null
+    private var lastHostSource: Pair<String, SongItem>? = null
     private var endpoint: Endpoint? = null
     private var audioFailure: (String) -> Unit = {}
+    private var guestRefilled: (String) -> Unit = {}
     override var preparationError: String = "SOURCE"
         private set
     override val preparedMediaId: String? get() = engine?.let { audio -> audio.mediaId?.takeIf(audio::ready) }
@@ -85,6 +91,11 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
     }
 
     override fun watchAudioFailure(handler: (String) -> Unit) { audioFailure = handler }
+    override fun watchHostTrackEnd(handler: (ListenTogetherTrack?, Boolean) -> Unit) { LanPlaybackBinding.hostTrackEnded = handler }
+    override fun roomTrackEnded(lastInPlaylist: Boolean) { LanPlaybackBinding.checkEndTimer(lastInPlaylist) }
+    override fun muteHostForSleep(muted: Boolean) { engine?.muteForSleep(muted) }
+    override fun watchRelayInvalidation(handler: (String, String) -> Unit) { publisher.onInvalidated = handler }
+    override fun watchGuestRefill(handler: (String) -> Unit) { guestRefilled = handler }
 
     private fun main() { check(Looper.myLooper() == Looper.getMainLooper()) }
     override fun currentTrack(): ListenTogetherTrack? = LanPlaybackBinding.track(PlayerManager.currentSongFlow.value)
@@ -119,15 +130,28 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         incoming = resource?.let { Incoming(track, it) }
     }
 
-    override suspend fun prepareSharedSource(track: ListenTogetherTrack, refresh: Boolean): LanPreparedSource =
-        publisher.offer(track, hostSong(track), refresh)
+    override suspend fun prepareSharedSource(track: ListenTogetherTrack, refresh: Boolean): LanPreparedSource {
+        val offers = LanPlaybackBinding.queueOffers
+        val selection = offers.forTrack(track)
+        val song = selection?.song ?: hostSong(track)
+        lastHostSource = track.stableKey to song
+        val source = try {
+            publisher.offer(track, song, refresh)
+        } catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
+            if (selection != null) offers.discard(selection)
+            throw error
+        }
+        if (selection != null) offers.published(selection, source.streamResource.mediaId)
+        return source
+    }
 
     override fun sharedPresentationUpdates(track: ListenTogetherTrack, mediaId: String): Flow<LanSharedPresentation> =
-        publisher.presentationUpdates(track, mediaId, hostSong(track))
+        publisher.presentationUpdates(track, mediaId, lastHostSource?.takeIf { it.first == track.stableKey }?.second ?: hostSong(track))
 
     private fun hostSong(track: ListenTogetherTrack): SongItem =
-        matchingSong(LanPlaybackBinding.offeredQueue, track)
-            ?: matchingSong(PlayerManager.currentQueueFlow.value, track)
+        matchingSong(PlayerManager.currentQueueFlow.value, track)
+            ?: lastHostSource?.takeIf { it.first == track.stableKey }?.second
             ?: sanitizedSong(track)
 
     private fun matchingSong(songs: List<SongItem>?, track: ListenTogetherTrack): SongItem? =
@@ -152,13 +176,25 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         val mediaEndpoint = endpoint ?: return false
         if (PlayerManager.usbExclusivePlaybackEnabled) { preparationError = "OUTPUT"; return false }
         val positionMs = (positionSeconds * 1000).roundToLong().coerceAtLeast(0)
-        if (audio.mediaId != source.resource.mediaId) publishRoomSong(track, positionMs)
+        val mediaId = source.resource.mediaId
         if (!audio.prepare(source.resource.mediaId, mediaEndpoint.mediaUrl(source.resource.mediaId),
-                mediaEndpoint.token, source.resource.mimeType, positionMs)) return false
+                mediaEndpoint.token, source.resource.mimeType, positionMs)) {
+            LanPlaybackBinding.queueOffers.consume(mediaId)
+            return false
+        }
+        val offered = LanPlaybackBinding.queueOffers.consume(mediaId)
+        val selected = offered?.resolve(PlayerManager.currentQueueFlow.value)
         preparationError = when {
             isLanDefinitePreview(track.channelId, track.durationMs, audio.seekableDurationMs) -> "FULL_AUDIO_REQUIRED"
             positionMs > 0 && !audio.seekable -> "AUDIO_NOT_SEEKABLE"
-            else -> return true
+            offered != null && selected == null -> "SOURCE_CHANGED"
+            else -> {
+                if (displayedMediaId != mediaId || selected != null) {
+                    publishRoomSong(track, positionMs, selected)
+                    displayedMediaId = mediaId
+                }
+                return true
+            }
         }
         audio.invalidate()
         PlayerManager._playerPlaybackStateFlow.value = Player.STATE_IDLE
@@ -166,22 +202,20 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         return false
     }
 
-    private fun publishRoomSong(track: ListenTogetherTrack, positionMs: Long) {
-        val offered = LanPlaybackBinding.offeredQueue
+    private fun publishRoomSong(track: ListenTogetherTrack, positionMs: Long, selected: LanQueueSelection?) {
         val existing = PlayerManager.currentQueueFlow.value
-        val queue = if (hosting()) offered.takeIf { matchingSong(it, track) != null }
-            ?: existing.takeIf { matchingSong(it, track) != null } ?: listOf(sanitizedSong(track))
-            else listOf(sanitizedSong(track))
-        val index = queue.indexOfFirst { LanPlaybackBinding.track(it)?.stableKey == track.stableKey }.coerceAtLeast(0)
-        val song = queue[index]
+        val selection = if (hosting()) selected ?: currentLanQueueSelection(track, existing, PlayerManager.currentIndex) { hostSong(track) }
+            else LanQueueSelection(listOf(sanitizedSong(track)), 0, track.stableKey)
+        val song = selection.song
         PlayerManager.player.stop()
         PlayerManager.player.clearMediaItems()
         PlayerManager._currentMediaUrl.value = null
         PlayerManager.currentMediaUrlResolvedAtMs = 0
         PlayerManager._currentPlaybackAudioInfo.value = PlaybackAudioInfo(lanAudioSource(track.channelId))
+        engine?.audioFormat?.let(::updateAudioFormat)
         PlayerManager.setCurrentSongForPlayback(song)
         PlayerManager._playbackPositionMs.value = positionMs
-        PlayerManager.applyRemoteQueueUpdate(queue, index)
+        PlayerManager.applyRemoteQueueUpdate(selection.songs, selection.index)
         LanSharedPresentationStore.forSong(song)?.let { applyPresentation(song, it) }
     }
 
@@ -283,7 +317,8 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         LanPlaybackBinding.interruptAudio = { reason -> audioFailure(reason) }
         engine = LanMedia3AudioEngine(PlayerManager.application, !PlayerManager.allowMixedPlaybackEnabled,
             presentation::update, ::updateAudioFormat, { LanPlaybackBinding.ended() }, { audioFailure("SOURCE") },
-            { audioFailure("AUDIO_SUSPENDED") }, { preparationError = "AUDIO_NOT_SEEKABLE" })
+            { audioFailure("AUDIO_SUSPENDED") }, { preparationError = "AUDIO_NOT_SEEKABLE" },
+            onGuestRefilled = if (hosting()) null else guestRefilled)
         ntp = LanNtpEstimator()
         LanPlaybackBinding.command = onCommand
         LanPlaybackBinding.stopped = onStop
@@ -301,6 +336,8 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         engine?.release(); engine = null
         ntp?.let { obsolete -> scope.launch { obsolete.close() } }; ntp = null
         endpoint = null; incoming = null
+        displayedMediaId = null
+        lastHostSource = null
         publisher.clear()
         clearCover()
         mediaVolume.stop()
@@ -315,6 +352,7 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         PlayerManager._isPlayingFlow.value = false
         PlayerManager._playbackControlPlayingFlow.value = false
         PlayerManager._playWhenReadyFlow.value = false
+        presentation.end()
         if (PlayerManager.initialized) {
             PlayerManager._playerPlaybackStateFlow.value = PlayerManager.player.playbackState
             PlayerManager.setPlaybackSpeed(savedSpeed, persist = false)

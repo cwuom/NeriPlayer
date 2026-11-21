@@ -164,6 +164,43 @@ class LanProgressiveMediaServerTest {
         assertTrue(opened.isEmpty())
     }
 
+    @Test fun busyHttpWorkerReturnsRetryAfterAndServesTheNextRequest() {
+        val limited = LanMediaServer(1)
+        val entering = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val opens = AtomicInteger()
+        val auth = limited.grant("member")
+        limited.publishStream(id, "audio/mpeg", 1) { _, _ ->
+            opens.incrementAndGet()
+            LanMediaStreamInput(object : InputStream() {
+                override fun read(): Int {
+                    entering.countDown()
+                    check(release.await(10, TimeUnit.SECONDS))
+                    return 42
+                }
+            }, 1)
+        }
+        limited.start(5000, true)
+        val get = Request.Builder().url("http://127.0.0.1:${limited.listeningPort}/media/$id")
+            .header("Authorization", "Bearer $auth").build()
+        try {
+            client.newCall(get).execute().use { first ->
+                try {
+                    assertEquals(200, first.code)
+                    assertTrue(entering.await(5, TimeUnit.SECONDS))
+                    client.newCall(get).execute().use {
+                        assertEquals(503, it.code)
+                        assertEquals("1", it.header("Retry-After"))
+                        assertEquals(0, it.body.bytes().size)
+                    }
+                    assertEquals(1, opens.get())
+                } finally { release.countDown() }
+                assertEquals(42, first.body.bytes().single().toInt())
+            }
+            client.newCall(get).execute().use { assertEquals(42, it.body.bytes().single().toInt()) }
+        } finally { limited.stop() }
+    }
+
     @Test fun retiringActiveStreamsClosesTheirSourcesAndFreesTransferSlots() {
         val reading = CountDownLatch(2)
         val closed = CountDownLatch(2)

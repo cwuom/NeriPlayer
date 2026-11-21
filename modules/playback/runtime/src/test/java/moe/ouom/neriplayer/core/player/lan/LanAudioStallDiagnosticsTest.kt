@@ -30,6 +30,22 @@ class LanAudioStallDiagnosticsTest {
         assertEquals(0, diagnostics.rebuffers)
     }
 
+    @Test fun refillIsTrackedEvenForUnsampledStallsAndClearedByExplicitTransport() {
+        repeat(3) { index ->
+            playing()
+            assertEquals(index < 2, buffering())
+            assertTrue(diagnostics.awaitingRefill)
+            assertFalse(buffering())
+            assertTrue(diagnostics.awaitingRefill)
+            diagnostics.resetPlaybackTransition()
+            assertFalse(diagnostics.awaitingRefill)
+        }
+        playing()
+        buffering()
+        diagnostics.reportRebuffer(playing = false, playWhenReady = false, buffering = true)
+        assertFalse(diagnostics.awaitingRefill)
+    }
+
     @Test fun shortUnderrunsAndRebuffersHaveIndependentTotalsAndBoundedLogging() {
         val reportedUnderruns = (1..17).filter { diagnostics.reportUnderrun() }
         assertEquals(listOf(1, 2, 4, 8, 16), reportedUnderruns)

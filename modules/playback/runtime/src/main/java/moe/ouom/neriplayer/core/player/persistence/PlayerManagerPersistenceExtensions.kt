@@ -339,7 +339,7 @@ internal fun PlayerManager.playFromQueueImpl(
     if (currentPlaylist.isEmpty()) return
     if (index !in currentPlaylist.indices) return
     val targetSong = currentPlaylist[index]
-    if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.playlist(currentPlaylist, index, commandSource)) return
+    if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.playlist(currentPlaylist, index, commandSource, fromCurrentQueue = true)) return
     NPLogger.d(
         "NERI-PlayerManager",
         "playFromQueue(): index=$index, source=$commandSource, currentIndex=$currentIndex, queueSize=${currentPlaylist.size}, target=${targetSong.name}/${targetSong.id}, stack=[${debugStackHint()}]"

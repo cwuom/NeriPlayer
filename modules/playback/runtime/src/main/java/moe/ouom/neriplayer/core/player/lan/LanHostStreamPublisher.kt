@@ -2,6 +2,7 @@
 
 package moe.ouom.neriplayer.core.player.lan
 
+import moe.ouom.neriplayer.core.player.lan.track.LanLocalIdentity
 import android.graphics.Bitmap
 import androidx.core.net.toUri
 import androidx.media3.datasource.DefaultDataSource
@@ -40,6 +41,7 @@ import moe.ouom.neriplayer.lanltw.playback.LanPreparedSource
 
 internal class LanHostStreamPublisher {
     var server: LanMediaServer? = null
+    var onInvalidated: (String, String) -> Unit = { _, _ -> }
     private data class Published(val server: LanMediaServer, val source: LanPreparedSource,
         val origin: LanRelayOrigin, val covers: ArrayDeque<LanFileResource> = ArrayDeque())
     private var active: Published? = null
@@ -55,6 +57,8 @@ internal class LanHostStreamPublisher {
         val host = checkNotNull(server) { "LOCAL_TRANSFER" }
         active?.takeIf { !refresh && it.source.track.stableKey == track.stableKey }?.let { return it.source }
         val local = song.localMediaUri()
+        val mediaId = UUID.randomUUID().toString()
+        val invalidate = { reason: String -> onInvalidated(mediaId, reason) }
         // 在后台打开音源时如果房间已退出，仍由本次请求关闭已打开的连接
         var opened: LanRelayOrigin? = null
         try {
@@ -71,16 +75,18 @@ internal class LanHostStreamPublisher {
                 check(result.url == ref.resourceUrl()) { "SOURCE" }
                 val factory = checkNotNull(PlayerManager.conditionalHttpFactory) { "SOURCE" }
                 opened = LanRelayOrigin.openRemote(factory::forLanRelay,
-                    PlayerDependencies.repositories.sharedOkHttpClient, result.url.toUri(), result.mimeType)
+                    PlayerDependencies.repositories.sharedOkHttpClient, result.url.toUri(),
+                    PlayerManager.application.cacheDir, result.mimeType, invalidate)
                 result.audioInfo?.qualityKey
             } else {
-                val url = selectCandidate(track, song) { opened = it }
+                val renew = refresh && active?.source?.track?.stableKey == track.stableKey
+                val url = selectCandidate(track, song, renew, invalidate) { opened = it }
                 listenTogetherQualityKeyFromStreamUrl(url, lanAudioSource(track.channelId))
             }
             currentCoroutineContext().ensureActive()
             check(host === server) { "LOCAL_TRANSFER" }
             val origin = checkNotNull(opened)
-            val resource = LanStreamResource(UUID.randomUUID().toString(), origin.mime, origin.byteLength, qualityKey = quality)
+            val resource = LanStreamResource(mediaId, origin.mime, origin.byteLength, qualityKey = quality)
             val clean = track.copy(streamUrl = null, streamUrls = emptyList(), mediaUri = null, coverUrl = null)
             val source = LanPreparedSource(clean, resource)
             host.publishStream(resource.mediaId, resource.mimeType, resource.byteLength, origin.window::open)
@@ -93,7 +99,8 @@ internal class LanHostStreamPublisher {
         } finally { opened?.close() }
     }
 
-    private suspend fun selectCandidate(track: ListenTogetherTrack, song: SongItem, onOpen: (LanRelayOrigin) -> Unit): String {
+    private suspend fun selectCandidate(track: ListenTogetherTrack, song: SongItem, renew: Boolean,
+        invalidate: (String) -> Unit, onOpen: (LanRelayOrigin) -> Unit): String {
         val attempted = mutableSetOf<String>()
         val factory = checkNotNull(PlayerManager.conditionalHttpFactory) { "SOURCE" }
         suspend fun tryUrls(urls: List<String>): String? {
@@ -102,7 +109,8 @@ internal class LanHostStreamPublisher {
                 if (!attempted.add(origin)) continue
                 try {
                     onOpen(LanRelayOrigin.openRemote(factory::forLanRelay,
-                        PlayerDependencies.repositories.sharedOkHttpClient, origin.toUri()))
+                        PlayerDependencies.repositories.sharedOkHttpClient, origin.toUri(),
+                        PlayerManager.application.cacheDir, onInvalidated = invalidate))
                     return url
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { currentCoroutineContext().ensureActive() }
@@ -112,11 +120,12 @@ internal class LanHostStreamPublisher {
         val captured = initial?.takeIf { it.first == track.stableKey }?.second.orEmpty()
         initial = null
         tryUrls(captured)?.let { return it }
-        val resolved = PlayerManager.resolveShareableListenTogetherStreamUrls(song, progressiveRelay = true, firstQualityOnly = true)
+        val resolved = PlayerManager.resolveShareableListenTogetherStreamUrls(song, progressiveRelay = true,
+            firstQualityOnly = true, forceRefresh = renew)
         check(!resolved.isPreviewOnly) { "FULL_AUDIO_REQUIRED" }
         tryUrls(resolved.streamUrls)?.let { return it }
         if (resolved.streamUrls.isEmpty()) error("SOURCE")
-        val alternatives = PlayerManager.resolveShareableListenTogetherStreamUrls(song, progressiveRelay = true)
+        val alternatives = PlayerManager.resolveShareableListenTogetherStreamUrls(song, progressiveRelay = true, forceRefresh = true)
         return tryUrls(alternatives.streamUrls) ?: error("SOURCE")
     }
 

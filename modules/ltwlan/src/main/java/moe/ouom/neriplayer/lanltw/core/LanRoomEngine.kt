@@ -25,9 +25,10 @@ class LanRoomEngine(
     private var currentStream: LanStreamResource? = null
     private var currentPresentation: LanFileResource? = null
     private var sourceFailure: String? = null
+    private var lastRelayRenewal: Pair<String, Double>? = null
     private fun pendingPreparation() = awaitingSource ?: loading
     private fun displayedPlayback(): LanPlayback = pendingPreparation()?.let {
-        LanPlayback(it.track, it.position, false, revision = it.generation, preparing = true)
+        LanPlayback(it.track, it.position, false, revision = it.generation, preparing = true, playAfterPreparation = it.playing)
     } ?: playback
     fun snapshot() = LanRoom(roomId, roomName, peers.values.map { it.member }, permissions, globalVolume, displayedPlayback())
     fun join(id: String, name: String, host: Boolean, initialVolume: Float = 1f): Boolean {
@@ -67,6 +68,7 @@ class LanRoomEngine(
     private val streamHandlers: Map<String, (LanMessage) -> Unit> = mapOf(
         "LAN_STREAM_PUBLISHED" to ::streamPublished,
         "LAN_STREAM_FAILED" to ::streamFailed,
+        "LAN_RENEW_STREAM" to ::renewStream,
         "LAN_TRACK_FINISHED" to ::streamFinished,
         "LAN_PRESENTATION_PUBLISHED" to ::presentationPublished
     )
@@ -153,8 +155,10 @@ class LanRoomEngine(
     private fun shouldPlay(intent: String): Boolean = intent != "SEEK" || (pendingPreparation()?.playing ?: playback.playing)
     private fun resumePending(): Boolean {
         val pending = pendingPreparation() ?: return false
+        if (pending.playing) return true
         val resumed = pending.copy(playing = true)
         if (awaitingSource != null) awaitingSource = resumed else loading = resumed
+        broadcastState()
         return true
     }
     private fun canReuseStream(): Boolean = awaitingSource == null && currentStream != null
@@ -199,6 +203,23 @@ class LanRoomEngine(
         val track = plan.track ?: return
         fail(track, controlPosition(plan), streamError(m.code))
     }
+    private fun renewStream(message: LanMessage) {
+        val plan = publishedPlayback(message) ?: return
+        val track = plan.track ?: return
+        val position = controlPosition(plan)
+        if (!allowRelayRenewal(track.stableKey)) {
+            fail(track, position, "SOURCE_CHANGED")
+            return
+        }
+        requestHostStream(checkNotNull(hostId()), track, position, loading?.playing ?: plan.playing)
+    }
+    private fun allowRelayRenewal(trackKey: String): Boolean {
+        val now = clock.nowMs()
+        val previous = lastRelayRenewal
+        if (previous?.first == trackKey && now - previous.second < 60_000.0) return false
+        lastRelayRenewal = trackKey to now
+        return true
+    }
     private fun presentationPublished(m: LanMessage) {
         val plan = publishedPlayback(m) ?: return
         val resource = validatedPresentation(m.presentationResource) ?: return
@@ -209,10 +230,29 @@ class LanRoomEngine(
         if (awaitingSource == null && matchesCurrentStream(m)) displayedPlayback() else null
 
     private fun streamFinished(m: LanMessage) {
-        val plan = publishedPlayback(m) ?: return
+        val plan = completedPlayback(m) ?: return
         val track = plan.track ?: return
-        if (!plan.playing || plan.revision != m.revision || track.stableKey != m.audioSource) return
-        publishPlan(track, position = 0.0, playing = false, generation = ++revision)
+        if (track.stableKey != m.audioSource) return
+        m.lastInPlaylist?.let { last ->
+            broadcast(LanMessage("LAN_TRACK_BOUNDARY", audioSource = track.stableKey,
+                mediaId = m.mediaId, revision = plan.revision, lastInPlaylist = last))
+        }
+        if (!advanceAfterEnd(m.track, plan)) publishPlan(track, position = 0.0, playing = false, generation = ++revision)
+    }
+
+    private fun completedPlayback(message: LanMessage): LanPlayback? {
+        val plan = publishedPlayback(message) ?: return null
+        if (!plan.playing || message.revision != plan.revision) return null
+        return plan
+    }
+
+    private fun advanceAfterEnd(next: ListenTogetherTrack?, plan: LanPlayback): Boolean {
+        if (next == null) return false
+        val owner = hostId() ?: return false
+        val decision = LanRoomPolicy.play(true, permissions, plan, 0.0, LanMessage("PLAY", intent = "NEXT", track = next))
+        val clean = decision.track ?: return false
+        requestHostStream(owner, clean, position = 0.0, playing = true)
+        return true
     }
 
     private fun validatedPresentation(resource: LanFileResource?): LanFileResource? =
@@ -234,14 +274,15 @@ class LanRoomEngine(
     }
     private fun requestPause(id: String, host: Boolean) {
         if (!host && !permissions.playPause) return reject(id, "DENIED")
-        loading?.let { loading = it.copy(playing = false); return }
+        loading?.let { loading = it.copy(playing = false); broadcastState(); return }
         awaitingSource = awaitingSource?.copy(playing = false)
-        if (playback.playing) pausePlayback()
+        if (playback.playing) pausePlayback() else if (awaitingSource != null) broadcastState()
     }
     private fun pausePlayback() {
         val track = playback.track ?: return
         val at = executeAt()
-        val position = LanSchedule.position(playback.positionSeconds, playback.executeAtMs, at)
+        val position = if (clock.nowMs() < playback.executeAtMs) playback.positionSeconds
+            else LanSchedule.position(playback.positionSeconds, playback.executeAtMs, at)
         val pauseRevision = if (awaitingSource == null) ++revision else playback.revision
         playback = LanPlayback(track, position, false, at, pauseRevision)
         broadcast(scheduledAction(playback, position, at))

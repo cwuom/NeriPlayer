@@ -38,4 +38,13 @@ class LanPlaybackControlsTest {
         assertEquals(false, lanPlayerControls(preparing.copy(error = "SOURCE")).preparing)
         assertEquals(false, lanPlayerControls(member).preparing)
     }
+
+    @Test fun aToggleCancelsAnAcceptedPlayBeforeTheAudioStarts() {
+        val plan = LanPlayback(preparing = true, playAfterPreparation = true)
+        val waiting = member.copy(room = member.room!!.copy(playback = plan))
+        assertEquals("PAUSE", lanRoomPlayPauseIntent(waiting))
+        val scheduled = plan.copy(preparing = false, playAfterPreparation = false, playing = true, executeAtMs = 10_000.0)
+        assertEquals("PAUSE", lanRoomPlayPauseIntent(member.copy(room = member.room!!.copy(playback = scheduled))))
+        assertEquals("PLAY_PAUSE", lanRoomPlayPauseIntent(waiting.copy(audioSuspended = true)))
+    }
 }

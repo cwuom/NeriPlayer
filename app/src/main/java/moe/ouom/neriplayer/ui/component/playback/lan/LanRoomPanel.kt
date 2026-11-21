@@ -104,7 +104,9 @@ private fun RoomControls(manager: LanSessionManager, state: LanSessionState, onD
         LinearProgressIndicator(progress = { (state.receivedBytes.toFloat() / state.totalBytes).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
         Text("${state.receivedBytes / 1024} / ${state.totalBytes / 1024} KiB", style = MaterialTheme.typography.bodySmall)
     }
-    SelectionContainer { Text("${state.address}:${state.port}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    if (state.address.isNotBlank() && state.port > 0) {
+        SelectionContainer { Text("${state.address}:${state.port}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
     val room = state.room
     if (state.audioSuspended) Text(stringResource(CoreR.string.lan_audio_suspended))
     val playPauseIntent = lanRoomPlayPauseIntent(state)

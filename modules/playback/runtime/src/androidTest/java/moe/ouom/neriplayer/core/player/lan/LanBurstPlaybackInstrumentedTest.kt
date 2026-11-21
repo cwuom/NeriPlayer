@@ -2,6 +2,7 @@
 
 package moe.ouom.neriplayer.core.player.lan
 
+import android.os.SystemClock
 import androidx.media3.common.Player
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -16,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import moe.ouom.neriplayer.data.model.lan.LanAction
 import moe.ouom.neriplayer.lanltw.media.LanMediaServer
 import moe.ouom.neriplayer.lanltw.media.LanMediaStreamInput
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -28,7 +30,12 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class LanBurstPlaybackInstrumentedTest {
     @Test(timeout = 45_000L)
-    fun waitsForSustainedAudioAfterSourceStarvation() = runBlocking {
+    fun waitsForSustainedAudioAfterSourceStarvation() = runBlocking { verifyStarvation(guest = false) }
+
+    @Test(timeout = 45_000L)
+    fun guestWaitsForANewRoomPlanAfterSourceStarvation() = runBlocking { verifyStarvation(guest = true) }
+
+    private suspend fun verifyStarvation(guest: Boolean) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val flac = instrumentation.context.assets.open("lan-burst-96k.flac").use { it.readBytes() }
         val server = LanMediaServer()
@@ -71,6 +78,12 @@ class LanBurstPlaybackInstrumentedTest {
             withContext(Dispatchers.Main) {
                 var lastStatus = Player.STATE_IDLE
                 var stalls = 0
+                var refillRequests = 0
+                val refilled = CompletableDeferred<String>()
+                val requestRoomPlan: (String) -> Unit = { mediaId ->
+                    refillRequests++
+                    refilled.complete(mediaId)
+                }
                 val audio = LanMedia3AudioEngine(instrumentation.targetContext, false, { state, status, requested ->
                     if (state.playing) {
                         started.complete(Unit)
@@ -80,7 +93,7 @@ class LanBurstPlaybackInstrumentedTest {
                         buffering.complete(state.positionSeconds)
                     }
                     lastStatus = status
-                }, {}, { ended.complete(Unit) }, {})
+                }, {}, { ended.complete(Unit) }, {}, onGuestRefilled = if (guest) requestRoomPlan else null)
                 try {
                     assertTrue("initial burst must support startup", audio.prepare(media, url, token, "audio/flac", 0))
                     audio.play()
@@ -91,15 +104,27 @@ class LanBurstPlaybackInstrumentedTest {
                     withTimeout(5_000L) { burstDelivered.await() }
                     delay(4_000L)
                     assertFalse("short burst restarted a starved player: ${audio.diagnostics()}", resumed.isCompleted)
+                    assertFalse("short burst must not trigger resynchronization", refilled.isCompleted)
 
                     remainder.countDown()
+                    if (guest) {
+                        assertEquals(media, withTimeout(8_000) { refilled.await() })
+                        delay(250)
+                        assertFalse("guest played its stale position before receiving a plan", resumed.isCompleted)
+                        val target = pausedAt + 4.0
+                        val deadline = SystemClock.elapsedRealtime() + 600
+                        assertTrue(audio.schedule(LanAction("PLAY", media, target), deadline.toDouble(), 0.0, 0))
+                        assertTrue("guest started before the plan deadline", SystemClock.elapsedRealtime() >= deadline)
+                        assertTrue("guest resumed behind the room", audio.positionSeconds >= target - .05)
+                    }
                     withTimeout(8_000L) {
                         resumed.await()
                         while (!audio.playing || audio.positionSeconds < pausedAt + 1.0) delay(20)
                     }
                     withTimeout(15_000L) { ended.await() }
                     assertEquals("only the forced network outage may interrupt playback", 1, stalls)
-                    assertEquals("playback must recover on its original stream", 1, openCount.get())
+                    if (!guest) assertEquals("playback must recover on its original stream", 1, openCount.get())
+                    assertEquals(if (guest) 1 else 0, refillRequests)
                 } finally {
                     burst.countDown()
                     remainder.countDown()

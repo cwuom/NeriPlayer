@@ -17,6 +17,11 @@ interface LanPlaybackPort {
     val preparationError: String get() = "SOURCE"
     fun watchTransferProgress(handler: (Long, Long) -> Unit) = Unit
     fun watchAudioFailure(handler: (String) -> Unit) = Unit
+    fun watchHostTrackEnd(handler: (ListenTogetherTrack?, Boolean) -> Unit) = Unit
+    fun roomTrackEnded(lastInPlaylist: Boolean) = Unit
+    fun muteHostForSleep(muted: Boolean) = Unit
+    fun watchRelayInvalidation(handler: (mediaId: String, reason: String) -> Unit) = Unit
+    fun watchGuestRefill(handler: (String) -> Unit) = Unit
     fun sharedPresentation(track: ListenTogetherTrack, presentation: LanSharedPresentation?) = Unit
     suspend fun prepareSharedPresentation(track: ListenTogetherTrack): LanSharedPresentation? = null
     fun sharedPresentationUpdates(track: ListenTogetherTrack, mediaId: String): Flow<LanSharedPresentation> = flow {

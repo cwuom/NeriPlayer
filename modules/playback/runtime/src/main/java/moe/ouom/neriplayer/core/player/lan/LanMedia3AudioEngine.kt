@@ -43,6 +43,7 @@ internal class LanMedia3AudioEngine(
     private val onError: () -> Unit,
     private val onInterrupted: () -> Unit = {},
     private val onSeekUnavailable: () -> Unit = {},
+    private val onGuestRefilled: ((String) -> Unit)? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val http = OkHttpClient.Builder().proxy(Proxy.NO_PROXY)
@@ -58,10 +59,12 @@ internal class LanMedia3AudioEngine(
         .build()
     private var generation = 0L
     private var preparing = false
+    private var sleepMuted = false
     private val stalls = LanAudioStallDiagnostics()
     private var activeSource: String? = null
     private var reportedAudioFormat: Format? = null
     val mediaId: String? get() = player.currentMediaItem?.mediaId
+    val audioFormat: Format? get() = player.audioFormat
     val positionSeconds: Double get() = player.currentPosition.coerceIn(0, actualDurationMs() ?: Long.MAX_VALUE) / 1000.0
     val playing: Boolean get() = player.isPlaying
     val seekable: Boolean get() = player.isCurrentMediaItemSeekable
@@ -77,6 +80,7 @@ internal class LanMedia3AudioEngine(
                         buffering = player.playbackState == Player.STATE_BUFFERING
                     )
                 ) NPLogger.w(LOG_TAG, "media rebuffer ${diagnostics()}")
+                handleGuestRefill()
                 publish()
                 if (activeSource != null && events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && player.playbackState == Player.STATE_ENDED &&
                     player.playWhenReady) {
@@ -125,6 +129,29 @@ internal class LanMedia3AudioEngine(
 
     fun ready(id: String): Boolean = mediaId == id && player.playbackState == Player.STATE_READY && player.playerError == null
 
+    private fun handleGuestRefill() {
+        val refilled = onGuestRefilled ?: return
+        val id = activeSource ?: return
+        if (stalls.awaitingRefill && player.playbackState == Player.STATE_READY && player.playWhenReady) {
+            stalls.resetPlaybackTransition()
+            player.pause()
+            refilled(id)
+        }
+        // 让 Media3 按断流阈值继续蓄水，并在新计划到达前静音旧进度
+        applyOutputVolume()
+    }
+
+    fun muteForSleep(muted: Boolean) {
+        sleepMuted = muted
+        applyOutputVolume()
+        publish()
+    }
+
+    private fun applyOutputVolume() {
+        val volume = if (sleepMuted || (onGuestRefilled != null && stalls.awaitingRefill)) 0f else 1f
+        if (player.volume != volume) player.volume = volume
+    }
+
     suspend fun prepare(id: String, url: HttpUrl, bearer: String, mime: String, positionMs: Long): Boolean {
         val ticket = ++generation
         stalls.resetPlaybackTransition()
@@ -153,6 +180,7 @@ internal class LanMedia3AudioEngine(
     suspend fun schedule(action: LanAction, deadlineMs: Double, offsetMs: Double, nudgeMs: Int): Boolean {
         val id = mediaId ?: return false
         val ticket = ++generation
+        stalls.resetPlaybackTransition()
         if (action.type == "PAUSE") {
             val targetMs = (deadlineMs - offsetMs - nudgeMs).roundToLong()
             delay((targetMs - now()).coerceAtLeast(0L))
@@ -217,6 +245,7 @@ internal class LanMedia3AudioEngine(
     fun cancelSchedule() {
         generation++
         preparing = false
+        stalls.resetPlaybackTransition()
         player.pause()
     }
 
@@ -253,8 +282,8 @@ internal class LanMedia3AudioEngine(
             onFormat(it)
         }
         val playbackRequested = player.playWhenReady && player.playerError == null && player.playbackState != Player.STATE_ENDED
-        onState(LanAudioState(playing = playing, positionSeconds = positionSeconds,
-            durationSeconds = (actualDurationMs() ?: 0) / 1000.0), player.playbackState, playbackRequested)
+        onState(LanAudioState(playing = playing && !sleepMuted, positionSeconds = positionSeconds,
+            durationSeconds = (actualDurationMs() ?: 0) / 1000.0), player.playbackState, playbackRequested && !sleepMuted)
     }
 
     private fun actualDurationMs(): Long? = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }

@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.core.player.lan.relay
 
-import java.io.Closeable
 import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
@@ -18,7 +17,7 @@ internal class LanRelayWindow(
     initial: InputStream,
     private val stopUpstream: () -> Unit = {},
     private val reopen: (Long) -> InputStream
-) : Closeable {
+) : LanRelayContent {
     // 成员的预读位置可能不同，各自顺序读取时可以接着使用原来的上游连接
     private val cursors = linkedMapOf(0L to initial)
     @Volatile private var length = initialLength
@@ -32,7 +31,7 @@ internal class LanRelayWindow(
     private val lock = Any()
     private var closed = false
 
-    fun open(offset: Long, limit: Long?): LanMediaStreamInput {
+    override fun open(offset: Long, limit: Long?): LanMediaStreamInput {
         require(offset >= 0 && (limit == null || limit >= 0))
         val remaining = synchronized(lock) {
             if (closed) throw IOException("LOCAL_TRANSFER")

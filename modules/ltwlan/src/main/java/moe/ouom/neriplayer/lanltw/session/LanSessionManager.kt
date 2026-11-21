@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.lanltw.session
 
 import android.content.Context
 import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.SystemClock
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
@@ -20,8 +19,6 @@ import moe.ouom.neriplayer.lanltw.transport.*
 import okhttp3.OkHttpClient
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.File
-import java.net.Inet4Address
-import java.net.NetworkInterface
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
@@ -59,6 +56,7 @@ class LanSessionManager(
     private var heartbeat: Job? = null
     private var reconnect: Job? = null
     private var connected = false
+    private var sleepingHost = false
     private var attempts = 0
     private var targetUrl = ""
     private var hello = LanMessage("HELLO")
@@ -104,8 +102,14 @@ class LanSessionManager(
         }
         withContext(Dispatchers.IO) { transport.start() }
         val port = withTimeout(6000) { transport.ready.await() }
-        val address = withContext(Dispatchers.IO) { localAddress() }
-        mutable.value = state.value.copy(address = address, port = port)
+        mutable.update { it.copy(port = port) }
+        child.launch {
+            val address = try {
+                withContext(Dispatchers.IO) { lanHostAddress(context.getSystemService(ConnectivityManager::class.java)) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { return@launch }
+            if (ticket.isCurrent) mutable.update { it.copy(address = address) }
+        }
         discovery.advertise(id, name.trim(), port) { scope.launch { if (ticket.isCurrent) reportError("DISCOVERY") } }
         child.launch { while (isActive) { delay(2500); transport.expireHandshakes(); engine?.tick()?.forEach(transport::disconnect); keepAlive.renew() } }
         targetUrl = "http://127.0.0.1:$port/ws"
@@ -130,6 +134,23 @@ class LanSessionManager(
             if (progressTicket.isCurrent) mutable.update { it.copy(receivedBytes = received, totalBytes = total) }
         } }
         playback.watchAudioFailure { code -> scope.launch { if (progressTicket.isCurrent) audioFailed(code) } }
+        playback.watchHostTrackEnd { next, last ->
+            if (progressTicket.isCurrent && connected && state.value.hosting) sendTrackFinished(next, last)
+        }
+        playback.watchRelayInvalidation { mediaId, reason -> scope.launch {
+            if (progressTicket.isCurrent && state.value.hosting && connected) {
+                val command = if (reason == "LOCAL_STORAGE") "LAN_STREAM_FAILED" else "LAN_RENEW_STREAM"
+                send(LanMessage(command, mediaId = mediaId, code = reason))
+            }
+        } }
+        playback.watchGuestRefill { mediaId ->
+            val current = state.value
+            val plan = current.room?.playback
+            val player = scheduler
+            val activePlan = progressTicket.isCurrent && connected && !current.hosting && !current.audioSuspended &&
+                plan?.playing == true && player != null && player.playbackRevision == plan.revision && player.mediaId == mediaId
+            if (activePlan) send(LanMessage("SYNC"))
+        }
         playback.begin(::requestPlayback) { leave("SERVICE_STOPPED") }
         (playback as? LanScheduledAudioPort)?.let { it.initializeAudio(); it.resetAudioClock() }
         playback.watchMediaVolume { value ->
@@ -190,7 +211,8 @@ class LanSessionManager(
             "WELCOME" -> welcome(m, initial)
             "ROOM_EVENT" -> roomEvent(m)
             "NTP_RESPONSE" -> ntp(m, receivedAt)
-            "SCHEDULED_ACTION" -> if (!state.value.audioSuspended || m.scheduledAction?.type != "PLAY") scheduler?.schedule(m)
+            "SCHEDULED_ACTION" -> if (!state.value.audioSuspended || sleepingHost || m.scheduledAction?.type != "PLAY") scheduler?.schedule(m)
+            "LAN_TRACK_BOUNDARY" -> receiveTrackBoundary(m)
             "LAN_PAUSED_STATE" -> scheduler?.paused(m)
             "LAN_ERROR" -> roomError(m.code ?: "NETWORK")
             "LIVENESS_PING" -> send(LanMessage("LIVENESS_PONG"))
@@ -210,6 +232,15 @@ class LanSessionManager(
     }
     private fun audioFailed(code: String) {
         if (!state.value.active) return
+        if (code == "SLEEP_TIMER") {
+            if (state.value.audioSuspended) return
+            mutable.update { it.copy(audioSuspended = true) }
+            if (state.value.hosting) {
+                sleepingHost = true
+                playback.muteHostForSleep(true)
+            } else scheduler?.interruptPlayback()
+            return
+        }
         if (code == "AUDIO_SUSPENDED") { interruptPlayback(); return }
         if (code in FATAL_AUDIO_ERRORS) { leave(code); return }
         val mediaId = scheduler?.mediaId
@@ -219,9 +250,10 @@ class LanSessionManager(
     }
     private fun interruptPlayback() {
         val current = state.value
-        if (current.audioSuspended) return
+        if (current.audioSuspended && !sleepingHost) return
         val roomMayPlay = current.room?.playback?.let { it.playing || it.preparing } ?: (current.hosting && current.preparing)
         if (!roomMayPlay && !playback.isPlaying() && scheduler?.playScheduled != true) return
+        sleepingHost = false
         mutable.update { it.copy(audioSuspended = true) }
         scheduler?.interruptPlayback()
         if (current.hosting && connected) send(LanMessage("PAUSE"))
@@ -255,7 +287,7 @@ class LanSessionManager(
             }
         }
         if (initial != null) {
-            val startPlaying = initial.playing && !state.value.audioSuspended
+            val startPlaying = initial.playing && (!state.value.audioSuspended || sleepingHost)
             requestPlayback(if (startPlaying) "START" else "START_PAUSED", initial.track, initial.position)
         }
     }
@@ -308,12 +340,19 @@ class LanSessionManager(
     }
     fun requestPlayback(intent: String, track: ListenTogetherTrack?, position: Double) {
         if (!connected) { reportError("NETWORK"); return }
+        val command = if (intent == "TOGGLE") playPauseIntent(state.value, scheduler?.playScheduled == true) else intent
+        sendPlaybackRequest(command, track, position)
+    }
+
+    private fun sendPlaybackRequest(intent: String, track: ListenTogetherTrack?, position: Double) {
         if (intent == "PLAY_PAUSE" && state.value.audioSuspended) {
-            if (state.value.room?.playback?.playing == true) { sync(); return }
-            mutable.update { it.copy(audioSuspended = false) }
+            if (state.value.room?.playback?.playing == true) {
+                if (sleepingHost) resumeLocalOutput() else sync()
+                return
+            }
+            resumeLocalOutput()
         }
         if (intent == "PLAY_PAUSE" && syncUnseekableGuest()) return
-        if (intent == "FINISHED") { sendTrackFinished(track); return }
         if (intent == "STEP") {
             send(LanMessage("LAN_REQUEST_STEP", audioSource = state.value.room?.playback?.track?.stableKey, trackTimeSeconds = position))
             return
@@ -328,12 +367,18 @@ class LanSessionManager(
         val command = if (intent == "PLAY_PAUSE" && canRetryPlayback(state.value.error)) "RETRY" else intent
         send(LanMessage("PLAY", audioSource = clean?.stableKey, intent = command, track = clean, trackTimeSeconds = position))
     }
-    private fun sendTrackFinished(track: ListenTogetherTrack?) {
-        if (!state.value.hosting) return
+    private fun sendTrackFinished(next: ListenTogetherTrack?, lastInPlaylist: Boolean) {
         val player = scheduler ?: return
         val mediaId = player.mediaId ?: return
-        val key = track?.stableKey ?: state.value.room?.playback?.track?.stableKey ?: return
-        send(LanMessage("LAN_TRACK_FINISHED", audioSource = key, mediaId = mediaId, revision = player.playbackRevision))
+        val key = state.value.room?.playback?.track?.stableKey ?: return
+        send(LanMessage("LAN_TRACK_FINISHED", audioSource = key, mediaId = mediaId, revision = player.playbackRevision,
+            track = next?.copy(coverUrl = null), lastInPlaylist = lastInPlaylist))
+    }
+    private fun receiveTrackBoundary(message: LanMessage) {
+        val current = state.value
+        val plan = current.room?.playback ?: return
+        if (current.hosting || plan.revision != message.revision || plan.track?.stableKey != message.audioSource) return
+        message.lastInPlaylist?.let(playback::roomTrackEnded)
     }
     private fun syncUnseekableGuest(): Boolean {
         val current = state.value
@@ -351,17 +396,22 @@ class LanSessionManager(
         sourceJob?.cancel()
         mutable.update { it.copy(preparing = true, receivedBytes = 0, totalBytes = 0, error = null) }
         sourceJob = sessionScope?.launch {
-            try {
-                val source = playback.prepareSharedSource(target, refresh = true)
-                if (!ticket.isCurrent) return@launch
-                send(LanMessage("LAN_STREAM_PUBLISHED", loadGeneration = generation, streamResource = source.streamResource))
-                publishStreamPresentation(source)
+            val source = try {
+                playback.prepareSharedSource(target, refresh = true)
+            } catch (_: TimeoutCancellationException) {
+                currentCoroutineContext().ensureActive()
+                if (ticket.isCurrent) send(LanMessage("LAN_STREAM_FAILED", loadGeneration = generation, code = "LOAD_TIMEOUT"))
+                return@launch
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 if (!ticket.isCurrent) return@launch
                 val code = error.message?.takeIf(::canRetryPlayback) ?: "SOURCE"
                 send(LanMessage("LAN_STREAM_FAILED", loadGeneration = generation, code = code))
+                return@launch
             }
+            if (!ticket.isCurrent) return@launch
+            send(LanMessage("LAN_STREAM_PUBLISHED", loadGeneration = generation, streamResource = source.streamResource))
+            publishStreamPresentation(source)
         }
     }
     private suspend fun publishStreamPresentation(source: LanPreparedSource) {
@@ -402,9 +452,14 @@ class LanSessionManager(
         mutable.value = state.value.copy(nudgeMs = next); saveNudge(next); scheduler?.nudgeChanged(next - previous)
     }
     fun sync() {
-        mutable.update { it.copy(audioSuspended = false) }
+        resumeLocalOutput()
         scheduler?.resetRecovery()
         send(LanMessage("SYNC"))
+    }
+    private fun resumeLocalOutput() {
+        if (state.value.hosting && state.value.audioSuspended) playback.muteHostForSleep(false)
+        sleepingHost = false
+        mutable.update { it.copy(audioSuspended = false) }
     }
     fun reportError(code: String) {
         mutable.update {
@@ -418,6 +473,7 @@ class LanSessionManager(
         scope.launch { lifecycle.withLock { stopResources(); mutable.value = LanSessionState(nudgeMs = state.value.nudgeMs, error = error) } }
     }
     private suspend fun stopResources() {
+        sleepingHost = false
         sourceRequests.advance(); sourceJob?.cancel(); sourceJob = null
         connections.advance(); connected = false; sessionScope?.cancel(); sessionScope = null; heartbeat = null; reconnect = null
         client?.close(); client = null; scheduler?.close(); scheduler = null
@@ -429,28 +485,16 @@ class LanSessionManager(
         withContext(NonCancellable) { withContext(Dispatchers.IO) { oldServer?.stop(1500); oldMediaServer?.stop() }; oldEstimator?.close() }
     }
     private fun Double?.orZero(): Double = this ?: 0.0
-    private fun localAddress(): String {
-        // 多网卡时优先取活动局域网的地址，离线 Wi-Fi 或热点仍可使用本机接口
-        return runCatching(::activeLanAddress).getOrNull() ?: NetworkInterface.getNetworkInterfaces().toList()
-            .flatMap { it.inetAddresses.toList() }
-            .firstOrNull { it is Inet4Address && it.isSiteLocalAddress && !it.isLoopbackAddress }?.hostAddress ?: "127.0.0.1"
-    }
-    private fun activeLanAddress(): String? {
-        val connectivity = context.getSystemService(ConnectivityManager::class.java) ?: return null
-        val network = connectivity.activeNetwork ?: return null
-        val capabilities = connectivity.getNetworkCapabilities(network) ?: return null
-        if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) return null
-        if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
-            !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) return null
-        return connectivity.getLinkProperties(network)?.linkAddresses
-            ?.firstOrNull { it.address is Inet4Address && it.address.isSiteLocalAddress && !it.address.isLoopbackAddress }
-            ?.address?.hostAddress
-    }
     companion object {
         private val ERRORS = setOf("SERVICE_STOPPED", "NAME", "ADDRESS", "SOURCE", "OUTPUT", "CLOUD_ACTIVE", "AUDIO_SUSPENDED", "AUDIO_ENGINE", "MEMORY_LIMIT", "AUDIO_FORMAT")
         private val RETRYABLE_ERRORS = setOf("SOURCE", "AUDIO_DURATION", "AUDIO_CONTENT", "LOAD_TIMEOUT", "MEMORY_LIMIT",
             "FULL_AUDIO_REQUIRED", "AUDIO_FORMAT", "SOURCE_CHANGED", "LOCAL_READ", "LOCAL_STORAGE", "LOCAL_TRANSFER", LAN_AUDIO_NOT_SEEKABLE)
         fun canRetryPlayback(error: String?): Boolean = error in RETRYABLE_ERRORS
+        fun playPauseIntent(state: LanSessionState, scheduled: Boolean = false): String {
+            val plan = state.room?.playback
+            val playRequested = scheduled || plan?.playing == true || plan?.playAfterPreparation == true
+            return if (playRequested && !state.audioSuspended && !canRetryPlayback(state.error)) "PAUSE" else "PLAY_PAUSE"
+        }
         private val FATAL_AUDIO_ERRORS = setOf("OUTPUT", "AUDIO_ENGINE", "SERVICE_STOPPED")
     }
 }

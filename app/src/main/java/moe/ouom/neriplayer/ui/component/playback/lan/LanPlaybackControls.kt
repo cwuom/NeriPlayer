@@ -17,7 +17,7 @@ internal fun lanPlaybackControls(state: LanSessionState): LanPermissions = when 
 }
 
 internal fun lanRoomPlayPauseIntent(state: LanSessionState): String =
-    if (state.room?.playback?.playing == true && !state.audioSuspended && !LanSessionManager.canRetryPlayback(state.error)) "PAUSE" else "PLAY_PAUSE"
+    LanSessionManager.playPauseIntent(state)
 
 internal data class LanPlayerControls(val permissions: LanPermissions, val preparing: Boolean)
 

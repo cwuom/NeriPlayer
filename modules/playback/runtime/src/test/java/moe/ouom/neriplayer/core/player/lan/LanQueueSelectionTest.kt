@@ -103,16 +103,17 @@ class LanQueueSelectionTest {
         val oldRepeat = PlayerManager.repeatModeSetting
         try {
             PlayerManager.repeatModeSetting = Player.REPEAT_MODE_OFF
-            val requests = mutableListOf<Pair<String, Double>>()
+            val requests = mutableListOf<Pair<String?, Boolean>>()
             LanPlaybackBinding.isHost = { true }
-            LanPlaybackBinding.command = { intent, _, position -> requests += intent to position }
+            LanPlaybackBinding.command = { intent, _, _ -> fail("unexpected interactive command $intent") }
+            LanPlaybackBinding.hostTrackEnded = { next, last -> requests += next?.stableKey to last }
 
             PlayerManager.publishCurrentQueue(listOf(song(1L)), 0)
             assertTrue(LanPlaybackBinding.ended())
             PlayerManager.publishCurrentQueue(emptyList(), -1)
             assertTrue(LanPlaybackBinding.ended())
 
-            assertEquals(listOf("FINISHED" to 0.0, "FINISHED" to 0.0), requests)
+            assertEquals(listOf(null to true, null to true), requests)
         } finally {
             LanPlaybackBinding.clear()
             PlayerManager.publishCurrentQueue(oldQueue.playlist, oldQueue.currentIndex)
@@ -142,7 +143,9 @@ class LanQueueSelectionTest {
             assertFalse(PlayerManager.shouldBlockLocalSongSwitch(songs[1], PlaybackCommandSource.LOCAL))
             PlayerManager.playFromQueue(1)
             assertEquals(1, requests)
-            assertEquals(songs, LanPlaybackBinding.offeredQueue)
+            val offer = requireNotNull(LanPlaybackBinding.queueOffers.forTrack(requireNotNull(LanPlaybackBinding.track(songs[1]))))
+            assertEquals(songs, offer.songs)
+            assertEquals(1, offer.index)
             assertEquals(0, PlayerManager.currentIndex)
             PlayerManager.playFromQueue(-1)
             assertEquals(1, requests)
@@ -154,5 +157,99 @@ class LanQueueSelectionTest {
         }
     }
 
-    private fun song(id: Long) = SongItem(id, "Song $id", "Artist", "Album", 0, 60_000L, null)
+    @Test fun onlyTheAcceptedSelectionReplacesTheQueueOnce() {
+        val a = song(1L)
+        val b = song(2L)
+        val c = song(3L)
+        val offers = LanQueueOffers()
+        val track = requireNotNull(LanPlaybackBinding.track(b))
+        val first = offers.offer(listOf(a, b), 1, track)
+        val latest = offers.offer(listOf(b, a, b), 2, track)
+        offers.published(first, "old")
+        assertNull(offers.consume("old"))
+        assertNull(offers.forTrack(requireNotNull(LanPlaybackBinding.track(a))))
+        offers.published(latest, "new")
+        val committed = requireNotNull(offers.consume("new"))
+        assertEquals(2, committed.index)
+        val edited = committed.songs + c
+        val step = requireNotNull(LanPlaybackBinding.track(a))
+        assertNull(offers.forTrack(step))
+        val next = currentLanQueueSelection(step, edited, committed.index) { error("track already in the queue") }
+        assertEquals(listOf(b, a, b, c), next.songs)
+        assertEquals(1, next.index)
+        assertNull(offers.consume("new"))
+        offers.published(latest, "late")
+        assertNull(offers.consume("late"))
+    }
+
+    @Test fun failedPublicationOnlyDiscardsItsOwnSelection() {
+        val offers = LanQueueOffers()
+        val songs = listOf(song(1L), song(2L))
+        val first = offers.offer(songs, 0, requireNotNull(LanPlaybackBinding.track(songs.first())))
+        val track = requireNotNull(LanPlaybackBinding.track(songs.last()))
+        val latest = offers.offer(songs, 1, track)
+        offers.discard(first)
+        assertSame(latest, offers.forTrack(track))
+        offers.discard(latest)
+        assertNull(offers.forTrack(track))
+    }
+
+    @Test fun anAcceptedQueueStepKeepsConcurrentEditsAndTheSelectedOccurrence() {
+        val a = song(1L)
+        val duplicate = a.copy(customName = "second occurrence")
+        val b = song(2L)
+        val queue = listOf(a, duplicate)
+        val track = requireNotNull(LanPlaybackBinding.track(a))
+        val offers = LanQueueOffers()
+        offers.offerNavigation(queue, 1, track)
+        val pending = requireNotNull(offers.forTrack(track))
+        offers.published(pending, "duplicate")
+        val step = requireNotNull(offers.consume("duplicate"))
+        val edited = listOf(b, a, duplicate)
+        val accepted = requireNotNull(step.resolve(edited))
+        assertEquals(edited, accepted.songs)
+        assertEquals(2, accepted.index)
+        assertNull(step.resolve(listOf(b)))
+    }
+
+    @Test fun guestSelectionsNeverStageAQueueEvenWhenTheirRequestIsDenied() {
+        try {
+            val requests = mutableListOf<String>()
+            LanPlaybackBinding.command = { intent, _, _ -> requests += intent }
+            val a = song(1L)
+            assertTrue(LanPlaybackBinding.playlist(listOf(a), 0, PlaybackCommandSource.LOCAL))
+            assertEquals(listOf("NEXT"), requests)
+            assertNull(LanPlaybackBinding.queueOffers.forTrack(requireNotNull(LanPlaybackBinding.track(a))))
+        } finally {
+            LanPlaybackBinding.clear()
+        }
+    }
+
+    @Test fun guestsWaitForTheHostsPlaylistBoundaryAndTimersStayLocal() {
+        val timer = PlayerManager.sleepTimerManager
+        assertFalse(timer.timerState.value.isActive)
+        val interruptions = mutableListOf<String>()
+        try {
+            LanPlaybackBinding.externalAudio = true
+            LanPlaybackBinding.interruptAudio = { interruptions += it }
+            LanPlaybackBinding.command = { intent, _, _ -> fail("unexpected room command $intent") }
+            timer.startFinishPlaylist()
+            assertTrue(LanPlaybackBinding.ended())
+            LanPlaybackBinding.checkEndTimer(lastInPlaylist = false)
+            assertTrue(timer.timerState.value.isActive)
+            LanPlaybackBinding.checkEndTimer(lastInPlaylist = true)
+            assertFalse(timer.timerState.value.isActive)
+            timer.startFinishCurrent()
+            assertTrue(LanPlaybackBinding.ended())
+            assertFalse(timer.timerState.value.isActive)
+            PlayerManager.pauseForSleepTimer()
+            assertEquals(List(3) { "SLEEP_TIMER" }, interruptions)
+        } finally {
+            timer.cancel()
+            LanPlaybackBinding.clear()
+        }
+    }
+
+    private fun song(id: Long) = SongItem(id, "Song $id", "Artist", "Album", 0, 60_000L, null,
+        channelId = "netease", audioId = id.toString())
 }

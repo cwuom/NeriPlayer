@@ -196,6 +196,23 @@ class LanRoomEngineTest {
         assertEquals(f.song.stableKey, f.sent.last().second.track?.stableKey)
         assertEquals(paused.positionSeconds, f.sent.last().second.trackTimeSeconds!!, .0001)
     }
+
+    @Test fun pausingAnAcceptedStartKeepsTheUnplayedPosition() {
+        val f = Fixture()
+        val generation = f.requestStream()
+        assertTrue(f.room.snapshot().playback.playAfterPreparation)
+        f.room.request("host", LanMessage("PAUSE"))
+        assertFalse(f.room.snapshot().playback.playAfterPreparation)
+        f.publish(generation)
+        f.loaded("host"); f.loaded("member")
+        assertFalse(f.room.snapshot().playback.playing)
+        f.room.request("host", LanMessage("PLAY", intent = "PLAY_PAUSE", track = f.song))
+        val start = f.room.snapshot().playback
+        f.now = start.executeAtMs - 1
+        f.room.request("host", LanMessage("PAUSE"))
+        assertFalse(f.room.snapshot().playback.playing)
+        assertEquals(start.positionSeconds, f.room.snapshot().playback.positionSeconds, 0.0)
+    }
     @Test fun activeSyncProjectsToFutureExecutionTime() {
         val f = Fixture(); f.play(); f.loaded("host"); f.loaded("member"); f.now = 5000.0
         f.room.request("member", LanMessage("SYNC"))
@@ -444,6 +461,51 @@ class LanRoomEngineTest {
         }
     }
 
+    @Test fun onlyHostCanRenewAnExpiredRelayAndRenewalPreservesPausedPosition() {
+        val f = Fixture()
+        f.room.request("host", LanMessage("PLAY", intent = "START_PAUSED", track = f.song, trackTimeSeconds = 27.0))
+        val first = f.sent.last().second.loadGeneration!!
+        f.publish(first)
+        f.loaded("host", first)
+        f.loaded("member", first)
+        f.sent.clear()
+        val renew = LanMessage("LAN_RENEW_STREAM", mediaId = f.stream.mediaId)
+        f.room.request("member", renew)
+        assertEquals("DENIED", f.sent.last().second.code)
+        f.room.request("host", renew.copy(mediaId = "stale"))
+        assertTrue(f.sent.none { it.second.type == "LAN_HOST_PLAY" })
+        f.room.request("host", renew)
+        f.room.request("host", renew)
+        val next = f.sent.single { it.second.type == "LAN_HOST_PLAY" }.second.loadGeneration!!
+        val replacement = f.stream.copy(mediaId = "12345678-1234-1234-1234-123456789abd")
+        f.publish(next, replacement)
+        for (peer in listOf("host", "member")) {
+            f.room.request(peer, LanMessage("AUDIO_SOURCE_READY", mediaId = replacement.mediaId, loadGeneration = next))
+        }
+        assertFalse(f.room.snapshot().playback.playing)
+        assertEquals(27.0, f.room.snapshot().playback.positionSeconds, 0.0)
+        f.room.request("host", renew)
+        f.room.request("host", renew.copy(mediaId = replacement.mediaId))
+        assertEquals(1, f.sent.count { it.second.type == "LAN_HOST_PLAY" })
+        assertTrue(f.sent.any { it.second.code == "SOURCE_CHANGED" })
+    }
+
+    @Test fun expiringWhilePreparingKeepsPlayIntentAndCanRenewAgainAfterCooldown() {
+        val f = Fixture()
+        f.play()
+        val renew = LanMessage("LAN_RENEW_STREAM", mediaId = f.stream.mediaId)
+        f.room.request("host", renew)
+        val generation = f.sent.last().second.loadGeneration!!
+        f.publish(generation)
+        f.loaded("host", generation)
+        f.loaded("member", generation)
+        assertTrue(f.room.snapshot().playback.playing)
+        f.now += 61_000
+        f.room.request("host", renew)
+        assertEquals("LAN_HOST_PLAY", f.sent.last().second.type)
+        assertTrue(f.room.snapshot().playback.positionSeconds > 50)
+    }
+
     @Test fun activeHostStreamFailureReleasesRoomForRetry() {
         val f = Fixture(); f.play(); f.loaded("host"); f.loaded("member")
         val failure = LanMessage("LAN_STREAM_FAILED", mediaId = f.stream.mediaId, code = "LOCAL_TRANSFER")
@@ -593,6 +655,40 @@ class LanRoomEngineTest {
         f.room.request("host", LanMessage("PLAY", track = f.song))
         assertEquals(0.0, f.room.snapshot().playback.positionSeconds, .0001)
         assertEquals("PLAY", f.actions().last().second.scheduledAction?.type)
+    }
+
+    @Test fun naturalAdvanceNotifiesGuestTimersBeforeLoadingAndRejectsOldBoundaries() {
+        val f = Fixture(); f.play(); f.loaded("host"); f.loaded("member")
+        val next = f.song.copy(stableKey = "netease:2", audioId = "2", mediaUri = "/local/path")
+        val end = LanMessage("LAN_TRACK_FINISHED", audioSource = f.song.stableKey, mediaId = f.stream.mediaId,
+            revision = 1, track = next, lastInPlaylist = false)
+        f.sent.clear()
+        f.room.request("member", end)
+        f.room.request("host", end.copy(revision = 0))
+        f.room.request("host", end.copy(revision = null))
+        assertFalse(f.sent.any { it.second.type == "LAN_TRACK_BOUNDARY" })
+        f.room.request("host", end)
+        val boundary = f.sent.indexOfFirst { it.first == "member" && it.second.type == "LAN_TRACK_BOUNDARY" }
+        assertTrue(boundary >= 0)
+        assertEquals(false, f.sent[boundary].second.lastInPlaylist)
+        assertTrue(boundary < f.sent.indexOfFirst { it.second.type == "LAN_HOST_PLAY" })
+        assertNull(f.room.snapshot().playback.track?.mediaUri)
+        assertEquals(next.stableKey, f.room.snapshot().playback.track?.stableKey)
+        f.room.request("host", end)
+        assertEquals(1, f.sent.count { it.first == "member" && it.second.type == "LAN_TRACK_BOUNDARY" })
+    }
+
+    @Test fun invalidNextAtAnAcceptedBoundaryStopsOnTheFinishedSong() {
+        val f = Fixture(); f.play(); f.loaded("host"); f.loaded("member")
+        val invalidNext = f.song.copy(audioId = "different")
+        f.sent.clear()
+        f.room.request("host", LanMessage("LAN_TRACK_FINISHED", audioSource = f.song.stableKey,
+            mediaId = f.stream.mediaId, revision = 1, track = invalidNext, lastInPlaylist = true))
+        val stopped = f.room.snapshot().playback
+        assertFalse(stopped.playing)
+        assertEquals(f.song.stableKey, stopped.track?.stableKey)
+        assertTrue(f.sent.none { it.second.type == "LAN_HOST_PLAY" })
+        assertEquals(true, f.sent.single { it.first == "member" && it.second.type == "LAN_TRACK_BOUNDARY" }.second.lastInPlaylist)
     }
 
     @Test fun guestAndStaleFinishedReportsLeaveTheCurrentPlaybackIntact() {

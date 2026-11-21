@@ -44,7 +44,7 @@ internal object LanPermissionsSerializer : KSerializer<LanPermissions> {
 }
 
 @Serializable data class LanMember(@SerialName("clientId") val id: String, @SerialName("username") val name: String, @SerialName("isAdmin") val host: Boolean = false, @SerialName("rtt") val rttMs: Double = 0.0, val volume: Float = 1f)
-@Serializable data class LanPlayback(val track: ListenTogetherTrack? = null, val positionSeconds: Double = 0.0, val playing: Boolean = false, val executeAtMs: Double = 0.0, val revision: Long = 0, val preparing: Boolean = false)
+@Serializable data class LanPlayback(val track: ListenTogetherTrack? = null, val positionSeconds: Double = 0.0, val playing: Boolean = false, val executeAtMs: Double = 0.0, val revision: Long = 0, val preparing: Boolean = false, val playAfterPreparation: Boolean = false)
 @Serializable data class LanRoom(val id: String, val name: String, val members: List<LanMember> = emptyList(), val permissions: LanPermissions = LanPermissions(), val volume: Float = 1f, val playback: LanPlayback = LanPlayback())
 @Serializable data class LanAction(val type: String, val audioSource: String, val trackTimeSeconds: Double, val track: ListenTogetherTrack? = null)
 
@@ -76,6 +76,7 @@ internal object LanPermissionsSerializer : KSerializer<LanPermissions> {
     val trackTimeSeconds: Double? = null,
     val intent: String? = null,
     val loadGeneration: Long? = null,
+    val lastInPlaylist: Boolean? = null,
     val permissions: LanPermissions? = null,
     val volume: Float? = null,
     val code: String? = null,

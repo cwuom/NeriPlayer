@@ -16,13 +16,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import moe.ouom.neriplayer.lanltw.media.LanMediaStreamInput
 import okhttp3.Call
+import okhttp3.OkHttpClient
 import okhttp3.Request
 
-internal class LanRelayOrigin private constructor(
+internal interface LanRelayContent : Closeable {
+    fun open(offset: Long, limit: Long?): LanMediaStreamInput
+}
+
+internal class LanRelayOrigin(
     val mime: String,
     val byteLength: Long?,
-    val window: LanRelayWindow
+    val window: LanRelayContent
 ) : Closeable {
     override fun close() = window.close()
 
@@ -32,16 +38,19 @@ internal class LanRelayOrigin private constructor(
 
         suspend fun openRemote(
             factory: (Call.Factory) -> DataSource.Factory,
-            calls: Call.Factory,
+            calls: OkHttpClient,
             uri: Uri,
-            localMime: String? = null
+            cacheDir: File,
+            localMime: String? = null,
+            onInvalidated: (String) -> Unit,
         ): LanRelayOrigin = coroutineScope {
             suspendCancellableCoroutine { continuation ->
-                val sources = RelayHttpSources(factory, calls)
+                val sources = RelayHttpSources(factory, calls.newBuilder().addInterceptor(::validateRelayHttpRange).build())
                 continuation.invokeOnCancellation { sources.cancel() }
                 launch(Dispatchers.IO) {
                     try {
-                        val origin = open(uri, localMime, sources::create, sources::cancel)
+                        val origin = LanRemoteRelay(uri, localMime, cacheDir, sources::create,
+                            sources::cancel, onInvalidated).open()
                         continuation.resume(origin) { _, discarded, _ -> discarded.close() }
                     } catch (error: Throwable) {
                         sources.cancel()
@@ -69,14 +78,7 @@ internal class LanRelayOrigin private constructor(
             try {
                 val size = initial.dataSource.open(DataSpec(uri)).takeIf { it >= 0 }
                 check(size != 0L) { "AUDIO_FORMAT" }
-                val mime = initial.dataSource.responseHeaders.entries.firstOrNull { it.key.equals("Content-Type", true) }
-                    ?.value?.firstOrNull()?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT) ?: localMime.orEmpty()
-                check(progressiveMediaType(mime) && !uri.path.orEmpty().endsWith(".m3u8", true)) { "AUDIO_FORMAT" }
-                val audioMime = when (mime) {
-                    "video/mp4" -> "audio/mp4"
-                    "video/webm" -> "audio/webm"
-                    else -> mime.takeIf { it.matches(Regex("audio/[a-zA-Z0-9.+_-]{1,100}")) } ?: "application/octet-stream"
-                }
+                val audioMime = relayAudioMime(uri, initial.dataSource, localMime)
                 val first = readProgressivePrefix(RelayInput(initial, verify))
                 val window = LanRelayWindow(size, first, stopUpstream) { offset ->
                     verify()
@@ -95,6 +97,17 @@ internal class LanRelayOrigin private constructor(
                 throw error
             }
         }
+    }
+}
+
+internal fun relayAudioMime(uri: Uri, source: DataSource, fallback: String?): String {
+    val mime = source.responseHeaders.entries.firstOrNull { it.key.equals("Content-Type", true) }
+        ?.value?.firstOrNull()?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT) ?: fallback.orEmpty()
+    check(progressiveMediaType(mime) && !uri.path.orEmpty().endsWith(".m3u8", true)) { "AUDIO_FORMAT" }
+    return when (mime) {
+        "video/mp4" -> "audio/mp4"
+        "video/webm" -> "audio/webm"
+        else -> mime.takeIf { it.matches(Regex("audio/[a-zA-Z0-9.+_-]{1,100}")) } ?: "application/octet-stream"
     }
 }
 
@@ -118,7 +131,7 @@ internal fun readProgressivePrefix(input: InputStream): InputStream {
     return result
 }
 
-private class RelayInput(private val source: RelaySource, private val verify: () -> Unit) : InputStream() {
+internal class RelayInput(private val source: RelaySource, private val verify: () -> Unit = {}) : InputStream() {
     private var closed = false
     override fun read(b: ByteArray, off: Int, len: Int): Int {
         if (closed) throw IOException("LOCAL_TRANSFER")
@@ -136,7 +149,7 @@ private class RelayInput(private val source: RelaySource, private val verify: ()
     }
 }
 
-private class RelaySource(val dataSource: DataSource, private val release: () -> Unit = {}) : Closeable {
+internal class RelaySource(val dataSource: DataSource, private val release: () -> Unit = {}) : Closeable {
     override fun close() {
         try { dataSource.close() } finally { release() }
     }
