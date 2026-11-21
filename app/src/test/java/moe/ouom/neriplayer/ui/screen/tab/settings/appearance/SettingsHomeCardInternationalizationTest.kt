@@ -22,8 +22,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsHomeCardCopy
+import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.Assert.assertEquals
+import moe.ouom.neriplayer.ui.settings.route.HomeSectionSettingsActions
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.doAnswer
+import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,6 +53,12 @@ class SettingsHomeCardInternationalizationTest {
         var internationalEnabled by mutableStateOf(false)
         var checked by mutableStateOf(true)
         val changes = mutableListOf<Boolean>()
+        val actions = mock(HomeSectionSettingsActions::class.java)
+        doAnswer {
+            checked = it.getArgument<Boolean>(1)
+            changes += checked
+            Unit
+        }.`when`(actions).setMajorVisible(HomeMajorSectionIds.BILIBILI, false)
         composeRule.setContent {
             NeriTheme(
                 followSystemDark = false,
@@ -61,23 +72,10 @@ class SettingsHomeCardInternationalizationTest {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     SettingsPersonalizationHomeCard(
                         internationalEnabled = internationalEnabled,
-                        homeTrendingLabelRes = copy.trendingLabelRes,
-                        homeRadarLabelRes = copy.radarLabelRes,
-                        homeRecommendedLabelRes = copy.recommendedLabelRes,
+                        copy = copy,
                         homeStartAvailable = true,
-                        showHomeContinueCard = true,
-                        onShowHomeContinueCardChange = {},
-                        showHomeTrendingCard = true,
-                        onShowHomeTrendingCardChange = {},
-                        showHomeRadarCard = true,
-                        onShowHomeRadarCardChange = {},
-                        showHomeRecommendedCard = true,
-                        onShowHomeRecommendedCardChange = {},
-                        showHomeBilibiliCard = checked,
-                        onShowHomeBilibiliCardChange = {
-                            checked = it
-                            changes += it
-                        },
+                        state = AppHomeCardsSettingsState(true, true, true, true, checked),
+                        actions = actions,
                         highlightTargetId = null,
                         highlightPulse = 0,
                         onHighlightFinished = null

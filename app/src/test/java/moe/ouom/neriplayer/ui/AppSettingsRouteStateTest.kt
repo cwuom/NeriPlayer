@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.ui.settings.route.appSettingsRouteStateFlow
 import moe.ouom.neriplayer.ui.settings.route.initialAppSettingsRouteState
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.anyInt
@@ -91,7 +92,7 @@ class AppSettingsRouteStateTest {
         AppAppearanceSettingsActions(repository, this) {}
             .onInternationalizationEnabledChange(nextInternationalization)
         AppUsbExclusiveSettingsActions(repository, this).onBitPerfectChange(nextBitPerfect)
-        AppHomeSettingsActions(repository, this).onShowHomeBilibiliCardChange(false)
+        AppHomeSettingsActions(repository, this).setMajorVisible(HomeMajorSectionIds.BILIBILI, false)
 
         val updated = withTimeout(10_000) {
             appSettingsRouteStateFlow(repository).first { state ->

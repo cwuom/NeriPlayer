@@ -18,9 +18,15 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsHomeCardCopy
+import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import moe.ouom.neriplayer.ui.settings.route.HomeSectionSettingsActions
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
+import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,8 +51,7 @@ class SettingsHomeCardLayoutTest {
         val radarTitle = context.getString(copy.radarLabelRes)
         val dailyTitle = context.getString(CoreCommonR.string.home_netease_daily_songs)
         val expand = context.getString(CoreCommonR.string.settings_home_sub_section_expand, radarTitle)
-        val parentChanges = mutableListOf<Boolean>()
-        val childChanges = mutableListOf<Pair<String, Boolean>>()
+        val actions = mock(HomeSectionSettingsActions::class.java)
 
         composeRule.setContent {
             NeriTheme(
@@ -60,21 +65,10 @@ class SettingsHomeCardLayoutTest {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     SettingsPersonalizationHomeCard(
                         internationalEnabled = false,
-                        homeTrendingLabelRes = copy.trendingLabelRes,
-                        homeRadarLabelRes = copy.radarLabelRes,
-                        homeRecommendedLabelRes = copy.recommendedLabelRes,
+                        copy = copy,
                         homeStartAvailable = true,
-                        showHomeContinueCard = true,
-                        onShowHomeContinueCardChange = {},
-                        showHomeTrendingCard = true,
-                        onShowHomeTrendingCardChange = {},
-                        showHomeRadarCard = true,
-                        onShowHomeRadarCardChange = { parentChanges += it },
-                        showHomeRecommendedCard = true,
-                        onShowHomeRecommendedCardChange = {},
-                        showHomeBilibiliCard = true,
-                        onShowHomeBilibiliCardChange = {},
-                        onSetRadarVisible = { id, checked -> childChanges += id to checked },
+                        state = AppHomeCardsSettingsState(true, true, true, true, true),
+                        actions = actions,
                         highlightTargetId = null,
                         highlightPulse = 0,
                         onHighlightFinished = null
@@ -94,7 +88,7 @@ class SettingsHomeCardLayoutTest {
         val child = composeRule.onNode(isToggleable() and hasContentDescription(dailyTitle))
         parent.assertIsOn()
         child.assertIsOn()
-        assertTrue(parentChanges.isEmpty())
+        verify(actions, never()).setMajorVisible(HomeMajorSectionIds.RADAR, false)
         assertEquals(
             parent.fetchSemanticsNode().boundsInRoot.right,
             child.fetchSemanticsNode().boundsInRoot.right,
@@ -102,11 +96,11 @@ class SettingsHomeCardLayoutTest {
         )
 
         child.performClick()
-        assertEquals(listOf(HomeRadarSubSectionIds.DAILY_RECOMMEND to false), childChanges)
+        verify(actions).setSubVisible(HomeMajorSectionIds.RADAR, HomeRadarSubSectionIds.DAILY_RECOMMEND, false)
         composeRule.onNodeWithText(radarTitle).performClick()
         child.assertDoesNotExist()
-        assertTrue(parentChanges.isEmpty())
+        verify(actions, never()).setMajorVisible(HomeMajorSectionIds.RADAR, false)
         parent.performClick()
-        assertEquals(listOf(false), parentChanges)
+        verify(actions).setMajorVisible(HomeMajorSectionIds.RADAR, false)
     }
 }
