@@ -900,18 +900,22 @@ object PlayerManager {
         resumePlaybackRequested = requested
     }
 
-    fun isTransportActive(): Boolean = playbackTransportOwner.isTransportActive()
+    fun isTransportActive(): Boolean = playbackTransportOwner.isTransportActive() ||
+        moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()
 
     internal fun isTransportActiveWithoutInitialization(): Boolean =
-        playbackTransportOwner.isTransportActiveWithoutInitialization()
+        playbackTransportOwner.isTransportActiveWithoutInitialization() ||
+            moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()
 
     fun shouldRunPlaybackServiceInForeground(): Boolean =
-        playbackTransportOwner.shouldRunForegroundService()
+        playbackTransportOwner.shouldRunForegroundService() ||
+            moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()
 
     fun shouldBootstrapPlaybackServiceOnAppLaunch(): Boolean =
         playbackTransportOwner.shouldBootstrapService()
 
-    fun isTransportBuffering(): Boolean = playbackTransportOwner.isBuffering()
+    fun isTransportBuffering(): Boolean = playbackTransportOwner.isBuffering() ||
+        moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isRemoteBuffering()
 
     fun shouldIgnoreExternalPauseCommand(source: String): Boolean =
         playbackTransportOwner.shouldIgnoreExternalPause(source)
@@ -1316,6 +1320,7 @@ object PlayerManager {
 
     internal fun bumpCurrentQueueDisplayRevision() {
         _currentQueueDisplayRevisionFlow.update { it + 1 }
+        moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.invalidateQueuedNext()
     }
 
     internal fun localMediaSource(song: SongItem): String? {

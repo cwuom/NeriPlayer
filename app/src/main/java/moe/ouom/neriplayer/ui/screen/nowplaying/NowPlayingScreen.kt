@@ -764,7 +764,7 @@ fun NowPlayingScreen(
 
     // 控制音量弹窗的显示
     var showVolumeSheet by remember { mutableStateOf(false) }
-    val volumeSheetState = rememberModalBottomSheetState()
+    val volumeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val currentLyricSourceKey = currentSong?.stableKey()
     val lyricsLoadOwner = rememberNowPlayingLyricsLoadOwner(

@@ -1148,15 +1148,9 @@ fun LyricsScreen(
 
             // 音量按钮 (根据设备显示不同图标, 居中)
             val context = LocalContext.current
-            val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-            val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            val audioDeviceIcon = remember(devices) {
-                when {
-                    devices.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP } -> Icons.Default.Headset
-                    devices.any { it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES } -> Icons.Default.Headset
-                    else -> Icons.Default.SpeakerGroup
-                }
-            }
+            val audioDeviceInfo = moe.ouom.neriplayer.ui.screen.nowplaying.rememberAudioDeviceInfo()
+            val isDlnaActive = moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.castStateFlow
+                .collectAsStateWithLifecycle().value.isCastingActive
             var showVolumeSheet by remember { mutableStateOf(false) }
             HapticIconButton(onClick = { showVolumeSheet = true },
                 modifier = toolbarActionModifier.then(
@@ -1173,8 +1167,9 @@ fun LyricsScreen(
                     } else Modifier
                 )) {
                 Icon(
-                    audioDeviceIcon,
-                    contentDescription = stringResource(CoreCommonR.string.cd_audio_device),
+                    audioDeviceInfo.second,
+                    contentDescription = audioDeviceInfo.first,
+                    tint = if (isDlnaActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(toolbarLayout.iconSize)
                 )
             }
@@ -1258,6 +1253,7 @@ fun LyricsScreen(
             if (showVolumeSheet) {
                 DensityScaledModalBottomSheet(
                     onDismissRequest = { showVolumeSheet = false },
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
                     sheetGesturesEnabled = false
                 ) {
                     VolumeControlSheetContent()

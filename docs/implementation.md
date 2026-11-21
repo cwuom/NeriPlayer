@@ -42,7 +42,7 @@
 | [`:database`](../modules/database/README.md) | Room 数据库、实体、DAO、历史 schema 与版本升级。 |
 | [`:native`](../modules/native/README.md) | Native 崩溃处理、DSP 音效、USB 协议与 PCM 计算、独占传输和第三方 libusb，生成并打包 `lib_neri.so`。 |
 | [`:playback:logic`](../modules/playback/logic/README.md) | 播放 policy、状态协调 runtime、PCM/audio 和队列 queue 规则，包级隔离。 |
-| [`:playback:runtime`](../modules/playback/runtime/README.md) | Media3 引擎、播放服务、音源解析、USB 输出、Native DSP 接入、浮窗与蓝牙歌词及宿主接入。 |
+| [`:playback:runtime`](../modules/playback/runtime/README.md) | Media3 引擎、播放服务、音源解析、USB 输出、DLNA / UPnP 投送、Native DSP 接入、浮窗与蓝牙歌词及宿主接入。 |
 | [`:download:logic`](../modules/download/logic/README.md) | 下载准入、状态迁移、重试、调度、传输槽位、所有权、提交与元数据规则。 |
 | [`:download:runtime`](../modules/download/runtime/README.md) | 下载执行、Room 队列、受管文件、迁移与恢复，以及 Worker 和 JobService。 |
 | [`:lyrics`](../modules/lyrics/README.md) | LRC/YRC/TTML 解析、转换、时间轴、翻译对齐、时间偏移，以及词幕（Lyricon）和 SuperLyric 接入。 |
@@ -214,7 +214,7 @@ python3 -B tools_pub/quality/module_boundaries.py
 
 - 播放核心基于 Media3 ExoPlayer，由 `PlayerManager` 统一管理。
 - `AudioPlayerService` 提供前台播放服务、媒体通知、MediaSession 和基础传输控制。
-- 播放器按 `playback/`、`url/`、`resolver/`、`service/`、`effects/`、`lifecycle/`、`watchdog/`、`usb/` 等职责分包。
+- 播放器按 `playback/`、`url/`、`resolver/`、`service/`、`effects/`、`lifecycle/`、`watchdog/`、`usb/`、`dlna/` 等职责分包。
 - 共享歌曲与播放状态契约由 `:model` 维护。
 - 播放状态定期持久化，进程重启后恢复队列和状态。
 - 睡眠定时器、淡入淡出、切歌交叉淡入淡出、播放模式恢复由播放器层管理。
@@ -265,6 +265,12 @@ UAC2 异步显式反馈拓扑：
 - 前后台切换后恢复 USB 独占。
 
 USB 设备插入响应由设置控制，关闭后 Activity alias 和播放服务都忽略 `USB_DEVICE_ATTACHED` 唤起路径。
+
+### DLNA / UPnP 投送
+
+- 按 `protocol/`、`server/`、`audio/`、`session/` 拆分 SSDP 发现、UPnP SOAP / GENA 控制、局域网受控 HTTP Range 媒体服务、音源与容器标签暂存及会话桥接。
+- 支持无损 FLAC 原字节流直传、无损 WAV（可选 RIFF ID3v2.3）兼容后备、在线有损音源自适应直传，以及按设备开启的严格无损拦截。
+- 支持 `SetNextAVTransportURI` 下一首预排队与渲染器曲末 `STOPPED` / `PAUSED_PLAYBACK` 状态机自动续播。
 
 ## 搜索与数据来源
 

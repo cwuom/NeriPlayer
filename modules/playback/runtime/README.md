@@ -4,7 +4,7 @@
 
 ## 中文
 
-`:playback:runtime` 负责 Media3 播放器、音源解析、后台服务、音频焦点、音效、USB 独占输出及浮窗和蓝牙歌词。
+`:playback:runtime` 负责 Media3 播放器、音源解析、后台服务、音频焦点、音效、USB 独占输出、DLNA / UPnP 投送及浮窗和蓝牙歌词。
 
 ### 结构
 
@@ -98,7 +98,7 @@
 
 ## English
 
-`:playback:runtime` owns the Media3 player, source resolution, background service, audio focus, effects, USB exclusive output, and floating/Bluetooth lyrics.
+`:playback:runtime` owns the Media3 player, source resolution, background service, audio focus, effects, USB exclusive output, DLNA / UPnP casting, and floating/Bluetooth lyrics.
 
 ### Layout
 

@@ -101,7 +101,8 @@ internal suspend fun PlayerManager.resolveSongUrl(
     sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects(),
     allowGenericPrefetchCache: Boolean = true,
     playbackRequestTokenOverride: Long? = null,
-    shouldApplyCacheMutation: () -> Boolean = { true }
+    shouldApplyCacheMutation: () -> Boolean = { true },
+    preferYouTubeM4a: Boolean = false
 ): SongUrlResult {
     val serverSong = song.isServerSong()
     logSongUrlResolutionRequest(
@@ -192,10 +193,11 @@ internal suspend fun PlayerManager.resolveSongUrl(
         return SongUrlResult.Success(song.streamUrl.orEmpty())
     }
     val isYouTubeTrack = isYouTubeMusicTrack(song)
+    val effectiveYouTubePreferM4a = youtubeRecoveryStrategy?.preferM4a ?: preferYouTubeM4a
     val cacheKey = computeCacheKey(
         song = song,
         youtubeQualityOverride = youtubeRecoveryStrategy?.preferredQualityOverride,
-        youtubePreferM4aOverride = youtubeRecoveryStrategy?.preferM4a
+        youtubePreferM4aOverride = effectiveYouTubePreferM4a
     )
     val cacheKeyIsUnsafe = loadPlaybackCacheKeySafety(cacheKey)
     val cacheIntegrity = if (forceRefresh) {
@@ -311,7 +313,8 @@ internal suspend fun PlayerManager.resolveSongUrl(
                 suppressError = suppressError,
                 forceRefresh = forceRefresh,
                 youtubeRecoveryStrategy = youtubeRecoveryStrategy,
-                sideEffects = resolverSideEffects
+                sideEffects = resolverSideEffects,
+                preferM4aOverride = preferYouTubeM4a
             )
             isBiliTrack(song) -> getBiliAudioUrl(
                 song = song,
@@ -1635,9 +1638,10 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
                 song.id,
                 level = quality
             )
-            NPLogger.d("NERI-PlayerManager", "id=${song.id}, level=$quality, resp=$resp")
+            val parsed = NeteasePlaybackResponseParser.parsePlayback(resp, song.durationMs)
+            NPLogger.d("NERI-PlayerManager", sanitizeNeteasePlaybackLogSummary(song.id, quality, parsed))
 
-            when (val parsed = NeteasePlaybackResponseParser.parsePlayback(resp, song.durationMs)) {
+            when (parsed) {
                 is NeteasePlaybackResponseParser.PlaybackResult.RequiresLogin -> {
                     requiresLogin = true
                     if (shouldRetryNeteaseWithLowerQualityAfterLogin(
@@ -1818,7 +1822,7 @@ private suspend fun PlayerManager.getBiliAudioUrl(
         )
 
         if (audioStream?.url != null) {
-            NPLogger.d("NERI-PlayerManager-BiliAudioUrl", audioStream.url)
+            NPLogger.d("NERI-PlayerManager-BiliAudioUrl", playbackLogReference(audioStream.url))
             SongUrlResult.Success(
                 url = audioStream.url,
                 candidateUrls = audioStream.candidateUrls,
@@ -1861,7 +1865,8 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
     suppressError: Boolean = false,
     forceRefresh: Boolean = false,
     youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
-    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
+    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects(),
+    preferM4aOverride: Boolean = false
 ): SongUrlResult = withContext(Dispatchers.IO) {
     val videoId = extractYouTubeMusicVideoId(song.mediaUri)
     if (videoId.isNullOrBlank()) {
@@ -1878,8 +1883,8 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
         val preferredQuality = youtubeRecoveryStrategy?.preferredQualityOverride
             ?: effectiveYouTubeQuality()
         val requireDirect = youtubeRecoveryStrategy?.requireDirect ?: false
-        // 首播保留用户选择; 出错恢复时才切到更稳的 m4a 直链
-        val preferM4a = youtubeRecoveryStrategy?.preferM4a ?: false
+        // 首播保留用户选择; 出错恢复或 DLNA 投送时切到兼容性更高的 m4a 直链
+        val preferM4a = youtubeRecoveryStrategy?.preferM4a ?: preferM4aOverride
         val resolvedPlayableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(
             videoId = videoId,
             preferredQualityOverride = preferredQuality,
