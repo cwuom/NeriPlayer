@@ -22,9 +22,15 @@ class LanPermissionPreferencesTest {
         doAnswer { invocation -> stored.value = invocation.getArgument(1); Unit }
             .`when`(repository).setSetting(eq(setting) ?: setting, anyInt())
         val preferences = LanPermissionPreferences(repository)
-        assertEquals(LanPermissions(true, true, true), preferences.load())
-        for ((value, bits) in listOf(LanPermissions(true, false, true) to 5,
-            LanPermissions(false, true, false) to 2, LanPermissions(false, false, false) to 0)) {
+        assertEquals(7, setting.defaultValue)
+        assertEquals(LanPermissions(true, true, true, false), preferences.load())
+        for ((value, bits) in listOf(
+            LanPermissions(false, false, false, true) to 8,
+            LanPermissions(true, true, true, true) to 15,
+            LanPermissions(true, false, true, false) to 5,
+            LanPermissions(false, true, false, false) to 2,
+            LanPermissions(false, false, false, false) to 0
+        )) {
             preferences.save(value)
             assertEquals(bits, stored.value)
             assertEquals(value, LanPermissionPreferences(repository).load())

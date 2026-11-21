@@ -299,9 +299,14 @@ class LanRoomEngine(
     }
     private fun configure(id: String, host: Boolean, m: LanMessage) {
         if (m.type == "LIVENESS_PONG") return
-        if (!host && !(m.type == "LAN_MEMBER_VOLUME" && m.clientId == id)) return reject(id, "DENIED")
+        if (!host && !memberMayConfigure(id, m)) return reject(id, "DENIED")
         val error = applyConfiguration(m)
         if (error != null) reject(id, error) else broadcastState()
+    }
+    private fun memberMayConfigure(id: String, m: LanMessage): Boolean = when (m.type) {
+        "SET_GLOBAL_VOLUME" -> permissions.volume
+        "LAN_MEMBER_VOLUME" -> peers[m.clientId]?.member?.let { permissions.allowsMemberDeviceVolume(id, it) } == true
+        else -> false
     }
     private val configurationHandlers: Map<String, (LanMessage) -> String?> = mapOf(
         "LAN_PERMISSIONS" to { setPermissions(it.permissions) },

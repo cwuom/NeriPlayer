@@ -8,14 +8,23 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.common.R
@@ -29,6 +38,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoMoreInteractions
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -37,6 +48,46 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class LanDeviceVolumeNavigationTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun memberGrantEnablesTheGroupAndHostSliderButKeepsOtherDevicesReadOnly() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val manager = mock(LanSessionManager::class.java)
+        val host = LanMember("host", "Host", host = true, volume = 0.8f)
+        val self = LanMember("self", "Self", volume = 0.2f)
+        val peer = LanMember("peer", "Peer", volume = 0.3f)
+        val room = LanRoom("room", "Test room", listOf(host, self, peer), volume = 0.6f)
+        val state = mutableStateOf(LanSessionState(phase = "CONNECTED", synced = true, selfId = self.id, room = room))
+        compose.setContent {
+            MaterialTheme {
+                Column(Modifier.verticalScroll(rememberScrollState())) { LanRoomPanelContent(manager, state.value) }
+            }
+        }
+        fun sliderAt(value: Float) = compose.onNode(SemanticsMatcher("volume $value") {
+            it.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo)?.current == value
+        })
+        sliderAt(room.volume).assertIsNotEnabled()
+        compose.onNodeWithText(app.getString(R.string.lan_permissions)).assertDoesNotExist()
+        compose.runOnIdle { state.value = state.value.copy(room = room.copy(permissions = room.permissions.copy(volume = true))) }
+        sliderAt(room.volume).assertIsEnabled().performSemanticsAction(SemanticsActions.SetProgress) { it(0.7f) }
+        verify(manager).setVolume(0.7f)
+        compose.onNodeWithText(app.getString(R.string.lan_device_volume)).performClick()
+        sliderAt(host.volume).assertIsEnabled().performSemanticsAction(SemanticsActions.SetProgress) { it(0.85f) }
+        verify(manager).setVolume(0.85f, host.id)
+        sliderAt(self.volume).assertIsEnabled()
+        sliderAt(peer.volume).assertDoesNotExist()
+        sliderAt(0.85f).performTouchInput {
+            down(Offset(width * 0.85f, centerY))
+            moveTo(Offset(width * 0.5f, centerY))
+        }
+        compose.runOnIdle { state.value = state.value.copy(room = room) }
+        sliderAt(self.volume).performTouchInput { up() }
+        sliderAt(0.85f).assertDoesNotExist()
+        sliderAt(host.volume).assertDoesNotExist()
+        sliderAt(self.volume).assertIsEnabled()
+        sliderAt(peer.volume).assertDoesNotExist()
+        verifyNoMoreInteractions(manager)
+    }
 
     @Test
     fun shortDeviceListResizesInBothDirectionsAndSurvivesRoomUpdates() {

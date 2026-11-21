@@ -20,14 +20,19 @@ import androidx.compose.ui.unit.LayoutDirection
 import kotlin.math.abs
 
 @Composable
-internal fun LanGroupVolumeSlider(value: Float, commit: (Float) -> Unit) {
+internal fun LanGroupVolumeSlider(value: Float, enabled: Boolean, commit: (Float) -> Unit) {
+    val mayCommit by rememberUpdatedState(enabled)
+    if (!enabled) {
+        Slider(value = value, onValueChange = {}, enabled = false)
+        return
+    }
     var applied by remember(value) { mutableFloatStateOf(value) }
     var draft by remember { mutableStateOf<Float?>(null) }
     val displayed = draft ?: applied
     val layoutDirection = LocalLayoutDirection.current
     val currentValue by rememberUpdatedState(displayed)
     val finish by rememberUpdatedState {
-        draft?.let {
+        if (mayCommit) draft?.let {
             applied = it
             commit(it)
         }

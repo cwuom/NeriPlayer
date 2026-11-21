@@ -31,7 +31,7 @@ class LanRoomEngineTest {
     }
     @Test fun savedPermissionsArePresentInFirstWelcomeAndOnlyHostCanChangeThem() {
         val messages = mutableListOf<LanMessage>()
-        val saved = LanPermissions(next = true, playPause = false, seek = true)
+        val saved = LanPermissions(playPause = false, volume = true)
         val room = LanRoomEngine("r", "Room", LanClock { 0.0 }, saved) { _, message -> messages += message }
         room.join("host", "Host", true)
         room.join("member", "Member", false)
@@ -41,6 +41,45 @@ class LanRoomEngineTest {
         room.request("host", LanMessage("LAN_PERMISSIONS", permissions = LanPermissions()))
         assertEquals(LanPermissions(), room.snapshot().permissions)
         assertEquals(LanPermissions(), messages.last().event?.room?.permissions)
+    }
+    @Test fun volumeGrantLetsMembersAdjustTheGroupAndHostButNotOtherMembers() {
+        val f = Fixture()
+        f.room.join("other", "Other", false, .2f)
+        val group = LanMessage("SET_GLOBAL_VOLUME", volume = .5f)
+        val hostVolume = LanMessage("LAN_MEMBER_VOLUME", clientId = "host", volume = .7f)
+        fun deviceVolume(id: String) = f.room.snapshot().members.first { it.id == id }.volume
+
+        f.room.request("member", group)
+        assertEquals("DENIED", f.sent.last().second.code)
+        f.room.request("member", hostVolume)
+        assertEquals("DENIED", f.sent.last().second.code)
+        assertEquals(1f, f.room.snapshot().volume)
+        assertEquals(1f, deviceVolume("host"))
+
+        val granted = LanPermissions(next = false, playPause = false, seek = false, volume = true)
+        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = granted))
+        f.room.request("member", group)
+        assertEquals(.5f, f.room.snapshot().volume)
+        assertTrue(f.room.snapshot().members.all { it.volume == .5f })
+        f.room.request("member", hostVolume)
+        assertEquals(.7f, deviceVolume("host"))
+        f.room.request("member", hostVolume.copy(clientId = "other"))
+        assertEquals("DENIED", f.sent.last().second.code)
+        assertEquals(.5f, deviceVolume("other"))
+        f.room.request("member", hostVolume.copy(clientId = "member", volume = .3f))
+        assertEquals(.3f, deviceVolume("member"))
+        assertEquals(.5f, f.room.snapshot().volume)
+
+        f.room.request("host", LanMessage("LAN_PERMISSIONS", permissions = granted.copy(volume = false)))
+        f.room.request("member", group.copy(volume = .8f))
+        assertEquals("DENIED", f.sent.last().second.code)
+        f.room.request("member", hostVolume.copy(volume = .9f))
+        assertEquals("DENIED", f.sent.last().second.code)
+        assertEquals(.5f, f.room.snapshot().volume)
+        assertEquals(.7f, deviceVolume("host"))
+        f.room.request("member", hostVolume.copy(clientId = "member", volume = .4f))
+        assertEquals(.4f, deviceVolume("member"))
+        assertEquals(.5f, f.room.snapshot().volume)
     }
     private class Fixture {
         var now = 1000.0

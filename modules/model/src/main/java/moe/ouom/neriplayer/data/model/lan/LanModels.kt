@@ -6,7 +6,15 @@ import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 
 const val LAN_PROTOCOL_VERSION = 4
 
-@Serializable data class LanPermissions(val next: Boolean = true, val playPause: Boolean = true, val seek: Boolean = true)
+@Serializable data class LanPermissions(
+    val next: Boolean = true,
+    val playPause: Boolean = true,
+    val seek: Boolean = true,
+    val volume: Boolean = false
+) {
+    fun allowsMemberDeviceVolume(selfId: String?, target: LanMember): Boolean =
+        selfId != null && (target.id == selfId || (volume && target.host))
+}
 @Serializable data class LanMember(@SerialName("clientId") val id: String, @SerialName("username") val name: String, @SerialName("isAdmin") val host: Boolean = false, @SerialName("rtt") val rttMs: Double = 0.0, val volume: Float = 1f)
 @Serializable data class LanPlayback(val track: ListenTogetherTrack? = null, val positionSeconds: Double = 0.0, val playing: Boolean = false, val executeAtMs: Double = 0.0, val revision: Long = 0, val preparing: Boolean = false)
 @Serializable data class LanRoom(val id: String, val name: String, val members: List<LanMember> = emptyList(), val permissions: LanPermissions = LanPermissions(), val volume: Float = 1f, val playback: LanPlayback = LanPlayback())

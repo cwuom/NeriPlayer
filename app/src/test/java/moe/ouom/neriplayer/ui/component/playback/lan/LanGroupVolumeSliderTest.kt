@@ -10,12 +10,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
@@ -39,16 +42,17 @@ import org.robolectric.annotation.GraphicsMode
 class LanGroupVolumeSliderTest {
     @get:Rule val compose = createComposeRule()
     private val roomVolume = mutableFloatStateOf(0.25f)
+    private val enabled = mutableStateOf(true)
     private val sent = mutableListOf<Float>()
     private val scroll = ScrollState(0)
-    private val slider get() = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress))
+    private val slider get() = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
 
     private fun showSlider() {
         compose.setContent {
             MaterialTheme {
                 Box(Modifier.width(240.dp).height(180.dp)) {
                     Column(Modifier.verticalScroll(scroll)) {
-                        LanGroupVolumeSlider(roomVolume.floatValue, sent::add)
+                        LanGroupVolumeSlider(roomVolume.floatValue, enabled.value, sent::add)
                         Spacer(Modifier.height(480.dp))
                     }
                 }
@@ -103,6 +107,32 @@ class LanGroupVolumeSliderTest {
         slider.performTouchInput { cancel() }
         assertEquals(0.1f, shownVolume(), 0f)
         assertTrue(sent.isEmpty())
+    }
+
+    @Test
+    fun revokingPermissionDuringDragDiscardsPreviewAndKeepsShowingRoomUpdates() {
+        showSlider()
+        slider.performTouchInput {
+            down(Offset(width * 0.2f, centerY))
+            moveTo(Offset(width * 0.7f, centerY))
+        }
+        assertTrue(shownVolume() > 0.5f)
+        compose.runOnIdle { enabled.value = false; roomVolume.floatValue = 0.1f }
+        slider.assertIsNotEnabled()
+        assertEquals(0.1f, shownVolume(), 0f)
+        slider.performTouchInput { up() }
+        val setProgress = slider.fetchSemanticsNode().config.getOrNull(SemanticsActions.SetProgress)?.action
+        compose.runOnIdle { setProgress?.invoke(0.9f) }
+        slider.performTouchInput {
+            down(center)
+            moveBy(Offset(width * 0.4f, 0f))
+            up()
+        }
+        assertTrue(sent.isEmpty())
+        assertEquals(0.1f, shownVolume(), 0f)
+        compose.runOnIdle { enabled.value = true }
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { it(0.6f) }
+        assertEquals(listOf(0.6f), sent)
     }
 
     @Test

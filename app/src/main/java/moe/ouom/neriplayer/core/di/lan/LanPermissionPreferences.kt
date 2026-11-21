@@ -13,11 +13,12 @@ internal class LanPermissionPreferences(private val repository: SettingsReposito
     private val setting = AutoSettingsSchema.playback.lanHostPermissions
     suspend fun load(): LanPermissions = mutex.withLock {
         val bits = repository.settingFlow(setting).first()
-        LanPermissions(bits and 1 != 0, bits and 2 != 0, bits and 4 != 0)
+        LanPermissions(next = bits and 1 != 0, playPause = bits and 2 != 0,
+            seek = bits and 4 != 0, volume = bits and 8 != 0)
     }
     suspend fun save(value: LanPermissions) = mutex.withLock {
         val bits = (if (value.next) 1 else 0) or
-            (if (value.playPause) 2 else 0) or (if (value.seek) 4 else 0)
+            (if (value.playPause) 2 else 0) or (if (value.seek) 4 else 0) or (if (value.volume) 8 else 0)
         repository.setSetting(setting, bits)
     }
 }

@@ -122,6 +122,80 @@ class LanSessionDeviceTest {
         }
     }
 
+    @Test fun memberVolumeAccessFollowsLiveGrantsAndKeepsDeviceLevelsSeparate() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val http = OkHttpClient()
+        val hostPort = Port()
+        val memberPort = Port()
+        val otherPort = Port()
+        val host = LanSessionManager(context, http, hostPort, { false }, {})
+        val member = LanSessionManager(context, http, memberPort, { false }, {})
+        val other = LanSessionManager(context, http, otherPort, { false }, {})
+        val sessions = listOf(host, member, other)
+        try {
+            main { host.host("Host") }
+            val hosting = withTimeout(30_000) { host.state.first { it.synced && it.room != null } }
+            val hostId = checkNotNull(hosting.selfId)
+            val roomId = checkNotNull(hosting.room).id
+            val address = "127.0.0.1:${hosting.port}"
+            main { member.join(address, roomId, "Member"); other.join(address, roomId, "Other") }
+            withTimeout(30_000) {
+                for (session in sessions) session.state.first { it.synced && it.room?.members?.size == 3 }
+            }
+            val memberId = checkNotNull(member.state.value.selfId)
+            val otherId = checkNotNull(other.state.value.selfId)
+
+            suspend fun awaitVolumes(group: Float, hostGain: Float, memberGain: Float, otherGain: Float) {
+                val levels = mapOf(hostId to hostGain, memberId to memberGain, otherId to otherGain)
+                withTimeout(10_000) {
+                    for (session in sessions) session.state.mapNotNull { it.room }.first { room ->
+                        room.volume == group && room.members.associate { it.id to it.volume } == levels
+                    }
+                    hostPort.gain.first { it == hostGain }
+                    memberPort.gain.first { it == memberGain }
+                    otherPort.gain.first { it == otherGain }
+                }
+            }
+            suspend fun expectDenied(target: String?) {
+                main {
+                    member.clearError()
+                    member.setVolume(.9f, target)
+                }
+                withTimeout(5_000) { member.state.first { it.error == "DENIED" } }
+            }
+            suspend fun grantVolume(enabled: Boolean) {
+                main { host.setPermissions(checkNotNull(host.state.value.room).permissions.copy(volume = enabled)) }
+                withTimeout(5_000) { member.state.first { it.room?.permissions?.volume == enabled } }
+            }
+
+            assertFalse(checkNotNull(member.state.value.room).permissions.volume)
+            main { host.setVolume(.5f) }
+            awaitVolumes(.5f, .5f, .5f, .5f)
+            expectDenied(null)
+            expectDenied(hostId)
+            main { member.setVolume(.25f, memberId) }
+            awaitVolumes(.5f, .5f, .25f, .5f)
+
+            grantVolume(true)
+            main { member.setVolume(.75f) }
+            awaitVolumes(.75f, .75f, .75f, .75f)
+            main { member.setVolume(.4f, hostId) }
+            awaitVolumes(.75f, .4f, .75f, .75f)
+            expectDenied(otherId)
+
+            grantVolume(false)
+            expectDenied(null)
+            expectDenied(hostId)
+            main { member.setVolume(.3f, memberId) }
+            awaitVolumes(.75f, .4f, .3f, .75f)
+        } finally {
+            main { other.leave(); member.leave(); host.leave() }
+            withTimeout(10_000) { for (session in sessions) session.state.first { !it.active } }
+            http.dispatcher.executorService.shutdown()
+            http.connectionPool.evictAll()
+        }
+    }
+
     @Test fun lateCoverReachesPlayingMemberAndLateJoinerThroughAuthorizedHttp() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val http = OkHttpClient()

@@ -117,9 +117,11 @@ private fun RoomControls(manager: LanSessionManager, state: LanSessionState, onD
         OutlinedButton(onClick = manager::sync, enabled = state.synced) { Text(stringResource(CoreR.string.lan_sync)) }
     }
     if (room != null) {
+        Text(stringResource(CoreR.string.lan_volume))
+        LanGroupVolumeSlider(room.volume, enabled = state.synced && (state.hosting || room.permissions.volume)) {
+            manager.setVolume(it)
+        }
         if (state.hosting) {
-            Text(stringResource(CoreR.string.lan_volume))
-            LanGroupVolumeSlider(room.volume) { manager.setVolume(it) }
             Text(stringResource(CoreR.string.lan_permissions))
             LanPermissionsRow(room.permissions, manager::setPermissions)
         }
@@ -159,28 +161,49 @@ private fun RoomVolumeSlider(value: Float, commit: (Float) -> Unit) {
 }
 @Composable
 internal fun LanPermissionsRow(permissions: LanPermissions, change: (LanPermissions) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        FilterChip(selected = permissions.next, onClick = { change(permissions.copy(next = !permissions.next)) },
-            leadingIcon = if (permissions.next) { { Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp)) } } else null,
-            label = { Text(stringResource(CoreR.string.lan_permission_next_short)) }, modifier = Modifier.weight(1f))
-        FilterChip(selected = permissions.playPause, onClick = { change(permissions.copy(playPause = !permissions.playPause)) },
-            leadingIcon = if (permissions.playPause) { { Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp)) } } else null,
-            label = { Text(stringResource(CoreR.string.lan_permission_play_short)) }, modifier = Modifier.weight(1f))
-        FilterChip(selected = permissions.seek, onClick = { change(permissions.copy(seek = !permissions.seek)) },
-            leadingIcon = if (permissions.seek) { { Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp)) } } else null,
-            label = { Text(stringResource(CoreR.string.lan_permission_seek_short)) }, modifier = Modifier.weight(1f))
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        LanPermissionChip(permissions.next, stringResource(CoreR.string.lan_permission_next_short)) {
+            change(permissions.copy(next = !permissions.next))
+        }
+        LanPermissionChip(permissions.playPause, stringResource(CoreR.string.lan_permission_play_short)) {
+            change(permissions.copy(playPause = !permissions.playPause))
+        }
+        LanPermissionChip(permissions.seek, stringResource(CoreR.string.lan_permission_seek_short)) {
+            change(permissions.copy(seek = !permissions.seek))
+        }
+        LanPermissionChip(permissions.volume, stringResource(CoreR.string.lan_permission_volume_short)) {
+            change(permissions.copy(volume = !permissions.volume))
+        }
     }
 }
+
+@Composable
+private fun LanPermissionChip(selected: Boolean, label: String, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected, onClick = onClick, label = { Text(label) },
+        leadingIcon = if (selected) {
+            { Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+        } else null
+    )
+}
+
 @Composable
 private fun LanDeviceVolumes(manager: LanSessionManager, state: LanSessionState) {
-    state.room?.members?.forEach { member ->
+    val room = state.room ?: return
+    room.members.forEach { member ->
         key(member.id) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Text(member.name + if (member.host) " · ${stringResource(CoreR.string.lan_host_badge)}" else "",
                     modifier = Modifier.weight(1f), maxLines = 2)
                 Text("${(member.volume * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
             }
-            if (state.hosting || member.id == state.selfId) RoomVolumeSlider(member.volume) { manager.setVolume(it, member.id) }
+            val editable by rememberUpdatedState(
+                member.id == state.selfId || state.synced &&
+                    (state.hosting || room.permissions.allowsMemberDeviceVolume(state.selfId, member))
+            )
+            if (editable) RoomVolumeSlider(member.volume) {
+                if (editable) manager.setVolume(it, member.id)
+            }
         }
     }
 }

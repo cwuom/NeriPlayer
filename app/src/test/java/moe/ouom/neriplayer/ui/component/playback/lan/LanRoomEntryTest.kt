@@ -1,13 +1,18 @@
 package moe.ouom.neriplayer.ui.component.playback.lan
 
 import android.app.Application
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.data.model.lan.LanPermissions
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -27,18 +32,29 @@ class LanRoomEntryTest {
     @Test fun compactPermissionsToggleIndependently() {
         val app = ApplicationProvider.getApplicationContext<Application>()
         val permissions = mutableStateOf(LanPermissions())
-        compose.setContent { MaterialTheme { LanPermissionsRow(permissions.value) { permissions.value = it } } }
+        compose.setContent {
+            MaterialTheme {
+                Box(Modifier.width(200.dp)) {
+                    LanPermissionsRow(permissions.value) { permissions.value = it }
+                }
+            }
+        }
         val next = compose.onNodeWithText(app.getString(R.string.lan_permission_next_short))
         val play = compose.onNodeWithText(app.getString(R.string.lan_permission_play_short))
         val seek = compose.onNodeWithText(app.getString(R.string.lan_permission_seek_short))
+        val volume = compose.onNodeWithText(app.getString(R.string.lan_permission_volume_short))
         next.assertIsSelected()
         play.assertIsSelected()
         seek.assertIsSelected()
+        volume.assertIsDisplayed().assertIsNotSelected()
+        volume.performClick().assertIsSelected()
         next.performClick().assertIsNotSelected()
         play.performClick().assertIsNotSelected()
         seek.performClick().assertIsNotSelected()
         play.performClick().assertIsSelected()
         seek.performClick().assertIsSelected()
+        compose.runOnIdle { assertEquals(LanPermissions(false, true, true, volume = true), permissions.value) }
+        volume.performClick().assertIsNotSelected()
         compose.runOnIdle { assertEquals(LanPermissions(false, true, true), permissions.value) }
     }
     @Test fun createAndJoinAreVisibleAndActiveRoomUsesManage() {
