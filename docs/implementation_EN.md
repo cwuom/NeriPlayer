@@ -273,6 +273,7 @@ USB attach handling is controlled by a setting. When it is off, both the Activit
 
 - `Explore` integrates NetEase, Bilibili and YouTube Music as separate sources, without mixing results.
 - NetEase can switch among songs, playlists and artists. NetEase and Bilibili support lazy pagination.
+- Bilibili search offers songs from the music category, videos from all categories, and creators. Selecting a creator opens their uploader profile. [Explore screenshot](images/bilibili-explore-search.png)
 - Link recognition accepts direct links and share text containing short links.
 - Bilibili video links keep the `p` / `cid` part target.
 - Bilibili collection shares prefer the UGC season from video details and fall back to the linked `season_id`.

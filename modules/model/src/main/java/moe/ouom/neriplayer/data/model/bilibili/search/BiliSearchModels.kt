@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.model.bilibili.search
 
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderProfile
+
 data class SearchVideoItem(
     val aid: Long,
     val bvid: String,
@@ -19,4 +21,10 @@ data class SearchVideoPage(
     val numResults: Int,
     val numPages: Int,
     val items: List<SearchVideoItem>
+)
+
+data class SearchUploaderPage(
+    val page: Int,
+    val numPages: Int,
+    val items: List<UploaderProfile>
 )

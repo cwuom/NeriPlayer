@@ -73,9 +73,11 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -113,6 +115,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -120,6 +123,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -151,9 +155,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -185,6 +192,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreSearchResult
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.BilibiliExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
@@ -236,16 +244,43 @@ internal fun shouldClearExploreSearchQuery(
         )
 }
 
+internal fun shouldDefaultExploreToYouTube(
+    isInternational: Boolean,
+    youtubeEnabled: Boolean,
+    searchQuery: String
+): Boolean = isInternational && youtubeEnabled && searchQuery.isBlank()
+
+@Composable
+internal fun ExploreSearchPagerEffect(
+    pager: PagerState,
+    sources: List<SearchSource>,
+    selectedSource: SearchSource,
+    onSourceChange: (SearchSource) -> Unit
+) {
+    LaunchedEffect(pager, sources, selectedSource) {
+        val targetPage = sources.indexOf(selectedSource)
+        if (targetPage < 0) return@LaunchedEffect
+        // a restored page index can refer to a different source before settings load
+        if (pager.currentPage != targetPage) pager.scrollToPage(targetPage)
+        snapshotFlow { pager.settledPage }.collect { page ->
+            val source = sources.getOrNull(page) ?: return@collect
+            if (source != selectedSource) onSourceChange(source)
+        }
+    }
+}
+
 internal fun exploreSearchScrollContextKey(
     keyword: String,
     source: SearchSource,
     neteaseSearchType: NeteaseExploreSearchType,
-    youtubeSearchType: YouTubeExploreSearchType = YouTubeExploreSearchType.SONG
+    youtubeSearchType: YouTubeExploreSearchType = YouTubeExploreSearchType.SONG,
+    bilibiliSearchType: BilibiliExploreSearchType = BilibiliExploreSearchType.SONG
 ): String? {
     val normalizedKeyword = keyword.trim()
     if (normalizedKeyword.isBlank()) return null
     val sourceType = when (source) {
         SearchSource.NETEASE -> neteaseSearchType.name
+        SearchSource.BILIBILI -> bilibiliSearchType.name
         SearchSource.YOUTUBE_MUSIC -> youtubeSearchType.name
         else -> "-"
     }
@@ -349,6 +384,23 @@ private fun neteaseSearchTypeIcon(type: NeteaseExploreSearchType): ImageVector {
 }
 
 @Composable
+private fun bilibiliSearchTypeLabel(type: BilibiliExploreSearchType): String {
+    return when (type) {
+        BilibiliExploreSearchType.SONG -> stringResource(CoreCommonR.string.explore_search_type_song)
+        BilibiliExploreSearchType.VIDEO -> stringResource(CoreCommonR.string.explore_search_type_video)
+        BilibiliExploreSearchType.CREATOR -> stringResource(CoreCommonR.string.explore_search_type_creator)
+    }
+}
+
+private fun bilibiliSearchTypeIcon(type: BilibiliExploreSearchType): ImageVector {
+    return when (type) {
+        BilibiliExploreSearchType.SONG -> Icons.Outlined.MusicNote
+        BilibiliExploreSearchType.VIDEO -> Icons.Filled.PlayCircle
+        BilibiliExploreSearchType.CREATOR -> Icons.Filled.AccountCircle
+    }
+}
+
+@Composable
 private fun youtubeSearchTypeLabel(type: YouTubeExploreSearchType): String {
     return when (type) {
         YouTubeExploreSearchType.SONG -> stringResource(CoreCommonR.string.explore_search_type_song)
@@ -378,6 +430,7 @@ fun ExploreScreen(
     offlineMode: Boolean = false,
     onPlay: (PlaylistSummary) -> Unit,
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
+    onBiliUploaderClick: (BiliUploaderSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onYouTubeCreatorClick: (YouTubeMusicCreatorSummary) -> Unit = {},
     onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit = {},
@@ -447,6 +500,7 @@ fun ExploreScreen(
     }
 
     var showPartsSheet by remember { mutableStateOf(false) }
+    var pendingPartsLookup by remember { mutableStateOf<Job?>(null) }
     var partsInfo by remember { mutableStateOf<VideoBasicInfo?>(null) }
     var clickedSongCoverUrl by remember { mutableStateOf("") }
     val partsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -522,34 +576,18 @@ fun ExploreScreen(
         if (ui.playlists.isEmpty()) vm.loadHighQuality()
     }
 
-    LaunchedEffect(ui.selectedSearchSource, orderedSearchSources) {
-        val targetPage = orderedSearchSources.indexOf(ui.selectedSearchSource)
-            .takeIf { it >= 0 }
-            ?: return@LaunchedEffect
-        if (pagerState.currentPage != targetPage) {
-            pagerState.scrollToPage(targetPage)
-        }
-    }
-
-    LaunchedEffect(pagerState.currentPage, orderedSearchSources, ui.selectedSearchSource) {
-        val currentSource = orderedSearchSources.getOrNull(pagerState.currentPage)
-            ?: return@LaunchedEffect
-        if (ui.selectedSearchSource != currentSource) {
-            vm.setSearchSource(currentSource)
-        }
-        if (currentSource == SearchSource.YOUTUBE_MUSIC && ui.ytMusicPlaylists.isEmpty()) {
+    ExploreSearchPagerEffect(pagerState, orderedSearchSources, ui.selectedSearchSource, vm::setSearchSource)
+    LaunchedEffect(ui.selectedSearchSource) {
+        if (ui.selectedSearchSource == SearchSource.YOUTUBE_MUSIC && ui.ytMusicPlaylists.isEmpty()) {
             vm.loadYtMusicPlaylists()
         }
     }
 
     // 国际化模式默认跳到 YouTube Music 标签
     LaunchedEffect(isInternational, youtubeEnabled) {
-        if (isInternational && youtubeEnabled) {
+        if (shouldDefaultExploreToYouTube(isInternational, youtubeEnabled, searchQuery)) {
             if (ui.selectedSearchSource != SearchSource.YOUTUBE_MUSIC) {
                 vm.setSearchSource(SearchSource.YOUTUBE_MUSIC)
-            }
-            if (ui.ytMusicPlaylists.isEmpty()) {
-                vm.loadYtMusicPlaylists()
             }
         }
     }
@@ -598,6 +636,7 @@ fun ExploreScreen(
         effectiveSearchKeyword,
         searchHistoryEnabled,
         ui.selectedSearchSource,
+        ui.selectedBilibiliSearchType,
         ui.selectedNeteaseSearchType,
         ui.selectedYouTubeMusicSearchType
     ) {
@@ -627,15 +666,21 @@ fun ExploreScreen(
     val currentSearchScrollContextKey = remember(
         effectiveSearchKeyword,
         ui.selectedSearchSource,
+        ui.selectedBilibiliSearchType,
         ui.selectedNeteaseSearchType,
         ui.selectedYouTubeMusicSearchType
     ) {
         exploreSearchScrollContextKey(
             keyword = effectiveSearchKeyword,
             source = ui.selectedSearchSource,
+            bilibiliSearchType = ui.selectedBilibiliSearchType,
             neteaseSearchType = ui.selectedNeteaseSearchType,
             youtubeSearchType = ui.selectedYouTubeMusicSearchType
         )
+    }
+
+    DisposableEffect(currentSearchScrollContextKey) {
+        onDispose { pendingPartsLookup?.cancel() }
     }
 
     LaunchedEffect(
@@ -659,6 +704,7 @@ fun ExploreScreen(
         shouldLoadMoreSearch,
         ui.searchItems.size,
         ui.selectedSearchSource,
+        ui.selectedBilibiliSearchType,
         ui.selectedNeteaseSearchType,
         ui.selectedYouTubeMusicSearchType
     ) {
@@ -897,9 +943,11 @@ fun ExploreScreen(
                     }
                     ExploreSearchTypeBar(
                         source = searchTypeBarSource,
+                        selectedBilibiliSearchType = ui.selectedBilibiliSearchType,
                         selectedNeteaseSearchType = ui.selectedNeteaseSearchType,
                         selectedYouTubeSearchType = ui.selectedYouTubeMusicSearchType,
                         onNeteaseSearchTypeClick = vm::setNeteaseSearchType,
+                        onBilibiliSearchTypeClick = vm::setBilibiliSearchType,
                         onYouTubeSearchTypeClick = vm::setYouTubeMusicSearchType,
                         selectedAlpha = tagChipSelectedAlpha,
                         unselectedAlpha = tagChipUnselectedAlpha,
@@ -945,9 +993,10 @@ fun ExploreScreen(
                                 ) { Text(stringResource(CoreCommonR.string.search_no_result)) }
                             }
                             else -> {
-                                val searchSongIndexByKey = remember(ui.searchResults) {
-                                    buildMap(ui.searchResults.size) {
-                                        ui.searchResults.forEachIndexed { songIdx, s ->
+                                val songs = ui.searchResults
+                                val searchSongIndexByKey = remember(songs) {
+                                    buildMap(songs.size) {
+                                        songs.forEachIndexed { songIdx, s ->
                                             putIfAbsent(s.stableKey(), songIdx)
                                         }
                                     }
@@ -978,14 +1027,15 @@ fun ExploreScreen(
                                                 ),
                                                 actions = ExploreSongRowActions(
                                                     onClick = {
+                                                        pendingPartsLookup?.cancel()
                                                         if (shouldShowBiliPartsPicker(song)) {
-                                                            scope.launch {
+                                                            pendingPartsLookup = scope.launch {
                                                                 try {
                                                                     val info =
                                                                         vm.getVideoInfoByAvid(song.id)
                                                                     if (info.pages.size <= 1) {
                                                                         onSongClick(
-                                                                            ui.searchResults,
+                                                                            songs,
                                                                             songListIndex
                                                                         )
                                                                     } else {
@@ -994,6 +1044,8 @@ fun ExploreScreen(
                                                                             song.coverUrl ?: ""
                                                                         showPartsSheet = true
                                                                     }
+                                                                } catch (cancelled: CancellationException) {
+                                                                    throw cancelled
                                                                 } catch (e: Exception) {
                                                                     NPLogger.e(
                                                                         "ExploreScreen",
@@ -1004,12 +1056,15 @@ fun ExploreScreen(
                                                             }
                                                         } else {
                                                             onSongClick(
-                                                                ui.searchResults,
+                                                                songs,
                                                                 songListIndex
                                                             )
                                                         }
                                                     },
-                                                    onPlayNow = { onSongPlayPreservingQueue(song) },
+                                                    onPlayNow = {
+                                                        pendingPartsLookup?.cancel()
+                                                        onSongPlayPreservingQueue(song)
+                                                    },
                                                     onPlayNext = { onSongPlayNext(song) },
                                                     onAddToQueueEnd = { onSongAddToQueueEnd(song) },
                                                     onDownload = {
@@ -1099,10 +1154,23 @@ fun ExploreScreen(
                                             )
                                         }
                                         is ExploreSearchResult.YouTubeCreator -> {
-                                            YouTubeCreatorSearchRow(
-                                                creator = item.creator,
+                                            CreatorSearchRow(
+                                                title = item.creator.title,
+                                                subtitle = item.creator.subtitle.ifBlank {
+                                                    stringResource(CoreCommonR.string.explore_search_type_creator)
+                                                },
+                                                coverUrl = item.creator.coverUrl,
                                                 offlineMode = offlineMode,
                                                 onClick = { onYouTubeCreatorClick(item.creator) }
+                                            )
+                                        }
+                                        is ExploreSearchResult.BilibiliCreator -> {
+                                            CreatorSearchRow(
+                                                title = item.creator.name,
+                                                subtitle = stringResource(CoreCommonR.string.bili_uploader_mid, item.creator.mid),
+                                                coverUrl = item.creator.avatarUrl,
+                                                offlineMode = offlineMode,
+                                                onClick = { onBiliUploaderClick(item.creator) }
                                             )
                                         }
                                         is ExploreSearchResult.Notice -> {
@@ -1631,9 +1699,7 @@ internal fun exploreSearchTypeBarSource(
     contentScrolled: Boolean
 ): SearchSource? {
     if (contentScrolled) return null
-    return selectedSearchSource.takeIf {
-        it == SearchSource.NETEASE || it == SearchSource.YOUTUBE_MUSIC
-    }
+    return selectedSearchSource.takeIf { it in EXPLORE_SEARCH_TYPE_BAR_SOURCES }
 }
 
 internal fun isExploreSearchTypeBarSourceSwap(
@@ -1649,9 +1715,11 @@ internal fun isExploreSearchTypeBarSourceSwap(
 @Composable
 internal fun ExploreSearchTypeBar(
     source: SearchSource?,
+    selectedBilibiliSearchType: BilibiliExploreSearchType,
     selectedNeteaseSearchType: NeteaseExploreSearchType,
     selectedYouTubeSearchType: YouTubeExploreSearchType,
     onNeteaseSearchTypeClick: (NeteaseExploreSearchType) -> Unit,
+    onBilibiliSearchTypeClick: (BilibiliExploreSearchType) -> Unit,
     onYouTubeSearchTypeClick: (YouTubeExploreSearchType) -> Unit,
     selectedAlpha: Float,
     unselectedAlpha: Float,
@@ -1738,60 +1806,49 @@ internal fun ExploreSearchTypeBar(
         },
         label = "explore_search_type_bar"
     ) { displayedSource ->
-        when (displayedSource) {
-            SearchSource.NETEASE -> {
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .testTag(EXPLORE_NETEASE_SEARCH_TYPE_BAR_TAG),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(NeteaseExploreSearchType.entries) { _, type ->
-                        ExploreTagChip(
-                            label = neteaseSearchTypeLabel(type),
-                            icon = neteaseSearchTypeIcon(type),
-                            selected = selectedNeteaseSearchType == type,
-                            onClick = {
-                                if (source == displayedSource) {
-                                    onNeteaseSearchTypeClick(type)
-                                }
-                            },
-                            selectedAlpha = selectedAlpha,
-                            unselectedAlpha = unselectedAlpha,
-                            borderAlpha = borderAlpha
-                        )
-                    }
+        val tag = when (displayedSource) {
+            SearchSource.NETEASE -> EXPLORE_NETEASE_SEARCH_TYPE_BAR_TAG
+            SearchSource.BILIBILI -> EXPLORE_BILIBILI_SEARCH_TYPE_BAR_TAG
+            SearchSource.YOUTUBE_MUSIC -> EXPLORE_YOUTUBE_SEARCH_TYPE_BAR_TAG
+            else -> return@AnimatedContent
+        }
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag(tag),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            fun <T> typeChips(
+                types: List<T>,
+                selectedType: T,
+                label: @Composable (T) -> String,
+                icon: (T) -> ImageVector,
+                onTypeClick: (T) -> Unit
+            ) {
+                items(types) { type ->
+                    ExploreTagChip(
+                        label = label(type),
+                        icon = icon(type),
+                        selected = selectedType == type,
+                        onClick = { if (source == displayedSource) onTypeClick(type) },
+                        selectedAlpha = selectedAlpha,
+                        unselectedAlpha = unselectedAlpha,
+                        borderAlpha = borderAlpha
+                    )
                 }
             }
-
-            SearchSource.YOUTUBE_MUSIC -> {
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .testTag(EXPLORE_YOUTUBE_SEARCH_TYPE_BAR_TAG),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(YouTubeExploreSearchType.entries) { _, type ->
-                        ExploreTagChip(
-                            label = youtubeSearchTypeLabel(type),
-                            icon = youtubeSearchTypeIcon(type),
-                            selected = selectedYouTubeSearchType == type,
-                            onClick = {
-                                if (source == displayedSource) {
-                                    onYouTubeSearchTypeClick(type)
-                                }
-                            },
-                            selectedAlpha = selectedAlpha,
-                            unselectedAlpha = unselectedAlpha,
-                            borderAlpha = borderAlpha
-                        )
-                    }
-                }
+            when (displayedSource) {
+                SearchSource.NETEASE -> typeChips(
+                    NeteaseExploreSearchType.entries, selectedNeteaseSearchType,
+                    { neteaseSearchTypeLabel(it) }, ::neteaseSearchTypeIcon, onNeteaseSearchTypeClick
+                )
+                SearchSource.BILIBILI -> typeChips(
+                    BilibiliExploreSearchType.entries, selectedBilibiliSearchType,
+                    { bilibiliSearchTypeLabel(it) }, ::bilibiliSearchTypeIcon, onBilibiliSearchTypeClick
+                )
+                SearchSource.YOUTUBE_MUSIC -> typeChips(
+                    YouTubeExploreSearchType.entries, selectedYouTubeSearchType,
+                    { youtubeSearchTypeLabel(it) }, ::youtubeSearchTypeIcon, onYouTubeSearchTypeClick
+                )
             }
-
-            else -> Unit
         }
     }
 }
@@ -1799,6 +1856,7 @@ internal fun ExploreSearchTypeBar(
 private const val EXPLORE_HISTORY_DISPLAY_LIMIT = 15
 private val EXPLORE_SEARCH_TYPE_BAR_SOURCES = setOf(
     SearchSource.NETEASE,
+    SearchSource.BILIBILI,
     SearchSource.YOUTUBE_MUSIC
 )
 private const val EXPLORE_SEARCH_TYPE_BAR_ENTER_DURATION_MS = 180
@@ -1807,4 +1865,5 @@ private const val EXPLORE_SEARCH_TYPE_BAR_SIZE_DURATION_MS = 220
 private const val EXPLORE_SEARCH_TYPE_BAR_SLIDE_DIVISOR = 5
 internal const val EXPLORE_SEARCH_TYPE_BAR_CONTAINER_TAG = "explore_search_type_bar"
 internal const val EXPLORE_NETEASE_SEARCH_TYPE_BAR_TAG = "explore_netease_search_type_bar"
+internal const val EXPLORE_BILIBILI_SEARCH_TYPE_BAR_TAG = "explore_bilibili_search_type_bar"
 internal const val EXPLORE_YOUTUBE_SEARCH_TYPE_BAR_TAG = "explore_youtube_search_type_bar"

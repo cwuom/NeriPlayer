@@ -5,8 +5,10 @@ import moe.ouom.neriplayer.ui.screen.tab.explore.exploreSearchResultsBottomPaddi
 import moe.ouom.neriplayer.ui.screen.tab.explore.exploreSearchScrollContextKey
 import moe.ouom.neriplayer.ui.screen.tab.explore.exploreSearchSourceDisplayOrder
 import moe.ouom.neriplayer.ui.screen.tab.explore.shouldClearExploreSearchQuery
+import moe.ouom.neriplayer.ui.screen.tab.explore.shouldDefaultExploreToYouTube
 import moe.ouom.neriplayer.ui.screen.tab.explore.shouldRenderExploreSearchResults
 import moe.ouom.neriplayer.ui.screen.tab.explore.shouldResetExploreSearchScroll
+import moe.ouom.neriplayer.ui.viewmodel.tab.BilibiliExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeExploreSearchType
@@ -44,6 +46,12 @@ class ExploreScreenYouTubeGateTest {
 
         assertEquals(SearchSource.YOUTUBE_MUSIC, sources.first())
         assertEquals(SearchSource.LINK_RECOGNITION, sources.last())
+    }
+
+    @Test
+    fun `international default preserves the active search on return from creator details`() {
+        assertFalse(shouldDefaultExploreToYouTube(isInternational = true, youtubeEnabled = true, searchQuery = "demo"))
+        assertTrue(shouldDefaultExploreToYouTube(isInternational = true, youtubeEnabled = true, searchQuery = ""))
     }
 
     @Test
@@ -124,6 +132,21 @@ class ExploreScreenYouTubeGateTest {
         assertEquals("YOUTUBE_MUSIC|SONG|demo", songs)
         assertEquals("YOUTUBE_MUSIC|CREATOR|demo", creators)
         assertTrue(shouldResetExploreSearchScroll(songs, creators))
+    }
+
+    @Test
+    fun `switching Bilibili category resets the result list for the same keyword`() {
+        val contexts = BilibiliExploreSearchType.entries.map { type ->
+            exploreSearchScrollContextKey(
+                keyword = "demo",
+                source = SearchSource.BILIBILI,
+                neteaseSearchType = NeteaseExploreSearchType.SONG,
+                bilibiliSearchType = type
+            )
+        }
+
+        assertEquals(listOf("BILIBILI|SONG|demo", "BILIBILI|VIDEO|demo", "BILIBILI|CREATOR|demo"), contexts)
+        assertTrue(contexts.zipWithNext().all { (from, to) -> shouldResetExploreSearchScroll(from, to) })
     }
 
     @Test

@@ -994,6 +994,7 @@
       "moe.ouom.neriplayer.data.model.bilibili.playback.FlacAudio",
       "moe.ouom.neriplayer.data.model.bilibili.playback.PlayInfo",
       "moe.ouom.neriplayer.data.model.bilibili.playback.PlayOptions",
+      "moe.ouom.neriplayer.data.model.bilibili.search.SearchUploaderPage",
       "moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoItem",
       "moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoPage",
       "moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContent",

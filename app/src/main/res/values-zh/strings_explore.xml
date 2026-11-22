@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Explore & Tags -->
-    <string name="explore_bili_desc">在哔哩哔哩中发现更多精彩视频</string>
+    <string name="explore_bili_desc">在哔哩哔哩搜索歌曲、视频或创作者</string>
     <string name="explore_offline_disabled">探索需要网络连接，恢复网络后会自动启用。</string>
     <string name="explore_tag_youtube_music">YouTube</string>
     <string name="tag_all">全部</string>
