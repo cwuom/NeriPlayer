@@ -94,7 +94,8 @@ internal fun CommentItem(
     modifier: Modifier = Modifier,
     likingIds: Set<String> = emptySet(),
     onLikeReply: (String) -> Unit = {},
-    showReplyActions: Boolean = true
+    showReplyActions: Boolean = true,
+    onTimestampClick: (Long) -> Unit = {}
 ) {
     val context = LocalContext.current
     val anonymous = stringResource(AppR.string.comment_anonymous_user)
@@ -176,7 +177,8 @@ internal fun CommentItem(
                     content = comment.content,
                     emotes = comment.emotes,
                     style = MaterialTheme.typography.bodyLarge,
-                    offlineMode = offlineMode
+                    offlineMode = offlineMode,
+                    onTimestampClick = onTimestampClick
                 )
                 if (comment.images.isNotEmpty()) {
                     CommentImageGrid(
@@ -197,7 +199,8 @@ internal fun CommentItem(
                             isLiking = reply.id in likingIds,
                             likeEnabled = likeEnabled && !offlineMode,
                             onLike = { onLikeReply(reply.id) },
-                            showReplyAction = showReplyActions
+                            showReplyAction = showReplyActions,
+                            onTimestampClick = onTimestampClick
                         )
                     }
                 }

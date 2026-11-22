@@ -178,7 +178,8 @@ internal fun CommentReplyItem(
     isLiking: Boolean = false,
     likeEnabled: Boolean = true,
     onLike: () -> Unit = {},
-    showReplyAction: Boolean = true
+    showReplyAction: Boolean = true,
+    onTimestampClick: (Long) -> Unit = {}
 ) {
     val context = LocalContext.current
     // 楼中楼配图的放大预览 (与一级评论各自独立)
@@ -234,7 +235,8 @@ internal fun CommentReplyItem(
                         content = comment.content,
                         emotes = comment.emotes,
                         style = MaterialTheme.typography.bodyMedium,
-                        offlineMode = offlineMode
+                        offlineMode = offlineMode,
+                        onTimestampClick = onTimestampClick
                     )
                     if (comment.images.isNotEmpty()) {
                         CommentImageGrid(
