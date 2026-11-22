@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.IntOffset
@@ -597,6 +598,12 @@ private fun CleanSettingsSlider(
  * 便于与其他控件排在同一行。
  *
  * [unselectedContentColor] 为 null 时未选中项使用默认的 `onSurfaceVariant`。
+ *
+ * [contentPadding] 是控件内部留白。控件变窄时用它压缩留白，
+ * 否则固定 4dp 的内边距会把标签挤到放不下。
+ *
+ * [labelStyle] 是标签文字样式。控件变矮时用它调小字号，
+ * 否则文字会撑出控件边界。
  */
 @Composable
 internal fun MiuixSettingsSegmentedTabs(
@@ -606,7 +613,9 @@ internal fun MiuixSettingsSegmentedTabs(
     modifier: Modifier = Modifier,
     fillWidth: Boolean = true,
     unselectedContentColor: Color? = null,
-    height: Dp = 48.dp
+    height: Dp = 48.dp,
+    contentPadding: Dp = 4.dp,
+    labelStyle: TextStyle = MaterialTheme.typography.labelLarge
 ) {
     if (labels.isEmpty()) {
         return
@@ -620,7 +629,7 @@ internal fun MiuixSettingsSegmentedTabs(
             .clip(MiuixControlShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .height(height)
-            .padding(4.dp)
+            .padding(contentPadding)
     ) {
         val tabWidth = maxWidth / labels.size.toFloat()
         val indicatorOffset by animateDpAsState(
@@ -669,7 +678,7 @@ internal fun MiuixSettingsSegmentedTabs(
                     CompositionLocalProvider(LocalContentColor provides contentColor) {
                         Text(
                             text = label,
-                            style = MaterialTheme.typography.labelLarge,
+                            style = labelStyle,
                             maxLines = 1
                         )
                     }

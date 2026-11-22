@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab.home
 
+import moe.ouom.neriplayer.ui.viewmodel.tab.HomeSectionIdMapping
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -57,5 +59,41 @@ class HomeSongChartCardStripTest {
         )
 
         assertEquals(listOf(listOf("top_soaring", "top_hot")), runs)
+    }
+
+    @Test
+    fun sourcesRequiringLoginAreExcludedFromTheCardGroup() {
+        // 未登录时每日推荐与私人 FM 拿不到数据，列表里本来就没有它们，
+        // 卡片形态也不该出现，否则点进去只会得到一个接口报错。
+        val group = collectHomeSongChartCardGroup(
+            visibleIds = listOf("personal_radar", "daily_recommend", "private_fm"),
+            availableSources = setOf(NeteaseHomeSongSource.PERSONAL_RADAR),
+            isChartCardMode = { true },
+            sourceOf = { HomeSectionIdMapping.radarSourceOf(it) },
+            titleResOf = { it.titleRes }
+        )
+
+        assertEquals(setOf("personal_radar"), group.cardIds)
+        assertEquals(listOf("personal_radar"), group.cards.map { it.id })
+    }
+
+    @Test
+    fun loginOnlySourcesAppearOnceSignedIn() {
+        val group = collectHomeSongChartCardGroup(
+            visibleIds = listOf("personal_radar", "daily_recommend", "private_fm"),
+            availableSources = setOf(
+                NeteaseHomeSongSource.PERSONAL_RADAR,
+                NeteaseHomeSongSource.DAILY_RECOMMEND,
+                NeteaseHomeSongSource.PRIVATE_FM
+            ),
+            isChartCardMode = { true },
+            sourceOf = { HomeSectionIdMapping.radarSourceOf(it) },
+            titleResOf = { it.titleRes }
+        )
+
+        assertEquals(
+            listOf("personal_radar", "daily_recommend", "private_fm"),
+            group.cards.map { it.id }
+        )
     }
 }

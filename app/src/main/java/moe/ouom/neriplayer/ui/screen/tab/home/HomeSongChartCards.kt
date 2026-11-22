@@ -36,9 +36,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.data.model.settings.home.HomeSongCardColumns
 
-/** 榜单卡片的封面宽度上限。 */
-private const val HomeSongChartCardMaxWidthDp = 140f
-
 /** 卡片之间的间距。 */
 private const val HomeSongChartCardSpacingDp = 12f
 
@@ -69,13 +66,13 @@ internal fun HomeSongChartCardStrip(
     val safeColumns = HomeSongCardColumns.normalize(columns)
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val spacing = HomeSongChartCardSpacingDp.dp
-        // 卡片宽度按「每页几张」平分可用宽度，扣掉的是卡片条自己的内边距与间距。
+        // 卡片宽度按「每行几张」平分可用宽度，扣掉的是卡片条自己的内边距与间距。
+        // 这里不能给宽度加固定上限：上限一旦小于平分结果，1 列与 2 列会算出同一个宽度，
+        // 用户选的列数就没了作用。宽度上限改由「不超过可用宽度」来兜底。
         val availableWidth = maxWidth.value -
             HomeSongChartCardHorizontalPaddingDp * 2f -
             HomeSongChartCardSpacingDp * (safeColumns - 1)
-        val cardWidth = (availableWidth / safeColumns)
-            .coerceIn(0f, HomeSongChartCardMaxWidthDp)
-            .dp
+        val cardWidth = (availableWidth / safeColumns).coerceAtLeast(0f).dp
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = HomeSongChartCardHorizontalPaddingDp.dp),

@@ -130,9 +130,14 @@ internal data class HomeSongChartCardGroup(
  *
  * 卡片只依赖小模块标题，不依赖歌曲列表是否已加载，因此这里不检查小模块的数据状态：
  * 否则数据尚未返回时卡片会整块消失，用户看不到自己配置的形态。
+ *
+ * 但登录要求仍然要遵守：[availableSources] 是当前登录状态下真正会展示的来源集合，
+ * 需要登录的来源（每日推荐、私人 FM）在未登录时既不出现在列表里，也不该出现在卡片带里，
+ * 否则点进去只会得到一个接口报错。
  */
 internal fun collectHomeSongChartCardGroup(
     visibleIds: List<String>,
+    availableSources: Set<NeteaseHomeSongSource>,
     isChartCardMode: (String) -> Boolean,
     sourceOf: (String) -> NeteaseHomeSongSource?,
     titleResOf: (NeteaseHomeSongSource) -> Int
@@ -143,6 +148,7 @@ internal fun collectHomeSongChartCardGroup(
     visibleIds.forEach { id ->
         if (!isChartCardMode(id)) return@forEach
         val source = sourceOf(id) ?: return@forEach
+        if (source !in availableSources) return@forEach
         cardIds += id
         cards += HomeSongChartCardData(id = id, titleRes = titleResOf(source))
         sources[id] = source
@@ -251,6 +257,7 @@ internal fun LazyGridScope.addHomeTrendingBlock(env: HomeMajorSectionEnv) {
     )
     val cardGroup = collectHomeSongChartCardGroup(
         visibleIds = visibleIds,
+        availableSources = env.ui.trendingSongSections.map { it.source }.toSet(),
         isChartCardMode = { env.isChartCardMode(it) },
         sourceOf = { HomeSectionIdMapping.trendingSourceOf(it) },
         titleResOf = { it.titleRes }
@@ -307,6 +314,7 @@ internal fun LazyGridScope.addHomeRadarBlock(env: HomeMajorSectionEnv) {
     )
     val cardGroup = collectHomeSongChartCardGroup(
         visibleIds = visibleIds,
+        availableSources = env.ui.radarSongSections.map { it.source }.toSet(),
         isChartCardMode = { env.isChartCardMode(it) },
         sourceOf = { HomeSectionIdMapping.radarSourceOf(it) },
         titleResOf = { it.titleRes }

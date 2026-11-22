@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -207,6 +208,9 @@ internal fun SettingsPersonalizationHomeCard(
 ) {
     val rows = state.homeRows(copy, internationalEnabled)
     val editor = state.majorOrderEditor(internationalEnabled, actions)
+    // 榜单卡片是网易云首页小模块的能力，国际模式下这些小模块走 YouTube Music，
+    // 相关控件整体隐藏。
+    val showSongCardControls = !internationalEnabled
     PersonalizationCardContainer {
         MiuixSettingsSectionIntro(
             title = stringResource(CoreCommonR.string.settings_personalization_home_section),
@@ -238,16 +242,28 @@ internal fun SettingsPersonalizationHomeCard(
                         sections = it,
                         actions = actions,
                         songSectionModes = songSectionModes,
-                        onSetSongSectionMode = onSetSongSectionMode
+                        onSetSongSectionMode = onSetSongSectionMode,
+                        showSongSectionModeSelector = showSongCardControls,
+                        highlightTargetId = highlightTargetId,
+                        highlightPulse = highlightPulse,
+                        onHighlightFinished = onHighlightFinished
                     )
                 }
             }
         }
 
-        HomeSongCardColumnsSetting(
-            columns = songCardColumns,
-            onColumnsChange = onSetSongCardColumns
-        )
+        // 国际模式下首页由 YouTube Music 渲染，不读展示模式与卡片列数，
+        // 这两个控件留着只会让人以为改了有用。
+        if (showSongCardControls) {
+            HomeSongCardColumnsSetting(
+                columns = songCardColumns,
+                onColumnsChange = onSetSongCardColumns,
+                targetId = "setting:home_song_card_columns",
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+        }
 
         LazyAnimatedVisibility(visible = !homeStartAvailable) {
             Text(
@@ -282,7 +298,11 @@ private fun HomeSubSectionList(
     sections: HomeSubSections,
     actions: HomeSectionSettingsActions,
     songSectionModes: Map<String, HomeSongSectionDisplayMode> = emptyMap(),
-    onSetSongSectionMode: (String, HomeSongSectionDisplayMode) -> Unit = { _, _ -> }
+    onSetSongSectionMode: (String, HomeSongSectionDisplayMode) -> Unit = { _, _ -> },
+    showSongSectionModeSelector: Boolean = true,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
 ) {
     val editor = sections.editor(parentId, actions)
     HomeReorderableColumn(
@@ -314,19 +334,28 @@ private fun HomeSubSectionList(
                 headlineContent = {
                     Row(
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
                             text = title,
+                            // 标题必须限制在单行：给定权重后空间不足时中文会被逐字拆行，
+                            // 「私人雷达」会竖着堆叠。这里单行显示，空间不够就省略号。
+                            modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             color = if (visible) MaterialTheme.colorScheme.onSurface
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         // 歌曲类小模块额外支持「列表 / 卡片」两种展示形态。
-                        if (isSongSection) {
+                        if (isSongSection && showSongSectionModeSelector) {
                             HomeSongSectionDisplayModeSelector(
                                 mode = homeSongSectionDisplayModeOf(songSectionModes, id),
-                                onModeChange = { onSetSongSectionMode(id, it) }
+                                onModeChange = { onSetSongSectionMode(id, it) },
+                                targetId = "setting:home_song_section_mode",
+                                highlightTargetId = highlightTargetId,
+                                highlightPulse = highlightPulse,
+                                onHighlightFinished = onHighlightFinished
                             )
                         }
                     }
@@ -350,7 +379,11 @@ private fun HomeSubSectionList(
 @Composable
 private fun HomeSongSectionDisplayModeSelector(
     mode: HomeSongSectionDisplayMode,
-    onModeChange: (HomeSongSectionDisplayMode) -> Unit
+    onModeChange: (HomeSongSectionDisplayMode) -> Unit,
+    targetId: String,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
 ) {
     val labels = listOf(
         stringResource(CoreCommonR.string.settings_home_song_section_mode_default),
@@ -371,10 +404,20 @@ private fun HomeSongSectionDisplayModeSelector(
         },
         // 固定宽度而不是自适应：分段控件内部按权重平分标签，
         // 宽度不确定时标签会被压缩成一个圆角小块。
-        modifier = Modifier.width(128.dp),
+        // 宽度压到刚好放下「列表 / 卡片」两个标签，行内空间才够标题单行显示。
+        modifier = Modifier
+            .settingsHighlightTarget(
+                targetId = targetId,
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            .width(88.dp),
         fillWidth = false,
         unselectedContentColor = MaterialTheme.colorScheme.primary,
-        height = 36.dp
+        height = 28.dp,
+        contentPadding = 2.dp,
+        labelStyle = MaterialTheme.typography.labelMedium
     )
 }
 
@@ -384,7 +427,11 @@ private fun HomeSongSectionDisplayModeSelector(
 @Composable
 private fun HomeSongCardColumnsSetting(
     columns: Int,
-    onColumnsChange: (Int) -> Unit
+    onColumnsChange: (Int) -> Unit,
+    targetId: String,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
 ) {
     val safeColumns = HomeSongCardColumns.normalize(columns)
     val labels = (HomeSongCardColumns.MIN..HomeSongCardColumns.MAX).map { value ->
@@ -392,6 +439,12 @@ private fun HomeSongCardColumnsSetting(
     }
     Column(
         modifier = Modifier
+            .settingsHighlightTarget(
+                targetId = targetId,
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
     ) {
