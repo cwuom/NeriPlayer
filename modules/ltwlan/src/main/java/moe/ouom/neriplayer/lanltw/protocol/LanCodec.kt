@@ -12,7 +12,8 @@ object LanCodec {
         return runCatching { json.decodeFromString(LanMessage.serializer(), text) }.getOrNull()?.takeIf(::finite)
     }
     private fun finite(m: LanMessage): Boolean {
-        val numbers = listOf(m.t0, m.t1, m.t2, m.clientRTT, m.clientCompensationMs, m.clientNudgeMs, m.trackTimeSeconds, m.serverTimeToExecute)
+        val numbers = listOf(m.t0, m.t1, m.t2, m.clientRTT, m.clientCompensationMs, m.clientNudgeMs,
+            m.trackTimeSeconds, m.serverTimeToExecute, m.bufferedUntilSeconds)
         return numbers.all { it == null || it.isFinite() } && (m.volume?.isFinite() != false)
     }
     fun validProbe(m: LanMessage): Boolean = m.t0 != null && m.probeGroupId != null && m.probeGroupIndex in 0..1

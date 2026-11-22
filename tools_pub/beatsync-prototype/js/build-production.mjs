@@ -7,7 +7,7 @@ for(const source of manifest.files) {
  const hash=createHash('sha256').update(await readFile(`js/upstream/${source.file}`)).digest('hex');
  if(hash!==source.sha256) throw new Error(`Changed upstream ${source.file}`);
 }
-const output='../../modules/ltwlan/src/main/resources/beatsync';
+const output='js/reference';
 await mkdir(output,{recursive:true});
 await build({entryPoints:['js/production.ts'],bundle:true,format:'iife',globalName:'LanBeatSync',target:'es2015',platform:'neutral',outfile:`${output}/core.js`,banner:{js:'/* BeatSync 94c38ab; Copyright (c) 2025 freeman-jiang. MIT. See LICENSE. Generated; do not edit. */\nvar console = {log: function(){}};'},alias:{'@beatsync/shared':fileURLToPath(new URL('./shared.ts',import.meta.url))}});
 await copyFile('js/upstream/LICENSE',`${output}/LICENSE`);

@@ -489,14 +489,15 @@ internal fun StartupStepHero(
     val emblemHandle = rememberStartupSharedHandle(StartupSharedKeys.HeroEmblem, visibilityScope)
     val emblemViewport = LocalStartupSharedViewport.current
     val welcome = layout == StartupHeroLayout.Welcome
+    val shortPane = layout == StartupHeroLayout.Pane && LocalStartupOnboardingShortSidebar.current
     val emblemSize = when (layout) {
         StartupHeroLayout.Welcome -> 112.dp
-        StartupHeroLayout.Pane -> 80.dp
+        StartupHeroLayout.Pane -> if (shortPane) 64.dp else 80.dp
         StartupHeroLayout.Compact -> 60.dp
     }
-    val titleStyle = when (layout) {
-        StartupHeroLayout.Welcome, StartupHeroLayout.Pane -> MaterialTheme.typography.headlineLarge
-        StartupHeroLayout.Compact -> MaterialTheme.typography.headlineMedium
+    val titleStyle = when {
+        layout == StartupHeroLayout.Compact || shortPane -> MaterialTheme.typography.headlineMedium
+        else -> MaterialTheme.typography.headlineLarge
     }
     Column(
         modifier = modifier.fillMaxWidth(),

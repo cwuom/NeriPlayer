@@ -45,6 +45,7 @@ internal fun LazyGridScope.addHomeYouTubeMusicTrendingBlock(env: HomeMajorSectio
         title = env.guessYouLikeTitle,
         onSongClick = env.onSongClick,
         favoriteSongLookup = env.favoriteSongLookup,
+        downloadPresenceVersion = env.downloadPresenceVersion,
         onFavoriteToggle = env.onFavoriteToggle,
         onShowSnackbar = env.onShowSnackbar,
         offlineMode = env.offlineMode
@@ -65,6 +66,7 @@ internal fun LazyGridScope.addHomeYouTubeMusicRadarBlock(env: HomeMajorSectionEn
         title = env.dailyDiscoverTitle,
         onSongClick = env.onSongClick,
         favoriteSongLookup = env.favoriteSongLookup,
+        downloadPresenceVersion = env.downloadPresenceVersion,
         onFavoriteToggle = env.onFavoriteToggle,
         onShowSnackbar = env.onShowSnackbar,
         offlineMode = env.offlineMode
@@ -79,7 +81,8 @@ internal fun LazyGridScope.addHomeYouTubeMusicRecommendedBlock(env: HomeMajorSec
 
     item(
         key = env.registerKey(HomeScrollKeyYtMoreHeader),
-        span = { GridItemSpan(maxLineSpan) }
+        span = { GridItemSpan(maxLineSpan) },
+        contentType = HomeContentTypeHeader
     ) {
         SectionHeader(
             icon = Icons.Outlined.Star,
@@ -91,7 +94,8 @@ internal fun LazyGridScope.addHomeYouTubeMusicRecommendedBlock(env: HomeMajorSec
         env.ui.ytMusicPlaylists.items.isNotEmpty() -> {
             env.ui.ytMusicPlaylists.items.forEach { playlist ->
                 item(
-                    key = env.registerKey(homeYtMusicPlaylistScrollKey(playlist))
+                    key = env.registerKey(homeYtMusicPlaylistScrollKey(playlist)),
+                    contentType = HomeContentTypeYtPlaylistCard
                 ) {
                     YtMusicPlaylistCard(
                         playlist = playlist,
@@ -106,7 +110,8 @@ internal fun LazyGridScope.addHomeYouTubeMusicRecommendedBlock(env: HomeMajorSec
         env.ui.ytMusicPlaylists.loading -> {
             item(
                 key = env.registerKey(HomeScrollKeyYtMoreLoading),
-                span = { GridItemSpan(maxLineSpan) }
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = HomeContentTypeLoading
             ) {
                 SectionLoadingState(env.loadingText)
             }
@@ -114,7 +119,8 @@ internal fun LazyGridScope.addHomeYouTubeMusicRecommendedBlock(env: HomeMajorSec
         env.ui.ytMusicPlaylists.error != null -> {
             item(
                 key = env.registerKey(HomeScrollKeyYtMoreError),
-                span = { GridItemSpan(maxLineSpan) }
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = HomeContentTypeError
             ) {
                 SectionErrorState(detail = env.ui.ytMusicPlaylists.error.asString())
             }
@@ -139,6 +145,7 @@ internal fun LazyGridScope.addHomeYouTubeMusicRecommendedBlock(env: HomeMajorSec
                         title = shelf.title,
                         onSongClick = env.onSongClick,
                         favoriteSongLookup = env.favoriteSongLookup,
+                        downloadPresenceVersion = env.downloadPresenceVersion,
                         onFavoriteToggle = env.onFavoriteToggle,
                         onShowSnackbar = env.onShowSnackbar,
                         offlineMode = env.offlineMode
@@ -150,7 +157,8 @@ internal fun LazyGridScope.addHomeYouTubeMusicRecommendedBlock(env: HomeMajorSec
                     }
                     item(
                         key = env.registerKey("$shelfKey:header"),
-                        span = { GridItemSpan(maxLineSpan) }
+                        span = { GridItemSpan(maxLineSpan) },
+                        contentType = HomeContentTypeHeader
                     ) {
                         SectionHeader(
                             icon = Icons.Outlined.Explore,
@@ -165,7 +173,8 @@ internal fun LazyGridScope.addHomeYouTubeMusicRecommendedBlock(env: HomeMajorSec
                                     itemIndex = itemIndex,
                                     item = homeItem
                                 )
-                            )
+                            ),
+                            contentType = HomeContentTypeYtHomeItemCard
                         ) {
                             YtMusicHomeItemCard(
                                 item = homeItem,
@@ -196,7 +205,8 @@ internal fun LazyGridScope.addHomeYouTubeMusicRecommendedBlock(env: HomeMajorSec
         env.ui.ytMusicHomeShelves.loading -> {
             item(
                 key = env.registerKey(HomeScrollKeyYtShelvesLoading),
-                span = { GridItemSpan(maxLineSpan) }
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = HomeContentTypeLoading
             ) {
                 SectionLoadingState(env.loadingText)
             }
@@ -204,7 +214,8 @@ internal fun LazyGridScope.addHomeYouTubeMusicRecommendedBlock(env: HomeMajorSec
         env.ui.ytMusicHomeShelves.error != null -> {
             item(
                 key = env.registerKey(HomeScrollKeyYtShelvesError),
-                span = { GridItemSpan(maxLineSpan) }
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = HomeContentTypeError
             ) {
                 SectionErrorState(detail = env.ui.ytMusicHomeShelves.error.asString())
             }
@@ -223,7 +234,8 @@ internal fun LazyGridScope.addHomeYouTubeMusicEmptyFeedBlock(env: HomeMajorSecti
         env.ui.ytMusicHomeShelves.loading -> {
             item(
                 key = env.registerKey(HomeScrollKeyYtEmptyFeedLoading),
-                span = { GridItemSpan(maxLineSpan) }
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = HomeContentTypeLoading
             ) {
                 SectionLoadingState(env.loadingText)
             }
@@ -231,7 +243,8 @@ internal fun LazyGridScope.addHomeYouTubeMusicEmptyFeedBlock(env: HomeMajorSecti
         env.ui.ytMusicHomeShelves.error != null -> {
             item(
                 key = env.registerKey(HomeScrollKeyYtEmptyFeedError),
-                span = { GridItemSpan(maxLineSpan) }
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = HomeContentTypeError
             ) {
                 SectionErrorState(detail = env.ui.ytMusicHomeShelves.error.asString().orEmpty())
             }

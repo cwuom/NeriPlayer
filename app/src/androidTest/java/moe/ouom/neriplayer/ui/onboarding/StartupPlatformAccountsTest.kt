@@ -163,7 +163,8 @@ class StartupPlatformAccountsTest {
             }
             composeRule.onNodeWithTag("settingsAccountStacked:netease", true).assertIsDisplayed()
             composeRule.onNodeWithTag("settingsAccountNickname:netease", true).performScrollTo().assertTextEquals(NETEASE_NAME)
-            assertTrue(bounds("settingsAccountCard:netease").left > bounds(INTRO).right)
+            assertTrue("竖屏平板和手机一样单栏, 账号内容应位于引导说明下方",
+                bounds("settingsAccountCard:netease").top > bounds(INTRO).bottom)
             capture("tablet-portrait-large-font")
             composeRule.onNodeWithTag("settingsAccountLogin:youtube").performScrollTo().assertIsDisplayed()
             assertEquals(nextBeforeScroll, bounds(NEXT))

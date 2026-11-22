@@ -76,7 +76,7 @@ class LanRoomEngine(
         when (m.type) {
             "PLAY" -> requestPlay(id, host, m)
             "PAUSE" -> requestPause(id, host)
-            "SYNC" -> sync(id)
+            "SYNC" -> sync(id, m)
             "AUDIO_SOURCE_READY" -> ready(id, m)
             "LAN_LOAD_FAILED" -> loadFailed(id, host, m)
             "LAN_REQUEST_STEP" -> requestStep(id, host, m)
@@ -330,7 +330,8 @@ class LanRoomEngine(
         return LanMessage("SCHEDULED_ACTION", scheduledAction = LanAction(action, track.stableKey, position, track),
             serverTimeToExecute = at, revision = plan.revision, streamResource = currentStream, presentationResource = currentPresentation)
     }
-    private fun sync(id: String) {
+    private fun sync(id: String, request: LanMessage) {
+        if (staleRefill(request)) return
         sourceFailure?.let { reject(id, it); return }
         if (awaitingSource != null) return
         loading?.let { pending ->
@@ -343,8 +344,28 @@ class LanRoomEngine(
                 revision = playback.revision, streamResource = currentStream, presentationResource = currentPresentation))
             return
         }
-        val at = executeAt(1500.0, listOf(id))
+        val at = syncDeadline(id, request)
         send(id, scheduledAction(playback, LanSchedule.position(playback.positionSeconds, playback.executeAtMs, at), at))
+    }
+
+    private fun staleRefill(request: LanMessage): Boolean {
+        return (request.revision != null && request.revision != revision) ||
+            (request.mediaId != null && !matchesCurrentStream(request))
+    }
+
+    private fun syncDeadline(id: String, request: LanMessage): Double {
+        val earliest = executeAt(participants = listOf(id))
+        val preparedAt = maxOf(earliest + SYNC_PREPARATION_MS, playback.executeAtMs)
+        if (!matchesCurrentStream(request) || request.revision != playback.revision) return preparedAt
+        val refillAt = maxOf(earliest, playback.executeAtMs)
+        val target = LanSchedule.position(playback.positionSeconds, playback.executeAtMs, refillAt)
+        return if (coversStart(request, target)) refillAt else preparedAt
+    }
+
+    private fun coversStart(request: LanMessage, positionSeconds: Double): Boolean {
+        val from = request.trackTimeSeconds ?: return false
+        val until = request.bufferedUntilSeconds ?: return false
+        return from in 0.0..positionSeconds && until >= positionSeconds + LanSchedule.START_BUFFER_MS / 1000.0
     }
     private fun configure(id: String, host: Boolean, m: LanMessage) {
         if (m.type == "LIVENESS_PONG") return
@@ -397,4 +418,8 @@ class LanRoomEngine(
     private fun reject(id: String, code: String) = send(id, LanMessage("LAN_ERROR", code = code))
     private fun broadcast(message: LanMessage) = peers.keys.toList().forEach { send(it, message) }
     private fun broadcastState() { val state = snapshot(); broadcast(LanMessage("ROOM_EVENT", event = LanRoomEvent("CLIENT_CHANGE", clients = state.members, room = state))) }
+
+    private companion object {
+        const val SYNC_PREPARATION_MS = 1_500.0
+    }
 }

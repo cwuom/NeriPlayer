@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.theme
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -148,9 +149,9 @@ internal val CleanTypography = Typography(
 )
 
 internal val CleanShapes = Shapes(
-    extraSmall = ContinuousRoundedCornerShape(14.dp),
-    small = ContinuousRoundedCornerShape(16.dp),
-    medium = ContinuousRoundedCornerShape(18.dp),
-    large = ContinuousRoundedCornerShape(24.dp),
-    extraLarge = ContinuousRoundedCornerShape(30.dp)
+    extraSmall = RoundedCornerShape(14.dp),
+    small = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(30.dp)
 )
