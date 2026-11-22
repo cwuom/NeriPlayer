@@ -52,12 +52,14 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -419,10 +421,10 @@ private fun NowPlayingImmersivePortraitLayout(
     trailingContent: @Composable ColumnScope.() -> Unit
 ) {
     Layout(
-        modifier = modifier,
+        modifier = modifier.testTag("nowPlayingImmersivePortraitLayout"),
         content = {
             Box { topBar() }
-            Box { cover() }
+            Box(Modifier.testTag("nowPlayingImmersiveCover")) { cover() }
             Column(horizontalAlignment = Alignment.CenterHorizontally, content = leadingContent)
             Column(horizontalAlignment = Alignment.CenterHorizontally, content = trailingContent)
         }
@@ -1665,6 +1667,8 @@ fun NowPlayingScreen(
                                     nowPlayingProgressSection,
                                     mainPlaybackControls
                                 )
+                                // 竖屏平板只有沉浸模式会走到这里, 底部工具栏和控件之间留出呼吸空间
+                                if (tabletPortrait) Spacer(Modifier.height(NowPlayingTabletImmersiveToolbarSpacing))
                                 coverToolbar(false)
                             }
 
@@ -1738,7 +1742,7 @@ fun NowPlayingScreen(
                                         phoneTopActions = coverTopActions
                                     )
                                 }
-                            } else if (tabletPortrait) {
+                            } else if (shouldUseNowPlayingTabletPortraitLayout(tabletPortrait, immersiveMode)) {
                                 Box(modifier = contentModifier) {
                                     NowPlayingTabletPortraitLayout(
                                         controlsAtBottom = nowPlayingControlsAtBottom,
@@ -1763,14 +1767,28 @@ fun NowPlayingScreen(
                                     )
                                 }
                             } else if (immersiveMode || useCompactPortraitLayout) {
-                                NowPlayingImmersivePortraitLayout(
-                                    modifier = contentModifier,
-                                    beforeCoverSpacing = coverPagePresentation.beforeCoverSpacing,
-                                    topBar = coverTopBar,
-                                    cover = { coverPanel(Modifier, coverPagePresentation.preferredCoverSize) },
-                                    leadingContent = portraitLeadingContent,
-                                    trailingContent = portraitTrailingContent
-                                )
+                                val immersiveLayout: @Composable (Modifier) -> Unit = { modifier ->
+                                    NowPlayingImmersivePortraitLayout(
+                                        modifier = modifier,
+                                        beforeCoverSpacing = coverPagePresentation.beforeCoverSpacing,
+                                        topBar = coverTopBar,
+                                        cover = { coverPanel(Modifier, coverPagePresentation.preferredCoverSize) },
+                                        leadingContent = portraitLeadingContent,
+                                        trailingContent = portraitTrailingContent
+                                    )
+                                }
+                                if (tabletPortrait) {
+                                    // 封面和控件按手机比例铺满整个平板宽度会过大, 收在由封面边长决定的宽度里居中
+                                    BoxWithConstraints(modifier = contentModifier, contentAlignment = Alignment.TopCenter) {
+                                        immersiveLayout(
+                                            Modifier
+                                                .width(resolveNowPlayingTabletImmersiveContentWidth(maxWidth, maxHeight))
+                                                .fillMaxHeight()
+                                        )
+                                    }
+                                } else {
+                                    immersiveLayout(contentModifier)
+                                }
                             } else {
                                 Column(
                                     modifier = contentModifier,

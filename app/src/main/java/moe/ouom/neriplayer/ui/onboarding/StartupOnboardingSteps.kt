@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.onboarding
 
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingPhoneLandscape
 
 internal enum class StartupChapter {
     Look,
@@ -38,6 +39,18 @@ internal enum class StartupChoice(val step: StartupStep) {
     Style(StartupStep.Style),
     Motion(StartupStep.Motion)
 }
+
+/** 与播放页同一套判断, 引导里看到的布局和实际进入播放页时一致 */
+internal fun isStartupTabletLandscape(isLandscape: Boolean, smallestScreenWidthDp: Int): Boolean =
+    isLandscape && !isNowPlayingPhoneLandscape(isLandscape, smallestScreenWidthDp)
+
+/** 平板横屏的播放页把封面和完整歌词并排显示, 没有单独的歌词页, 歌词这一步并进播放界面 */
+internal fun startupStepsFor(tabletLandscape: Boolean): List<StartupStep> =
+    if (tabletLandscape) StartupStep.entries - StartupStep.Lyrics else StartupStep.entries
+
+/** 旋转后当前步骤可能不在新序列里, 落到它之前最近的一步, 不让用户被推着往前走 */
+internal fun resolveStartupStepInSequence(step: StartupStep, steps: List<StartupStep>): StartupStep =
+    if (step in steps) step else steps.lastOrNull { it.ordinal < step.ordinal } ?: steps.first()
 
 internal data class StartupChapterSegment(
     val chapter: StartupChapter,

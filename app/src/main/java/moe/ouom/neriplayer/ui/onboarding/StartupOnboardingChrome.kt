@@ -96,9 +96,9 @@ import moe.ouom.neriplayer.ui.theme.NeriDesign
 private data class StartupAmbientAnchors(val first: Offset, val second: Offset, val third: Offset)
 
 // 每个章节一套光斑落点, 换页时光斑缓慢漂移过去, 背景本身就是一条连续的线索
-private fun startupAmbientAnchors(stepIndex: Int): StartupAmbientAnchors {
-    val drift = (stepIndex % 3) * 0.06f
-    return when (StartupStep.entries.getOrNull(stepIndex)?.chapter ?: StartupChapter.Look) {
+private fun startupAmbientAnchors(step: StartupStep): StartupAmbientAnchors {
+    val drift = (step.ordinal % 3) * 0.06f
+    return when (step.chapter) {
         StartupChapter.Look -> StartupAmbientAnchors(
             Offset(0.18f + drift, 0.12f), Offset(0.92f, 0.3f - drift), Offset(0.32f, 0.92f)
         )
@@ -122,14 +122,14 @@ private fun startupAmbientAnchors(stepIndex: Int): StartupAmbientAnchors {
 
 @Composable
 internal fun StartupAmbientBackdrop(
-    stepIndex: Int,
+    step: StartupStep,
     hasCustomBackground: Boolean,
     modifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
     val clean = NeriDesign.isClean
     val dark = colors.background.luminanceApprox() < 0.5f
-    val anchors = startupAmbientAnchors(stepIndex)
+    val anchors = startupAmbientAnchors(step)
     val drift = spring<Offset>(dampingRatio = 1f, stiffness = 18f)
     val first by animateOffsetAsState(anchors.first, drift, label = "startup_ambient_first")
     val second by animateOffsetAsState(anchors.second, drift, label = "startup_ambient_second")
@@ -195,14 +195,15 @@ internal fun startupChapterLabel(chapter: StartupChapter): String = stringResour
 
 @Composable
 internal fun StartupProgressHeader(
+    steps: List<StartupStep>,
     stepIndex: Int,
-    stepCount: Int,
     modifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
-    val chapter = StartupStep.entries.getOrNull(stepIndex)?.chapter ?: StartupChapter.Look
+    val stepCount = steps.size
+    val chapter = steps.getOrNull(stepIndex)?.chapter ?: StartupChapter.Look
     Column(modifier = modifier.fillMaxWidth()) {
-        StartupProgressTrack(stepIndex = stepIndex, stepCount = stepCount)
+        StartupProgressTrack(steps = steps, stepIndex = stepIndex)
         Spacer(Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -238,10 +239,10 @@ internal fun StartupProgressHeader(
 }
 
 @Composable
-private fun StartupProgressTrack(stepIndex: Int, stepCount: Int) {
+private fun StartupProgressTrack(steps: List<StartupStep>, stepIndex: Int) {
     val colors = MaterialTheme.colorScheme
     val clean = NeriDesign.isClean
-    val steps = StartupStep.entries.take(stepCount)
+    val stepCount = steps.size
     val barHeight = if (clean) 4.dp else 6.dp
     val description = stringResource(AppR.string.onboarding_step_counter, stepIndex + 1, stepCount)
     Row(

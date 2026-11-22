@@ -201,6 +201,57 @@ class NowPlayingPortraitImmersiveLayoutTest {
         }
     }
 
+    @Test
+    fun tabletPortraitImmersiveUsesTheLargeCoverInsteadOfAnEmptyLyricsArea() =
+        assertTabletImmersiveLayout(width = 800, height = 1_200)
+
+    @Test
+    fun shortTabletPortraitImmersiveKeepsCoverAlignedAndControlsApart() =
+        assertTabletImmersiveLayout(width = 600, height = 950,
+            placement = NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS)
+
+    private fun assertTabletImmersiveLayout(
+        width: Int,
+        height: Int,
+        placement: NowPlayingControlPlacement = NowPlayingControlPlacement.LOWER
+    ) =
+        UiFailureDiagnostics.onFailure("now-playing-immersive-tablet-${width}x$height-$placement") {
+            runBlocking {
+                SettingsRepository(composeRule.activity.applicationContext).apply {
+                    setNowPlayingImmersiveMode(true)
+                    setPlaybackControlLayoutPreferences(PlaybackControlLayoutPreferences(nowPlayingPlacement = placement))
+                }
+            }
+            render(height = height, fontScale = 1f, style = UiStyle.Clean, width = width)
+
+            // 平板竖屏布局会给封面歌词留出整块高度, 沉浸模式隐藏歌词后那块就成了空白
+            composeRule.onNodeWithTag("nowPlayingTabletPortraitLayout").assertDoesNotExist()
+            val viewport = composeRule.onNodeWithTag(ViewportTag, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val layout = composeRule.onNodeWithTag("nowPlayingImmersivePortraitLayout", useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val cover = composeRule.onNodeWithTag("nowPlayingImmersiveCover", useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val layoutWidth = layout.right - layout.left
+            assertTrue("沉浸布局应收在平板内容宽度内: $layout", layoutWidth <= 561.dp)
+            assertEquals("沉浸布局应水平居中", (layout.left - viewport.left).value,
+                (viewport.right - layout.right).value, 2f)
+            // 标题、进度和工具栏贴着内容两侧, 封面要和它们对齐
+            assertTrue("封面应和内容两侧对齐: cover=$cover layout=$layout",
+                cover.right - cover.left >= layoutWidth - 2.dp)
+
+            val playbackButtons = listOf(CoreCommonR.string.player_shuffle, CoreCommonR.string.player_previous,
+                CoreCommonR.string.player_next, CoreCommonR.string.player_repeat).map(::button)
+            val toolbarButtons = listOf(CoreCommonR.string.playlist_queue, CoreCommonR.string.sleep_timer_short,
+                CoreCommonR.string.playlist_add_to).map(::button)
+            (playbackButtons + toolbarButtons).forEach { assertFullyVisible(it, viewport) }
+            val identityGap = playbackButtons.minOf { it.getUnclippedBoundsInRoot().top } - cover.bottom
+            assertTrue("封面和控件之间不应留下歌词空位: gap=$identityGap", identityGap < 240.dp)
+            val toolbarGap = toolbarButtons.minOf { it.getUnclippedBoundsInRoot().top } -
+                playbackButtons.maxOf { it.getUnclippedBoundsInRoot().bottom }
+            assertTrue("播放控件和底部工具栏不能挤在一起: gap=$toolbarGap", toolbarGap >= 16.dp)
+        }
+
     private fun assertActionsReachable(
         height: Int,
         fontScale: Float,
@@ -262,29 +313,29 @@ class NowPlayingPortraitImmersiveLayoutTest {
             composeRule.runOnIdle { assertEquals(1, backCallbacks) }
         }
 
-    private fun render(height: Int, fontScale: Float, style: UiStyle) {
+    private fun render(height: Int, fontScale: Float, style: UiStyle, width: Int = 360) {
         composeRule.setContent {
             if (visible) {
                 val configuration = LocalConfiguration.current
-                val portrait = remember(configuration, height, fontScale) {
+                val portrait = remember(configuration, width, height, fontScale) {
                     Configuration(configuration).apply {
-                        screenWidthDp = 360
+                        screenWidthDp = width
                         screenHeightDp = height
-                        smallestScreenWidthDp = 360
+                        smallestScreenWidthDp = width
                         orientation = Configuration.ORIENTATION_PORTRAIT
                         uiMode = Configuration.UI_MODE_TYPE_NORMAL
                         this.fontScale = fontScale
                     }
                 }
                 CompositionLocalProvider(LocalConfiguration provides portrait) {
-                    FittedTestViewport(360.dp, height.dp, fontScale = fontScale) {
+                    FittedTestViewport(width.dp, height.dp, fontScale = fontScale) {
                         val density = LocalDensity.current
                         val actualWindow = LocalWindowInfo.current
-                        val size = with(density) { IntSize(360.dp.roundToPx(), height.dp.roundToPx()) }
-                        val window = remember(actualWindow, size, height) {
+                        val size = with(density) { IntSize(width.dp.roundToPx(), height.dp.roundToPx()) }
+                        val window = remember(actualWindow, size, width, height) {
                             object : WindowInfo by actualWindow {
                                 override val containerSize = size
-                                override val containerDpSize = DpSize(360.dp, height.dp)
+                                override val containerDpSize = DpSize(width.dp, height.dp)
                             }
                         }
                         CompositionLocalProvider(LocalWindowInfo provides window) {

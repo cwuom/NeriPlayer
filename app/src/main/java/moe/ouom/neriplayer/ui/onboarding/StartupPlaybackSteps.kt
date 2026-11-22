@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -54,6 +55,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -94,15 +97,7 @@ internal fun StartupPlaybackControlsContent(
     LaunchedEffect(preferences) { previewPreferences = preferences }
     LaunchedEffect(coverLyricFontScale) { pendingCoverLyricFontScale = coverLyricFontScale }
     fun applyPreferences(updated: PlaybackControlLayoutPreferences) {
-        // 歌词页尺寸原本跟随播放页时, 改播放页尺寸要一起带过去
-        val shouldFollowLyricsSize = previewPreferences.lyricsSize == previewPreferences.nowPlayingSize
-        val linkedPreferences = if (
-            shouldFollowLyricsSize && updated.nowPlayingSize != previewPreferences.nowPlayingSize
-        ) {
-            updated.copy(lyricsSize = updated.nowPlayingSize)
-        } else {
-            updated
-        }
+        val linkedPreferences = linkStartupLyricsControlSize(previewPreferences, updated)
         previewPreferences = linkedPreferences
         onPreferencesChange(linkedPreferences)
     }
@@ -233,11 +228,82 @@ internal fun StartupLyricsContent(
     }
 }
 
-/** 选项在平板上排成两列, 手机上单列 */
+/** 歌词页尺寸原本跟随播放页时, 改播放页尺寸要一起带过去 */
+internal fun linkStartupLyricsControlSize(
+    previous: PlaybackControlLayoutPreferences,
+    updated: PlaybackControlLayoutPreferences
+): PlaybackControlLayoutPreferences {
+    val followsNowPlaying = previous.lyricsSize == previous.nowPlayingSize
+    return if (followsNowPlaying && updated.nowPlayingSize != previous.nowPlayingSize) {
+        updated.copy(lyricsSize = updated.nowPlayingSize)
+    } else {
+        updated
+    }
+}
+
+/**
+ * 平板横屏的播放页封面和歌词并排, 这里只调控件大小和歌词大小
+ * 控件位置、沉浸模式、封面页歌词和歌词页控件都放到竖屏调, 用提示卡告诉用户转回竖屏
+ */
+@Composable
+internal fun StartupNowPlayingLandscapeContent(
+    preferences: PlaybackControlLayoutPreferences,
+    lyricFontScale: Float,
+    onLyricFontScaleChange: (Float) -> Unit,
+    onPreferencesChange: (PlaybackControlLayoutPreferences) -> Unit,
+    onOpenPreview: () -> Unit = {}
+) {
+    var previewPreferences by remember { mutableStateOf(preferences) }
+    var pendingLyricFontScale by remember { mutableFloatStateOf(lyricFontScale) }
+    LaunchedEffect(preferences) { previewPreferences = preferences }
+    LaunchedEffect(lyricFontScale) { pendingLyricFontScale = lyricFontScale }
+    fun applyPreferences(updated: PlaybackControlLayoutPreferences) {
+        val linkedPreferences = linkStartupLyricsControlSize(previewPreferences, updated)
+        previewPreferences = linkedPreferences
+        onPreferencesChange(linkedPreferences)
+    }
+
+    StartupOptionColumn {
+        StartupPreviewHintCard(
+            description = stringResource(AppR.string.onboarding_preview_hint_landscape_desc),
+            onOpenPreview = onOpenPreview
+        )
+        StartupInfoCard(
+            icon = Icons.Rounded.ScreenRotation,
+            title = stringResource(AppR.string.onboarding_landscape_portrait_hint_title),
+            description = stringResource(AppR.string.onboarding_landscape_portrait_hint_desc),
+            modifier = Modifier.testTag(StartupLandscapePortraitHintTag)
+        )
+        StartupOptionGroup(
+            title = stringResource(AppR.string.onboarding_controls_size_title),
+            description = stringResource(AppR.string.onboarding_controls_size_desc)
+        ) {
+            StartupControlSizeSelector(
+                selected = previewPreferences.nowPlayingSize,
+                onSelect = { size -> applyPreferences(previewPreferences.copy(nowPlayingSize = size)) }
+            )
+        }
+        StartupOptionGroup(
+            title = stringResource(AppR.string.onboarding_landscape_lyrics_size_title),
+            description = stringResource(AppR.string.onboarding_landscape_lyrics_size_desc)
+        ) {
+            StartupLyricScaleControl(
+                value = pendingLyricFontScale,
+                onValueChange = { pendingLyricFontScale = it },
+                onValueChangeFinished = { onLyricFontScaleChange(pendingLyricFontScale) }
+            )
+        }
+    }
+}
+
+internal const val StartupLandscapePortraitHintTag = "startupLandscapePortraitHint"
+
+/** 选项在横屏双栏里够宽时排成两列, 单栏布局和手机一样一列 */
 @Composable
 private fun StartupOptionColumn(content: @Composable () -> Unit) {
+    val twoPane = LocalStartupOnboardingTwoPane.current
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        if (maxWidth >= StartupOptionTwoColumnMinWidth) {
+        if (twoPane && maxWidth >= StartupOptionTwoColumnMinWidth) {
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 maxItemsInEachRow = 2,
@@ -261,15 +327,39 @@ private val LocalStartupOptionItemModifier = staticCompositionLocalOf<Modifier> 
 /** 提示可以打开实机预览, 点按钮和点下方迷你播放器效果相同 */
 @Composable
 private fun StartupPreviewHintCard(description: String, onOpenPreview: () -> Unit) {
+    StartupInfoCard(
+        icon = Icons.Rounded.PlayCircle,
+        title = stringResource(AppR.string.onboarding_preview_hint_title),
+        description = description
+    ) {
+        HapticTextButton(onClick = onOpenPreview) {
+            Text(stringResource(AppR.string.onboarding_preview_hint_open))
+        }
+    }
+}
+
+@Composable
+private fun StartupInfoCard(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+    action: (@Composable () -> Unit)? = null
+) {
     val colors = MaterialTheme.colorScheme
     val clean = NeriDesign.isClean
     OnboardingGlassSurface(
-        modifier = LocalStartupOptionItemModifier.current.fillMaxWidth(),
+        modifier = LocalStartupOptionItemModifier.current.fillMaxWidth().then(modifier),
         shape = OnboardingCardShape,
         color = colors.surfaceContainerHigh
     ) {
         Row(
-            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 14.dp),
+            modifier = Modifier.padding(
+                start = 16.dp,
+                end = if (action != null) 8.dp else 16.dp,
+                top = 14.dp,
+                bottom = 14.dp
+            ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -281,7 +371,7 @@ private fun StartupPreviewHintCard(description: String, onOpenPreview: () -> Uni
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.PlayCircle,
+                    imageVector = icon,
                     contentDescription = null,
                     tint = if (clean) colors.primary else colors.onPrimaryContainer,
                     modifier = Modifier.size(22.dp)
@@ -289,7 +379,7 @@ private fun StartupPreviewHintCard(description: String, onOpenPreview: () -> Uni
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = stringResource(AppR.string.onboarding_preview_hint_title),
+                    text = title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.onSurface
@@ -300,9 +390,7 @@ private fun StartupPreviewHintCard(description: String, onOpenPreview: () -> Uni
                     color = colors.onSurfaceVariant
                 )
             }
-            HapticTextButton(onClick = onOpenPreview) {
-                Text(stringResource(AppR.string.onboarding_preview_hint_open))
-            }
+            action?.invoke()
         }
     }
 }

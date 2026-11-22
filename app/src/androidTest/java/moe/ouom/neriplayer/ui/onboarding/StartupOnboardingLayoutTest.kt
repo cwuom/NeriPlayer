@@ -112,7 +112,7 @@ class StartupOnboardingLayoutTest {
     }
 
     @Test
-    fun tabletPortrait_firstFramePlacesSettingsBesideHeader() {
+    fun tabletPortrait_firstFrameUsesPhoneReadingOrder() {
         // 缩小密度让竖屏平板的可用内容区完整落在当前测试宿主中
         setLayout(width = 800.dp, height = 1_000.dp, densityScale = 0.5f)
 
@@ -120,8 +120,20 @@ class StartupOnboardingLayoutTest {
         val content = composeRule.onNodeWithTag("content").fetchSemanticsNode().boundsInRoot
         val actions = composeRule.onNodeWithTag("next").fetchSemanticsNode().boundsInRoot
 
-        assertTrue("竖屏平板首次显示就应使用双栏", content.left >= header.right)
-        assertTrue("竖屏平板的说明不应挤压设置高度", content.top < header.bottom)
+        assertTrue("竖屏平板应和手机一样把说明放在内容上方", header.bottom < content.top)
+        assertTrue("竖屏平板的操作应位于内容下方", content.bottom < actions.top)
+        composeRule.onNodeWithTag("next").assertIsDisplayed()
+    }
+
+    @Test
+    fun tabletLandscape_firstFramePlacesSettingsBesideHeader() {
+        setLayout(width = 1_000.dp, height = 700.dp, densityScale = 0.5f)
+
+        val header = composeRule.onNodeWithTag("intro").fetchSemanticsNode().boundsInRoot
+        val content = composeRule.onNodeWithTag("content").fetchSemanticsNode().boundsInRoot
+        val actions = composeRule.onNodeWithTag("next").fetchSemanticsNode().boundsInRoot
+
+        assertTrue("横屏平板应使用双栏", content.left >= header.right)
         assertTrue("操作应固定在说明栏内", actions.right <= content.left)
         composeRule.onNodeWithTag("next").assertIsDisplayed()
     }
@@ -138,7 +150,7 @@ class StartupOnboardingLayoutTest {
         val header = composeRule.onNodeWithTag("intro").fetchSemanticsNode().boundsInRoot
         val content = composeRule.onNodeWithTag("content").fetchSemanticsNode().boundsInRoot
         val initialActions = composeRule.onNodeWithTag("next").fetchSemanticsNode().boundsInRoot
-        assertTrue("中等竖屏平板也应显示独立设置栏", content.left >= header.right)
+        assertTrue("中等竖屏平板应和手机一样单栏", header.bottom < content.top)
 
         composeRule.onNodeWithTag("last-option").assertIsNotDisplayed()
         composeRule.onNodeWithTag("last-option").performScrollTo().assertIsDisplayed()

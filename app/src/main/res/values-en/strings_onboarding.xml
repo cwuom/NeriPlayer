@@ -116,6 +116,12 @@
     <string name="onboarding_lyrics_control_size_warning_title">Use a different control size?</string>
     <string name="onboarding_lyrics_control_size_warning_desc">Different control sizes on the lyrics and cover pages may make the transition look uneven. Continue with this size?</string>
     <string name="onboarding_lyrics_control_size_warning_confirm">Use anyway</string>
+    <string name="onboarding_controls_landscape_desc">In landscape the cover and lyrics sit side by side.</string>
+    <string name="onboarding_preview_hint_landscape_desc">Tap or swipe up the mini player below to open the same landscape player you get in the app. Changes apply instantly.</string>
+    <string name="onboarding_landscape_portrait_hint_title">Cover and lyrics pages in portrait</string>
+    <string name="onboarding_landscape_portrait_hint_desc">Control placement, immersive mode, cover lyric size and lyrics page control size are adjusted in portrait. Rotate to portrait and this step splits into separate cover and lyrics steps.</string>
+    <string name="onboarding_landscape_lyrics_size_title">Lyric size</string>
+    <string name="onboarding_landscape_lyrics_size_desc">Used by the lyrics beside the cover in landscape, shared with the portrait lyrics page.</string>
     <string name="onboarding_controls_preview_lyric_6">One leaf, one autumn sound</string>
     <string name="onboarding_controls_preview_lyric_7">One banana leaf, one quiet ache</string>
     <string name="onboarding_controls_preview_lyric_8">The dream returns after midnight</string>
