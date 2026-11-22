@@ -31,7 +31,8 @@ data class PlaybackUrlCandidate(
     val audioInfo: PlaybackAudioInfo? = null,
     val representationIdentity: String? = null,
     val cacheKeyOverride: String? = null,
-    val isPreviewClip: Boolean = false
+    val isPreviewClip: Boolean = false,
+    val deferredNeteaseAutoBiliCandidateId: String? = null
 ) {
     fun playbackUrls(): List<String> = buildList {
         add(url)
@@ -54,7 +55,8 @@ sealed class SongUrlResult {
         val cacheKeyOverride: String? = null,
         val isNeteaseLocalFallback: Boolean = false,
         val isPreviewClip: Boolean = false,
-        val fallbackCandidates: List<PlaybackUrlCandidate> = emptyList()
+        val fallbackCandidates: List<PlaybackUrlCandidate> = emptyList(),
+        val deferredNeteaseAutoBiliCandidateId: String? = null
     ) : SongUrlResult() {
         fun playbackUrls(): List<String> = buildList {
             add(url)
@@ -72,7 +74,8 @@ sealed class SongUrlResult {
                     audioInfo = audioInfo,
                     representationIdentity = representationIdentity,
                     cacheKeyOverride = cacheKeyOverride,
-                    isPreviewClip = isPreviewClip
+                    isPreviewClip = isPreviewClip,
+                    deferredNeteaseAutoBiliCandidateId = deferredNeteaseAutoBiliCandidateId
                 )
             }
             return (primary + fallbackCandidates.flatMap { candidate ->

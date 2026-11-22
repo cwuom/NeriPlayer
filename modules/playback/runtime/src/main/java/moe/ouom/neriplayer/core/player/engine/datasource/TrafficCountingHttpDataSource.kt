@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
 import moe.ouom.neriplayer.data.model.traffic.TrafficUsageSource
+import moe.ouom.neriplayer.core.player.resolver.netease.isNeteasePlaybackHost
 import moe.ouom.neriplayer.core.player.resolver.netease.shouldUseNeteaseFlacResumableRange
 import java.io.IOException
 
@@ -146,11 +147,10 @@ internal class TrafficCountingHttpDataSource(
             ?.substringBefore(';')
             ?.trim()
             ?.lowercase()
-        val isNeteaseStream = host == "music.126.net" || host.endsWith(".music.126.net")
         val isFlac = uri.path?.lowercase()?.endsWith(".flac") == true ||
             contentType == "audio/flac" ||
             contentType == "audio/x-flac"
-        if (!isNeteaseStream || !isFlac) return null
+        if (!isNeteasePlaybackHost(host) || !isFlac) return null
         return NeteaseFlacStreamDiagnostic(
             host = host,
             requestPosition = dataSpec.position,

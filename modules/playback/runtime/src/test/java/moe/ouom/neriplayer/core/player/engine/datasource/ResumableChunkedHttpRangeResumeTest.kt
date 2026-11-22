@@ -3,6 +3,7 @@
 package moe.ouom.neriplayer.core.player.engine.datasource
 
 import androidx.media3.common.C
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import java.io.IOException
 import moe.ouom.neriplayer.core.player.resolver.netease.normalizeNeteaseFlacResponseContentType
@@ -101,6 +102,62 @@ class ResumableChunkedHttpRangeResumeTest {
         assertEquals(100L, source.open(httpGet(mockHttpUri("https://cdn.example.com/a.flac"))))
         assertArrayEquals(body, source.readToEnd())
         assertEquals(1024L * 1024L, server.requests.single().length)
+    }
+
+    @Test
+    fun `netease flac seek reads nine MiB with only two range round trips`() {
+        val mib = 1024 * 1024
+        val start = 317
+        val body = ByteArray(start + 9 * mib) { (it % 251).toByte() }
+        val server = ScriptedHttpServer { request -> rangeResponse(request.httpRange(), body) }
+        val source = ResumableChunkedHttpDataSource(server, { it })
+        val uri = mockHttpUri("https://m801.music.126.net/music/song.flac")
+
+        assertEquals(9L * mib, source.open(httpGet(uri, position = start.toLong())))
+        assertArrayEquals(body.copyOfRange(start, body.size), source.readToEnd(64 * 1024))
+        val ranges = server.requests.map { it.httpRange() }
+        assertEquals(listOf(start.toLong(), start + 8L * mib), ranges.map { it.position })
+        assertEquals(listOf(8L * mib, mib.toLong()), ranges.map { it.length })
+        source.close()
+    }
+
+    @Test
+    fun `netease flac remembers proxy range limit until the source is reopened`() {
+        val mib = 1024 * 1024
+        val body = ByteArray(9 * mib) { (it % 251).toByte() }
+        var limit = 2L * mib
+        val server = ScriptedHttpServer { request ->
+            val spec = request.httpRange()
+            if (spec.length > limit) ScriptedHttpResponse(failure = rangeFailure(416, spec))
+            else rangeResponse(spec, body)
+        }
+        val source = ResumableChunkedHttpDataSource(server, { it })
+        val spec = httpGet(mockHttpUri("https://m801.music.126.net/music/song.flac"))
+
+        source.open(spec)
+        assertArrayEquals(body, source.readToEnd(64 * 1024))
+        assertEquals(listOf(8, 4, 2, 2, 2, 2, 1).map { it.toLong() * mib }, server.requests.map { it.httpRange().length })
+        source.close()
+
+        limit = 8L * mib
+        source.open(spec)
+        assertEquals(limit, server.requests.last().httpRange().length)
+        source.close()
+    }
+
+    private fun DataSpec.httpRange(): DataSpec {
+        val (start, end) = httpRequestHeaders.getValue("Range").removePrefix("bytes=").split('-').map(String::toLong)
+        return buildUpon().setPosition(start).setLength(end - start + 1).build()
+    }
+
+    private fun rangeResponse(spec: DataSpec, body: ByteArray): ScriptedHttpResponse {
+        val start = spec.position.toInt()
+        val end = minOf(start + spec.length.toInt(), body.size)
+        return ScriptedHttpResponse(
+            code = 206,
+            headers = mapOf("Content-Range" to listOf("bytes $start-${end - 1}/${body.size}")),
+            body = body.copyOfRange(start, end)
+        )
     }
 
     @Test

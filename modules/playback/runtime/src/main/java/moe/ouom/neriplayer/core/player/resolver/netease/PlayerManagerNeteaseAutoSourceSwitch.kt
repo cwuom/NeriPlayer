@@ -7,7 +7,6 @@ import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackUrlCandidate
 import moe.ouom.neriplayer.data.model.playback.SongUrlResult
-import moe.ouom.neriplayer.core.player.runtime.refresh.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.url.buildBiliPlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.buildBiliRepresentationIdentity
 import moe.ouom.neriplayer.core.player.url.inferBiliQualityKey
@@ -25,8 +24,9 @@ private val autoSourceWhitespaceRegex = Regex("\\s+")
 
 internal suspend fun PlayerManager.tryResolveNeteaseAutoBiliSource(
     song: SongItem,
-    sideEffects: RefreshResolverSideEffects
-): SongUrlResult? {
+    deferAlternates: Boolean = false,
+    failedCandidate: String? = null
+): SongUrlResult.Success? {
     if (!neteaseAutoSourceSwitchEnabled) return null
 
     val queries = buildNeteaseAutoSourceQueries(song)
@@ -37,30 +37,58 @@ internal suspend fun PlayerManager.tryResolveNeteaseAutoBiliSource(
         "Netease source unavailable, trying Bili auto source: song=${song.name}, artist=${song.artist}"
     )
 
+    return selectNeteaseBiliSources(
+        queries = queries,
+        deferAlternates = deferAlternates,
+        failedCandidate = failedCandidate,
+        rankedCandidates = { query ->
+            fetchBiliAutoSourceCandidates(song, "$query 无损")
+                .sortedByDescending { scoreNeteaseAutoBiliCandidate(song, it) }
+                .take(NETEASE_AUTO_SOURCE_SEARCH_LIMIT)
+        },
+        resolve = { candidate -> resolveNeteaseAutoBiliCandidate(song, candidate) }
+    ).also {
+        if (it == null) {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "Bili auto source not found: song=${song.name}, artist=${song.artist}"
+            )
+        }
+    }
+}
+
+internal suspend fun selectNeteaseBiliSources(
+    queries: List<String>,
+    deferAlternates: Boolean = false,
+    failedCandidate: String? = null,
+    rankedCandidates: suspend (String) -> List<SearchVideoItem>,
+    resolve: suspend (SearchVideoItem) -> SongUrlResult.Success?
+): SongUrlResult.Success? {
     val visitedCandidates = mutableSetOf<String>()
+    failedCandidate?.let(visitedCandidates::add)
+    val fallbackLimit = if (failedCandidate == null) {
+        NETEASE_AUTO_SOURCE_FALLBACK_LIMIT
+    } else {
+        NETEASE_AUTO_SOURCE_FALLBACK_LIMIT - 1
+    }
     var primaryResult: SongUrlResult.Success? = null
     val fallbackResults = mutableListOf<PlaybackUrlCandidate>()
 
     for (query in queries) {
-        val candidates = fetchBiliAutoSourceCandidates(song, "$query 无损")
-            .sortedByDescending { scoreNeteaseAutoBiliCandidate(song, it) }
-            .take(NETEASE_AUTO_SOURCE_SEARCH_LIMIT)
+        val candidates = rankedCandidates(query)
 
         for (candidate in candidates) {
             val candidateKey = candidate.bvid.ifBlank { candidate.aid.toString() }
             if (!visitedCandidates.add(candidateKey)) continue
 
-            val result = resolveNeteaseAutoBiliCandidate(
-                song = song,
-                candidate = candidate,
-                sideEffects = sideEffects
-            )
+            val result = resolve(candidate)
             if (result == null) continue
+            if (deferAlternates) return result.copy(deferredNeteaseAutoBiliCandidateId = candidateKey)
             if (primaryResult == null) {
                 primaryResult = result
             } else {
                 fallbackResults += result.toPlaybackUrlCandidate()
-                if (fallbackResults.size >= NETEASE_AUTO_SOURCE_FALLBACK_LIMIT) {
+                if (fallbackResults.size >= fallbackLimit) {
                     return primaryResult.copy(fallbackCandidates = fallbackResults)
                 }
             }
@@ -71,10 +99,6 @@ internal suspend fun PlayerManager.tryResolveNeteaseAutoBiliSource(
         return result.copy(fallbackCandidates = fallbackResults)
     }
 
-    NPLogger.w(
-        "NERI-PlayerManager",
-        "Bili auto source not found: song=${song.name}, artist=${song.artist}"
-    )
     return null
 }
 
@@ -142,8 +166,7 @@ private suspend fun PlayerManager.fetchBiliAutoSourceCandidates(
 
 private suspend fun PlayerManager.resolveNeteaseAutoBiliCandidate(
     song: SongItem,
-    candidate: SearchVideoItem,
-    sideEffects: RefreshResolverSideEffects
+    candidate: SearchVideoItem
 ): SongUrlResult.Success? {
     val videoInfo = fetchBiliAutoSourceVideoInfo(candidate) ?: return null
     val pageMatch = selectNeteaseAutoBiliPage(song, candidate, videoInfo) ?: return null
@@ -171,12 +194,6 @@ private suspend fun PlayerManager.resolveNeteaseAutoBiliCandidate(
     val durationMs = pageMatch.page.durationSec
         .takeIf { it > 0 }
         ?.times(1000L)
-    if (durationMs != null) {
-        sideEffects.updateDuration {
-            maybeUpdateSongDuration(song, durationMs)
-        }
-    }
-
     NPLogger.w(
         "NERI-PlayerManager",
         "Bili auto source selected: song=${song.name}, bvid=${videoInfo.bvid}, cid=${pageMatch.page.cid}, score=${pageMatch.score}"

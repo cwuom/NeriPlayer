@@ -48,6 +48,8 @@ import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
 import moe.ouom.neriplayer.network.range.ResumableHttpRangeSupport
 import moe.ouom.neriplayer.network.security.normalizeTrustedHost
 
+internal const val BILI_AKAMAI_HOST = "upos-hz-mirrorakam.akamaized.net"
+
 internal fun removeExplicitRangeHeader(headers: Map<String, String>): Map<String, String> {
     return LinkedHashMap<String, String>().apply {
         headers.forEach { (name, value) ->
@@ -73,7 +75,6 @@ class ConditionalHttpDataSourceFactory(
 
     companion object {
         private const val BILI_OVERSEAS_COS_HOST = "upos-sz-mirrorcosov.bilivideo.com"
-        private const val BILI_AKAMAI_HOST = "upos-hz-mirrorakam.akamaized.net"
         private const val BILI_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                 "AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/124.0.0.0 Safari/537.36"

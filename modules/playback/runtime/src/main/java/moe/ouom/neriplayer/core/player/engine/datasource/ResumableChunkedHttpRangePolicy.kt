@@ -10,6 +10,8 @@ import moe.ouom.neriplayer.core.player.resolver.netease.shouldUseNeteaseFlacResu
 import moe.ouom.neriplayer.core.player.resolver.netease.validateNeteaseFlacRangeResponse
 import moe.ouom.neriplayer.platform.youtube.api.transport.range.YouTubeGoogleVideoRangeSupport
 
+private const val NETEASE_FLAC_RANGE_BYTES = 8L * 1024L * 1024L
+
 internal data class ResumableChunkedHttpRangePolicy(
     val shouldUse: (DataSpec) -> Boolean,
     val normalizeResponseHeaders: (
@@ -21,7 +23,8 @@ internal data class ResumableChunkedHttpRangePolicy(
         responseCode: Int,
         responseHeaders: Map<String, List<String>>,
         requestedStartPosition: Long
-    ) -> Unit = { _, _, _, _ -> }
+    ) -> Unit = { _, _, _, _ -> },
+    val initialChunkSizeOverride: (Uri) -> Long? = { null }
 )
 
 internal fun shouldUseResumableChunkedHttpRange(dataSpec: DataSpec): Boolean {
@@ -36,5 +39,9 @@ internal fun shouldUseResumableChunkedHttpRange(dataSpec: DataSpec): Boolean {
 internal val defaultResumableChunkedHttpRangePolicy = ResumableChunkedHttpRangePolicy(
     shouldUse = ::shouldUseResumableChunkedHttpRange,
     normalizeResponseHeaders = ::normalizeNeteaseFlacResponseContentType,
-    validateResponse = ::validateNeteaseFlacRangeResponse
+    validateResponse = ::validateNeteaseFlacRangeResponse,
+    // 高码率 FLAC 用较大的范围减少等待响应的次数，响应体仍然边读边播
+    initialChunkSizeOverride = { uri ->
+        NETEASE_FLAC_RANGE_BYTES.takeIf { shouldUseNeteaseFlacResumableRange(uri) }
+    }
 )

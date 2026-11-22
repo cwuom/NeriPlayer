@@ -13,7 +13,8 @@ data class RefreshRequestSemantics(
     val reason: String,
     val resumedPlaybackCommandSource: PlaybackCommandSource?,
     val youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
-    val cacheKeyToInvalidateBeforeResolve: String? = null
+    val cacheKeyToInvalidateBeforeResolve: String? = null,
+    val failedNeteaseAutoBiliCandidateId: String? = null
 )
 
 data class YouTubePlaybackRecoveryStrategy(

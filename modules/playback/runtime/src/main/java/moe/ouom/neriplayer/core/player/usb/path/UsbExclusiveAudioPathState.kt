@@ -11,7 +11,8 @@ internal fun sameUsbExclusiveAudioPathConfiguration(
     previous: UsbExclusiveAudioPathState,
     current: UsbExclusiveAudioPathState
 ): Boolean {
-    return previous.copy(generation = 0L) == current.copy(generation = 0L)
+    // 音量渐变会逐步更新诊断状态，服务保活只需响应路径和播放配置的变化
+    return previous.copy(generation = current.generation, requestedVolume = current.requestedVolume) == current
 }
 
 object UsbExclusiveAudioPathTracker {

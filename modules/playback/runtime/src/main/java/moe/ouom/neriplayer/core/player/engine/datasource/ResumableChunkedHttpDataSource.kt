@@ -6,12 +6,17 @@ import moe.ouom.neriplayer.network.range.ResumableHttpRangeSupport
 import android.net.Uri
 import android.os.SystemClock
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BaseDataSource
+import androidx.media3.datasource.DataSourceException
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.HttpUtil
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.core.player.resolver.netease.shouldUseNeteaseFlacResumableRange
 import java.io.IOException
+import java.io.InterruptedIOException
 
 /**
  * 负责把可恢复的 HTTP 媒体请求拆成有界的 Range，并在短读后从准确偏移继续
@@ -26,7 +31,10 @@ internal class ResumableChunkedHttpDataSource(
 
     companion object {
         private const val TAG = "ResumableChunkedDs"
+        private val UNSATISFIED_RANGE = Regex("""bytes\s+\*/(\d+)""", RegexOption.IGNORE_CASE)
     }
+
+    private data class OpenedRange(val spec: DataSpec, val openLength: Long)
 
     private val requestProperties = linkedMapOf<String, String>()
 
@@ -38,6 +46,7 @@ internal class ResumableChunkedHttpDataSource(
 
     private var transformedSpec: DataSpec? = null
     private var chunkedMode = false
+    private var neteaseChunkSize: Long? = null
     private var bytesReadFromRequest = 0L
     private var bytesReadAtChunkStart = 0L
     private var retriedZeroProgressChunk = false
@@ -62,6 +71,9 @@ internal class ResumableChunkedHttpDataSource(
         totalContentLength = null
         chunkedMode = shouldChunk(preparedSpec)
         if (chunkedMode) {
+            neteaseChunkSize = if (shouldUseNeteaseFlacResumableRange(preparedSpec.uri)) {
+                rangePolicy.initialChunkSizeOverride(preparedSpec.uri) ?: ResumableHttpRangeSupport.DEFAULT_CHUNK_SIZE_BYTES
+            } else null
             NPLogger.d(
                 TAG,
                 "enable resumable HTTP ranges: host=${preparedSpec.uri.host}, " +
@@ -80,15 +92,7 @@ internal class ResumableChunkedHttpDataSource(
                 }
                 openChunk(startPosition = preparedSpec.position)
             } else {
-                val delegate = upstreamFactory.createDataSource()
-                val openLength = try {
-                    delegate.open(preparedSpec)
-                } catch (error: IOException) {
-                    runCatching { delegate.close() }
-                    throw error
-                }
-                bindOpenResult(delegate)
-                bytesRemainingInRequest = openLength
+                bytesRemainingInRequest = openUpstream(preparedSpec).openLength
             }
         } catch (error: IOException) {
             closeUpstreamQuietly()
@@ -97,6 +101,7 @@ internal class ResumableChunkedHttpDataSource(
 
         opened = true
         transferStarted(dataSpec)
+        if (chunkedMode && neteaseChunkSize != null && dataSpec.length != C.LENGTH_UNSET.toLong()) return dataSpec.length
         return bytesRemainingInRequest
     }
 
@@ -193,6 +198,7 @@ internal class ResumableChunkedHttpDataSource(
         currentResponseCode = -1
         transformedSpec = null
         chunkedMode = false
+        neteaseChunkSize = null
         bytesReadFromRequest = 0L
         bytesReadAtChunkStart = 0L
         retriedZeroProgressChunk = false
@@ -248,10 +254,10 @@ internal class ResumableChunkedHttpDataSource(
         )
         return try {
             openChunk(startPosition = nextStartPosition)
-            true
+            bytesRemainingInRequest != 0L
         } catch (error: HttpDataSource.InvalidResponseCodeException) {
             val knownLength = totalContentLength
-            val reachedKnownEnd = error.responseCode == 416 &&
+            val reachedKnownEnd = neteaseChunkSize == null && error.responseCode == 416 &&
                 knownLength != null &&
                 nextStartPosition >= knownLength
             if (reachedKnownEnd) {
@@ -272,18 +278,12 @@ internal class ResumableChunkedHttpDataSource(
         } else {
             C.LENGTH_UNSET.toLong()
         }
+        val preferredChunkSize = neteaseChunkSize ?: ResumableHttpRangeSupport.DEFAULT_CHUNK_SIZE_BYTES
         val firstChunkLength = ResumableHttpRangeSupport
-            .candidateChunkLengths(requestedRemaining)
+            .candidateChunkLengths(requestedRemaining, preferredChunkSize)
             .first()
-        data class OpenedChunk(
-            val delegate: HttpDataSource,
-            val chunkSpec: DataSpec,
-            val effectiveLength: Long,
-            val openLength: Long
-        )
-
         val openResult = ResumableHttpRangeSupport.executeChunkLengthFallback(
-            requestedRemaining
+            requestedRemaining, preferredChunkSize
         ) { chunkLength ->
             val effectiveLength = if (requestedRemaining == C.LENGTH_UNSET.toLong()) {
                 chunkLength
@@ -294,25 +294,25 @@ internal class ResumableChunkedHttpDataSource(
                 startPosition - baseSpec.position,
                 effectiveLength
             )
-            val delegate = upstreamFactory.createDataSource()
             try {
-                val openLength = delegate.open(chunkSpec)
-                OpenedChunk(
-                    delegate = delegate,
-                    chunkSpec = chunkSpec,
-                    effectiveLength = effectiveLength,
-                    openLength = openLength
-                )
-            } catch (error: IOException) {
-                runCatching { delegate.close() }
+                val wireSpec = if (neteaseChunkSize != null) {
+                    // 单独发送 Range，让 OkHttp 保留代理忽略范围时返回的整个 200 响应
+                    val range = requireNotNull(HttpUtil.buildRangeRequestHeader(startPosition, effectiveLength))
+                    chunkSpec.buildUpon().setPosition(0).setLength(C.LENGTH_UNSET.toLong())
+                        .setHttpRequestHeaders(chunkSpec.httpRequestHeaders + ("Range" to range)).build()
+                } else chunkSpec
+                openUpstream(wireSpec, chunkSpec)
+            } catch (error: HttpDataSource.InvalidResponseCodeException) {
+                if (error.responseCode == 416 && finishNeteaseRangeAtEnd(startPosition, error.headerFields)) return
                 throw error
             }
         }
 
-        bindOpenResult(openResult.value.delegate)
+        val range = openResult.value
         try {
+            if (neteaseChunkSize != null && handleNeteaseResponse(baseSpec, range)) return
             rangePolicy.validateResponse(
-                openResult.value.chunkSpec.uri,
+                range.spec.uri,
                 currentResponseCode,
                 currentResponseHeaders,
                 startPosition
@@ -322,10 +322,24 @@ internal class ResumableChunkedHttpDataSource(
             throw error
         }
 
+        // 代理或 CDN 接受较小范围后，本次读取沿用该大小
+        neteaseChunkSize = neteaseChunkSize?.coerceAtMost(openResult.chunkLength)
+        updateRangeLengths(range, requestedRemaining, startPosition)
+
+        val requestedLength = openResult.value.spec.length
+        if (openResult.chunkLength != requestedLength) {
+            NPLogger.w(TAG, "chunk size clamped for ${range.spec.uri.host}: $requestedLength bytes")
+        } else if (openResult.chunkLength != firstChunkLength) {
+            NPLogger.w(TAG, "chunk size fallback applied for ${range.spec.uri.host}: $requestedLength bytes")
+        }
+    }
+
+    private fun updateRangeLengths(range: OpenedRange, requestedRemaining: Long, startPosition: Long) {
+        val neteasePartial = neteaseChunkSize != null && currentResponseCode == 206
         val resolvedChunkLength = ResumableHttpRangeSupport.resolveChunkResponseLength(
-            requestedLength = openResult.value.effectiveLength,
+            requestedLength = range.spec.length,
             headers = currentResponseHeaders,
-            delegateOpenLength = openResult.value.openLength
+            delegateOpenLength = if (neteasePartial) C.LENGTH_UNSET.toLong() else range.openLength
         )
         if (resolvedChunkLength <= 0L) {
             closeUpstreamQuietly()
@@ -334,13 +348,13 @@ internal class ResumableChunkedHttpDataSource(
                     "host=${currentUri?.host}, position=$startPosition"
             )
         }
-        val boundedChunkLength = resolvedChunkLength.coerceAtMost(
-            openResult.value.effectiveLength
-        )
-        totalContentLength = ResumableHttpRangeSupport.resolveTotalContentLength(
-            uri = openResult.value.chunkSpec.uri,
-            headers = currentResponseHeaders
-        ) ?: totalContentLength
+        val boundedChunkLength = resolvedChunkLength.coerceAtMost(range.spec.length)
+        // 206 的 Content-Length 只描述这一段，文件总长可以是未知的
+        totalContentLength = if (neteasePartial) {
+            currentResponseHeaders.headerValue("Content-Range")?.substringAfterLast('/')?.trim()?.toLongOrNull()
+        } else {
+            ResumableHttpRangeSupport.resolveTotalContentLength(range.spec.uri, currentResponseHeaders)
+        } ?: totalContentLength
         bytesRemainingInChunk = boundedChunkLength
         bytesReadAtChunkStart = bytesReadFromRequest
 
@@ -349,27 +363,81 @@ internal class ResumableChunkedHttpDataSource(
                 totalContentLength != null -> {
                     (totalContentLength!! - startPosition).coerceAtLeast(0L)
                 }
-                resolvedChunkLength < openResult.value.effectiveLength -> resolvedChunkLength
+                !neteasePartial && resolvedChunkLength < range.spec.length -> resolvedChunkLength
                 else -> C.LENGTH_UNSET.toLong()
             }
         }
         if (currentResponseCode == 200 && bytesRemainingInRequest == C.LENGTH_UNSET.toLong()) {
             bytesRemainingInRequest = boundedChunkLength
         }
+    }
 
-        if (openResult.chunkLength != openResult.value.effectiveLength) {
-            NPLogger.w(
-                TAG,
-                "chunk size clamped for ${openResult.value.chunkSpec.uri.host}: " +
-                    "${openResult.value.effectiveLength} bytes"
-            )
-        } else if (openResult.chunkLength != firstChunkLength) {
-            NPLogger.w(
-                TAG,
-                "chunk size fallback applied for ${openResult.value.chunkSpec.uri.host}: " +
-                    "${openResult.value.effectiveLength} bytes"
-            )
+    private fun openUpstream(wireSpec: DataSpec, logicalSpec: DataSpec = wireSpec): OpenedRange {
+        val delegate = upstreamFactory.createDataSource()
+        val length = try {
+            delegate.open(wireSpec)
+        } catch (error: IOException) {
+            runCatching { delegate.close() }
+            throw error
         }
+        bindOpenResult(delegate)
+        return OpenedRange(logicalSpec, length)
+    }
+
+    private fun handleNeteaseResponse(baseSpec: DataSpec, range: OpenedRange): Boolean {
+        val start = range.spec.position
+        if (currentResponseCode == 416) {
+            if (finishNeteaseRangeAtEnd(start, currentResponseHeaders)) return true
+            throw DataSourceException(PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE)
+        }
+        if (currentResponseCode != 200) return false
+        val total = range.openLength
+        if (total != C.LENGTH_UNSET.toLong() && start > total) {
+            throw DataSourceException(PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE)
+        }
+        skipFullResponsePrefix(start)
+        chunkedMode = false
+        val remainder = baseSpec.subrange(start - baseSpec.position)
+        bytesRemainingInRequest = when {
+            remainder.length != C.LENGTH_UNSET.toLong() -> remainder.length
+            total != C.LENGTH_UNSET.toLong() -> total - start
+            else -> C.LENGTH_UNSET.toLong()
+        }
+        return true
+    }
+
+    private fun skipFullResponsePrefix(start: Long) {
+        if (start == 0L) return
+        val source = requireNotNull(upstream)
+        val buffer = ByteArray(minOf(start, DEFAULT_BUFFER_SIZE.toLong()).toInt())
+        var remaining = start
+        while (remaining > 0) {
+            if (Thread.currentThread().isInterrupted) throw InterruptedIOException()
+            val count = try {
+                source.read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
+            } catch (error: IOException) {
+                if (Thread.currentThread().isInterrupted) throw InterruptedIOException().apply { initCause(error) }
+                throw error
+            }
+            if (count == C.RESULT_END_OF_INPUT) throw DataSourceException(PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE)
+            if (count <= 0) throw IOException("No progress while skipping Netease FLAC response prefix")
+            remaining -= count
+        }
+        if (Thread.currentThread().isInterrupted) throw InterruptedIOException()
+    }
+
+    private fun finishNeteaseRangeAtEnd(start: Long, headers: Map<String, List<String>>): Boolean {
+        if (neteaseChunkSize == null) return false
+        val contentRange = headers.headerValue("Content-Range")
+        val end = if (contentRange == null) totalContentLength else
+            UNSATISFIED_RANGE.matchEntire(contentRange.trim())?.groupValues?.get(1)?.toLongOrNull()
+        if (start != end) return false
+        closeUpstreamQuietly()
+        currentResponseCode = 416
+        currentResponseHeaders = headers
+        bytesRemainingInRequest = 0L
+        bytesRemainingInChunk = 0L
+        return true
     }
 
     private fun bindOpenResult(delegate: HttpDataSource) {

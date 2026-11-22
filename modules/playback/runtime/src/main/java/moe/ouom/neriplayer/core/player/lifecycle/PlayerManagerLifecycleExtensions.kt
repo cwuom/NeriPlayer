@@ -61,6 +61,7 @@ import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
 import moe.ouom.neriplayer.core.player.audio.processing.PlaybackVolumeNormalizationState
 import moe.ouom.neriplayer.core.player.engine.ReactiveRenderersFactory
 import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSourceFactory
+import moe.ouom.neriplayer.core.player.engine.datasource.PlaybackRouteDiagnostics
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.core.player.lyrics.attachLiveLyricSurfaces
 import moe.ouom.neriplayer.core.player.lyrics.clearExternalBluetoothLyricLine
@@ -496,7 +497,9 @@ private fun initializeLyriconWhenNeeded(app: Application) {
 }
 
 private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMaxCacheSize: Long) {
-    val okHttpClient = PlayerDependencies.repositories.sharedOkHttpClient
+    val okHttpClient = PlayerDependencies.repositories.sharedOkHttpClient.newBuilder()
+        .addNetworkInterceptor(PlaybackRouteDiagnostics)
+        .build()
     val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
     val conditionalFactory = ConditionalHttpDataSourceFactory(
         upstreamFactory,
