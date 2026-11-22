@@ -98,7 +98,8 @@ import moe.ouom.neriplayer.R as AppR
 internal fun CommentSheet(
     source: CommentSource?,
     offlineMode: Boolean,
-    onDismissRequest: () -> Unit
+    onDismissRequest: () -> Unit,
+    onTimestampClick: (Long) -> Unit = {}
 ) {
     val viewModel: CommentViewModel = viewModel()
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
@@ -142,7 +143,8 @@ internal fun CommentSheet(
             onReply = viewModel::replyTo,
             onSend = viewModel::sendComment,
             onToggleReplies = viewModel::toggleReplies,
-            onLoadReplies = viewModel::loadReplies
+            onLoadReplies = viewModel::loadReplies,
+            onTimestampClick = onTimestampClick
         )
     }
 }
@@ -215,6 +217,7 @@ internal fun CommentSheetContent(
     onSend: () -> Unit = {},
     onToggleReplies: (String) -> Unit = {},
     onLoadReplies: (String) -> Unit = {},
+    onTimestampClick: (Long) -> Unit = {},
     onDismiss: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -368,7 +371,8 @@ internal fun CommentSheetContent(
                                 hasReplyThread = thread != null,
                                 replyEnabled = replyEnabled,
                                 likingIds = ui.likingIds,
-                                onLikeReply = onLike
+                                onLikeReply = onLike,
+                                onTimestampClick = onTimestampClick
                             )
                         }
                         if (thread?.expanded == true) {
@@ -382,7 +386,8 @@ internal fun CommentSheetContent(
                                     offlineMode = offlineMode,
                                     isLiking = reply.id in ui.likingIds,
                                     likeEnabled = likeEnabled,
-                                    onLike = { onLike(reply.id) }
+                                    onLike = { onLike(reply.id) },
+                                    onTimestampClick = onTimestampClick
                                 )
                             }
                             item(key = "reply-footer:${comment.id}", contentType = "reply-footer") {

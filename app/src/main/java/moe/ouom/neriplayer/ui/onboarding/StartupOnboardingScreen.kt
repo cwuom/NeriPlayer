@@ -12,6 +12,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SizeTransform
@@ -67,6 +68,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -861,13 +863,12 @@ fun StartupOnboardingScreen(
                                             }
                                         ) { index ->
                                             val step = steps[index]
-                                            // 卡片模糊由宿主统一绘制, 不跟随页面淡入淡出; 按页面进出场同步玻璃透明度
-                                            // 否则旧页文字已经消失, 空的模糊板还停在原地, 新页也会先冒出空模糊板
-                                            val stepGlassOpacity = rememberStartupGlassOpacity(
-                                                enterMillis = STARTUP_STEP_GLASS_ENTER_MILLIS,
-                                                exitMillis = STARTUP_STEP_GLASS_EXIT_MILLIS,
-                                                enterDelayMillis = STARTUP_STEP_GLASS_ENTER_DELAY_MILLIS
-                                            )
+                                            // 卡片模糊由宿主统一绘制, 不在页面图层里; 页面和玻璃读同一个透明度才不会一先一后
+                                            val stepAlpha = rememberStartupStepAlpha(clean)
+                                            val parentGlassOpacity = LocalAdvancedGlassSceneOpacity.current
+                                            val stepGlassOpacity = remember(parentGlassOpacity, stepAlpha) {
+                                                { parentGlassOpacity() * stepAlpha.value }
+                                            }
                                             CompositionLocalProvider(
                                                 LocalStartupStepVisibility provides this,
                                                 LocalAdvancedGlassSceneOpacity provides stepGlassOpacity,
@@ -876,7 +877,9 @@ fun StartupOnboardingScreen(
                                             ) {
                                                 AdvancedGlassSceneLayer(
                                                     controller = advancedGlassController,
-                                                    modifier = Modifier.fillMaxSize(),
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .graphicsLayer { alpha = stepAlpha.value },
                                                     disableStretchOverscroll = backgroundImageUri != null,
                                                     fixedBackground = true,
                                                     background = { Box(Modifier.fillMaxSize()) }
@@ -907,9 +910,8 @@ fun StartupOnboardingScreen(
                                                         }
                                                         Column(
                                                             modifier = Modifier.animateEnterExit(
-                                                                enter = fadeIn(tween(220, delayMillis = 60)) +
-                                                                    slideInVertically(spring(0.86f, 300f)) { it / 14 },
-                                                                exit = fadeOut(tween(120))
+                                                                enter = slideInVertically(spring(0.86f, 300f)) { it / 14 },
+                                                                exit = ExitTransition.None
                                                             )
                                                         ) {
                                                             StepBody(
@@ -1230,8 +1232,3 @@ internal fun StartupNotificationPermissionWarningDialog(
 
 // 完整说明收起后再留一帧余量, 确保收起动画的最后一帧已经画出
 private const val STARTUP_POLICY_CONSENT_GAP_MILLIS = 32L
-
-// 与步骤内容的淡入淡出对齐: 页面在 90ms 后开始淡入, 正文再用约 220ms 淡完; 退场 90ms
-private const val STARTUP_STEP_GLASS_ENTER_DELAY_MILLIS = 90
-private const val STARTUP_STEP_GLASS_ENTER_MILLIS = 220
-private const val STARTUP_STEP_GLASS_EXIT_MILLIS = 90
