@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.lanltw.core
 
 /** BeatSync 94c38ab config.ts / global.tsx, with explicit input clock and units. */
 object LanSchedule {
+    const val START_BUFFER_MS = 600
+
     fun executionDelay(rtt: Double, compensation: Double, extra: Double = 0.0): Double =
         maxOf((rtt * 1.5 + 200).coerceIn(400.0, 3000.0), compensation + 200) + extra
     fun position(anchor: Double, at: Double, now: Double): Double = (anchor + (now - at) / 1000).coerceAtLeast(0.0)

@@ -62,15 +62,19 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
     private var lastHostSource: Pair<String, SongItem>? = null
     private var endpoint: Endpoint? = null
     private var audioFailure: (String) -> Unit = {}
-    private var guestRefilled: (String) -> Unit = {}
+    private var playbackRefilled: (String) -> Unit = {}
     override var preparationError: String = "SOURCE"
         private set
     override val preparedMediaId: String? get() = engine?.let { audio -> audio.mediaId?.takeIf(audio::ready) }
+    override val bufferedUntilSeconds: Double? get() = engine?.bufferedUntilSeconds
     override val outputLatencyMs: Double get() = 0.0
 
     override fun audioDiagnostics(): String = engine?.diagnostics() ?: "[]"
     override suspend fun initializeAudio() { checkNotNull(engine) }
-    override suspend fun resetAudioClock() { checkNotNull(ntp).reset() }
+    override suspend fun resetAudioClock() {
+        engine?.resetRoomClock()
+        checkNotNull(ntp).reset()
+    }
     override suspend fun receiveProbe(message: LanMessage, receivedAt: Double): LanNtpEstimator.Estimate? =
         checkNotNull(ntp).response(message, receivedAt)
 
@@ -84,10 +88,13 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         return audio.schedule(action, deadline, offsetMs, nudgeMs)
     }
 
+    override fun updateAudioClock(offsetMs: Double, receivedAt: Double) {
+        engine?.updateRoomClock(offsetMs, receivedAt.toLong())
+    }
+
     override fun cancelAudioSchedule() { engine?.cancelSchedule() }
     override fun changeAudioNudge(value: Int, delta: Int) {
-        val audio = engine ?: return
-        if (audio.playing && audio.seekable) audio.seek((audio.positionSeconds * 1000).roundToLong() + delta)
+        engine?.changeNudge(delta)
     }
 
     override fun watchAudioFailure(handler: (String) -> Unit) { audioFailure = handler }
@@ -95,7 +102,7 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
     override fun roomTrackEnded(lastInPlaylist: Boolean) { LanPlaybackBinding.checkEndTimer(lastInPlaylist) }
     override fun muteHostForSleep(muted: Boolean) { engine?.muteForSleep(muted) }
     override fun watchRelayInvalidation(handler: (String, String) -> Unit) { publisher.onInvalidated = handler }
-    override fun watchGuestRefill(handler: (String) -> Unit) { guestRefilled = handler }
+    override fun watchPlaybackRefill(handler: (String) -> Unit) { playbackRefilled = handler }
 
     private fun main() { check(Looper.myLooper() == Looper.getMainLooper()) }
     override fun currentTrack(): ListenTogetherTrack? = LanPlaybackBinding.track(PlayerManager.currentSongFlow.value)
@@ -318,7 +325,7 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
         engine = LanMedia3AudioEngine(PlayerManager.application, !PlayerManager.allowMixedPlaybackEnabled,
             presentation::update, ::updateAudioFormat, { LanPlaybackBinding.ended() }, { audioFailure("SOURCE") },
             { audioFailure("AUDIO_SUSPENDED") }, { preparationError = "AUDIO_NOT_SEEKABLE" },
-            onGuestRefilled = if (hosting()) null else guestRefilled)
+            onRefilled = playbackRefilled, resumeUnseekableLocally = hosting())
         ntp = LanNtpEstimator()
         LanPlaybackBinding.command = onCommand
         LanPlaybackBinding.stopped = onStop

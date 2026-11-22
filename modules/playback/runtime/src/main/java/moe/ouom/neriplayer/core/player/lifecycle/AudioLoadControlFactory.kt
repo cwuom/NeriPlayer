@@ -5,6 +5,7 @@ package moe.ouom.neriplayer.core.player.lifecycle
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.LoadControl
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.lanltw.core.LanSchedule
 
 internal data class AudioLoadControlPolicy(
     val localMinBufferMs: Int = 15_000,
@@ -25,6 +26,14 @@ internal data class AudioLoadControlPolicy(
      * 音频码率低, 留一分钟也就一两 MB, 换来的是回拖直接从内存续上
      */
     val backBufferMs: Int = 60_000
+)
+
+internal fun buildLanAudioLoadControl(): LoadControl = buildAudioLoadControl(
+    AudioLoadControlPolicy(
+        maxBufferMs = DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
+        bufferForPlaybackMs = LanSchedule.START_BUFFER_MS,
+        backBufferMs = 0
+    )
 )
 
 internal fun buildAudioLoadControl(

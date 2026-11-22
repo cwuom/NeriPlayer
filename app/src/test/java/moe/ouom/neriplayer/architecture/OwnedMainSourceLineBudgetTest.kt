@@ -13,7 +13,6 @@ class OwnedMainSourceLineBudgetTest {
         listOf(
             "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/LanRoomPolicy.kt",
             "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/LanPeerTiming.kt",
-            "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/BeatSyncRuntime.java",
             "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/LanClock.kt",
             "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/LanNtpEstimator.kt",
             "modules/ltwlan/src/main/java/moe/ouom/neriplayer/lanltw/core/LanRoomEngine.kt",

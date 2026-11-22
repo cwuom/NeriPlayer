@@ -93,7 +93,7 @@ class LanBurstPlaybackInstrumentedTest {
                         buffering.complete(state.positionSeconds)
                     }
                     lastStatus = status
-                }, {}, { ended.complete(Unit) }, {}, onGuestRefilled = if (guest) requestRoomPlan else null)
+                }, {}, { ended.complete(Unit) }, {}, onRefilled = if (guest) requestRoomPlan else null)
                 try {
                     assertTrue("initial burst must support startup", audio.prepare(media, url, token, "audio/flac", 0))
                     audio.play()

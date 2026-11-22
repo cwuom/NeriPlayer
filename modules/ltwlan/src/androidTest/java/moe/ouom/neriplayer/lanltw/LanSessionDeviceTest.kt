@@ -54,8 +54,8 @@ class LanSessionDeviceTest {
         var ended = true
         var audioFailure: (String) -> Unit = {}
         override fun watchAudioFailure(handler: (String) -> Unit) { audioFailure = handler }
-        var guestRefilled: (String) -> Unit = {}
-        override fun watchGuestRefill(handler: (String) -> Unit) { guestRefilled = handler }
+        var playbackRefilled: (String) -> Unit = {}
+        override fun watchPlaybackRefill(handler: (String) -> Unit) { playbackRefilled = handler }
         var resolve: suspend (ListenTogetherTrack) -> LanPreparedSource = { LanPreparedSource(it, stream) }
         override suspend fun prepareSharedSource(track: ListenTogetherTrack, refresh: Boolean) = resolve(track)
         override fun sharedPresentationUpdates(track: ListenTogetherTrack, mediaId: String) =
@@ -196,7 +196,7 @@ class LanSessionDeviceTest {
             main {
                 assertTrue(hostPort.playing)
                 assertFalse(guestPort.playing)
-                guestPort.guestRefilled(stream.mediaId)
+                guestPort.playbackRefilled(stream.mediaId)
                 host.requestPlayback("PAUSE", song, 0.0)
             }
             withTimeout(5_000) { guest.state.first { it.room?.playback?.playing == false } }
@@ -246,7 +246,7 @@ class LanSessionDeviceTest {
             assertEquals(31.0, prepared.positionSeconds, .001)
             assertEquals(0, hostPort.plays.value)
             assertEquals(0, memberPort.plays.value)
-            main { memberPort.guestRefilled(stream.mediaId) }
+            main { memberPort.playbackRefilled(stream.mediaId) }
             main { host.requestPlayback("PLAY_PAUSE", song, 31.0) }
             withTimeout(15000) { hostPort.plays.first { it > 0 }; memberPort.plays.first { it > 0 } }
             val playing = withTimeout(5000) { member.state.first { it.room?.playback?.playing == true } }
@@ -254,14 +254,14 @@ class LanSessionDeviceTest {
             val guestPlays = memberPort.plays.value
             val hostPlays = hostPort.plays.value
             main {
-                hostPort.guestRefilled(stream.mediaId)
-                memberPort.guestRefilled("previous-media")
+                hostPort.playbackRefilled(stream.mediaId)
+                memberPort.playbackRefilled("previous-media")
             }
             assertNull(withTimeoutOrNull(2_500) { memberPort.plays.first { it > guestPlays } })
             main {
                 memberPort.playing = false
                 memberPort.position = 19.0
-                memberPort.guestRefilled(stream.mediaId)
+                memberPort.playbackRefilled(stream.mediaId)
             }
             withTimeout(10_000) { memberPort.plays.first { it > guestPlays } }
             main {
@@ -269,6 +269,14 @@ class LanSessionDeviceTest {
                 assertEquals(hostPlays, hostPort.plays.value)
                 assertEquals(previousRevision, member.state.value.room!!.playback.revision)
             }
+            val memberPlaysAfterRefill = memberPort.plays.value
+            main {
+                hostPort.playing = false
+                hostPort.playbackRefilled(stream.mediaId)
+            }
+            withTimeout(10_000) { hostPort.plays.first { it > hostPlays } }
+            assertEquals(memberPlaysAfterRefill, memberPort.plays.value)
+            assertEquals(previousRevision, host.state.value.room!!.playback.revision)
             main { member.requestPlayback("SEEK", song, 10.0) }
             withTimeout(5000) { member.state.first { it.error == "DENIED" } }
             assertEquals(previousRevision, member.state.value.room!!.playback.revision)

@@ -16,6 +16,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -40,6 +41,68 @@ class LanMedia3ProgressiveInstrumentedTest {
 
     @Test(timeout = 35_000L)
     fun seekCancelsAStalledPreviousRequestAndOpensARange() = exerciseSeek(releaseInitialRead = false)
+
+    @Test(timeout = 25_000L)
+    fun lateRangeReadSurvivesItsOriginalPlayDeadline() = runBlocking {
+        val server = LanMediaServer()
+        val resource = UUID.randomUUID().toString()
+        val initialLimit = WAV_SAMPLE_RATE * 2L * 4
+        val header = wavHeader()
+        val total = header.size + WAV_DATA_SIZE.toLong()
+        val initialGate = CountDownLatch(1)
+        val rangeGate = CountDownLatch(1)
+        val rangeTail = CountDownLatch(1)
+        val rangePrefixSent = CountDownLatch(1)
+        val rangeRequests = AtomicInteger()
+        try {
+            server.start(30_000, true)
+            val token = server.grant("slow-seek")
+            server.publishStream(resource, "audio/wav", total) { offset, length ->
+                val isRange = offset >= initialLimit
+                if (isRange) {
+                    rangeRequests.incrementAndGet()
+                    check(rangeGate.await(10, TimeUnit.SECONDS))
+                }
+                val end = offset + (length ?: (total - offset))
+                val prefixEnd = if (isRange) offset + WAV_SAMPLE_RATE * 2L else initialLimit
+                val stream = wavBytes(header, offset, end, prefixEnd, if (isRange) rangeTail else initialGate,
+                    if (isRange) rangePrefixSent else CountDownLatch(1))
+                LanMediaStreamInput(stream, end - offset)
+            }
+            val url = "http://127.0.0.1:${server.listeningPort}/media/$resource".toHttpUrl()
+            withContext(Dispatchers.Main) {
+                val audio = LanMedia3AudioEngine(InstrumentationRegistry.getInstrumentation().targetContext,
+                    false, { _, _, _ -> }, {}, {}, {})
+                try {
+                    assertTrue(audio.prepare(resource, url, token, "audio/wav", 0))
+                    val deadline = SystemClock.elapsedRealtime() + 200L
+                    val start = async { audio.schedule(LanAction("PLAY", resource, 45.0), deadline.toDouble(), 0.0, 0) }
+                    withTimeout(5_000) { while (rangeRequests.get() == 0) delay(10) }
+                    delay(1_800)
+                    assertEquals("a missed deadline must keep the pending range", 1, rangeRequests.get())
+                    rangeGate.countDown()
+                    withTimeout(4_000) { while (rangePrefixSent.count > 0) delay(10) }
+                    delay(600)
+                    assertEquals("one playable second cannot cover the moving room target", 1, rangeRequests.get())
+                    rangeTail.countDown()
+                    assertTrue("room recovery failed after data arrived", withTimeout(8_000) { start.await() })
+                    val expected = 45.0 + (SystemClock.elapsedRealtime() - deadline) / 1000.0
+                    assertTrue("stale recovery position ${audio.positionSeconds}, expected $expected",
+                        kotlin.math.abs(audio.positionSeconds - expected) < 0.2)
+                } finally {
+                    initialGate.countDown()
+                    rangeGate.countDown()
+                    rangeTail.countDown()
+                    audio.release()
+                }
+            }
+        } finally {
+            initialGate.countDown()
+            rangeGate.countDown()
+            rangeTail.countDown()
+            server.stop()
+        }
+    }
 
     @Test(timeout = 35_000L)
     fun relayKeepsAnEndSeekPausedAndFinishesAnEndSeekWhilePlaying() = runBlocking {
@@ -115,6 +178,19 @@ class LanMedia3ProgressiveInstrumentedTest {
                 try {
                     assertTrue("initial PCM reached READY", audio.prepare(resource, url, token, "audio/wav", 0))
                     assertTrue("ready did not require the server to release the rest of the file", unblockInitialRead.count > 0)
+                    val cancelledDeadline = SystemClock.elapsedRealtime() + 700L
+                    val cancelled = async {
+                        audio.schedule(LanAction("PLAY", "local:fixture", 0.0), cancelledDeadline.toDouble(), 0.0, 0)
+                    }
+                    withTimeout(500) {
+                        while ("outputTiming=armed " !in audio.diagnostics()) delay(10)
+                    }
+                    assertFalse("an armed plan must not report audible playback", audio.playing)
+                    audio.cancelSchedule()
+                    assertFalse("cancelled plan reported completion", cancelled.await())
+                    delay(100)
+                    assertFalse("cancelled output started at its old deadline", audio.playing)
+                    assertTrue("the intro was consumed while the output was armed", audio.positionSeconds < 0.1)
                     val deadline = SystemClock.elapsedRealtime() + 500L
                     assertTrue(audio.schedule(LanAction("PLAY", "local:fixture", 0.0), deadline.toDouble(), 0.0, 0))
                     withTimeout(5_000L) { while (!audio.playing || audio.positionSeconds < 0.3) delay(25) }
@@ -140,6 +216,71 @@ class LanMedia3ProgressiveInstrumentedTest {
         } finally {
             unblockInitialRead.countDown()
             server.stop()
+        }
+    }
+
+    @Test(timeout = 45_000L)
+    fun pcmOutputTracksRoomClockChangesDuringPlayback() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val wav = File.createTempFile("lan-clock-", ".wav", context.cacheDir)
+        val server = LanMediaServer()
+        val id = UUID.randomUUID().toString()
+        try {
+            writeWav(wav, ENDPOINT_WAV_SIZE)
+            LanRelayOrigin.open(DefaultDataSource.Factory(context), Uri.fromFile(wav), "audio/wav").use { origin ->
+                server.start(30_000, true)
+                val token = server.grant("clock-test")
+                server.publishStream(id, origin.mime, origin.byteLength, origin.window::open)
+                val url = "http://127.0.0.1:${server.listeningPort}/media/$id".toHttpUrl()
+                withContext(Dispatchers.Main) {
+                    val audio = LanMedia3AudioEngine(context, false, { _, _, _ -> }, {}, {}, {})
+                    try {
+                        assertTrue(audio.prepare(id, url, token, "audio/wav", 0))
+                        audio.updateRoomClock(0.0, SystemClock.elapsedRealtime())
+                        val deadline = SystemClock.elapsedRealtime() + 500L
+                        assertTrue(audio.schedule(LanAction("PLAY", "fixture", 0.0), deadline.toDouble(), 0.0, 0))
+                        val observed = withTimeoutOrNull(5_000) {
+                            var error: Double?
+                            do {
+                                delay(50)
+                                error = audio.diagnostics().substringAfter("phaseErrorMs=").substringBefore(' ').toDoubleOrNull()
+                            } while (error == null)
+                            error
+                        }
+                        assertTrue("no PCM presentation timestamp: ${audio.diagnostics()}", observed != null)
+                        android.util.Log.i("LanTimingTest", audio.diagnostics())
+                        for ((bias, speed) in listOf(35.0 to 1.002f, -35.0 to 0.998f)) {
+                            audio.updateRoomClock(bias - checkNotNull(observed), SystemClock.elapsedRealtime())
+                            val adjusted = withTimeoutOrNull(2_500) {
+                                while ("speed=$speed " !in audio.diagnostics()) delay(50)
+                                true
+                            }
+                            assertTrue("room clock did not produce $speed: ${audio.diagnostics()}", adjusted == true)
+                            android.util.Log.i("LanTimingTest", audio.diagnostics())
+                        }
+                        audio.cancelSchedule()
+                        assertTrue("cancel must restore normal speed", "speed=1.0 " in audio.diagnostics())
+                        repeat(4) {
+                            audio.invalidate()
+                            assertTrue(audio.prepare(id, url, token, "audio/wav", 0))
+                            val nextDeadline = SystemClock.elapsedRealtime() + 500L
+                            assertTrue(audio.schedule(LanAction("PLAY", "fixture", 0.0), nextDeadline.toDouble(), 0.0, 0))
+                            val tracked = withTimeoutOrNull(5_000L) {
+                                while ("outputTiming=tracking-" !in audio.diagnostics()) delay(50L)
+                                true
+                            }
+                            val diagnostics = audio.diagnostics()
+                            assertTrue("reopened PCM must reach the output: $diagnostics", tracked == true)
+                            android.util.Log.i("LanTimingTest", diagnostics)
+                        }
+                    } finally {
+                        audio.release()
+                    }
+                }
+            }
+        } finally {
+            server.stop()
+            wav.delete()
         }
     }
 
