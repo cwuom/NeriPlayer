@@ -10,6 +10,7 @@ interface LanScheduledAudioPort {
     suspend fun initializeAudio()
     suspend fun resetAudioClock()
     suspend fun receiveProbe(message: LanMessage, receivedAt: Double): LanNtpEstimator.Estimate?
+    fun updateAudioClock(offsetMs: Double, receivedAt: Double) {}
     suspend fun scheduleAudio(message: LanMessage, offsetMs: Double, nudgeMs: Int): Boolean
     fun cancelAudioSchedule()
     fun changeAudioNudge(value: Int, delta: Int)

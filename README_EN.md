@@ -463,6 +463,11 @@ Shipped work is tracked in [Releases](https://github.com/cwuom/NeriPlayer/releas
 - [LDDC](https://github.com/chenmozhijin/LDDC): Multi-platform lyric matching tool; reference for manual matching UX
 - [Metrolist](https://github.com/MetrolistGroup/Metrolist): YouTube Music client for Android
 - [HyperCeiler](https://github.com/ReChronoRain/HyperCeiler): HyperOS enhancement module
+- [BeatSync](https://github.com/freeman-jiang/beatsync) by freeman-jiang provides the paired-probe clock synchronization algorithm for LAN Listen Together and the reference implementation used to test the Kotlin port.
+- [AndroidX Media3](https://github.com/androidx/media) provides progressive audio playback and pitch-preserving speed adjustments for LAN room members.
+- [Java-WebSocket](https://github.com/TooTallNate/Java-WebSocket) provides the host’s WebSocket server for room control messages.
+- [NanoHTTPD](https://github.com/NanoHttpd/nanohttpd) provides the host’s HTTP server for sharing audio with room members.
+- [OkHttp](https://github.com/square/okhttp) lets members connect to the room and stream the shared audio.
 
 ---
 

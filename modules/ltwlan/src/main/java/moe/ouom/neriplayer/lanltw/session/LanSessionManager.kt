@@ -143,11 +143,11 @@ class LanSessionManager(
                 send(LanMessage(command, mediaId = mediaId, code = reason))
             }
         } }
-        playback.watchGuestRefill { mediaId ->
+        playback.watchPlaybackRefill { mediaId ->
             val current = state.value
             val plan = current.room?.playback
             val player = scheduler
-            val activePlan = progressTicket.isCurrent && connected && !current.hosting && !current.audioSuspended &&
+            val activePlan = progressTicket.isCurrent && connected && !playback.isPlaying() && !current.audioSuspended &&
                 plan?.playing == true && player != null && player.playbackRevision == plan.revision && player.mediaId == mediaId
             if (activePlan) send(LanMessage("SYNC"))
         }
@@ -200,7 +200,7 @@ class LanSessionManager(
         val transport = LanWebSocketClient(clientHttp, clock)
         client?.close(); client = transport
         transport.connect(targetUrl, hello.copy(volume = playback.mediaVolume()), onOpen = {}, onMessage = { m, time ->
-            // Liveness is transport activity, not completion of a JS clock-estimator callback.
+            // 在传输层收到回包时更新心跳，避免后续消息排队影响超时判断
             if (ticket.isCurrent && connectionTicket.isCurrent) responseAt = time
             if (!incoming.trySend(m to time).isSuccess) scope.launch { if (ticket.isCurrent && connectionTicket.isCurrent && client === transport) lost() }
         }, onFailure = { scope.launch { incoming.close(); if (ticket.isCurrent && connectionTicket.isCurrent && client === transport) lost() } })
@@ -313,6 +313,7 @@ class LanSessionManager(
         if (!connection.isCurrent) return
         val firstSync = result.synced && !state.value.synced
         offset = result.offset
+        if (result.synced) (playback as? LanScheduledAudioPort)?.updateAudioClock(offset, receivedAt)
         mutable.value = state.value.copy(synced = result.synced, rttMs = result.rtt, phase = if (result.synced) "CONNECTED" else "SYNCING")
         if (firstSync) send(LanMessage("SYNC"))
     }
