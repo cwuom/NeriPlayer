@@ -29,7 +29,7 @@ class CarMediaMetadataTest {
     @Test
     fun `default bluetooth mode combines lyrics while preserving artist and non bluetooth behavior`() {
         val payload = ExternalBluetoothLyricPayload("line", "译文")
-        val bluetooth = serviceMetadataText(song(), payload, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, false)
+        val bluetooth = serviceMetadataText(song(), payload, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, false, BluetoothMetadataMode.SongAndLyrics, bluetoothTranslationEnabled = true)
         assertEquals("Song | line | 译文", bluetooth.title)
         assertEquals("Artist", bluetooth.artist)
         assertEquals("Album", bluetooth.album)
@@ -55,7 +55,7 @@ class CarMediaMetadataTest {
     @Test
     fun `song information mode overrides forced lyric output on bluetooth only`() {
         val payload = ExternalBluetoothLyricPayload("lyric", "translation")
-        val bluetooth = serviceMetadataText(song(), payload, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, true, BluetoothMetadataMode.SongInfo)
+        val bluetooth = serviceMetadataText(song(), payload, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, true, BluetoothMetadataMode.SongInfo, bluetoothTranslationEnabled = true)
         assertEquals("Song", bluetooth.title)
         assertEquals("Artist", bluetooth.artist)
         assertEquals("Album", bluetooth.album)
@@ -126,8 +126,54 @@ class CarMediaMetadataTest {
     }
 
     @Test
+    fun `bluetooth translation follows the switch while the lyric row stays put`() {
+        val payload = ExternalBluetoothLyricPayload("歌词行", "译文行")
+
+        // 开关关着时, 灵动岛/锁屏/悬浮歌词可能已经把翻译写进了 payload,
+        // 车机这边不该看到翻译。
+        val disabled = serviceMetadataText(
+            song = song(),
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            forceSendLyrics = false,
+            mode = BluetoothMetadataMode.Lyrics,
+            bluetoothTranslationEnabled = false,
+        )
+        assertEquals("歌词行", disabled.title)
+        assertEquals("Song - Artist", disabled.artist)
+        assertNull(disabled.album)
+
+        val enabled = serviceMetadataText(
+            song = song(),
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            forceSendLyrics = false,
+            mode = BluetoothMetadataMode.Lyrics,
+            bluetoothTranslationEnabled = true,
+        )
+        assertEquals("歌词行", enabled.title)
+        assertEquals("译文行", enabled.artist)
+        assertEquals("Song - Artist", enabled.album)
+    }
+
+    @Test
+    fun `bluetooth translation switch does not affect non bluetooth output`() {
+        val payload = ExternalBluetoothLyricPayload("lyric", "translation")
+        val speaker = serviceMetadataText(
+            song = song(),
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            forceSendLyrics = true,
+            mode = BluetoothMetadataMode.Lyrics,
+            bluetoothTranslationEnabled = false,
+        )
+        assertEquals("lyric", speaker.title)
+        assertEquals("translation", speaker.artist)
+    }
+
+    @Test
     fun `combined lyrics stay visible in display metadata while preserving artist and album`() {
-        val metadata = serviceMetadataText(song(), ExternalBluetoothLyricPayload("line", "译文"), AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, false, BluetoothMetadataMode.SongAndLyrics)
+        val metadata = serviceMetadataText(song(), ExternalBluetoothLyricPayload("line", "译文"), AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, false, BluetoothMetadataMode.SongAndLyrics, bluetoothTranslationEnabled = true)
         assertEquals("Song | line | 译文", metadata.title)
         assertEquals("Artist", metadata.artist)
         assertEquals("Album", metadata.album)

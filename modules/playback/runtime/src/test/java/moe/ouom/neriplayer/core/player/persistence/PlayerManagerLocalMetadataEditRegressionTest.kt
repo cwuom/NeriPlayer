@@ -1440,7 +1440,11 @@ class PlayerManagerLocalMetadataEditRegressionTest {
             }
             mockStatic(Os::class.java, CALLS_REAL_METHODS).use { os ->
                 os.`when`<StructStat> { Os.fstat(any()) }.thenAnswer { invocation ->
-                    Os.stat(files.getValue(invocation.getArgument(0)).absolutePath)
+                    // 只补本测试打开的文件, 别的 fd(并行测试打开的)用真实实现,
+                    // 否则会拿错文件的状态, 报"伴随文件不支持稳定普通文件身份"
+                    val descriptor = invocation.getArgument<FileDescriptor>(0)
+                    val file = files[descriptor] ?: return@thenAnswer invocation.callRealMethod()
+                    Os.stat(file.absolutePath)
                 }
                 block()
             }

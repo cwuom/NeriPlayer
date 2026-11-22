@@ -62,17 +62,34 @@ internal fun CarLibraryItem.toAndroidMediaItem(context: Context): MediaBrowser.M
     )
 }
 
+/**
+ * 构建车机会话队列。
+ *
+ * [currentItemTitleOverride] / [currentItemSubtitleOverride] 覆盖队列当前项的标题与副标题,
+ * 用来和 session metadata 对齐。
+ *
+ * AOSP 蓝牙栈的 MediaPlayerWrapper.isMetadataSynced() 会比较队列当前项与当前 metadata,
+ * 不一致时不立即下发, 而是等 CALLBACK_TIMEOUT_MS(2 秒), 期间的更新都会被丢弃。
+ * 蓝牙歌词下 metadata 的 title 是随进度变化的歌词, 队列项的 title 固定是歌名, 两者不可能一致。
+ */
 internal fun carMediaSessionQueue(
     context: Context,
     songs: List<SongItem>,
     selectedIndex: Int,
+    currentItemTitleOverride: String? = null,
+    currentItemSubtitleOverride: String? = null,
 ): List<MediaSession.QueueItem> {
     return carQueueWindow(carQueueEntries(songs), selectedIndex).map { entry ->
         val song = entry.song
+        val isCurrent = entry.index == selectedIndex
         val item = CarLibraryItem(
             mediaId = CarMediaIds.song(CarMediaIds.QUEUE, entry.index, song.stableKey()),
-            title = song.displayName(),
-            subtitle = song.displayArtist(),
+            title = if (isCurrent) currentItemTitleOverride ?: song.displayName() else song.displayName(),
+            subtitle = if (isCurrent) {
+                currentItemSubtitleOverride ?: song.displayArtist()
+            } else {
+                song.displayArtist()
+            },
             description = song.album,
             song = song,
         )
