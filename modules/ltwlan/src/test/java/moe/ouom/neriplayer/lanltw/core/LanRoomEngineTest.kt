@@ -227,6 +227,58 @@ class LanRoomEngineTest {
         room.request("member", checkNotNull(LanCodec.decode(packet)))
     }
 
+    private fun Fixture.publishFutureStart(position: Double, hostCompensationMs: Double) {
+        room.observe("host", 0.0, hostCompensationMs)
+        room.request("host", LanMessage("PLAY", intent = "START", track = song, trackTimeSeconds = position))
+        publish(checkNotNull(sent.last().second.loadGeneration))
+        loaded("host"); loaded("member")
+        now = 1_100.0
+        sent.clear()
+    }
+
+    @Test fun refillBeforeRoomStartWaitsForThePublishedAnchor() {
+        val f = Fixture()
+        f.publishFutureStart(0.0, hostCompensationMs = 1_200.0)
+        assertEquals(2_400.0, f.room.snapshot().playback.executeAtMs, 0.0)
+        f.reportRefill(0.0, 2.0)
+        val (recipient, action) = f.sent.single()
+        assertEquals("member", recipient)
+        assertEquals(2_400.0, action.serverTimeToExecute!!, 0.0)
+        assertEquals(0.0, action.scheduledAction!!.trackTimeSeconds, 0.0)
+    }
+
+    @Test fun refillBeforeRoomStartChecksTheBufferAtTheAnchoredMediaPosition() {
+        val f = Fixture()
+        f.publishFutureStart(31.0, hostCompensationMs = 1_200.0)
+        f.reportRefill(31.0, 32.0)
+        assertEquals(2_400.0, f.sent.single().second.serverTimeToExecute!!, 0.0)
+        assertEquals(31.0, f.sent.single().second.scheduledAction!!.trackTimeSeconds, 0.0)
+
+        f.sent.clear()
+        f.reportRefill(30.0, 30.75)
+        val fallback = f.sent.single().second
+        assertEquals(3_000.0, fallback.serverTimeToExecute!!, 0.0)
+        assertEquals(31.6, fallback.scheduledAction!!.trackTimeSeconds, .0001)
+        f.sent.clear()
+        f.room.request("member", LanMessage("SYNC"))
+        assertEquals(fallback, f.sent.single().second)
+    }
+
+    @Test fun refillFallbackAndLegacySyncCannotStartBeforeTheRoomAnchor() {
+        val f = Fixture()
+        f.publishFutureStart(31.0, hostCompensationMs = 4_000.0)
+        assertEquals(5_200.0, f.room.snapshot().playback.executeAtMs, 0.0)
+        f.reportRefill(0.0, 2.0)
+        val action = f.sent.single().second
+        assertEquals(5_200.0, action.serverTimeToExecute!!, 0.0)
+        assertEquals(31.0, action.scheduledAction!!.trackTimeSeconds, 0.0)
+        f.sent.clear()
+        f.room.request("member", LanMessage("SYNC"))
+        val legacy = f.sent.single().second
+        assertEquals(5_200.0, legacy.serverTimeToExecute!!, 0.0)
+        assertEquals(31.0, legacy.scheduledAction!!.trackTimeSeconds, 0.0)
+    }
+
     @Test fun refillTargetsOnlyThePreparedPeerAndKeepsItsTimingMargin() {
         val f = Fixture()
         f.play(); f.loaded("host"); f.loaded("member")

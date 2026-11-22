@@ -236,6 +236,7 @@ class LanMedia3ProgressiveInstrumentedTest {
                     val audio = LanMedia3AudioEngine(context, false, { _, _, _ -> }, {}, {}, {})
                     try {
                         assertTrue(audio.prepare(id, url, token, "audio/wav", 0))
+                        audio.updateRoomClock(0.0, SystemClock.elapsedRealtime())
                         val deadline = SystemClock.elapsedRealtime() + 500L
                         assertTrue(audio.schedule(LanAction("PLAY", "fixture", 0.0), deadline.toDouble(), 0.0, 0))
                         val observed = withTimeoutOrNull(5_000) {
@@ -264,10 +265,13 @@ class LanMedia3ProgressiveInstrumentedTest {
                             assertTrue(audio.prepare(id, url, token, "audio/wav", 0))
                             val nextDeadline = SystemClock.elapsedRealtime() + 500L
                             assertTrue(audio.schedule(LanAction("PLAY", "fixture", 0.0), nextDeadline.toDouble(), 0.0, 0))
-                            delay(600L)
-                            val result = audio.diagnostics()
-                            assertTrue("reopened PCM must reach the output: $result", "outputTiming=tracking-" in result)
-                            android.util.Log.i("LanTimingTest", result)
+                            val tracked = withTimeoutOrNull(5_000L) {
+                                while ("outputTiming=tracking-" !in audio.diagnostics()) delay(50L)
+                                true
+                            }
+                            val diagnostics = audio.diagnostics()
+                            assertTrue("reopened PCM must reach the output: $diagnostics", tracked == true)
+                            android.util.Log.i("LanTimingTest", diagnostics)
                         }
                     } finally {
                         audio.release()

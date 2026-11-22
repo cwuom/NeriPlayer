@@ -9,16 +9,15 @@ internal class LanRoomOutputTiming {
     private var initialOffsetMs = 0.0
     private var offsetMs = 0.0
     private var nudgeDeltaMs = 0
-    private var clockUpdatedAtMs = 0L
+    private var clockUpdatedAtMs: Long? = null
     private var lastSampleMs = Long.MIN_VALUE
     private var routeId: Int? = null
     var errorMs: Double? = null
         private set
 
-    fun arm(generation: Long, plan: LanMedia3StartPlan, clockOffsetMs: Double, nowMs: Long) {
+    fun arm(generation: Long, plan: LanMedia3StartPlan, clockOffsetMs: Double) {
         target = plan
         initialOffsetMs = clockOffsetMs
-        updateClock(clockOffsetMs, nowMs)
         nudgeDeltaMs = 0
         resetSamples()
         hardware.arm(generation, plan.deadlineMs)
@@ -29,6 +28,11 @@ internal class LanRoomOutputTiming {
     fun updateClock(newOffsetMs: Double, elapsedMs: Long) {
         offsetMs = newOffsetMs
         clockUpdatedAtMs = elapsedMs
+    }
+
+    fun resetClock() {
+        clockUpdatedAtMs = null
+        resetSamples()
     }
 
     fun cancel() {
@@ -54,9 +58,10 @@ internal class LanRoomOutputTiming {
 
     fun speed(generation: Long, nowMs: Long, currentSpeed: Float): Float {
         val plan = target ?: return 1f
+        val lastClockMs = clockUpdatedAtMs
         val sample = hardware.observation(generation)
         if (sample == null || nowMs - sample.elapsedMs !in -20.0..500.0 ||
-            nowMs - clockUpdatedAtMs !in 0..MAX_CLOCK_AGE_MS) {
+            lastClockMs == null || nowMs - lastClockMs !in 0..MAX_CLOCK_AGE_MS) {
             resetSamples()
             return 1f
         }

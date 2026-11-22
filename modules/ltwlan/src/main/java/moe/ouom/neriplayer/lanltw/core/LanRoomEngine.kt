@@ -355,9 +355,11 @@ class LanRoomEngine(
 
     private fun syncDeadline(id: String, request: LanMessage): Double {
         val earliest = executeAt(participants = listOf(id))
-        val target = LanSchedule.position(playback.positionSeconds, playback.executeAtMs, earliest)
-        val refill = matchesCurrentStream(request) && request.revision == playback.revision
-        return if (refill && coversStart(request, target)) earliest else earliest + SYNC_PREPARATION_MS
+        val preparedAt = maxOf(earliest + SYNC_PREPARATION_MS, playback.executeAtMs)
+        if (!matchesCurrentStream(request) || request.revision != playback.revision) return preparedAt
+        val refillAt = maxOf(earliest, playback.executeAtMs)
+        val target = LanSchedule.position(playback.positionSeconds, playback.executeAtMs, refillAt)
+        return if (coversStart(request, target)) refillAt else preparedAt
     }
 
     private fun coversStart(request: LanMessage, positionSeconds: Double): Boolean {

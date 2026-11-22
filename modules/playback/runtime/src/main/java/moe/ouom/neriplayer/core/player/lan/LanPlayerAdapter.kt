@@ -71,7 +71,10 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
 
     override fun audioDiagnostics(): String = engine?.diagnostics() ?: "[]"
     override suspend fun initializeAudio() { checkNotNull(engine) }
-    override suspend fun resetAudioClock() { checkNotNull(ntp).reset() }
+    override suspend fun resetAudioClock() {
+        engine?.resetRoomClock()
+        checkNotNull(ntp).reset()
+    }
     override suspend fun receiveProbe(message: LanMessage, receivedAt: Double): LanNtpEstimator.Estimate? =
         checkNotNull(ntp).response(message, receivedAt)
 

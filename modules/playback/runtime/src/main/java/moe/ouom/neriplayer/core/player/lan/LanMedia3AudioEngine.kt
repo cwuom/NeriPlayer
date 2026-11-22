@@ -149,6 +149,11 @@ internal class LanMedia3AudioEngine(
 
     fun updateRoomClock(offsetMs: Double, elapsedMs: Long) = timing.updateClock(offsetMs, elapsedMs)
 
+    fun resetRoomClock() {
+        timing.resetClock()
+        setCorrectionSpeed(1f)
+    }
+
     private fun setCorrectionSpeed(speed: Float) {
         if (player.playbackParameters.speed != speed) player.setPlaybackSpeed(speed)
     }
@@ -253,7 +258,7 @@ internal class LanMedia3AudioEngine(
     }
 
     private suspend fun playAtDeadline(id: String, ticket: Long, plan: LanMedia3StartPlan, offsetMs: Double): Boolean {
-        timing.arm(ticket, plan, offsetMs, now())
+        timing.arm(ticket, plan, offsetMs)
         player.play()
         // 输出线程已接收计划，房间在约定时刻才收到播放完成回报
         try {
