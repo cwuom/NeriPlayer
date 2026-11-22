@@ -13,7 +13,9 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingBackIcon
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingAdaptiveCoverSize
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingTopBarButtonSize
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingPhoneTopActionButtonSize
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingTabletPortraitContentMaxWidth
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideLayoutSpec
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldUseNowPlayingTabletPortraitLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingWideControlSlot
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideControlPlacement
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideControlOffsets
@@ -148,6 +150,17 @@ class NowPlayingAdaptiveLayoutTest {
         assertTrue(isNowPlayingTabletPortrait(isLandscape = false, smallestScreenWidthDp = 800))
         assertFalse(isNowPlayingTabletPortrait(isLandscape = false, smallestScreenWidthDp = 360))
         assertFalse(isNowPlayingTabletPortrait(isLandscape = true, smallestScreenWidthDp = 800))
+    }
+
+    @Test
+    fun `immersive tablet portrait leaves the lyrics layout for the large cover`() {
+        assertTrue(shouldUseNowPlayingTabletPortraitLayout(tabletPortrait = true, immersiveMode = false))
+        assertFalse(shouldUseNowPlayingTabletPortraitLayout(tabletPortrait = true, immersiveMode = true))
+        assertFalse(shouldUseNowPlayingTabletPortraitLayout(tabletPortrait = false, immersiveMode = false))
+        assertEquals(
+            NowPlayingTabletPortraitContentMaxWidth,
+            resolveNowPlayingTabletPortraitLayoutSpec(1_000.dp, 1_400.dp).contentWidth
+        )
     }
 
     @Test

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.onboarding
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.SystemClock
@@ -151,9 +152,18 @@ fun StartupOnboardingScreen(
     val scope = rememberCoroutineScope()
     val repo = AppContainer.settingsRepo
     val autoSettings = remember(context) { AutoSettingsRepository(context.applicationContext) }
-    val steps = StartupStep.entries
-    var stepIndex by rememberSaveable { mutableIntStateOf(0) }
-    val currentStep = steps[stepIndex]
+    val configuration = LocalConfiguration.current
+    val tabletLandscape = isStartupTabletLandscape(
+        isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+        smallestScreenWidthDp = configuration.smallestScreenWidthDp
+    )
+    val steps = remember(tabletLandscape) { startupStepsFor(tabletLandscape) }
+    // 按步骤而不是下标保存, 旋转后序列长度变化也能停在原来那一步
+    var selectedStep by rememberSaveable { mutableStateOf(StartupStep.Language) }
+    val currentStep = resolveStartupStepInSequence(selectedStep, steps)
+    val stepIndex = steps.indexOf(currentStep)
+    // 横屏落到合并后的一步时同步回去, 再转回竖屏不会跳到用户没选过的歌词步骤
+    LaunchedEffect(currentStep) { if (selectedStep != currentStep) selectedStep = currentStep }
     val latestDisclaimerAccepted by rememberUpdatedState(disclaimerAccepted)
 
     var selectedLanguageCode by rememberSaveable {
@@ -273,7 +283,6 @@ fun StartupOnboardingScreen(
 
     // UI 缩放与背景
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsStateWithLifecycle(initialValue = 1.0f)
-    val configuration = LocalConfiguration.current
     val uiScaleRange = UiDensityScalePreference.forDevice(configuration.smallestScreenWidthDp, configuration.uiMode)
     var pendingUiScale by rememberSaveable { mutableFloatStateOf(uiScaleRange.normalize(uiDensityScale)) }
     val appliedPendingUiScale = uiScaleRange.normalize(pendingUiScale)
@@ -445,7 +454,7 @@ fun StartupOnboardingScreen(
     var celebrationOrigin by remember { mutableStateOf<Offset?>(null) }
     val reveal = rememberStartupRevealController(activity)
 
-    val stepTransition = updateTransition(targetState = stepIndex, label = "startup_step")
+    val stepTransition = updateTransition(targetState = currentStep, label = "startup_step")
     val sharedViewport = remember { StartupSharedViewport() }
     var lastStepChangeAt by remember { mutableLongStateOf(0L) }
 
@@ -455,13 +464,13 @@ fun StartupOnboardingScreen(
         if (!canEnterStartupStep(steps[nextIndex], latestDisclaimerAccepted)) return
         policyOpen = false
         lastStepChangeAt = SystemClock.uptimeMillis()
-        stepIndex = nextIndex
+        selectedStep = steps[nextIndex]
     }
     LaunchedEffect(disclaimerAccepted) {
         if (!disclaimerAccepted || !awaitingConsent) return@LaunchedEffect
         awaitingConsent = false
         if (shouldAdvanceAfterStartupConsent(currentStep)) {
-            transitionToStep(StartupStep.Privacy.ordinal + 1)
+            transitionToStep(steps.indexOf(StartupStep.Privacy) + 1)
         }
     }
 
@@ -671,19 +680,33 @@ fun StartupOnboardingScreen(
                     localMediaPermissionLauncher.launch(localMediaPermission)
                 }
             )
-            StartupStep.PlaybackControls -> StartupPlaybackControlsContent(
-                preferences = playbackControlLayoutPreferences,
-                coverLyricFontScale = lyricFontScales.coverLyric,
-                onCoverLyricFontScaleChange = { scale ->
-                    scope.launch { repo.setLyricFontScale(LyricFontScaleTarget.COVER_LYRIC, scale) }
-                },
-                onPreferencesChange = { preferences ->
-                    scope.launch { repo.setPlaybackControlLayoutPreferences(preferences) }
-                },
-                onOpenPreview = ::openNowPlayingPreview,
-                immersiveMode = nowPlayingImmersiveMode,
-                onImmersiveModeChange = ::setNowPlayingImmersiveMode
-            )
+            StartupStep.PlaybackControls -> if (tabletLandscape) {
+                StartupNowPlayingLandscapeContent(
+                    preferences = playbackControlLayoutPreferences,
+                    lyricFontScale = lyricFontScales.lyricsPageLyric,
+                    onLyricFontScaleChange = { scale ->
+                        scope.launch { repo.setLyricFontScale(LyricFontScaleTarget.LYRICS_PAGE_LYRIC, scale) }
+                    },
+                    onPreferencesChange = { preferences ->
+                        scope.launch { repo.setPlaybackControlLayoutPreferences(preferences) }
+                    },
+                    onOpenPreview = ::openNowPlayingPreview
+                )
+            } else {
+                StartupPlaybackControlsContent(
+                    preferences = playbackControlLayoutPreferences,
+                    coverLyricFontScale = lyricFontScales.coverLyric,
+                    onCoverLyricFontScaleChange = { scale ->
+                        scope.launch { repo.setLyricFontScale(LyricFontScaleTarget.COVER_LYRIC, scale) }
+                    },
+                    onPreferencesChange = { preferences ->
+                        scope.launch { repo.setPlaybackControlLayoutPreferences(preferences) }
+                    },
+                    onOpenPreview = ::openNowPlayingPreview,
+                    immersiveMode = nowPlayingImmersiveMode,
+                    onImmersiveModeChange = ::setNowPlayingImmersiveMode
+                )
+            }
             StartupStep.Lyrics -> StartupLyricsContent(
                 preferences = playbackControlLayoutPreferences,
                 lyricFontScale = lyricFontScales.lyricsPageLyric,
@@ -723,7 +746,7 @@ fun StartupOnboardingScreen(
             StartupStep.BackupRestore -> session?.let { StartupBackupRestoreStepBody(it) }
             StartupStep.LearningGuide -> StartupFinishStepBody(
                 summaries = choiceSummaries,
-                onChoiceClick = { choice -> transitionToStep(choice.step.ordinal) }
+                onChoiceClick = { choice -> transitionToStep(steps.indexOf(choice.step)) }
             )
         }
     }
@@ -731,7 +754,7 @@ fun StartupOnboardingScreen(
     @Composable
     fun StepHero(step: StartupStep, layout: StartupHeroLayout, visibilityScope: AnimatedVisibilityScope) {
         StartupStepHero(
-            spec = startupHeroSpec(step),
+            spec = startupHeroSpec(step, tabletLandscape),
             layout = layout,
             visibilityScope = visibilityScope,
             accessory = {
@@ -758,8 +781,8 @@ fun StartupOnboardingScreen(
         ) {
             val colors = MaterialTheme.colorScheme
             val glassOwners = resolveStartupGlassNavigationOwners(
-                steps[stepTransition.currentState],
-                steps[stepTransition.targetState]
+                stepTransition.currentState,
+                stepTransition.targetState
             )
             AdvancedGlassHost(
                 controller = advancedGlassController,
@@ -784,7 +807,7 @@ fun StartupOnboardingScreen(
                                         .background(colors.background)
                                 ) {
                                     StartupAmbientBackdrop(
-                                        stepIndex = stepIndex,
+                                        step = currentStep,
                                         hasCustomBackground = backgroundImageUri != null
                                     )
                                     CustomBackground(
@@ -802,7 +825,7 @@ fun StartupOnboardingScreen(
                                         header = {
                                             val twoPane = LocalStartupOnboardingTwoPane.current
                                             Column(modifier = Modifier.fillMaxWidth()) {
-                                                StartupProgressHeader(stepIndex = stepIndex, stepCount = steps.size)
+                                                StartupProgressHeader(steps = steps, stepIndex = stepIndex)
                                                 Column(modifier = Modifier.animateContentSize(spring(0.9f, 420f))) {
                                                     if (currentStep != StartupStep.Language) {
                                                         Spacer(Modifier.height(10.dp))
@@ -810,7 +833,7 @@ fun StartupOnboardingScreen(
                                                     StartupChoiceRail(
                                                         currentStep = currentStep,
                                                         summaries = choiceSummaries,
-                                                        onChoiceClick = { choice -> transitionToStep(choice.step.ordinal) }
+                                                        onChoiceClick = { choice -> transitionToStep(steps.indexOf(choice.step)) }
                                                     )
                                                 }
                                                 if (twoPane) {
@@ -822,8 +845,8 @@ fun StartupOnboardingScreen(
                                                                 .togetherWith(fadeOut(tween(140)) + slideOutVertically(tween(200)) { -it / 10 })
                                                                 .using(SizeTransform(clip = false))
                                                         }
-                                                    ) { index ->
-                                                        StepHero(steps[index], StartupHeroLayout.Pane, this)
+                                                    ) { step ->
+                                                        StepHero(step, StartupHeroLayout.Pane, this)
                                                     }
                                                 }
                                             }
@@ -861,8 +884,7 @@ fun StartupOnboardingScreen(
                                             transitionSpec = {
                                                 startupStepContentTransform(forward = targetState > initialState, clean = clean)
                                             }
-                                        ) { index ->
-                                            val step = steps[index]
+                                        ) { step ->
                                             // 卡片模糊由宿主统一绘制, 不在页面图层里; 页面和玻璃读同一个透明度才不会一先一后
                                             val stepAlpha = rememberStartupStepAlpha(clean)
                                             val parentGlassOpacity = LocalAdvancedGlassSceneOpacity.current
@@ -916,7 +938,7 @@ fun StartupOnboardingScreen(
                                                         ) {
                                                             StepBody(
                                                                 step = step,
-                                                                sceneActive = index == stepIndex && !stepTransition.isRunning && !finishing
+                                                                sceneActive = step == currentStep && !stepTransition.isRunning && !finishing
                                                             )
                                                         }
                                                         Spacer(Modifier.height(16.dp))
@@ -1048,7 +1070,7 @@ fun StartupOnboardingScreen(
 }
 
 @Composable
-private fun startupHeroSpec(step: StartupStep): StartupHeroSpec = when (step) {
+private fun startupHeroSpec(step: StartupStep, tabletLandscape: Boolean): StartupHeroSpec = when (step) {
     StartupStep.Language -> StartupHeroSpec(
         null, 9,
         stringResource(AppR.string.onboarding_title), stringResource(AppR.string.onboarding_subtitle)
@@ -1080,7 +1102,10 @@ private fun startupHeroSpec(step: StartupStep): StartupHeroSpec = when (step) {
     )
     StartupStep.PlaybackControls -> StartupHeroSpec(
         Icons.Rounded.PlayCircle, 10,
-        stringResource(AppR.string.onboarding_controls_title), stringResource(AppR.string.onboarding_controls_desc)
+        stringResource(AppR.string.onboarding_controls_title),
+        stringResource(
+            if (tabletLandscape) AppR.string.onboarding_controls_landscape_desc else AppR.string.onboarding_controls_desc
+        )
     )
     StartupStep.Lyrics -> StartupHeroSpec(
         Icons.Rounded.Subtitles, 8,

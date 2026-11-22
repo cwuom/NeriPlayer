@@ -27,11 +27,18 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 
 /** 平板双栏时标题区移到左栏, 步骤内容只放可操作的部分 */
 internal val LocalStartupOnboardingTwoPane = staticCompositionLocalOf { false }
+
+/** 竖屏平板和手机一样单栏阅读, 只有横向够宽时才把标题和设置并排 */
+internal fun isStartupOnboardingTwoPane(width: Dp, height: Dp): Boolean =
+    width >= StartupOnboardingTwoPaneMinWidth && width > height
+
+private val StartupOnboardingTwoPaneMinWidth = 600.dp
 
 @Composable
 internal fun StartupOnboardingLayout(
@@ -45,7 +52,7 @@ internal fun StartupOnboardingLayout(
             .windowInsetsPadding(WindowInsets.safeDrawing)
     ) {
         val compactHeight = maxHeight < 480.dp
-        val twoPane = maxWidth >= 600.dp
+        val twoPane = isStartupOnboardingTwoPane(maxWidth, maxHeight)
         val compactWidth = maxWidth < 720.dp
         val compactSpacing = compactHeight || compactWidth
         val sidebarWidth = (maxWidth * 0.34f).coerceIn(

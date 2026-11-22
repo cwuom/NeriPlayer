@@ -21,6 +21,7 @@ import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
@@ -250,6 +251,56 @@ class StartupOnboardingExtrasComposeTest {
             ),
             changes
         )
+    }
+
+    @Test
+    fun `tablet landscape step keeps only options that apply beside the lyrics and points to portrait`() {
+        val changes = mutableListOf<PlaybackControlLayoutPreferences>()
+        val scales = mutableListOf<Float>()
+        var previewRequests = 0
+        setStep {
+            StartupNowPlayingLandscapeContent(
+                preferences = PlaybackControlLayoutPreferences(),
+                lyricFontScale = 1f,
+                onLyricFontScaleChange = { scales += it },
+                onPreferencesChange = { changes += it },
+                onOpenPreview = { previewRequests += 1 }
+            )
+        }
+
+        composeRule.onNodeWithTag(StartupLandscapePortraitHintTag).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_landscape_portrait_hint_title)).assertExists()
+        // 横屏播放页里不生效的选项不能出现
+        composeRule.onNodeWithText(string(CoreCommonR.string.settings_nowplaying_immersive_mode)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_controls_cover_lyrics_size_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_lyrics_control_size_title)).assertDoesNotExist()
+
+        clickText(string(AppR.string.onboarding_preview_hint_open))
+        clickText(string(CoreCommonR.string.settings_playback_control_size_large))
+        setLyricScaleSlider(to = 1.2f)
+
+        assertEquals(1, previewRequests)
+        assertEquals(
+            listOf(
+                PlaybackControlLayoutPreferences(
+                    nowPlayingSize = PlaybackControlSize.LARGE,
+                    lyricsSize = PlaybackControlSize.LARGE
+                )
+            ),
+            changes
+        )
+        assertEquals(listOf(1.2f), scales)
+    }
+
+    @Test
+    fun `progress header reads the chapter from the merged landscape sequence`() {
+        val steps = startupStepsFor(tabletLandscape = true)
+        val index = steps.indexOf(StartupStep.Personalize)
+        setStep { StartupProgressHeader(steps = steps, stepIndex = index) }
+
+        composeRule.onNodeWithText(string(AppR.string.onboarding_step_counter, index + 1, steps.size)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_chapter_personalize)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_chapter_playback)).assertDoesNotExist()
     }
 
     @Test

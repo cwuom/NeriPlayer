@@ -35,6 +35,7 @@ private val NowPlayingCompactPlayerPaneMaxWidth = 340.dp
 private val NowPlayingPhoneLandscapeMinimumContentHeight = 240.dp
 private val NowPlayingTabletPortraitFixedContentReserve = 480.dp
 private val NowPlayingTabletPortraitCoverMaxSize = 336.dp
+internal val NowPlayingTabletPortraitContentMaxWidth = 560.dp
 private val NowPlayingExpandedCoverIdentitySpacing = 20.dp
 private const val NOW_PLAYING_EXPANDED_CONTROLS_SPACER_WEIGHT = 0.12f
 private const val NOW_PLAYING_TABLET_LANDSCAPE_COVER_WIDTH_FRACTION = 0.72f
@@ -49,6 +50,12 @@ internal fun isNowPlayingTabletPortrait(
     isLandscape: Boolean,
     smallestScreenWidthDp: Int
 ): Boolean = !isLandscape && smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
+
+/** 沉浸模式不显示封面歌词, 竖屏平板改走大封面布局, 不给隐藏的歌词留空位 */
+internal fun shouldUseNowPlayingTabletPortraitLayout(
+    tabletPortrait: Boolean,
+    immersiveMode: Boolean
+): Boolean = tabletPortrait && !immersiveMode
 
 internal fun shouldUseStandaloneNowPlayingLyricsPage(
     showLyricsScreen: Boolean,
@@ -207,7 +214,7 @@ internal fun resolveNowPlayingTabletPortraitLayoutSpec(
     availableWidth: Dp,
     availableHeight: Dp
 ): NowPlayingTabletPortraitLayoutSpec {
-    val contentWidth = minOf(availableWidth, 560.dp)
+    val contentWidth = minOf(availableWidth, NowPlayingTabletPortraitContentMaxWidth)
     // 短竖屏优先为控件和歌词留空间，封面只占预留后高度的一半
     val coverHeightBudget = (availableHeight - NowPlayingTabletPortraitFixedContentReserve)
         .coerceAtLeast(0.dp) * 0.5f
