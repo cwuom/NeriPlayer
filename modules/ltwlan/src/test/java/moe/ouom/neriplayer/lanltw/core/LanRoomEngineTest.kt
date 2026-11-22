@@ -4,6 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import moe.ouom.neriplayer.data.model.lan.*
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
+import moe.ouom.neriplayer.lanltw.protocol.LanCodec
 
 class LanRoomEngineTest {
     @Test fun roomVolumeStartsAtHostMediaVolumeAndOnlyChangesWithGroupCommands() {
@@ -219,6 +220,58 @@ class LanRoomEngineTest {
         val m = f.sent.last().second
         assertEquals(6900.0, m.serverTimeToExecute!!, .0001)
         assertEquals(5.5, m.scheduledAction!!.trackTimeSeconds, .0001)
+    }
+
+    private fun Fixture.reportRefill(from: Double, until: Double, mediaId: String = stream.mediaId, revision: Long = 1) {
+        val packet = """{"type":"SYNC","mediaId":"$mediaId","revision":$revision,"trackTimeSeconds":$from,"bufferedUntilSeconds":$until}"""
+        room.request("member", checkNotNull(LanCodec.decode(packet)))
+    }
+
+    @Test fun refillTargetsOnlyThePreparedPeerAndKeepsItsTimingMargin() {
+        val f = Fixture()
+        f.play(); f.loaded("host"); f.loaded("member")
+        f.room.observe("member", 500.0, 0.0)
+        f.room.observe("host", 3000.0, 5000.0)
+        f.now = 5000.0
+        val original = f.room.snapshot().playback
+        f.sent.clear()
+        f.reportRefill(3.0, 5.2)
+        val (recipient, message) = f.sent.single()
+        assertEquals("member", recipient)
+        assertEquals(5950.0, message.serverTimeToExecute!!, .0001)
+        assertEquals(4.55, message.scheduledAction!!.trackTimeSeconds, .0001)
+        assertEquals(original, f.room.snapshot().playback)
+    }
+
+    @Test fun refillKeepsNormalLeadWhenProjectedPlaybackIsOutsideThePlayableWindow() {
+        val f = Fixture()
+        f.play(); f.loaded("host"); f.loaded("member")
+        f.now = 5000.0
+        // 首播目标为 4 秒，还需要保留起播所需的音频
+        for ((start, end) in listOf(1.0 to 4.59, 4.1 to 12.0, 3.5 to 2.5)) {
+            f.sent.clear()
+            f.reportRefill(start, end)
+            assertEquals(6900.0, f.sent.single().second.serverTimeToExecute!!, .0001)
+        }
+        val report = LanMessage("SYNC", mediaId = f.stream.mediaId, revision = 1)
+        val buffered = report.copy(trackTimeSeconds = 2.0, bufferedUntilSeconds = 8.0)
+        for (incomplete in listOf(report, buffered.copy(mediaId = null), buffered.copy(revision = null))) {
+            f.sent.clear()
+            f.room.request("member", incomplete)
+            assertEquals(6900.0, f.sent.single().second.serverTimeToExecute!!, .0001)
+        }
+    }
+
+    @Test fun staleRefillCannotReplaceANewerPlanForTheSamePeer() {
+        val f = Fixture()
+        f.play(); f.loaded("host"); f.loaded("member")
+        f.now = 5000.0
+        f.sent.clear()
+        f.reportRefill(0.0, 12.0, revision = 0)
+        f.reportRefill(0.0, 12.0, mediaId = "old-stream")
+        assertTrue(f.sent.isEmpty())
+        f.room.request("member", LanMessage("SYNC"))
+        assertEquals(6900.0, f.sent.single().second.serverTimeToExecute!!, .0001)
     }
     @Test fun compensationCanReturnToZeroAndOfflinePeersStopInflatingDelay() {
         val f = Fixture(); f.room.observe("member", 500.0, 4000.0); f.play(); f.loaded("host"); f.loaded("member")

@@ -10,7 +10,6 @@ import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -28,8 +27,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.lan.timing.LanHardwareRenderersFactory
 import moe.ouom.neriplayer.core.player.lan.timing.LanRoomOutputTiming
+import moe.ouom.neriplayer.core.player.lifecycle.buildLanAudioLoadControl
 import moe.ouom.neriplayer.data.model.lan.LanAction
 import moe.ouom.neriplayer.lanltw.audio.LanAudioState
+import moe.ouom.neriplayer.lanltw.core.LanSchedule
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import java.net.Proxy
@@ -57,9 +58,7 @@ internal class LanMedia3AudioEngine(
     private val timing = LanRoomOutputTiming()
     private val player = ExoPlayer.Builder(context, LanHardwareRenderersFactory(context, timing.hardware)
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON))
-        .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(
-            REFILL_THRESHOLD_MS, DefaultLoadControl.DEFAULT_MAX_BUFFER_MS, START_BUFFER_MS, REBUFFER_RESUME_MS
-        ).build())
+        .setLoadControl(buildLanAudioLoadControl())
         .setAudioAttributes(AudioAttributes.DEFAULT, handleAudioFocus)
         .build()
     private var generation = 0L
@@ -70,6 +69,7 @@ internal class LanMedia3AudioEngine(
     private var reportedAudioFormat: Format? = null
     val mediaId: String? get() = player.currentMediaItem?.mediaId
     val audioFormat: Format? get() = player.audioFormat
+    val bufferedUntilSeconds: Double get() = player.bufferedPosition / 1000.0
     val positionSeconds: Double get() = (timing.upcomingPositionMs(now()) ?: player.currentPosition)
         .coerceIn(0, actualDurationMs() ?: Long.MAX_VALUE) / 1000.0
     val playing: Boolean get() = player.isPlaying && timing.upcomingPositionMs(now()) == null
@@ -226,32 +226,45 @@ internal class LanMedia3AudioEngine(
         }
         if (action.type != "PLAY") return false
         player.pause()
-        repeat(2) {
+        val loadDeadlineMs = now() + PREPARE_TIMEOUT_MS
+        var missedDeadline = false
+        while (generation == ticket && mediaId == id && player.playerError == null && now() < loadDeadlineMs) {
             val plan = planLanMedia3Start(now(), deadlineMs, offsetMs, nudgeMs, action.trackTimeSeconds, actualDurationMs())
                 ?: return finishMissedTail()
+            // 原计划过期后继续接收同一段，等缓存覆盖房间的新位置再定位
+            if (missedDeadline && !bufferCoversStart(plan.positionMs)) {
+                delay(READY_POLL_MS)
+                continue
+            }
             if (!seekToPosition(plan.positionMs)) {
                 onSeekUnavailable()
                 return false
             }
-            val waitMs = (plan.deadlineMs - now()).coerceAtLeast(1L)
-            if (withTimeoutOrNull(waitMs) { awaitReady(id, ticket) } == true) {
-                if (ticket != generation || !ready(id)) return false
-                timing.arm(ticket, plan, offsetMs, now())
-                player.play()
-                // 输出线程已接收计划，房间在约定时刻才收到播放完成回报
-                try {
-                    delay((plan.deadlineMs - now()).coerceAtLeast(0L))
-                } catch (cancelled: CancellationException) {
-                    if (generation == ticket) cancelSchedule()
-                    throw cancelled
-                }
-                if (generation != ticket || mediaId != id) return false
-                if (ready(id) && player.playWhenReady && player.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE) return true
-                cancelSchedule()
-                return false
-            }
-            if (ticket != generation || player.playerError != null) return false
+            if (withTimeoutOrNull(loadDeadlineMs - now()) { awaitReady(id, ticket) } != true) return false
+            if (now() <= plan.deadlineMs) return playAtDeadline(id, ticket, plan, offsetMs)
+            missedDeadline = true
         }
+        return false
+    }
+
+    private fun bufferCoversStart(positionMs: Long): Boolean {
+        val endMs = (positionMs + LanSchedule.START_BUFFER_MS).coerceAtMost(actualDurationMs() ?: Long.MAX_VALUE)
+        return player.bufferedPosition >= endMs || abs(positionMs - player.currentPosition) <= SEEK_TOLERANCE_MS
+    }
+
+    private suspend fun playAtDeadline(id: String, ticket: Long, plan: LanMedia3StartPlan, offsetMs: Double): Boolean {
+        timing.arm(ticket, plan, offsetMs, now())
+        player.play()
+        // 输出线程已接收计划，房间在约定时刻才收到播放完成回报
+        try {
+            delay((plan.deadlineMs - now()).coerceAtLeast(0L))
+        } catch (cancelled: CancellationException) {
+            if (generation == ticket) cancelSchedule()
+            throw cancelled
+        }
+        if (generation != ticket || mediaId != id) return false
+        if (ready(id) && player.playWhenReady && player.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE) return true
+        cancelSchedule()
         return false
     }
 
@@ -360,10 +373,6 @@ internal class LanMedia3AudioEngine(
 
     companion object {
         private const val LOG_TAG = "NERI-LanAudio"
-        // 首播保持低延迟，播放中提前补充数据，断流后积累足够余量再恢复
-        private const val REFILL_THRESHOLD_MS = 15_000
-        private const val START_BUFFER_MS = 600
-        private const val REBUFFER_RESUME_MS = 5_000
         private const val PREPARE_TIMEOUT_MS = 20_000L
         private const val READY_POLL_MS = 20L
         private const val SEEK_TOLERANCE_MS = 20L

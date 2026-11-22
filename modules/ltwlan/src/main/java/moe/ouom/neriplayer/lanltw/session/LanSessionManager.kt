@@ -146,10 +146,11 @@ class LanSessionManager(
         playback.watchPlaybackRefill { mediaId ->
             val current = state.value
             val plan = current.room?.playback
-            val player = scheduler
+            val player = scheduler ?: return@watchPlaybackRefill
             val activePlan = progressTicket.isCurrent && connected && !playback.isPlaying() && !current.audioSuspended &&
-                plan?.playing == true && player != null && player.playbackRevision == plan.revision && player.mediaId == mediaId
-            if (activePlan) send(LanMessage("SYNC"))
+                plan?.playing == true && player.playbackRevision == plan.revision && player.mediaId == mediaId
+            if (activePlan) send(LanMessage("SYNC", mediaId = mediaId, revision = player.playbackRevision,
+                trackTimeSeconds = playback.positionSeconds(), bufferedUntilSeconds = playback.bufferedUntilSeconds))
         }
         playback.begin(::requestPlayback) { leave("SERVICE_STOPPED") }
         (playback as? LanScheduledAudioPort)?.let { it.initializeAudio(); it.resetAudioClock() }

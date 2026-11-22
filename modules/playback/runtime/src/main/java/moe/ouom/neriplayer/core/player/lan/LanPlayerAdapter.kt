@@ -66,6 +66,7 @@ class LanPlayerAdapter(private val hosting: () -> Boolean) : LanPlaybackPort, La
     override var preparationError: String = "SOURCE"
         private set
     override val preparedMediaId: String? get() = engine?.let { audio -> audio.mediaId?.takeIf(audio::ready) }
+    override val bufferedUntilSeconds: Double? get() = engine?.bufferedUntilSeconds
     override val outputLatencyMs: Double get() = 0.0
 
     override fun audioDiagnostics(): String = engine?.diagnostics() ?: "[]"

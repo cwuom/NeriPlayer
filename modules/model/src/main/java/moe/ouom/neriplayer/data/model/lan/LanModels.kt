@@ -83,7 +83,8 @@ internal object LanPermissionsSerializer : KSerializer<LanPermissions> {
     val presentationResource: LanFileResource? = null,
     val t0: Double? = null, val t1: Double? = null, val t2: Double? = null,
     val probeGroupId: Int? = null, val probeGroupIndex: Int? = null,
-    val clientRTT: Double? = null, val clientCompensationMs: Double? = null, val clientNudgeMs: Double? = null
+    val clientRTT: Double? = null, val clientCompensationMs: Double? = null, val clientNudgeMs: Double? = null,
+    val bufferedUntilSeconds: Double? = null
 )
 
 data class LanDiscoveredRoom(val key: String, val name: String, val address: String, val port: Int)

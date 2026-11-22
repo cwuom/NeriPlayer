@@ -24,6 +24,43 @@ class AudioLoadControlFactoryTest {
     private val mediaPeriodId = MediaPeriodId("audio-load-control-period")
     private val stream = MediaItem.fromUri("https://example.invalid/song.flac")
     private val local = MediaItem.fromUri("content://media/external/audio/media/1")
+    private val lan = MediaItem.fromUri("http://127.0.0.1/media/song")
+
+    @Test
+    fun `lan resumes loading below thirty seconds after filling its fifty second window`() {
+        val loadControl = buildLanAudioLoadControl()
+        loadControl.onPrepared(playerId)
+
+        assertTrue(loadControl.shouldContinueLoading(parameters(600, item = lan)))
+        assertTrue(loadControl.shouldContinueLoading(parameters(49_999, item = lan)))
+        assertFalse(loadControl.shouldContinueLoading(parameters(50_000, item = lan)))
+        assertFalse(loadControl.shouldContinueLoading(parameters(30_000, item = lan)))
+        assertTrue(loadControl.shouldContinueLoading(parameters(29_999, item = lan)))
+        assertEquals(0L, loadControl.getBackBufferDurationUs(playerId))
+
+        loadControl.onReleased(playerId)
+    }
+
+    @Test
+    fun `lan requires enough playable time even when high bitrate audio fills the byte budget`() {
+        val loadControl = buildLanAudioLoadControl()
+        loadControl.onPrepared(playerId)
+        val allocator = loadControl.getAllocator(playerId)
+        val allocations = List(DefaultLoadControl.DEFAULT_AUDIO_BUFFER_SIZE / allocator.individualAllocationLength) {
+            allocator.allocate()
+        }
+        try {
+            assertTrue(loadControl.shouldContinueLoading(parameters(10_000, item = lan)))
+            assertFalse(loadControl.shouldContinueLoading(parameters(30_000, item = lan)))
+            assertFalse(loadControl.shouldStart(599, item = lan))
+            assertTrue(loadControl.shouldStart(600, item = lan))
+            assertFalse(loadControl.shouldStart(4_999, rebuffering = true, item = lan))
+            assertTrue(loadControl.shouldStart(5_000, rebuffering = true, item = lan))
+        } finally {
+            allocations.forEach(allocator::release)
+            loadControl.onReleased(playerId)
+        }
+    }
 
     @Test
     fun `audio playback starts after one second`() {

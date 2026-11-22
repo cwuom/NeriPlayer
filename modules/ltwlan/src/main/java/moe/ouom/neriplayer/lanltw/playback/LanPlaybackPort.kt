@@ -13,6 +13,7 @@ data class LanPreparedSource(val track: ListenTogetherTrack, val streamResource:
 /** All calls occur on the player's application thread. Preparation must not start playback. */
 interface LanPlaybackPort {
     val preparedMediaId: String? get() = null
+    val bufferedUntilSeconds: Double? get() = null
     val schedulingLeadMs: Double get() = 0.0
     val preparationError: String get() = "SOURCE"
     fun watchTransferProgress(handler: (Long, Long) -> Unit) = Unit

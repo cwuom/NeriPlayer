@@ -42,6 +42,68 @@ class LanMedia3ProgressiveInstrumentedTest {
     @Test(timeout = 35_000L)
     fun seekCancelsAStalledPreviousRequestAndOpensARange() = exerciseSeek(releaseInitialRead = false)
 
+    @Test(timeout = 25_000L)
+    fun lateRangeReadSurvivesItsOriginalPlayDeadline() = runBlocking {
+        val server = LanMediaServer()
+        val resource = UUID.randomUUID().toString()
+        val initialLimit = WAV_SAMPLE_RATE * 2L * 4
+        val header = wavHeader()
+        val total = header.size + WAV_DATA_SIZE.toLong()
+        val initialGate = CountDownLatch(1)
+        val rangeGate = CountDownLatch(1)
+        val rangeTail = CountDownLatch(1)
+        val rangePrefixSent = CountDownLatch(1)
+        val rangeRequests = AtomicInteger()
+        try {
+            server.start(30_000, true)
+            val token = server.grant("slow-seek")
+            server.publishStream(resource, "audio/wav", total) { offset, length ->
+                val isRange = offset >= initialLimit
+                if (isRange) {
+                    rangeRequests.incrementAndGet()
+                    check(rangeGate.await(10, TimeUnit.SECONDS))
+                }
+                val end = offset + (length ?: (total - offset))
+                val prefixEnd = if (isRange) offset + WAV_SAMPLE_RATE * 2L else initialLimit
+                val stream = wavBytes(header, offset, end, prefixEnd, if (isRange) rangeTail else initialGate,
+                    if (isRange) rangePrefixSent else CountDownLatch(1))
+                LanMediaStreamInput(stream, end - offset)
+            }
+            val url = "http://127.0.0.1:${server.listeningPort}/media/$resource".toHttpUrl()
+            withContext(Dispatchers.Main) {
+                val audio = LanMedia3AudioEngine(InstrumentationRegistry.getInstrumentation().targetContext,
+                    false, { _, _, _ -> }, {}, {}, {})
+                try {
+                    assertTrue(audio.prepare(resource, url, token, "audio/wav", 0))
+                    val deadline = SystemClock.elapsedRealtime() + 200L
+                    val start = async { audio.schedule(LanAction("PLAY", resource, 45.0), deadline.toDouble(), 0.0, 0) }
+                    withTimeout(5_000) { while (rangeRequests.get() == 0) delay(10) }
+                    delay(1_800)
+                    assertEquals("a missed deadline must keep the pending range", 1, rangeRequests.get())
+                    rangeGate.countDown()
+                    withTimeout(4_000) { while (rangePrefixSent.count > 0) delay(10) }
+                    delay(600)
+                    assertEquals("one playable second cannot cover the moving room target", 1, rangeRequests.get())
+                    rangeTail.countDown()
+                    assertTrue("room recovery failed after data arrived", withTimeout(8_000) { start.await() })
+                    val expected = 45.0 + (SystemClock.elapsedRealtime() - deadline) / 1000.0
+                    assertTrue("stale recovery position ${audio.positionSeconds}, expected $expected",
+                        kotlin.math.abs(audio.positionSeconds - expected) < 0.2)
+                } finally {
+                    initialGate.countDown()
+                    rangeGate.countDown()
+                    rangeTail.countDown()
+                    audio.release()
+                }
+            }
+        } finally {
+            initialGate.countDown()
+            rangeGate.countDown()
+            rangeTail.countDown()
+            server.stop()
+        }
+    }
+
     @Test(timeout = 35_000L)
     fun relayKeepsAnEndSeekPausedAndFinishesAnEndSeekWhilePlaying() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
