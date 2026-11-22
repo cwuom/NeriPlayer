@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.BoundsTransform
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SizeTransform
@@ -44,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -207,34 +209,57 @@ internal fun Modifier.startupContainerTransform(handle: StartupSharedHandle?, zI
     }
 }
 
+/**
+ * 步骤切换只负责位移, 透明度交给 [rememberStartupStepAlpha]
+ * 不带 SizeTransform: 步骤页本来就撑满内容区, 尺寸动画落后于约束时整页会被居中下移, 徽记跟着被视口裁掉一截
+ */
 internal fun startupStepContentTransform(forward: Boolean, clean: Boolean): ContentTransform {
     val direction = if (forward) 1 else -1
-    // 旧页在 90ms 内淡出, 新页 90ms 后才开始淡入, 两页的文字不会同时出现
     val transform = if (clean) {
         val push = spring(dampingRatio = 0.92f, stiffness = 420f, visibilityThreshold = IntOffset.VisibilityThreshold)
-        (slideInHorizontally(push) { width -> width * direction / 4 } +
-            fadeIn(tween(durationMillis = 180, delayMillis = 90, easing = LinearOutSlowInEasing)))
-            .togetherWith(
-                slideOutHorizontally(push) { width -> -width * direction / 8 } +
-                    fadeOut(tween(durationMillis = 90, easing = FastOutLinearInEasing))
-            )
+        slideInHorizontally(push) { width -> width * direction / 4 }
+            .togetherWith(slideOutHorizontally(push) { width -> -width * direction / 8 })
     } else {
         // Material 共享轴: 位移克制, 节奏来自强调缓动
-        (slideInHorizontally(tween(durationMillis = 400, easing = NeriMotion.EmphasizedDecelerate)) { width ->
+        slideInHorizontally(tween(durationMillis = 400, easing = NeriMotion.EmphasizedDecelerate)) { width ->
             (width * 0.14f * direction).toInt()
-        } + fadeIn(tween(durationMillis = 200, delayMillis = 90, easing = LinearOutSlowInEasing)))
-            .togetherWith(
-                slideOutHorizontally(tween(durationMillis = 240, easing = NeriMotion.EmphasizedAccelerate)) { width ->
-                    -(width * 0.06f * direction).toInt()
-                } + fadeOut(tween(durationMillis = 90, easing = FastOutLinearInEasing))
-            )
+        }.togetherWith(
+            slideOutHorizontally(tween(durationMillis = 240, easing = NeriMotion.EmphasizedAccelerate)) { width ->
+                -(width * 0.06f * direction).toInt()
+            }
+        )
     }
     return ContentTransform(
         targetContentEnter = transform.targetContentEnter,
         initialContentExit = transform.initialContentExit,
-        sizeTransform = SizeTransform(clip = false)
+        sizeTransform = null
     )
 }
+
+/**
+ * 步骤页的透明度: 页面内容和卡片玻璃读同一个值
+ * 连续切换会打断上一次动画, 各自独立淡入淡出时会出现文字已经消失, 模糊板还留在原处
+ * 旧页 90ms 内淡出, 新页 90ms 后才开始淡入, 两页的文字不会同时出现
+ */
+@Composable
+internal fun AnimatedVisibilityScope.rememberStartupStepAlpha(clean: Boolean): State<Float> =
+    transition.animateFloat(
+        transitionSpec = {
+            if (targetState == EnterExitState.Visible) {
+                tween(
+                    durationMillis = if (clean) 180 else 200,
+                    delayMillis = STARTUP_STEP_FADE_IN_DELAY_MILLIS,
+                    easing = LinearOutSlowInEasing
+                )
+            } else {
+                tween(durationMillis = STARTUP_STEP_FADE_OUT_MILLIS, easing = FastOutLinearInEasing)
+            }
+        },
+        label = "startup_step_alpha"
+    ) { state -> if (state == EnterExitState.Visible) 1f else 0f }
+
+private const val STARTUP_STEP_FADE_IN_DELAY_MILLIS = 90
+private const val STARTUP_STEP_FADE_OUT_MILLIS = 90
 
 /** 波浪圆: 花瓣数在两个整数之间插值, 让徽记在步骤之间变形而不是切换 */
 private fun scallopRadius(lobes: Int, theta: Float, depth: Float): Float =
