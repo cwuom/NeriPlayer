@@ -73,6 +73,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -478,6 +479,7 @@ fun NeriMiniPlayer(
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
     playPauseEnabled: Boolean = true,
+    skipEnabled: Boolean = true,
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -491,7 +493,9 @@ fun NeriMiniPlayer(
     visualCoverIdentityKey: String? = null,
     hasCurrentSong: Boolean = true,
     tabletControls: MiniPlayerTabletControls? = null,
-    clearCover: Boolean = false
+    clearCover: Boolean = false,
+    // 不贴底栏单独悬浮时传入完整圆角外形, 玻璃层和裁切共用同一个形状
+    containerShape: Shape? = null
 ) {
     val context = LocalContext.current
     val smallestScreenWidthDp = LocalConfiguration.current.smallestScreenWidthDp
@@ -505,7 +509,7 @@ fun NeriMiniPlayer(
     } else {
         MaterialTheme.colorScheme.onSecondaryContainer
     }
-    val shape = when {
+    val shape = containerShape ?: when {
         useTabletControls -> RectangleShape
         cleanStyle -> NeriDesign.tokens.miniPlayerShape
         else -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
@@ -578,6 +582,7 @@ fun NeriMiniPlayer(
         (LocalConfiguration.current.screenHeightDp.dp * 0.5f).toPx()
     }
     val currentOnNext by rememberUpdatedState(onNext)
+    val currentSkipEnabled by rememberUpdatedState(skipEnabled)
     val swipeOffset = remember { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -896,8 +901,8 @@ fun NeriMiniPlayer(
                     Modifier
                 }
             )
-            .pointerInput(useTabletControls) {
-                if (useTabletControls) return@pointerInput
+            .pointerInput(useTabletControls, skipEnabled) {
+                if (useTabletControls || !skipEnabled) return@pointerInput
                 detectHorizontalDragGestures(
                     onDragStart = {
                         swipeJob?.cancel()
@@ -927,12 +932,12 @@ fun NeriMiniPlayer(
                         when {
                             finalDistancePx <= -swipeThresholdPx -> animateSwipeRelease(
                                 targetDirection = -1f,
-                                onComplete = { currentOnNext() }
+                                onComplete = { if (currentSkipEnabled) currentOnNext() }
                             )
 
                             finalDistancePx >= swipeThresholdPx -> animateSwipeRelease(
                                 targetDirection = 1f,
-                                onComplete = { currentOnPrevious() }
+                                onComplete = { if (currentSkipEnabled) currentOnPrevious() }
                             )
 
                             else -> {
@@ -994,6 +999,7 @@ fun NeriMiniPlayer(
                 TabletMiniPlayerContent(
                     controls = tabletControls,
                     playPauseEnabled = playPauseEnabled,
+                    skipEnabled = skipEnabled,
                     onPlayPause = onPlayPause,
                     onPrevious = onPrevious,
                     onNext = onNext,
@@ -1037,7 +1043,7 @@ fun NeriMiniPlayer(
                             pauseContentDescription = stringResource(CoreCommonR.string.lyrics_pause),
                             restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
                             waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
-                            color = MaterialTheme.colorScheme.onPrimary,
+                            color = if (playPauseEnabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f),
                             progressIndicatorSize = 22.dp,
                             progressStrokeWidth = 2.dp
                         )
@@ -1087,6 +1093,7 @@ fun NeriMiniPlayer(
                             if (showSkipControls) {
                                 HapticIconButton(
                                     onClick = onPrevious,
+                                    enabled = skipEnabled,
                                     modifier = Modifier
                                         .size(NeriMiniPlayerDefaults.ControlButtonSize)
                                         .testTag("miniPlayerPrevious")
@@ -1094,7 +1101,7 @@ fun NeriMiniPlayer(
                                     Icon(
                                         imageVector = Icons.Outlined.SkipPrevious,
                                         contentDescription = stringResource(CoreCommonR.string.player_previous),
-                                        tint = miniContentColor
+                                        tint = if (skipEnabled) miniContentColor else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
                                     )
                                 }
                             }
@@ -1115,7 +1122,7 @@ fun NeriMiniPlayer(
                                     pauseContentDescription = stringResource(CoreCommonR.string.lyrics_pause),
                                     restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
                                     waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
-                                    color = miniContentColor,
+                                    color = if (playPauseEnabled) miniContentColor else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f),
                                     progressIndicatorSize = 22.dp,
                                     progressStrokeWidth = 2.dp
                                 )
@@ -1123,6 +1130,7 @@ fun NeriMiniPlayer(
                             if (showSkipControls) {
                                 HapticIconButton(
                                     onClick = onNext,
+                                    enabled = skipEnabled,
                                     modifier = Modifier
                                         .size(NeriMiniPlayerDefaults.ControlButtonSize)
                                         .testTag("miniPlayerNext")
@@ -1130,7 +1138,7 @@ fun NeriMiniPlayer(
                                     Icon(
                                         imageVector = Icons.Outlined.SkipNext,
                                         contentDescription = stringResource(CoreCommonR.string.player_next),
-                                        tint = miniContentColor
+                                        tint = if (skipEnabled) miniContentColor else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
                                     )
                                 }
                             }

@@ -11,6 +11,14 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSections
+import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionHidden
+import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionOrder
+import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionHidden
+import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionOrder
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingIcon
 import moe.ouom.neriplayer.ksp.annotations.SettingAccessMode
 import moe.ouom.neriplayer.ksp.annotations.SettingUiType
@@ -36,6 +44,100 @@ class AutoSettingsGeneratedTest {
         val setting = AutoSettingsMetadata.setting("home_card_bilibili")
         assertEquals(AutoSettingsSections.personalization, setting?.section)
         assertTrue(AutoSettingsBackupKeys.booleanKeys.any { it.name == "home_card_bilibili" })
+    }
+
+    @Test
+    fun homeSectionOrderKeysAreRegisteredAsCustomStringSettings() {
+        listOf(
+            "home_major_order",
+            "home_trending_order",
+            "home_trending_hidden",
+            "home_radar_order",
+            "home_radar_hidden",
+            "home_recommended_order",
+            "home_recommended_hidden"
+        ).forEach { keyName ->
+            val metadata = AutoSettingsMetadata.setting(keyName)
+            assertEquals(SettingValueType.String, metadata?.valueType)
+            assertEquals(SettingUiType.Custom, metadata?.ui)
+            assertEquals(AutoSettingsSections.personalization, metadata?.section)
+            assertTrue(
+                "home section setting should be exportable: $keyName",
+                AutoSettingsBackupKeys.stringKeys.any { it.name == keyName }
+            )
+        }
+    }
+
+    @Test
+    fun homeSectionOrderDefaultsMatchTheSectionDefaults() = runBlocking {
+        val context = IsolatedSettingsDataStore.context(
+            moe.ouom.neriplayer.data.testing.InMemorySharedPreferencesRegistry()
+        )
+        IsolatedSettingsDataStore.withEmptySettings(context) {
+            assertEquals(
+                encodeHomeSectionOrder(HomeMajorSectionIds.DEFAULT_ORDER),
+                AutoSettingsRepository(context).homeMajorOrderFlow.first()
+            )
+        }
+        assertEquals(
+            HomeTrendingSubSectionIds.DEFAULT_ORDER,
+            parseHomeSectionOrder(
+                "top_soaring,personalized_new_songs,top_hot,top_new",
+                HomeTrendingSubSectionIds.DEFAULT_ORDER
+            )
+        )
+        assertEquals(
+            HomeRadarSubSectionIds.DEFAULT_ORDER,
+            parseHomeSectionOrder(
+                "personal_radar,radar_playlists,daily_recommend,private_fm",
+                HomeRadarSubSectionIds.DEFAULT_ORDER
+            )
+        )
+        assertEquals(
+            HomeRecommendedSubSectionIds.DEFAULT_ORDER,
+            parseHomeSectionOrder(
+                "personalized,daily_resource,high_quality,hot_playlists,acg_playlists",
+                HomeRecommendedSubSectionIds.DEFAULT_ORDER
+            )
+        )
+        assertEquals(
+            emptySet<String>(),
+            parseHomeSectionHidden("", HomeTrendingSubSectionIds.DEFAULT_ORDER)
+        )
+        assertEquals(
+            emptySet<String>(),
+            parseHomeSectionHidden("", HomeRadarSubSectionIds.DEFAULT_ORDER)
+        )
+        assertEquals(
+            emptySet<String>(),
+            parseHomeSectionHidden("", HomeRecommendedSubSectionIds.DEFAULT_ORDER)
+        )
+    }
+
+    @Test
+    fun homeSectionOrderEncodingRoundTripsThroughTheRepositoryCodecs() {
+        assertEquals(
+            "radar,continue",
+            encodeHomeSectionOrder(listOf("radar", "continue"))
+        )
+        assertEquals(
+            "private_fm",
+            encodeHomeSectionHidden(setOf("private_fm"))
+        )
+        assertEquals(
+            listOf("radar", "continue"),
+            parseHomeSectionOrder(
+                encodeHomeSectionOrder(listOf("radar", "continue")),
+                HomeMajorSectionIds.DEFAULT_ORDER
+            ).take(2)
+        )
+        assertEquals(
+            setOf("private_fm"),
+            parseHomeSectionHidden(
+                encodeHomeSectionHidden(setOf("private_fm")),
+                HomeRadarSubSectionIds.DEFAULT_ORDER
+            )
+        )
     }
 
     @Test
@@ -429,8 +531,10 @@ class AutoSettingsGeneratedTest {
     fun inheritedPlaybackSectionKeepsEveryGeneratedSetting() {
         val settings = AutoSettingsMetadata.settingsIn(AutoSettingsSections.playback)
 
-        assertEquals(41, settings.size)
-        assertEquals(41, settings.map { it.keyName }.toSet().size)
+        assertEquals(43, settings.size)
+        assertEquals(43, settings.map { it.keyName }.toSet().size)
+        assertEquals(7, AutoSettingsSchema.playback.lanHostPermissions.defaultValue)
+        assertEquals(0, AutoSettingsSchema.playback.lanNudgeMs.defaultValue)
         assertEquals("playback_fade_in", settings.first().keyName)
         assertEquals(
             AutoSettingsSections.playback,

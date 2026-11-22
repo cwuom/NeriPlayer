@@ -44,6 +44,7 @@ AGENTS.md
 /ksp-processor/build/
 /modules/**/build/
 /docs-private/
+/.tmp_logs/
 .serena/
 /app/datastore/
 

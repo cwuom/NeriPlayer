@@ -115,6 +115,20 @@ class AudioPlayerServiceStartupTest {
     }
 
     @Test
+    fun `LAN sync satisfies a new foreground start on an already promoted service`() = withFixture {
+        create()
+        start(1)
+        val token = requireNotNull(session()).sessionToken
+        val notification = requireNotNull(shadow.lastForegroundNotification)
+
+        startForegroundSync("lan_listen", 2)
+
+        assertNotSame(notification, shadow.lastForegroundNotification)
+        assertTrue(shadow.isLastForegroundNotificationAttached)
+        assertEquals(token, session()?.sessionToken)
+    }
+
+    @Test
     fun `a browsing session keeps its token when playback starts`() = withFixture {
         create()
         val binding = bind()
@@ -250,7 +264,8 @@ class AudioPlayerServiceStartupTest {
         private val previousApplication = applicationField.get(null)
         private val previousInitialized = PlayerManager.initialized
         private val previousInitializationInProgress = PlayerManager.initializationInProgress
-        private val companionFields = listOf("isServiceInstanceActive", "isServiceForegroundActive", "activeServiceInstance")
+        private val companionFields = listOf("isServiceInstanceActive", "isServiceForegroundActive", "activeServiceInstance",
+            "lastSuccessfulSyncStartElapsedRealtime", "lastSuccessfulSyncStartSource")
             .associateWith { serviceField(it).get(null) }
         private val controller: org.robolectric.android.controller.ServiceController<AudioPlayerService>
         val service: AudioPlayerService
@@ -285,6 +300,12 @@ class AudioPlayerServiceStartupTest {
         fun start(startId: Int) = service.onStartCommand(
             AudioPlayerService.createSyncIntent(service, "startup_test"), 0, startId,
         )
+
+        fun startForegroundSync(source: String, startId: Int) {
+            assertTrue(AudioPlayerService.startSyncService(application, source, forceForeground = true))
+            val intent = requireNotNull(shadowOf(application).nextStartedService)
+            service.onStartCommand(intent, 0, startId)
+        }
 
         fun carIntent() = Intent(service, AudioPlayerService::class.java).setAction(AudioPlayerService.ACTION_BIND_CAR)
 

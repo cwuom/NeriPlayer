@@ -89,7 +89,7 @@ import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
-import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
+import moe.ouom.neriplayer.ui.component.playback.ListenTogetherPanel
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliCcSubtitleContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.MoreOptionsMainContent
@@ -820,10 +820,7 @@ private fun MoreOptionsListenTogetherPage(
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .windowInsetsPadding(WindowInsets.navigationBars)
     ) {
-        ListenTogetherRoomPanel(
-            modifier = Modifier.fillMaxWidth(),
-            showBaseUrlEditor = false
-        )
+        ListenTogetherPanel(Modifier.fillMaxWidth())
     }
 }
 

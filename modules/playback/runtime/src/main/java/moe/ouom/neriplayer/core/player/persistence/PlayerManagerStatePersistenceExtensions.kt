@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.url.isCurrentListenTogetherFallbackMediaUrl
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.common.coroutines.runCatchingNonCancellation
+import moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding
 
 internal typealias PlaybackStatePersistRequest =
     PlaybackStatePersistenceCoordinator.Request<PlaybackStatePersistenceSnapshot>
@@ -22,7 +23,9 @@ internal typealias PlaybackStatePersistRequest =
 internal fun PlayerManager.prepareStatePersist(
     positionMs: Long = _playbackPositionMs.value.coerceAtLeast(0L),
     shouldResumePlayback: Boolean = currentPlaylist.isNotEmpty() && shouldResumePlaybackSnapshot()
-): PlaybackStatePersistRequest? = statePersistenceCoordinator.prepare {
+): PlaybackStatePersistRequest? = if (LanPlaybackBinding.guestPlayback != null ||
+    currentPlaylist.any { it.sourceStableKey?.startsWith("lan-session:") == true }) null
+else statePersistenceCoordinator.prepare {
     val session = queueStore.sessionSnapshot()
     PlaybackStatePersistenceSnapshot(
         session = session,

@@ -51,20 +51,32 @@ class SystemAudioTrackBufferSizeProviderTest {
     }
 
     @Test
-    fun `normal pcm and encoded output retain default sizing`() {
-        val defaultProvider = DefaultAudioSink.AudioTrackBufferSizeProvider.DEFAULT
-        for (sampleRate in listOf(44_100, 96_000)) {
+    fun `common stereo pcm formats cover two of the recorded feed gaps`() {
+        // 两种常见的输出格式都可能产生现场记录的每秒 384000 字节
+        for ((sampleRate, frameSize) in listOf(96_000 to 4, 48_000 to 8)) {
             assertEquals(
-                defaultProvider.getBufferSizeInBytes(
-                    14_144, C.ENCODING_PCM_16BIT, DefaultAudioSink.OUTPUT_MODE_PCM,
-                    4, sampleRate, C.RATE_UNSET_INT, 1.0
-                ),
+                384_000,
                 SystemAudioTrackBufferSizeProvider.getBufferSizeInBytes(
-                    14_144, C.ENCODING_PCM_16BIT, DefaultAudioSink.OUTPUT_MODE_PCM,
-                    4, sampleRate, C.RATE_UNSET_INT, 1.0
+                    46_128, if (frameSize == 4) C.ENCODING_PCM_16BIT else C.ENCODING_PCM_FLOAT,
+                    DefaultAudioSink.OUTPUT_MODE_PCM, frameSize, sampleRate, C.RATE_UNSET_INT, 1.0
                 )
             )
         }
+    }
+
+    @Test
+    fun `larger device minimum gives ordinary pcm more headroom`() {
+        val bufferBytes = SystemAudioTrackBufferSizeProvider.getBufferSizeInBytes(
+            32_768, C.ENCODING_PCM_16BIT, DefaultAudioSink.OUTPUT_MODE_PCM,
+            4, 44_100, C.RATE_UNSET_INT, 1.0
+        )
+
+        assertEquals(262_144, bufferBytes)
+    }
+
+    @Test
+    fun `encoded output retains default sizing`() {
+        val defaultProvider = DefaultAudioSink.AudioTrackBufferSizeProvider.DEFAULT
         assertEquals(
             defaultProvider.getBufferSizeInBytes(
                 14_144, C.ENCODING_AC3, DefaultAudioSink.OUTPUT_MODE_PASSTHROUGH,

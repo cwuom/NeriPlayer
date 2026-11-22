@@ -22,17 +22,22 @@ import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.anyList
 import org.mockito.ArgumentMatchers.nullable
 import org.mockito.Mockito.RETURNS_SELF
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockConstruction
 import org.mockito.Mockito.mockingDetails
+import org.mockito.Mockito.reset
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
@@ -232,8 +237,186 @@ class CarSessionPresentationRegressionTest {
         }
     }
 
-    private data class Fixture(val owner: PlaybackServicePresentationOwner, val port: PlaybackServicePresentationPort)
+    /**
+     * 队列当前项的 title/artist 必须和 metadata 一致,
+     * 否则 AOSP 蓝牙栈的 isMetadataSynced() 不通过, 歌词更新会被拖进 2 秒超时。
+     */
+    @Test
+    fun `bluetooth lyric metadata keeps the session queue current item in sync`() = runTest {
+        MetadataBuilders().use { builders ->
+            val source = FakeSource(playback(listOf(song(1)), 0)).apply {
+                metadataInputs = bluetoothLyrics()
+            }
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
 
+            val queueCalls = queueOverrides(fixture.port)
+            assertEquals(1, queueCalls.size)
+            val (title, subtitle) = queueCalls.first()
+            assertEquals(builders.string(0, MediaMetadata.METADATA_KEY_TITLE), title)
+            assertEquals(builders.string(0, MediaMetadata.METADATA_KEY_ARTIST), subtitle)
+
+            // 歌词变了, 队列当前项要跟着变
+            source.metadataInputs = bluetoothLyrics().copy(
+                payload = ExternalBluetoothLyricPayload("next line", null),
+            )
+            fixture.owner.updateMetadata()
+
+            val updated = queueOverrides(fixture.port)
+            assertEquals(2, updated.size)
+            assertEquals(builders.string(1, MediaMetadata.METADATA_KEY_TITLE), updated.last().first)
+            assertEquals(builders.string(1, MediaMetadata.METADATA_KEY_ARTIST), updated.last().second)
+            assertTrue(updated.last().first != title)
+        }
+    }
+
+    /** 非蓝牙输出时不应改写队列当前项的标题 */
+    @Test
+    fun `non bluetooth output leaves the session queue current item untouched`() = runTest {
+        MetadataBuilders().use {
+            val source = FakeSource(playback(listOf(song(1)), 0))
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
+            assertEquals(0, queueOverrides(fixture.port).size)
+        }
+    }
+
+    /**
+     * 从蓝牙切回扬声器时, 会话队列当前项要恢复成歌名/歌手。
+     * 否则控制器会一直看到上一行歌词, 与随后发布的普通 metadata 对不上。
+     */
+    @Test
+    fun `leaving bluetooth restores the session queue current item to the song title`() = runTest {
+        MetadataBuilders().use { builders ->
+            val current = song(1)
+            val source = FakeSource(playback(listOf(current), 0)).apply {
+                metadataInputs = bluetoothLyrics()
+            }
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
+
+            // 切回扬声器: 路由不再是蓝牙
+            source.metadataInputs = source.metadataInputs.copy(audioDeviceType = null)
+            fixture.owner.updateMetadata()
+
+            val overrides = queueOverrides(fixture.port)
+            assertTrue("切回扬声器后应重新下发队列", overrides.size >= 2)
+            // 最后一次发布不再带覆盖值, 队列当前项回落到歌名/歌手
+            assertNull(overrides.last().first)
+            assertNull(overrides.last().second)
+        }
+    }
+
+    /**
+     * 队列发布失败时, 期望的覆盖值要保留下来。
+     * 下一次队列变化会用这份最新的期望覆盖值重试, 否则会拿旧值重新下发, 队列又和 metadata 对不上。
+     */
+    @Test
+    fun `a failed queue publish keeps the latest override for the next attempt`() = runTest {
+        MetadataBuilders().use {
+            val source = FakeSource(playback(listOf(song(1)), 0)).apply {
+                metadataInputs = bluetoothLyrics()
+            }
+            val fixture = fixture(source, backgroundScope)
+            val port = fixture.port
+            // 第一次发布直接失败
+            doThrow(IllegalStateException("queue rejected"))
+                .`when`(port)
+                .setQueue(anyList(), anyInt(), nullable(String::class.java), nullable(String::class.java))
+
+            fixture.owner.updateMetadata()
+            val failedAttempt = queueOverrides(port).lastOrNull()
+            assertNotNull("失败时应该尝试过发布队列", failedAttempt)
+            val attempt = failedAttempt!!
+            assertNotNull("失败前也应带上期望覆盖值", attempt.first)
+
+            // 之后队列发布恢复正常, 重试时不带显式覆盖值
+            reset(port)
+            fixture.owner.publishCarQueue(
+                songs = listOf(song(1)),
+                selectedIndex = 0,
+            )
+
+            val overrides = queueOverrides(port)
+            assertTrue("失败后应重新发布队列", overrides.isNotEmpty())
+            // 重试时用的是失败前记住的期望覆盖值, 不是 null
+            assertEquals(attempt.first, overrides.last().first)
+            assertEquals(attempt.second, overrides.last().second)
+        }
+    }
+
+    /**
+     * 换歌时队列会被重新下发, 这时不能把当前项的标题覆盖回歌名,
+     * 否则蓝牙栈又不认这次 metadata, 歌词会丢一行。
+     */
+    @Test
+    fun `queue republish keeps the bluetooth lyric override on the current item`() = runTest {
+        MetadataBuilders().use { builders ->
+            val source = FakeSource(playback(listOf(song(1)), 0)).apply {
+                metadataInputs = bluetoothLyrics()
+            }
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
+
+            // 换歌路径: 队列重新发布, 不带覆盖值
+            fixture.owner.publishCarQueue(
+                songs = listOf(song(1)),
+                selectedIndex = 0,
+            )
+
+            val overrides = queueOverrides(fixture.port)
+            assertTrue(overrides.size >= 2)
+            // 最后一次发布的当前项仍然是歌词, 不是歌名
+            assertEquals(builders.string(0, MediaMetadata.METADATA_KEY_TITLE), overrides.last().first)
+            assertEquals(builders.string(0, MediaMetadata.METADATA_KEY_ARTIST), overrides.last().second)
+        }
+    }
+
+    /** 路由切到蓝牙时, 即使 metadata 内容没变也要重新对齐队列当前项 */
+    @Test
+    fun `switching to bluetooth re-aligns the queue current item`() = runTest {
+        MetadataBuilders().use {
+            val source = FakeSource(playback(listOf(song(1)), 0))
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
+            assertEquals(0, queueOverrides(fixture.port).size)
+
+            source.metadataInputs = bluetoothLyrics()
+            fixture.owner.updateMetadata()
+
+            assertEquals(1, queueOverrides(fixture.port).size)
+        }
+    }
+
+    /**
+     * 翻译开关变化时用收集到的值直接刷新。
+     * PlayerManager 的状态由另一个收集器写入, 两者没有先后保证,
+     * 这里必须用收集到的值, 不能去读可能还是旧值的状态。
+     */
+    @Test
+    fun `the translation override wins over the state read from the source`() = runTest {
+        MetadataBuilders().use { builders ->
+            // 来源里的翻译开关是开的, 但收集器发来的值是关的
+            val source = FakeSource(playback(listOf(song(1)), 0)).apply {
+                metadataInputs = bluetoothLyrics()
+            }
+            val fixture = fixture(source, backgroundScope)
+            fixture.owner.updateMetadata()
+
+            fixture.owner.updateMetadata(bluetoothTranslationOverride = false)
+
+            val titles = builders.titles()
+            assertTrue("关闭翻译后不应再带译文", titles.last().contains("译文").not())
+        }
+    }
+
+    private fun queueOverrides(port: PlaybackServicePresentationPort): List<Pair<String?, String?>> =
+        mockingDetails(port).invocations.filter { it.method.name == "setQueue" }.map { invocation ->
+            val args = invocation.arguments
+            args[2] as String? to args[3] as String?
+        }
+
+    private data class Fixture(val owner: PlaybackServicePresentationOwner, val port: PlaybackServicePresentationPort)
     private fun fixture(source: FakeSource, scope: CoroutineScope): Fixture {
         val port = mock(PlaybackServicePresentationPort::class.java)
         val artwork = mock(PlaybackArtworkOwner::class.java)
@@ -261,7 +444,10 @@ class CarSessionPresentationRegressionTest {
     private fun song(id: Long) = SongItem(id, "Song $id", "Artist", "Album", 1, 10_000, null)
 
     private fun bluetoothLyrics() = PlaybackServiceMetadataInputs(
-        ExternalBluetoothLyricPayload("line", "translation"), AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, false
+        ExternalBluetoothLyricPayload("line", "translation"),
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        false,
+        bluetoothTranslationEnabled = true,
     )
 
     private fun calls(port: PlaybackServicePresentationPort, method: String): Int =
@@ -296,6 +482,11 @@ class CarSessionPresentationRegressionTest {
         fun builder(index: Int): MediaMetadata.Builder = construction.constructed()[index]
 
         fun string(index: Int, key: String): String? = arguments(index, "putString", key)[1] as String?
+
+        /** 每次构建写入的标题, 顺序与构建顺序一致 */
+        fun titles(): List<String> = results.indices.mapNotNull { index ->
+            string(index, MediaMetadata.METADATA_KEY_TITLE)
+        }
 
         fun long(index: Int, key: String): Long = arguments(index, "putLong", key)[1] as Long
 

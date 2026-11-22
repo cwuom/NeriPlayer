@@ -32,8 +32,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -83,8 +81,6 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.NeriMotion
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
-import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
-import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 import moe.ouom.neriplayer.ui.viewmodel.ManualSearchState
 import moe.ouom.neriplayer.ui.viewmodel.ManualMetadataApplicationState
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
@@ -287,7 +283,7 @@ fun SongMetadataSearchContent(
 }
 
 @Composable
-private fun MetadataSearchInput(
+internal fun MetadataSearchInput(
     state: ManualSearchState,
     enabled: Boolean,
     canSearch: Boolean,
@@ -296,13 +292,11 @@ private fun MetadataSearchInput(
     onSearch: () -> Unit,
     onSearchSubmitted: () -> Unit
 ) {
-    OutlinedTextField(
+    PlaybackSheetTextField(
         value = state.keyword,
         onValueChange = onKeywordChange,
         enabled = enabled && !state.isApplyingMetadata,
-        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
-        colors = neriSearchFieldColors(),
-        label = { Text(stringResource(CoreCommonR.string.search_keywords)) },
+        label = stringResource(CoreCommonR.string.search_keywords),
         modifier = Modifier
             .fillMaxWidth()
             .focusRequester(focusRequester)

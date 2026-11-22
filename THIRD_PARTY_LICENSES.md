@@ -10,6 +10,9 @@ NeriPlayer 按根目录的 [GPL-3.0 许可证](LICENSE) 发布。
 
 ### 来源与许可
 
+- [BeatSync](https://github.com/freeman-jiang/beatsync)
+  - 引用：提交 `94c38ab16ec861835ce0b4bc3a7db82dabbb9b88` 的 NTP 算法、调度代码、传输辅助和测试见[原型源码](tools_pub/beatsync-prototype/js/upstream/)，生成产物用于 [NTP](modules/ltwlan/src/main/resources/beatsync/) 与 [Web Audio](modules/ltwlan/src/main/assets/lan-audio/)
+  - 许可：MIT，保留[原始许可声明](tools_pub/beatsync-prototype/js/upstream/LICENSE)
 - [Capsulyric](https://github.com/FrancoGiudans/Capsulyric)
   - 引用：直接移植 `ShizukuHook`、`FirewallCompat`、`ShizukuXmsfNetworkHelper`，以及超级岛歌词桥使用的激进隔离状态处理
   - 许可：GPL-3.0-or-later，以改编源码头部声明为准
@@ -38,6 +41,9 @@ This document records selected source imports and adaptations. It is not an exha
 
 ### Sources and licenses
 
+- [BeatSync](https://github.com/freeman-jiang/beatsync)
+  - Contribution: NTP algorithms, scheduling code, transport helpers, and tests from commit `94c38ab16ec861835ce0b4bc3a7db82dabbb9b88` in the [prototype](tools_pub/beatsync-prototype/js/upstream/), with generated [NTP](modules/ltwlan/src/main/resources/beatsync/) and [Web Audio](modules/ltwlan/src/main/assets/lan-audio/) resources
+  - License: MIT, with the [original notice](tools_pub/beatsync-prototype/js/upstream/LICENSE) retained
 - [Capsulyric](https://github.com/FrancoGiudans/Capsulyric)
   - Contribution: directly ported `ShizukuHook`, `FirewallCompat`, `ShizukuXmsfNetworkHelper`, and the aggressive-isolation state handling used by the Super Island lyric bridge
   - License: GPL-3.0-or-later, as declared in the adapted source headers

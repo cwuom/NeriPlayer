@@ -572,23 +572,10 @@ internal fun SettingsScreen(
                             item(key = "${selectedPage.name}:card:1") {
                                 SettingsPersonalizationHomeCard(
                                     internationalEnabled = otherState.internationalizationEnabled,
-                                    homeTrendingLabelRes = homeCardCopy.trendingLabelRes,
-                                    homeRadarLabelRes = homeCardCopy.radarLabelRes,
-                                    homeRecommendedLabelRes = homeCardCopy.recommendedLabelRes,
-                                    homeTrendingSupportingRes = homeCardCopy.trendingSupportingRes,
-                                    homeRadarSupportingRes = homeCardCopy.radarSupportingRes,
-                                    homeRecommendedSupportingRes = homeCardCopy.recommendedSupportingRes,
+                                    copy = homeCardCopy,
                                     homeStartAvailable = homeStartAvailable,
-                                    showHomeContinueCard = otherState.homeCards.showHomeContinueCard,
-                                    onShowHomeContinueCardChange = homeActions.onShowHomeContinueCardChange,
-                                    showHomeTrendingCard = otherState.homeCards.showHomeTrendingCard,
-                                    onShowHomeTrendingCardChange = homeActions.onShowHomeTrendingCardChange,
-                                    showHomeRadarCard = otherState.homeCards.showHomeRadarCard,
-                                    onShowHomeRadarCardChange = homeActions.onShowHomeRadarCardChange,
-                                    showHomeRecommendedCard = otherState.homeCards.showHomeRecommendedCard,
-                                    onShowHomeRecommendedCardChange = homeActions.onShowHomeRecommendedCardChange,
-                                    showHomeBilibiliCard = otherState.homeCards.showHomeBilibiliCard,
-                                    onShowHomeBilibiliCardChange = homeActions.onShowHomeBilibiliCardChange,
+                                    state = otherState.homeCards,
+                                    actions = homeActions,
                                     highlightTargetId = settingsHighlightTargetId,
                                     highlightPulse = settingsHighlightPulse,
                                     onHighlightFinished = onSettingsHighlightFinished
@@ -1170,6 +1157,8 @@ internal fun SettingsScreen(
                             miuixSettingsSectionCardItem("${selectedPage.name}:content") {
                                 SettingsListenTogetherSection(
                                     controller = listenTogetherSettings,
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .background(Color.Transparent)

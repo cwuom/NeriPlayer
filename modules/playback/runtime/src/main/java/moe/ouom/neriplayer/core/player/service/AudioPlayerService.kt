@@ -22,13 +22,13 @@ package moe.ouom.neriplayer.core.player.service
  * File: moe.ouom.neriplayer.core.player.service/AudioPlayerService
  * Updated: 2026/3/23
  */
-
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import moe.ouom.neriplayer.core.player.service.artwork.AndroidPlaybackArtworkClock
 import moe.ouom.neriplayer.core.player.service.artwork.AndroidPlaybackCoverSources
 import moe.ouom.neriplayer.core.player.service.artwork.CoilPlaybackArtworkBitmapLoader
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkChange
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkOwner
+import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkSnapshot
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackCoverSourceResolver
 import moe.ouom.neriplayer.core.player.runtime.service.PlaybackServiceIdleShutdownCoordinator
 import moe.ouom.neriplayer.core.player.policy.service.shouldKeepPlaybackServiceSticky
@@ -99,6 +99,8 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
 import moe.ouom.neriplayer.core.player.lyrics.updateLiveUpdateArtwork
+import moe.ouom.neriplayer.core.player.lan.LanPlaybackArtwork
+import moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding
 import moe.ouom.neriplayer.core.player.service.lyrics.coloros.observeColorOsLyricMetadata
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusivePlaybackResumeAfterDeviceAttach
@@ -127,7 +129,6 @@ import moe.ouom.neriplayer.core.player.service.car.CarMediaSessionCallback
 import moe.ouom.neriplayer.core.player.service.car.CarMediaSessionControlPort
 import moe.ouom.neriplayer.core.player.service.car.CarPlaybackBindingOwner
 import moe.ouom.neriplayer.core.player.service.car.androidCarMediaLibrary
-import moe.ouom.neriplayer.core.player.service.car.carMediaSessionQueue
 import moe.ouom.neriplayer.core.player.service.car.carQueueIndex
 import moe.ouom.neriplayer.core.player.service.car.clearCarQueueIdentityCache
 import moe.ouom.neriplayer.core.player.service.car.library.CarPlaybackSelection
@@ -320,6 +321,7 @@ class AudioPlayerService : Service() {
         private const val LEGACY_ACTION_HIDE_FLOATING_LYRICS =
             "moe.ouom.neriplayer.action.HIDE_FLOATING_LYRICS"
         const val EXTRA_START_SOURCE = "audio_service_start_source"
+        private const val EXTRA_FOREGROUND_START_REQUESTED = "audio_service_foreground_start_requested"
         internal const val ACTION_BIND_CAR = "moe.ouom.neriplayer.action.BIND_CAR"
 
         internal const val NOTIFICATION_ID = 1
@@ -343,6 +345,12 @@ class AudioPlayerService : Service() {
         fun isInstanceActiveForDiagnostics(): Boolean = isServiceInstanceActive
 
         fun isForegroundActiveForDiagnostics(): Boolean = isServiceForegroundActive
+
+        internal fun publishCurrentLanArtwork() {
+            val service = activeServiceInstance ?: return
+            val song = PlayerManager.currentSongFlow.value
+            service.publishLanArtwork(song, service.artworkOwner.snapshotFor(song))
+        }
 
         fun refreshPlaybackWidgetsFromActiveService(reason: String): Boolean {
             val service = activeServiceInstance ?: return false
@@ -411,6 +419,7 @@ class AudioPlayerService : Service() {
             )
             return try {
                 if (shouldStartInForeground) {
+                    intent.putExtra(EXTRA_FOREGROUND_START_REQUESTED, true)
                     ContextCompat.startForegroundService(context, intent)
                 } else {
                     context.startService(intent)
@@ -550,13 +559,10 @@ class AudioPlayerService : Service() {
     private val carPlaybackBinding = CarPlaybackBindingOwner {
         presentationOwner.sessionOrNull()?.sessionToken
     }
-    private var lastCarQueueSession: MediaSession? = null
-    private var lastCarQueueSongs: List<SongItem>? = null
-    private var lastCarQueueIndex = -1
+    private var keepPlayerRuntimeAfterServiceStop = false
     private val pendingStartCommands = ArrayDeque<PendingStartCommand>()
     private val pendingPlayerActions = ArrayDeque<() -> Unit>()
     private var latestStartId = 0
-    private var keepPlayerRuntimeAfterServiceStop = false
     private val idleShutdownCoordinator = PlaybackServiceIdleShutdownCoordinator(
         scope = serviceScope,
         delayMs = PlaybackServiceIdleShutdownPreference.delayMs(
@@ -773,15 +779,15 @@ class AudioPlayerService : Service() {
     }
 
     private fun updateCarQueue() {
-        val session = presentationOwner.sessionOrNull() ?: return
+        // 没有会话时不用下发队列
+        if (presentationOwner.sessionOrNull() == null) return
         val queue = PlayerManager.currentQueueSnapshot()
-        // 队列和当前歌曲分别通知同一快照，只发布一次车机会话队列
-        if (lastCarQueueSession === session && lastCarQueueSongs === queue.playlist &&
-            lastCarQueueIndex == queue.currentIndex) return
-        session.setQueue(carMediaSessionQueue(this, queue.playlist, queue.currentIndex))
-        lastCarQueueSession = session
-        lastCarQueueSongs = queue.playlist
-        lastCarQueueIndex = queue.currentIndex
+        // 队列当前项的标题在蓝牙输出下要跟随歌词, 交给 owner 统一发布,
+        // 避免这里把 owner 刚同步的当前项覆盖回歌名。
+        presentationOwner.publishCarQueue(
+            songs = queue.playlist,
+            selectedIndex = queue.currentIndex,
+        )
     }
 
     private fun dispatchMediaButtonIntent(intent: Intent?) {
@@ -981,6 +987,18 @@ class AudioPlayerService : Service() {
                 refreshLyricMetadata()
             }
         }
+        // 「蓝牙外接设备翻译歌词」开关变化时 payload 未必变化: 灵动岛等其它功能开着时
+        // payload 一直带翻译, 收集器不会发新值, 车机上的译文就留着旧的。这里直接观察
+        // 开关本身, 让开关立刻生效。
+        // 收集到的值直接用上: PlayerManager 的状态由另一个收集器写入, 两者没有先后保证,
+        // 这里若去读它可能拿到旧值, 开关就白切了。
+        serviceScope.launch {
+            PlayerDependencies.repositories.settingsRepo.externalBluetoothTranslationEnabledFlow
+                .distinctUntilChanged()
+                .collectSafely("externalBluetoothTranslationEnabledFlow") { enabled ->
+                    updateMetadata(enabled)
+                }
+        }
         serviceScope.observeColorOsLyricMetadata(
             PlayerManager.colorOsLyricTimelineFlow, PlayerManager.colorOsLockscreenLyricsEnabledFlow,
         ) { refreshLyricMetadata() }
@@ -1131,11 +1149,10 @@ class AudioPlayerService : Service() {
                             "active USB audio device detached id=${detachedDevice?.deviceId} " +
                                 "name=${detachedDevice?.deviceName}"
                         )
-                        if (PlayerManager.shouldMuteListenTogetherListenerForAudioRouteLoss()) {
-                            PlayerManager.suppressPlaybackForAudioRouteLoss(
-                                reason = "listen_together_usb_output_disconnect"
-                            )
-                        }
+                        moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.routeLossInterruptOrSuppress(
+                            shouldMute = PlayerManager.shouldMuteListenTogetherListenerForAudioRouteLoss(),
+                            reason = "listen_together_usb_output_disconnect"
+                        )
                         StartupAudioFocusController.forceRelease("usb_device_detached")
                         PlayerManager.stopPlaybackAfterUsbExclusiveNativeFailure(
                             "usb_device_detached"
@@ -1222,10 +1239,12 @@ class AudioPlayerService : Service() {
         allowServiceRestart = true
         latestStartId = startId
 
-        // 先发布前台通知，避免会话和播放器初始化占用系统的服务启动期限
-        if (!isForegroundStarted && action != ACTION_STOP) {
+        // 系统要求每次显式前台启动及时响应，应用内的前台状态可能与系统不同步
+        val foregroundStartRequested = intent?.getBooleanExtra(EXTRA_FOREGROUND_START_REQUESTED, false) == true
+        if (action != ACTION_STOP && (!isForegroundStarted || foregroundStartRequested)) {
+            val notification = if (isForegroundStarted && playerRuntimeReady) buildNotification() else buildBootstrapNotification()
             if (!startForegroundImmediately(
-                    buildBootstrapNotification(),
+                    notification,
                     "on_start_command:$action:$startSource",
                     verbose = false,
                 )) {
@@ -1245,7 +1264,7 @@ class AudioPlayerService : Service() {
         if (!playerRuntimeReady) {
             pendingStartCommands.addLast(
                 PendingStartCommand(
-                    intent = intent?.let { Intent(it) },
+                    intent = intent?.let { Intent(it).apply { removeExtra(EXTRA_FOREGROUND_START_REQUESTED) } },
                     flags = flags,
                     startId = startId,
                 )
@@ -1330,7 +1349,7 @@ class AudioPlayerService : Service() {
             }
 
             ACTION_SYNC -> {
-                if (!hasPlaybackSurfaceContent()) {
+                if (!hasPlaybackSurfaceContent() && startSource != "lan_listen") {
                     allowServiceRestart = false
                     NPLogger.w("NERI-APS", "Ignoring ACTION_SYNC because playback content is empty, source=$startSource")
                     stopForegroundIfStarted("sync_without_items")
@@ -1468,13 +1487,21 @@ class AudioPlayerService : Service() {
 
     /** Live Update 复用媒体通知已解析好的封面，只在对应歌曲的位图就绪后转交 */
     private fun publishLiveUpdateArtwork() {
-        val song = PlayerManager.currentSongFlow.value ?: return
+        val song = PlayerManager.currentSongFlow.value
         val snapshot = artworkOwner.snapshotFor(song)
+        publishLanArtwork(song, snapshot)
+        if (song == null) return
         PlayerManager.updateLiveUpdateArtwork(
             song = song,
             artwork = snapshot.notificationBitmap.takeIf { snapshot.notificationReady },
             coverSource = snapshot.coverSource,
         )
+    }
+
+    private fun publishLanArtwork(song: SongItem?, snapshot: PlaybackArtworkSnapshot) {
+        if (!LanPlaybackBinding.active || !LanPlaybackBinding.isHost()) return
+        val bitmap = snapshot.mediaBitmap.takeIf { snapshot.mediaReady }
+        LanPlaybackArtwork.update(bitmap?.let { LanPlaybackBinding.track(song)?.stableKey }, bitmap)
     }
 
     private fun updatePlaybackWidget(force: Boolean = false) {
@@ -1487,6 +1514,11 @@ class AudioPlayerService : Service() {
 
     private fun updateMetadata() {
         presentationOwner.updateMetadata()
+    }
+
+    /** 翻译开关变化时用收集到的值直接刷新, 不等 PlayerManager 的状态同步 */
+    private fun updateMetadata(bluetoothTranslationEnabled: Boolean) {
+        presentationOwner.updateMetadata(bluetoothTranslationEnabled)
     }
 
     private fun refreshLyricMetadata() {
@@ -1544,6 +1576,7 @@ class AudioPlayerService : Service() {
     }
 
     override fun onDestroy() {
+        moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.notifyServiceStopped()
         NPLogger.w("NERI-APS", "onDestroy ${buildStateSummary()}")
         val preservePlaybackForRestart = shouldPreservePlaybackForRestart()
         try {
@@ -1606,9 +1639,6 @@ class AudioPlayerService : Service() {
 
     private fun releaseMediaSessionForDestroy() {
         if (presentationOwnerDelegate.isInitialized()) presentationOwner.releaseSessionForDestroy()
-        lastCarQueueSession = null
-        lastCarQueueSongs = null
-        lastCarQueueIndex = -1
     }
 
     private fun releasePlayerRuntimeAfterServiceStop(preservePlaybackForRestart: Boolean) {
@@ -1745,9 +1775,6 @@ class AudioPlayerService : Service() {
         if (presentationOwnerDelegate.isInitialized()) {
             presentationOwner.releaseSessionAfterForegroundFailure(reason)
         }
-        lastCarQueueSession = null
-        lastCarQueueSongs = null
-        lastCarQueueIndex = -1
     }
 
     private fun releasePlayerAfterForegroundFailure(reason: String, preservePlayerRuntime: Boolean) {
@@ -1882,7 +1909,8 @@ class AudioPlayerService : Service() {
     }
 
     private fun isListenTogetherSessionActive(): Boolean {
-        return !PlayerDependencies.listenTogether.sessionState.value.roomId.isNullOrBlank()
+        return moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.active ||
+            !PlayerDependencies.listenTogether.sessionState.value.roomId.isNullOrBlank()
     }
 
     private fun listenTogetherExpectedPositionMs(): Long {

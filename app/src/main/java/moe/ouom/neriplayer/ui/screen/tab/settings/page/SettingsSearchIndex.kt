@@ -98,6 +98,7 @@ internal fun searchSettingsEntries(
 }
 
 internal fun AutoSettingInfo.settingsPage(): SettingsPage? {
+    if (keyName == "lan_listen_nudge_ms") return SettingsPage.ListenTogether
     if (keyName in LyricAppearanceSettingKeys) {
         return SettingsPage.Lyrics
     }
@@ -162,6 +163,7 @@ internal fun AutoSettingInfo.searchTokens(
 }
 
 internal fun AutoSettingInfo.searchTargetId(): String {
+    if (keyName == "lan_listen_nudge_ms") return "manual:lan_listen_together"
     val targetKey = when (keyName) {
         "playback_fade_in_duration_ms",
         "playback_fade_out_duration_ms" -> "playback_fade_in"
@@ -178,6 +180,11 @@ internal fun AutoSettingInfo.searchTargetId(): String {
         "download_youtube_audio_quality",
         "download_bili_audio_quality" -> "download_follow_playback_audio_quality"
         "lyric_font_scale" -> "nowplaying_cover_lyric_font_scale"
+        // 顺序与隐藏集合没有独立的可高亮控件，落到所属的大模块上
+        "home_major_order" -> "home_card_continue"
+        "home_trending_order", "home_trending_hidden" -> "home_card_trending"
+        "home_radar_order", "home_radar_hidden" -> "home_card_radar"
+        "home_recommended_order", "home_recommended_hidden" -> "home_card_recommended"
         else -> keyName
     }
     return "setting:$targetKey"
@@ -755,6 +762,14 @@ internal fun manualSettingsSearchEntries(resources: Resources): List<SettingsSea
         ),
         entry(
             page = SettingsPage.ListenTogether,
+            titleRes = CoreCommonR.string.lan_title,
+            descriptionRes = CoreCommonR.string.lan_description,
+            id = "lan_listen_together",
+            aliases = listOf("LAN", "Wi-Fi", "局域网", "nudge", "偏移"),
+            targetId = "manual:lan_listen_together"
+        ),
+        entry(
+            page = SettingsPage.ListenTogether,
             titleRes = CoreCommonR.string.listen_together_join_room,
             descriptionRes = CoreCommonR.string.settings_listen_together_join_room_desc,
             id = "listen_together_join_room",
@@ -916,7 +931,7 @@ private val PageSearchAliases = mapOf(
     SettingsPage.TrafficManagement to listOf("traffic", "mobile", "roaming", "data", "liuliang"),
     SettingsPage.Downloads to listOf("download", "downloads", "threads", "parallel", "concurrency", "xiazai"),
     SettingsPage.Backup to listOf("backup", "sync", "github", "webdav", "import", "export", "beifen"),
-    SettingsPage.ListenTogether to listOf("listen together", "room", "worker", "server", "yiqiting"),
+    SettingsPage.ListenTogether to listOf("listen together", "room", "worker", "server", "yiqiting", "LAN", "Wi-Fi", "局域网", "一起听"),
     SettingsPage.About to listOf("about", "version", "debug", "guanyu")
 )
 
@@ -967,6 +982,56 @@ private val SettingSearchAliases = mapOf(
         "acg",
         "more recommendations",
         "更多推荐"
+    ),
+    "home_major_order" to listOf(
+        "home order",
+        "section order",
+        "sort",
+        "reorder",
+        "drag",
+        "首页顺序",
+        "模块顺序",
+        "排序",
+        "拖拽"
+    ),
+    "home_trending_order" to listOf(
+        "trending order",
+        "sub section",
+        "reorder",
+        "热力顺序",
+        "子栏目"
+    ),
+    "home_trending_hidden" to listOf(
+        "trending visible",
+        "hidden",
+        "热力显示",
+        "隐藏"
+    ),
+    "home_radar_order" to listOf(
+        "radar order",
+        "sub section",
+        "reorder",
+        "雷达顺序",
+        "子栏目"
+    ),
+    "home_radar_hidden" to listOf(
+        "radar visible",
+        "hidden",
+        "雷达显示",
+        "隐藏"
+    ),
+    "home_recommended_order" to listOf(
+        "playlist order",
+        "sub section",
+        "reorder",
+        "歌单顺序",
+        "子栏目"
+    ),
+    "home_recommended_hidden" to listOf(
+        "playlist visible",
+        "hidden",
+        "歌单显示",
+        "隐藏"
     ),
     "show_cover_source_badge" to listOf("badge", "source", "cover", "biaoshi"),
     "always_use_new_tab_style" to listOf("tab", "bottom bar", "new ui"),

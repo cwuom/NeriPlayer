@@ -82,6 +82,7 @@ import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.BottomBarLayoutInsets
+import moe.ouom.neriplayer.ui.shouldExtendContentBehindBottomBar
 import moe.ouom.neriplayer.ui.banner.MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD
 import moe.ouom.neriplayer.ui.banner.MANAGED_LIBRARY_PROCESSING_REVEAL_EDGE
 import moe.ouom.neriplayer.ui.banner.MANAGED_LIBRARY_PROCESSING_Z_INDEX
@@ -203,7 +204,10 @@ internal fun AppNavigationScaffold(
                 )
                 val layoutInsets = resolveAppNavigationLayoutInsets(
                     useNavigationRail = useNavigationRail,
-                    baseBlurRequested = baseBlurRequested,
+                    baseBlurRequested = shouldExtendContentBehindBottomBar(
+                        baseBlurRequested = baseBlurRequested,
+                        floatingBottomBar = NeriDesign.isClean
+                    ),
                     bottomBarInset = innerPadding.calculateBottomPadding().coerceAtLeast(0.dp),
                     reservedMiniPlayerHeight = pageReservedMiniPlayerHeight
                 )
@@ -519,6 +523,7 @@ private fun AppMiniPlayerOverlay(
     onBoundsChanged: (Rect) -> Unit
 ) {
     val controls = rememberMiniPlayerPlaybackControls()
+    val lanControls = moe.ouom.neriplayer.ui.component.playback.lan.rememberLanPlaybackControls()
     val resources = LocalResources.current
     val miniPlayerVisible = floatingPlaybackChromeVisible(
         requested = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying)
@@ -554,7 +559,8 @@ private fun AppMiniPlayerOverlay(
                 hasCurrentSong = miniPlayer.hasSong,
                 clearCover = miniPlayer.song.hasKnownEmptyLocalCover(),
                 isPlaying = controls.playbackRequested,
-                playPauseEnabled = !controls.usbPreparing,
+                playPauseEnabled = !controls.usbPreparing && lanControls.permissions.playPause,
+                skipEnabled = lanControls.permissions.seek,
                 modifier = Modifier.testTag("appMiniPlayer")
                     .onGloballyPositioned { coordinates ->
                         onBoundsChanged(coordinates.boundsInRoot())
@@ -568,7 +574,8 @@ private fun AppMiniPlayerOverlay(
                 isPlaybackWaiting = resolvePlaybackWaiting(
                     playbackRequested = controls.playbackRequested,
                     isPlaying = controls.playing,
-                    usbPlaybackPreparing = controls.usbPreparing
+                    usbPlaybackPreparing = controls.usbPreparing,
+                    lanPreparing = lanControls.preparing
                 ),
                 isAudioRouteMuted = controls.routeMuted,
                 tabletControls = tabletControls

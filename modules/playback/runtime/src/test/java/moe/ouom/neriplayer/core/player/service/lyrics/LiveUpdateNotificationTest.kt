@@ -96,6 +96,7 @@ class LiveUpdateNotificationTest {
         assertEquals(ACCENT, notification.color)
         val actions = checkNotNull(notification.actions)
         assertEquals(listOf(PREVIOUS_GLYPH, PAUSE_GLYPH, NEXT_GLYPH), actions.map { it.title.toString() })
+        actions.forEach { assertNull(it.getIcon()) }
         assertEquals(
             listOf(text(R.string.player_previous), text(R.string.player_pause), text(R.string.player_next)),
             actions.map { spokenLabel(it.title) },
@@ -132,9 +133,10 @@ class LiveUpdateNotificationTest {
     fun `paused notification offers play and stops the chronometer`() {
         val notification = build(playingContent.copy(playing = false), chronometerBaseWallMs = null)
 
-        val play = checkNotNull(notification.actions)[1].title
-        assertEquals(PLAY_GLYPH, play.toString())
-        assertEquals(text(R.string.player_play), spokenLabel(play))
+        val play = checkNotNull(notification.actions)[1]
+        assertEquals(PLAY_GLYPH, play.title.toString())
+        assertNull(play.getIcon())
+        assertEquals(text(R.string.player_play), spokenLabel(play.title))
         assertFalse(notification.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
         assertFalse(notification.extras.getBoolean(Notification.EXTRA_SHOW_WHEN))
     }

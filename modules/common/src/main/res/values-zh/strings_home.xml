@@ -57,4 +57,10 @@
     <string name="home_bili_music_source_upload">投稿视频 · %1$s</string>
     <string name="home_bili_music_source_note">榜单展示原唱信息，播放优先使用官方 MV，缺失时回退到榜单授权投稿视频</string>
     <string name="home_bili_music_open_original">打开原视频</string>
+    <!-- 首页模块二级页 -->
+    <string name="home_section_empty">这里还没有内容</string>
+    <string name="home_section_load_failed">加载失败：%s</string>
+    <string name="home_section_more_playlists">更多歌单</string>
+    <string name="home_section_refresh_hint">下拉或点击右上角可重新加载</string>
+    <string name="home_section_offline_unavailable">脱机模式下无法加载在线内容</string>
 </resources>

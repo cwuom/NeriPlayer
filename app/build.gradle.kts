@@ -511,6 +511,7 @@ dependencies {
 
     // 拖拽排序
     implementation(libs.reorderable)
+    implementation(libs.sh.calvin.reorderable)
     implementation(libs.gson)
 
     implementation(libs.androidx.media)

@@ -1,7 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioManager
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -45,7 +49,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackQualityOption
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
@@ -373,6 +376,17 @@ fun VolumeControlSheetContent() {
 
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
     var currentVolume by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
+    DisposableEffect(context, audioManager) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            }
+        }
+        ContextCompat.registerReceiver(context, receiver, IntentFilter("android.media.VOLUME_CHANGED_ACTION"),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
+        currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
 
     val audioDeviceInfo = rememberAudioDeviceInfo()
 
@@ -423,10 +437,11 @@ internal fun NowPlayingProgressSection(
     tabletLandscape: Boolean = false,
     progressRowModifier: Modifier = Modifier
 ) {
+    val playbackSource = LocalNowPlayingPlaybackSource.current
     val owner = remember(songKey) {
-        NowPlayingProgressOwner(PlayerManager.playbackPositionFlow.value)
+        NowPlayingProgressOwner(playbackSource.playbackPositionFlow.value)
     }
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
+    val currentPosition by playbackSource.playbackPositionFlow.collectAsStateWithLifecycle()
     val effectivePreviewPositionMs = owner.previewPositionMs(currentPosition)
     val previewOverridePositionMs = owner.previewOverrideMs(currentPosition)
     val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
@@ -532,18 +547,19 @@ private fun rememberNowPlayingSeekActions(
     owner: NowPlayingProgressOwner,
     lyricSeekHaptic: LyricSeekHapticFeedback
 ): NowPlayingSeekActionOwner {
-    return bindNowPlayingSeekActions(owner, lyricSeekHaptic, LocalContext.current)
+    return bindNowPlayingSeekActions(owner, lyricSeekHaptic, LocalContext.current, LocalNowPlayingPlaybackSource.current)
 }
 
 private fun bindNowPlayingSeekActions(
     owner: NowPlayingProgressOwner,
     lyricSeekHaptic: LyricSeekHapticFeedback,
-    context: Context
+    context: Context,
+    playbackSource: NowPlayingPlaybackSource
 ): NowPlayingSeekActionOwner = owner.bindSeekActions(
     lyricSeekHaptic::onSeekStart,
     lyricSeekHaptic::onSeekMove,
     lyricSeekHaptic::onSeekEnd,
-    { PlayerManager.seekTo(it) },
+    { playbackSource.seekTo(it) },
     context::performHapticFeedback
 )
 

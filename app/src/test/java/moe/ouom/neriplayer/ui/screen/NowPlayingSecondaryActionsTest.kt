@@ -62,6 +62,8 @@ class NowPlayingSecondaryActionsTest {
         assertTrue(lyrics.gesturesEnabled)
         owner.open(MoreOptionsPage.LISTEN_TOGETHER)
         assertFalse(owner.windowPresentation(compactLandscape = true).gesturesEnabled)
+        owner.onBack()
+        assertEquals(MoreOptionsPage.MAIN, owner.page)
         owner.updateSheetImeVisibility(false)
         assertFalse(owner.sheetImeVisible)
     }

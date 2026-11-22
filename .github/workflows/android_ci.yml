@@ -108,7 +108,7 @@ jobs:
           ./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
           :lyrics:verifyCrap :platform:verifyCrap :platform:verifyDomainDependencies :sync:verifyCrap :sync:verifyDomainDependencies
           :local:verifySyncIntegrationCrap :download:logic:verifyCrap :download:runtime:verifyCrap
-          :listentogether:verifyCrap :listentogether:verifyDomainDependencies
+          :listentogether:verifyCrap :listentogether:verifyDomainDependencies :ltwlan:verifyCrap
           verifyModularization --init-script .github/scripts/jvm_test_diagnostics.init.gradle
           --warning-mode all --stacktrace
 
@@ -146,10 +146,10 @@ jobs:
             test_group: shard 0
             emulator_gpu: swiftshader
             build_tasks: >-
-              :database:assembleDebugAndroidTest :local:assembleDebugAndroidTest
+              :database:assembleDebugAndroidTest :local:assembleDebugAndroidTest :ltwlan:assembleDebugAndroidTest
               :playback:runtime:assembleDebugAndroidTest :app:assembleDebug :app:assembleDebugAndroidTest
             module_tests: >-
-              :database:connectedDebugAndroidTest :local:connectedDebugAndroidTest
+              :database:connectedDebugAndroidTest :local:connectedDebugAndroidTest :ltwlan:connectedDebugAndroidTest
               :playback:runtime:connectedDebugAndroidTest
             app_test_arguments: >-
               -Pandroid.testInstrumentationRunnerArguments.numShards=4

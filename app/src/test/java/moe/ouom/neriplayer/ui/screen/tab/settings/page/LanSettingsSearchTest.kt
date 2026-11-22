@@ -1,0 +1,36 @@
+package moe.ouom.neriplayer.ui.screen.tab.settings.page
+import android.app.Application
+import androidx.test.core.app.ApplicationProvider
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
+import moe.ouom.neriplayer.ui.component.playback.ListenTogetherTab
+import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.listenTogetherTabForSearchTarget
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [32], application = Application::class)
+class LanSettingsSearchTest {
+    @Test fun discoveryAndNudgeSearchLeadToVisibleListenTogetherPage() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val entries = buildSettingsSearchEntries(app.resources)
+        assertTrue(searchSettingsEntries(entries, "LAN").any { it.page == SettingsPage.ListenTogether })
+        assertTrue(searchSettingsEntries(entries, "局域网").any { it.page == SettingsPage.ListenTogether })
+        val setting = AutoSettingsMetadata.settings.single { it.keyName == "lan_listen_nudge_ms" }
+        assertEquals(SettingsPage.ListenTogether, setting.settingsPage())
+        assertEquals("manual:lan_listen_together", setting.searchTargetId())
+        assertEquals(ListenTogetherTab.Lan, listenTogetherTabForSearchTarget(setting.searchTargetId()))
+        assertTrue(searchSettingsEntries(entries, "LAN").any {
+            it.page == SettingsPage.ListenTogether && it.targetId == "manual:lan_listen_together"
+        })
+    }
+
+    @Test fun cloudSearchTargetsSelectCloudAndUnrelatedTargetsPreserveTheCurrentTab() {
+        for (target in listOf("listen_together_join_room", "listen_together_server", "listen_together_nickname")) {
+            assertEquals(ListenTogetherTab.Cloud, listenTogetherTabForSearchTarget("manual:$target"))
+        }
+        assertNull(listenTogetherTabForSearchTarget(null))
+        assertNull(listenTogetherTabForSearchTarget("manual:other_settings"))
+    }
+}

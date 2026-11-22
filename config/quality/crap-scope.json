@@ -331,7 +331,8 @@
     "moe/ouom/neriplayer/data/local/storage/host/Storage*.kt",
     "moe/ouom/neriplayer/data/local/storage/mapping/Storage*.kt",
     "moe/ouom/neriplayer/data/local/storage/presentation/Storage*.kt",
-    "moe/ouom/neriplayer/data/local/storage/Storage*.kt"
+    "moe/ouom/neriplayer/data/local/storage/Storage*.kt",
+    "moe/ouom/neriplayer/lanltw/core/**/*.kt"
   ],
   "method_scopes": [
     {
@@ -770,20 +771,6 @@
         "acceptTrackEndIdentity",
         "isDuplicateTrackEnd",
         "acceptTrackEndTiming",
-        "seekToImpl",
-        "logSeekRequested",
-        "acceptSeekCommand",
-        "allowsLocalRoomSeek",
-        "preparePlaybackSeek",
-        "shouldRefreshYouTubeUrlForSeek",
-        "knownSeekDuration",
-        "rememberYouTubeSeekPosition",
-        "applyPendingSeekPosition",
-        "applyPlaybackSeek",
-        "seekPlayerIfReady",
-        "syncSeekOutputs",
-        "refreshPlaybackUrlAfterSeek",
-        "seekRefreshReason",
         "maybePersistPlaybackStatsProgress",
         "pauseInternal",
         "startProgressUpdates",
@@ -829,6 +816,26 @@
         "clearQueueStopMediaUrl",
         "logQueueStopComplete",
         "<clinit>"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/player/playback/PlayerManagerSeekExtensions.kt",
+      "class": "moe.ouom.neriplayer.core.player.playback.PlayerManagerSeekExtensionsKt",
+      "methods": [
+        "seekToImpl",
+        "logSeekRequested",
+        "acceptSeekCommand",
+        "allowsLocalRoomSeek",
+        "preparePlaybackSeek",
+        "shouldRefreshYouTubeUrlForSeek",
+        "knownSeekDuration",
+        "rememberYouTubeSeekPosition",
+        "applyPendingSeekPosition",
+        "applyPlaybackSeek",
+        "seekPlayerIfReady",
+        "syncSeekOutputs",
+        "refreshPlaybackUrlAfterSeek",
+        "seekRefreshReason"
       ]
     },
     {
@@ -1123,17 +1130,17 @@
         "NowPlayingScreen",
         "NowPlayingImmersivePortraitLayout-EUb7tLY",
         "resolveNowPlayingCoverPagePresentation",
-        "NowPlayingScreen$lambda$155$0$2$0$1",
-        "NowPlayingScreen$lambda$155$0$2$0$1$22",
-        "NowPlayingScreen$lambda$155$0$2$0$1$23",
-        "NowPlayingScreen$lambda$155$0$2$0$1$24",
-        "NowPlayingScreen$lambda$155$0$2$0$1$25",
-        "NowPlayingScreen$lambda$155$0$2$0$1$26",
-        "NowPlayingScreen$lambda$155$0$2$0$1$27",
-        "NowPlayingScreen$lambda$155$0$2$0$1$28",
-        "NowPlayingScreen$lambda$155$0$2$0$1$29",
-        "NowPlayingScreen$lambda$155$0$2$0$1$30",
-        "NowPlayingScreen$lambda$155$0$2$0$1$24$0"
+        "NowPlayingScreen$lambda$156$0$2$0$1",
+        "NowPlayingScreen$lambda$156$0$2$0$1$22",
+        "NowPlayingScreen$lambda$156$0$2$0$1$23",
+        "NowPlayingScreen$lambda$156$0$2$0$1$24",
+        "NowPlayingScreen$lambda$156$0$2$0$1$25",
+        "NowPlayingScreen$lambda$156$0$2$0$1$26",
+        "NowPlayingScreen$lambda$156$0$2$0$1$27",
+        "NowPlayingScreen$lambda$156$0$2$0$1$28",
+        "NowPlayingScreen$lambda$156$0$2$0$1$29",
+        "NowPlayingScreen$lambda$156$0$2$0$1$30",
+        "NowPlayingScreen$lambda$156$0$2$0$1$24$0"
       ]
     },
     {

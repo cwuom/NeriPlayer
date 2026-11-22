@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
@@ -329,33 +330,54 @@ internal class AppPlaybackSettingsActions(
         }
 }
 
+internal interface HomeSectionSettingsActions {
+    fun setMajorVisible(id: String, visible: Boolean)
+    fun reorderMajor(order: List<String>)
+    fun setSubVisible(parentId: String, id: String, visible: Boolean)
+    fun reorderSub(parentId: String, order: List<String>)
+}
+
 internal class AppHomeSettingsActions(
     private val repo: SettingsRepository,
     private val scope: CoroutineScope
-) {
+) : HomeSectionSettingsActions {
     val onDefaultStartDestinationChange: (String) -> Unit = { route ->
-            scope.launch { repo.setDefaultStartDestination(route) }
-        }
+        scope.launch { repo.setDefaultStartDestination(route) }
+    }
 
-    val onShowHomeContinueCardChange: (Boolean) -> Unit = { enabled ->
-            scope.launch { repo.setHomeCardContinue(enabled) }
-        }
+    private val majorVisibility = mapOf(
+        HomeMajorSectionIds.CONTINUE to repo::setHomeCardContinue,
+        HomeMajorSectionIds.TRENDING to repo::setHomeCardTrending,
+        HomeMajorSectionIds.RADAR to repo::setHomeCardRadar,
+        HomeMajorSectionIds.RECOMMENDED to repo::setHomeCardRecommended,
+        HomeMajorSectionIds.BILIBILI to repo::setHomeCardBilibili
+    )
+    private val subVisibility = mapOf(
+        HomeMajorSectionIds.TRENDING to repo::setHomeTrendingSubSectionVisible,
+        HomeMajorSectionIds.RADAR to repo::setHomeRadarSubSectionVisible,
+        HomeMajorSectionIds.RECOMMENDED to repo::setHomeRecommendedSubSectionVisible
+    )
+    private val subOrder = mapOf(
+        HomeMajorSectionIds.TRENDING to repo::setHomeTrendingOrder,
+        HomeMajorSectionIds.RADAR to repo::setHomeRadarOrder,
+        HomeMajorSectionIds.RECOMMENDED to repo::setHomeRecommendedOrder
+    )
 
-    val onShowHomeTrendingCardChange: (Boolean) -> Unit = { enabled ->
-            scope.launch { repo.setHomeCardTrending(enabled) }
-        }
+    override fun setMajorVisible(id: String, visible: Boolean) {
+        scope.launch { majorVisibility.getValue(id)(visible) }
+    }
 
-    val onShowHomeRadarCardChange: (Boolean) -> Unit = { enabled ->
-            scope.launch { repo.setHomeCardRadar(enabled) }
-        }
+    override fun reorderMajor(order: List<String>) {
+        scope.launch { repo.setHomeMajorOrder(order) }
+    }
 
-    val onShowHomeRecommendedCardChange: (Boolean) -> Unit = { enabled ->
-            scope.launch { repo.setHomeCardRecommended(enabled) }
-        }
+    override fun setSubVisible(parentId: String, id: String, visible: Boolean) {
+        scope.launch { subVisibility.getValue(parentId)(id, visible) }
+    }
 
-    val onShowHomeBilibiliCardChange: (Boolean) -> Unit = { enabled ->
-            scope.launch { repo.setHomeCardBilibili(enabled) }
-        }
+    override fun reorderSub(parentId: String, order: List<String>) {
+        scope.launch { subOrder.getValue(parentId)(order) }
+    }
 }
 
 internal class AppStorageSettingsActions(

@@ -538,8 +538,88 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardBilibili = autoSetting(
-            titleRes = CoreCommonR.string.settings_home_card_bilibili,
-            descriptionRes = CoreCommonR.string.settings_home_card_bilibili_desc
+            titleRes = CoreCommonR.string.settings_home_card_bilibili
+        )
+
+        @AutoSetting(
+            key = "home_major_order",
+            type = SettingValueType.String,
+            defaultString = "continue,radar,trending,recommended,bilibili",
+            order = 71,
+            ui = SettingUiType.Custom
+        )
+        val homeMajorOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_major_order,
+            descriptionRes = CoreCommonR.string.settings_home_major_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_trending_order",
+            type = SettingValueType.String,
+            defaultString = "top_soaring,personalized_new_songs,top_hot,top_new",
+            order = 72,
+            ui = SettingUiType.Custom
+        )
+        val homeTrendingOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_trending_order,
+            descriptionRes = CoreCommonR.string.settings_home_trending_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_trending_hidden",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 73,
+            ui = SettingUiType.Custom
+        )
+        val homeTrendingHidden = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_trending_visible
+        )
+
+        @AutoSetting(
+            key = "home_radar_order",
+            type = SettingValueType.String,
+            defaultString = "personal_radar,radar_playlists,daily_recommend,private_fm",
+            order = 74,
+            ui = SettingUiType.Custom
+        )
+        val homeRadarOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_radar_order,
+            descriptionRes = CoreCommonR.string.settings_home_radar_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_radar_hidden",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 75,
+            ui = SettingUiType.Custom
+        )
+        val homeRadarHidden = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_radar_visible
+        )
+
+        @AutoSetting(
+            key = "home_recommended_order",
+            type = SettingValueType.String,
+            defaultString = "personalized,daily_resource,high_quality,hot_playlists,acg_playlists",
+            order = 76,
+            ui = SettingUiType.Custom
+        )
+        val homeRecommendedOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_recommended_order,
+            descriptionRes = CoreCommonR.string.settings_home_recommended_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_recommended_hidden",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 77,
+            ui = SettingUiType.Custom
+        )
+        val homeRecommendedHidden = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_recommended_visible
         )
     }
 
@@ -1838,6 +1918,18 @@ object AutoSettingsSchema {
         order = 110
     )
     object playback : PlaybackSettingsSection() {
+        @AutoSetting(order = 991, ui = SettingUiType.Custom)
+        val lanHostPermissions = autoIntSetting(
+            key = "lan_listen_host_permissions", defaultValue = 7,
+            titleRes = CoreCommonR.string.lan_permissions, icon = AutoSettingIcon.Bolt
+        )
+
+        @AutoSetting(order = 990, ui = SettingUiType.Custom)
+        val lanNudgeMs = autoIntSetting(
+            key = "lan_listen_nudge_ms", defaultValue = 0,
+            titleRes = CoreCommonR.string.lan_nudge, icon = AutoSettingIcon.Bolt
+        )
+
         val metadata = autoSettingsSection(
             titleRes = CoreCommonR.string.settings_playback,
             descriptionRes = CoreCommonR.string.settings_playback_expand,

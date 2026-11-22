@@ -1,4 +1,7 @@
 [versions]
+nanoHttpd = "2.3.1"
+javaWebSocket = "1.6.0"
+zipline = "1.28.0"
 zstd = "1.5.7-20"
 androidxAnnotation = "1.11.0"
 accompanistNavigationAnimation = "0.36.0"
@@ -43,6 +46,7 @@ robolectric = "4.17"
 newpipeExtractor = "v0.26.4"
 paletteKtx = "1.0.0"
 reorderable = "0.9.6"
+shCalvinReorderable = "3.1.0"
 room = "2.8.4"
 foundationLayout = "1.11.4"
 securityCrypto = "1.1.0"
@@ -60,6 +64,9 @@ focusApi = "1.4"
 hiddenApiBypass = "6.1"
 
 [libraries]
+nanohttpd = { module = "org.nanohttpd:nanohttpd", version.ref = "nanoHttpd" }
+java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "javaWebSocket" }
+zipline = { module = "app.cash.zipline:zipline", version.ref = "zipline" }
 zstd-jni = { module = "com.github.luben:zstd-jni", version.ref = "zstd" }
 androidx-annotation = { module = "androidx.annotation:annotation", version.ref = "androidxAnnotation" }
 accompanist-navigation-animation = { module = "com.google.accompanist:accompanist-navigation-animation", version.ref = "accompanistNavigationAnimation" }
@@ -137,6 +144,7 @@ focus-api = { module = "com.xzakota.hyper.notification:focus-api", version.ref =
 hidden-api-bypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version.ref = "hiddenApiBypass" }
 eclipse-jgit = { module = "org.eclipse.jgit:org.eclipse.jgit", version = "6.9.0.202403050737-r" }
 reorderable = { module = "org.burnoutcrew.composereorderable:reorderable", version.ref = "reorderable" }
+sh-calvin-reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "shCalvinReorderable" }
 androidx-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayout" }
 
 

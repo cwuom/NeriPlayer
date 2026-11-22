@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.SettingsPersonalizationHomeCard
 import moe.ouom.neriplayer.ui.settings.route.AppHomeSettingsActions
+import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -66,23 +67,10 @@ class SettingsHomeBilibiliVisibilityTest {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         SettingsPersonalizationHomeCard(
                             internationalEnabled = false,
-                            homeTrendingLabelRes = copy.trendingLabelRes,
-                            homeRadarLabelRes = copy.radarLabelRes,
-                            homeRecommendedLabelRes = copy.recommendedLabelRes,
-                            homeTrendingSupportingRes = copy.trendingSupportingRes,
-                            homeRadarSupportingRes = copy.radarSupportingRes,
-                            homeRecommendedSupportingRes = copy.recommendedSupportingRes,
+                            copy = copy,
                             homeStartAvailable = isSettingsHomeStartAvailable(false, false, false, false, false, enabled),
-                            showHomeContinueCard = false,
-                            onShowHomeContinueCardChange = {},
-                            showHomeTrendingCard = false,
-                            onShowHomeTrendingCardChange = {},
-                            showHomeRadarCard = false,
-                            onShowHomeRadarCardChange = {},
-                            showHomeRecommendedCard = false,
-                            onShowHomeRecommendedCardChange = {},
-                            showHomeBilibiliCard = enabled,
-                            onShowHomeBilibiliCardChange = actions.onShowHomeBilibiliCardChange,
+                            state = AppHomeCardsSettingsState(false, false, false, false, enabled),
+                            actions = actions,
                             highlightTargetId = null,
                             highlightPulse = 0,
                             onHighlightFinished = null

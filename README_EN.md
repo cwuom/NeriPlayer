@@ -192,10 +192,13 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 
 ### 👥 Listen Together
 
+- **Unified entry**: switch between Cloud and LAN using the sliding tabs under Now Playing → More → Listen Together. The tablet mini-player and Settings use the same grouping.
 - **Rooms**: create or join a room with real-time WebSocket sync.
 - **Joining**: the first join needs an invite key; reconnects use a member key.
 - **Synced state**: host / listener roles, repeat and shuffle modes, clock-offset correction, and host offline recovery.
 - **Playback candidates**: the host can share up to 3 candidates; listeners resolve them with their own quality policy first.
+
+- **LAN Listen Together** lets devices on the same Wi-Fi discover rooms or join by address. Manage rooms from the speaker button in the player, Now Playing → More, or Settings → Listen Together. The host can share audio, cover art, and lyrics. Members can play and pause by default. The Progress permission controls both skipping and seeking and is enabled by default. They can see the room volume and adjust their own device volume and timing offset. If the host grants volume control, members can also drag the room volume slider to adjust all devices together or change just the host device’s volume. Permission settings are saved on the host device. LAN rooms run separately from cloud rooms and currently do not support USB exclusive output. See the [module documentation](modules/ltwlan/README.md).
 
 ### 🛟 Stability and diagnostics
 
@@ -307,7 +310,7 @@ When online, tap a desktop-synced Bilibili multipart video in My Favorites or a 
 
 Build versions, module boundaries, and key implementation paths are documented separately:
 
-- [docs/implementation_EN.md](./docs/implementation_EN.md): build versions, the 14 owned libraries, entry points and navigation, playback and caching, search and data sources, local data and safety, downloads and backup.
+- [docs/implementation_EN.md](./docs/implementation_EN.md): build versions, the 15 owned libraries, entry points and navigation, playback and caching, search and data sources, local data and safety, downloads and backup.
 - [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md#project-layout): module boundaries, extension paths, tests, and submission rules.
 
 ---
@@ -330,7 +333,7 @@ In the app's Settings you can set the server address, test availability, and res
 - Room IDs are 6 readable characters.
 - Nicknames are 1–24 characters: Chinese, Latin letters, and digits.
 - The first join must use the key in the invite link.
-- Local songs cannot create a room.
+- Cloud rooms support online tracks. LAN rooms also support local audio.
 
 For the full protocol, event model, and deployment details, see [np-submodule/NeriPlayer-LTW/README.md](./np-submodule/NeriPlayer-LTW/README.md).
 

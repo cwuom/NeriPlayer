@@ -14,25 +14,56 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.ui.component.playback.ListenTogetherTab
+import moe.ouom.neriplayer.ui.component.playback.ListenTogetherTabs
+import moe.ouom.neriplayer.ui.screen.tab.settings.lan.LanListenTogetherSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 
 @Composable
 internal fun SettingsListenTogetherSection(
     controller: SettingsListenTogetherController,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        SettingsListenTogetherJoinItem(controller)
-        SettingsListenTogetherServerItem(controller)
-        SettingsListenTogetherNicknameItem(controller)
-        SettingsListenTogetherIdentityItem(controller)
-    }
+    val lanManager = remember { AppContainer.lanListenTogether }
+    val cloudManager = remember { AppContainer.listenTogetherSessionManager }
+    val lanState by lanManager.state.collectAsStateWithLifecycle()
+    val cloudState by cloudManager.sessionState.collectAsStateWithLifecycle()
+    ListenTogetherTabs(
+        lanActive = lanState.active,
+        cloudRoomId = cloudState.roomId,
+        modifier = modifier,
+        requestedTab = listenTogetherTabForSearchTarget(highlightTargetId),
+        requestId = highlightPulse,
+        cloudContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                SettingsListenTogetherJoinItem(controller)
+                SettingsListenTogetherServerItem(controller)
+                SettingsListenTogetherNicknameItem(controller)
+                SettingsListenTogetherIdentityItem(controller)
+            }
+        },
+        lanContent = { LanListenTogetherSection() }
+    )
+}
+
+internal fun listenTogetherTabForSearchTarget(targetId: String?): ListenTogetherTab? = when (targetId) {
+    "manual:lan_listen_together" -> ListenTogetherTab.Lan
+    "manual:listen_together_join_room",
+    "manual:listen_together_server",
+    "manual:listen_together_nickname" -> ListenTogetherTab.Cloud
+    else -> null
 }
 
 @Composable
