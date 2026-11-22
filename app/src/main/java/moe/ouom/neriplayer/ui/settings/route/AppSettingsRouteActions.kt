@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.State
+import androidx.compose.runtime.Stable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -331,11 +332,23 @@ internal class AppPlaybackSettingsActions(
         }
 }
 
+/**
+ * 首页卡片设置页的写操作。
+ *
+ * 标注 [Stable] 是为了让 Compose 的重启作用域把它当作稳定类型：
+ * 未标注时接口类型会被视为不稳定，编译器会在每个 Composable 的重启作用域里
+ * 多生成一次 `changedInstance` 检查，抬高圈复杂度。
+ */
+@Stable
 internal interface HomeSectionSettingsActions {
     fun setMajorVisible(id: String, visible: Boolean)
     fun reorderMajor(order: List<String>)
     fun setSubVisible(parentId: String, id: String, visible: Boolean)
     fun reorderSub(parentId: String, order: List<String>)
+    /** 设置歌曲类小模块的展示形态（默认列表 / 榜单卡片）。 */
+    fun setSongSectionMode(id: String, mode: HomeSongSectionDisplayMode)
+    /** 设置榜单卡片的并排数量（1 / 2 / 3）。 */
+    fun setSongCardColumns(columns: Int)
 }
 
 internal class AppHomeSettingsActions(
@@ -380,11 +393,11 @@ internal class AppHomeSettingsActions(
         scope.launch { subOrder.getValue(parentId)(order) }
     }
 
-    val onSetHomeSongSectionMode: (String, HomeSongSectionDisplayMode) -> Unit = { id, mode ->
+    override fun setSongSectionMode(id: String, mode: HomeSongSectionDisplayMode) {
         scope.launch { repo.setHomeSongSectionMode(id, mode) }
     }
 
-    val onSetHomeSongCardColumns: (Int) -> Unit = { columns ->
+    override fun setSongCardColumns(columns: Int) {
         scope.launch { repo.setHomeSongCardColumns(columns) }
     }
 }

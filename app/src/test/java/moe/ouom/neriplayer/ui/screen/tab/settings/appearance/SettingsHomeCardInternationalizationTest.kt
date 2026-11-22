@@ -22,6 +22,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsHomeCardCopy
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHighlightState
 import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.Assert.assertEquals
@@ -76,9 +77,11 @@ class SettingsHomeCardInternationalizationTest {
                         homeStartAvailable = true,
                         state = AppHomeCardsSettingsState(true, true, true, true, checked),
                         actions = actions,
-                        highlightTargetId = null,
-                        highlightPulse = 0,
-                        onHighlightFinished = null
+                        highlight = SettingsHighlightState(
+                            targetId = null,
+                            pulse = 0,
+                            onFinished = null
+                        )
                     )
                 }
             }

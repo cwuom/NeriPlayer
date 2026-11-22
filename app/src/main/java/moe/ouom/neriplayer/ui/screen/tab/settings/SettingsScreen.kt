@@ -102,6 +102,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsResponsiveDe
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.miuixSettingsSectionCardItem
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHighlightState
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.screen.tab.settings.about.SettingsAboutPageContent
@@ -301,6 +302,15 @@ internal fun SettingsScreen(
     val settingsHighlightTargetId by navigation.highlightTargetState
     val settingsHighlightPulse by navigation.highlightPulseState
     val onSettingsHighlightFinished: () -> Unit = navigation::clearHighlight
+    // 首页卡片设置整块共用一个高亮状态对象，避免把这三个值分别透传给
+    // Composable 参数，抬高它们的圈复杂度。
+    val homeCardHighlight = remember(settingsHighlightTargetId, settingsHighlightPulse) {
+        SettingsHighlightState(
+            targetId = settingsHighlightTargetId,
+            pulse = settingsHighlightPulse,
+            onFinished = onSettingsHighlightFinished
+        )
+    }
 
     fun navigateBackFromActiveSettingsPage() = navigation.navigateBack()
 
@@ -576,13 +586,7 @@ internal fun SettingsScreen(
                                     homeStartAvailable = homeStartAvailable,
                                     state = otherState.homeCards,
                                     actions = homeActions,
-                                    songSectionModes = otherState.homeCards.songSectionModes,
-                                    onSetSongSectionMode = homeActions.onSetHomeSongSectionMode,
-                                    songCardColumns = otherState.homeCards.songCardColumns,
-                                    onSetSongCardColumns = homeActions.onSetHomeSongCardColumns,
-                                    highlightTargetId = settingsHighlightTargetId,
-                                    highlightPulse = settingsHighlightPulse,
-                                    onHighlightFinished = onSettingsHighlightFinished
+                                    highlight = homeCardHighlight
                                 )
                             }
                         },

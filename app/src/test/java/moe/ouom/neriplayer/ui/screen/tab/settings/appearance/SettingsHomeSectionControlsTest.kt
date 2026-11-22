@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsHomeCardCopy
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHighlightState
 import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.settings.route.AppHomeSettingsActions
 import moe.ouom.neriplayer.ui.theme.NeriTheme
@@ -213,9 +214,11 @@ class SettingsHomeSectionControlsTest {
                         homeStartAvailable = true,
                         state = state,
                         actions = actions,
-                        highlightTargetId = highlightTargetId,
-                        highlightPulse = if (highlightTargetId == null) 0 else 1,
-                        onHighlightFinished = null
+                        highlight = SettingsHighlightState(
+                            targetId = highlightTargetId,
+                            pulse = if (highlightTargetId == null) 0 else 1,
+                            onFinished = null
+                        )
                     )
                 }
             }

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.settings.route
 
+import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
@@ -102,6 +103,14 @@ internal data class AppMobileAudioQualitySettingsState(
     val mobileDataBiliAudioQuality: String
 )
 
+/**
+ * 首页卡片设置页的状态快照。
+ *
+ * 标注 [Immutable] 是为了让 Compose 的重启作用域把它当作稳定类型：
+ * 未标注时 `Map` 字段会让编译器认为该类型不稳定，从而在每个 Composable
+ * 的重启作用域里多生成一次 `changedInstance` 检查，抬高圈复杂度。
+ */
+@Immutable
 internal data class AppHomeCardsSettingsState(
     val showHomeContinueCard: Boolean,
     val showHomeTrendingCard: Boolean,
