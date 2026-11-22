@@ -36,7 +36,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AltRoute
+import androidx.compose.material.icons.automirrored.rounded.AltRoute
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.Celebration
@@ -235,6 +235,7 @@ fun StartupOnboardingScreen(
         preferHighRefreshRate = preferHighRefreshRate
     )
     var motionTouched by rememberSaveable { mutableStateOf(false) }
+    var chosenMotionPreset by rememberSaveable { mutableStateOf<StartupMotionPreset?>(null) }
     var motionScanPlayed by rememberSaveable { mutableStateOf(false) }
     var pendingMotionConfig by remember { mutableStateOf<StartupMotionConfig?>(null) }
     LaunchedEffect(storedMotionConfig, pendingMotionConfig) {
@@ -246,7 +247,7 @@ fun StartupOnboardingScreen(
         else -> pendingMotionConfig ?: storedMotionConfig
     }
     val selectedMotionPreset = if (motionTouched) {
-        matchStartupMotionPreset(displayedMotionConfig, deviceSpec)
+        matchStartupMotionPreset(displayedMotionConfig, deviceSpec, preferred = chosenMotionPreset)
     } else {
         recommendation.preset
     }
@@ -397,7 +398,6 @@ fun StartupOnboardingScreen(
     }
 
     // 隐私说明: 只在同意前倒计时, 同意动作交给宿主写入
-    var privacyCountdown by rememberSaveable { mutableIntStateOf(STARTUP_PRIVACY_COUNTDOWN_SECONDS) }
     var policyOpen by rememberSaveable { mutableStateOf(false) }
     var policyCollapseToEntry by remember { mutableStateOf(true) }
     val previewLyricTexts = startupPreviewLyricTexts()
@@ -433,13 +433,9 @@ fun StartupOnboardingScreen(
         nowPlayingPreviewOpen = true
     }
     var awaitingConsent by remember { mutableStateOf(false) }
-    LaunchedEffect(currentStep, privacyCountdown, disclaimerAccepted) {
-        if (currentStep != StartupStep.Privacy || disclaimerAccepted || privacyCountdown <= 0) {
-            return@LaunchedEffect
-        }
-        delay(1_000L.milliseconds)
-        privacyCountdown -= 1
-    }
+    val privacyCountdown = rememberStartupPrivacyCountdown(
+        active = currentStep == StartupStep.Privacy && !disclaimerAccepted
+    )
     val session = if (disclaimerAccepted) rememberStartupOnboardingSession() else null
     val noPlatformConnected = session?.let { rememberStartupNoPlatformConnected(it) } ?: false
 
@@ -460,8 +456,9 @@ fun StartupOnboardingScreen(
         stepIndex = nextIndex
     }
     LaunchedEffect(disclaimerAccepted) {
-        if (disclaimerAccepted && awaitingConsent) {
-            awaitingConsent = false
+        if (!disclaimerAccepted || !awaitingConsent) return@LaunchedEffect
+        awaitingConsent = false
+        if (shouldAdvanceAfterStartupConsent(currentStep)) {
             transitionToStep(StartupStep.Privacy.ordinal + 1)
         }
     }
@@ -641,7 +638,10 @@ fun StartupOnboardingScreen(
                 uiStyle = uiStyle,
                 scanPlayed = motionScanPlayed,
                 onScanPlayed = { motionScanPlayed = true },
-                onSelectPreset = { preset -> applyMotionConfig(startupMotionConfigFor(preset, deviceSpec)) },
+                onSelectPreset = { preset ->
+                    chosenMotionPreset = preset
+                    applyMotionConfig(startupMotionConfigFor(preset, deviceSpec))
+                },
                 onConfigChange = ::applyMotionConfig
             )
             StartupStep.Privacy -> StartupPrivacyStepBody(
@@ -841,7 +841,7 @@ fun StartupOnboardingScreen(
                                                     else -> stringResource(AppR.string.onboarding_action_next)
                                                 },
                                                 primaryEnabled = !finishing && !awaitingConsent &&
-                                                    (currentStep != StartupStep.Privacy || disclaimerAccepted || privacyCountdown <= 0),
+                                                    (currentStep != StartupStep.Privacy || isStartupPrivacyAgreeEnabled(disclaimerAccepted, privacyCountdown)),
                                                 onPrimary = { goNextStep() },
                                                 primaryProgress = if (currentStep == StartupStep.Privacy && !disclaimerAccepted) {
                                                     resolveStartupPrivacyCountdownProgress(privacyCountdown)
@@ -938,19 +938,16 @@ fun StartupOnboardingScreen(
                                     visible = policyOpen && currentStep == StartupStep.Privacy,
                                     onClose = { policyOpen = false },
                                     agreeLabel = startupPrivacyAgreeLabel(disclaimerAccepted, privacyCountdown),
-                                    agreeEnabled = !awaitingConsent && (disclaimerAccepted || privacyCountdown <= 0),
+                                    agreeEnabled = !awaitingConsent && isStartupPrivacyAgreeEnabled(disclaimerAccepted, privacyCountdown),
                                     agreeProgress = if (!disclaimerAccepted) {
                                         resolveStartupPrivacyCountdownProgress(privacyCountdown)
                                     } else {
                                         null
                                     },
                                     onAgree = {
-                                        if (disclaimerAccepted) {
-                                            policyCollapseToEntry = true
-                                            policyOpen = false
-                                        } else {
-                                            goNextStep()
-                                        }
+                                        // 已同意时按钮显示为下一步, 和底栏一样直接前进; 入口卡片随旧页退场, 不再收回
+                                        if (disclaimerAccepted) policyCollapseToEntry = false
+                                        goNextStep()
                                     },
                                     collapseToEntry = policyCollapseToEntry
                                 )
@@ -1071,7 +1068,7 @@ private fun startupHeroSpec(step: StartupStep): StartupHeroSpec = when (step) {
         stringResource(AppR.string.onboarding_platforms_title), stringResource(AppR.string.onboarding_platforms_desc)
     )
     StartupStep.PlaybackSources -> StartupHeroSpec(
-        Icons.Rounded.AltRoute, 6,
+        Icons.AutoMirrored.Rounded.AltRoute, 6,
         stringResource(AppR.string.onboarding_playback_sources_title),
         stringResource(AppR.string.onboarding_playback_sources_desc)
     )

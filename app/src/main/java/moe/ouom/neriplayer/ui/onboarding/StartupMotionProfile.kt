@@ -238,13 +238,16 @@ internal fun startupMotionConfigFor(
     }
 }
 
-/** 回到这一步时用当前设置反推档位, 都对不上就显示为自定义 */
+/**
+ * 回到这一步时用当前设置反推档位, 都对不上就显示为自定义
+ * 旧系统裁掉不支持的效果后几个档位可能是同一份配置, 这时以用户点选的档位为准
+ */
 internal fun matchStartupMotionPreset(
     config: StartupMotionConfig,
-    spec: StartupDeviceSpec
-): StartupMotionPreset? = StartupMotionPreset.entries.firstOrNull { preset ->
-    startupMotionConfigFor(preset, spec) == config
-}
+    spec: StartupDeviceSpec,
+    preferred: StartupMotionPreset? = null
+): StartupMotionPreset? = preferred?.takeIf { startupMotionConfigFor(it, spec) == config }
+    ?: StartupMotionPreset.entries.firstOrNull { preset -> startupMotionConfigFor(preset, spec) == config }
 
 internal fun StartupMotionConfig.withEnhancedAdvancedBlur(enabled: Boolean): StartupMotionConfig {
     val quality = if (!enabled && advancedBlurQuality == AdvancedBlurQuality.High) {

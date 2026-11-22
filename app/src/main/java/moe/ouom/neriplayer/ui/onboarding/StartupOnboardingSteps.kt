@@ -94,6 +94,10 @@ internal fun canEnterStartupStep(
     disclaimerAccepted: Boolean
 ): Boolean = !step.requiresConsent || disclaimerAccepted
 
+// 同意要等完整说明收起才写入, 这段时间里用户可能已经返回上一步, 那时不能再把人拉去下一步
+internal fun shouldAdvanceAfterStartupConsent(currentStep: StartupStep): Boolean =
+    currentStep == StartupStep.Privacy
+
 /** 已经做过的选择收进顶部胶囊, 当前步骤和完成页用各自的大卡片承接同一个共享元素 */
 internal fun isStartupChoiceInRail(choice: StartupChoice, currentStep: StartupStep): Boolean =
     currentStep.ordinal > choice.step.ordinal && currentStep != StartupStep.LearningGuide

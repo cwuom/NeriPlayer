@@ -46,9 +46,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +64,8 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
@@ -368,12 +372,8 @@ internal fun StartupPrivacyPolicyOverlay(
                 modifier = Modifier
                     .widthIn(max = 720.dp)
                     .fillMaxSize()
-                    .startupContainerTransform(handle, zIndexInOverlay = 4f)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
-                    ),
+                    .startupContainerTransform(handle, zIndexInOverlay = 4f),
+                // Surface 本身会拦下触摸, 再套 clickable 会把整页说明合并成一个节点, 读屏和滚动都会失效
                 shape = tokens.dialogShape,
                 color = colors.surfaceContainerLow,
                 border = if (tokens.isClean) BorderStroke(0.5.dp, colors.outlineVariant) else null
@@ -471,6 +471,24 @@ private fun StartupPolicySectionBlock(index: Int, section: StartupPolicySection)
         }
     }
 }
+
+/** 只在隐私页且尚未同意时每秒减一, 离开再回来接着数, 不重新开始 */
+@Composable
+internal fun rememberStartupPrivacyCountdown(
+    active: Boolean,
+    totalSeconds: Int = STARTUP_PRIVACY_COUNTDOWN_SECONDS
+): Int {
+    var remaining by rememberSaveable { mutableIntStateOf(totalSeconds) }
+    LaunchedEffect(active, remaining) {
+        if (!active || remaining <= 0) return@LaunchedEffect
+        delay(1_000L.milliseconds)
+        remaining -= 1
+    }
+    return remaining
+}
+
+internal fun isStartupPrivacyAgreeEnabled(accepted: Boolean, remainingSeconds: Int): Boolean =
+    accepted || remainingSeconds <= 0
 
 @Composable
 internal fun startupPrivacyAgreeLabel(accepted: Boolean, remainingSeconds: Int): String = when {

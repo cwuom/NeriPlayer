@@ -154,10 +154,8 @@ internal fun StartupAmbientBackdrop(
             .drawBehind {
                 val unit = max(size.width, size.height)
                 fun blob(anchor: Offset, color: Color, radiusFactor: Float, wobble: Float) {
-                    val center = Offset(
-                        size.width * anchor.x + cos(phase + wobble) * unit * 0.035f,
-                        size.height * anchor.y + sin(phase * 0.8f + wobble) * unit * 0.03f
-                    )
+                    val center = Offset(size.width * anchor.x, size.height * anchor.y) +
+                        startupAmbientDrift(phase, wobble) * unit
                     val radius = unit * radiusFactor
                     drawCircle(
                         brush = Brush.radialGradient(
@@ -176,6 +174,10 @@ internal fun StartupAmbientBackdrop(
             }
     )
 }
+
+// 纵向用相位的整数倍, phase 从 2π 回到 0 时位置首尾相接, 光斑不会在循环点跳一下
+internal fun startupAmbientDrift(phase: Float, wobble: Float): Offset =
+    Offset(cos(phase + wobble) * 0.035f, sin(phase * 2f + wobble) * 0.03f)
 
 private fun Color.luminanceApprox(): Float = 0.2126f * red + 0.7152f * green + 0.0722f * blue
 

@@ -537,7 +537,7 @@ private fun StartupMotionFineTune(
         add(
             StartupMotionToggle(
                 titleRes = CoreCommonR.string.settings_enhanced_advanced_blur,
-                checked = config.enhancedAdvancedBlur && config.advancedBlur,
+                checked = capabilities.advancedBlurSupported && config.advancedBlur && config.enhancedAdvancedBlur,
                 enabled = capabilities.advancedBlurSupported && config.advancedBlur,
                 hintRes = when {
                     !capabilities.advancedBlurSupported -> AppR.string.onboarding_motion_requires_android13

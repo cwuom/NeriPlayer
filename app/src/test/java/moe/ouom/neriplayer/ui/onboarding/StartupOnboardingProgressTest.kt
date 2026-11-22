@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.ui.onboarding
 
+import kotlin.math.PI
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
@@ -213,5 +215,22 @@ class StartupOnboardingProgressTest {
         assertTrue(STARTUP_PREVIEW_START_MS in lyrics.first().startTimeMs until lyrics.first().endTimeMs)
         lyrics.zipWithNext { previous, next -> assertEquals(previous.endTimeMs, next.startTimeMs) }
         assertTrue(lyrics.last().endTimeMs < STARTUP_PREVIEW_DURATION_MS)
+    }
+
+    @Test
+    fun ambientDriftLoopsWithoutJumpAtPhaseRestart() {
+        // phase 从 2π 回到 0 时光斑位置要首尾相接
+        listOf(0f, 2.1f).forEach { wobble ->
+            val start = startupAmbientDrift(0f, wobble)
+            val end = startupAmbientDrift(2f * PI.toFloat(), wobble)
+            assertEquals(start.x, end.x, 1e-4f)
+            assertEquals(start.y, end.y, 1e-4f)
+        }
+    }
+
+    @Test
+    fun consentOnlyAdvancesWhileUserStaysOnPrivacy() {
+        assertTrue(shouldAdvanceAfterStartupConsent(StartupStep.Privacy))
+        assertFalse(shouldAdvanceAfterStartupConsent(StartupStep.Motion))
     }
 }

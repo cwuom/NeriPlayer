@@ -34,7 +34,6 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.espresso.Espresso
@@ -48,10 +47,12 @@ import moe.ouom.neriplayer.common.locale.LanguageManager.Language
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.core.startup.debug.debugBuildWarningDataStore
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
+import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.appearance.PreviewThemePromptRepository
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.testutil.StartupMotionPreferencesSnapshot
 import moe.ouom.neriplayer.ui.onboarding.StartupStep
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsPageTransitionSceneTag
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
@@ -342,13 +343,12 @@ class MainActivityLanguageContinuityTest {
         val savedDestination = runBlocking { settings.defaultStartDestinationFlow.first() }
         val savedAutoSource = runBlocking { settings.neteaseAutoSourceSwitchFlow.first() }
         val savedLocalFallback = runBlocking { settings.neteaseLocalSourceFallbackFlow.first() }
-        // 引导经过动效一步时会写入推荐配置, 结束后按原值还原
-        val savedMotion = runBlocking { context.dataStore.data.first() }.let { prefs ->
-            MotionBooleanKeys.associateWith { prefs[it] } to prefs[MotionQualityKey]
-        }
+        val savedMotion = runBlocking { StartupMotionPreferencesSnapshot.capture(context) }
         val previewKey = booleanPreferencesKey("preview_theme_prompt_answered")
         val warningKey = booleanPreferencesKey("acknowledged")
         val savedPreview = runBlocking { context.dataStore.data.first()[previewKey] }
+        // 风格卡片测试会改写界面风格, 结束后按原值还原
+        val savedUiStyle = runBlocking { context.dataStore.data.first()[SettingsKeys.UI_STYLE] }
         val savedWarning = runBlocking { context.debugBuildWarningDataStore.data.first()[warningKey] }
         var scenario: ActivityScenario<MainActivity>? = null
         var failure: Throwable? = null
@@ -384,16 +384,11 @@ class MainActivityLanguageContinuityTest {
                     if (onboarding) {
                         settings.setNeteaseAutoSourceSwitch(savedAutoSource)
                         settings.setNeteaseLocalSourceFallback(savedLocalFallback)
-                        context.dataStore.edit { prefs ->
-                            savedMotion.first.forEach { (key, value) ->
-                                if (value == null) prefs.remove(key) else prefs[key] = value
-                            }
-                            val quality = savedMotion.second
-                            if (quality == null) prefs.remove(MotionQualityKey) else prefs[MotionQualityKey] = quality
-                        }
+                        savedMotion.restore(context)
                     } else settings.setDefaultStartDestination(savedDestination)
                     context.dataStore.edit {
                         if (savedPreview == null) it.remove(previewKey) else it[previewKey] = savedPreview
+                        if (savedUiStyle == null) it.remove(SettingsKeys.UI_STYLE) else it[SettingsKeys.UI_STYLE] = savedUiStyle
                     }
                     context.debugBuildWarningDataStore.edit {
                         if (savedWarning == null) it.remove(warningKey) else it[warningKey] = savedWarning
@@ -470,16 +465,5 @@ class MainActivityLanguageContinuityTest {
         const val BluetoothSearchQuery = "blueto"
         const val StyleRevealSettleMillis = 1_600L
         val LanguageRoundTrips = listOf(Language.ENGLISH, Language.CHINESE, Language.ENGLISH, Language.CHINESE)
-        val MotionBooleanKeys = listOf(
-            "advanced_blur_enabled",
-            "enhanced_advanced_blur_enabled",
-            "liquid_glass_enabled",
-            "enhanced_visual_effects_enabled",
-            "nowplaying_dynamic_background_enabled",
-            "nowplaying_audio_reactive_enabled",
-            "lyric_blur_enabled",
-            "prefer_high_refresh_rate"
-        ).map(::booleanPreferencesKey)
-        val MotionQualityKey = stringPreferencesKey("advanced_blur_quality")
     }
 }

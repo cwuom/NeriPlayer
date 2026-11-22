@@ -151,6 +151,24 @@ class StartupMotionProfileTest {
     }
 
     @Test
+    fun `ambiguous presets on old systems keep the one the user picked`() {
+        val android12 = spec(socClass = StartupSocClass.Flagship, sdkInt = 31)
+        val balanced = startupMotionConfigFor(StartupMotionPreset.Balanced, android12)
+        assertEquals(balanced, startupMotionConfigFor(StartupMotionPreset.Immersive, android12))
+
+        assertEquals(
+            StartupMotionPreset.Balanced,
+            matchStartupMotionPreset(balanced, android12, preferred = StartupMotionPreset.Balanced)
+        )
+        assertEquals(
+            StartupMotionPreset.Immersive,
+            matchStartupMotionPreset(balanced, android12, preferred = StartupMotionPreset.Immersive)
+        )
+        val custom = balanced.copy(lyricBlur = false)
+        assertNull(matchStartupMotionPreset(custom, android12, preferred = StartupMotionPreset.Balanced))
+    }
+
+    @Test
     fun `turning enhanced blur off drops the high quality that depends on it`() {
         val immersive = startupMotionConfigFor(StartupMotionPreset.Immersive, spec())
         val reduced = immersive.withEnhancedAdvancedBlur(false)

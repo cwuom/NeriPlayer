@@ -15,7 +15,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
@@ -142,6 +142,34 @@ class StartupOnboardingStepsComposeTest {
 
         composeRule.onNode(
             isToggleable() and hasText(string(CoreCommonR.string.settings_liquid_glass), substring = true),
+            useUnmergedTree = false
+        ).assertIsNotEnabled().assertIsOff()
+    }
+
+    @Test
+    fun `enhanced blur shows off on devices without advanced blur even if stored on`() {
+        val android12 = device.copy(sdkInt = 31)
+        // 迁移或备份恢复来的设置可能没按设备能力归一化
+        val stored = startupMotionConfigFor(StartupMotionPreset.Immersive, device)
+        setStep {
+            StartupMotionStepBody(
+                spec = android12,
+                recommendation = recommendStartupMotion(android12),
+                selectedPreset = null,
+                config = stored,
+                uiStyle = UiStyle.Clean,
+                scanPlayed = true,
+                onScanPlayed = {},
+                onSelectPreset = {},
+                onConfigChange = {}
+            )
+        }
+
+        composeRule.onNodeWithText(string(AppR.string.onboarding_motion_fine_tune)).performClick()
+        settle()
+
+        composeRule.onNode(
+            isToggleable() and hasText(string(CoreCommonR.string.settings_enhanced_advanced_blur), substring = true),
             useUnmergedTree = false
         ).assertIsNotEnabled().assertIsOff()
     }

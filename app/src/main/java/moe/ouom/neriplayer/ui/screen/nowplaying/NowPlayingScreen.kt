@@ -536,7 +536,7 @@ fun NowPlayingScreen(
     val onLyricSeek: (Long) -> Unit = { positionMs ->
         if (lanControls.permissions.seek) {
             val knownDurationMs = maxOf(durationMs, currentSong?.durationMs ?: 0L)
-            resolveLyricSeekPosition(positionMs, knownDurationMs)?.let(PlayerManager::seekTo)
+            resolveLyricSeekPosition(positionMs, knownDurationMs)?.let(playbackSource::seekTo)
         }
     }
     val showProgressQualitySwitch by settingsRepo

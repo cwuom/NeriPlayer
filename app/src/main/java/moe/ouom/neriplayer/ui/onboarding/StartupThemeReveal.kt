@@ -30,6 +30,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.coroutines.resume
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -111,6 +112,10 @@ internal class StartupRevealController(
                 applyStarted = true
                 apply()
                 applyCompleted = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 设置写入失败时交给 finally 回滚, 不让异常把引导页带崩, 用户还能再点一次
             } finally {
                 if (token == captureToken) {
                     if (applyStarted && !applyCompleted) {

@@ -167,10 +167,7 @@ internal fun StartupLyricsContent(
     var pendingControlSize by remember { mutableStateOf(preferences.lyricsSize) }
     var showControlSizeWarning by remember { mutableStateOf(false) }
     LaunchedEffect(lyricFontScale) { pendingLyricFontScale = lyricFontScale }
-    LaunchedEffect(preferences) {
-        previewPreferences = preferences
-        pendingControlSize = preferences.lyricsSize
-    }
+    LaunchedEffect(preferences) { previewPreferences = preferences }
     fun applyControlSize(size: PlaybackControlSize) {
         previewPreferences = previewPreferences.copy(lyricsSize = size)
         pendingControlSize = size

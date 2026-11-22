@@ -6,6 +6,9 @@ import android.graphics.Canvas
 import android.view.View
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -342,4 +345,27 @@ class StartupOnboardingExtrasComposeTest {
             .assertExists()
     }
 
+    @Test
+    fun `lyrics size warning confirms the picked size even if preferences refresh meanwhile`() {
+        val changes = mutableListOf<PlaybackControlLayoutPreferences>()
+        var preferences by mutableStateOf(PlaybackControlLayoutPreferences())
+        setStep {
+            StartupLyricsContent(
+                preferences = preferences,
+                lyricFontScale = 1f,
+                onLyricFontScaleChange = {},
+                onPreferencesChange = { changes += it }
+            )
+        }
+
+        clickText(string(CoreCommonR.string.settings_playback_control_size_small))
+        // 对话框开着时迟到一份仍是旧歌词尺寸的设置快照
+        composeRule.runOnIdle {
+            preferences = PlaybackControlLayoutPreferences(nowPlayingPlacement = NowPlayingControlPlacement.BOTTOM)
+        }
+        settle()
+        clickDialogButton(string(AppR.string.onboarding_lyrics_control_size_warning_confirm))
+
+        assertEquals(PlaybackControlSize.SMALL, changes.single().lyricsSize)
+    }
 }

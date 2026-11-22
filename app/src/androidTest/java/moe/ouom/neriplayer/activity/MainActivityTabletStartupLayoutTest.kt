@@ -19,6 +19,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.locale.getDisplayName
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.testutil.StartupMotionPreferencesSnapshot
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertEquals
@@ -52,6 +53,7 @@ class MainActivityTabletStartupLayoutTest {
             settings.startupOnboardingCompletedFlow.filterNotNull().first()
         }
         val originalUiScale = runBlocking { settings.uiDensityScaleFlow.first() }
+        val originalMotion = runBlocking { StartupMotionPreferencesSnapshot.capture(context) }
         try {
             runBlocking {
                 settings.setUiDensityScale(1f)
@@ -133,6 +135,7 @@ class MainActivityTabletStartupLayoutTest {
                 settings.setUiDensityScale(originalUiScale)
                 settings.setDisclaimerAccepted(originalDisclaimer)
                 settings.setStartupOnboardingCompleted(originalOnboarding)
+                originalMotion.restore(context)
             }
         }
     }
