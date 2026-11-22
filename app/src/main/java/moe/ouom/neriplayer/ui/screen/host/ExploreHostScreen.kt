@@ -59,6 +59,7 @@ import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliSongAlbu
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
@@ -150,6 +151,7 @@ internal fun resolveExploreSelectedDetailBackTarget(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ExploreHostScreen(
+    onBiliUploaderClick: (BiliUploaderSummary) -> Unit,
     offlineMode: Boolean = false,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onSongClickWithSourceRoute: (List<SongItem>, Int, String?) -> Unit = { songs, index, _ ->
@@ -395,6 +397,7 @@ internal fun ExploreHostScreen(
                                         ExploreSelectedItem.YouTubeMusicCreator(creator)
                                     )
                                 },
+                                onBiliUploaderClick = onBiliUploaderClick,
                                 onNeteaseArtistClick = { artist ->
                                     captureExploreScrollPosition()
                                     openExploreSelectedItem(ExploreSelectedItem.NeteaseArtist(artist))

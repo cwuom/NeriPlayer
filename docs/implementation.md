@@ -273,6 +273,7 @@ USB 设备插入响应由设置控制，关闭后 Activity alias 和播放服务
 
 - `Explore` 接入网易云、Bilibili 和 YouTube Music，按平台独立搜索，不混合聚合结果。
 - 网易云可切换歌曲/歌单/歌手，网易云和 Bilibili 支持触底分页。
+- Bilibili 的「歌曲」搜索音乐区投稿，「视频」搜索全站视频，「创作者」搜索 UP 主并可打开其详情页。[探索页截图](images/bilibili-explore-search.png)
 - 链接识别支持直接链接和含短链接的分享文案。
 - Bilibili 视频链接保留 `p` / `cid` 指向的分 P。
 - Bilibili 合集分享优先使用视频详情里的 UGC season，必要时回退到链接里的 `season_id`。

@@ -94,9 +94,9 @@ class ExploreSearchHistoryDisplayTest {
     fun `platform changes retain one search type bar target for an interruptible swap`() {
         val targets = listOf(
             SearchSource.NETEASE,
+            SearchSource.BILIBILI,
             SearchSource.YOUTUBE_MUSIC,
-            SearchSource.NETEASE,
-            SearchSource.YOUTUBE_MUSIC
+            SearchSource.NETEASE
         ).map { source ->
             exploreSearchTypeBarSource(
                 selectedSearchSource = source,
@@ -107,9 +107,9 @@ class ExploreSearchHistoryDisplayTest {
         assertEquals(
             listOf(
                 SearchSource.NETEASE,
+                SearchSource.BILIBILI,
                 SearchSource.YOUTUBE_MUSIC,
-                SearchSource.NETEASE,
-                SearchSource.YOUTUBE_MUSIC
+                SearchSource.NETEASE
             ),
             targets
         )
@@ -125,7 +125,7 @@ class ExploreSearchHistoryDisplayTest {
         assertEquals(
             null,
             exploreSearchTypeBarSource(
-                selectedSearchSource = SearchSource.BILIBILI,
+                selectedSearchSource = SearchSource.LINK_RECOGNITION,
                 contentScrolled = false
             )
         )

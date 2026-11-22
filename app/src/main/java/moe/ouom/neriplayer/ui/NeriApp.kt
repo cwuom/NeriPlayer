@@ -1520,6 +1520,7 @@ private fun NeriAppContent(
                 }
                 val exploreContent: @Composable () -> Unit = {
                     ExploreHostScreen(
+                        onBiliUploaderClick = ::navigateToBiliUploader,
                         offlineMode = offlineMode,
                         onSongClick = ::playSongsAndOpenNowPlaying,
                         onSongClickWithSourceRoute = ::playSongsAndOpenNowPlaying,

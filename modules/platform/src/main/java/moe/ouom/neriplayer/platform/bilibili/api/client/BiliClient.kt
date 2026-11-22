@@ -59,6 +59,7 @@ import moe.ouom.neriplayer.data.model.bilibili.playback.Durl
 import moe.ouom.neriplayer.data.model.bilibili.playback.FlacAudio
 import moe.ouom.neriplayer.data.model.bilibili.playback.PlayInfo
 import moe.ouom.neriplayer.data.model.bilibili.playback.PlayOptions
+import moe.ouom.neriplayer.data.model.bilibili.search.SearchUploaderPage
 import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoItem
 import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoPage
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContentPage
@@ -107,6 +108,7 @@ class BiliClient(
 
         // 搜索 (WBI)
         private const val SEARCH_TYPE_URL = "https://api.bilibili.com/x/web-interface/wbi/search/type"
+        private val SEARCH_HIGHLIGHT = Regex("""(?i)</?em\b[^>]*>""")
 
         // 点赞近况
         private const val HAS_LIKE_URL = "https://api.bilibili.com/x/web-interface/archive/has/like"
@@ -398,6 +400,9 @@ class BiliClient(
 
     // 搜索 //
 
+    suspend fun searchMusicVideos(keyword: String, page: Int = 1): SearchVideoPage =
+        searchVideos(keyword = keyword, page = page, tids = MUSIC_ZONE_RID)
+
     suspend fun searchVideos(
         keyword: String,
         page: Int = 1,
@@ -413,20 +418,20 @@ class BiliClient(
             "tids" to tids.toString(),
             "page" to page.toString()
         )
-        val jo = getJsonWbi(SEARCH_TYPE_URL, params)
-        val data = jo.optJSONObject("data") ?: JSONObject()
+        val data = getJsonWbi(SEARCH_TYPE_URL, params).requireSuccessfulData("video search")
         val itemsArr = data.optJSONArray("result") ?: JSONArray()
         val items = ArrayList<SearchVideoItem>(itemsArr.length())
         for (i in 0 until itemsArr.length()) {
             val it = itemsArr.optJSONObject(i) ?: continue
             if (it.optString("type") != "video") continue
             val aid = it.optLong("aid")
-            val bvid = it.optString("bvid")
-            val titleHtml = it.optString("title")
-            val titlePlain = stripHtml(titleHtml)
-            val author = it.optString("author")
+            val bvid = it.searchString("bvid").ifBlank { BiliVideoIdCodec.aidToBvid(aid) }
+            val titleHtml = it.searchString("title")
+            val titlePlain = plainSearchText(titleHtml)
+            if (aid <= 0L || titlePlain.isBlank()) continue
+            val author = plainSearchText(it.searchString("author"))
             val mid = it.optLong("mid")
-            val cover = ensureHttps(it.optString("pic"))
+            val cover = normalizeCoverUrl(it.searchString("pic"))
             val durationSec = parseDurationToSeconds(it.optString("duration"))
             val play = it.optLongOrNull("play")
             val pubdate = it.optLongOrNull("pubdate")
@@ -452,6 +457,50 @@ class BiliClient(
             items = items
         )
     }
+
+    suspend fun searchUploaders(keyword: String, page: Int = 1): SearchUploaderPage =
+        withContext(Dispatchers.IO) {
+            val data = getJsonWbi(
+                SEARCH_TYPE_URL,
+                mapOf("search_type" to "bili_user", "keyword" to keyword, "page" to page.toString())
+            ).requireSuccessfulData("uploader search")
+            val results = data.optJSONArray("result") ?: JSONArray()
+            val uploaders = buildList {
+                for (index in 0 until results.length()) {
+                    val item = results.optJSONObject(index) ?: continue
+                    if (item.optString("type") != "bili_user") continue
+                    val mid = item.optLong("mid")
+                    val name = plainSearchText(item.searchString("uname"))
+                    if (mid <= 0L || name.isBlank()) continue
+                    add(
+                        UploaderProfile(
+                            mid = mid,
+                            name = name,
+                            faceUrl = normalizeCoverUrl(item.searchString("upic")),
+                            sign = plainSearchText(item.searchString("usign")),
+                            topPhotoUrl = ""
+                        )
+                    )
+                }
+            }
+            SearchUploaderPage(
+                page = data.optInt("page", page),
+                numPages = data.optInt("numPages", 1),
+                items = uploaders
+            )
+        }
+
+    private fun JSONObject.searchString(key: String): String = (opt(key) as? String).orEmpty()
+
+    private fun plainSearchText(raw: String): String = raw.replace(SEARCH_HIGHLIGHT, "")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#39;", "'")
+        .replace("&#x27;", "'", ignoreCase = true)
+        .replace("&nbsp;", "\u00a0")
+        .replace("&amp;", "&")
 
     // UP 主空间 //
 

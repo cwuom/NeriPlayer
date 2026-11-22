@@ -50,7 +50,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
@@ -202,17 +201,17 @@ internal fun NeteaseArtistSearchRow(
 }
 
 @Composable
-internal fun YouTubeCreatorSearchRow(
-    creator: YouTubeMusicCreatorSummary,
+internal fun CreatorSearchRow(
+    title: String,
+    subtitle: String,
+    coverUrl: String?,
     offlineMode: Boolean,
     onClick: () -> Unit
 ) {
     LinkedCollectionRow(
-        title = creator.title,
-        subtitle = creator.subtitle.ifBlank {
-            stringResource(CoreCommonR.string.explore_search_type_creator)
-        },
-        coverUrl = creator.coverUrl,
+        title = title,
+        subtitle = subtitle,
+        coverUrl = coverUrl,
         offlineMode = offlineMode,
         fallbackIcon = {
             Icon(

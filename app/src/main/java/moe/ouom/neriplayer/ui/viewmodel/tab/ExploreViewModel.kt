@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.collection.FavFolder
 import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoItem
+import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoPage
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliPartSong
@@ -54,8 +55,10 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
 import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
 import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseSongDetail
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
@@ -116,6 +119,12 @@ enum class NeteaseExploreSearchType(val apiType: Int) {
     ARTIST(apiType = 100)
 }
 
+enum class BilibiliExploreSearchType {
+    SONG,
+    VIDEO,
+    CREATOR
+}
+
 enum class YouTubeExploreSearchType(
     val filter: YouTubeMusicSearchFilter?
 ) {
@@ -158,6 +167,10 @@ sealed class ExploreSearchResult {
             "bilibili|playlist|${playlist.kind}|${playlist.mediaId}|${playlist.mid}"
     }
 
+    data class BilibiliCreator(val creator: BiliUploaderSummary) : ExploreSearchResult() {
+        override val stableKey: String = "bilibili|creator|${creator.mid}"
+    }
+
     data class Artist(val result: NeteaseSearchArtistResult) : ExploreSearchResult() {
         override val stableKey: String = "netease|artist|${result.artist.id}"
     }
@@ -191,6 +204,7 @@ data class ExploreUiState(
     val searchDisplayQuery: String = "",
     val selectedSearchSource: SearchSource = SearchSource.NETEASE,
     val selectedNeteaseSearchType: NeteaseExploreSearchType = NeteaseExploreSearchType.SONG,
+    val selectedBilibiliSearchType: BilibiliExploreSearchType = BilibiliExploreSearchType.SONG,
     val selectedYouTubeMusicSearchType: YouTubeExploreSearchType = YouTubeExploreSearchType.SONG,
     val isNeteaseLoggedIn: Boolean = false,
     val ytMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
@@ -325,7 +339,7 @@ internal fun shouldLoadExploreSearchMore(
     return lastVisible >= resultCount - prefetchDistance
 }
 
-private data class ExploreSearchFetchResult(
+internal data class ExploreSearchFetchResult(
     val items: List<ExploreSearchResult>,
     val page: Int,
     val hasMore: Boolean
@@ -385,43 +399,19 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         if (source == SearchSource.YOUTUBE_MUSIC && !youtubeEnabled) return
         if (source == _uiState.value.selectedSearchSource) return
         NPLogger.d(TAG, "setSearchSource: ${_uiState.value.selectedSearchSource} -> $source")
-        searchJob?.cancel()
-        searchMoreJob?.cancel()
-        invalidateSearchRequest()
-        _uiState.value = _uiState.value.copy(
-            selectedSearchSource = source,
-            searching = false,
-            searchResults = emptyList(), // 切换源时清空结果
-            searchItems = emptyList(),
-            searchHasMore = false,
-            searchLoadingMore = false,
-            searchLoadMoreError = null,
-            searchPage = 0,
-            searchKeyword = "",
-            searchDisplayQuery = "",
-            searchError = null
-        )
+        clearSearch(_uiState.value.copy(selectedSearchSource = source))
     }
 
     fun setNeteaseSearchType(type: NeteaseExploreSearchType) {
         if (type == _uiState.value.selectedNeteaseSearchType) return
         NPLogger.d(TAG, "setNeteaseSearchType: ${_uiState.value.selectedNeteaseSearchType} -> $type")
-        searchJob?.cancel()
-        searchMoreJob?.cancel()
-        invalidateSearchRequest()
-        _uiState.value = _uiState.value.copy(
-            selectedNeteaseSearchType = type,
-            searching = false,
-            searchError = null,
-            searchResults = emptyList(),
-            searchItems = emptyList(),
-            searchHasMore = false,
-            searchLoadingMore = false,
-            searchLoadMoreError = null,
-            searchPage = 0,
-            searchKeyword = "",
-            searchDisplayQuery = ""
-        )
+        clearSearch(_uiState.value.copy(selectedNeteaseSearchType = type))
+    }
+
+    fun setBilibiliSearchType(type: BilibiliExploreSearchType) {
+        val state = _uiState.value
+        if (type == state.selectedBilibiliSearchType) return
+        clearSearch(state.copy(selectedBilibiliSearchType = type))
     }
 
     fun setYouTubeMusicSearchType(type: YouTubeExploreSearchType) {
@@ -430,11 +420,14 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             TAG,
             "setYouTubeMusicSearchType: ${_uiState.value.selectedYouTubeMusicSearchType} -> $type"
         )
+        clearSearch(_uiState.value.copy(selectedYouTubeMusicSearchType = type))
+    }
+
+    private fun clearSearch(state: ExploreUiState = _uiState.value) {
         searchJob?.cancel()
         searchMoreJob?.cancel()
         invalidateSearchRequest()
-        _uiState.value = _uiState.value.copy(
-            selectedYouTubeMusicSearchType = type,
+        _uiState.value = state.copy(
             searching = false,
             searchError = null,
             searchResults = emptyList(),
@@ -454,21 +447,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         val matchQuery = displayQuery.trim().ifBlank { apiKeyword }
         if (apiKeyword.isBlank()) {
             NPLogger.d(TAG, "search cleared because keyword is blank")
-            searchJob?.cancel()
-            searchMoreJob?.cancel()
-            invalidateSearchRequest()
-            _uiState.value = _uiState.value.copy(
-                searching = false,
-                searchResults = emptyList(),
-                searchItems = emptyList(),
-                searchHasMore = false,
-                searchLoadingMore = false,
-                searchLoadMoreError = null,
-                searchPage = 0,
-                searchKeyword = "",
-                searchDisplayQuery = "",
-                searchError = null
-            )
+            clearSearch()
             return
         }
         val source = _uiState.value.selectedSearchSource
@@ -510,7 +489,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         _uiState.value = state.copy(searchLoadingMore = true, searchLoadMoreError = null)
         NPLogger.d(
             TAG,
-            "search load more: source=$source, request=$requestVersion, keyword=$keyword, page=$nextPage, type=$neteaseType"
+            "search load more: source=$source, request=$requestVersion, keyword=$keyword, page=$nextPage"
         )
         searchMoreJob = viewModelScope.launch {
             try {
@@ -528,7 +507,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     SearchSource.BILIBILI -> fetchBilibiliSearchPage(
                         keyword = keyword,
                         matchQuery = matchQuery,
-                        page = nextPage
+                        page = nextPage,
+                        type = state.selectedBilibiliSearchType
                     )
                     SearchSource.YOUTUBE_MUSIC,
                     SearchSource.LINK_RECOGNITION -> return@launch
@@ -569,11 +549,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** 搜索 Bilibili 视频 */
     private fun searchBilibili(keyword: String, matchQuery: String, requestVersion: Long) {
+        val type = _uiState.value.selectedBilibiliSearchType
         searchJob = viewModelScope.launch {
             try {
-                val result = fetchBilibiliSearchPage(keyword, matchQuery, page = 1)
+                val result = fetchBilibiliSearchPage(keyword, matchQuery, page = 1, type = type)
                 NPLogger.d(
                     TAG,
                     "search Bilibili success: request=$requestVersion, keyword=$keyword, count=${result.items.size}, page=${result.page}, hasMore=${result.hasMore}"
@@ -619,20 +599,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private suspend fun fetchBilibiliSearchPage(
         keyword: String,
         matchQuery: String,
-        page: Int
-    ): ExploreSearchFetchResult {
-        val searchPage = withContext(Dispatchers.IO) {
-            biliClient.searchVideos(keyword = keyword, page = page)
-        }
-        val songs = rankExploreSongSearchResults(
-            query = matchQuery,
-            songs = searchPage.items.map { it.toSongItem() }
-        )
-        return ExploreSearchFetchResult(
-            items = songs.map { ExploreSearchResult.Song(it) },
-            page = searchPage.page,
-            hasMore = searchPage.page < searchPage.numPages && searchPage.items.isNotEmpty()
-        )
+        page: Int,
+        type: BilibiliExploreSearchType
+    ): ExploreSearchFetchResult = withContext(Dispatchers.IO) {
+        biliClient.fetchExplorePage(keyword, matchQuery, page, type)
     }
 
     private fun beginSearchRequest(keyword: String, displayQuery: String): Long {
@@ -1448,6 +1418,39 @@ private fun JSONObject.linkedNeteaseArtistPicUrl(): String? {
         .ifBlank { optString("img1v1Url", "") }
         .replaceFirst("http://", "https://")
         .takeIf { it.isNotBlank() }
+}
+
+internal suspend fun BiliClient.fetchExplorePage(
+    keyword: String,
+    matchQuery: String,
+    page: Int,
+    type: BilibiliExploreSearchType
+): ExploreSearchFetchResult {
+    return when (type) {
+        BilibiliExploreSearchType.SONG -> searchMusicVideos(keyword, page).toExplorePage(matchQuery)
+        BilibiliExploreSearchType.VIDEO -> searchVideos(keyword, page).toExplorePage()
+        BilibiliExploreSearchType.CREATOR -> {
+            val results = searchUploaders(keyword, page)
+            val items = results.items.distinctBy { it.mid }.map {
+                ExploreSearchResult.BilibiliCreator(BiliUploaderSummary(it.mid, it.name, it.faceUrl))
+            }
+            ExploreSearchFetchResult(
+                items = items,
+                page = results.page,
+                hasMore = results.page < results.numPages && items.isNotEmpty()
+            )
+        }
+    }
+}
+
+private fun SearchVideoPage.toExplorePage(rankBy: String? = null): ExploreSearchFetchResult {
+    val songs = items.distinctBy { it.aid }.map { it.toSongItem() }
+    val ordered = if (rankBy == null) songs else rankExploreSongSearchResults(rankBy, songs)
+    return ExploreSearchFetchResult(
+        items = ordered.map(ExploreSearchResult::Song),
+        page = page,
+        hasMore = page < numPages && songs.isNotEmpty()
+    )
 }
 
 /** Bilibili 搜索结果到通用 SongItem 的转换器 */
