@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.SettingsPersonalizationHomeCard
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHighlightState
 import moe.ouom.neriplayer.ui.settings.route.AppHomeSettingsActions
 import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.theme.NeriTheme
@@ -71,9 +72,11 @@ class SettingsHomeBilibiliVisibilityTest {
                             homeStartAvailable = isSettingsHomeStartAvailable(false, false, false, false, false, enabled),
                             state = AppHomeCardsSettingsState(false, false, false, false, enabled),
                             actions = actions,
-                            highlightTargetId = null,
-                            highlightPulse = 0,
-                            onHighlightFinished = null
+                            highlight = SettingsHighlightState(
+                                targetId = null,
+                                pulse = 0,
+                                onFinished = null
+                            )
                         )
                     }
                 }
