@@ -150,6 +150,9 @@ private class HomeSectionOrderEditor(val order: List<String>, val reorder: (List
 private class HomeSubSections(defaults: List<String>, order: List<String>, val hidden: Set<String>) {
     private val order = applyHomeSectionOrder(defaults, order, emptySet())
 
+    /** 该分组下可见的子模块 id。 */
+    fun visibleSubSectionIds(): List<String> = order
+
     fun editor(parentId: String, actions: HomeSectionSettingsActions) =
         HomeSectionOrderEditor(order) { actions.reorderSub(parentId, it) }
 }
@@ -160,6 +163,22 @@ private class HomeMajorRow(
     val checked: Boolean,
     val children: HomeSubSections? = null
 )
+
+/**
+ * 哪些大模块分组需要展开，才能让高亮目标出现在屏幕上。
+ *
+ * 歌曲小模块的形态选择器挂在子模块行里，而子模块行只在大模块展开后才渲染。
+ * 搜索跳到设置页时分组默认是折叠的，控件根本不存在，也就无从高亮，
+ * 用户还得自己再展开一次。这里按目标 id 反查需要展开的分组。
+ */
+internal fun homeSectionGroupsToExpand(
+    highlightTargetId: String?,
+    songGroupIds: Set<String>
+): Set<String> = when (highlightTargetId) {
+    // 形态选择器在每个歌曲类子模块行上都有，展开所有含歌曲子模块的分组即可。
+    "setting:home_song_section_mode" -> songGroupIds
+    else -> emptySet()
+}
 
 private fun AppHomeCardsSettingsState.homeRows(copy: SettingsHomeCardCopy, international: Boolean) = mapOf(
     HomeMajorSectionIds.CONTINUE to HomeMajorRow(
@@ -211,6 +230,17 @@ internal fun SettingsPersonalizationHomeCard(
     // 榜单卡片是网易云首页小模块的能力，国际模式下这些小模块走 YouTube Music，
     // 相关控件整体隐藏。
     val showSongCardControls = !internationalEnabled
+    // 歌曲类小模块分属「私人雷达」与「热力与榜单」两个大模块分组。
+    val songGroupIds = remember(rows) {
+        rows.filterValues { row ->
+            row.children?.visibleSubSectionIds()?.any { it in HomeSongSectionIds.ALL } == true
+        }.keys
+    }
+    // 搜索定位到形态选择器时，先把包含歌曲子模块的分组展开，
+    // 否则控件不在组合里，高亮不会生效。
+    val autoExpandedGroups = remember(highlightTargetId, songGroupIds) {
+        homeSectionGroupsToExpand(highlightTargetId, songGroupIds)
+    }
     PersonalizationCardContainer {
         MiuixSettingsSectionIntro(
             title = stringResource(CoreCommonR.string.settings_personalization_home_section),
@@ -220,6 +250,10 @@ internal fun SettingsPersonalizationHomeCard(
             val row = rows.getValue(id)
             val title = stringResource(row.titleRes)
             var expanded by remember(id) { mutableStateOf(false) }
+            // 高亮目标在折叠的分组里时自动展开，用户不必再手动点一次。
+            LaunchedEffect(autoExpandedGroups, id) {
+                if (id in autoExpandedGroups) expanded = true
+            }
             ReorderableItem {
                 SettingsHomeCardSwitch(
                     title = title,
