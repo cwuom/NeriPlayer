@@ -36,6 +36,10 @@ private val NowPlayingPhoneLandscapeMinimumContentHeight = 240.dp
 private val NowPlayingTabletPortraitFixedContentReserve = 480.dp
 private val NowPlayingTabletPortraitCoverMaxSize = 336.dp
 internal val NowPlayingTabletPortraitContentMaxWidth = 560.dp
+// 沉浸模式给顶栏、标题、进度、控件和工具栏预留的高度, 封面不再吃掉全部剩余空间
+private val NowPlayingTabletImmersiveFixedContentReserve = 420.dp
+private val NowPlayingTabletImmersiveMinContentWidth = 360.dp
+internal val NowPlayingTabletImmersiveToolbarSpacing = 16.dp
 private val NowPlayingExpandedCoverIdentitySpacing = 20.dp
 private const val NOW_PLAYING_EXPANDED_CONTROLS_SPACER_WEIGHT = 0.12f
 private const val NOW_PLAYING_TABLET_LANDSCAPE_COVER_WIDTH_FRACTION = 0.72f
@@ -56,6 +60,13 @@ internal fun shouldUseNowPlayingTabletPortraitLayout(
     tabletPortrait: Boolean,
     immersiveMode: Boolean
 ): Boolean = tabletPortrait && !immersiveMode
+
+/** 竖屏平板沉浸模式按封面放得下的边长定内容宽度, 标题、进度和工具栏与封面两侧对齐, 剩余高度留作间距 */
+internal fun resolveNowPlayingTabletImmersiveContentWidth(availableWidth: Dp, availableHeight: Dp): Dp = minOf(
+    availableWidth,
+    NowPlayingTabletPortraitContentMaxWidth,
+    (availableHeight - NowPlayingTabletImmersiveFixedContentReserve).coerceAtLeast(NowPlayingTabletImmersiveMinContentWidth)
+)
 
 internal fun shouldUseStandaloneNowPlayingLyricsPage(
     showLyricsScreen: Boolean,

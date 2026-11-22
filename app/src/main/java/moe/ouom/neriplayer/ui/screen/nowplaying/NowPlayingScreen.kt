@@ -52,13 +52,14 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -1665,6 +1666,8 @@ fun NowPlayingScreen(
                                     nowPlayingProgressSection,
                                     mainPlaybackControls
                                 )
+                                // 竖屏平板只有沉浸模式会走到这里, 底部工具栏和控件之间留出呼吸空间
+                                if (tabletPortrait) Spacer(Modifier.height(NowPlayingTabletImmersiveToolbarSpacing))
                                 coverToolbar(false)
                             }
 
@@ -1774,10 +1777,12 @@ fun NowPlayingScreen(
                                     )
                                 }
                                 if (tabletPortrait) {
-                                    // 封面和控件按手机比例铺满整个平板宽度会过大, 收在平板竖屏的内容宽度里居中
-                                    Box(modifier = contentModifier, contentAlignment = Alignment.TopCenter) {
+                                    // 封面和控件按手机比例铺满整个平板宽度会过大, 收在由封面边长决定的宽度里居中
+                                    BoxWithConstraints(modifier = contentModifier, contentAlignment = Alignment.TopCenter) {
                                         immersiveLayout(
-                                            Modifier.widthIn(max = NowPlayingTabletPortraitContentMaxWidth).fillMaxSize()
+                                            Modifier
+                                                .width(resolveNowPlayingTabletImmersiveContentWidth(maxWidth, maxHeight))
+                                                .fillMaxHeight()
                                         )
                                     }
                                 } else {

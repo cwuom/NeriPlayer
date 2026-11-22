@@ -274,6 +274,7 @@ class StartupOnboardingExtrasComposeTest {
         composeRule.onNodeWithText(string(CoreCommonR.string.settings_nowplaying_immersive_mode)).assertDoesNotExist()
         composeRule.onNodeWithText(string(AppR.string.onboarding_controls_cover_lyrics_size_title)).assertDoesNotExist()
         composeRule.onNodeWithText(string(AppR.string.onboarding_lyrics_control_size_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_controls_position_title)).assertDoesNotExist()
 
         clickText(string(AppR.string.onboarding_preview_hint_open))
         clickText(string(CoreCommonR.string.settings_playback_control_size_large))

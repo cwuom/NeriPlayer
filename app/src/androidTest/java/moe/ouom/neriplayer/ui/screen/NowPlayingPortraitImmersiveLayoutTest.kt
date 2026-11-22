@@ -203,14 +203,26 @@ class NowPlayingPortraitImmersiveLayoutTest {
 
     @Test
     fun tabletPortraitImmersiveUsesTheLargeCoverInsteadOfAnEmptyLyricsArea() =
-        UiFailureDiagnostics.onFailure("now-playing-immersive-tablet-portrait") {
+        assertTabletImmersiveLayout(width = 800, height = 1_200)
+
+    @Test
+    fun shortTabletPortraitImmersiveKeepsCoverAlignedAndControlsApart() =
+        assertTabletImmersiveLayout(width = 600, height = 950,
+            placement = NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS)
+
+    private fun assertTabletImmersiveLayout(
+        width: Int,
+        height: Int,
+        placement: NowPlayingControlPlacement = NowPlayingControlPlacement.LOWER
+    ) =
+        UiFailureDiagnostics.onFailure("now-playing-immersive-tablet-${width}x$height-$placement") {
             runBlocking {
                 SettingsRepository(composeRule.activity.applicationContext).apply {
                     setNowPlayingImmersiveMode(true)
-                    setPlaybackControlLayoutPreferences(PlaybackControlLayoutPreferences())
+                    setPlaybackControlLayoutPreferences(PlaybackControlLayoutPreferences(nowPlayingPlacement = placement))
                 }
             }
-            render(height = 1_200, fontScale = 1f, style = UiStyle.Clean, width = 800)
+            render(height = height, fontScale = 1f, style = UiStyle.Clean, width = width)
 
             // 平板竖屏布局会给封面歌词留出整块高度, 沉浸模式隐藏歌词后那块就成了空白
             composeRule.onNodeWithTag("nowPlayingTabletPortraitLayout").assertDoesNotExist()
@@ -224,8 +236,9 @@ class NowPlayingPortraitImmersiveLayoutTest {
             assertTrue("沉浸布局应收在平板内容宽度内: $layout", layoutWidth <= 561.dp)
             assertEquals("沉浸布局应水平居中", (layout.left - viewport.left).value,
                 (viewport.right - layout.right).value, 2f)
-            assertTrue("封面应撑满内容宽度: cover=$cover layout=$layout",
-                cover.right - cover.left >= layoutWidth * 0.9f)
+            // 标题、进度和工具栏贴着内容两侧, 封面要和它们对齐
+            assertTrue("封面应和内容两侧对齐: cover=$cover layout=$layout",
+                cover.right - cover.left >= layoutWidth - 2.dp)
 
             val playbackButtons = listOf(CoreCommonR.string.player_shuffle, CoreCommonR.string.player_previous,
                 CoreCommonR.string.player_next, CoreCommonR.string.player_repeat).map(::button)
@@ -234,6 +247,9 @@ class NowPlayingPortraitImmersiveLayoutTest {
             (playbackButtons + toolbarButtons).forEach { assertFullyVisible(it, viewport) }
             val identityGap = playbackButtons.minOf { it.getUnclippedBoundsInRoot().top } - cover.bottom
             assertTrue("封面和控件之间不应留下歌词空位: gap=$identityGap", identityGap < 240.dp)
+            val toolbarGap = toolbarButtons.minOf { it.getUnclippedBoundsInRoot().top } -
+                playbackButtons.maxOf { it.getUnclippedBoundsInRoot().bottom }
+            assertTrue("播放控件和底部工具栏不能挤在一起: gap=$toolbarGap", toolbarGap >= 16.dp)
         }
 
     private fun assertActionsReachable(

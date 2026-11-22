@@ -116,10 +116,10 @@
     <string name="onboarding_lyrics_control_size_warning_title">确认使用不同的控件大小</string>
     <string name="onboarding_lyrics_control_size_warning_desc">歌词页和封面页使用不同控件大小时，切换页面可能出现不自然的尺寸过渡。仍要使用这个大小吗？</string>
     <string name="onboarding_lyrics_control_size_warning_confirm">仍要更改</string>
-    <string name="onboarding_controls_landscape_desc">横屏时封面和歌词并排显示，在这里调整控件大小、位置和歌词大小</string>
+    <string name="onboarding_controls_landscape_desc">横屏时封面和歌词并排显示，在这里调整控件和歌词大小</string>
     <string name="onboarding_preview_hint_landscape_desc">点按或上滑下方的迷你播放器，打开和应用里一模一样的横屏播放页，调整会实时生效</string>
     <string name="onboarding_landscape_portrait_hint_title">竖屏可分别调整封面页和歌词页</string>
-    <string name="onboarding_landscape_portrait_hint_desc">沉浸模式、封面页歌词大小和歌词页控件大小只在竖屏生效，转到竖屏后这一步会分成封面页和歌词页两步</string>
+    <string name="onboarding_landscape_portrait_hint_desc">控件位置、沉浸模式、封面页歌词大小和歌词页控件大小需在竖屏调整，转到竖屏后这一步会分成封面页和歌词页两步</string>
     <string name="onboarding_landscape_lyrics_size_title">歌词大小</string>
     <string name="onboarding_landscape_lyrics_size_desc">横屏时封面旁的歌词使用这个大小，和竖屏歌词页共用</string>
     <string name="onboarding_controls_preview_lyric_6">一声梧叶一声秋</string>

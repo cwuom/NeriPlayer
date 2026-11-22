@@ -242,8 +242,8 @@ internal fun linkStartupLyricsControlSize(
 }
 
 /**
- * 平板横屏的播放页封面和歌词并排, 只留下横屏里真正生效的选项
- * 沉浸模式、封面页歌词和歌词页控件只在竖屏出现, 用提示卡告诉用户转回竖屏再调
+ * 平板横屏的播放页封面和歌词并排, 这里只调控件大小和歌词大小
+ * 控件位置、沉浸模式、封面页歌词和歌词页控件都放到竖屏调, 用提示卡告诉用户转回竖屏
  */
 @Composable
 internal fun StartupNowPlayingLandscapeContent(
@@ -281,17 +281,6 @@ internal fun StartupNowPlayingLandscapeContent(
             StartupControlSizeSelector(
                 selected = previewPreferences.nowPlayingSize,
                 onSelect = { size -> applyPreferences(previewPreferences.copy(nowPlayingSize = size)) }
-            )
-        }
-        StartupOptionGroup(
-            title = stringResource(AppR.string.onboarding_controls_position_title),
-            description = stringResource(AppR.string.onboarding_controls_position_desc)
-        ) {
-            StartupPlacementSelector(
-                selected = previewPreferences.nowPlayingPlacement,
-                onSelect = { placement ->
-                    applyPreferences(previewPreferences.copy(nowPlayingPlacement = placement))
-                }
             )
         }
         StartupOptionGroup(

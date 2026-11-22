@@ -68,6 +68,13 @@ class StartupOnboardingFlowTest {
     }
 
     @Test
+    fun `only a short two pane sidebar tightens the heading`() {
+        assertTrue(isStartupOnboardingShortSidebar(twoPane = true, height = 552.dp))
+        assertFalse(isStartupOnboardingShortSidebar(twoPane = true, height = 752.dp))
+        assertFalse(isStartupOnboardingShortSidebar(twoPane = false, height = 552.dp))
+    }
+
+    @Test
     fun `rotating away from the lyrics step falls back to now playing instead of skipping ahead`() {
         val landscape = startupStepsFor(tabletLandscape = true)
         val portrait = startupStepsFor(tabletLandscape = false)

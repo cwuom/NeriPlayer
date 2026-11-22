@@ -837,7 +837,7 @@ fun StartupOnboardingScreen(
                                                     )
                                                 }
                                                 if (twoPane) {
-                                                    Spacer(Modifier.height(28.dp))
+                                                    Spacer(Modifier.height(if (LocalStartupOnboardingShortSidebar.current) 16.dp else 28.dp))
                                                     stepTransition.AnimatedContent(
                                                         transitionSpec = {
                                                             (fadeIn(tween(260, delayMillis = 80)) +
@@ -1070,7 +1070,7 @@ fun StartupOnboardingScreen(
 }
 
 @Composable
-private fun startupHeroSpec(step: StartupStep, tabletLandscape: Boolean): StartupHeroSpec = when (step) {
+internal fun startupHeroSpec(step: StartupStep, tabletLandscape: Boolean): StartupHeroSpec = when (step) {
     StartupStep.Language -> StartupHeroSpec(
         null, 9,
         stringResource(AppR.string.onboarding_title), stringResource(AppR.string.onboarding_subtitle)
