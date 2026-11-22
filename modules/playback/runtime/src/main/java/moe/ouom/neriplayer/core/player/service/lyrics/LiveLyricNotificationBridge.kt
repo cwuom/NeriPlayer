@@ -21,7 +21,6 @@ import android.text.Spanned
 import android.text.TextPaint
 import android.text.style.TtsSpan
 import android.util.Log
-import androidx.annotation.DrawableRes
 import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -570,23 +569,23 @@ internal fun buildLiveUpdateNotification(
         .setShortCriticalText(content.chipText)
         .setRequestPromotedOngoing(true)
         .addAction(
-            liveUpdateAction(context, R.drawable.round_skip_previous_24,
+            liveUpdateAction(context,
                 liveUpdateGlyphTitle(LIVE_UPDATE_PREVIOUS_GLYPH, localized.getString(R.string.player_previous)),
                 AudioPlayerService.ACTION_PREV, 1)
         )
         .addAction(
             if (content.playing) {
-                liveUpdateAction(context, R.drawable.round_pause_24,
+                liveUpdateAction(context,
                     liveUpdateGlyphTitle(LIVE_UPDATE_PAUSE_GLYPH, localized.getString(R.string.player_pause)),
                     AudioPlayerService.ACTION_PAUSE, 2)
             } else {
-                liveUpdateAction(context, R.drawable.round_play_arrow_24,
+                liveUpdateAction(context,
                     liveUpdateGlyphTitle(LIVE_UPDATE_PLAY_GLYPH, localized.getString(R.string.player_play)),
                     AudioPlayerService.ACTION_PLAY, 3)
             }
         )
         .addAction(
-            liveUpdateAction(context, R.drawable.round_skip_next_24,
+            liveUpdateAction(context,
                 liveUpdateGlyphTitle(LIVE_UPDATE_NEXT_GLYPH, localized.getString(R.string.player_next)),
                 AudioPlayerService.ACTION_NEXT, 4)
         )
@@ -629,10 +628,7 @@ private fun liveUpdateContentIntent(context: Context): PendingIntent? =
         )
     }
 
-/**
- * 系统模板只给普通按钮画文字（图标仅限来电与全屏通知），只能用单色符号充当图标；
- * ⏸ 在系统字体里只有彩色 emoji，暂停改用两条竖线。读屏读的是按钮标题，用 TtsSpan 读出原文案。
- */
+/** 暂停用两根竖线避开彩色表情，读屏时通过 TtsSpan 朗读本地化操作名称 */
 private fun liveUpdateGlyphTitle(glyph: String, spokenLabel: String): CharSequence =
     SpannableString(glyph).apply {
         setSpan(TtsSpan.TextBuilder(spokenLabel).build(), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -640,12 +636,12 @@ private fun liveUpdateGlyphTitle(glyph: String, spokenLabel: String): CharSequen
 
 private fun liveUpdateAction(
     context: Context,
-    @DrawableRes iconRes: Int,
     title: CharSequence,
     action: String,
     requestOffset: Int,
 ): NotificationCompat.Action = NotificationCompat.Action.Builder(
-    IconCompat.createWithResource(context, iconRes),
+    // 标题已经包含播放符号，部分系统会把单独提供的图标也画出来
+    null,
     title,
     PendingIntent.getService(
         context,
