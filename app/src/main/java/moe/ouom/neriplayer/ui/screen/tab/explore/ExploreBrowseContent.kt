@@ -118,7 +118,10 @@ internal fun NeteaseDefaultContent(
         ),
         modifier = Modifier.exploreCenteredMaxWidth(ExploreBrowseContentMaxWidth)
     ) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
+        item(
+            span = { GridItemSpan(maxLineSpan) },
+            contentType = "explore:netease:tags"
+        ) {
             Column(Modifier.fillMaxWidth()) {
                 val displayKeys = tagKeys
                 val displayLabels = tagLabels
@@ -132,7 +135,10 @@ internal fun NeteaseDefaultContent(
                         ),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    itemsIndexed(displayKeys) { index, tagKey ->
+                    itemsIndexed(
+                        items = displayKeys,
+                        contentType = { _, _ -> "explore:netease:tag-chip" }
+                    ) { index, tagKey ->
                         val selected = (browse.selectedTag == tagKey)
                         ExploreTagChip(
                             label = displayLabels[index],
@@ -158,7 +164,11 @@ internal fun NeteaseDefaultContent(
             }
         }
         if (browse.playlists.isNotEmpty()) {
-            items(items = browse.playlists, key = { it.id }) { playlist ->
+            items(
+                items = browse.playlists,
+                key = { it.id },
+                contentType = { "explore:netease:playlist-card" }
+            ) { playlist ->
                 PlaylistCard(
                     playlist = playlist,
                     isFavorite = favoriteKeys.contains("netease:${playlist.id}"),
@@ -166,7 +176,10 @@ internal fun NeteaseDefaultContent(
                 )
             }
         } else if (browse.loading) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item(
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = "explore:loading"
+            ) {
                 Box(
                     Modifier
                         .fillMaxWidth()
@@ -177,7 +190,10 @@ internal fun NeteaseDefaultContent(
                 }
             }
         } else if (browse.error != null) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item(
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = "explore:error"
+            ) {
                 Text(browse.error, color = MaterialTheme.colorScheme.error)
             }
         }
@@ -322,7 +338,8 @@ internal fun YouTubeMusicExploreContent(
             ) {
                 items(
                     items = browse.playlists,
-                    key = { it.browseId }
+                    key = { it.browseId },
+                    contentType = { "explore:ytmusic:playlist-card" }
                 ) { playlist ->
                     YtMusicExploreCard(
                         playlist = playlist,

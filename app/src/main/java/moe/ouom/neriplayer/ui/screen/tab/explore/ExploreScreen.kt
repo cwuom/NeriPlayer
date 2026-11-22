@@ -945,6 +945,13 @@ fun ExploreScreen(
                                 ) { Text(stringResource(CoreCommonR.string.search_no_result)) }
                             }
                             else -> {
+                                val searchSongIndexByKey = remember(ui.searchResults) {
+                                    buildMap(ui.searchResults.size) {
+                                        ui.searchResults.forEachIndexed { songIdx, s ->
+                                            putIfAbsent(s.stableKey(), songIdx)
+                                        }
+                                    }
+                                }
                                 ExploreSearchResultsList(
                                     state = searchListState,
                                     isTabletLayout = isTabletLayout,
@@ -952,14 +959,14 @@ fun ExploreScreen(
                                 ) {
                                 itemsIndexed(
                                     items = ui.searchItems,
-                                    key = { _, item -> item.stableKey }
+                                    key = { _, item -> item.stableKey },
+                                    contentType = { _, item -> item::class }
                                 ) { index, item ->
                                     when (item) {
                                         is ExploreSearchResult.Song -> {
                                             val song = item.song
-                                            val songListIndex = ui.searchResults.indexOfFirst {
-                                                it.stableKey() == song.stableKey()
-                                            }.takeIf { it >= 0 } ?: index
+                                            val songListIndex =
+                                                searchSongIndexByKey[song.stableKey()] ?: index
                                             val isFavoriteSong = favoriteSongLookup.contains(song)
                                             SongRow(
                                                 state = ExploreSongRowState(
@@ -1106,11 +1113,17 @@ fun ExploreScreen(
                                     }
                                 }
                                 if (ui.searchLoadingMore) {
-                                    item(key = "search-loading-more") {
+                                    item(
+                                        key = "search-loading-more",
+                                        contentType = "explore:search:loading-more"
+                                    ) {
                                         SearchLoadingMoreRow()
                                     }
                                 } else if (ui.searchLoadMoreError != null) {
-                                    item(key = "search-load-more-error") {
+                                    item(
+                                        key = "search-load-more-error",
+                                        contentType = "explore:search:load-more-error"
+                                    ) {
                                         SearchLoadMoreErrorRow(
                                             error = ui.searchLoadMoreError!!.asString(),
                                             onRetry = vm::loadMoreSearchResults

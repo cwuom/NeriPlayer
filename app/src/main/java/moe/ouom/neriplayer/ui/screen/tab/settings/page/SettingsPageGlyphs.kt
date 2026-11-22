@@ -36,7 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 /** Clean-style section glyph: a rounded white symbol on its own hue, as in system settings. */
 internal data class SettingsPageGlyph(val icon: ImageVector, val tint: Color)
@@ -94,7 +94,7 @@ internal fun SettingsPageGlyphTile(
     Box(
         modifier = modifier
             .size(size)
-            .clip(ContinuousRoundedCornerShape(size * 0.28f))
+            .clip(RoundedCornerShape(size * 0.28f))
             .background(glyph.tint),
         contentAlignment = Alignment.Center
     ) {

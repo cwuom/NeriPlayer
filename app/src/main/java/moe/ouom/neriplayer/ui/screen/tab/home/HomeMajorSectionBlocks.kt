@@ -70,6 +70,7 @@ internal class HomeMajorSectionEnv(
     val onItemClick: (PlaylistSummary) -> Unit = {},
     val onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     val favoriteSongLookup: FavoriteSongLookup = FavoriteSongLookup(emptyList()),
+    val downloadPresenceVersion: Int = 0,
     val favoriteKeys: Set<String> = emptySet(),
     val onFavoriteToggle: (SongItem, Boolean) -> Unit = { _, _ -> },
     val onShowSnackbar: (String) -> Unit = {},
@@ -105,7 +106,8 @@ internal fun LazyGridScope.addHomeContinueBlock(env: HomeMajorSectionEnv) {
     if (!env.showContinue) return
     item(
         key = env.registerKey(HomeScrollKeyContinueHeader),
-        span = { GridItemSpan(maxLineSpan) }
+        span = { GridItemSpan(maxLineSpan) },
+        contentType = HomeContentTypeHeader
     ) {
         SectionHeader(
             icon = Icons.Outlined.History,
@@ -114,7 +116,8 @@ internal fun LazyGridScope.addHomeContinueBlock(env: HomeMajorSectionEnv) {
     }
     item(
         key = env.registerKey(HomeScrollKeyContinueContent),
-        span = { GridItemSpan(maxLineSpan) }
+        span = { GridItemSpan(maxLineSpan) },
+        contentType = if (env.usageLoaded) HomeContentTypeContinue else HomeContentTypeLoading
     ) {
         if (env.usageLoaded) {
             ContinueSection(
@@ -178,6 +181,7 @@ internal fun LazyGridScope.addHomeTrendingBlock(env: HomeMajorSectionEnv) {
             loadingText = env.loadingText,
             onSongClick = env.onSongClick,
             favoriteSongLookup = env.favoriteSongLookup,
+            downloadPresenceVersion = env.downloadPresenceVersion,
             onFavoriteToggle = env.onFavoriteToggle,
             onShowSnackbar = env.onShowSnackbar,
             offlineMode = env.offlineMode,
@@ -212,6 +216,7 @@ internal fun LazyGridScope.addHomeRadarBlock(env: HomeMajorSectionEnv) {
             loadingText = env.loadingText,
             onSongClick = env.onSongClick,
             favoriteSongLookup = env.favoriteSongLookup,
+            downloadPresenceVersion = env.downloadPresenceVersion,
             onFavoriteToggle = env.onFavoriteToggle,
             onShowSnackbar = env.onShowSnackbar,
             offlineMode = env.offlineMode,
@@ -224,7 +229,8 @@ internal fun LazyGridScope.addHomeRadarPlaylistBlock(env: HomeMajorSectionEnv) {
     val radarPlaylistState: HomeSectionState<PlaylistSummary> = env.ui.radarPlaylists
     item(
         key = env.registerKey(HomeScrollKeyNeteaseRadarPlaylistsHeader),
-        span = { GridItemSpan(maxLineSpan) }
+        span = { GridItemSpan(maxLineSpan) },
+        contentType = HomeContentTypeHeader
     ) {
         SectionHeader(
             icon = Icons.Outlined.Explore,
@@ -240,7 +246,8 @@ internal fun LazyGridScope.addHomeRadarPlaylistBlock(env: HomeMajorSectionEnv) {
     ) {
         item(
             key = env.registerKey(HomeScrollKeyNeteaseRadarPlaylistsContent),
-            span = { GridItemSpan(maxLineSpan) }
+            span = { GridItemSpan(maxLineSpan) },
+            contentType = HomeContentTypeRadarPlaylists
         ) {
             RadarPlaylistStrip(
                 playlists = radarPlaylistState.items,

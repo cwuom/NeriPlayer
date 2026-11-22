@@ -55,6 +55,23 @@ internal const val HomeScrollKeyNeteaseRadarPlaylists = "home:netease:radar-play
 internal const val HomeScrollKeyNeteaseRadarPlaylistsHeader = "$HomeScrollKeyNeteaseRadarPlaylists:header"
 internal const val HomeScrollKeyNeteaseRadarPlaylistsContent = "$HomeScrollKeyNeteaseRadarPlaylists:content"
 
+internal const val HomeContentTypeHeader = "home:header"
+internal const val HomeContentTypeContinue = "home:continue"
+internal const val HomeContentTypeSongPager = "home:song-pager"
+internal const val HomeContentTypeRadarPlaylists = "home:radar-playlists"
+internal const val HomeContentTypeRadarPlaylistCard = "home:radar-playlist-card"
+internal const val HomeContentTypeBiliHeader = "home:bili-header"
+internal const val HomeContentTypeBiliRankHeader = "home:bili-rank-header"
+internal const val HomeContentTypeBiliRankStrip = "home:bili-rank-strip"
+internal const val HomeContentTypeBiliRankCard = "home:bili-rank-card"
+internal const val HomeContentTypeBiliHotStrip = "home:bili-hot-strip"
+internal const val HomeContentTypeBiliHotCard = "home:bili-hot-card"
+internal const val HomeContentTypePlaylistCard = "home:playlist-card"
+internal const val HomeContentTypeYtPlaylistCard = "home:yt-playlist-card"
+internal const val HomeContentTypeYtHomeItemCard = "home:yt-home-item-card"
+internal const val HomeContentTypeLoading = "home:loading"
+internal const val HomeContentTypeError = "home:error"
+
 /**
  * 首页 Clean 风格的手机网格：至少两列，避免 20dp 页边距下自适应格只剩一列。
  */

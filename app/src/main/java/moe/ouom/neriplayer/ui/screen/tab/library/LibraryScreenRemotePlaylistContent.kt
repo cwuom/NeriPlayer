@@ -283,14 +283,17 @@ internal fun YouTubeMusicPlaylistList(
                     ),
                     leadingContent = {
                         if (playlist.coverUrl.isNotEmpty()) {
-                            AsyncImage(
-                                model = offlineCachedImageRequest(
+                            val coverRequest = remember(context, playlist.coverUrl, offlineMode) {
+                                offlineCachedImageRequest(
                                     context = context,
                                     data = playlist.coverUrl,
                                     sizePx = 192,
-                                    allowHardware = false,
+                                    allowHardware = true,
                                     offlineMode = offlineMode
-                                ),
+                                )
+                            }
+                            AsyncImage(
+                                model = coverRequest,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
@@ -553,14 +556,17 @@ internal fun BiliPlaylistList(
                     ),
                     leadingContent = {
                         if (pl.coverUrl.isNotEmpty()) {
-                            AsyncImage(
-                                model = offlineCachedImageRequest(
+                            val coverRequest = remember(context, pl.coverUrl, offlineMode) {
+                                offlineCachedImageRequest(
                                     context = context,
                                     data = pl.coverUrl,
                                     sizePx = 192,
-                                    allowHardware = false,
+                                    allowHardware = true,
                                     offlineMode = offlineMode
-                                ),
+                                )
+                            }
+                            AsyncImage(
+                                model = coverRequest,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
