@@ -247,6 +247,12 @@ internal data class BottomBarLayoutInsets(
     val miniPlayerBottomPadding: Dp
 )
 
+/** 简洁风格的底栏始终是悬浮胶囊, 关闭模糊也要让内容延伸到底栏后面; Material 底栏只在模糊开启时悬浮 */
+internal fun shouldExtendContentBehindBottomBar(
+    baseBlurRequested: Boolean,
+    floatingBottomBar: Boolean
+): Boolean = baseBlurRequested || floatingBottomBar
+
 internal fun resolveBottomBarLayoutInsets(
     baseBlurRequested: Boolean,
     bottomBarInset: Dp,

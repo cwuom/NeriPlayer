@@ -298,7 +298,10 @@ NeriPlayer 功能面较宽，提交前优先保护以下链路。
 
 **`app/src/main/java/moe/ouom/neriplayer/ui/onboarding/`**
 
-- 首次启动引导，覆盖语言、平台账号、权限说明、播放控件、GitHub 同步和个性化设置。
+- 首次启动引导，依次覆盖语言、界面风格、按机型推荐的动效、使用说明与隐私、平台账号、播放源兜底、权限说明、播放控件、歌词、个性化、GitHub / WebDAV 同步和功能指引。
+- 同意使用说明之后才创建平台账号与同步会话，不在同意前读取登录态。
+- 播放控件和歌词两步的实机预览复用真实的 `AppNowPlayingOverlay`、`NowPlayingScreen` 和 `LyricsScreen`，通过 `StartupPreviewPlaybackSource` 播放内存中的示例歌曲，不改动真实播放器、队列、历史和音频焦点。
+- 播放页与歌词页通过 `LocalNowPlayingPlaybackSource` 读写播放状态，默认实现转发 `PlayerManager`。给播放页新增状态读取或播放操作时加到该接口，不在页面里直接调用 `PlayerManager`。会改动真实数据的入口（队列、定时、音量、加歌单、评论、更多操作、歌词分享）受 `secondaryActionsEnabled` 控制。
 
 **`modules/platform/src/main/java/moe/ouom/neriplayer/platform/`**
 

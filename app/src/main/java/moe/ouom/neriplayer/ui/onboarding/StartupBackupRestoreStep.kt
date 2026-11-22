@@ -98,12 +98,6 @@ internal fun BackupRestoreContent(
     onToggleWebDavAutoSync: (Boolean) -> Unit,
     onWebDavSyncNow: () -> Unit
 ) {
-    StepHeader(
-        icon = Icons.Outlined.CloudSync,
-        title = stringResource(AppR.string.onboarding_backup_restore_title),
-        description = stringResource(AppR.string.onboarding_backup_restore_desc)
-    )
-    Spacer(Modifier.height(18.dp))
     BackupSyncMessage(gitHubState.errorMessage, onDismissGitHubMessage)
     BackupSyncMessage(gitHubState.successMessage, onDismissGitHubMessage)
     BackupSyncMessage(webDavState.errorMessage, onDismissWebDavMessage)

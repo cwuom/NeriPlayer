@@ -19,6 +19,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.locale.getDisplayName
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.testutil.StartupMotionPreferencesSnapshot
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertEquals
@@ -52,6 +53,7 @@ class MainActivityTabletStartupLayoutTest {
             settings.startupOnboardingCompletedFlow.filterNotNull().first()
         }
         val originalUiScale = runBlocking { settings.uiDensityScaleFlow.first() }
+        val originalMotion = runBlocking { StartupMotionPreferencesSnapshot.capture(context) }
         try {
             runBlocking {
                 settings.setUiDensityScale(1f)
@@ -66,6 +68,7 @@ class MainActivityTabletStartupLayoutTest {
                     var firstLanguageLabel = ""
                     var lastLanguageLabel = ""
                     var nextLabel = ""
+                    var stepTitles = emptyList<String>()
                     scenario.onActivity { activity ->
                         assertTrue(
                             "真实 Activity 必须保留平板可用宽度",
@@ -81,14 +84,13 @@ class MainActivityTabletStartupLayoutTest {
                         firstLanguageLabel = LanguageManager.Language.entries.first().getDisplayName(localized)
                         lastLanguageLabel = LanguageManager.Language.entries.last().getDisplayName(localized)
                         nextLabel = localized.getString(AppR.string.onboarding_action_next)
+                        stepTitles = listOf(
+                            localized.getString(AppR.string.onboarding_style_title),
+                            localized.getString(AppR.string.onboarding_motion_title),
+                            disclaimerTitle
+                        )
                     }
-                    waitForText(disclaimerTitle)
-                    composeRule.onNodeWithText(disclaimerTitle).assertIsDisplayed()
-                    waitForText(agreeLabel)
-                    composeRule.onNodeWithText(agreeLabel).assertIsEnabled()
-                    capture(context, "disclaimer")
-                    composeRule.onNodeWithText(agreeLabel).performClick()
-
+                    // 首次启动先选语言, 使用说明在外观三步之后才出现
                     waitForText(onboardingTitle)
                     waitForText(firstLanguageLabel)
                     composeRule.waitForIdle()
@@ -111,9 +113,21 @@ class MainActivityTabletStartupLayoutTest {
                             .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
                     )
                     assertTrue(
-                        "实际免责声明流程应持久化接受状态",
-                        runBlocking { settings.disclaimerAcceptedFlow.filterNotNull().first() }
+                        "同意使用说明之前不应写入接受状态",
+                        !runBlocking { settings.disclaimerAcceptedFlow.filterNotNull().first() }
                     )
+
+                    stepTitles.forEach { stepTitle ->
+                        composeRule.onNodeWithText(nextLabel).performClick()
+                        waitForText(stepTitle)
+                    }
+                    waitForText(agreeLabel)
+                    composeRule.onNodeWithText(agreeLabel).assertIsEnabled()
+                    capture(context, "disclaimer")
+                    composeRule.onNodeWithText(agreeLabel).performClick()
+                    composeRule.waitUntil(timeoutMillis = STARTUP_TIMEOUT_MS) {
+                        runBlocking { settings.disclaimerAcceptedFlow.filterNotNull().first() }
+                    }
                 }
             }
         } finally {
@@ -121,6 +135,7 @@ class MainActivityTabletStartupLayoutTest {
                 settings.setUiDensityScale(originalUiScale)
                 settings.setDisclaimerAccepted(originalDisclaimer)
                 settings.setStartupOnboardingCompleted(originalOnboarding)
+                originalMotion.restore(context)
             }
         }
     }
