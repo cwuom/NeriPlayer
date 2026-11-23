@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.cover
 
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingPlaybackSource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.draw.shadow
@@ -923,7 +924,8 @@ private fun NowPlayingCoverSizedPanel(
         val restScale by animateFloatAsState(
             targetValue = nowPlayingCoverRestScale(
                 playing = playbackRequested,
-                wideLandscape = viewport.wideLandscape
+                wideLandscape = viewport.wideLandscape,
+                clean = NeriDesign.isClean
             ),
             animationSpec = spring(dampingRatio = 0.72f, stiffness = 260f),
             label = "now_playing_cover_rest_scale"
@@ -1064,9 +1066,12 @@ private val NowPlayingCoverCornerRadius = 24.dp
 private val NowPlayingCoverShadowElevation = 20.dp
 private const val NowPlayingCoverPausedScale = 0.86f
 
-/** 暂停时封面收进一圈, 播放时弹回满尺寸; 沉浸模式同样生效, 只有宽横屏和歌词并排时保持不动 */
-internal fun nowPlayingCoverRestScale(playing: Boolean, wideLandscape: Boolean): Float =
-    if (!playing && !wideLandscape) NowPlayingCoverPausedScale else 1f
+/**
+ * Clean 暂停时封面收进一圈, 播放时弹回满尺寸; 沉浸模式同样生效, 宽横屏和歌词并排时保持不动
+ * Material 的形变播放键已经表达了播放状态, 封面始终满尺寸
+ */
+internal fun nowPlayingCoverRestScale(playing: Boolean, wideLandscape: Boolean, clean: Boolean): Float =
+    if (clean && !playing && !wideLandscape) NowPlayingCoverPausedScale else 1f
 
 private fun coverSurfaceColor(coverUrl: String?, placeholder: Color): Color =
     if (coverUrl == null) placeholder else Color.Transparent

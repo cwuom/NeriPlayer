@@ -93,13 +93,18 @@ class NeriTabletMiniPlayerProgressRenderTest {
                 bounds.width.toInt(), bounds.height.toInt()).asImageBitmap().toPixelMap()
         }
         val state = "progress=$progress dragging=$dragging"
-        // density 2: 静止 3dp, 拖动 6dp
-        val expectedThickness = if (dragging) 12 else 6
+        // density 2: 粗细跟随静止和拖动两个常量
+        val thicknessDp = if (dragging) {
+            NeriMiniPlayerDefaults.TabletProgressDragThickness
+        } else {
+            NeriMiniPlayerDefaults.TabletProgressThickness
+        }
+        val expectedThickness = thicknessDp.value * 2f
         val trackX = (pixels.width * 0.9f).toInt()
         val trackRows = (0 until pixels.height).filter { y -> pixels[trackX, y].red > 0.03f }
         assertTrue("进度线未绘制: $state", trackRows.isNotEmpty())
         assertEquals("进度线应贴住顶边: $state", 0, trackRows.first())
-        assertEquals("进度线粗细不对: $state", expectedThickness.toFloat(), trackRows.size.toFloat(), 1f)
+        assertEquals("进度线粗细不对: $state", expectedThickness, trackRows.size.toFloat(), 1f)
         if (progress > 0.05f) {
             val playedX = (pixels.width * progress * 0.5f).toInt()
             assertTrue("已播放部分未着色: $state", pixels[playedX, 0].red > 0.5f && pixels[playedX, 0].blue > 0.5f)

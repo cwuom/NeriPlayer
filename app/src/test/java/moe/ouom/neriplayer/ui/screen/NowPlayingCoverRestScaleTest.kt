@@ -11,14 +11,20 @@ import org.junit.Test
 class NowPlayingCoverRestScaleTest {
 
     @Test
-    fun `cover settles smaller only while paused`() {
-        assertTrue(nowPlayingCoverRestScale(playing = false, wideLandscape = false) < 1f)
-        assertEquals(1f, nowPlayingCoverRestScale(playing = true, wideLandscape = false), 0f)
+    fun `clean cover settles smaller only while paused`() {
+        assertTrue(nowPlayingCoverRestScale(playing = false, wideLandscape = false, clean = true) < 1f)
+        assertEquals(1f, nowPlayingCoverRestScale(playing = true, wideLandscape = false, clean = true), 0f)
+    }
+
+    @Test
+    fun `material cover always stays full size`() {
+        assertEquals(1f, nowPlayingCoverRestScale(playing = false, wideLandscape = false, clean = false), 0f)
+        assertEquals(1f, nowPlayingCoverRestScale(playing = true, wideLandscape = false, clean = false), 0f)
     }
 
     @Test
     fun `wide landscape keeps the cover still beside the lyrics`() {
-        assertEquals(1f, nowPlayingCoverRestScale(playing = false, wideLandscape = true), 0f)
+        assertEquals(1f, nowPlayingCoverRestScale(playing = false, wideLandscape = true, clean = true), 0f)
     }
 
     @Test

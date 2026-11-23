@@ -129,7 +129,7 @@ object NeriMiniPlayerDefaults {
     val Height = 64.dp
     val TabletHeight = 80.dp
     internal val TabletProgressHeight = 12.dp
-    internal val TabletProgressThickness = 3.dp
+    internal val TabletProgressThickness = 4.dp
     internal val TabletProgressDragThickness = 6.dp
     internal val TabletMetadataVerticalPadding = 2.dp
     internal val ContentVerticalPadding = 8.dp
