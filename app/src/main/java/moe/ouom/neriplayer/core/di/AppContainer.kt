@@ -69,6 +69,7 @@ import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.platform.search.api.client.QQMusicSearchApi
 import moe.ouom.neriplayer.platform.lyrics.search.SearchManager
 import moe.ouom.neriplayer.platform.youtube.api.client.YouTubeMusicClient
+import moe.ouom.neriplayer.platform.youtube.api.protocol.YouTubeCatalogSource
 import moe.ouom.neriplayer.platform.youtube.api.client.YouTubeAccountProfileClient
 import moe.ouom.neriplayer.platform.youtube.repository.YouTubeMusicPlaybackRepository
 import moe.ouom.neriplayer.platform.youtube.api.bootstrap.YouTubePlaybackBootstrapCoordinator
@@ -578,6 +579,7 @@ object AppContainer {
         this.application = app
         primeProxySetting()
         YouTubeContentSettings.initialize(app)
+        YouTubeCatalogSource.bind({ YouTubeContentSettings.preferences.value }, YouTubeContentSettings::systemLocale)
         initialized = true
         moe.ouom.neriplayer.core.integration.download.installDownloadDependencies()
         moe.ouom.neriplayer.core.di.player.installPlayerDependencies(app)

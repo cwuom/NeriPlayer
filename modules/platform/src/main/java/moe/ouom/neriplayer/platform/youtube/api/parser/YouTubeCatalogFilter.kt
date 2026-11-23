@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.platform.youtube.api.parser
 
-import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentPreferences
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeCatalogPolicy
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal fun JSONObject.filterCatalogItems(preferences: YouTubeContentPreferences): Int {
+internal fun JSONObject.filterCatalogItems(preferences: YouTubeCatalogPolicy): Int {
     if (!preferences.hideExplicit && !preferences.hideMusicVideos) return 0
     var removed = 0
     val pending = ArrayDeque<Any>()

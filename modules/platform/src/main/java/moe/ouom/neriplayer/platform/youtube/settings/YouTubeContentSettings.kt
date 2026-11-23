@@ -7,51 +7,24 @@ import moe.ouom.neriplayer.common.locale.DeviceLocale
 import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.model.SongItem
 import java.util.Locale
-import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeCatalogPolicy
+import moe.ouom.neriplayer.data.model.youtube.music.youtubeContentLanguageTags
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicRequestLocale
-
-private val isoCountryCodes = Locale.getISOCountries().toSet()
 
 enum class PlaylistSuggestionSource {
     Title, Tracks, Both
 }
 
 data class YouTubeContentPreferences(
-    val languageTag: String = "",
-    val countryCode: String = "",
-    val hideExplicit: Boolean = false,
-    val hideMusicVideos: Boolean = false,
+    override val languageTag: String = "",
+    override val countryCode: String = "",
+    override val hideExplicit: Boolean = false,
+    override val hideMusicVideos: Boolean = false,
     val playlistSuggestionSource: PlaylistSuggestionSource = PlaylistSuggestionSource.Both
-) {
-    fun hides(label: YouTubeContentLabel?): Boolean =
-        label != null && ((hideExplicit && label.explicit) || (hideMusicVideos && label.musicVideo))
-
-    fun resolveLocale(system: Locale): YouTubeMusicRequestLocale {
-        val country = system.country.uppercase(Locale.ROOT)
-        val language = when {
-            country == "CN" -> "zh-CN"
-            system.language == "zh" -> if (system.script == "Hant" || country in setOf("TW", "HK", "MO")) "zh-TW" else "zh-CN"
-            system.language == "en" && country == "US" -> "en-US"
-            system.toLanguageTag() in YouTubeContentSettings.languageTags -> system.toLanguageTag()
-            system.language in YouTubeContentSettings.languageTags -> system.language
-            else -> "en"
-        }
-        return YouTubeMusicRequestLocale(
-            hl = languageTag.ifBlank { language },
-            gl = countryCode.ifBlank {
-                when (country) {
-                    "CN" -> "JP"
-                    in isoCountryCodes -> country
-                    else -> "US"
-                }
-            }
-        )
-    }
-
+) : YouTubeCatalogPolicy {
     fun catalogKey(system: Locale): String {
         val locale = resolveLocale(system)
         return "${locale.hl}/${locale.gl}/$hideExplicit/$hideMusicVideos"
@@ -62,12 +35,7 @@ data class YouTubeContentPreferences(
 }
 
 object YouTubeContentSettings {
-    val languageTags = listOf(
-        "ar", "bg", "cs", "da", "de", "el", "en", "en-GB", "en-NG", "es", "et", "fi",
-        "fr", "he", "hi", "hr", "hu", "id", "it", "ja", "ko", "lt", "lv", "ms", "nl",
-        "no", "pl", "pt", "pt-BR", "ro", "ru", "sk", "sr", "sv", "th", "tr", "uk", "vi",
-        "zh", "zh-CN", "zh-TW"
-    )
+    val languageTags = youtubeContentLanguageTags
     val countryCodes = listOf(
         "AE", "AR", "AU", "BR", "CA", "CL", "CN", "CO", "DE", "EG", "ES", "FR", "GB",
         "HK", "ID", "IN", "IT", "JP", "KR", "MX", "MY", "NG", "NL", "PE", "PH", "PL",

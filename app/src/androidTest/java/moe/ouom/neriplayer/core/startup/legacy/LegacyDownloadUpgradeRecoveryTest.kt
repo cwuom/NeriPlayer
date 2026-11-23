@@ -723,12 +723,7 @@ class LegacyDownloadUpgradeRecoveryTest {
             fixture.databaseName,
             NeriUserDataDatabase.FINAL_DB_VERSION,
             false,
-            NeriUserDataDatabase.MIGRATION_15_FINAL,
-            NeriUserDataDatabase.MIGRATION_16_17,
-            NeriUserDataDatabase.MIGRATION_17_18,
-            NeriUserDataDatabase.MIGRATION_18_19,
-            NeriUserDataDatabase.MIGRATION_19_20,
-            NeriUserDataDatabase.MIGRATION_20_21
+            *NeriUserDataDatabase.allMigrations()
         ).close()
         return Room.databaseBuilder(
             fixture.baseContext,

@@ -211,7 +211,7 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
         }
 
         /** 新版本只在这里登记，漏登会让旧版本用户升级时无法打开数据库 */
-        internal fun allMigrations(): Array<Migration> = arrayOf(
+        fun allMigrations(): Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
             MIGRATION_3_4,

@@ -32,7 +32,7 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.Locale
 import moe.ouom.neriplayer.platform.youtube.api.parser.filterCatalogItems
-import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.platform.youtube.api.protocol.YouTubeCatalogSource
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -599,7 +599,7 @@ class YouTubeMusicClient(
         filter: YouTubeMusicSearchFilter,
         cursor: YouTubeMusicSearchCursor? = null
     ): YouTubeMusicSearchPage<YouTubeMusicSearchResult> {
-        if (filter == YouTubeMusicSearchFilter.Video && YouTubeContentSettings.preferences.value.hideMusicVideos) {
+        if (filter == YouTubeMusicSearchFilter.Video && YouTubeCatalogSource.policy.hideMusicVideos) {
             return YouTubeMusicSearchPage(emptyList())
         }
         val parser = when (filter) {
@@ -1134,7 +1134,7 @@ class YouTubeMusicClient(
             bootstrap()
         }
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
-        val preferences = YouTubeContentSettings.preferences.value
+        val preferences = YouTubeCatalogSource.policy
         val detail = collectYouTubeMusicPlaylistDetail(
             browseId = resolvedBrowseId,
             fallbackTitle = fallbackTitle,
@@ -1673,7 +1673,7 @@ class YouTubeMusicClient(
                         bootstrap = activeBootstrap,
                         root = root,
                         requestLocale = requestLocale,
-                        filteredItems = if (filterCatalog) root.filterCatalogItems(YouTubeContentSettings.preferences.value) else 0
+                        filteredItems = if (filterCatalog) root.filterCatalogItems(YouTubeCatalogSource.policy) else 0
                     )
                 } catch (error: IOException) {
                     lastError = error
@@ -1738,7 +1738,7 @@ class YouTubeMusicClient(
                         bootstrap = activeBootstrap,
                         root = root,
                         requestLocale = requestLocale,
-                        filteredItems = root.filterCatalogItems(YouTubeContentSettings.preferences.value)
+                        filteredItems = root.filterCatalogItems(YouTubeCatalogSource.policy)
                     )
                 } catch (error: IOException) {
                     lastError = error
