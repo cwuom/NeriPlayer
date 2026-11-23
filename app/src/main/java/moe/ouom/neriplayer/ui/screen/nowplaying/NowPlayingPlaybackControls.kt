@@ -506,16 +506,7 @@ private fun NowPlayingProgressRow(
     lyricSeekHaptic: LyricSeekHapticFeedback,
     modifier: Modifier
 ) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = formatDuration(effectivePreviewPositionMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    val slider: @Composable (Modifier) -> Unit = { sliderModifier ->
         NowPlayingSeekSlider(
             owner = owner,
             currentPosition = currentPosition,
@@ -529,15 +520,74 @@ private fun NowPlayingProgressRow(
             seekEnabled = seekEnabled,
             activeContentColor = activeContentColor,
             lyricSeekHaptic = lyricSeekHaptic,
-            modifier = Modifier.weight(1f)
+            modifier = sliderModifier
         )
+    }
+    if (NeriDesign.isClean) {
+        CleanNowPlayingProgressRow(effectivePreviewPositionMs, durationMs, owner.isDragging, modifier, slider)
+    } else {
+        MaterialNowPlayingProgressRow(effectivePreviewPositionMs, durationMs, modifier, slider)
+    }
+}
+
+/** Clean: 进度条占满整行, 时间收到下方两端, 拖动时已播放时间跟随强调 */
+@Composable
+private fun CleanNowPlayingProgressRow(
+    positionMs: Long,
+    durationMs: Long,
+    dragging: Boolean,
+    modifier: Modifier,
+    slider: @Composable (Modifier) -> Unit
+) {
+    Column(modifier = modifier) {
+        slider(Modifier.fillMaxWidth().height(CleanProgressTouchHeight))
+        Row(
+            modifier = Modifier.fillMaxWidth().offset(y = (-6).dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            val timeStyle = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
+            Text(
+                text = formatDuration(positionMs),
+                style = timeStyle,
+                color = if (dragging) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "-" + formatDuration((durationMs - positionMs).coerceAtLeast(0L)),
+                style = timeStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun MaterialNowPlayingProgressRow(
+    positionMs: Long,
+    durationMs: Long,
+    modifier: Modifier,
+    slider: @Composable (Modifier) -> Unit
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        val timeStyle = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum")
+        Text(
+            text = formatDuration(positionMs),
+            style = timeStyle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        slider(Modifier.weight(1f))
         Text(
             text = formatDuration(durationMs),
-            style = MaterialTheme.typography.bodySmall,
+            style = timeStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
+
+private val CleanProgressTouchHeight = 32.dp
 
 internal fun nowPlayingProgressFraction(positionMs: Long, durationMs: Long): Float =
     if (durationMs > 0) positionMs.toFloat() / durationMs else 0f

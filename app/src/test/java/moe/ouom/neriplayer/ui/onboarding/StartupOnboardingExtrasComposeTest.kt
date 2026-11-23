@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.ui.onboarding
 
+import org.junit.Assert.assertTrue
+import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.Box
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -301,6 +306,30 @@ class StartupOnboardingExtrasComposeTest {
             changes
         )
         assertEquals(listOf(1.2f), scales)
+    }
+
+    @Test
+    fun `wide two pane landscape step lays options in two columns without intrinsic measurement`() {
+        setStep {
+            CompositionLocalProvider(LocalStartupOnboardingTwoPane provides true) {
+                Box(Modifier.requiredWidth(900.dp)) {
+                    StartupNowPlayingLandscapeContent(
+                        preferences = PlaybackControlLayoutPreferences(),
+                        lyricFontScale = 1f,
+                        onLyricFontScaleChange = {},
+                        onPreferencesChange = {},
+                        onOpenPreview = {}
+                    )
+                }
+            }
+        }
+
+        // 选项卡里带 BoxWithConstraints, 双列 FlowRow 一旦按权重测量就会因固有尺寸查询崩溃
+        val size = composeRule.onNodeWithText(string(AppR.string.onboarding_controls_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        val lyrics = composeRule.onNodeWithText(string(AppR.string.onboarding_landscape_lyrics_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue("两个选项应并排成两列", lyrics.left > size.right)
     }
 
     @Test

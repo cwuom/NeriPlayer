@@ -44,6 +44,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.lerp
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.NeriMotion
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -65,8 +73,6 @@ import kotlin.math.ceil
 import kotlin.math.pow
 import kotlin.math.sin
 
-private const val WAVE_AMPLITUDE = 6f   // 波浪的振幅
-private const val WAVE_FREQUENCY = 0.08f // 波浪的频率
 private const val WAVE_ANIMATION_DURATION_NS = 2_000_000_000L
 private const val NANOS_PER_MILLISECOND = 1_000_000L
 private const val WAVE_SAMPLE_SPACING_PX = 6f
@@ -76,14 +82,20 @@ private const val WAITING_PULSE_ANIMATION_DURATION_NS = 1_400_000_000L
 private const val WAITING_PULSE_RADIUS_SEGMENTS = 4f
 private const val MIN_WAITING_PULSE_SEGMENTS = 1
 private const val MAX_WAITING_PULSE_SEGMENTS = 72
-private val WaveInactiveStroke = androidx.compose.ui.graphics.drawscope.Stroke(
-    width = 4f,
-    cap = StrokeCap.Round
-)
-private val WaveActiveStroke = androidx.compose.ui.graphics.drawscope.Stroke(
-    width = 6f,
-    cap = StrokeCap.Round
-)
+
+// Material: M3 Expressive 波浪进度, 波浪只画已播放段, 未播放段是平直轨道并在末端留停止点
+private val WaveAmplitude = 3.dp
+private val WaveLength = 40.dp
+private val WaveTrackThickness = 4.dp
+private val WaveThumbWidth = 4.dp
+private val WaveThumbHeight = 20.dp
+private val WaveThumbDragHeight = 28.dp
+private val WaveThumbGap = 4.dp
+private val WaveStopIndicatorSize = 4.dp
+
+// Clean: 无拇指的扁平胶囊, 按住时加粗给出可拖动反馈
+private val FlatTrackThickness = 6.dp
+private val FlatTrackDragThickness = 12.dp
 
 @Composable
 fun WaveformSlider(
@@ -104,9 +116,19 @@ fun WaveformSlider(
     playbackSessionKey: String? = null
 ) {
     val clampedValue = normalizeWaveProgress(value)
-    val activeColor = if (enabled) activeTint else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
-    val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.3f else 0.18f)
-    val thumbColor = if (enabled) activeTint else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
+    val flatStyle = NeriDesign.isClean
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val activeColor = when {
+        !enabled -> onSurface.copy(alpha = .38f)
+        // Clean 已播放段用中性墨色, 强调色只留给可交互元素
+        flatStyle -> onSurface.copy(alpha = 0.92f)
+        else -> activeTint
+    }
+    val inactiveColor = when {
+        flatStyle -> onSurface.copy(alpha = if (enabled) 0.18f else 0.1f)
+        else -> activeTint.copy(alpha = if (enabled) 0.26f else 0.12f)
+    }
+    val thumbColor = if (enabled) activeTint else onSurface.copy(alpha = .38f)
 
     var isDragging by remember { mutableStateOf(false) }
     val latestOnValueChangeCanceled by rememberUpdatedState(onValueChangeCanceled)
@@ -119,10 +141,15 @@ fun WaveformSlider(
 
     val animatedAmplitude by animateFloatAsState(
         targetValue = if (
-            enabled && isPlaying && !isPlaybackWaiting && !isDragging
-        ) WAVE_AMPLITUDE else 0f,
+            !flatStyle && enabled && isPlaying && !isPlaybackWaiting && !isDragging
+        ) 1f else 0f,
         animationSpec = tween(durationMillis = 500, easing = LinearEasing),
         label = "amplitude_animation"
+    )
+    val dragEmphasis by animateFloatAsState(
+        targetValue = if (isDragging) 1f else 0f,
+        animationSpec = NeriMotion.snappy(),
+        label = "progress_drag_emphasis"
     )
 
     var phase by remember { mutableFloatStateOf(0f) }
@@ -243,6 +270,18 @@ fun WaveformSlider(
         val progressPx = progressValue * size.width
         val currentPhase = phase
 
+        if (flatStyle) {
+            drawFlatProgress(
+                progressPx = progressPx,
+                centerY = centerY,
+                thickness = lerp(FlatTrackThickness, FlatTrackDragThickness, dragEmphasis).toPx(),
+                activeColor = activeColor,
+                inactiveColor = inactiveColor,
+                waitingPhase = if (isPlaybackWaiting && !isDragging) currentPhase else null
+            )
+            return@Canvas
+        }
+
         if (isPlaybackWaiting && !isDragging) {
             val preferredSpacingPx = 8.dp.toPx()
             val pulseSegmentCount = resolveWaitingPulseSegmentCount(
@@ -276,46 +315,104 @@ fun WaveformSlider(
                 )
             }
 
-            drawCircle(
-                color = thumbColor,
-                radius = 16f,
-                center = Offset(progressPx, centerY)
-            )
+            drawWaveThumb(progressPx, centerY, WaveThumbHeight.toPx(), thumbColor)
             return@Canvas
         }
 
-        val segmentCount = resolveWaveSegmentCount(size.width)
-        val segmentWidth = size.width / segmentCount
-
-        wavePath.rewind()
-        wavePath.moveTo(0f, centerY + sin(currentPhase) * animatedAmplitude)
-        for (index in 1..segmentCount) {
-            val x = index * segmentWidth
-            val angle = x * WAVE_FREQUENCY + currentPhase
-            val y = centerY + sin(angle) * animatedAmplitude
-            wavePath.lineTo(x, y)
-        }
-
-        drawPath(
-            path = wavePath,
-            color = inactiveColor,
-            style = WaveInactiveStroke
-        )
-
-        clipRect(right = progressPx) {
+        val strokePx = WaveTrackThickness.toPx()
+        val halfThumbPx = WaveThumbWidth.toPx() / 2f
+        val gapPx = WaveThumbGap.toPx()
+        val amplitudePx = WaveAmplitude.toPx() * animatedAmplitude
+        val waveNumber = TWO_PI / WaveLength.toPx()
+        val activeEnd = progressPx - halfThumbPx - gapPx
+        if (activeEnd > 0f) {
+            val segmentCount = resolveWaveSegmentCount(activeEnd)
+            val segmentWidth = activeEnd / segmentCount
+            wavePath.rewind()
+            wavePath.moveTo(0f, centerY + sin(currentPhase) * amplitudePx)
+            for (index in 1..segmentCount) {
+                val x = index * segmentWidth
+                wavePath.lineTo(x, centerY + sin(x * waveNumber + currentPhase) * amplitudePx)
+            }
             drawPath(
                 path = wavePath,
                 color = activeColor,
-                style = WaveActiveStroke
+                style = Stroke(width = strokePx, cap = StrokeCap.Round)
             )
         }
 
-        val thumbY = centerY + sin(progressPx * WAVE_FREQUENCY + currentPhase) * animatedAmplitude
-        drawCircle(
-            color = thumbColor,
-            radius = 16f,
-            center = Offset(progressPx, thumbY)
+        val stopRadius = WaveStopIndicatorSize.toPx() / 2f
+        val inactiveStart = progressPx + halfThumbPx + gapPx
+        val inactiveEnd = size.width - stopRadius
+        if (inactiveEnd > inactiveStart + strokePx) {
+            drawLine(
+                color = inactiveColor,
+                start = Offset(inactiveStart + strokePx / 2f, centerY),
+                end = Offset(inactiveEnd - strokePx / 2f, centerY),
+                strokeWidth = strokePx,
+                cap = StrokeCap.Round
+            )
+            drawCircle(
+                color = activeColor,
+                radius = stopRadius,
+                center = Offset(inactiveEnd, centerY)
+            )
+        }
+
+        drawWaveThumb(
+            progressPx = progressPx,
+            centerY = centerY,
+            heightPx = lerp(WaveThumbHeight, WaveThumbDragHeight, dragEmphasis).toPx(),
+            color = thumbColor
         )
+    }
+}
+
+private fun DrawScope.drawWaveThumb(progressPx: Float, centerY: Float, heightPx: Float, color: Color) {
+    val widthPx = WaveThumbWidth.toPx()
+    val x = progressPx.coerceIn(widthPx / 2f, size.width - widthPx / 2f)
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(x - widthPx / 2f, centerY - heightPx / 2f),
+        size = Size(widthPx, heightPx),
+        cornerRadius = CornerRadius(widthPx / 2f)
+    )
+}
+
+private fun DrawScope.drawFlatProgress(
+    progressPx: Float,
+    centerY: Float,
+    thickness: Float,
+    activeColor: Color,
+    inactiveColor: Color,
+    waitingPhase: Float?
+) {
+    val half = thickness / 2f
+    val start = Offset(half, centerY)
+    val end = Offset(size.width - half, centerY)
+    drawLine(inactiveColor, start, end, strokeWidth = thickness, cap = StrokeCap.Round)
+    if (waitingPhase != null) {
+        // 缓冲时一道柔光沿轨道扫过, 比跳动的竖条安静
+        val band = size.width * 0.28f
+        val center = (waitingPhase.floorMod(TWO_PI) / TWO_PI) * (size.width + band) - band / 2f
+        clipRect(top = centerY - half, bottom = centerY + half) {
+            drawLine(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Transparent, activeColor.copy(alpha = 0.32f), Color.Transparent),
+                    startX = center - band / 2f,
+                    endX = center + band / 2f
+                ),
+                start = start,
+                end = end,
+                strokeWidth = thickness,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+    if (progressPx > 0f) {
+        // 矩形裁剪按整像素对齐, 慢速推进时边缘会跳格; 直接画到小数坐标让抗锯齿负责亚像素移动
+        val activeEnd = (progressPx - half).coerceIn(half, size.width - half)
+        drawLine(activeColor, start, Offset(activeEnd, centerY), strokeWidth = thickness, cap = StrokeCap.Round)
     }
 }
 

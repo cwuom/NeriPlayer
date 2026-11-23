@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.cover
 
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingPlaybackSource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.draw.shadow
+import androidx.compose.animation.core.spring
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -84,8 +89,6 @@ import moe.ouom.neriplayer.util.media.PLAYBACK_COVER_BITMAP_MAX_DIMENSION_PX
 import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.animation.sharedCoverTarget
-import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
-import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
 import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -829,7 +832,8 @@ internal fun resolveNowPlayingCoverSize(
 ): Dp = when {
     wideLandscape -> minOf(windowWidth * 0.40f, maxWidth * 0.82f, maxHeight * 0.42f)
     landscape -> minOf(windowWidth * 0.45f, maxHeight * 0.5f, maxWidth)
-    else -> minOf(maxWidth * 0.6f, maxHeight * 0.65f)
+    // 竖屏封面是视觉主角, 让它接近七成宽而不是只占一半多
+    else -> minOf(maxWidth * 0.72f, maxHeight * 0.65f)
 }
 
 internal fun resolveNowPlayingAdaptiveCoverSize(
@@ -915,12 +919,27 @@ private fun NowPlayingCoverSizedPanel(
         }
         val requestSizePx = with(density) { coverSize.roundToPx().coerceAtLeast(256) }
         val sharedCoverFlight = LocalSharedCoverFlight.current
+        val playbackRequested by LocalNowPlayingPlaybackSource.current
+            .playbackControlPlayingFlow.collectAsStateWithLifecycle()
+        val restScale by animateFloatAsState(
+            targetValue = nowPlayingCoverRestScale(
+                playing = playbackRequested,
+                wideLandscape = viewport.wideLandscape,
+                clean = NeriDesign.isClean
+            ),
+            animationSpec = spring(dampingRatio = 0.72f, stiffness = 260f),
+            label = "now_playing_cover_rest_scale"
+        )
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
                 .size(coverSize)
                 // the source badge rides with the artwork, so it hides while the artwork flies
-                .graphicsLayer { alpha = nowPlayingCoverArtworkAlpha(sharedCoverFlight) }
+                .graphicsLayer {
+                    alpha = nowPlayingCoverArtworkAlpha(sharedCoverFlight)
+                    scaleX = restScale
+                    scaleY = restScale
+                }
         ) {
             NowPlayingCoverPanelImage(
                 owner = owner,
@@ -997,14 +1016,19 @@ private fun NowPlayingCoverInteractiveImage(
         onTap = preview.action(owner, content.source.coverUrl, longPress = false),
         onLongPress = preview.action(owner, content.source.coverUrl, longPress = true)
     )
-    val coverShape = if (NeriDesign.isClean) {
-        ContinuousRoundedCornerShape(NowPlayingCoverCornerRadius)
-    } else {
-        RoundedCornerShape(NowPlayingCoverCornerRadius)
-    }
+    // 解析圆角让裁剪和投影轮廓都走 GPU 快路径; 路径轮廓在按压回弹和缩放变换下会丢角
+    val coverShape = RoundedCornerShape(NowPlayingCoverCornerRadius)
     val imageModifier = Modifier.fillMaxSize()
         .then(modifier)
         .sharedCoverTarget(NowPlayingCoverCornerRadius)
+        // 单张大封面的投影走硬件渲染, 给画面一点纵深
+        .shadow(
+            elevation = NowPlayingCoverShadowElevation,
+            shape = coverShape,
+            clip = false,
+            ambientColor = Color.Black.copy(alpha = 0.32f),
+            spotColor = Color.Black.copy(alpha = 0.48f)
+        )
         .clip(coverShape)
         .background(coverSurfaceColor(content.source.coverUrl, MaterialTheme.colorScheme.primaryContainer))
         .then(previewModifier)
@@ -1039,6 +1063,15 @@ private fun NowPlayingCoverImageFrame(
 }
 
 private val NowPlayingCoverCornerRadius = 24.dp
+private val NowPlayingCoverShadowElevation = 20.dp
+private const val NowPlayingCoverPausedScale = 0.86f
+
+/**
+ * Clean 暂停时封面收进一圈, 播放时弹回满尺寸; 沉浸模式同样生效, 宽横屏和歌词并排时保持不动
+ * Material 的形变播放键已经表达了播放状态, 封面始终满尺寸
+ */
+internal fun nowPlayingCoverRestScale(playing: Boolean, wideLandscape: Boolean, clean: Boolean): Float =
+    if (clean && !playing && !wideLandscape) NowPlayingCoverPausedScale else 1f
 
 private fun coverSurfaceColor(coverUrl: String?, placeholder: Color): Color =
     if (coverUrl == null) placeholder else Color.Transparent

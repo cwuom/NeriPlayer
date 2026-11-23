@@ -46,6 +46,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -83,22 +84,59 @@ class PlaylistModernComponentsTest {
 
         composeRule.onNodeWithContentDescription(string(CoreCommonR.string.player_play_all)).performClick()
         composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_mode_order)).performClick()
-        composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_mode_repeat_off)).performClick()
-        composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_export_to_local)).performClick()
+        // 循环模式和导出收在更多菜单里, 切换循环时菜单保持展开
+        composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_playback_more_options)).performClick()
+        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_mode_repeat_off)).performClick()
+        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_export_to_local)).performClick()
 
         shuffleEnabled = true
         repeatMode = Player.REPEAT_MODE_ONE
         composeRule.onNodeWithContentDescription(string(CoreCommonR.string.player_shuffle_play)).performClick()
         composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_mode_shuffle)).assertIsEnabled()
-        composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_mode_repeat_one)).assertExists()
+        composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_playback_more_options)).performClick()
+        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_mode_repeat_one)).assertExists()
 
         songCount = 0
         repeatMode = Player.REPEAT_MODE_ALL
         composeRule.onNodeWithContentDescription(string(CoreCommonR.string.player_shuffle_play)).assertIsNotEnabled()
-        composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_export_to_local)).assertIsNotEnabled()
-        composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_mode_repeat_all)).assertIsEnabled()
+        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_export_to_local)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_mode_repeat_all)).assertIsEnabled()
 
         assertEquals(listOf("order", "toggle", "repeat", "export", "shuffle"), events)
+    }
+
+    @Test
+    @Config(qualifiers = "w411dp-h891dp")
+    fun `material playback bar keeps one labelled pill between separate buttons`() {
+        composeRule.setContent {
+            MaterialTheme(colorScheme = darkColorScheme()) {
+                PlaylistModernPlaybackActions(
+                    songCount = 3,
+                    shuffleEnabled = true,
+                    repeatMode = Player.REPEAT_MODE_ALL,
+                    onPlayInOrder = {},
+                    onShufflePlay = {},
+                    onToggleShuffle = {},
+                    onCycleRepeatMode = {},
+                    onExportToLocalPlaylist = {},
+                    onEnterSelection = {}
+                )
+            }
+        }
+
+        val bounds = listOf(
+            CoreCommonR.string.playlist_mode_shuffle,
+            CoreCommonR.string.player_shuffle_play,
+            CoreCommonR.string.playlist_multi_select,
+            CoreCommonR.string.playlist_playback_more_options
+        ).map { label ->
+            composeRule.onNodeWithContentDescription(string(label)).fetchSemanticsNode().boundsInRoot
+        }
+        bounds.zipWithNext().forEach { (left, right) ->
+            assertTrue("playback bar buttons overlap: $left / $right", left.right <= right.left)
+        }
+        val pill = bounds[1]
+        assertTrue("play pill should be the widest control", bounds.all { it == pill || it.width < pill.width })
     }
 
     @Test
@@ -154,13 +192,15 @@ class PlaylistModernComponentsTest {
             composeRule.onNodeWithText(text).assertExists()
         }
         composeRule.onNodeWithContentDescription("Mix").assertExists()
-        composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_export_to_local)).performClick()
+        composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_playback_more_options)).performClick()
+        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_export_to_local)).performClick()
 
         dark = true
         listOf("Mix", "hero-search", "docked-search").forEach { text ->
             composeRule.onNodeWithText(text).assertExists()
         }
-        composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_export_to_local)).performClick()
+        composeRule.onNodeWithContentDescription(string(CoreCommonR.string.playlist_playback_more_options)).performClick()
+        composeRule.onNodeWithText(string(CoreCommonR.string.playlist_export_to_local)).performClick()
         assertEquals(listOf(1, 1), exports)
     }
 

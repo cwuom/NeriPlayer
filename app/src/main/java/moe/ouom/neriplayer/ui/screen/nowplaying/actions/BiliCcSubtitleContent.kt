@@ -21,7 +21,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Switch
+import moe.ouom.neriplayer.ui.component.common.NeriSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -257,7 +257,7 @@ private fun BiliCcSubtitleReadyContent(
             Text(stringResource(CoreCommonR.string.settings_bili_cc_subtitle_ai_only_desc))
         },
         trailingContent = {
-            Switch(
+            NeriSwitch(
                 checked = aiOnlyEnabled,
                 enabled = lyricsEnabled,
                 onCheckedChange = { onToggleAiOnly() }

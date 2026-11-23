@@ -23,6 +23,11 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import moe.ouom.neriplayer.ui.i18n.UiText
 import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.theme.NeriDesign
@@ -111,6 +116,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -325,8 +331,8 @@ fun HomeScreen(
     val appBarTitle = titleOptions[titleSeed % titleOptions.size]
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
-        // follow the finger and stay put; a release snap reads as an unwanted bounce
-        snapAnimationSpec = null,
+        // 松手吸附到完全展开或完全收起, 半折叠时大标题会被裁成一道残影; 临界阻尼不回弹
+        snapAnimationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
         canScroll = {
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = gridState.canScrollForward,
@@ -368,27 +374,12 @@ fun HomeScreen(
     val isTabletLayout = windowWidthDp >= 720.dp
     val isTabletDevice =
         LocalConfiguration.current.smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
-    // clean style trades a little density for calmer rhythm: wider gutters, larger tablet tiles
     val cleanStyle = NeriDesign.isClean
-    val pageHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
-    val gridMinCellSize = when {
-        isTabletLayout && cleanStyle -> 172.dp
-        isTabletLayout -> 156.dp
-        // two large tiles per row on phones reads calmer than three thumbnails
-        cleanStyle -> 150.dp
-        else -> 120.dp
-    }
-    val gridContentPadding = if (isTabletLayout) 14.dp else 8.dp
-    val gridSpacing = when {
-        isTabletLayout && cleanStyle -> 18.dp
-        isTabletLayout -> 14.dp
-        cleanStyle -> 14.dp
-        else -> 10.dp
-    }
-    val gridColumns = remember(gridMinCellSize, cleanStyle, isTabletLayout) {
-        if (cleanStyle && !isTabletLayout) HomePhoneGridCells(gridMinCellSize)
-        else GridCells.Adaptive(gridMinCellSize)
-    }
+    val gridSpec = homeGridSpec(isTabletLayout, cleanStyle)
+    val pageHorizontalPadding = gridSpec.pageHorizontalPadding
+    val gridContentPadding = gridSpec.contentPadding
+    val gridSpacing = gridSpec.spacing
+    val gridColumns = remember(gridSpec) { gridSpec.columns }
     // 大标题与卡片左边缘对齐，扣掉 TopAppBar 自带的标题内边距
     val appBarTitleInset = (pageHorizontalPadding + gridContentPadding - TopAppBarTitleInset).coerceAtLeast(0.dp)
 
@@ -460,6 +451,7 @@ fun HomeScreen(
                 .padding(top = if (isTabletDevice) 8.dp else 0.dp)
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
         ) {
+            val greeting = rememberHomeGreeting()
             LargeTopAppBar(
                 title = { Text(appBarTitle, modifier = Modifier.padding(start = appBarTitleInset)) },
                 actions = {
@@ -486,16 +478,14 @@ fun HomeScreen(
                     scrolledContainerColor = Color.Transparent
                 )
             )
-            val openSearch = LocalHomeOpenSearch.current
-            if (cleanStyle && openSearch != null) {
-                HomeSearchPill(
-                    onClick = openSearch,
-                    modifier = Modifier
-                        .widthIn(max = 1240.dp)
-                        .align(Alignment.CenterHorizontally)
-                        .padding(horizontal = pageHorizontalPadding + gridContentPadding, vertical = 4.dp)
-                )
-            }
+            HomeGreetingLine(
+                text = greeting,
+                collapsedFraction = { topAppBarState.collapsedFraction },
+                modifier = Modifier
+                    .widthIn(max = 1240.dp)
+                    .align(Alignment.CenterHorizontally)
+                    .padding(horizontal = pageHorizontalPadding + gridContentPadding)
+            )
 
             Box(
                 modifier = Modifier
@@ -900,14 +890,18 @@ private fun SongRowMini(
             .fillMaxWidth()
             .clip(neriRoundedShape(8.dp))
             .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // 序号居中占一格, 和卡片左缘拉开距离, 两位数时也不贴边
         Text(
             text = index.toString(),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.width(28.dp),
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .width(28.dp)
+                .padding(end = 6.dp),
             maxLines = 1,
             overflow = TextOverflow.Clip
         )
@@ -1339,7 +1333,7 @@ fun PlaylistCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .clip(neriRoundedShape(8.dp))
+                        .clip(neriRoundedShape(8.dp))
             )
             Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
                 Text(
@@ -1585,30 +1579,57 @@ private fun ResponsiveSongPagerList(
         widthDp >= 600 -> 2
         else -> 1
     }
-    val rowsPerColumn = 3
+    val rowsPerColumn = HomeSongPagerRowsPerColumn
     val perPage = (columns * rowsPerColumn).coerceAtLeast(1)
+    val clean = NeriDesign.isClean
+    val overImage = LocalHasCustomBackground.current
+    // 背景图上两种风格都给榜单垫一层卡片: 高动效走毛玻璃, 低动效退回半透明底色
+    val chartCard = !clean || overImage
+    val chartCardShape = if (clean) NeriDesign.tokens.cardShape else HomeSongPagerCardShape
+    val chartCardColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
+        alpha = if (overImage) HomeOverImageCardAlpha else 1f
+    )
 
-    val pageCount = ceil(songs.size / perPage.toFloat()).toInt().coerceAtLeast(1)
+    // 横滑榜单只展示前 28 首, 点击后仍以整个分区作为播放队列
+    val visibleCount = min(songs.size, HomeSongPagerMaxSongs)
+    val pageCount = ceil(visibleCount / perPage.toFloat()).toInt().coerceAtLeast(1)
     val pagerState = rememberPagerState(pageCount = { pageCount })
 
+    Column(modifier = Modifier.fillMaxWidth()) {
     HorizontalPager(
         state = pagerState,
         key = { page -> page },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp)
+        // Material 的榜单卡与分区标题左缘对齐; Clean 是平铺行, 留出与标题文字对齐的缩进
+        contentPadding = PaddingValues(horizontal = if (clean) 8.dp else 0.dp),
+        pageSpacing = 12.dp,
+        modifier = Modifier.fillMaxWidth()
     ) { page ->
         val start = page * perPage
-        val end = min(start + perPage, songs.size)
+        val end = min(start + perPage, visibleCount)
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             for (columnIndex in 0 until columns) {
-                Column(
+                if (!homeSongPagerColumnHasSongs(start, end, columnIndex, rowsPerColumn)) {
+                    // 末页凑不满时空列只占位保持列宽, 不画空卡片
+                    Spacer(Modifier.weight(1f))
+                    continue
+                }
+                AdvancedGlassSurface(
+                    role = AdvancedGlassRole.SettingsGroup,
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    shape = chartCardShape,
+                    fallbackColor = if (chartCard) chartCardColor else Color.Transparent,
+                    tintColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    enabled = overImage
+                ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (chartCard) Modifier.padding(vertical = 6.dp) else Modifier),
+                    verticalArrangement = Arrangement.spacedBy(if (chartCard) 2.dp else 6.dp)
                 ) {
                     for (rowIndex in 0 until rowsPerColumn) {
                         val absoluteIndex = start + (columnIndex * rowsPerColumn + rowIndex)
@@ -1629,10 +1650,35 @@ private fun ResponsiveSongPagerList(
                         }
                     }
                 }
+                }
             }
         }
     }
+    if (pageCount > 1) {
+        // 用页码点提示可以横滑, 不露出下一页的内容
+        HomePagerDots(
+            pageCount = pageCount,
+            currentPage = { pagerState.currentPage },
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 10.dp)
+        )
+    }
+    }
 }
+
+internal fun homeSongPagerColumnHasSongs(
+    pageStart: Int,
+    pageEnd: Int,
+    columnIndex: Int,
+    rowsPerColumn: Int
+): Boolean = pageStart + columnIndex * rowsPerColumn < pageEnd
+
+private const val HomeSongPagerRowsPerColumn = 4
+internal const val HomeSongPagerMaxSongs = 28
+// 背景图上的容器底色: 低动效时直接显示这层半透明, 高动效时作为毛玻璃的底色
+internal const val HomeOverImageCardAlpha = 0.82f
+private val HomeSongPagerCardShape = RoundedCornerShape(24.dp)
 
 internal fun buildHomeSongInfo(song: SongItem): String {
     return "${song.displayName()}-${song.displayArtist()}"

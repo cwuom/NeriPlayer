@@ -136,7 +136,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
-import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
+import moe.ouom.neriplayer.ui.theme.neriInputFieldShape
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
 import moe.ouom.neriplayer.util.format.formatDuration
@@ -888,7 +888,7 @@ private fun LyricsEditorTextInput(owner: NowPlayingLyricsEditorOwner, modifier: 
         value = textState.value,
         onValueChange = owner::replaceSelectedText,
         enabled = !owner.isSavingState.value,
-        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+        shape = neriInputFieldShape(),
         colors = neriSearchFieldColors(),
         modifier = modifier.testTag("lyrics-editor-input"),
         placeholder = {
@@ -1080,7 +1080,7 @@ private fun LyricMatchQuery(presentation: LyricMatchQueryPresentation, actions: 
         OutlinedTextField(
             value = presentation.query,
             onValueChange = actions.onQueryChange,
-            shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+            shape = neriInputFieldShape(),
             colors = neriSearchFieldColors(),
             modifier = Modifier.weight(1f).testTag("lyrics-match-query"),
             label = { Text(stringResource(CoreCommonR.string.lyrics_match_keyword)) },

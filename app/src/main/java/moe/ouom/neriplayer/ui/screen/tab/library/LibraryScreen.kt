@@ -123,7 +123,6 @@ internal const val LOCAL_CATEGORY_ARTIST = 1
 internal const val LIBRARY_UI_PREFS = "library_ui_preferences"
 internal const val KEY_LOCAL_ARTIST_SORT_MODE = "local_artist_sort_mode"
 internal val LibraryPrimaryTabShape = RoundedCornerShape(20.dp)
-internal val LibrarySearchFieldShape = RoundedCornerShape(16.dp)
 
 internal val HotPlaylistPeriods = listOf(
     PlaybackStatsPeriod.WEEK,

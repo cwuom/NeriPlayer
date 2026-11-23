@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.screen.lyrics
  * Created: 2025/8/13
  */
 
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.annotation.SuppressLint
 import android.content.ClipData
@@ -171,7 +174,9 @@ import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
-import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
+import moe.ouom.neriplayer.ui.component.playback.NeriPlayPauseButton
+import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingPrimaryGlyphRatio
+import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingWaitingIndicatorSize
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.format.formatDuration
@@ -373,7 +378,7 @@ fun LyricsScreen(
     val toolbarWidthFraction = if (isTabletLandscape) 0.58f else 1f
     val lyricsControlSize = playbackControlLayoutPreferences.lyricsSize
     val baseToolbarIconSize = if (isTabletLandscape) 22.dp else 20.dp
-    val basePrimaryControlSize = if (isTabletLandscape) 50.dp else 42.dp
+    val basePrimaryControlSize = if (isTabletLandscape) 56.dp else 52.dp
     val baseSecondaryControlSize = if (isTabletLandscape) 46.dp else 42.dp
     val lyricsTopActionButtonSize = lyricsControlSize.scaleButtonSize(48.dp)
     val lyricsTopActionIconSize = lyricsControlSize.scaleIconSize(24.dp)
@@ -383,7 +388,7 @@ fun LyricsScreen(
     val primaryControlSize = lyricsControlSize.scaleButtonSize(basePrimaryControlSize)
     val secondaryControlSize = lyricsControlSize.scaleButtonSize(baseSecondaryControlSize)
     val secondaryControlIconSize = lyricsControlSize.scaleIconSize(32.dp)
-    val primaryControlIconSize = lyricsControlSize.scaleIconSize(24.dp)
+    val primaryControlIconSize = (primaryControlSize * nowPlayingPrimaryGlyphRatio(NeriDesign.isClean)).coerceAtLeast(20.dp)
     val snackbarHostState = remember { SnackbarHostState() }
 
     // 启动进入动画
@@ -994,13 +999,14 @@ fun LyricsScreen(
                     .size(secondaryControlSize)
                 ) {
                     Icon(
-                        Icons.Outlined.SkipPrevious,
+                        if (NeriDesign.isClean) Icons.Rounded.SkipPrevious else Icons.Outlined.SkipPrevious,
                         contentDescription = stringResource(CoreCommonR.string.lyrics_previous),
                         modifier = Modifier.size(secondaryControlIconSize)
                     )
                 }
 
-                HapticFilledIconButton(
+                NeriPlayPauseButton(
+                    isPlaying = isPlaybackControlPlaying,
                     onClick = { playbackSource.togglePlayPause() },
                     enabled = !usbPlaybackPreparing && lanControls.permissions.playPause,
                     modifier = Modifier
@@ -1028,7 +1034,8 @@ fun LyricsScreen(
                         restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
                         waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
                         modifier = Modifier.size(primaryControlIconSize),
-                        progressIndicatorSize = primaryControlIconSize
+                        progressIndicatorSize = nowPlayingWaitingIndicatorSize(primaryControlSize),
+                        iconSize = primaryControlIconSize
                     )
                 }
 
@@ -1051,7 +1058,7 @@ fun LyricsScreen(
                         .size(secondaryControlSize)
                 ) {
                     Icon(
-                        Icons.Outlined.SkipNext,
+                        if (NeriDesign.isClean) Icons.Rounded.SkipNext else Icons.Outlined.SkipNext,
                         contentDescription = stringResource(CoreCommonR.string.lyrics_next),
                         modifier = Modifier.size(secondaryControlIconSize)
                     )

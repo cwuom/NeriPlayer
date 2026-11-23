@@ -35,6 +35,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.BorderStroke
+import moe.ouom.neriplayer.ui.theme.neriOutlinedButtonBorder
 
 private const val VIBRATION_EFFECT_CLICK = 0
 private const val VIBRATION_EFFECT_DOUBLE_CLICK = 1
@@ -145,6 +147,7 @@ fun HapticButton(
     colors: ButtonColors = ButtonDefaults.buttonColors(),
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
     interactionSource: MutableInteractionSource? = null,
+    border: BorderStroke? = null,
     content: @Composable RowScope.() -> Unit
 ) {
     Button(
@@ -153,6 +156,7 @@ fun HapticButton(
         enabled = enabled,
         shape = shape,
         colors = colors,
+        border = border,
         contentPadding = contentPadding,
         interactionSource = interactionSource,
         content = content
@@ -186,6 +190,7 @@ fun HapticOutlinedButton(
     enabled: Boolean = true,
     shape: Shape = ButtonDefaults.shape,
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    border: BorderStroke? = neriOutlinedButtonBorder(enabled),
     content: @Composable RowScope.() -> Unit
 ) {
     OutlinedButton(
@@ -193,6 +198,7 @@ fun HapticOutlinedButton(
         modifier = modifier,
         enabled = enabled,
         shape = shape,
+        border = border,
         contentPadding = contentPadding,
         content = content
     )

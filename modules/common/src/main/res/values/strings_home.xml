@@ -36,6 +36,14 @@
     <string name="home_title_brand_loud">音理音理!!</string>
     <string name="home_title_brand_wave">音理音理~</string>
     <string name="home_title_brand_call">NeriPlayer</string>
+    <string name="home_greeting_morning">早上好</string>
+    <string name="home_greeting_noon">午安</string>
+    <string name="home_greeting_afternoon">下午好</string>
+    <string name="home_greeting_evening">晚上好</string>
+    <string name="home_greeting_tone_bright">！</string>
+    <string name="home_greeting_tone_soft">～</string>
+    <string name="home_greeting_midnight">夜深了，记得早点休息</string>
+    <string name="home_greeting_night">夜深了</string>
     <string name="home_all_cards_hidden">首页卡片已全部隐藏，可在设置中重新开启。</string>
     <string name="home_offline_no_continue">脱机模式下仅显示继续播放，暂无可显示内容。</string>
     <string name="offline_mode_title">脱机模式</string>

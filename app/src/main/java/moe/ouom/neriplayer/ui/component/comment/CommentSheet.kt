@@ -350,7 +350,7 @@ internal fun CommentSheetContent(
                         // 下拉会继续上传给 sheet → 直接关闭面板; 传 lambda 保证拦截一定装上
                         .bottomSheetScrollGuard { true },
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(if (NeriDesign.isClean) 0.dp else 10.dp)
                 ) {
                     ui.comments.forEachIndexed { index, comment ->
                         val thread = ui.replyThreads[comment.id]
@@ -372,7 +372,8 @@ internal fun CommentSheetContent(
                                 replyEnabled = replyEnabled,
                                 likingIds = ui.likingIds,
                                 onLikeReply = onLike,
-                                onTimestampClick = onTimestampClick
+                                onTimestampClick = onTimestampClick,
+                                modifier = Modifier.animateItem()
                             )
                         }
                         if (thread?.expanded == true) {
@@ -382,7 +383,10 @@ internal fun CommentSheetContent(
                                     rootId = comment.id,
                                     replyEnabled = replyEnabled,
                                     onReply = requestReply,
-                                    modifier = Modifier.padding(start = 24.dp),
+                                    // 楼中楼展开时逐条淡入并把下方内容平滑推开
+                                    modifier = Modifier
+                                        .animateItem()
+                                        .padding(start = 24.dp, bottom = if (NeriDesign.isClean) 8.dp else 0.dp),
                                     offlineMode = offlineMode,
                                     isLiking = reply.id in ui.likingIds,
                                     likeEnabled = likeEnabled,
@@ -391,6 +395,7 @@ internal fun CommentSheetContent(
                                 )
                             }
                             item(key = "reply-footer:${comment.id}", contentType = "reply-footer") {
+                                Box(Modifier.animateItem()) {
                                 when {
                                     thread.loading -> CommentLoadingMoreRow()
                                     thread.error != null -> CommentLoadMoreErrorRow(thread.error) { onLoadReplies(comment.id) }
@@ -402,6 +407,7 @@ internal fun CommentSheetContent(
                                         stringResource(AppR.string.comment_empty_replies), Modifier.padding(16.dp),
                                         style = MaterialTheme.typography.bodySmall
                                     )
+                                }
                                 }
                             }
                         }

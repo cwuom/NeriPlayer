@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.page
 
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -84,7 +85,7 @@ import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 import kotlin.time.Duration.Companion.milliseconds
 
-private val MiuixCardShape = RoundedCornerShape(16.dp)
+private val MiuixCardShape = RoundedCornerShape(24.dp)
 private val MiuixHighlightShape = RoundedCornerShape(18.dp)
 private val MiuixSettingsContentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
 private val MiuixPageRowPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
@@ -98,31 +99,37 @@ internal fun settingsPageRowTestTag(page: SettingsPage): String = "settings-page
 private val settingsCardShape: Shape
     @Composable get() = if (NeriDesign.isClean) NeriDesign.tokens.groupShape else MiuixCardShape
 
-/** Clean style uses opaque inset-grouped cards; Material keeps the translucent glass tint. */
+/** Opaque tonal cards on a plain canvas; both styles turn translucent only over a custom background */
 private val settingsCardFallbackColor: Color
-    @Composable get() = if (NeriDesign.isClean) {
-        MaterialTheme.colorScheme.surfaceContainerLow.copy(
-            alpha = if (LocalHasCustomBackground.current) CleanCardOverBackgroundAlpha else 1f
-        )
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.56f)
+    @Composable get() {
+        val overImage = LocalHasCustomBackground.current
+        return if (NeriDesign.isClean) {
+            MaterialTheme.colorScheme.surfaceContainerLow.copy(
+                alpha = if (overImage) CleanCardOverBackgroundAlpha else 1f
+            )
+        } else {
+            MaterialTheme.colorScheme.surfaceContainer.copy(
+                alpha = if (overImage) MaterialCardOverBackgroundAlpha else 1f
+            )
+        }
     }
 
 private val settingsCardTintColor: Color
     @Composable get() = if (NeriDesign.isClean) {
         MaterialTheme.colorScheme.surfaceContainerLow
     } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest
+        MaterialTheme.colorScheme.surfaceContainer
     }
 
-/** Clean cards drop the glass pass on a plain canvas but keep it over a custom background. */
+/** Glass only earns its cost over a custom background; on a plain canvas it reads as a flat tint anyway */
 private val settingsCardGlassEnabled: Boolean
-    @Composable get() = !NeriDesign.isClean || LocalHasCustomBackground.current
+    @Composable get() = LocalHasCustomBackground.current
 
+private const val MaterialCardOverBackgroundAlpha = 0.82f
 private const val CleanCardOverBackgroundAlpha = 0.66f
 
 private val settingsListSpacing: Dp
-    @Composable get() = if (NeriDesign.isClean) 16.dp else 12.dp
+    @Composable get() = 16.dp
 
 @Composable
 private fun settingsHorizontalPadding(isTabletLayout: Boolean): Dp = when {
@@ -314,11 +321,8 @@ internal fun MiuixSettingsPageGroupCard(
         return
     }
 
-    val fallbackColor = if (NeriDesign.isClean) {
-        settingsCardFallbackColor
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.58f)
-    }
+    val clean = NeriDesign.isClean
+    val fallbackColor = settingsCardFallbackColor
     val cardShape = settingsCardShape
 
     ElevatedCard(
@@ -344,16 +348,12 @@ internal fun MiuixSettingsPageGroupCard(
                         selected = selectedPage == page,
                         onClick = { onPageClick(page) }
                     )
-                    if (index != pages.lastIndex) {
+                    // Material 整组是一块连续色面, 不画分隔线; Clean 保留 iOS 式内缩分隔
+                    if (clean && index != pages.lastIndex) {
                         HorizontalDivider(
-                            modifier = Modifier.padding(
-                                start = if (NeriDesign.isClean) 66.dp else 74.dp,
-                                end = 16.dp
-                            ),
-                            thickness = if (NeriDesign.isClean) 0.5.dp else 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(
-                                alpha = if (NeriDesign.isClean) 0.9f else 0.5f
-                            )
+                            modifier = Modifier.padding(start = 66.dp, end = 16.dp),
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
                         )
                     }
                 }
@@ -372,7 +372,7 @@ private fun MiuixSettingsPageRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = if (clean) 64.dp else 76.dp)
+            .heightIn(min = if (clean) 64.dp else 72.dp)
             .testTag(settingsPageRowTestTag(page))
             .semantics {
                 this.selected = selected
@@ -381,7 +381,7 @@ private fun MiuixSettingsPageRow(
                 when {
                     !selected -> Color.Transparent
                     clean -> MaterialTheme.colorScheme.secondaryContainer
-                    else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                    else -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f)
                 }
             )
             .clickable(onClick = onClick)
@@ -392,7 +392,13 @@ private fun MiuixSettingsPageRow(
         if (clean) {
             SettingsPageGlyphTile(page = page, size = 32.dp)
         } else Box(
-            modifier = Modifier.size(42.dp),
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(
+                    if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.secondaryContainer
+                ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -400,9 +406,9 @@ private fun MiuixSettingsPageRow(
                 contentDescription = stringResource(page.titleRes),
                 modifier = Modifier.size(22.dp),
                 tint = if (selected) {
-                    MaterialTheme.colorScheme.primary
+                    MaterialTheme.colorScheme.onPrimary
                 } else {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.86f)
+                    MaterialTheme.colorScheme.onSecondaryContainer
                 }
             )
         }

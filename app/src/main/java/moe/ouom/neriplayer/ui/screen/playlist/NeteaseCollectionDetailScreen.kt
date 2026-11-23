@@ -80,6 +80,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -471,12 +473,16 @@ fun DetailScreen(
         end = PlaylistModernHeroSearchHeight,
         fraction = searchVisibilityEased
     )
+    // 横屏平板两栏时头部固定在侧栏, 顶栏不随列表折叠, 搜索框也留在侧栏
+    val twoPane = rememberPlaylistTwoPaneLayout()
     val playlistChromeCollapseProgress by remember(
         listState,
         density,
-        playlistHeroHeight
+        playlistHeroHeight,
+        twoPane
     ) {
         derivedStateOf {
+            if (twoPane) return@derivedStateOf 1f
             resolvePlaylistChromeCollapseProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
@@ -490,8 +496,9 @@ fun DetailScreen(
     val playlistChromeVisualProgress = resolvePlaylistEasedProgress(
         playlistChromeCollapseProgress
     )
-    val dockedSearchRevealProgress by remember(listState, density) {
+    val dockedSearchRevealProgress by remember(listState, density, twoPane) {
         derivedStateOf {
+            if (twoPane) return@derivedStateOf 0f
             resolvePlaylistDockedSearchRevealProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
@@ -514,7 +521,7 @@ fun DetailScreen(
     )
     val headerSearchAlpha = resolvePlaylistHeaderSearchAlpha(
         searchVisibilityProgress = searchVisibilityProgress,
-        chromeCollapseProgress = playlistChromeCollapseProgress
+        chromeCollapseProgress = if (twoPane) 0f else playlistChromeCollapseProgress
     )
     val headerSearchVisible = shouldComposePlaylistSearchSlot(
         searchVisible = searchVisible,
@@ -593,6 +600,10 @@ fun DetailScreen(
                             title = {
                                 Text(
                                     text = ui.header?.name ?: stringResource(CoreCommonR.string.playlist_title),
+                                    // 标题已在头部大字展示, 顶栏只在头部滚走后淡入, 避免同屏出现两遍
+                                    modifier = Modifier.graphicsLayer {
+                                        alpha = if (twoPane) 0f else playlistChromeVisualProgress
+                                    },
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -756,17 +767,39 @@ fun DetailScreen(
                     )
                     val trackCount = ui.header?.trackCount ?: ui.tracks.size
                     val heroTitle = ui.header?.name ?: stringResource(CoreCommonR.string.playlist_title)
-                    val heroSubtitle = if (ui.header?.isAlbum == true) {
-                        stringResource(
-                            CoreCommonR.string.collection_track_count_format,
-                            trackCount
-                        )
+                    val trackCountText = pluralStringResource(
+                        CoreCommonR.plurals.playlist_meta_song_count,
+                        trackCount,
+                        trackCount
+                    )
+                    val playCountText = formatPlayCount(context, ui.header?.playCount ?: 0)
+                    val playCountDescription = stringResource(
+                        CoreCommonR.string.playlist_meta_play_count,
+                        playCountText
+                    )
+                    val isAlbum = ui.header?.isAlbum == true
+                    val heroSubtitle = if (isAlbum) {
+                        stringResource(CoreCommonR.string.collection_track_count_format, trackCount)
                     } else {
                         stringResource(
                             CoreCommonR.string.playlist_play_count_format,
-                            formatPlayCount(context, ui.header?.playCount ?: 0),
+                            playCountText,
                             trackCount
                         )
+                    }
+                    val heroMeta = remember(isAlbum, trackCountText, playCountText, playCountDescription) {
+                        buildList {
+                            if (!isAlbum) {
+                                add(
+                                    PlaylistHeroMeta(
+                                        text = playCountText,
+                                        icon = Icons.Rounded.Headphones,
+                                        contentDescription = playCountDescription
+                                    )
+                                )
+                            }
+                            add(PlaylistHeroMeta(text = trackCountText, icon = Icons.Rounded.MusicNote))
+                        }
                     }
                     fun playCollection(shuffle: Boolean) {
                         val startIndex = resolvePlaylistPlaybackStartIndex(
@@ -789,20 +822,14 @@ fun DetailScreen(
                             coverUrl = displayCoverUrl,
                             offlineMode = offlineMode
                         ) {
-                            LazyColumn(
-                                state = listState,
-                                contentPadding = PaddingValues(
-                                    bottom = 24.dp + miniPlayerHeight
-                                ),
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                item {
-                                    PlaylistModernHeroHeader(
+                            val heroBlock: @Composable () -> Unit = {
+                                PlaylistModernHeroHeader(
                                         displayName = heroTitle,
                                         coverUrl = displayCoverUrl,
                                         subtitle = heroSubtitle,
                                         offlineMode = offlineMode,
                                         height = playlistHeroHeight,
+                                        metaItems = heroMeta,
                                         actionsRevealProgress = searchVisibilityEased,
                                         coverContentDescription = heroTitle,
                                         actions = if (headerSearchVisible) {
@@ -830,12 +857,8 @@ fun DetailScreen(
                                             null
                                         }
                                     )
-                                }
-
-                            item(
-                                key = PLAYLIST_ACTIONS_KEY,
-                                contentType = "playlist_actions"
-                            ) {
+                            }
+                            val actionsBlock: @Composable () -> Unit = {
                                 PlaylistModernActionSheet(
                                     coverUrl = displayCoverUrl,
                                     offlineMode = offlineMode,
@@ -855,9 +878,39 @@ fun DetailScreen(
                                             },
                                             onExportToLocalPlaylist = {
                                                 showExportAllSheet = true
+                                            },
+                                            onEnterSelection = {
+                                                selectedIds = emptySet()
+                                                selectionMode = true
                                             }
                                         )
                                 }
+                            }
+                            PlaylistTwoPaneBody(
+                                twoPane = twoPane,
+                                modifier = Modifier.fillMaxSize(),
+                                pane = {
+                                    heroBlock()
+                                    actionsBlock()
+                                }
+                            ) {
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(
+                                    bottom = 24.dp + miniPlayerHeight
+                                ),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                item {
+                                // 两栏时头部和操作区搬进侧栏, 这里留空位保住索引, 定位和恢复滚动仍按固定偏移计算
+                                if (twoPane) PlaylistTwoPaneListTopGap() else heroBlock()
+                            }
+
+                            item(
+                                key = PLAYLIST_ACTIONS_KEY,
+                                contentType = "playlist_actions"
+                            ) {
+                                if (!twoPane) actionsBlock()
                             }
 
                             val loadError = ui.error
@@ -955,6 +1008,7 @@ fun DetailScreen(
                                 }
                             }
                         }
+                            }
                         }
 
                         if (currentIndex >= 0) {

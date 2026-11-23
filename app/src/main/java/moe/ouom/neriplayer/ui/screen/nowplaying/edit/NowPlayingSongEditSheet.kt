@@ -117,7 +117,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.theme.NeriDesign
-import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
+import moe.ouom.neriplayer.ui.theme.neriInputFieldShape
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricsEditorSheet
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -749,7 +749,7 @@ internal fun EditSongEditableTextField(
         val interactionSource = remember { MutableInteractionSource() }
         val focused by interactionSource.collectIsFocusedAsState()
         val colors = MaterialTheme.colorScheme
-        val shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape)
+        val shape = neriInputFieldShape()
         val fill = colors.onSurface.copy(alpha = 0.06f)
         // 填充输入框将标签留在内部，避免边框缺口同时裁掉标签下方的底色
         TextField(
@@ -784,7 +784,7 @@ internal fun EditSongEditableTextField(
         modifier = modifier.fillMaxWidth(),
         enabled = enabled,
         singleLine = true,
-        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+        shape = neriInputFieldShape(),
         trailingIcon = restoreIcon
     )
 }

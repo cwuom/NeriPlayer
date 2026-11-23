@@ -74,10 +74,8 @@ class NowPlayingProgressSpacingTest {
         renderLayout(1280.dp, 800.dp, NowPlayingControlPlacement.LOWER)
 
         assertTabletInformationFits()
-        assertEquals(pixels(12.dp), bounds("progressRow").top - bounds("identity").bottom, 1f)
-        assertEquals(pixels(13.dp), bounds("controls").top - informationRowBounds().bottom, 1f)
-        assertTrue(bounds("controls").bottom < bounds("toolbar").top - pixels(24.dp))
-        assertTrue(bounds("cover").height >= pixels(350.dp) - 1f)
+        assertExpandedTabletOrder()
+        assertTrue(bounds("cover").height >= pixels(400.dp) - 1f)
     }
 
     @Test
@@ -85,10 +83,8 @@ class NowPlayingProgressSpacingTest {
         renderLayout(1280.dp, 800.dp, NowPlayingControlPlacement.BOTTOM)
 
         assertTabletInformationFits()
-        assertEquals(pixels(12.dp), bounds("progressRow").top - bounds("identity").bottom, 1f)
-        assertTrue(bounds("controls").top > informationTextBounds().bottom + pixels(24.dp))
-        assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
-        assertTrue(bounds("cover").height >= pixels(350.dp) - 1f)
+        assertExpandedTabletOrder()
+        assertTrue(bounds("cover").height >= pixels(400.dp) - 1f)
     }
 
     @Test
@@ -96,10 +92,8 @@ class NowPlayingProgressSpacingTest {
         renderLayout(1280.dp, 800.dp, NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS)
 
         assertTabletInformationFits()
-        assertTrue(bounds("progressRow").top > bounds("identity").bottom + pixels(24.dp))
-        assertEquals(pixels(13.dp), bounds("controls").top - informationRowBounds().bottom, 1f)
-        assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
-        assertTrue(bounds("cover").height >= pixels(350.dp) - 1f)
+        assertExpandedTabletOrder()
+        assertTrue(bounds("cover").height >= pixels(400.dp) - 1f)
     }
 
     @Test
@@ -127,7 +121,7 @@ class NowPlayingProgressSpacingTest {
         )
 
         assertTabletInformationFits()
-        assertEquals(pixels(13.dp), bounds("controls").top - informationRowBounds().bottom, 1f)
+        assertExpandedTabletOrder()
         assertTrue(bounds("cover").height >= pixels(320.dp))
         assertTrue(bounds("nowPlayingLyricPane").height >= pixels(700.dp))
     }
@@ -138,9 +132,8 @@ class NowPlayingProgressSpacingTest {
             fontScale = 1.5f, largeControls = true)
 
         assertTabletInformationFits()
-        assertTrue(bounds("progressRow").top >= bounds("identity").bottom)
-        assertTrue(bounds("controls").top > informationTextBounds().bottom + pixels(24.dp))
-        assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
+        assertExpandedTabletOrder()
+        assertTrue(bounds("cover").height >= pixels(320.dp))
     }
 
     @Test
@@ -149,9 +142,8 @@ class NowPlayingProgressSpacingTest {
             fontScale = 1.5f, largeControls = true)
 
         assertTabletInformationFits()
-        assertTrue(bounds("progressRow").top > bounds("identity").bottom + pixels(24.dp))
-        assertEquals(pixels(13.dp), bounds("controls").top - informationRowBounds().bottom, 1f)
-        assertEquals(pixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
+        assertExpandedTabletOrder()
+        assertTrue(bounds("cover").height >= pixels(320.dp))
     }
 
     @Test
@@ -387,6 +379,15 @@ class NowPlayingProgressSpacingTest {
         }
         assertEquals(pixels(-1.dp), informationRowBounds().top - bounds("progressRow").bottom, 1f)
         assertTrue(informationTextBounds().bottom < bounds("controls").top)
+    }
+
+    /** 宽松横屏平板左栏: 封面, 歌名, 进度, 播放键, 工具栏自上而下紧凑排列 */
+    private fun assertExpandedTabletOrder() {
+        assertTrue("歌名应紧贴封面下方", bounds("identity").top >= bounds("cover").bottom - 1f)
+        assertEquals(pixels(6.dp), bounds("progressRow").top - bounds("identity").bottom, 1f)
+        assertTrue("播放键应在进度信息下方", bounds("controls").top >= informationRowBounds().bottom - 1f)
+        assertEquals(pixels(2.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
+        assertTrue(bounds("toolbar").bottom <= bounds("viewport").bottom - pixels(8.dp) + 1f)
     }
 
     private fun informationRowBounds(): Rect = bounds("nowPlayingProgressInfoRow")

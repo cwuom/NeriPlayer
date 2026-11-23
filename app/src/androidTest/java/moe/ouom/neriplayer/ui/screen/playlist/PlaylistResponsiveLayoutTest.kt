@@ -77,7 +77,7 @@ class PlaylistResponsiveLayoutTest {
                 }
             }
         }
-        listOf(TITLE, SUBTITLE).forEach { label ->
+        (listOf(TITLE) + SUBTITLE_PARTS).forEach { label ->
             val results = mutableListOf<TextLayoutResult>()
             composeRule.onNodeWithText(label, useUnmergedTree = true)
                 .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
@@ -90,13 +90,15 @@ class PlaylistResponsiveLayoutTest {
         }
         val hero = composeRule.onNodeWithTag("hero").getUnclippedBoundsInRoot()
         val title = composeRule.onNodeWithText(TITLE).getUnclippedBoundsInRoot()
-        val subtitle = composeRule.onNodeWithText(SUBTITLE).getUnclippedBoundsInRoot()
+        val metaBottom = SUBTITLE_PARTS.maxOf {
+            composeRule.onNodeWithText(it, useUnmergedTree = true).getUnclippedBoundsInRoot().bottom
+        }
         assertTrue("title must stay inside the hero", title.bottom <= hero.bottom)
-        assertTrue("metadata must stay inside the hero", subtitle.bottom <= hero.bottom)
+        assertTrue("metadata must stay inside the hero", metaBottom <= hero.bottom)
         if (search) {
             val field = composeRule.onNodeWithTag("search").getUnclippedBoundsInRoot()
             val next = composeRule.onNodeWithTag("next").getUnclippedBoundsInRoot()
-            assertTrue("search must not overlap metadata", field.top >= subtitle.bottom)
+            assertTrue("search must not overlap metadata", field.top >= metaBottom)
             assertTrue("search must not overlap the following actions", field.bottom <= next.top)
         }
     }
@@ -143,8 +145,10 @@ class PlaylistResponsiveLayoutTest {
         assertFalse("primary action must remain readable", results.single().isLineEllipsized(0))
         composeRule.onNodeWithContentDescription(play).performClick()
         composeRule.onNodeWithContentDescription(context.getString(playlistShuffleModeLabelRes(false))).performClick()
-        composeRule.onNodeWithContentDescription(context.getString(playlistRepeatModeLabelRes(0))).performClick()
-        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.playlist_export_to_local)).performClick()
+        // 循环模式和导出收在更多菜单里
+        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.playlist_playback_more_options)).performClick()
+        composeRule.onNodeWithText(context.getString(playlistRepeatModeLabelRes(0))).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.playlist_export_to_local)).performClick()
         composeRule.runOnIdle { assertEquals(listOf("play", "shuffle", "repeat", "export"), events) }
         if (style == UiStyle.Clean) {
             File(context.cacheDir, "playlist-responsive-clean-2x.png").outputStream().use {
@@ -174,5 +178,6 @@ class PlaylistResponsiveLayoutTest {
     private companion object {
         const val TITLE = "漫长夜晚的纯音乐精选合集"
         const val SUBTITLE = "31 首歌曲 · 播放 27 次"
+        val SUBTITLE_PARTS = listOf("31 首歌曲", "播放 27 次")
     }
 }

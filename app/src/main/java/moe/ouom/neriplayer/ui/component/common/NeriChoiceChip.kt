@@ -1,6 +1,18 @@
 package moe.ouom.neriplayer.ui.component.common
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -54,7 +66,32 @@ fun NeriChoiceChip(
             onClick = onClick,
             enabled = enabled,
             modifier = modifier.then(selectionSemantics),
-            label = { Text(label) }
+            label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            // 对勾随选中态展开, chip 宽度跟着平滑变化而不是跳变
+            leadingIcon = {
+                AnimatedVisibility(
+                    visible = selected,
+                    enter = fadeIn(tween(160)) + expandHorizontally(NeriMotion.smooth()),
+                    exit = fadeOut(tween(100)) + shrinkHorizontally(NeriMotion.smooth())
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(FilterChipDefaults.IconSize)
+                    )
+                }
+            },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                selectedLeadingIconColor = MaterialTheme.colorScheme.onSecondaryContainer
+            ),
+            border = FilterChipDefaults.filterChipBorder(
+                enabled = enabled,
+                selected = selected,
+                borderColor = MaterialTheme.colorScheme.outlineVariant,
+                selectedBorderColor = Color.Transparent
+            )
         )
         return
     }

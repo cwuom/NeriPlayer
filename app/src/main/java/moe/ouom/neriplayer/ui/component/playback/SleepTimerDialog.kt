@@ -44,6 +44,7 @@ import moe.ouom.neriplayer.data.model.playback.SleepTimerMode
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.ui.theme.neriOutlinedButtonBorder
 
 @Composable
 fun SleepTimerDialog(
@@ -146,6 +147,8 @@ fun SleepTimerDialog(
                 )
 
                 OutlinedButton(
+
+                    border = neriOutlinedButtonBorder(),
                     onClick = {
                         PlayerManager.sleepTimerManager.startCountdown(
                             minutes = sliderValue.toInt(),
@@ -168,6 +171,8 @@ fun SleepTimerDialog(
                 )
 
                 OutlinedButton(
+
+                    border = neriOutlinedButtonBorder(),
                     onClick = {
                         PlayerManager.sleepTimerManager.startFinishCurrent()
                         onDismiss()
@@ -184,6 +189,8 @@ fun SleepTimerDialog(
                 }
 
                 OutlinedButton(
+
+                    border = neriOutlinedButtonBorder(),
                     onClick = {
                         PlayerManager.sleepTimerManager.startFinishPlaylist()
                         onDismiss()

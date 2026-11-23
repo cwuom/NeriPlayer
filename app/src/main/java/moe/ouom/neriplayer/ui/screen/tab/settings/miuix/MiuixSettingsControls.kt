@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.miuix
 
+import moe.ouom.neriplayer.ui.component.common.NeriSwitch
 import moe.ouom.neriplayer.ui.theme.NeriMotion
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.rounded.Check
@@ -12,7 +13,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,8 +55,6 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -90,6 +88,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import moe.ouom.neriplayer.ui.theme.neriOutlinedButtonBorder
 
 private val MiuixControlShape = RoundedCornerShape(16.dp)
 private val MiuixDialogShape = RoundedCornerShape(28.dp)
@@ -179,7 +178,7 @@ internal fun MiuixSettingsOutlinedButton(
         modifier = modifier.dialogSlotButtonSize(44.dp),
         enabled = enabled,
         shape = buttonShape,
-        border = if (NeriDesign.isClean) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = if (NeriDesign.isClean) null else neriOutlinedButtonBorder(enabled),
         colors = ButtonDefaults.outlinedButtonColors(
             containerColor = if (NeriDesign.isClean) {
                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
@@ -430,39 +429,13 @@ internal fun MiuixSettingsSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
-    Switch(
+    NeriSwitch(
         checked = checked,
         onCheckedChange = onCheckedChange,
         modifier = modifier,
-        enabled = enabled,
-        colors = if (NeriDesign.isClean) cleanSwitchColors() else SwitchDefaults.colors(
-            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-            checkedTrackColor = MaterialTheme.colorScheme.primary,
-            uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            disabledCheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            disabledCheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-            disabledUncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-            disabledUncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-        )
+        enabled = enabled
     )
 }
-
-// 主题已配对的前景色能在浅色强调轨道上保持滑块可辨认
-@Composable
-private fun cleanSwitchColors() = SwitchDefaults.colors(
-    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-    checkedTrackColor = MaterialTheme.colorScheme.primary,
-    checkedBorderColor = Color.Transparent,
-    uncheckedThumbColor = Color.White,
-    uncheckedTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
-    uncheckedBorderColor = Color.Transparent,
-    disabledCheckedThumbColor = Color.White.copy(alpha = 0.8f),
-    disabledCheckedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
-    disabledUncheckedThumbColor = Color.White.copy(alpha = 0.7f),
-    disabledUncheckedTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-    disabledUncheckedBorderColor = Color.Transparent
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

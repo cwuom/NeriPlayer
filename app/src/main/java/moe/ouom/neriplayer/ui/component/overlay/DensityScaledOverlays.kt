@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.component.overlay
 
+import moe.ouom.neriplayer.ui.component.common.NeriSheetDragHandle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -149,7 +150,7 @@ internal fun DensityScaledModalBottomSheet(
     contentColor: Color = contentColorFor(containerColor),
     tonalElevation: Dp = 0.dp,
     scrimColor: Color = BottomSheetDefaults.ScrimColor,
-    dragHandle: @Composable (() -> Unit)? = { BottomSheetDefaults.DragHandle() },
+    dragHandle: @Composable (() -> Unit)? = { NeriSheetDragHandle() },
     contentWindowInsets: @Composable () -> WindowInsets = {
         WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Top)
     },

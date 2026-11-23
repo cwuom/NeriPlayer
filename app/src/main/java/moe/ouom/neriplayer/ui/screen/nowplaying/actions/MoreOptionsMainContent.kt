@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.actions
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.style.TextOverflow
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.download.DownloadStage
 import moe.ouom.neriplayer.data.ltw.validation.format
@@ -158,24 +165,19 @@ internal fun MoreOptionsMainContent(
             .verticalScroll(scrollState)
             .padding(bottom = 32.dp)
     ) {
-        MoreOptionsGroup {
-            MetadataAndPlaybackActions(
-                audioInfo = currentPlaybackAudioInfo,
-                isDismissing = isDismissing,
-                onOpenSearch = onOpenSearch,
-                onOpenEditInfo = onOpenEditInfo,
-                onShowQualitySwitch = onShowQualitySwitch
-            )
+        // 常用操作两列平铺, 其余设置类入口按主题分组成列表
+        MoreOptionsTileGrid {
             DownloadOrDetailsAction(
                 viewModel = viewModel,
                 song = originalSong,
                 isLocalSong = isLocalSong,
                 onShowSongDetails = onShowSongDetails
             )
-            NeteaseAlbumAction(
+            ShareSongAction(
                 song = originalSong,
-                onEnterAlbum = onEnterAlbum,
-                snackbarHostState = snackbarHostState
+                queue = queue,
+                snackbarHostState = snackbarHostState,
+                onDismissSheet = onDismissSheet
             )
             NeteasePlaylistCollectionAction(
                 owner = viewModel.neteasePlaylistCollection,
@@ -184,6 +186,33 @@ internal fun MoreOptionsMainContent(
                 offlineMode = offlineMode,
                 isDismissing = isDismissing,
                 onSubmitted = { onDismissSheet {} }
+            )
+            MoreOptionsItem(
+                title = stringResource(AppR.string.encyclopedia_title),
+                icon = Icons.AutoMirrored.Outlined.MenuBook,
+                hue = MoreHueViolet,
+                onClick = onOpenEncyclopedia
+            )
+            MoreOptionsItem(
+                title = stringResource(CoreCommonR.string.listen_together_title),
+                icon = Icons.Outlined.Headphones,
+                hue = MoreHueIndigo,
+                onClick = onOpenListenTogether
+            )
+            PlaybackStatsAction(originalSong)
+        }
+        MoreOptionsGroup {
+            MetadataAndPlaybackActions(
+                audioInfo = currentPlaybackAudioInfo,
+                isDismissing = isDismissing,
+                onOpenSearch = onOpenSearch,
+                onOpenEditInfo = onOpenEditInfo,
+                onShowQualitySwitch = onShowQualitySwitch
+            )
+            NeteaseAlbumAction(
+                song = originalSong,
+                onEnterAlbum = onEnterAlbum,
+                snackbarHostState = snackbarHostState
             )
         }
         MoreOptionsGroup {
@@ -194,8 +223,8 @@ internal fun MoreOptionsMainContent(
                 onOpenFontSize = onOpenFontSize
             )
         }
-        MoreOptionsGroup {
-            if (PlayerManager.isBiliTrack(originalSong)) {
+        if (PlayerManager.isBiliTrack(originalSong)) {
+            MoreOptionsGroup {
                 MoreOptionsItem(
                     title = stringResource(CoreCommonR.string.bili_video_skip_manage),
                     icon = Icons.Outlined.SkipNext,
@@ -209,25 +238,6 @@ internal fun MoreOptionsMainContent(
                     onClick = onOpenBiliCcSubtitle
                 )
             }
-            ShareSongAction(
-                song = originalSong,
-                queue = queue,
-                snackbarHostState = snackbarHostState,
-                onDismissSheet = onDismissSheet
-            )
-            PlaybackStatsAction(originalSong)
-            MoreOptionsItem(
-                title = stringResource(AppR.string.encyclopedia_title),
-                icon = Icons.AutoMirrored.Outlined.MenuBook,
-                hue = MoreHueViolet,
-                onClick = onOpenEncyclopedia
-            )
-            MoreOptionsItem(
-                title = stringResource(CoreCommonR.string.listen_together_title),
-                icon = Icons.Outlined.Headphones,
-                hue = MoreHueIndigo,
-                onClick = onOpenListenTogether
-            )
         }
     }
 }
@@ -691,22 +701,73 @@ private val MoreRowShape = RoundedCornerShape(14.dp)
 private val MoreGlyphShape = RoundedCornerShape(8.dp)
 private val MoreGroupShape = RoundedCornerShape(20.dp)
 
-/** Clean sheets group related actions into cards; Material keeps its flat list. */
+private val MoreTileShapeMaterial = RoundedCornerShape(20.dp)
+private val MoreTileShapeClean = RoundedCornerShape(16.dp)
+private val MoreGroupShapeMaterial = RoundedCornerShape(24.dp)
+
+/** 平铺网格内的条目改画成磁贴, 由所在 FlowRow 提供等分权重 */
+private val LocalMoreOptionsTileScope = staticCompositionLocalOf<FlowRowScope?> { null }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MoreOptionsTileGrid(content: @Composable () -> Unit) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        maxItemsInEachRow = 2,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        CompositionLocalProvider(LocalMoreOptionsTileScope provides this) { content() }
+    }
+}
+
+/** 两种风格都把相关入口收进一块连续的卡片, 卡片内不画分隔线 */
 @Composable
 private fun MoreOptionsGroup(content: @Composable ColumnScope.() -> Unit) {
-    if (!NeriDesign.isClean) {
-        Column(content = content)
-        return
-    }
+    val clean = NeriDesign.isClean
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clip(MoreGroupShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+            .clip(if (clean) MoreGroupShape else MoreGroupShapeMaterial)
+            .background(moreOptionsSurfaceColor())
             .padding(4.dp),
         content = content
     )
+}
+
+@Composable
+private fun moreOptionsSurfaceColor(): Color =
+    if (NeriDesign.isClean) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+
+@Composable
+private fun MoreOptionsGlyph(icon: ImageVector, hue: Color, busy: Boolean) {
+    val clean = NeriDesign.isClean
+    val container = if (clean) hue else MaterialTheme.colorScheme.secondaryContainer
+    val content = if (clean) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
+    Box(
+        modifier = Modifier
+            .size(if (clean) 30.dp else 40.dp)
+            .clip(if (clean) MoreGlyphShape else CircleShape)
+            .background(container),
+        contentAlignment = Alignment.Center
+    ) {
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(if (clean) 16.dp else 20.dp),
+                strokeWidth = 2.dp,
+                color = content
+            )
+        } else {
+            Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(if (clean) 18.dp else 20.dp))
+        }
+    }
 }
 
 @Composable
@@ -720,61 +781,101 @@ private fun MoreOptionsItem(
     subtitle: String? = null,
     supporting: (@Composable () -> Unit)? = null
 ) {
-    if (!NeriDesign.isClean) {
-        ListItem(
-            headlineContent = { Text(title) },
-            leadingContent = {
-                if (busy) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(icon, null)
-                }
-            },
-            supportingContent = supporting ?: subtitle?.let { text -> { Text(text) } },
-            modifier = Modifier.clickable(enabled = enabled, onClick = onClick)
+    val tileScope = LocalMoreOptionsTileScope.current
+    if (tileScope != null) {
+        MoreOptionsTile(
+            title = title,
+            icon = icon,
+            hue = hue,
+            onClick = onClick,
+            enabled = enabled,
+            busy = busy,
+            subtitle = subtitle,
+            supporting = supporting,
+            modifier = with(tileScope) { Modifier.weight(1f) }
         )
         return
     }
+    val clean = NeriDesign.isClean
     val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MoreRowShape)
+            .clip(if (clean) MoreRowShape else MoreTileShapeMaterial)
             .clickable(enabled = enabled, onClick = onClick)
-            .heightIn(min = 52.dp)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .heightIn(min = if (clean) 52.dp else 60.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .alpha(if (enabled) 1f else 0.5f),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(30.dp)
-                .clip(MoreGlyphShape)
-                .background(hue),
-            contentAlignment = Alignment.Center
-        ) {
-            if (busy) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
-            } else {
-                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-            }
-        }
+        MoreOptionsGlyph(icon, hue, busy)
         Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = colors.onSurface)
-            if (!subtitle.isNullOrBlank()) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-            }
-            if (supporting != null) {
-                CompositionLocalProvider(LocalContentColor provides colors.onSurfaceVariant) {
-                    ProvideTextStyle(MaterialTheme.typography.bodySmall) { supporting() }
-                }
+        MoreOptionsTexts(title, subtitle, supporting, Modifier.weight(1f))
+        if (clean) {
+            Icon(
+                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = colors.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MoreOptionsTile(
+    title: String,
+    icon: ImageVector,
+    hue: Color,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    busy: Boolean,
+    subtitle: String?,
+    supporting: (@Composable () -> Unit)?,
+    modifier: Modifier
+) {
+    val clean = NeriDesign.isClean
+    Row(
+        modifier = modifier
+            .clip(if (clean) MoreTileShapeClean else MoreTileShapeMaterial)
+            .background(moreOptionsSurfaceColor())
+            .clickable(enabled = enabled, onClick = onClick)
+            .heightIn(min = if (clean) 60.dp else 68.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .alpha(if (enabled) 1f else 0.5f),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MoreOptionsGlyph(icon, hue, busy)
+        Spacer(Modifier.width(if (clean) 10.dp else 12.dp))
+        MoreOptionsTexts(title, subtitle, supporting, Modifier.weight(1f), maxTitleLines = 2)
+    }
+}
+
+@Composable
+private fun MoreOptionsTexts(
+    title: String,
+    subtitle: String?,
+    supporting: (@Composable () -> Unit)?,
+    modifier: Modifier,
+    maxTitleLines: Int = Int.MAX_VALUE
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(modifier) {
+        Text(
+            title,
+            style = if (maxTitleLines == Int.MAX_VALUE) MaterialTheme.typography.bodyLarge
+            else MaterialTheme.typography.labelLarge,
+            color = colors.onSurface,
+            maxLines = maxTitleLines,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (!subtitle.isNullOrBlank()) {
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        }
+        if (supporting != null) {
+            CompositionLocalProvider(LocalContentColor provides colors.onSurfaceVariant) {
+                ProvideTextStyle(MaterialTheme.typography.bodySmall) { supporting() }
             }
         }
-        Icon(
-            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = null,
-            tint = colors.onSurfaceVariant.copy(alpha = 0.6f),
-            modifier = Modifier.size(20.dp)
-        )
     }
 }

@@ -116,13 +116,7 @@ private fun YouTubeMusicCreatorTabletDetails(
         }
         if (header.description.isNotBlank()) {
             Spacer(Modifier.height(2.dp))
-            Text(
-                text = header.description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 6,
-                overflow = TextOverflow.Ellipsis
-            )
+            CreatorExpandableText(text = header.description, collapsedMaxLines = 6)
         }
     }
 }

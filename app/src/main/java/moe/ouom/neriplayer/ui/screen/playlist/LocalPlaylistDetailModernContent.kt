@@ -59,14 +59,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
 import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -250,6 +247,7 @@ internal fun LocalPlaylistDetailModernContent(
 
         val deletionInProgress = deletingSongCount > 0 ||
                 isDownloadedSongDeletionRunning(deleteProgress)
+        val playCountText = formatPlayCount(context, playlistPlayCount)
         PlaylistModernDetailFrame(
             header = PlaylistModernDetailHeader(
                 key = playlistId,
@@ -260,10 +258,11 @@ internal fun LocalPlaylistDetailModernContent(
                     CoreCommonR.string.local_playlist_total_duration,
                     totalDurationText,
                     tabSongs.size,
-                    formatPlayCount(context, playlistPlayCount)
+                    playCountText
                 ),
                 offlineMode = offlineMode,
-                hasCustomBackground = hasCustomBackground
+                hasCustomBackground = hasCustomBackground,
+                metaItems = localPlaylistHeroMeta(totalDurationText, tabSongs.size, playCountText)
             ),
             search = PlaylistModernDetailSearch(
                 visible = showSearch,
@@ -466,45 +465,16 @@ internal fun LocalPlaylistDetailModernContent(
             playbackActions = {
                 Column {
                     if (isLocalFilesPlaylist) {
-                        PrimaryTabRow(
-                            selectedTabIndex = selectedLocalFilesTabIndex,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            containerColor = Color.Transparent,
-                            contentColor = MaterialTheme.colorScheme.primary
-                        ) {
-                            Tab(
-                                selected = selectedLocalFilesTab == LocalFilesSongTab.MANUALLY_ADDED,
-                                onClick = {
-                                    selectedLocalFilesTabIndex =
-                                        LocalFilesSongTab.MANUALLY_ADDED.ordinal
-                                    if (selectionMode) exitSelectionMode()
-                                },
-                                text = {
-                                    Text(
-                                        stringResource(CoreCommonR.string.local_files_manual_added)
-                                    )
-                                }
-                            )
-                            Tab(
-                                selected = selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED,
-                                onClick = {
-                                    selectedLocalFilesTabIndex =
-                                        LocalFilesSongTab.DOWNLOADED.ordinal
-                                    if (selectionMode) exitSelectionMode()
-                                },
-                                text = {
-                                    Text(
-                                        stringResource(CoreCommonR.string.local_files_downloaded)
-                                    )
-                                }
-                            )
-                        }
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(
-                                alpha = 0.5f
-                            )
+                        PlaylistSourceTabs(
+                            labels = listOf(
+                                stringResource(CoreCommonR.string.local_files_manual_added),
+                                stringResource(CoreCommonR.string.local_files_downloaded)
+                            ),
+                            selectedIndex = selectedLocalFilesTab.ordinal,
+                            onSelected = { index ->
+                                selectedLocalFilesTabIndex = LocalFilesSongTab.entries[index].ordinal
+                                if (selectionMode) exitSelectionMode()
+                            }
                         )
                     }
                     LocalPlaylistPlaybackActions(
@@ -521,6 +491,10 @@ internal fun LocalPlaylistDetailModernContent(
                         },
                         onExportToLocalPlaylist = {
                             showExportAllSheet = true
+                        },
+                        onEnterSelection = {
+                            selectedKeysState.value = emptySet()
+                            selectionMode = true
                         }
                     )
                 }

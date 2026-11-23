@@ -19,7 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.ui.theme.NeriDesign
-import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
+import moe.ouom.neriplayer.ui.theme.neriInputFieldShape
 
 @Composable
 internal fun PlaybackSheetTextField(
@@ -41,7 +41,7 @@ internal fun PlaybackSheetTextField(
         val interactionSource = remember { MutableInteractionSource() }
         val focused by interactionSource.collectIsFocusedAsState()
         val colors = MaterialTheme.colorScheme
-        val shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape)
+        val shape = neriInputFieldShape()
         val fill = colors.onSurface.copy(alpha = 0.06f)
         // 标签留在填充区域内部，避免描边缺口裁掉标签下方的底色
         TextField(

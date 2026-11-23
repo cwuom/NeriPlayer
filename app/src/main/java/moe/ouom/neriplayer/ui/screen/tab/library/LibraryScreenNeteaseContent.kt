@@ -473,7 +473,7 @@ internal fun NeteaseAlbumList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
-                shape = neriSearchFieldShape(LibrarySearchFieldShape)
+                shape = neriSearchFieldShape()
             ) {
             OutlinedTextField(
                 value = searchQuery,
@@ -481,7 +481,7 @@ internal fun NeteaseAlbumList(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text(stringResource(CoreCommonR.string.library_netease_search_hint)) },
                 singleLine = true,
-                shape = neriSearchFieldShape(LibrarySearchFieldShape),
+                shape = neriSearchFieldShape(),
 
                 colors = neriSearchFieldColors()
             )
@@ -558,9 +558,7 @@ internal fun NeteaseAlbumList(
         ) { pl ->
             Card(
                 shape = cardShape,
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Transparent
-                ),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)

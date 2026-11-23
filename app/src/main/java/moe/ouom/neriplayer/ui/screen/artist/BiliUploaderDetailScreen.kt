@@ -30,11 +30,11 @@ import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
 import android.app.Application
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -53,14 +53,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.VideoLibrary
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -443,6 +440,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.BiliUploaderContentRo
     }
 }
 
+/** UP 主头部: 和网易云歌手页同一套头图, 关注和签名放在头图下方, 不再套一层卡片 */
 @Composable
 private fun BiliUploaderHeaderCard(
     header: BiliUploaderHeader?,
@@ -453,21 +451,44 @@ private fun BiliUploaderHeaderCard(
     offlineMode: Boolean,
     isTabletLayout: Boolean
 ) {
-    ElevatedCard(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        shape = neriRoundedShape(28.dp)
+            .padding(top = 8.dp, bottom = 4.dp)
     ) {
-        BiliUploaderHero(header = header, offlineMode = offlineMode, isTabletLayout = isTabletLayout)
-        BiliUploaderProfileDetails(
-            header = header,
-            followFavorite = followFavorite,
-            videoCount = videoCount,
-            collectionCount = collectionCount,
-            seriesCount = seriesCount,
-            isTabletLayout = isTabletLayout
-        )
+        CreatorHeroBanner(
+            title = header?.name.orEmpty(),
+            subtitle = stringResource(CoreCommonR.string.bili_uploader_mid, header?.mid ?: 0L),
+            summaryItems = listOf(
+                pluralStringResource(CoreCommonR.plurals.bili_uploader_video_count, videoCount, videoCount),
+                pluralStringResource(
+                    CoreCommonR.plurals.bili_uploader_collection_count,
+                    collectionCount,
+                    collectionCount
+                ),
+                pluralStringResource(CoreCommonR.plurals.bili_uploader_series_count, seriesCount, seriesCount)
+            ),
+            height = if (isTabletLayout) 240.dp else 260.dp,
+            leading = {
+                BiliUploaderAvatar(header = header, offlineMode = offlineMode, size = if (isTabletLayout) 56.dp else 64.dp)
+            }
+        ) {
+            BiliUploaderBackdrop(
+                backdrop = resolveBiliUploaderBackdropSources(
+                    bannerUrl = header?.bannerUrl,
+                    avatarUrl = header?.avatarUrl
+                ),
+                bannerDescription = header?.name,
+                offlineMode = offlineMode
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+        CreatorFollowButton(favorite = followFavorite)
+        val sign = header?.sign
+        if (!sign.isNullOrBlank()) {
+            Spacer(Modifier.height(10.dp))
+            CreatorExpandableText(text = sign, collapsedMaxLines = if (isTabletLayout) 6 else 3)
+        }
     }
 }
 
@@ -496,48 +517,6 @@ private fun biliUploaderAvatarBackdropRequest(
         emptyList()
     }
 )
-
-@Composable
-private fun BiliUploaderHero(
-    header: BiliUploaderHeader?,
-    offlineMode: Boolean,
-    isTabletLayout: Boolean
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(if (isTabletLayout) 160.dp else 210.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        BiliUploaderBackdrop(
-            backdrop = resolveBiliUploaderBackdropSources(
-                bannerUrl = header?.bannerUrl,
-                avatarUrl = header?.avatarUrl
-            ),
-            bannerDescription = header?.name,
-            offlineMode = offlineMode
-        )
-        Box(
-            modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f))
-        )
-        if (isTabletLayout) {
-            Box(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
-                BiliUploaderAvatar(header = header, offlineMode = offlineMode, size = 82.dp)
-            }
-        } else Row(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            BiliUploaderAvatar(header = header, offlineMode = offlineMode, size = 64.dp)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                BiliUploaderIdentity(header, contentColor = Color.White, maxNameLines = 1)
-            }
-        }
-    }
-}
 
 @Composable
 private fun BiliUploaderBackdrop(
@@ -607,88 +586,7 @@ private fun BiliUploaderAvatar(
             .size(size)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
-    )
-}
-
-@Composable
-private fun BiliUploaderProfileDetails(
-    header: BiliUploaderHeader?,
-    followFavorite: FavoritePlaylist,
-    videoCount: Int,
-    collectionCount: Int,
-    seriesCount: Int,
-    isTabletLayout: Boolean
-) {
-    Column(modifier = Modifier.padding(if (isTabletLayout) 16.dp else 20.dp)) {
-        if (isTabletLayout) {
-            BiliUploaderIdentity(
-                header = header,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                maxNameLines = 3
-            )
-            Spacer(Modifier.height(12.dp))
-        }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AssistChip(
-                onClick = {},
-                label = {
-                    Text(pluralStringResource(CoreCommonR.plurals.bili_uploader_video_count, videoCount, videoCount))
-                }
-            )
-            AssistChip(
-                onClick = {},
-                label = {
-                    Text(
-                        pluralStringResource(
-                            CoreCommonR.plurals.bili_uploader_collection_count,
-                            collectionCount,
-                            collectionCount
-                        )
-                    )
-                }
-            )
-            AssistChip(
-                onClick = {},
-                label = {
-                    Text(pluralStringResource(CoreCommonR.plurals.bili_uploader_series_count, seriesCount, seriesCount))
-                }
-            )
-        }
-        val sign = header?.sign
-        if (!sign.isNullOrBlank()) {
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = sign,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Spacer(Modifier.height(14.dp))
-        CreatorFollowButton(favorite = followFavorite)
-    }
-}
-
-@Composable
-private fun BiliUploaderIdentity(
-    header: BiliUploaderHeader?,
-    contentColor: Color,
-    maxNameLines: Int
-) {
-    Text(
-        text = header?.name.orEmpty(),
-        style = MaterialTheme.typography.headlineSmall,
-        color = contentColor,
-        maxLines = maxNameLines,
-        overflow = TextOverflow.Ellipsis
-    )
-    Text(
-        text = stringResource(CoreCommonR.string.bili_uploader_mid, header?.mid ?: 0L),
-        style = MaterialTheme.typography.bodySmall,
-        color = contentColor.copy(alpha = 0.82f),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
+            .border(2.dp, Color.White.copy(alpha = 0.86f), CircleShape)
     )
 }
 

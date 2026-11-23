@@ -135,6 +135,30 @@ class SettingsHomeSectionControlsTest {
         }
     }
 
+    @Test
+    fun internationalModeOffersOnlyWholeShelfSwitchesThatTakeEffect() {
+        render(initial, international = true)
+        val copy = settingsHomeCardCopy(true)
+        // 网易云子栏目对 YouTube Music 首页无效, 不应再提供展开入口
+        listOf(copy.radarLabelRes, copy.trendingLabelRes, copy.recommendedLabelRes).forEach { titleRes ->
+            val description = context.getString(
+                CoreCommonR.string.settings_home_sub_section_expand,
+                context.getString(titleRes)
+            )
+            composeRule.onNodeWithContentDescription(description).assertDoesNotExist()
+        }
+        switch(copy.radarLabelRes).assertIsOn().performClick()
+        switch(copy.trendingLabelRes).assertIsOn().performClick()
+        switch(copy.recommendedLabelRes).assertIsOn().performClick()
+        composeRule.waitForIdle()
+
+        runBlocking {
+            verify(repository).setHomeCardRadar(false)
+            verify(repository).setHomeCardTrending(false)
+            verify(repository).setHomeCardRecommended(false)
+        }
+    }
+
     private fun switch(titleRes: Int) =
         composeRule.onNode(isToggleable() and hasContentDescription(context.getString(titleRes))).performScrollTo()
 

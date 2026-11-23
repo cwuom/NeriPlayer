@@ -58,11 +58,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
-import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 @RunWith(AndroidJUnit4::class)
 class NeriTabletMiniPlayerLayoutTest {
@@ -238,15 +236,15 @@ class NeriTabletMiniPlayerLayoutTest {
     }
 
     @Test
-    fun progressKeepsThumbCenteredOnTrackAndEndpointsInside() {
-        // 放大像素夹具，让窄屏宿主也能分辨圆点与轨道的边缘
+    fun progressLineHugsTheTopEdgeAndGrowsWhileDragging() {
+        // 放大像素夹具，让窄屏宿主也能分辨进度线的粗细与已播放段边缘
         render(240.dp, 120.dp, progressPixelFixture = true)
         val positions = listOf(0L, 30_000L, 120_000L)
         positions.forEach { position ->
             composeRule.runOnIdle { playback.value = playback.value.copy(positionMs = position) }
             val progress = position / 120_000f
-            assertProgressPixelsCenteredInsideGlass(progress, dragging = false)
-            capture("tablet-mini-centered-$position")
+            assertProgressPixelsAlongTopEdgeInsideGlass(progress, dragging = false)
+            capture("tablet-mini-top-edge-$position")
         }
         listOf(0f, 0.75f, 1f).forEach { endpoint ->
             progressNode().performTouchInput {
@@ -254,8 +252,8 @@ class NeriTabletMiniPlayerLayoutTest {
                 moveTo(Offset(width * endpoint, centerY), delayMillis = 100L)
             }
             assertProgress(endpoint)
-            assertProgressPixelsCenteredInsideGlass(endpoint, dragging = true)
-            capture("tablet-mini-centered-drag-$endpoint")
+            assertProgressPixelsAlongTopEdgeInsideGlass(endpoint, dragging = true)
+            capture("tablet-mini-top-edge-drag-$endpoint")
             progressNode().performTouchInput { up() }
         }
         composeRule.runOnIdle {
@@ -463,7 +461,7 @@ class NeriTabletMiniPlayerLayoutTest {
         composeRule.onNodeWithText(Title, useUnmergedTree = true).assertIsDisplayed()
     }
 
-    private fun assertProgressPixelsCenteredInsideGlass(progress: Float, dragging: Boolean) {
+    private fun assertProgressPixelsAlongTopEdgeInsideGlass(progress: Float, dragging: Boolean) {
         val playerBounds = bounds(PlayerTag)
         val progressBounds = bounds(ProgressTag)
         val viewportBounds = bounds(ViewportTag)
@@ -473,10 +471,13 @@ class NeriTabletMiniPlayerLayoutTest {
         assertEquals(playerBounds.left, progressBounds.left, 1f)
         assertEquals(playerBounds.right, progressBounds.right, 1f)
 
+        // 进度线贴住播放器顶边, 下方 12dp 只作触控区; 拖动时向下加粗, 没有圆点
         val pixels = progressNode().captureToImage().toPixelMap()
-        val centerY = pixels.height / 2f
-        val strokeTop = centerY - 2f * pixelsPerDp
-        val strokeBottom = centerY + 2f * pixelsPerDp
+        val thickness = (if (dragging) {
+            NeriMiniPlayerDefaults.TabletProgressDragThickness
+        } else {
+            NeriMiniPlayerDefaults.TabletProgressThickness
+        }).value * pixelsPerDp
         listOf(0.4f, 0.7f).forEach { fraction ->
             val x = (pixels.width * fraction).roundToInt().coerceIn(0, pixels.width - 1)
             val lineRows = (0 until pixels.height).filter { y ->
@@ -484,32 +485,23 @@ class NeriTabletMiniPlayerLayoutTest {
                 maxOf(color.red, color.green, color.blue) > 0.03f
             }
             assertTrue("进度线未绘制: progress=$progress x=$x", lineRows.isNotEmpty())
-            assertEquals("进度线中心偏移", centerY, (lineRows.first() + lineRows.last() + 1) / 2f, 1f)
-            assertEquals("进度线顶部偏移", strokeTop, lineRows.first().toFloat(), 1f)
-            assertEquals("进度线底部偏移", strokeBottom, lineRows.last() + 1f, 1f)
+            assertEquals("进度线没有贴住顶边", 0f, lineRows.first().toFloat(), 1f)
+            assertEquals("进度线粗细不对: dragging=$dragging", thickness, lineRows.size.toFloat(), 1f)
         }
-
-        val radius = (if (dragging) 5f else 3f) * pixelsPerDp
-        val thumbCenter = (progress * pixels.width).coerceIn(radius, pixels.width - radius)
-        val thumbColumn = thumbCenter.roundToInt().coerceIn(0, pixels.width - 1)
-        val thumbRows = (0 until pixels.height).filter { y -> isProgressPrimary(pixels[thumbColumn, y]) }
-        assertTrue("进度圆点未绘制", thumbRows.isNotEmpty())
-        assertEquals("圆点未对齐轨道中心", centerY, (thumbRows.first() + thumbRows.last() + 1) / 2f, 1f)
-        assertEquals("圆点竖向被裁切", radius * 2f, thumbRows.size.toFloat(), 2f)
-        val thumbRow = ceil(strokeBottom).toInt()
-            .coerceIn(0, pixels.height - 1)
-        val sampleOffset = thumbRow + 0.5f - centerY
-        val thumbHalfWidth = sqrt((radius * radius - sampleOffset * sampleOffset).coerceAtLeast(0f))
-        val thumbPixels = (0 until pixels.width).filter { x -> isProgressPrimary(pixels[x, thumbRow]) }
-        assertTrue("进度圆点未完整显示: progress=$progress dragging=$dragging", thumbPixels.isNotEmpty())
-        assertTrue("进度圆点左边缘被裁切: progress=$progress pixels=$thumbPixels",
-            abs(thumbPixels.first() - (thumbCenter - thumbHalfWidth)) <= 2f)
-        assertTrue("进度圆点右边缘被裁切: progress=$progress pixels=$thumbPixels",
-            abs((thumbPixels.last() + 1) - (thumbCenter + thumbHalfWidth)) <= 2f)
-        val thumbBottom = ceil(centerY + radius).toInt() + 1
-        for (y in thumbBottom until pixels.height) {
-            assertTrue("进度圆点未完整留在顶部区域: progress=$progress dragging=$dragging y=$y",
+        val lineBottom = ceil(thickness).toInt() + 1
+        for (y in lineBottom until pixels.height) {
+            assertTrue("进度线下方的触控区不应绘制: progress=$progress dragging=$dragging y=$y",
                 (0 until pixels.width).none { x -> isProgressPrimary(pixels[x, y]) })
+        }
+        val edge = (progress * pixels.width).roundToInt()
+        val margin = ceil(2f * pixelsPerDp).toInt()
+        if (edge - margin >= 0) {
+            assertTrue("已播放段应为主色: progress=$progress",
+                isProgressPrimary(pixels[(edge - margin).coerceAtMost(pixels.width - 1), 0]))
+        }
+        if (edge + margin < pixels.width) {
+            assertTrue("未播放段不应为主色: progress=$progress",
+                !isProgressPrimary(pixels[edge + margin, 0]))
         }
 
         val viewportPixels = composeRule.onNodeWithTag(ViewportTag).captureToImage().toPixelMap()

@@ -202,9 +202,14 @@ internal fun startupMotionConfigFor(
         StartupMotionPreset.Immersive -> StartupMotionConfig(
             advancedBlur = blurSupported,
             enhancedAdvancedBlur = blurSupported,
-            // High 只能在进阶模糊开启时选择
-            advancedBlurQuality = if (blurSupported) AdvancedBlurQuality.High else deviceDefaultQuality,
-            liquidGlass = blurSupported,
+            // 天玑上模糊开销偏高, 不管哪个档位开了模糊都只给超低画质; High 只能在进阶模糊开启时选择
+            advancedBlurQuality = when {
+                spec.dimensityDevice -> AdvancedBlurQuality.UltraLow
+                blurSupported -> AdvancedBlurQuality.High
+                else -> deviceDefaultQuality
+            },
+            // 两套天玑识别规则覆盖的型号不同, 任一命中都按天玑处理, 超低画质下不开透镜
+            liquidGlass = blurSupported && !spec.dimensityDevice && !spec.dimensityBlurCompatibility,
             enhancedVisualEffects = true,
             nowPlayingDynamicBackground = true,
             nowPlayingAudioReactive = true,
@@ -212,11 +217,11 @@ internal fun startupMotionConfigFor(
             preferHighRefreshRate = true
         )
         StartupMotionPreset.Balanced -> StartupMotionConfig(
-            advancedBlur = blurSupported,
+            // 均衡档流畅优先, 实时模糊和依赖它的透镜都交给沉浸档
+            advancedBlur = false,
             enhancedAdvancedBlur = false,
             advancedBlurQuality = deviceDefaultQuality,
-            // 天玑兼容策略下透镜只在高画质时启用, 均衡档不强开
-            liquidGlass = blurSupported && !spec.dimensityBlurCompatibility,
+            liquidGlass = false,
             enhancedVisualEffects = true,
             nowPlayingDynamicBackground = true,
             // 均衡档与出厂默认对齐, 老用户回到这一步也能匹配上
