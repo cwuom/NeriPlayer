@@ -28,7 +28,8 @@ internal data class StartupDeviceSpec(
     val lowRamDevice: Boolean,
     val powerSaveMode: Boolean,
     val dimensityDevice: Boolean,
-    val dimensityBlurCompatibility: Boolean
+    val dimensityBlurCompatibility: Boolean,
+    val entryLevelBlurDevice: Boolean = false
 )
 
 internal enum class StartupDeviceTier {
@@ -197,7 +198,10 @@ internal fun startupMotionConfigFor(
     spec: StartupDeviceSpec
 ): StartupMotionConfig {
     val blurSupported = spec.sdkInt >= STARTUP_ADVANCED_BLUR_MIN_SDK
-    val deviceDefaultQuality = AdvancedBlurQualityPreference.defaultForDevice(spec.dimensityDevice)
+    val deviceDefaultQuality = AdvancedBlurQualityPreference.defaultForDevice(
+        spec.dimensityDevice,
+        spec.entryLevelBlurDevice
+    )
     return when (preset) {
         StartupMotionPreset.Immersive -> StartupMotionConfig(
             advancedBlur = blurSupported,

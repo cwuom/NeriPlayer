@@ -10,6 +10,7 @@ import android.view.Display
 import java.util.Locale
 import moe.ouom.neriplayer.data.settings.appearance.currentBuildUsesDimensityBlurCompatibility
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
+import moe.ouom.neriplayer.data.settings.appearance.isCurrentDeviceEntryLevelBlurDevice
 
 internal fun readStartupDeviceSpec(context: Context): StartupDeviceSpec {
     val appContext = context.applicationContext
@@ -33,7 +34,8 @@ internal fun readStartupDeviceSpec(context: Context): StartupDeviceSpec {
         lowRamDevice = activityManager?.isLowRamDevice == true,
         powerSaveMode = appContext.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true,
         dimensityDevice = isCurrentBuildDimensity(),
-        dimensityBlurCompatibility = currentBuildUsesDimensityBlurCompatibility()
+        dimensityBlurCompatibility = currentBuildUsesDimensityBlurCompatibility(),
+        entryLevelBlurDevice = isCurrentDeviceEntryLevelBlurDevice(appContext)
     )
 }
 

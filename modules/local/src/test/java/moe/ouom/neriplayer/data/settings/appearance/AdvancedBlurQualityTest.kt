@@ -366,4 +366,46 @@ class AdvancedBlurQualityTest {
             }
         }
     }
+
+    @Test
+    fun missingPreferenceUsesUltraLowForEntryLevelDevicesToo() {
+        assertEquals(
+            AdvancedBlurQuality.UltraLow,
+            AdvancedBlurQualityPreference.resolve(value = null, isDimensityDevice = false, isEntryLevelDevice = true)
+        )
+        assertEquals(
+            AdvancedBlurQuality.High,
+            AdvancedBlurQualityPreference.resolve(value = "high", isDimensityDevice = false, isEntryLevelDevice = true)
+        )
+    }
+
+    @Test
+    fun entryLevelDetectionCoversMemoryCoresAndLowEndSocs() {
+        fun entry(
+            socManufacturer: String? = "QTI",
+            socModel: String? = "SM8550",
+            hardware: String? = "qcom",
+            lowRam: Boolean = false,
+            totalMemoryBytes: Long = 12L * GiB,
+            cores: Int = 8
+        ) = isEntryLevelBlurDevice(socManufacturer, socModel, hardware, null, lowRam, totalMemoryBytes, cores)
+
+        assertFalse("旗舰与未知内存不能误判", entry())
+        assertFalse(entry(totalMemoryBytes = 0L))
+        assertTrue(entry(lowRam = true))
+        assertTrue("标称 4GB 的实际可用内存", entry(totalMemoryBytes = 3_800_000_000L))
+        assertFalse("6GB 不算入门", entry(totalMemoryBytes = 5_600_000_000L))
+        assertTrue(entry(cores = 4))
+        assertTrue("Helio G99", entry(socManufacturer = "Mediatek", socModel = "MT6789V/CD", hardware = "mt6789"))
+        assertTrue(entry(socManufacturer = null, socModel = null, hardware = "Helio G85"))
+        assertTrue("Unisoc T606", entry(socManufacturer = "Unisoc", socModel = "T606", hardware = "ums512"))
+        assertTrue("Snapdragon 680", entry(socModel = "SM6225"))
+        assertTrue("Snapdragon 4 Gen 2", entry(socModel = "SM4450"))
+        assertFalse("Snapdragon 695", entry(socModel = "SM6375"))
+        assertFalse("Dimensity 走天玑规则", entry(socManufacturer = "Mediatek", socModel = "MT6989", hardware = "mt6989"))
+    }
+
+    private companion object {
+        const val GiB = 1L shl 30
+    }
 }

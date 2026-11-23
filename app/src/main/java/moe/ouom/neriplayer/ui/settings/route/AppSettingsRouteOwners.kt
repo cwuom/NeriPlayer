@@ -19,7 +19,6 @@ import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreferenc
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.local.storage.clearExtraStorageCaches
 import moe.ouom.neriplayer.ui.settings.owner.AppLyricOffsetSettingsOwner
 import moe.ouom.neriplayer.ui.settings.owner.AppSettingsCacheClearOwner
@@ -28,8 +27,9 @@ import moe.ouom.neriplayer.ui.settings.owner.formatExtraCacheClearResult
 import moe.ouom.neriplayer.common.format.formatFileSize
 
 @Composable
-private fun rememberInitialAdvancedBlurQuality() = remember {
-    AdvancedBlurQualityPreference.defaultForDevice(isCurrentBuildDimensity())
+private fun rememberInitialAdvancedBlurQuality(): AdvancedBlurQuality {
+    val context = LocalContext.current
+    return remember(context) { AdvancedBlurQualityPreference.defaultForCurrentDevice(context) }
 }
 
 @Composable
