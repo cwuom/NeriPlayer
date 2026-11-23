@@ -28,6 +28,7 @@ class SsdpDiscoveryClient(
         .followSslRedirects(false)
         .connectTimeout(2_500L, TimeUnit.MILLISECONDS)
         .readTimeout(3_500L, TimeUnit.MILLISECONDS)
+        .callTimeout(10_000L, TimeUnit.MILLISECONDS)
         .build()
 ) {
     companion object {

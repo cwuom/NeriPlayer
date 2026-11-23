@@ -126,7 +126,9 @@ class DlnaRound3StressAndSecurityTest {
 
     @Test
     fun concurrentStreamingAndTokenChurn_completesCleanlyWithoutCorruption() {
-        val payload = ByteArray(256 * 1024) { idx -> ((idx * 13 + 5) and 0xFF).toByte() }
+        val payload = ByteArray(256 * 1024) { idx ->
+            ((idx * 31 + (idx ushr 8) * 17 + (idx ushr 16) * 13 + 7) and 0xFF).toByte()
+        }
         val file = File(tempDir, "concurrent.flac").apply { writeBytes(payload) }
         val streamPath = server.registerStream(
             "flac",
@@ -173,7 +175,7 @@ class DlnaRound3StressAndSecurityTest {
         )
         assertTrue(endNearDur is DlnaCastStateMachine.PollDecision.TrackEnded)
 
-        // 2. Natural track end where renderer resets RelTime to 0 on STOPPED
+        // 2. Natural track end where renderer resets RelTime to 0 on STOPPED after reaching near-end
         val endResetZero = DlnaCastStateMachine.evaluatePoll(
             DlnaCastStateMachine.PollObservation(
                 previousState = DlnaTransportState.PLAYING,
@@ -184,10 +186,34 @@ class DlnaRound3StressAndSecurityTest {
                 generationId = 5L,
                 activeGenerationId = 5L,
                 hasStartedPlayingInGeneration = true,
-                consecutiveStoppedPolls = 1
+                consecutiveStoppedPolls = 1,
+                lastPlayingPositionMs = 178_000L
             )
         )
         assertTrue(endResetZero is DlnaCastStateMachine.PollDecision.TrackEnded)
+
+        // 2b. Renderer hardware Stop pressed mid-track must NOT auto-advance queue even after sustained STOPPED polls
+        for (polls in 1..5) {
+            val midTrackHardwareStop = DlnaCastStateMachine.evaluatePoll(
+                DlnaCastStateMachine.PollObservation(
+                    previousState = if (polls == 1) DlnaTransportState.PLAYING else DlnaTransportState.STOPPED,
+                    currentState = DlnaTransportState.STOPPED,
+                    positionMs = 0L,
+                    durationMs = 180_000L,
+                    userPausedOrStopped = false,
+                    generationId = 5L,
+                    activeGenerationId = 5L,
+                    hasStartedPlayingInGeneration = true,
+                    consecutiveStoppedPolls = polls,
+                    lastPlayingPositionMs = 45_000L
+                )
+            )
+            assertTrue(
+                "Sustained mid-track STOPPED poll #$polls must not advance queue",
+                midTrackHardwareStop is DlnaCastStateMachine.PollDecision.SyncPlayback &&
+                    !midTrackHardwareStop.isPlaying
+            )
+        }
 
         // 3. User-paused or user-stopped does NOT advance queue
         val userStopped = DlnaCastStateMachine.evaluatePoll(

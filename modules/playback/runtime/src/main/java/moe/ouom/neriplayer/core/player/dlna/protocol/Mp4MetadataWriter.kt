@@ -2,25 +2,37 @@ package moe.ouom.neriplayer.core.player.dlna.protocol
 
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
+import java.io.EOFException
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 
 /**
  * Pure-Kotlin ISO BMFF (M4A/MP4) faststart iTunes metadata (moov/udta/meta/ilst) writer.
- * Inserts/updates ©nam, ©ART, aART, and ©alb atoms while keeping mdat audio samples
- * 100% untouched and adjusting stco/co64 chunk offsets accurately.
+ * Inserts/updates ©nam, ©ART, aART, and ©alb atoms while preserving existing untouched
+ * ilst atoms (e.g. covr, trkn), keeping mdat audio samples 100% untouched, and validating
+ * & adjusting stco/co64 chunk offsets accurately.
  */
 object Mp4MetadataWriter {
 
     private const val MAX_MOOV_BYTES = 32L * 1024L * 1024L
+
+    private val ATOM_TITLE = String(byteArrayOf(0xA9.toByte(), 'n'.code.toByte(), 'a'.code.toByte(), 'm'.code.toByte()), Charsets.ISO_8859_1)
+    private val ATOM_ARTIST = String(byteArrayOf(0xA9.toByte(), 'A'.code.toByte(), 'R'.code.toByte(), 'T'.code.toByte()), Charsets.ISO_8859_1)
+    private val ATOM_ALBUM_ARTIST = "aART"
+    private val ATOM_ALBUM = String(byteArrayOf(0xA9.toByte(), 'a'.code.toByte(), 'l'.code.toByte(), 'b'.code.toByte()), Charsets.ISO_8859_1)
 
     private data class BoxRange(
         val type: String,
         val startOffset: Long,
         val size: Long,
         val headerSize: Int
+    )
+
+    private data class ParsedChildBox(
+        val type: String,
+        val headerSize: Int,
+        val rawBytes: ByteArray
     )
 
     fun hasMoofBox(file: File): Boolean {
@@ -41,9 +53,10 @@ object Mp4MetadataWriter {
     ): Boolean {
         if (!sourceFile.isFile || sourceFile.length() < 16L) return false
         val tmpFile = File(targetFile.parentFile, "${targetFile.name}.m4a_tmp")
+        var succeeded = false
         return try {
             val boxes = RandomAccessFile(sourceFile, "r").use { raf -> readTopLevelBoxes(raf) }
-            if (boxes.any { it.type == "moof" }) return false // fragmented MP4 must be defragmented first
+            if (boxes.any { it.type == "moof" }) return false // fragmented MP4 must not be rewritten
             val ftypBox = boxes.firstOrNull { it.type == "ftyp" } ?: return false
             val moovBox = boxes.firstOrNull { it.type == "moov" } ?: return false
             val mdatBoxes = boxes.filter { it.type == "mdat" }
@@ -60,12 +73,15 @@ object Mp4MetadataWriter {
                 title = title,
                 artist = artist,
                 album = album
-            )
+            ) ?: return false
+
             val newMoovTotalSize = 8L + updatedMoovPayloadNoShift.size.toLong()
+            if (newMoovTotalSize > MAX_MOOV_BYTES) return false
             val newMdatStartOffset = ftypBytes.size.toLong() + newMoovTotalSize
             val mdatShift = newMdatStartOffset - mdatBox.startOffset
 
             val finalMoovPayload = shiftChunkOffsetsInMoov(updatedMoovPayloadNoShift, mdatShift)
+                ?: return false
             val finalMoovBox = wrapBox("moov", finalMoovPayload)
 
             BufferedOutputStream(FileOutputStream(tmpFile), 64 * 1024).use { out ->
@@ -81,10 +97,14 @@ object Mp4MetadataWriter {
             }
 
             if (targetFile.exists()) targetFile.delete()
-            tmpFile.renameTo(targetFile)
+            succeeded = tmpFile.renameTo(targetFile)
+            succeeded
         } catch (_: Throwable) {
-            tmpFile.delete()
             false
+        } finally {
+            if (!succeeded) {
+                tmpFile.delete()
+            }
         }
     }
 
@@ -128,51 +148,113 @@ object Mp4MetadataWriter {
         title: String,
         artist: String,
         album: String
-    ): ByteArray {
-        val children = parseChildBoxes(moovPayload, 0, moovPayload.size)
+    ): ByteArray? {
+        val children = parseChildBoxes(moovPayload, 0, moovPayload.size) ?: return null
         val out = ByteArrayOutputStream(moovPayload.size + 512)
-        for ((type, bytes) in children) {
-            if (type != "udta") {
-                out.write(bytes)
+        for (child in children) {
+            if (child.type != "udta") {
+                out.write(child.rawBytes)
             }
         }
-        val existingUdta = children.firstOrNull { it.first == "udta" }?.second
-        val udtaPayload = if (existingUdta != null && existingUdta.size > 8) {
-            val udtaChildren = parseChildBoxes(existingUdta, 8, existingUdta.size)
+        val existingUdta = children.firstOrNull { it.type == "udta" }
+        val udtaPayload = if (existingUdta != null && existingUdta.rawBytes.size > existingUdta.headerSize) {
+            val udtaChildren = parseChildBoxes(
+                existingUdta.rawBytes,
+                existingUdta.headerSize,
+                existingUdta.rawBytes.size
+            ) ?: return null
             val uOut = ByteArrayOutputStream()
-            for ((type, bytes) in udtaChildren) {
-                if (type != "meta") uOut.write(bytes)
+            for (child in udtaChildren) {
+                if (child.type != "meta") uOut.write(child.rawBytes)
             }
-            uOut.write(buildMetaBox(title, artist, album))
+            val existingMeta = udtaChildren.firstOrNull { it.type == "meta" }
+            val metaBytes = buildMetaBox(title, artist, album, existingMeta) ?: return null
+            uOut.write(metaBytes)
             uOut.toByteArray()
         } else {
-            buildMetaBox(title, artist, album)
+            buildMetaBox(title, artist, album, existingMeta = null) ?: return null
         }
         out.write(wrapBox("udta", udtaPayload))
         return out.toByteArray()
     }
 
-    private fun buildMetaBox(title: String, artist: String, album: String): ByteArray {
-        val hdlrPayload = ByteArrayOutputStream().apply {
-            write(byteArrayOf(0, 0, 0, 0)) // version/flags
-            write(byteArrayOf(0, 0, 0, 0)) // pre_defined
-            write("mdir".toByteArray(Charsets.ISO_8859_1))
-            write("appl".toByteArray(Charsets.ISO_8859_1))
-            write(ByteArray(9)) // reserved + empty name
-        }.toByteArray()
+    private fun buildMetaBox(
+        title: String,
+        artist: String,
+        album: String,
+        existingMeta: ParsedChildBox?
+    ): ByteArray? {
+        var existingMetaChildren: List<ParsedChildBox> = emptyList()
+        var preservedIlstAtoms: List<ParsedChildBox> = emptyList()
+
+        if (existingMeta != null) {
+            val metaBodyStart = existingMeta.headerSize + 4 // FullBox 4-byte version/flags
+            if (metaBodyStart <= existingMeta.rawBytes.size) {
+                val parsedMeta = parseChildBoxes(
+                    existingMeta.rawBytes,
+                    metaBodyStart,
+                    existingMeta.rawBytes.size
+                )
+                if (parsedMeta != null) {
+                    existingMetaChildren = parsedMeta
+                    val existingIlst = parsedMeta.firstOrNull { it.type == "ilst" }
+                    if (existingIlst != null && existingIlst.headerSize <= existingIlst.rawBytes.size) {
+                        val parsedIlst = parseChildBoxes(
+                            existingIlst.rawBytes,
+                            existingIlst.headerSize,
+                            existingIlst.rawBytes.size
+                        )
+                        if (parsedIlst != null) {
+                            val replacedTypes = buildSet {
+                                if (title.isNotBlank()) add(ATOM_TITLE)
+                                if (artist.isNotBlank()) {
+                                    add(ATOM_ARTIST)
+                                    add(ATOM_ALBUM_ARTIST)
+                                }
+                                if (album.isNotBlank()) add(ATOM_ALBUM)
+                            }
+                            preservedIlstAtoms = parsedIlst.filter { it.type !in replacedTypes }
+                        }
+                    }
+                }
+            }
+        }
+
+        val hdlrBox = existingMetaChildren.firstOrNull { it.type == "hdlr" }?.rawBytes ?: run {
+            val hdlrPayload = ByteArrayOutputStream().apply {
+                write(byteArrayOf(0, 0, 0, 0)) // version/flags
+                write(byteArrayOf(0, 0, 0, 0)) // pre_defined
+                write("mdir".toByteArray(Charsets.ISO_8859_1))
+                write("appl".toByteArray(Charsets.ISO_8859_1))
+                write(ByteArray(9)) // reserved + empty name
+            }.toByteArray()
+            wrapBox("hdlr", hdlrPayload)
+        }
 
         val ilstPayload = ByteArrayOutputStream().apply {
-            if (title.isNotBlank()) write(buildIlstTextAtom(byteArrayOf(0xA9.toByte(), 'n'.code.toByte(), 'a'.code.toByte(), 'm'.code.toByte()), title))
-            if (artist.isNotBlank()) {
-                write(buildIlstTextAtom(byteArrayOf(0xA9.toByte(), 'A'.code.toByte(), 'R'.code.toByte(), 'T'.code.toByte()), artist))
-                write(buildIlstTextAtom("aART".toByteArray(Charsets.ISO_8859_1), artist))
+            if (title.isNotBlank()) {
+                write(buildIlstTextAtom(ATOM_TITLE.toByteArray(Charsets.ISO_8859_1), title))
             }
-            if (album.isNotBlank()) write(buildIlstTextAtom(byteArrayOf(0xA9.toByte(), 'a'.code.toByte(), 'l'.code.toByte(), 'b'.code.toByte()), album))
+            if (artist.isNotBlank()) {
+                write(buildIlstTextAtom(ATOM_ARTIST.toByteArray(Charsets.ISO_8859_1), artist))
+                write(buildIlstTextAtom(ATOM_ALBUM_ARTIST.toByteArray(Charsets.ISO_8859_1), artist))
+            }
+            if (album.isNotBlank()) {
+                write(buildIlstTextAtom(ATOM_ALBUM.toByteArray(Charsets.ISO_8859_1), album))
+            }
+            for (atom in preservedIlstAtoms) {
+                write(atom.rawBytes)
+            }
         }.toByteArray()
 
         val metaPayload = ByteArrayOutputStream().apply {
             write(byteArrayOf(0, 0, 0, 0)) // FullBox version/flags
-            write(wrapBox("hdlr", hdlrPayload))
+            write(hdlrBox)
+            for (child in existingMetaChildren) {
+                if (child.type != "hdlr" && child.type != "ilst") {
+                    write(child.rawBytes)
+                }
+            }
             write(wrapBox("ilst", ilstPayload))
         }.toByteArray()
         return wrapBox("meta", metaPayload)
@@ -193,67 +275,124 @@ object Mp4MetadataWriter {
         return out.toByteArray()
     }
 
-    private fun shiftChunkOffsetsInMoov(moovPayload: ByteArray, delta: Long): ByteArray {
-        if (delta == 0L) return moovPayload
+    private fun shiftChunkOffsetsInMoov(moovPayload: ByteArray, delta: Long): ByteArray? {
         val copy = moovPayload.copyOf()
-        shiftChunkOffsetsRecursive(copy, 0, copy.size, delta)
+        // Validate stco/co64 structure even when delta == 0L so corrupt tables fail fast
+        if (!shiftChunkOffsetsRecursive(copy, 0, copy.size, delta)) {
+            return null
+        }
         return copy
     }
 
-    private fun shiftChunkOffsetsRecursive(data: ByteArray, start: Int, end: Int, delta: Long) {
+    private fun shiftChunkOffsetsRecursive(data: ByteArray, start: Int, end: Int, delta: Long): Boolean {
         var pos = start
-        while (pos + 8 <= end) {
-            val size = readBe32(data, pos).toInt()
-            if (size < 8 || pos + size > end) break
+        while (pos < end) {
+            if (pos + 8 > end) return false
+            val size32 = readBe32(data, pos)
             val type = String(data, pos + 4, 4, Charsets.ISO_8859_1)
+            val headerSize: Int
+            val boxSizeLong: Long
+            when (size32) {
+                0L -> {
+                    headerSize = 8
+                    boxSizeLong = (end - pos).toLong()
+                }
+                1L -> {
+                    if (pos + 16 > end) return false
+                    headerSize = 16
+                    boxSizeLong = readBe64(data, pos + 8)
+                }
+                else -> {
+                    headerSize = 8
+                    boxSizeLong = size32
+                }
+            }
+            if (boxSizeLong < headerSize || pos.toLong() + boxSizeLong > end.toLong()) {
+                return false
+            }
+            val boxEnd = (pos.toLong() + boxSizeLong).toInt()
+            val payloadStart = pos + headerSize
+
             when (type) {
                 "trak", "mdia", "minf", "stbl" -> {
-                    shiftChunkOffsetsRecursive(data, pos + 8, pos + size, delta)
+                    if (!shiftChunkOffsetsRecursive(data, payloadStart, boxEnd, delta)) {
+                        return false
+                    }
                 }
                 "stco" -> {
-                    if (size >= 16) {
-                        val count = readBe32(data, pos + 12).toInt()
-                        var entryPos = pos + 16
-                        repeat(count) {
-                            if (entryPos + 4 <= pos + size) {
-                                val oldOff = readBe32(data, entryPos)
-                                val newOff = (oldOff + delta).coerceAtLeast(0L)
-                                putBe32(data, entryPos, newOff)
-                                entryPos += 4
-                            }
+                    if (boxEnd - payloadStart < 8) return false
+                    val count = readBe32(data, payloadStart + 4)
+                    val entriesStart = payloadStart + 8
+                    val maxEntries = (boxEnd - entriesStart).toLong() / 4L
+                    if (count < 0L || count > maxEntries) return false
+                    var entryPos = entriesStart
+                    repeat(count.toInt()) {
+                        val oldOff = readBe32(data, entryPos)
+                        val newOff = oldOff + delta
+                        if (newOff !in 0L..0xFFFFFFFFL) return false
+                        if (delta != 0L) {
+                            putBe32(data, entryPos, newOff)
                         }
+                        entryPos += 4
                     }
                 }
                 "co64" -> {
-                    if (size >= 16) {
-                        val count = readBe32(data, pos + 12).toInt()
-                        var entryPos = pos + 16
-                        repeat(count) {
-                            if (entryPos + 8 <= pos + size) {
-                                val oldOff = readBe64(data, entryPos)
-                                val newOff = (oldOff + delta).coerceAtLeast(0L)
-                                putBe64(data, entryPos, newOff)
-                                entryPos += 8
-                            }
+                    if (boxEnd - payloadStart < 8) return false
+                    val count = readBe32(data, payloadStart + 4)
+                    val entriesStart = payloadStart + 8
+                    val maxEntries = (boxEnd - entriesStart).toLong() / 8L
+                    if (count < 0L || count > maxEntries) return false
+                    var entryPos = entriesStart
+                    repeat(count.toInt()) {
+                        val oldOff = readBe64(data, entryPos)
+                        if (oldOff < 0L) return false
+                        val newOff = oldOff + delta
+                        if (newOff < 0L) return false
+                        if (delta != 0L) {
+                            putBe64(data, entryPos, newOff)
                         }
+                        entryPos += 8
                     }
                 }
             }
-            pos += size
+            pos = boxEnd
         }
+        return pos == end
     }
 
-    private fun parseChildBoxes(data: ByteArray, start: Int, end: Int): List<Pair<String, ByteArray>> {
-        val result = mutableListOf<Pair<String, ByteArray>>()
+    private fun parseChildBoxes(data: ByteArray, start: Int, end: Int): List<ParsedChildBox>? {
+        if (start < 0 || end < start || end > data.size) return null
+        val result = mutableListOf<ParsedChildBox>()
         var pos = start
-        while (pos + 8 <= end) {
-            val size = readBe32(data, pos).toInt()
-            if (size < 8 || pos + size > end) break
+        while (pos < end) {
+            if (pos + 8 > end) return null
+            val size32 = readBe32(data, pos)
             val type = String(data, pos + 4, 4, Charsets.ISO_8859_1)
-            result += type to data.copyOfRange(pos, pos + size)
-            pos += size
+            val headerSize: Int
+            val boxSizeLong: Long
+            when (size32) {
+                0L -> {
+                    headerSize = 8
+                    boxSizeLong = (end - pos).toLong()
+                }
+                1L -> {
+                    if (pos + 16 > end) return null
+                    headerSize = 16
+                    boxSizeLong = readBe64(data, pos + 8)
+                }
+                else -> {
+                    headerSize = 8
+                    boxSizeLong = size32
+                }
+            }
+            if (boxSizeLong < headerSize || pos.toLong() + boxSizeLong > end.toLong()) {
+                return null
+            }
+            val boxEnd = (pos.toLong() + boxSizeLong).toInt()
+            result += ParsedChildBox(type, headerSize, data.copyOfRange(pos, boxEnd))
+            pos = boxEnd
         }
-        return result
+        return if (pos == end) result else null
     }
 
     private fun wrapBox(type: String, payload: ByteArray): ByteArray {
@@ -281,7 +420,9 @@ object Mp4MetadataWriter {
             while (remaining > 0L) {
                 val want = minOf(buf.size.toLong(), remaining).toInt()
                 val read = raf.read(buf, 0, want)
-                if (read <= 0) break
+                if (read <= 0) {
+                    throw EOFException("Unexpected EOF while copying MP4 box ($remaining bytes remaining)")
+                }
                 out.write(buf, 0, read)
                 remaining -= read
             }

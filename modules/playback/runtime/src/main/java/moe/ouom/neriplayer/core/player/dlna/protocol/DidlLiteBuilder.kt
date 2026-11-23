@@ -113,23 +113,58 @@ object DidlLiteBuilder {
 object DlnaProtocolInfo {
 
     private const val FLAGS = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
+    private val WAV_MIME_ALIASES = listOf("audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave")
+    private val FLAC_MIME_ALIASES = listOf("audio/x-flac", "audio/flac")
+    private val MP3_MIME_ALIASES = listOf("audio/mpeg", "audio/mp3")
+    private val MP4_MIME_ALIASES = listOf("audio/mp4", "audio/m4a", "audio/x-m4a", "audio/mp4a-latm")
+    private val DEFAULT_FALLBACK_DLNA_MIMES = (
+        WAV_MIME_ALIASES + FLAC_MIME_ALIASES + MP3_MIME_ALIASES + MP4_MIME_ALIASES + listOf("audio/aac")
+        ).toSet()
 
-    fun contentTypeFor(mode: DlnaStreamMode, mimeOverride: String? = null): String {
+    fun preferredWavMime(sinkProtocolInfo: String = ""): String {
+        return selectPreferredMime(
+            sinkProtocolInfo = sinkProtocolInfo,
+            preferred = "audio/wav",
+            alternatives = WAV_MIME_ALIASES
+        )
+    }
+
+    fun contentTypeFor(
+        mode: DlnaStreamMode,
+        mimeOverride: String? = null,
+        sinkProtocolInfo: String = ""
+    ): String {
         return when (mode) {
             DlnaStreamMode.LOSSLESS_WAV,
-            DlnaStreamMode.LOSSLESS_WAV_ID3 -> "audio/wav"
+            DlnaStreamMode.LOSSLESS_WAV_ID3 -> preferredWavMime(sinkProtocolInfo)
             DlnaStreamMode.ORIGINAL_FLAC,
             DlnaStreamMode.ADAPTIVE_DIRECT -> {
                 val clean = mimeOverride?.substringBefore(';')?.trim()?.lowercase(Locale.US)
                 when (clean) {
-                    "audio/wav", "audio/x-wav" -> "audio/wav"
-                    "audio/flac", "audio/x-flac" -> "audio/x-flac"
-                    "audio/mp3", "audio/mpeg" -> "audio/mpeg"
-                    "audio/m4a", "audio/mp4" -> "audio/mp4"
+                    in WAV_MIME_ALIASES -> preferredWavMime(sinkProtocolInfo)
+                    "audio/flac", "audio/x-flac" -> selectPreferredMime(
+                        sinkProtocolInfo = sinkProtocolInfo,
+                        preferred = "audio/x-flac",
+                        alternatives = FLAC_MIME_ALIASES
+                    )
+                    "audio/mp3", "audio/mpeg" -> selectPreferredMime(
+                        sinkProtocolInfo = sinkProtocolInfo,
+                        preferred = "audio/mpeg",
+                        alternatives = MP3_MIME_ALIASES
+                    )
+                    "audio/m4a", "audio/mp4", "audio/x-m4a", "audio/mp4a-latm" -> selectPreferredMime(
+                        sinkProtocolInfo = sinkProtocolInfo,
+                        preferred = "audio/mp4",
+                        alternatives = MP4_MIME_ALIASES
+                    )
                     "audio/aac" -> "audio/aac"
                     "audio/ogg" -> "audio/ogg"
                     "audio/webm" -> "audio/webm"
-                    null, "" -> if (mode == DlnaStreamMode.ORIGINAL_FLAC) "audio/x-flac" else "application/octet-stream"
+                    null, "" -> if (mode == DlnaStreamMode.ORIGINAL_FLAC) {
+                        selectPreferredMime(sinkProtocolInfo, "audio/x-flac", FLAC_MIME_ALIASES)
+                    } else {
+                        "application/octet-stream"
+                    }
                     else -> clean
                 }
             }
@@ -141,36 +176,11 @@ object DlnaProtocolInfo {
         sinkProtocolInfo: String = "",
         mimeOverride: String? = null
     ): String {
-        val contentType = when (mode) {
-            DlnaStreamMode.LOSSLESS_WAV,
-            DlnaStreamMode.LOSSLESS_WAV_ID3 -> selectPreferredMime(
-                sinkProtocolInfo = sinkProtocolInfo,
-                preferred = "audio/wav",
-                alternatives = listOf("audio/wav", "audio/x-wav")
-            )
-            DlnaStreamMode.ORIGINAL_FLAC,
-            DlnaStreamMode.ADAPTIVE_DIRECT -> {
-                val base = contentTypeFor(mode, mimeOverride)
-                when (base) {
-                    "audio/x-flac", "audio/flac" -> selectPreferredMime(
-                        sinkProtocolInfo = sinkProtocolInfo,
-                        preferred = "audio/x-flac",
-                        alternatives = listOf("audio/x-flac", "audio/flac")
-                    )
-                    "audio/mpeg", "audio/mp3" -> selectPreferredMime(
-                        sinkProtocolInfo = sinkProtocolInfo,
-                        preferred = "audio/mpeg",
-                        alternatives = listOf("audio/mpeg", "audio/mp3")
-                    )
-                    "audio/mp4", "audio/m4a" -> selectPreferredMime(
-                        sinkProtocolInfo = sinkProtocolInfo,
-                        preferred = "audio/mp4",
-                        alternatives = listOf("audio/mp4", "audio/m4a", "audio/x-m4a", "audio/mp4a-latm")
-                    )
-                    else -> base
-                }
-            }
-        }
+        val contentType = contentTypeFor(
+            mode = mode,
+            mimeOverride = mimeOverride,
+            sinkProtocolInfo = sinkProtocolInfo
+        )
         return "http-get:*:$contentType:$FLAGS"
     }
 
@@ -187,8 +197,10 @@ object DlnaProtocolInfo {
         if (sinkProtocolInfo.isBlank()) return true
         val mimeEntries = parseProtocolEntries(sinkProtocolInfo)
         if (mimeEntries.isEmpty()) return true
+        var sawExplicitFlac = false
         for ((mime, params) in mimeEntries) {
-            if (mime == "audio/x-flac" || mime == "audio/flac") {
+            if (mime in FLAC_MIME_ALIASES) {
+                sawExplicitFlac = true
                 val declaredRate = extractRateParam(params)
                 if (declaredRate != null && sampleRateHz != null && sampleRateHz > 0 && declaredRate != sampleRateHz) {
                     continue
@@ -196,8 +208,8 @@ object DlnaProtocolInfo {
                 return true
             }
         }
-        // Treat wildcard-only sinks as capable; only return false when explicit non-FLAC protocols were listed
-        return false
+        if (sawExplicitFlac) return false
+        return mimeEntries.any { (mime, _) -> isWildcardAudioMime(mime) }
     }
 
     fun supportsWav(sinkProtocolInfo: String): Boolean {
@@ -205,8 +217,36 @@ object DlnaProtocolInfo {
         val mimeEntries = parseProtocolEntries(sinkProtocolInfo)
         if (mimeEntries.isEmpty()) return true
         return mimeEntries.any { (mime, _) ->
-            mime == "audio/wav" || mime == "audio/x-wav" || mime == "audio/wave" || mime == "audio/vnd.wave"
+            mime in WAV_MIME_ALIASES || isWildcardAudioMime(mime)
         }
+    }
+
+    fun supportsDeliveryMime(sinkProtocolInfo: String, mimeType: String?): Boolean {
+        val clean = mimeType?.substringBefore(';')?.trim()?.lowercase(Locale.US).orEmpty()
+        if (clean.isEmpty()) return false
+        if (sinkProtocolInfo.isBlank()) {
+            return clean in DEFAULT_FALLBACK_DLNA_MIMES
+        }
+        val mimeEntries = parseProtocolEntries(sinkProtocolInfo)
+        if (mimeEntries.isEmpty()) {
+            return clean in DEFAULT_FALLBACK_DLNA_MIMES
+        }
+        if (mimeEntries.any { (mime, _) -> isWildcardAudioMime(mime) }) {
+            return true
+        }
+        val candidates = when (clean) {
+            in WAV_MIME_ALIASES -> WAV_MIME_ALIASES
+            in FLAC_MIME_ALIASES -> FLAC_MIME_ALIASES
+            in MP3_MIME_ALIASES -> MP3_MIME_ALIASES
+            in MP4_MIME_ALIASES -> MP4_MIME_ALIASES
+            "audio/ogg", "application/ogg" -> listOf("audio/ogg", "application/ogg")
+            else -> listOf(clean)
+        }.toSet()
+        return mimeEntries.any { (mime, _) -> mime in candidates }
+    }
+
+    private fun isWildcardAudioMime(mime: String): Boolean {
+        return mime == "*" || mime == "*/*" || mime == "audio/*"
     }
 
     private fun selectPreferredMime(
@@ -227,11 +267,13 @@ object DlnaProtocolInfo {
             .mapNotNull { entry ->
                 val parts = entry.split(':')
                 if (parts.size < 3) return@mapNotNull null
+                val transport = parts[0].trim().lowercase(Locale.US)
+                if (transport != "*" && transport != "http-get") return@mapNotNull null
                 val third = parts[2].trim()
                 val semi = third.indexOf(';')
                 val mime = (if (semi >= 0) third.substring(0, semi) else third).trim().lowercase(Locale.US)
                 val params = if (semi >= 0) third.substring(semi + 1).trim().lowercase(Locale.US) else ""
-                if (mime == "*" || mime.isEmpty()) null else mime to params
+                if (mime.isEmpty()) null else mime to params
             }
     }
 

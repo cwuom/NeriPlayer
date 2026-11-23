@@ -31,7 +31,6 @@ import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaCastState
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaConnectionStatus
@@ -53,7 +52,9 @@ object DlnaCastManager {
     private val _castStateFlow = MutableStateFlow(DlnaCastState())
     val castStateFlow: StateFlow<DlnaCastState> = _castStateFlow
 
-    private val generationCounter = AtomicLong(0L)
+    // Separate device-connection generation from per-track cast generation
+    private val connectionGenerationCounter = AtomicLong(0L)
+    private val trackGenerationCounter = AtomicLong(0L)
 
     @Volatile
     private var initialized = false
@@ -81,17 +82,48 @@ object DlnaCastManager {
     private val nextUriMutex = Mutex()
     private val volumeMutex = Mutex()
 
+    private data class LocalHandoffSnapshot(
+        val positionMs: Long,
+        val wasPlaying: Boolean
+    )
+
+    private data class PendingCastRequest(
+        val song: SongItem,
+        val startPositionMs: Long,
+        val autoPlay: Boolean,
+        val trackGen: Long
+    )
+
+    private data class PendingVolumeCommand(
+        val deviceUdn: String,
+        val connectionGen: Long,
+        val volume: Int
+    )
+
     @Volatile
     private var desiredRemotePlaying = true
     @Volatile
+    private var pendingHandoffSnapshot: LocalHandoffSnapshot? = null
+    @Volatile
+    private var rendererMediaConfirmed = false
+    @Volatile
+    private var pendingConnectCastRequest: PendingCastRequest? = null
+    @Volatile
+    private var currentTrackUriLoadedGen = -1L
+    @Volatile
+    private var pendingTrackSeekMs: Long? = null
+    @Volatile
+    private var pendingTrackSeekGen = -1L
+    @Volatile
     private var pendingPausedSeekMs: Long? = null
     @Volatile
-    private var pendingVolumeTarget: Int? = null
+    private var pendingVolumeCommand: PendingVolumeCommand? = null
     @Volatile
     private var activeBoundNetwork: android.net.Network? = null
 
     private data class QueuedNextTrack(
         val forGenerationId: Long,
+        val queueRevision: Long,
         val song: SongItem,
         val snapshot: moe.ouom.neriplayer.data.model.playback.dlna.DlnaPlaybackSnapshot,
         val qualityReport: moe.ouom.neriplayer.data.model.playback.dlna.DlnaAudioQualityReport,
@@ -119,6 +151,12 @@ object DlnaCastManager {
     @Volatile
     private var lastObservedTransportState = DlnaTransportState.UNKNOWN
 
+    internal sealed interface DlnaUrlResolution {
+        data class Success(val result: SongUrlResult.Success) : DlnaUrlResolution
+        data object RequiresLogin : DlnaUrlResolution
+        data class Failure(val customMessage: String? = null) : DlnaUrlResolution
+    }
+
     // Hook callbacks invoked on main thread to keep PlayerManager in sync
     internal interface PlayerSyncHost {
         fun onSwitchToDlnaPauseLocal()
@@ -128,7 +166,7 @@ object DlnaCastManager {
         fun onDlnaGaplessTransitionedToNext(expectedSong: SongItem)
         fun peekNextAutoTrack(): SongItem?
         fun onDlnaCastError(message: String)
-        suspend fun resolveSongUrlForDlna(song: SongItem): SongUrlResult
+        suspend fun resolveSongUrlForDlna(song: SongItem, forPrequeue: Boolean = false): DlnaUrlResolution
         fun currentSong(): SongItem?
         fun currentPositionMs(): Long
         fun isLocalPlaying(): Boolean
@@ -139,7 +177,10 @@ object DlnaCastManager {
 
     @Synchronized
     fun ensureInitialized(application: Application) {
-        if (initialized) return
+        if (initialized) {
+            lockController.registerNetworkCallback()
+            return
+        }
         app = application
         prefsStore = DlnaPreferencesStore(application)
         sourceResolver = LosslessSourceResolver(
@@ -160,7 +201,7 @@ object DlnaCastManager {
                     activeStreamPath?.let { path ->
                         mediaServer.getStreamBackingFile(path)?.absolutePath?.let(::add)
                     }
-                    queuedNext?.streamPath?.let { path ->
+                    queuedNext?.streamPath?.takeIf { it.isNotBlank() }?.let { path ->
                         mediaServer.getStreamBackingFile(path)?.absolutePath?.let(::add)
                     }
                 }
@@ -196,7 +237,12 @@ object DlnaCastManager {
 
     fun isRemotePlaying(): Boolean {
         val state = _castStateFlow.value
-        return state.isCastingActive && state.transportState == DlnaTransportState.PLAYING
+        if (!state.isCastingActive) return false
+        return if (rendererMediaConfirmed) {
+            state.transportState == DlnaTransportState.PLAYING
+        } else {
+            desiredRemotePlaying
+        }
     }
 
     fun isRemoteBuffering(): Boolean {
@@ -211,12 +257,15 @@ object DlnaCastManager {
             _castStateFlow.update { it.copy(isDiscovering = true, errorMessage = null) }
             lockController.acquireMulticastLock()
             try {
-                val known = (_castStateFlow.value.discoveredDevices + prefsStore.loadManualDevices())
+                val knownForProbe = (_castStateFlow.value.discoveredDevices + prefsStore.loadManualDevices())
                     .distinctBy { it.udn }
-                val found = discoveryClient.scanOnce(knownDevices = known) { log ->
+                val found = discoveryClient.scanOnce(knownDevices = knownForProbe) { log ->
                     NPLogger.d(TAG, log)
                 }
-                val merged = mergeDiscoveredDevices(known, found)
+                val currentManuals = prefsStore.loadManualDevices()
+                val currentManualUdns = currentManuals.mapTo(HashSet()) { it.udn }
+                val filteredFound = found.filterNot { it.isManual && it.udn !in currentManualUdns }
+                val merged = mergeDiscoveredDevices(currentManuals, filteredFound)
                 ensureDefaultDeviceOptions(merged)
                 _castStateFlow.update { state ->
                     val updatedActive = state.activeDevice?.let { active ->
@@ -294,16 +343,33 @@ object DlnaCastManager {
         val previousState = _castStateFlow.value
         val previousDevice = previousState.activeDevice
         val wasPlayingLocal = host?.isLocalPlaying() == true
+        val priorHandoff = pendingHandoffSnapshot
         val shouldAutoPlay = if (previousDevice != null) {
-            previousState.transportState == DlnaTransportState.PLAYING || desiredRemotePlaying
+            if (rendererMediaConfirmed) {
+                previousState.transportState == DlnaTransportState.PLAYING || desiredRemotePlaying
+            } else {
+                priorHandoff?.wasPlaying ?: desiredRemotePlaying
+            }
         } else {
             wasPlayingLocal
         }
         val resumePosMs = if (previousDevice != null) {
-            previousState.remotePositionMs
+            if (rendererMediaConfirmed) {
+                previousState.remotePositionMs
+            } else {
+                pendingTrackSeekMs ?: priorHandoff?.positionMs ?: previousState.remotePositionMs
+            }
         } else {
             host?.currentPositionMs() ?: 0L
         }
+
+        // Capture handoff snapshot BEFORE pausing local player so canceling mid-connect restores exact state
+        pendingHandoffSnapshot = if (previousDevice == null || !rendererMediaConfirmed) {
+            priorHandoff ?: LocalHandoffSnapshot(positionMs = resumePosMs, wasPlaying = shouldAutoPlay)
+        } else {
+            LocalHandoffSnapshot(positionMs = resumePosMs, wasPlaying = shouldAutoPlay)
+        }
+        rendererMediaConfirmed = false
 
         // Immediately silence local playback before switching to DLNA so both never play together
         host?.onSwitchToDlnaPauseLocal()
@@ -312,10 +378,23 @@ object DlnaCastManager {
         castJob?.cancel()
         nextPrequeueJob?.cancel()
         pollJob?.cancel()
-        val selectionGen = generationCounter.incrementAndGet()
+        val connectionGen = connectionGenerationCounter.incrementAndGet()
+        val initialTrackGen = trackGenerationCounter.incrementAndGet()
         queueRevisionCounter.incrementAndGet()
         desiredRemotePlaying = shouldAutoPlay
+        userPausedOrStopped = !shouldAutoPlay
+        currentTrackUriLoadedGen = -1L
+        pendingTrackSeekMs = null
+        pendingTrackSeekGen = -1L
         pendingPausedSeekMs = null
+        pendingConnectCastRequest = currentSong?.let {
+            PendingCastRequest(
+                song = it,
+                startPositionMs = resumePosMs,
+                autoPlay = shouldAutoPlay,
+                trackGen = initialTrackGen
+            )
+        }
 
         val prevSid = activeGenaSid
         val prevEventSubUrl = activeGenaEventSubUrl
@@ -334,7 +413,10 @@ object DlnaCastManager {
                 activeDevice = device,
                 connectionStatus = DlnaConnectionStatus.CONNECTING,
                 transportState = DlnaTransportState.TRANSITIONING,
-                currentGenerationId = selectionGen,
+                currentGenerationId = initialTrackGen,
+                currentSnapshot = null,
+                qualityReport = null,
+                remotePositionMs = resumePosMs.coerceAtLeast(0L),
                 errorMessage = null,
                 statusMessage = localized(CoreCommonR.string.dlna_status_connecting_device, device.friendlyName)
             )
@@ -348,10 +430,10 @@ object DlnaCastManager {
                     }
                     runCatching { controlClient.stop(previousDevice) }
                 }
-                if (selectionGen != generationCounter.get()) return@launch
+                if (connectionGen != connectionGenerationCounter.get()) return@launch
 
                 mediaServer.start()
-                if (selectionGen != generationCounter.get()) return@launch
+                if (connectionGen != connectionGenerationCounter.get()) return@launch
                 lockController.acquireCastLocks()
 
                 val refreshedDevice = discoveryClient.fetchDeviceDescription(
@@ -359,10 +441,10 @@ object DlnaCastManager {
                     fallbackUdn = device.udn,
                     isManual = device.isManual
                 ) ?: device
-                if (selectionGen != generationCounter.get()) return@launch
+                if (connectionGen != connectionGenerationCounter.get()) return@launch
 
                 val sinkProtocolInfo = controlClient.getProtocolInfo(refreshedDevice).getOrDefault("")
-                if (selectionGen != generationCounter.get()) return@launch
+                if (connectionGen != connectionGenerationCounter.get()) return@launch
 
                 val connectedDevice = refreshedDevice.copy(
                     sinkProtocolInfo = sinkProtocolInfo,
@@ -373,12 +455,12 @@ object DlnaCastManager {
 
                 // Read initial remote volume safely; NEVER auto-set to max!
                 val volumeResult = controlClient.getVolume(connectedDevice)
-                if (selectionGen != generationCounter.get()) return@launch
+                if (connectionGen != connectionGenerationCounter.get()) return@launch
                 val initialVolume = volumeResult.getOrNull()
                 val volumeSupported = volumeResult.isSuccess && connectedDevice.renderingControlUrl.isNotBlank()
 
                 mediaServer.allowedPeerHost = connectedDevice.host
-                mediaServer.expectedGenaCallbackPath = "/dlna/event/avtransport/$selectionGen"
+                mediaServer.expectedGenaCallbackPath = "/dlna/event/avtransport/$connectionGen"
                 activeBoundNetwork = null
 
                 _castStateFlow.update { state ->
@@ -396,21 +478,28 @@ object DlnaCastManager {
                     )
                 }
 
-                subscribeGenaIfAvailable(connectedDevice, selectionGen)
-                startPollingLoop(connectedDevice)
+                subscribeGenaIfAvailable(connectedDevice, connectionGen)
+                startPollingLoop(connectedDevice, connectionGen)
 
-                if (currentSong != null && selectionGen == generationCounter.get()) {
-                    castSongInternal(
-                        song = currentSong,
-                        startPositionMs = resumePosMs,
-                        autoPlay = desiredRemotePlaying
-                    )
+                val requestToCast = pendingConnectCastRequest
+                pendingConnectCastRequest = null
+                if (requestToCast != null && connectionGen == connectionGenerationCounter.get()) {
+                    castJob = scope.launch {
+                        castSongInternal(
+                            song = requestToCast.song,
+                            startPositionMs = requestToCast.startPositionMs,
+                            autoPlay = desiredRemotePlaying,
+                            preassignedGen = requestToCast.trackGen,
+                            expectedConnectionGen = connectionGen
+                        )
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 NPLogger.e(TAG, "selectDevice failed", e)
-                if (selectionGen == generationCounter.get()) {
+                if (connectionGen == connectionGenerationCounter.get()) {
+                    pendingConnectCastRequest = null
                     lockController.releaseCastLocks()
                     mediaServer.allowedPeerHost = null
                     mediaServer.clearGenaSubscriptions()
@@ -431,18 +520,36 @@ object DlnaCastManager {
     fun switchToLocalPlayback(resumeLocalPlayback: Boolean = true) {
         val state = _castStateFlow.value
         val active = state.activeDevice
-        val wasPlayingRemote = state.transportState == DlnaTransportState.PLAYING
-        val remotePositionMs = state.remotePositionMs
+        val handoff = pendingHandoffSnapshot
+        val confirmed = rendererMediaConfirmed
+        val resumePlaying = if (confirmed) {
+            state.transportState == DlnaTransportState.PLAYING || desiredRemotePlaying
+        } else {
+            handoff?.wasPlaying ?: desiredRemotePlaying
+        }
+        val resumePosMs = if (confirmed) {
+            state.remotePositionMs
+        } else {
+            pendingTrackSeekMs ?: handoff?.positionMs ?: state.remotePositionMs
+        }
 
         connectJob?.cancel()
         castJob?.cancel()
         nextPrequeueJob?.cancel()
         pollJob?.cancel()
-        val retiredGen = generationCounter.incrementAndGet()
+        connectionGenerationCounter.incrementAndGet()
+        val retiredTrackGen = trackGenerationCounter.incrementAndGet()
         queueRevisionCounter.incrementAndGet()
+        pendingHandoffSnapshot = null
+        rendererMediaConfirmed = false
+        pendingConnectCastRequest = null
+        currentTrackUriLoadedGen = -1L
+        pendingTrackSeekMs = null
+        pendingTrackSeekGen = -1L
         userPausedOrStopped = true
         desiredRemotePlaying = false
         pendingPausedSeekMs = null
+        pendingVolumeCommand = null
 
         val oldStreamPath = activeStreamPath
         val oldQueued = queuedNext
@@ -479,12 +586,12 @@ object DlnaCastManager {
                 qualityReport = null,
                 statusMessage = null,
                 errorMessage = null,
-                currentGenerationId = retiredGen
+                currentGenerationId = retiredTrackGen
             )
         }
 
         if (resumeLocalPlayback && active != null) {
-            playerHost?.onSwitchBackToLocal(remotePositionMs, wasPlayingRemote)
+            playerHost?.onSwitchBackToLocal(resumePosMs.coerceAtLeast(0L), resumePlaying)
         }
     }
 
@@ -505,11 +612,53 @@ object DlnaCastManager {
     }
 
     fun castSong(song: SongItem, startPositionMs: Long = 0L, autoPlay: Boolean = true) {
-        if (!isCastingActive()) return
+        val state = _castStateFlow.value
+        if (!state.isCastingActive) return
         castJob?.cancel()
         nextPrequeueJob?.cancel()
+        desiredRemotePlaying = autoPlay
+        userPausedOrStopped = !autoPlay
+        pendingPausedSeekMs = null
+        pendingTrackSeekMs = null
+        pendingTrackSeekGen = -1L
+
+        if (!rendererMediaConfirmed) {
+            pendingHandoffSnapshot = LocalHandoffSnapshot(
+                positionMs = startPositionMs.coerceAtLeast(0L),
+                wasPlaying = autoPlay
+            )
+        }
+
+        // If device handshake is still in progress, update pending request without aborting handshake
+        if (state.connectionStatus == DlnaConnectionStatus.CONNECTING) {
+            val newTrackGen = trackGenerationCounter.incrementAndGet()
+            pendingConnectCastRequest = PendingCastRequest(
+                song = song,
+                startPositionMs = startPositionMs,
+                autoPlay = autoPlay,
+                trackGen = newTrackGen
+            )
+            _castStateFlow.update {
+                it.copy(
+                    currentGenerationId = newTrackGen,
+                    currentSnapshot = null,
+                    qualityReport = null,
+                    remotePositionMs = startPositionMs.coerceAtLeast(0L),
+                    errorMessage = null
+                )
+            }
+            return
+        }
+
+        val connGen = connectionGenerationCounter.get()
         castJob = scope.launch {
-            castSongInternal(song, startPositionMs, autoPlay)
+            castSongInternal(
+                song = song,
+                startPositionMs = startPositionMs,
+                autoPlay = autoPlay,
+                preassignedGen = null,
+                expectedConnectionGen = connGen
+            )
         }
     }
 
@@ -517,36 +666,48 @@ object DlnaCastManager {
         if (!initialized || !isCastingActive()) return
         val newRev = queueRevisionCounter.incrementAndGet()
         nextPrequeueJob?.cancel()
-        val oldNext = queuedNext
-        queuedNext = null
         val device = _castStateFlow.value.activeDevice ?: return
-        val activeGen = generationCounter.get()
-        if (oldNext != null) {
-            scope.launch {
-                nextUriMutex.withLock {
-                    if (oldNext.sentToRenderer) {
+        val activeGen = trackGenerationCounter.get()
+        val connGen = connectionGenerationCounter.get()
+        scope.launch {
+            nextUriMutex.withLock {
+                val oldNext = queuedNext
+                queuedNext = null
+                if (oldNext != null) {
+                    if (oldNext.sentToRenderer && connectionGenerationCounter.get() == connGen) {
                         runCatching { controlClient.setNextAvTransportUri(device, "", "") }
                     }
-                    if (oldNext.streamPath != activeStreamPath) {
+                    if (oldNext.streamPath.isNotBlank() && oldNext.streamPath != activeStreamPath) {
                         mediaServer.unregisterStream(oldNext.streamPath)
                     }
                 }
             }
-        }
-        if (hasStartedPlayingInGeneration && !userPausedOrStopped && newRev == queueRevisionCounter.get()) {
-            scheduleNextTrackPrequeue(device, activeGen)
+            if (hasStartedPlayingInGeneration &&
+                !userPausedOrStopped &&
+                newRev == queueRevisionCounter.get() &&
+                connGen == connectionGenerationCounter.get() &&
+                activeGen == trackGenerationCounter.get()
+            ) {
+                scheduleNextTrackPrequeue(device, connGen, activeGen)
+            }
         }
     }
 
     fun onQueueFinishedStop() {
         if (!initialized || !isCastingActive()) return
         val device = _castStateFlow.value.activeDevice ?: return
-        connectJob?.cancel()
         castJob?.cancel()
         nextPrequeueJob?.cancel()
-        val stopGen = generationCounter.incrementAndGet()
+        pendingConnectCastRequest = null
+        val stopGen = trackGenerationCounter.incrementAndGet()
         queueRevisionCounter.incrementAndGet()
+        currentTrackUriLoadedGen = -1L
+        pendingTrackSeekMs = null
+        pendingTrackSeekGen = -1L
         clearQueuedNext()
+        val oldPath = activeStreamPath
+        activeStreamPath = null
+        mediaServer.unregisterStream(oldPath)
         userPausedOrStopped = true
         desiredRemotePlaying = false
         pendingPausedSeekMs = null
@@ -557,25 +718,35 @@ object DlnaCastManager {
         _castStateFlow.update {
             it.copy(
                 currentGenerationId = stopGen,
+                currentSnapshot = null,
                 transportState = DlnaTransportState.STOPPED,
                 remotePositionMs = 0L
             )
         }
+        val expectedConnGen = connectionGenerationCounter.get()
         scope.launch {
-            controlClient.stop(device)
+            if (connectionGenerationCounter.get() == expectedConnGen) {
+                controlClient.stop(device)
+            }
         }
     }
 
     private suspend fun castSongInternal(
         song: SongItem,
         startPositionMs: Long,
-        autoPlay: Boolean
+        autoPlay: Boolean,
+        preassignedGen: Long? = null,
+        expectedConnectionGen: Long = connectionGenerationCounter.get()
     ) {
+        if (expectedConnectionGen != connectionGenerationCounter.get()) return
         val device = _castStateFlow.value.activeDevice ?: return
         val host = playerHost ?: return
-        val gen = generationCounter.incrementAndGet()
+        val gen = preassignedGen ?: trackGenerationCounter.incrementAndGet()
+        if (gen != trackGenerationCounter.get()) return
+
         nextPrequeueJob?.cancel()
         clearQueuedNext()
+        currentTrackUriLoadedGen = -1L
         desiredRemotePlaying = autoPlay
         pendingPausedSeekMs = null
         userPausedOrStopped = !autoPlay
@@ -589,21 +760,32 @@ object DlnaCastManager {
             it.copy(
                 currentGenerationId = gen,
                 transportState = DlnaTransportState.TRANSITIONING,
+                remotePositionMs = startPositionMs.coerceAtLeast(0L),
                 statusMessage = localized(CoreCommonR.string.dlna_status_resolving_lossless),
                 errorMessage = null
             )
         }
 
+        val isStale = {
+            gen != trackGenerationCounter.get() ||
+                expectedConnectionGen != connectionGenerationCounter.get()
+        }
+
         try {
-            val urlResult = host.resolveSongUrlForDlna(song)
-            if (gen != generationCounter.get()) return
-            if (urlResult !is SongUrlResult.Success) {
-                val msg = when (urlResult) {
-                    SongUrlResult.RequiresLogin -> localized(CoreCommonR.string.dlna_err_login_required)
-                    else -> localized(CoreCommonR.string.dlna_err_no_playable_url, song.name)
+            val urlResolution = host.resolveSongUrlForDlna(song, forPrequeue = false)
+            if (isStale()) return
+            val urlResult = when (urlResolution) {
+                is DlnaUrlResolution.Success -> urlResolution.result
+                DlnaUrlResolution.RequiresLogin -> {
+                    failCastGeneration(gen, expectedConnectionGen, device, localized(CoreCommonR.string.dlna_err_login_required))
+                    return
                 }
-                failCastGeneration(gen, msg)
-                return
+                is DlnaUrlResolution.Failure -> {
+                    val msg = urlResolution.customMessage
+                        ?: localized(CoreCommonR.string.dlna_err_no_playable_url, song.name)
+                    failCastGeneration(gen, expectedConnectionGen, device, msg)
+                    return
+                }
             }
 
             val options = _castStateFlow.value.optionsFor(device.udn)
@@ -615,17 +797,13 @@ object DlnaCastManager {
                 requestedLosslessQuality = requestedLossless,
                 device = device,
                 options = options,
-                isCancelled = { gen != generationCounter.get() }
+                isCancelled = isStale
             )
-            if (gen != generationCounter.get()) return
+            if (isStale()) return
 
             when (outcome) {
                 is LosslessSourceResolver.ResolutionOutcome.Blocked -> {
-                    val prevPath = activeStreamPath
-                    activeStreamPath = null
-                    mediaServer.unregisterStream(prevPath)
-                    pendingPausedSeekMs = null
-                    runCatching { controlClient.stop(device) }
+                    retireActiveTransportMedia(device)
                     _castStateFlow.update {
                         it.copy(
                             currentSnapshot = null,
@@ -638,19 +816,21 @@ object DlnaCastManager {
                         )
                     }
                     withContext(Dispatchers.Main) {
-                        host.onDlnaCastError(outcome.reason)
+                        if (!isStale()) {
+                            host.onDlnaCastError(outcome.reason)
+                        }
                     }
                     return
                 }
                 is LosslessSourceResolver.ResolutionOutcome.Failed -> {
-                    failCastGeneration(gen, outcome.reason)
+                    failCastGeneration(gen, expectedConnectionGen, device, outcome.reason)
                     return
                 }
                 is LosslessSourceResolver.ResolutionOutcome.Ready -> {
                     mediaServer.start()
                     val lanIp = DlnaLanAddressResolver.resolveLanIpv4ForTarget(device.host)
                         ?: run {
-                            failCastGeneration(gen, localized(CoreCommonR.string.dlna_err_no_lan_ip))
+                            failCastGeneration(gen, expectedConnectionGen, device, localized(CoreCommonR.string.dlna_err_no_lan_ip))
                             return
                         }
 
@@ -659,6 +839,10 @@ object DlnaCastManager {
                         extension = outcome.streamExtension,
                         content = outcome.streamContent
                     )
+                    if (isStale()) {
+                        mediaServer.unregisterStream(newStreamPath)
+                        return
+                    }
                     val newCoverPath = outcome.coverBytes?.let(mediaServer::registerArtwork)
                     val snapshot = outcome.snapshot.copy(
                         streamPath = newStreamPath,
@@ -669,17 +853,46 @@ object DlnaCastManager {
                     val didl = DidlLiteBuilder.buildDidlLite(snapshot, streamUrl, coverUrl)
 
                     activeStreamPath = newStreamPath
-                    // Retire previous stream after short overlap or replacement
                     if (previousStreamPath != null && previousStreamPath != newStreamPath) {
                         mediaServer.unregisterStream(previousStreamPath)
                     }
+
+                    // Stop any prior stream cleanly on renderer, then set new URI + DIDL
+                    controlClient.stop(device)
+                    val setRes = controlClient.setAvTransportUri(device, streamUrl, didl)
+                    if (setRes.isFailure) {
+                        failCastGeneration(
+                            gen,
+                            expectedConnectionGen,
+                            device,
+                            localized(
+                                CoreCommonR.string.dlna_err_set_uri_failed,
+                                setRes.exceptionOrNull()?.message.orEmpty()
+                            )
+                        )
+                        return
+                    }
+                    if (isStale()) return
+
+                    currentTrackUriLoadedGen = gen
+                    rendererMediaConfirmed = true
+                    pendingHandoffSnapshot = null
+
+                    val effectiveStartPosMs = if (pendingTrackSeekGen == gen && pendingTrackSeekMs != null) {
+                        val target = pendingTrackSeekMs!!
+                        pendingTrackSeekMs = null
+                        pendingTrackSeekGen = -1L
+                        target
+                    } else {
+                        startPositionMs
+                    }.coerceAtLeast(0L)
 
                     _castStateFlow.update {
                         it.copy(
                             currentSnapshot = snapshot,
                             qualityReport = outcome.qualityReport,
                             remoteDurationMs = snapshot.durationMs,
-                            remotePositionMs = startPositionMs.coerceAtLeast(0L),
+                            remotePositionMs = effectiveStartPosMs,
                             statusMessage = localized(
                                 CoreCommonR.string.dlna_status_casting_to,
                                 snapshot.title,
@@ -688,26 +901,13 @@ object DlnaCastManager {
                         )
                     }
 
-                    // Stop any prior stream cleanly on renderer, set new URI + DIDL, then Play
-                    controlClient.stop(device)
-                    val setRes = controlClient.setAvTransportUri(device, streamUrl, didl)
-                    if (setRes.isFailure) {
-                        failCastGeneration(
-                            gen,
-                            localized(
-                                CoreCommonR.string.dlna_err_set_uri_failed,
-                                setRes.exceptionOrNull()?.message.orEmpty()
-                            )
-                        )
-                        return
-                    }
-                    if (gen != generationCounter.get()) return
-
                     if (desiredRemotePlaying) {
                         val playRes = controlClient.play(device)
                         if (playRes.isFailure) {
                             failCastGeneration(
                                 gen,
+                                expectedConnectionGen,
+                                device,
                                 localized(
                                     CoreCommonR.string.dlna_err_play_failed,
                                     playRes.exceptionOrNull()?.message.orEmpty()
@@ -715,34 +915,48 @@ object DlnaCastManager {
                             )
                             return
                         }
-                        if (startPositionMs > 1_500L) {
+                        val postPlaySeekMs = if (pendingTrackSeekGen == gen && pendingTrackSeekMs != null) {
+                            val latest = pendingTrackSeekMs!!
+                            pendingTrackSeekMs = null
+                            pendingTrackSeekGen = -1L
+                            latest.coerceAtLeast(0L)
+                        } else {
+                            effectiveStartPosMs
+                        }
+                        if (postPlaySeekMs > 1_500L) {
                             delay(250L)
-                            if (gen == generationCounter.get()) {
-                                controlClient.seekRelTime(device, startPositionMs)
+                            if (!isStale()) {
+                                controlClient.seekRelTime(device, postPlaySeekMs)
                             }
                         }
+                        if (isStale()) return
                         _castStateFlow.update {
                             it.copy(
                                 transportState = DlnaTransportState.PLAYING,
+                                remotePositionMs = postPlaySeekMs,
                                 statusMessage = localized(CoreCommonR.string.dlna_status_playing_on, device.friendlyName)
                             )
                         }
                         withContext(Dispatchers.Main) {
-                            host.onDlnaPlaybackStateChanged(
-                                isPlaying = true,
-                                positionMs = startPositionMs,
-                                durationMs = snapshot.durationMs
-                            )
-                        }
-                    } else {
-                        if (startPositionMs > 1_500L) {
-                            val seekRes = controlClient.seekRelTime(device, startPositionMs)
-                            if (seekRes.isFailure) {
-                                pendingPausedSeekMs = startPositionMs
+                            if (!isStale()) {
+                                host.onDlnaPlaybackStateChanged(
+                                    isPlaying = true,
+                                    positionMs = postPlaySeekMs,
+                                    durationMs = snapshot.durationMs
+                                )
                             }
                         }
-                        _castStateFlow.update {
-                            it.copy(transportState = DlnaTransportState.PAUSED_PLAYBACK)
+                    } else {
+                        if (effectiveStartPosMs > 1_500L) {
+                            val seekRes = controlClient.seekRelTime(device, effectiveStartPosMs)
+                            if (seekRes.isFailure) {
+                                pendingPausedSeekMs = effectiveStartPosMs
+                            }
+                        }
+                        if (!isStale()) {
+                            _castStateFlow.update {
+                                it.copy(transportState = DlnaTransportState.PAUSED_PLAYBACK)
+                            }
                         }
                     }
                 }
@@ -751,92 +965,190 @@ object DlnaCastManager {
             throw e
         } catch (e: Exception) {
             NPLogger.e(TAG, "castSongInternal failed", e)
-            if (gen == generationCounter.get()) {
-                failCastGeneration(gen, e.message ?: "DLNA cast error")
+            if (!isStale()) {
+                failCastGeneration(gen, expectedConnectionGen, device, e.message ?: "DLNA cast error")
             }
         }
     }
 
     fun playRemote() {
-        val device = _castStateFlow.value.activeDevice ?: return
+        val state = _castStateFlow.value
+        val device = state.activeDevice ?: return
         desiredRemotePlaying = true
         userPausedOrStopped = false
         consecutiveStoppedPolls = 0
         consecutiveEndPausedPolls = 0
+        if (!rendererMediaConfirmed) {
+            pendingHandoffSnapshot = pendingHandoffSnapshot?.copy(wasPlaying = true)
+        }
+        if (state.connectionStatus == DlnaConnectionStatus.CONNECTING) {
+            pendingConnectCastRequest = pendingConnectCastRequest?.copy(autoPlay = true)
+            return
+        }
+        val expectedConnGen = connectionGenerationCounter.get()
+        val expectedTrackGen = trackGenerationCounter.get()
+        val expectedUdn = device.udn
         scope.launch {
-            val state = _castStateFlow.value
-            if (state.currentSnapshot == null || state.transportState == DlnaTransportState.NO_MEDIA_PRESENT) {
-                playerHost?.currentSong()?.let { castSongInternal(it, state.remotePositionMs, autoPlay = true) }
+            val current = _castStateFlow.value
+            if (current.currentSnapshot == null ||
+                currentTrackUriLoadedGen != expectedTrackGen ||
+                current.transportState == DlnaTransportState.NO_MEDIA_PRESENT
+            ) {
+                if (castJob?.isActive == true) {
+                    // castSongInternal is already running and will observe desiredRemotePlaying = true
+                    return@launch
+                }
+                val song = playerHost?.currentSong() ?: return@launch
+                val resumeMs = current.remotePositionMs.takeIf { it > 0L }
+                    ?: (playerHost?.currentPositionMs() ?: 0L)
+                castJob = scope.launch {
+                    castSongInternal(
+                        song = song,
+                        startPositionMs = resumeMs,
+                        autoPlay = true,
+                        preassignedGen = null,
+                        expectedConnectionGen = expectedConnGen
+                    )
+                }
                 return@launch
             }
             controlClient.play(device).onSuccess {
+                if (!isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) return@onSuccess
                 val pendingSeek = pendingPausedSeekMs
                 if (pendingSeek != null && pendingSeek > 1_500L) {
                     pendingPausedSeekMs = null
                     delay(200L)
-                    controlClient.seekRelTime(device, pendingSeek)
+                    if (isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) {
+                        controlClient.seekRelTime(device, pendingSeek)
+                    }
                 }
+                if (!isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) return@onSuccess
                 _castStateFlow.update { it.copy(transportState = DlnaTransportState.PLAYING, errorMessage = null) }
                 withContext(Dispatchers.Main) {
-                    playerHost?.onDlnaPlaybackStateChanged(
-                        isPlaying = true,
-                        positionMs = _castStateFlow.value.remotePositionMs,
-                        durationMs = _castStateFlow.value.remoteDurationMs
-                    )
+                    if (isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) {
+                        playerHost?.onDlnaPlaybackStateChanged(
+                            isPlaying = true,
+                            positionMs = _castStateFlow.value.remotePositionMs,
+                            durationMs = _castStateFlow.value.remoteDurationMs
+                        )
+                    }
                 }
             }.onFailure { err ->
-                _castStateFlow.update { it.copy(errorMessage = err.message) }
+                if (isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) {
+                    _castStateFlow.update { it.copy(errorMessage = err.message) }
+                }
             }
         }
     }
 
     fun pauseRemote() {
-        val device = _castStateFlow.value.activeDevice ?: return
+        val state = _castStateFlow.value
+        val device = state.activeDevice ?: return
         desiredRemotePlaying = false
         userPausedOrStopped = true
         consecutiveEndPausedPolls = 0
+        if (!rendererMediaConfirmed) {
+            pendingHandoffSnapshot = pendingHandoffSnapshot?.copy(wasPlaying = false)
+        }
+        if (state.connectionStatus == DlnaConnectionStatus.CONNECTING) {
+            pendingConnectCastRequest = pendingConnectCastRequest?.copy(autoPlay = false)
+            return
+        }
+        val expectedConnGen = connectionGenerationCounter.get()
+        val expectedTrackGen = trackGenerationCounter.get()
+        val expectedUdn = device.udn
         scope.launch {
+            if (currentTrackUriLoadedGen != expectedTrackGen) {
+                // castSongInternal will observe desiredRemotePlaying = false upon URI load
+                return@launch
+            }
             controlClient.pause(device).onSuccess {
+                if (!isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) return@onSuccess
                 _castStateFlow.update { it.copy(transportState = DlnaTransportState.PAUSED_PLAYBACK) }
                 withContext(Dispatchers.Main) {
-                    playerHost?.onDlnaPlaybackStateChanged(
-                        isPlaying = false,
-                        positionMs = _castStateFlow.value.remotePositionMs,
-                        durationMs = _castStateFlow.value.remoteDurationMs
-                    )
+                    if (isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) {
+                        playerHost?.onDlnaPlaybackStateChanged(
+                            isPlaying = false,
+                            positionMs = _castStateFlow.value.remotePositionMs,
+                            durationMs = _castStateFlow.value.remoteDurationMs
+                        )
+                    }
                 }
             }.onFailure { err ->
-                _castStateFlow.update { it.copy(errorMessage = err.message) }
+                if (isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) {
+                    _castStateFlow.update { it.copy(errorMessage = err.message) }
+                }
             }
         }
     }
 
     fun seekRemote(positionMs: Long) {
-        val device = _castStateFlow.value.activeDevice ?: return
+        val state = _castStateFlow.value
+        val device = state.activeDevice ?: return
         val target = positionMs.coerceAtLeast(0L)
         pendingPausedSeekMs = null
         lastPlayingPositionMs = target
         consecutiveEndPausedPolls = 0
         _castStateFlow.update { it.copy(remotePositionMs = target) }
+        if (!rendererMediaConfirmed) {
+            pendingHandoffSnapshot = pendingHandoffSnapshot?.copy(positionMs = target)
+        }
+        if (state.connectionStatus == DlnaConnectionStatus.CONNECTING) {
+            pendingConnectCastRequest = pendingConnectCastRequest?.copy(startPositionMs = target)
+            return
+        }
+        val expectedConnGen = connectionGenerationCounter.get()
+        val activeTrackGen = trackGenerationCounter.get()
+        val expectedUdn = device.udn
+
+        // If current track is still preparing/buffering before SetAVTransportURI, defer seek until loaded
+        if (currentTrackUriLoadedGen != activeTrackGen || state.currentSnapshot == null) {
+            pendingTrackSeekMs = target
+            pendingTrackSeekGen = activeTrackGen
+            return
+        }
+
         scope.launch {
             controlClient.seekRelTime(device, target).onFailure { err ->
-                _castStateFlow.update { it.copy(errorMessage = err.message) }
+                if (!isCurrentSessionAndTrack(expectedConnGen, activeTrackGen, expectedUdn)) return@onFailure
+                if (!desiredRemotePlaying || _castStateFlow.value.transportState == DlnaTransportState.PAUSED_PLAYBACK) {
+                    pendingPausedSeekMs = target
+                } else {
+                    _castStateFlow.update { it.copy(errorMessage = err.message) }
+                }
             }
         }
     }
 
     fun setRemoteVolume(volume: Int) {
         val device = _castStateFlow.value.activeDevice ?: return
+        val connGen = connectionGenerationCounter.get()
         val clamped = DlnaCastStateMachine.clampRemoteVolume(volume)
-        pendingVolumeTarget = clamped
+        pendingVolumeCommand = PendingVolumeCommand(
+            deviceUdn = device.udn,
+            connectionGen = connGen,
+            volume = clamped
+        )
         _castStateFlow.update { it.copy(remoteVolume = clamped) }
         scope.launch {
             volumeMutex.withLock {
-                val target = pendingVolumeTarget ?: return@withLock
-                pendingVolumeTarget = null
-                if (_castStateFlow.value.activeDevice?.udn != device.udn) return@withLock
-                controlClient.setVolume(device, target).onFailure { err ->
-                    _castStateFlow.update { it.copy(errorMessage = err.message) }
+                val cmd = pendingVolumeCommand ?: return@withLock
+                if (cmd.deviceUdn != device.udn || cmd.connectionGen != connGen) {
+                    // Belongs to a newer device/session; leave untouched for that worker
+                    return@withLock
+                }
+                pendingVolumeCommand = null
+                if (_castStateFlow.value.activeDevice?.udn != device.udn ||
+                    connectionGenerationCounter.get() != connGen
+                ) {
+                    return@withLock
+                }
+                controlClient.setVolume(device, cmd.volume).onFailure { err ->
+                    if (connectionGenerationCounter.get() == connGen &&
+                        _castStateFlow.value.activeDevice?.udn == device.udn
+                    ) {
+                        _castStateFlow.update { it.copy(errorMessage = err.message) }
+                    }
                 }
             }
         }
@@ -854,21 +1166,26 @@ object DlnaCastManager {
         lockController.releaseAll()
     }
 
-    private fun startPollingLoop(device: DlnaDevice) {
+    private fun startPollingLoop(device: DlnaDevice, connectionGen: Long) {
         pollJob?.cancel()
         pollJob = scope.launch {
-            while (isActive && _castStateFlow.value.activeDevice?.udn == device.udn) {
-                val activeGen = generationCounter.get()
+            while (isActive &&
+                connectionGenerationCounter.get() == connectionGen &&
+                _castStateFlow.value.activeDevice?.udn == device.udn
+            ) {
+                val activeTrackGen = trackGenerationCounter.get()
                 val transport = controlClient.getTransportState(device).getOrNull()
                 val posInfo = controlClient.getPositionInfo(device).getOrNull()
                 val vol = if (_castStateFlow.value.volumeSupported) {
                     controlClient.getVolume(device).getOrNull()
                 } else null
 
-                if (transport != null) {
+                if (connectionGenerationCounter.get() != connectionGen) break
+
+                if (transport != null && currentTrackUriLoadedGen == activeTrackGen) {
                     val pendingNext = queuedNext
                     if (pendingNext != null &&
-                        pendingNext.forGenerationId == activeGen &&
+                        pendingNext.forGenerationId == activeTrackGen &&
                         pendingNext.sentToRenderer &&
                         posInfo != null &&
                         DlnaCastStateMachine.matchesNextTrackUri(
@@ -877,7 +1194,7 @@ object DlnaCastManager {
                             expectedNextPath = pendingNext.streamPath
                         )
                     ) {
-                        promoteGaplessNextTrack(device, pendingNext, posInfo, vol)
+                        promoteGaplessNextTrack(device, connectionGen, pendingNext, posInfo, vol)
                         lastObservedTransportState = transport
                         delay(POLL_INTERVAL_MS)
                         continue
@@ -912,8 +1229,8 @@ object DlnaCastManager {
                             positionMs = posMs,
                             durationMs = durMs,
                             userPausedOrStopped = userPausedOrStopped,
-                            generationId = activeGen,
-                            activeGenerationId = generationCounter.get(),
+                            generationId = activeTrackGen,
+                            activeGenerationId = trackGenerationCounter.get(),
                             hasStartedPlayingInGeneration = hasStartedPlayingInGeneration,
                             consecutiveStoppedPolls = consecutiveStoppedPolls,
                             lastPlayingPositionMs = lastPlayingPositionMs,
@@ -927,8 +1244,10 @@ object DlnaCastManager {
                             if (decision.markStartedPlaying) {
                                 val firstStart = !hasStartedPlayingInGeneration
                                 hasStartedPlayingInGeneration = true
-                                if (firstStart || (queuedNext?.forGenerationId != activeGen)) {
-                                    scheduleNextTrackPrequeue(device, activeGen)
+                                rendererMediaConfirmed = true
+                                pendingHandoffSnapshot = null
+                                if (firstStart || (queuedNext?.forGenerationId != activeTrackGen)) {
+                                    scheduleNextTrackPrequeue(device, connectionGen, activeTrackGen)
                                 }
                             }
                             _castStateFlow.update {
@@ -940,11 +1259,13 @@ object DlnaCastManager {
                                 )
                             }
                             withContext(Dispatchers.Main) {
-                                playerHost?.onDlnaPlaybackStateChanged(
-                                    isPlaying = decision.isPlaying,
-                                    positionMs = decision.positionMs,
-                                    durationMs = decision.durationMs
-                                )
+                                if (isCurrentSessionAndTrack(connectionGen, activeTrackGen, device.udn)) {
+                                    playerHost?.onDlnaPlaybackStateChanged(
+                                        isPlaying = decision.isPlaying,
+                                        positionMs = decision.positionMs,
+                                        durationMs = decision.durationMs
+                                    )
+                                }
                             }
                         }
                         is DlnaCastStateMachine.PollDecision.TrackEnded -> {
@@ -956,7 +1277,9 @@ object DlnaCastManager {
                             clearQueuedNext()
                             _castStateFlow.update { it.copy(transportState = DlnaTransportState.STOPPED) }
                             withContext(Dispatchers.Main) {
-                                playerHost?.onDlnaTrackEnded(decision.generationId)
+                                if (connectionGenerationCounter.get() == connectionGen) {
+                                    playerHost?.onDlnaTrackEnded(decision.generationId)
+                                }
                             }
                         }
                         DlnaCastStateMachine.PollDecision.KeepPolling -> {
@@ -965,92 +1288,107 @@ object DlnaCastManager {
                             }
                         }
                     }
+                } else if (vol != null && connectionGenerationCounter.get() == connectionGen) {
+                    _castStateFlow.update { it.copy(remoteVolume = vol) }
                 }
                 delay(POLL_INTERVAL_MS)
             }
         }
     }
 
-    private fun scheduleNextTrackPrequeue(device: DlnaDevice, forGen: Long) {
-        if (nextPrequeueJob?.isActive == true && queuedNext?.forGenerationId == forGen) return
+    private fun scheduleNextTrackPrequeue(device: DlnaDevice, connGen: Long, forTrackGen: Long) {
+        if (nextPrequeueJob?.isActive == true && queuedNext?.forGenerationId == forTrackGen) return
         val existing = queuedNext
-        if (existing != null && existing.forGenerationId == forGen && (existing.sentToRenderer || existing.rejectedByRenderer)) {
+        if (existing != null &&
+            existing.forGenerationId == forTrackGen &&
+            (existing.sentToRenderer || existing.rejectedByRenderer)
+        ) {
             return
         }
         nextPrequeueJob?.cancel()
         val targetQueueRev = queueRevisionCounter.get()
+        val isCancelled = {
+            connGen != connectionGenerationCounter.get() ||
+                forTrackGen != trackGenerationCounter.get() ||
+                targetQueueRev != queueRevisionCounter.get() ||
+                userPausedOrStopped
+        }
         nextPrequeueJob = scope.launch {
             delay(1_200L)
-            if (forGen != generationCounter.get() || targetQueueRev != queueRevisionCounter.get() || userPausedOrStopped) return@launch
+            if (isCancelled()) return@launch
             val host = playerHost ?: return@launch
             val nextSong = withContext(Dispatchers.Main) { host.peekNextAutoTrack() } ?: return@launch
-            if (forGen != generationCounter.get() || targetQueueRev != queueRevisionCounter.get()) return@launch
-            val urlResult = host.resolveSongUrlForDlna(nextSong)
-            if (forGen != generationCounter.get() || targetQueueRev != queueRevisionCounter.get() || urlResult !is SongUrlResult.Success) return@launch
+            if (isCancelled()) return@launch
+            val urlResolution = host.resolveSongUrlForDlna(nextSong, forPrequeue = true)
+            if (isCancelled() || urlResolution !is DlnaUrlResolution.Success) return@launch
             val options = _castStateFlow.value.optionsFor(device.udn)
             val outcome = sourceResolver.prepareForCast(
                 song = nextSong,
-                generationId = forGen,
-                urlResult = urlResult,
+                generationId = forTrackGen,
+                urlResult = urlResolution.result,
                 requestedLosslessQuality = isRequestedLosslessForSong(nextSong),
                 device = device,
                 options = options,
-                isCancelled = { forGen != generationCounter.get() || targetQueueRev != queueRevisionCounter.get() }
+                isCancelled = isCancelled
             )
-            if (forGen != generationCounter.get() || targetQueueRev != queueRevisionCounter.get()) return@launch
-            if (outcome !is LosslessSourceResolver.ResolutionOutcome.Ready) return@launch
+            if (isCancelled() || outcome !is LosslessSourceResolver.ResolutionOutcome.Ready) return@launch
             val lanIp = DlnaLanAddressResolver.resolveLanIpv4ForTarget(device.host) ?: return@launch
             val nextStreamPath = mediaServer.registerStream(
                 extension = outcome.streamExtension,
                 content = outcome.streamContent
             )
-            val nextCoverPath = outcome.coverBytes?.let(mediaServer::registerArtwork)
-            val nextSnapshot = outcome.snapshot.copy(
-                streamPath = nextStreamPath,
-                coverPath = nextCoverPath
-            )
-            val nextStreamUrl = mediaServer.buildUrl(lanIp, nextStreamPath)
-            val nextCoverUrl = nextCoverPath?.let { mediaServer.buildUrl(lanIp, it) }
-            val nextDidl = DidlLiteBuilder.buildDidlLite(nextSnapshot, nextStreamUrl, nextCoverUrl)
-            nextUriMutex.withLock {
-                if (forGen != generationCounter.get() || targetQueueRev != queueRevisionCounter.get()) {
-                    mediaServer.unregisterStream(nextStreamPath)
-                    return@launch
-                }
-                val sendRes = controlClient.setNextAvTransportUri(device, nextStreamUrl, nextDidl)
-                if (forGen != generationCounter.get() || targetQueueRev != queueRevisionCounter.get()) {
-                    if (sendRes.isSuccess) {
-                        runCatching { controlClient.setNextAvTransportUri(device, "", "") }
+            var streamHandedOff = false
+            try {
+                val nextCoverPath = outcome.coverBytes?.let(mediaServer::registerArtwork)
+                val nextSnapshot = outcome.snapshot.copy(
+                    streamPath = nextStreamPath,
+                    coverPath = nextCoverPath
+                )
+                val nextStreamUrl = mediaServer.buildUrl(lanIp, nextStreamPath)
+                val nextCoverUrl = nextCoverPath?.let { mediaServer.buildUrl(lanIp, it) }
+                val nextDidl = DidlLiteBuilder.buildDidlLite(nextSnapshot, nextStreamUrl, nextCoverUrl)
+                nextUriMutex.withLock {
+                    if (isCancelled()) return@withLock
+                    val sendRes = controlClient.setNextAvTransportUri(device, nextStreamUrl, nextDidl)
+                    if (isCancelled()) {
+                        if (sendRes.isSuccess && connGen == connectionGenerationCounter.get()) {
+                            runCatching { controlClient.setNextAvTransportUri(device, "", "") }
+                        }
+                        return@withLock
                     }
-                    mediaServer.unregisterStream(nextStreamPath)
-                    return@launch
+                    if (sendRes.isSuccess) {
+                        queuedNext = QueuedNextTrack(
+                            forGenerationId = forTrackGen,
+                            queueRevision = targetQueueRev,
+                            song = nextSong,
+                            snapshot = nextSnapshot,
+                            qualityReport = outcome.qualityReport,
+                            streamUrl = nextStreamUrl,
+                            streamPath = nextStreamPath,
+                            coverPath = nextCoverPath,
+                            didl = nextDidl,
+                            sentToRenderer = true
+                        )
+                        streamHandedOff = true
+                    } else {
+                        queuedNext = QueuedNextTrack(
+                            forGenerationId = forTrackGen,
+                            queueRevision = targetQueueRev,
+                            song = nextSong,
+                            snapshot = nextSnapshot,
+                            qualityReport = outcome.qualityReport,
+                            streamUrl = nextStreamUrl,
+                            streamPath = "",
+                            coverPath = nextCoverPath,
+                            didl = nextDidl,
+                            sentToRenderer = false,
+                            rejectedByRenderer = true
+                        )
+                    }
                 }
-                if (sendRes.isSuccess) {
-                    queuedNext = QueuedNextTrack(
-                        forGenerationId = forGen,
-                        song = nextSong,
-                        snapshot = nextSnapshot,
-                        qualityReport = outcome.qualityReport,
-                        streamUrl = nextStreamUrl,
-                        streamPath = nextStreamPath,
-                        coverPath = nextCoverPath,
-                        didl = nextDidl,
-                        sentToRenderer = true
-                    )
-                } else {
+            } finally {
+                if (!streamHandedOff) {
                     mediaServer.unregisterStream(nextStreamPath)
-                    queuedNext = QueuedNextTrack(
-                        forGenerationId = forGen,
-                        song = nextSong,
-                        snapshot = nextSnapshot,
-                        qualityReport = outcome.qualityReport,
-                        streamUrl = nextStreamUrl,
-                        streamPath = nextStreamPath,
-                        coverPath = nextCoverPath,
-                        didl = nextDidl,
-                        sentToRenderer = false,
-                        rejectedByRenderer = true
-                    )
                 }
             }
         }
@@ -1058,27 +1396,42 @@ object DlnaCastManager {
 
     private suspend fun promoteGaplessNextTrack(
         device: DlnaDevice,
-        promoted: QueuedNextTrack,
+        connectionGen: Long,
+        observedNext: QueuedNextTrack,
         posInfo: UpnpControlClient.PositionInfo,
         vol: Int?
     ) {
-        val newGen = generationCounter.incrementAndGet()
-        val oldPath = activeStreamPath
-        activeStreamPath = promoted.streamPath
-        queuedNext = null
-        if (oldPath != null && oldPath != promoted.streamPath) {
-            mediaServer.unregisterStream(oldPath)
+        val newGen = nextUriMutex.withLock {
+            val currentQueued = queuedNext
+            if (connectionGenerationCounter.get() != connectionGen ||
+                currentQueued !== observedNext ||
+                currentQueued.queueRevision != queueRevisionCounter.get() ||
+                currentQueued.forGenerationId != trackGenerationCounter.get()
+            ) {
+                return
+            }
+            val gen = trackGenerationCounter.incrementAndGet()
+            currentTrackUriLoadedGen = gen
+            val oldPath = activeStreamPath
+            activeStreamPath = observedNext.streamPath
+            queuedNext = null
+            if (oldPath != null && oldPath != observedNext.streamPath) {
+                mediaServer.unregisterStream(oldPath)
+            }
+            gen
         }
         consecutiveStoppedPolls = 0
         consecutiveEndPausedPolls = 0
         lastPlayingPositionMs = posInfo.positionMs.coerceAtLeast(0L)
         hasStartedPlayingInGeneration = true
-        val durMs = posInfo.durationMs.takeIf { it > 0L } ?: promoted.snapshot.durationMs
+        rendererMediaConfirmed = true
+        pendingHandoffSnapshot = null
+        val durMs = posInfo.durationMs.takeIf { it > 0L } ?: observedNext.snapshot.durationMs
         _castStateFlow.update {
             it.copy(
                 currentGenerationId = newGen,
-                currentSnapshot = promoted.snapshot,
-                qualityReport = promoted.qualityReport,
+                currentSnapshot = observedNext.snapshot,
+                qualityReport = observedNext.qualityReport,
                 transportState = DlnaTransportState.PLAYING,
                 remotePositionMs = posInfo.positionMs.coerceAtLeast(0L),
                 remoteDurationMs = durMs,
@@ -1087,51 +1440,40 @@ object DlnaCastManager {
             )
         }
         withContext(Dispatchers.Main) {
-            playerHost?.onDlnaGaplessTransitionedToNext(promoted.song)
-            playerHost?.onDlnaPlaybackStateChanged(
-                isPlaying = true,
-                positionMs = posInfo.positionMs.coerceAtLeast(0L),
-                durationMs = durMs
-            )
+            if (isCurrentSessionAndTrack(connectionGen, newGen, device.udn)) {
+                playerHost?.onDlnaGaplessTransitionedToNext(observedNext.song)
+                playerHost?.onDlnaPlaybackStateChanged(
+                    isPlaying = true,
+                    positionMs = posInfo.positionMs.coerceAtLeast(0L),
+                    durationMs = durMs
+                )
+            }
         }
-        scheduleNextTrackPrequeue(device, newGen)
+        scheduleNextTrackPrequeue(device, connectionGen, newGen)
     }
 
     private fun clearQueuedNext() {
         val old = queuedNext
         queuedNext = null
-        val path = old?.streamPath
+        val path = old?.streamPath?.takeIf { it.isNotBlank() }
         if (path != null && path != activeStreamPath) {
             mediaServer.unregisterStream(path)
         }
     }
 
-    private fun subscribeGenaIfAvailable(device: DlnaDevice, selectionGen: Long) {
+    private fun subscribeGenaIfAvailable(device: DlnaDevice, connectionGen: Long) {
         val eventSubUrl = device.avTransportEventSubUrl.takeIf { it.isNotBlank() } ?: return
         val lanIp = DlnaLanAddressResolver.resolveLanIpv4ForTarget(device.host) ?: return
-        val callbackPath = "/dlna/event/avtransport/$selectionGen"
+        val callbackPath = "/dlna/event/avtransport/$connectionGen"
         val callbackUrl = mediaServer.buildUrl(lanIp, callbackPath)
         controlClient.subscribeGena(eventSubUrl, callbackUrl).onSuccess { sub ->
-            if (selectionGen == generationCounter.get()) {
+            if (connectionGen == connectionGenerationCounter.get()) {
                 activeGenaSid = sub.sid
                 activeGenaEventSubUrl = eventSubUrl
                 mediaServer.registerGenaSubscription(sub.sid)
             } else {
                 runCatching { controlClient.unsubscribeGena(eventSubUrl, sub.sid) }
             }
-        }
-    }
-
-    private fun unsubscribeGena() {
-        val sid = activeGenaSid
-        val url = activeGenaEventSubUrl
-        activeGenaSid = null
-        activeGenaEventSubUrl = null
-        if (!sid.isNullOrBlank()) {
-            mediaServer.unregisterGenaSubscription(sid)
-        }
-        if (!sid.isNullOrBlank() && !url.isNullOrBlank()) {
-            controlClient.unsubscribeGena(url, sid)
         }
     }
 
@@ -1180,26 +1522,65 @@ object DlnaCastManager {
         return if (args.isEmpty()) context.getString(resId) else context.getString(resId, *args)
     }
 
-    private suspend fun failCastGeneration(gen: Long, message: String) {
-        if (gen != generationCounter.get()) return
+    private fun retireActiveTransportMedia(device: DlnaDevice?) {
+        val prevPath = activeStreamPath
+        activeStreamPath = null
+        mediaServer.unregisterStream(prevPath)
+        clearQueuedNext()
+        currentTrackUriLoadedGen = -1L
+        pendingPausedSeekMs = null
+        if (device != null) {
+            runCatching { controlClient.stop(device) }
+        }
+    }
+
+    private suspend fun failCastGeneration(
+        gen: Long,
+        expectedConnectionGen: Long,
+        device: DlnaDevice?,
+        message: String
+    ) {
+        if (gen != trackGenerationCounter.get() ||
+            expectedConnectionGen != connectionGenerationCounter.get()
+        ) {
+            return
+        }
+        retireActiveTransportMedia(device)
         _castStateFlow.update {
             it.copy(
+                currentSnapshot = null,
                 transportState = DlnaTransportState.STOPPED,
+                remotePositionMs = 0L,
+                remoteDurationMs = 0L,
                 errorMessage = message,
                 statusMessage = null
             )
         }
         withContext(Dispatchers.Main) {
-            playerHost?.onDlnaCastError(message)
+            if (gen == trackGenerationCounter.get() &&
+                expectedConnectionGen == connectionGenerationCounter.get()
+            ) {
+                playerHost?.onDlnaCastError(message)
+            }
         }
     }
 
+    private fun isCurrentSessionAndTrack(
+        expectedConnGen: Long,
+        expectedTrackGen: Long,
+        expectedUdn: String
+    ): Boolean {
+        return connectionGenerationCounter.get() == expectedConnGen &&
+            trackGenerationCounter.get() == expectedTrackGen &&
+            _castStateFlow.value.activeDevice?.udn == expectedUdn
+    }
+
     private fun mergeDiscoveredDevices(
-        existing: List<DlnaDevice>,
+        manualDevices: List<DlnaDevice>,
         scanned: List<DlnaDevice>
     ): List<DlnaDevice> {
         val map = LinkedHashMap<String, DlnaDevice>()
-        for (item in existing) {
+        for (item in manualDevices) {
             if (item.isManual) {
                 map[item.udn] = item.copy(online = false)
             }

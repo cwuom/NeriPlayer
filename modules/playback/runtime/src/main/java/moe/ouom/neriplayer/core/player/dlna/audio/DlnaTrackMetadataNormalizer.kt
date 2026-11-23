@@ -13,6 +13,9 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
  */
 object DlnaTrackMetadataNormalizer {
 
+    private val INTERNAL_BILI_TAG_REGEX =
+        Regex("^Bilibili\\|\\d+\\|(?:BV[0-9A-Za-z]+|av\\d+).*$", RegexOption.IGNORE_CASE)
+
     data class NormalizedMetadata(
         val title: String,
         val artist: String,
@@ -27,20 +30,20 @@ object DlnaTrackMetadataNormalizer {
         youtubeFallbackAlbum: String = "YouTube Music",
         localFallbackAlbum: String = "Local Music"
     ): NormalizedMetadata {
+        val isBiliTrack = source == PlaybackAudioSource.BILIBILI ||
+            song.channelId.equals("bilibili", ignoreCase = true) ||
+            (source != PlaybackAudioSource.LOCAL &&
+                source != PlaybackAudioSource.SUBSONIC &&
+                INTERNAL_BILI_TAG_REGEX.matches(song.album.trim()))
         val title = (song.customName?.takeIf { it.isNotBlank() } ?: song.name).trim()
             .ifBlank { "Unknown Title" }
         val artist = (song.customArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim()
             .ifBlank {
-                when {
-                    source == PlaybackAudioSource.BILIBILI ||
-                        song.channelId.equals("bilibili", ignoreCase = true) ||
-                        song.album.startsWith(SongSourceTags.BILIBILI, ignoreCase = true) -> biliFallbackAlbum
-                    else -> "Unknown Artist"
-                }
+                if (isBiliTrack) biliFallbackAlbum else "Unknown Artist"
             }
         val album = normalizeAlbum(
             rawAlbum = song.album,
-            channelId = song.channelId,
+            isBiliTrack = isBiliTrack,
             source = source,
             biliFallbackAlbum = biliFallbackAlbum,
             neteaseFallbackAlbum = neteaseFallbackAlbum,
@@ -52,7 +55,7 @@ object DlnaTrackMetadataNormalizer {
 
     private fun normalizeAlbum(
         rawAlbum: String,
-        channelId: String?,
+        isBiliTrack: Boolean,
         source: PlaybackAudioSource,
         biliFallbackAlbum: String,
         neteaseFallbackAlbum: String,
@@ -60,9 +63,11 @@ object DlnaTrackMetadataNormalizer {
         localFallbackAlbum: String
     ): String {
         val trimmed = rawAlbum.trim()
-        if (trimmed.equals(SongSourceTags.BILIBILI, ignoreCase = true) ||
-            trimmed.startsWith("${SongSourceTags.BILIBILI}|", ignoreCase = true) ||
-            (trimmed.isBlank() && (source == PlaybackAudioSource.BILIBILI || channelId.equals("bilibili", ignoreCase = true)))
+        if (isBiliTrack && (
+                trimmed.isBlank() ||
+                    trimmed.equals(SongSourceTags.BILIBILI, ignoreCase = true) ||
+                    trimmed.startsWith("${SongSourceTags.BILIBILI}|", ignoreCase = true)
+            )
         ) {
             return biliFallbackAlbum
         }

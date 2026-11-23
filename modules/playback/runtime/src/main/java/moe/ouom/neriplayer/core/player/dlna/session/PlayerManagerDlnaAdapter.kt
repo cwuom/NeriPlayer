@@ -8,7 +8,9 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.ContentMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.dlna.protocol.DlnaProtocolInfo
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.handleTrackEnded
@@ -16,9 +18,12 @@ import moe.ouom.neriplayer.core.player.playback.pauseImpl
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.core.player.playback.playImpl
 import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueNavigationOwner
+import moe.ouom.neriplayer.core.player.runtime.refresh.RefreshResolverSideEffects
+import moe.ouom.neriplayer.core.player.runtime.refresh.RefreshSideEffectGate
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.url.OFFLINE_CACHE_URL_PREFIX
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
+import moe.ouom.neriplayer.core.player.url.tryReadVerifiedOfflineCacheResult
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
@@ -28,6 +33,7 @@ import moe.ouom.neriplayer.data.model.playback.queue.QueueTrackCompletion
 import moe.ouom.neriplayer.lyrics.lyricon.LyriconManager
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 
 /**
  * Bridges [DlnaCastManager] with [PlayerManager] and [AudioPlayerService].
@@ -198,39 +204,145 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
         manager.postPlayerEvent(PlayerEvent.ShowError(message))
     }
 
-    override suspend fun resolveSongUrlForDlna(song: SongItem): SongUrlResult {
+    override suspend fun resolveSongUrlForDlna(
+        song: SongItem,
+        forPrequeue: Boolean
+    ): DlnaCastManager.DlnaUrlResolution {
         val manager = PlayerManager
-        val initial = manager.resolveSongUrl(
-            song = song,
-            forceRefresh = false,
-            allowGenericPrefetchCache = false,
-            preferYouTubeM4a = true
-        )
-        if (initial is SongUrlResult.Success) {
-            initial.audioInfo?.let { resolvedInfo ->
-                manager.runPlayerActionOnMainThread {
-                    if (manager._currentSongFlow.value?.id == song.id &&
-                        manager._currentSongFlow.value?.album == song.album
-                    ) {
-                        manager._currentPlaybackAudioInfo.value = resolvedInfo
+        val sinkInfo = DlnaCastManager.castStateFlow.value.activeDevice?.sinkProtocolInfo.orEmpty()
+        val silentSideEffects = RefreshResolverSideEffects(RefreshSideEffectGate { false })
+
+        // Check if YouTube normal-playback cache already holds a complete renderer-playable file
+        var incompatibleCachedYouTubeMime: String? = null
+        if (!manager.isLocalSong(song) && manager.isYouTubeMusicTrack(song)) {
+            val m4aKey = manager.computeCacheKey(song, youtubePreferM4aOverride = true)
+            val m4aCached = manager.tryReadVerifiedOfflineCacheResult(m4aKey, song)
+            if (m4aCached == null) {
+                val normalKey = manager.computeCacheKey(song, youtubePreferM4aOverride = false)
+                val normalCached = if (normalKey != m4aKey) {
+                    manager.tryReadVerifiedOfflineCacheResult(normalKey, song)
+                } else null
+                if (normalCached != null) {
+                    if (DlnaProtocolInfo.supportsDeliveryMime(sinkInfo, normalCached.mimeType)) {
+                        val extracted = extractFromSimpleCache(normalKey)
+                        if (extracted != null) {
+                            publishResolvedAudioInfoIfCurrent(manager, song, forPrequeue, normalCached)
+                            return DlnaCastManager.DlnaUrlResolution.Success(
+                                normalCached.copy(url = extracted.absolutePath)
+                            )
+                        }
+                    } else {
+                        incompatibleCachedYouTubeMime = normalCached.mimeType ?: "cached"
                     }
                 }
             }
-            if (initial.url.startsWith(OFFLINE_CACHE_URL_PREFIX)) {
-                val cacheKey = initial.url.removePrefix(OFFLINE_CACHE_URL_PREFIX)
-                val extractedFile = extractFromSimpleCache(cacheKey)
-                if (extractedFile != null) {
-                    return initial.copy(url = extractedFile.absolutePath)
+        }
+
+        // Suppress generic URL error if we want to report a more specific offline cache-format mismatch
+        val resolverSideEffects = if (forPrequeue || incompatibleCachedYouTubeMime != null) {
+            silentSideEffects
+        } else {
+            RefreshResolverSideEffects()
+        }
+
+        val initial = manager.resolveSongUrl(
+            song = song,
+            forceRefresh = false,
+            sideEffects = resolverSideEffects,
+            allowGenericPrefetchCache = false,
+            preferYouTubeM4a = true
+        )
+        return materializeDlnaUrlResult(
+            manager = manager,
+            song = song,
+            forPrequeue = forPrequeue,
+            sinkInfo = sinkInfo,
+            initial = initial,
+            incompatibleCachedMimeHint = incompatibleCachedYouTubeMime
+        )
+    }
+
+    private suspend fun materializeDlnaUrlResult(
+        manager: PlayerManager,
+        song: SongItem,
+        forPrequeue: Boolean,
+        sinkInfo: String,
+        initial: SongUrlResult,
+        incompatibleCachedMimeHint: String?
+    ): DlnaCastManager.DlnaUrlResolution {
+        when (initial) {
+            is SongUrlResult.Success -> {
+                if (initial.url.startsWith(OFFLINE_CACHE_URL_PREFIX)) {
+                    val cacheKey = initial.url.removePrefix(OFFLINE_CACHE_URL_PREFIX)
+                    val cachedMime = initial.mimeType ?: initial.audioInfo?.mimeType
+                    val isLosslessEligibleForWav = cachedMime?.let {
+                        val lower = it.lowercase()
+                        lower.contains("flac") || lower.contains("alac") || lower.contains("wav")
+                    } == true
+                    val rendererCompatible = cachedMime.isNullOrBlank() ||
+                        isLosslessEligibleForWav ||
+                        DlnaProtocolInfo.supportsDeliveryMime(sinkInfo, cachedMime)
+
+                    if (rendererCompatible) {
+                        val extractedFile = extractFromSimpleCache(cacheKey)
+                        if (extractedFile != null) {
+                            publishResolvedAudioInfoIfCurrent(manager, song, forPrequeue, initial)
+                            return DlnaCastManager.DlnaUrlResolution.Success(
+                                initial.copy(url = extractedFile.absolutePath)
+                            )
+                        }
+                    }
+
+                    val refreshed = manager.resolveSongUrl(
+                        song = song,
+                        forceRefresh = true,
+                        sideEffects = RefreshResolverSideEffects(RefreshSideEffectGate { false }),
+                        allowGenericPrefetchCache = false,
+                        preferYouTubeM4a = true
+                    )
+                    if (refreshed is SongUrlResult.Success && !refreshed.url.startsWith(OFFLINE_CACHE_URL_PREFIX)) {
+                        publishResolvedAudioInfoIfCurrent(manager, song, forPrequeue, refreshed)
+                        return DlnaCastManager.DlnaUrlResolution.Success(refreshed)
+                    }
+                    if (!rendererCompatible) {
+                        val msg = manager.getLocalizedString(
+                            CoreCommonR.string.dlna_err_cached_format_unsupported,
+                            cachedMime.orEmpty()
+                        )
+                        return DlnaCastManager.DlnaUrlResolution.Failure(msg)
+                    }
+                    return DlnaCastManager.DlnaUrlResolution.Failure(null)
                 }
-                return manager.resolveSongUrl(
-                    song = song,
-                    forceRefresh = true,
-                    allowGenericPrefetchCache = false,
-                    preferYouTubeM4a = true
-                )
+
+                publishResolvedAudioInfoIfCurrent(manager, song, forPrequeue, initial)
+                return DlnaCastManager.DlnaUrlResolution.Success(initial)
+            }
+            SongUrlResult.RequiresLogin -> return DlnaCastManager.DlnaUrlResolution.RequiresLogin
+            else -> {
+                val customMsg = incompatibleCachedMimeHint?.let { mime ->
+                    manager.getLocalizedString(
+                        CoreCommonR.string.dlna_err_cached_format_unsupported,
+                        mime
+                    )
+                }
+                return DlnaCastManager.DlnaUrlResolution.Failure(customMsg)
             }
         }
-        return initial
+    }
+
+    private fun publishResolvedAudioInfoIfCurrent(
+        manager: PlayerManager,
+        song: SongItem,
+        forPrequeue: Boolean,
+        result: SongUrlResult.Success
+    ) {
+        if (forPrequeue) return
+        val resolvedInfo = result.audioInfo ?: return
+        manager.runPlayerActionOnMainThread {
+            if (manager._currentSongFlow.value?.sameIdentityAs(song) == true) {
+                manager._currentPlaybackAudioInfo.value = resolvedInfo
+            }
+        }
     }
 
     override fun currentSong(): SongItem? = PlayerManager.currentSongFlow.value
@@ -274,6 +386,10 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
         val manager = PlayerManager
         manager._playWhenReadyFlow.value = true
         DlnaCastManager.playRemote()
+        manager.scheduleStatePersist(
+            positionMs = manager._playbackPositionMs.value,
+            shouldResumePlayback = true
+        )
         manager.emitPlaybackCommand(
             type = "PLAY",
             source = commandSource,
@@ -289,14 +405,24 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
     ): Boolean {
         if (debugReason.startsWith("dlna_switch") || !DlnaCastManager.isCastingActive()) return false
         val manager = PlayerManager
+        val posMs = manager._playbackPositionMs.value.coerceAtLeast(0L)
         manager.updateResumePlaybackRequested(false)
         manager._playWhenReadyFlow.value = false
         manager._isPlayingFlow.value = false
         DlnaCastManager.pauseRemote()
+        val currentSong = manager._currentSongFlow.value
+        if (currentSong != null) {
+            val durationMs = maxOf(
+                currentSong.durationMs.coerceAtLeast(0L),
+                manager.playbackProgressOwner.duration.value
+            )
+            manager.persistLongFormPlaybackProgress(currentSong, posMs, durationMs)
+            manager.scheduleStatePersist(positionMs = posMs, shouldResumePlayback = false)
+        }
         manager.emitPlaybackCommand(
             type = "PAUSE",
             source = commandSource,
-            positionMs = manager._playbackPositionMs.value,
+            positionMs = posMs,
             currentIndex = manager.currentIndex
         )
         return true
@@ -329,47 +455,73 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
         return true
     }
 
+    internal fun cacheKeyToExportFileName(cacheKey: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(cacheKey.toByteArray(Charsets.UTF_8))
+        val hex = buildString(digest.size * 2) {
+            for (b in digest) {
+                append(String.format(java.util.Locale.US, "%02x", b.toInt() and 0xFF))
+            }
+        }
+        return "exo_$hex.audio"
+    }
+
     private suspend fun extractFromSimpleCache(cacheKey: String): File? = withContext(Dispatchers.IO) {
         val mediaCache = PlayerManager.cache ?: return@withContext null
         val contentLength = ContentMetadata.getContentLength(mediaCache.getContentMetadata(cacheKey))
         if (contentLength <= 0L) return@withContext null
         val stagingDir = File(PlayerManager.application.cacheDir, "dlna_staging").apply { mkdirs() }
-        val safeName = cacheKey.replace(Regex("[^A-Za-z0-9._-]"), "_").take(64)
-        val target = File(stagingDir, "exo_$safeName.audio")
+        val fileName = cacheKeyToExportFileName(cacheKey)
+        val target = File(stagingDir, fileName)
         if (target.isFile && target.length() == contentLength) {
             return@withContext target
         }
-        val tmp = File(stagingDir, "exo_$safeName.tmp")
-        return@withContext runCatching {
-            val cacheDataSource = CacheDataSource.Factory()
-                .setCache(mediaCache)
-                .setUpstreamDataSourceFactory(null)
-                .createDataSource()
-            val dataSpec = DataSpec.Builder()
-                .setUri(android.net.Uri.EMPTY)
-                .setKey(cacheKey)
-                .setPosition(0L)
-                .setLength(contentLength)
-                .build()
-            cacheDataSource.open(dataSpec)
-            try {
-                FileOutputStream(tmp).use { out ->
-                    val buf = ByteArray(64 * 1024)
-                    while (true) {
-                        val read = cacheDataSource.read(buf, 0, buf.size)
-                        if (read <= 0) break
-                        out.write(buf, 0, read)
+        val tmp = File(
+            stagingDir,
+            "${fileName.removeSuffix(".audio")}_${System.nanoTime()}_${Thread.currentThread().id}.tmp"
+        )
+        var committed = false
+        return@withContext try {
+            runCatching {
+                val cacheDataSource = CacheDataSource.Factory()
+                    .setCache(mediaCache)
+                    .setUpstreamDataSourceFactory(null)
+                    .createDataSource()
+                val dataSpec = DataSpec.Builder()
+                    .setUri(android.net.Uri.EMPTY)
+                    .setKey(cacheKey)
+                    .setPosition(0L)
+                    .setLength(contentLength)
+                    .build()
+                cacheDataSource.open(dataSpec)
+                try {
+                    FileOutputStream(tmp).use { out ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val read = cacheDataSource.read(buf, 0, buf.size)
+                            if (read <= 0) break
+                            out.write(buf, 0, read)
+                        }
                     }
+                } finally {
+                    runCatching { cacheDataSource.close() }
                 }
-            } finally {
-                runCatching { cacheDataSource.close() }
-            }
-            if (tmp.length() != contentLength) {
+                if (tmp.length() != contentLength) {
+                    return@runCatching null
+                }
+                if (target.exists()) target.delete()
+                if (tmp.renameTo(target)) {
+                    committed = true
+                    target
+                } else if (target.isFile && target.length() == contentLength) {
+                    target
+                } else {
+                    null
+                }
+            }.getOrNull()
+        } finally {
+            if (!committed && tmp.exists()) {
                 tmp.delete()
-                return@withContext null
             }
-            if (target.exists()) target.delete()
-            if (tmp.renameTo(target)) target else null
-        }.getOrNull()
+        }
     }
 }

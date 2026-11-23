@@ -31,6 +31,7 @@ object LosslessWavDecoder {
         sourceFile: File,
         inspected: FlacHeaderInspector.InspectedAudio,
         pcmOutputFile: File,
+        hintBitDepth: Int? = null,
         isCancelled: () -> Boolean = { false }
     ): DecodedPcmResult {
         if (inspected.format == FlacHeaderInspector.ContainerFormat.WAV &&
@@ -43,7 +44,7 @@ object LosslessWavDecoder {
                 pcmDataOffsetInFile = inspected.wavDataOffset,
                 pcmDataBytes = inspected.wavDataSize,
                 sampleRateHz = inspected.sampleRateHz ?: 44_100,
-                bitsPerSample = inspected.bitDepth ?: 16,
+                bitsPerSample = inspected.bitDepth ?: hintBitDepth?.takeIf { it > 0 } ?: 16,
                 channelCount = inspected.channelCount ?: 2
             )
         }
@@ -71,23 +72,33 @@ object LosslessWavDecoder {
             val expectedSampleRate = inspected.sampleRateHz
                 ?: selectedFormat.getOptionalInt(MediaFormat.KEY_SAMPLE_RATE)
                 ?: 44_100
-            val expectedBitDepth = normalizeTargetBitDepth(
-                inspected.bitDepth
-                    ?: (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        selectedFormat.getOptionalInt("bits-per-sample")
-                    } else null)
-                    ?: 16
-            )
+            val resolvedSourceBitDepth = inspected.bitDepth
+                ?: hintBitDepth?.takeIf { it > 0 }
+                ?: selectedFormat.getOptionalInt("bits-per-sample")
+            if (resolvedSourceBitDepth == null &&
+                inspected.format == FlacHeaderInspector.ContainerFormat.ALAC_MP4 &&
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+            ) {
+                error("Cannot verify ALAC bit depth on this Android version; aborting to avoid silent 16-bit truncation")
+            }
+            val expectedBitDepth = normalizeTargetBitDepth(resolvedSourceBitDepth ?: 16)
 
-            // Request exact bit depth where Android supports it without down-conversion
+            // Request exact bit-preserving output encoding; never route 32-bit int through 24-bit float mantissa
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 val desiredEncoding = when {
                     expectedBitDepth <= 16 -> AudioFormat.ENCODING_PCM_16BIT
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && expectedBitDepth == 24 ->
+                    expectedBitDepth == 24 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
                         AudioFormat.ENCODING_PCM_24BIT_PACKED
-                    else -> AudioFormat.ENCODING_PCM_FLOAT
+                    expectedBitDepth == 24 ->
+                        AudioFormat.ENCODING_PCM_FLOAT // IEEE 754 binary32 has exact 24-bit significand
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                        AudioFormat.ENCODING_PCM_32BIT
+                    else ->
+                        error("32-bit integer lossless WAV decode requires Android 12+ PCM_32BIT support")
                 }
                 selectedFormat.setInteger(MediaFormat.KEY_PCM_ENCODING, desiredEncoding)
+            } else if (expectedBitDepth > 16) {
+                error("High-resolution $expectedBitDepth-bit WAV decode is unsupported on this Android version")
             }
 
             codec = MediaCodec.createDecoderByType(mime)
@@ -97,17 +108,15 @@ object LosslessWavDecoder {
                 if (expectedBitDepth > 16) {
                     codec.release()
                     throw IllegalStateException(
-                        "Device codec rejected $expectedBitDepth-bit lossless PCM output; aborting 16-bit downgrade",
+                        "Device codec rejected $expectedBitDepth-bit lossless PCM output; aborting downgrade",
                         err
                     )
                 }
-                // Retry without explicit PCM encoding hint if codec rejects specific encoding key for <= 16-bit
+                // Retry with clean track format without KEY_PCM_ENCODING for <= 16-bit default PCM decoders
                 codec.release()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    selectedFormat.setInteger(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
-                }
+                val cleanDefaultFormat = extractor.getTrackFormat(audioTrackIndex)
                 codec = MediaCodec.createDecoderByType(mime)
-                codec.configure(selectedFormat, null, null, 0)
+                codec.configure(cleanDefaultFormat, null, null, 0)
             }
             codec.start()
 
@@ -118,6 +127,38 @@ object LosslessWavDecoder {
             var actualEncoding = AudioFormat.ENCODING_PCM_16BIT
             var formatChecked = false
             var totalPcmWritten = 0L
+
+            fun verifyAndApplyOutputFormat(outFmt: MediaFormat) {
+                actualSampleRate = outFmt.getOptionalInt(MediaFormat.KEY_SAMPLE_RATE)
+                    ?: actualSampleRate
+                actualChannels = outFmt.getOptionalInt(MediaFormat.KEY_CHANNEL_COUNT)
+                    ?: actualChannels
+                actualEncoding = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    outFmt.getOptionalInt(MediaFormat.KEY_PCM_ENCODING)
+                        ?: AudioFormat.ENCODING_PCM_16BIT
+                } else {
+                    AudioFormat.ENCODING_PCM_16BIT
+                }
+                if (inspected.sampleRateHz != null && actualSampleRate != inspected.sampleRateHz) {
+                    error(
+                        "Decoder altered sample rate (${inspected.sampleRateHz} -> $actualSampleRate); " +
+                            "aborting to preserve lossless fidelity"
+                    )
+                }
+                if (expectedBitDepth > 16 && actualEncoding == AudioFormat.ENCODING_PCM_16BIT) {
+                    error(
+                        "Decoder downgraded $expectedBitDepth-bit PCM to 16-bit; " +
+                            "aborting to preserve lossless fidelity"
+                    )
+                }
+                if (expectedBitDepth >= 32 && actualEncoding != AudioFormat.ENCODING_PCM_32BIT) {
+                    error(
+                        "Decoder did not provide 32-bit integer PCM (got encoding=$actualEncoding); " +
+                            "aborting to prevent precision loss"
+                    )
+                }
+                formatChecked = true
+            }
 
             val bufferInfo = MediaCodec.BufferInfo()
             var inputDone = false
@@ -155,45 +196,11 @@ object LosslessWavDecoder {
                     val outIdx = codec.dequeueOutputBuffer(bufferInfo, 10_000L)
                     when {
                         outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                            val outFmt = codec.outputFormat
-                            actualSampleRate = outFmt.getOptionalInt(MediaFormat.KEY_SAMPLE_RATE)
-                                ?: actualSampleRate
-                            actualChannels = outFmt.getOptionalInt(MediaFormat.KEY_CHANNEL_COUNT)
-                                ?: actualChannels
-                            actualEncoding = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                                outFmt.getOptionalInt(MediaFormat.KEY_PCM_ENCODING)
-                                    ?: AudioFormat.ENCODING_PCM_16BIT
-                            } else {
-                                AudioFormat.ENCODING_PCM_16BIT
-                            }
-                            if (inspected.sampleRateHz != null && actualSampleRate != inspected.sampleRateHz) {
-                                error(
-                                    "Decoder altered sample rate (${inspected.sampleRateHz} -> $actualSampleRate); " +
-                                        "aborting to preserve lossless fidelity"
-                                )
-                            }
-                            if (expectedBitDepth > 16 && actualEncoding == AudioFormat.ENCODING_PCM_16BIT) {
-                                error(
-                                    "Decoder downgraded $expectedBitDepth-bit PCM to 16-bit; " +
-                                        "aborting to preserve lossless fidelity"
-                                )
-                            }
-                            formatChecked = true
+                            verifyAndApplyOutputFormat(codec.outputFormat)
                         }
                         outIdx >= 0 -> {
                             if (!formatChecked) {
-                                val outFmt = codec.outputFormat
-                                actualSampleRate = outFmt.getOptionalInt(MediaFormat.KEY_SAMPLE_RATE)
-                                    ?: actualSampleRate
-                                actualChannels = outFmt.getOptionalInt(MediaFormat.KEY_CHANNEL_COUNT)
-                                    ?: actualChannels
-                                actualEncoding = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                                    outFmt.getOptionalInt(MediaFormat.KEY_PCM_ENCODING)
-                                        ?: AudioFormat.ENCODING_PCM_16BIT
-                                } else {
-                                    AudioFormat.ENCODING_PCM_16BIT
-                                }
-                                formatChecked = true
+                                verifyAndApplyOutputFormat(codec.outputFormat)
                             }
                             val outBuf = codec.getOutputBuffer(outIdx)
                             if (outBuf != null && bufferInfo.size > 0) {

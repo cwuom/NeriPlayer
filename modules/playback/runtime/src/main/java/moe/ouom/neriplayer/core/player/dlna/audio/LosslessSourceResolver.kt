@@ -63,16 +63,28 @@ class LosslessSourceResolver(
         internal fun buildStableRemoteStagingKey(
             songKey: String,
             url: String,
-            audioInfo: PlaybackAudioInfo?
+            audioInfo: PlaybackAudioInfo?,
+            isPreviewClip: Boolean = false,
+            representationIdentity: String? = null,
+            cacheKeyOverride: String? = null,
+            expectedContentLength: Long? = null
         ): String {
+            val urlWithoutQuery = url.substringBefore('?')
             val extHint = fileExtensionForMime(
                 audioInfo?.mimeType.orEmpty(),
-                File(url.substringBefore('?'))
+                File(urlWithoutQuery)
             )
+            val previewToken = if (isPreviewClip) "preview" else "full"
+            val repToken = representationIdentity?.trim().orEmpty()
+            val overrideToken = cacheKeyOverride?.trim().orEmpty()
+            val lenToken = expectedContentLength?.takeIf { it > 0L }?.toString().orEmpty()
+            val specToken = "${audioInfo?.codecLabel.orEmpty()}:${audioInfo?.bitrateKbps ?: 0}:" +
+                "${audioInfo?.sampleRateHz ?: 0}:${audioInfo?.bitDepth ?: 0}"
             val raw = if (songKey.isNotBlank()) {
-                "$songKey|${audioInfo?.qualityKey.orEmpty()}|${audioInfo?.mimeType.orEmpty()}|$extHint"
+                "$songKey|$previewToken|${audioInfo?.qualityKey.orEmpty()}|${audioInfo?.mimeType.orEmpty()}|" +
+                    "$repToken|$overrideToken|$lenToken|$specToken|$extHint"
             } else {
-                url.substringBefore('?')
+                "$urlWithoutQuery|$previewToken|$repToken|$overrideToken|$lenToken"
             }
             return sha256Hex(raw.toByteArray()).take(24)
         }
@@ -181,6 +193,8 @@ class LosslessSourceResolver(
                             CoreCommonR.string.dlna_strict_blocked_lossy_detail,
                             arrayOf(decision.sourceSummary)
                         )
+                    LosslessSourcePolicy.BlockReasonKind.WAV_UNSUPPORTED ->
+                        getLocalizedString(CoreCommonR.string.dlna_blocked_wav_unsupported, emptyArray())
                     LosslessSourcePolicy.BlockReasonKind.FLAC_UNSUPPORTED_WAV_DISABLED ->
                         getLocalizedString(CoreCommonR.string.dlna_blocked_flac_unsupported, emptyArray())
                     LosslessSourcePolicy.BlockReasonKind.ALAC_REQUIRES_WAV_FALLBACK ->
@@ -242,7 +256,8 @@ class LosslessSourceResolver(
                         )
                         val contentType = DlnaProtocolInfo.contentTypeFor(
                             mode = decision.mode,
-                            mimeOverride = decision.mimeType
+                            mimeOverride = decision.mimeType,
+                            sinkProtocolInfo = device.sinkProtocolInfo
                         )
                         val contentFeatures = DlnaProtocolInfo.contentFeaturesFromProtocolInfo(protocolInfo)
                         val ext = fileExtensionForMime(contentType, sourceFile)
@@ -302,12 +317,13 @@ class LosslessSourceResolver(
 
                     DlnaStreamMode.LOSSLESS_WAV,
                     DlnaStreamMode.LOSSLESS_WAV_ID3 -> {
-                        evictStagingIfNeeded()
+                        evictStagingIfNeeded(setOf(sourceFile.absolutePath))
                         val pcmCacheFile = File(stagingDir, "${sha256.take(24)}_${generationId}.pcm")
                         val decoded = LosslessWavDecoder.decodeToPcmFile(
                             sourceFile = sourceFile,
                             inspected = inspected,
                             pcmOutputFile = pcmCacheFile,
+                            hintBitDepth = (inspected.bitDepth ?: urlResult.audioInfo?.bitDepth)?.takeIf { it > 0 },
                             isCancelled = isCancelled
                         )
                         val id3Chunk = if (decision.mode == DlnaStreamMode.LOSSLESS_WAV_ID3) {
@@ -331,6 +347,10 @@ class LosslessSourceResolver(
                             pcmDataBytes = decoded.pcmDataBytes,
                             id3Chunk = id3Chunk
                         )
+                        val wavContentType = DlnaProtocolInfo.contentTypeFor(
+                            mode = effectiveWavMode,
+                            sinkProtocolInfo = device.sinkProtocolInfo
+                        )
                         val protocolInfo = DlnaProtocolInfo.protocolInfoFor(
                             mode = effectiveWavMode,
                             sinkProtocolInfo = device.sinkProtocolInfo
@@ -341,7 +361,7 @@ class LosslessSourceResolver(
                             pcmFile = decoded.pcmFile,
                             pcmDataOffsetInFile = decoded.pcmDataOffsetInFile,
                             pcmDataLength = decoded.pcmDataBytes,
-                            contentType = "audio/wav",
+                            contentType = wavContentType,
                             contentFeatures = contentFeatures
                         )
                         val snapshot = DlnaPlaybackSnapshot(
@@ -353,7 +373,7 @@ class LosslessSourceResolver(
                             durationMs = durationMs,
                             streamPath = "",
                             coverPath = null,
-                            contentType = "audio/wav",
+                            contentType = wavContentType,
                             protocolInfo = protocolInfo,
                             totalBytes = layout.totalBytes,
                             sampleRateHz = decoded.sampleRateHz,
@@ -369,7 +389,7 @@ class LosslessSourceResolver(
                             } else {
                                 "${decision.resolvedFormat} -> WAV"
                             },
-                            mimeType = "audio/wav",
+                            mimeType = wavContentType,
                             sampleRateHz = decoded.sampleRateHz,
                             bitDepth = decoded.bitsPerSample,
                             channelCount = decoded.channelCount,
@@ -423,6 +443,10 @@ class LosslessSourceResolver(
                     isBilibiliSong = song.channelId.equals("bilibili", ignoreCase = true) ||
                         song.album.startsWith("Bilibili", ignoreCase = true),
                     audioInfo = urlResult.audioInfo,
+                    isPreviewClip = urlResult.isPreviewClip,
+                    representationIdentity = urlResult.representationIdentity,
+                    cacheKeyOverride = urlResult.cacheKeyOverride,
+                    expectedContentLength = urlResult.expectedContentLength,
                     isCancelled = isCancelled
                 )
                 if (downloaded != null) return downloaded
@@ -488,11 +512,24 @@ class LosslessSourceResolver(
         songKey: String,
         isBilibiliSong: Boolean,
         audioInfo: PlaybackAudioInfo?,
+        isPreviewClip: Boolean,
+        representationIdentity: String?,
+        cacheKeyOverride: String?,
+        expectedContentLength: Long?,
         isCancelled: () -> Boolean
     ): File? {
-        val cacheId = buildStableRemoteStagingKey(songKey, url, audioInfo)
+        val cacheId = buildStableRemoteStagingKey(
+            songKey = songKey,
+            url = url,
+            audioInfo = audioInfo,
+            isPreviewClip = isPreviewClip,
+            representationIdentity = representationIdentity,
+            cacheKeyOverride = cacheKeyOverride,
+            expectedContentLength = expectedContentLength
+        )
+        val expectedLen = expectedContentLength?.takeIf { it > 0L }
         val target = File(stagingDir, "remote_$cacheId.audio")
-        if (target.isFile && target.length() > 0L) {
+        if (target.isFile && target.length() > 0L && (expectedLen == null || target.length() == expectedLen)) {
             target.setLastModified(System.currentTimeMillis())
             return target
         }
@@ -531,6 +568,7 @@ class LosslessSourceResolver(
                 }
             }
             if (isCancelled() || tmp.length() <= 0L) return null
+            if (expectedLen != null && tmp.length() != expectedLen) return null
             if (target.exists()) target.delete()
             if (!tmp.renameTo(target)) return null
             committed = true
@@ -663,7 +701,7 @@ class LosslessSourceResolver(
         isCancelled: () -> Boolean
     ): File {
         if (isCancelled()) return sourceFile
-        evictStagingIfNeeded()
+        evictStagingIfNeeded(setOf(sourceFile.absolutePath))
         val tagSig = sha256Hex("${metadata.title}|${metadata.artist}|${metadata.album}".toByteArray()).take(10)
         return when (inspected.format) {
             FlacHeaderInspector.ContainerFormat.FLAC -> {

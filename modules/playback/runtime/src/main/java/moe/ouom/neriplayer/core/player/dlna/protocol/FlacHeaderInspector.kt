@@ -35,6 +35,12 @@ object FlacHeaderInspector {
         val wavAudioFormatTag: Int? = null
     )
 
+    private data class AlacSpec(
+        val sampleRateHz: Int?,
+        val bitDepth: Int?,
+        val channelCount: Int?
+    )
+
     fun inspectFile(file: File): InspectedAudio {
         if (!file.isFile || file.length() < 4L) {
             return InspectedAudio(ContainerFormat.UNKNOWN, "application/octet-stream", isLossless = false)
@@ -44,7 +50,14 @@ object FlacHeaderInspector {
         RandomAccessFile(file, "r").use { raf ->
             raf.readFully(head)
             val initial = inspectBytes(head, file.length())
-            if (initial.format == ContainerFormat.AAC_OR_MP4) {
+            if (initial.format == ContainerFormat.WAV &&
+                (initial.wavAudioFormatTag == null || initial.wavDataOffset == null)
+            ) {
+                return inspectWavFile(raf, file.length())
+            }
+            if (initial.format == ContainerFormat.AAC_OR_MP4 ||
+                (initial.format == ContainerFormat.ALAC_MP4 && initial.bitDepth == null)
+            ) {
                 return inspectMp4File(raf, file.length()) ?: initial
             }
             return initial
@@ -161,6 +174,7 @@ object FlacHeaderInspector {
         var bitDepth: Int? = null
         var channelCount: Int? = null
         var audioFormatTag: Int? = null
+        var subFormatTag: Int? = null
         var dataOffset: Long? = null
         var dataSize: Long? = null
 
@@ -173,10 +187,13 @@ object FlacHeaderInspector {
                 channelCount = readLe16(bytes, payloadOffset + 2)
                 sampleRateHz = readLe32(bytes, payloadOffset + 4).toInt()
                 bitDepth = readLe16(bytes, payloadOffset + 14)
+                if (audioFormatTag == 0xFFFE && chunkSize >= 40L && payloadOffset + 26 <= bytes.size) {
+                    subFormatTag = readLe16(bytes, payloadOffset + 24)
+                }
             } else if (chunkId == "data") {
                 dataOffset = payloadOffset.toLong()
                 dataSize = minOf(chunkSize, maxOf(0L, totalFileLength - payloadOffset.toLong()))
-                break
+                if (audioFormatTag != null) break
             }
             if (chunkSize < 0L || chunkSize > bytes.size) break
             val padded = chunkSize + (chunkSize and 1L)
@@ -185,7 +202,7 @@ object FlacHeaderInspector {
             offset = next.toInt()
         }
 
-        val lossless = audioFormatTag == null || audioFormatTag == 1 || audioFormatTag == 0xFFFE
+        val lossless = isLosslessWavFormat(audioFormatTag, subFormatTag)
         return InspectedAudio(
             format = ContainerFormat.WAV,
             mimeType = "audio/wav",
@@ -195,17 +212,87 @@ object FlacHeaderInspector {
             channelCount = channelCount,
             wavDataOffset = dataOffset,
             wavDataSize = dataSize,
-            wavAudioFormatTag = audioFormatTag
+            wavAudioFormatTag = if (lossless && audioFormatTag == 0xFFFE && subFormatTag == 1) 1 else audioFormatTag
         )
     }
 
+    private fun inspectWavFile(raf: RandomAccessFile, fileLength: Long): InspectedAudio {
+        var offset = 12L
+        val chunkHeader = ByteArray(8)
+        val fmtBuf = ByteArray(40)
+        var sampleRateHz: Int? = null
+        var bitDepth: Int? = null
+        var channelCount: Int? = null
+        var audioFormatTag: Int? = null
+        var subFormatTag: Int? = null
+        var dataOffset: Long? = null
+        var dataSize: Long? = null
+
+        while (offset + 8L <= fileLength) {
+            raf.seek(offset)
+            raf.readFully(chunkHeader, 0, 8)
+            val chunkId = String(chunkHeader, 0, 4, Charsets.US_ASCII)
+            val chunkSize = readLe32(chunkHeader, 4)
+            val payloadOffset = offset + 8L
+            if (chunkSize < 0L || payloadOffset > fileLength) break
+
+            if (chunkId == "fmt " && chunkSize >= 16L && payloadOffset + 16L <= fileLength) {
+                val toRead = minOf(chunkSize, 40L, fileLength - payloadOffset).toInt()
+                raf.seek(payloadOffset)
+                raf.readFully(fmtBuf, 0, toRead)
+                audioFormatTag = readLe16(fmtBuf, 0)
+                channelCount = readLe16(fmtBuf, 2)
+                sampleRateHz = readLe32(fmtBuf, 4).toInt()
+                bitDepth = readLe16(fmtBuf, 14)
+                if (audioFormatTag == 0xFFFE && toRead >= 26) {
+                    subFormatTag = readLe16(fmtBuf, 24)
+                }
+            } else if (chunkId == "data") {
+                dataOffset = payloadOffset
+                dataSize = minOf(chunkSize, maxOf(0L, fileLength - payloadOffset))
+            }
+
+            if (audioFormatTag != null && dataOffset != null) break
+
+            val padded = chunkSize + (chunkSize and 1L)
+            val next = payloadOffset + padded
+            if (next <= offset || next > fileLength) break
+            offset = next
+        }
+
+        val lossless = isLosslessWavFormat(audioFormatTag, subFormatTag)
+        return InspectedAudio(
+            format = ContainerFormat.WAV,
+            mimeType = "audio/wav",
+            isLossless = lossless,
+            sampleRateHz = sampleRateHz,
+            bitDepth = bitDepth,
+            channelCount = channelCount,
+            wavDataOffset = dataOffset,
+            wavDataSize = dataSize,
+            wavAudioFormatTag = if (lossless && audioFormatTag == 0xFFFE && subFormatTag == 1) 1 else audioFormatTag
+        )
+    }
+
+    private fun isLosslessWavFormat(audioFormatTag: Int?, subFormatTag: Int?): Boolean {
+        // Never treat an unread/missing fmt chunk as lossless
+        return when (audioFormatTag) {
+            1 -> true
+            0xFFFE -> subFormatTag == null || subFormatTag == 1
+            else -> false
+        }
+    }
+
     private fun inspectMp4Container(bytes: ByteArray): InspectedAudio {
-        val hasAlac = hasAlacSampleEntryInBoxRange(bytes, 0, bytes.size)
-        return if (hasAlac) {
+        val alac = findAlacSpecInBoxRange(bytes, 0, bytes.size)
+        return if (alac != null) {
             InspectedAudio(
                 format = ContainerFormat.ALAC_MP4,
                 mimeType = "audio/alac",
-                isLossless = true
+                isLossless = true,
+                sampleRateHz = alac.sampleRateHz,
+                bitDepth = alac.bitDepth,
+                channelCount = alac.channelCount
             )
         } else {
             InspectedAudio(
@@ -244,9 +331,16 @@ object FlacHeaderInspector {
                 val moovPayload = ByteArray(payloadLen)
                 raf.seek(offset + headerSize)
                 raf.readFully(moovPayload)
-                val hasAlac = hasAlacSampleEntryInContainer(moovPayload, 0, moovPayload.size, "moov")
-                return if (hasAlac) {
-                    InspectedAudio(format = ContainerFormat.ALAC_MP4, mimeType = "audio/alac", isLossless = true)
+                val alac = findAlacSpecInContainer(moovPayload, 0, moovPayload.size, "moov")
+                return if (alac != null) {
+                    InspectedAudio(
+                        format = ContainerFormat.ALAC_MP4,
+                        mimeType = "audio/alac",
+                        isLossless = true,
+                        sampleRateHz = alac.sampleRateHz,
+                        bitDepth = alac.bitDepth,
+                        channelCount = alac.channelCount
+                    )
                 } else {
                     InspectedAudio(format = ContainerFormat.AAC_OR_MP4, mimeType = "audio/mp4", isLossless = false)
                 }
@@ -256,7 +350,7 @@ object FlacHeaderInspector {
         return null
     }
 
-    private fun hasAlacSampleEntryInBoxRange(bytes: ByteArray, start: Int, end: Int): Boolean {
+    private fun findAlacSpecInBoxRange(bytes: ByteArray, start: Int, end: Int): AlacSpec? {
         var pos = start
         while (pos + 8 <= end) {
             val size32 = readBe32(bytes, pos)
@@ -269,35 +363,38 @@ object FlacHeaderInspector {
             }
             if (boxSize < headerSize) break
             val boxEnd = minOf(end.toLong(), pos.toLong() + boxSize).toInt()
-            if (type == "moov" && hasAlacSampleEntryInContainer(bytes, pos + headerSize, boxEnd, "moov")) {
-                return true
+            if (type == "moov") {
+                findAlacSpecInContainer(bytes, pos + headerSize, boxEnd, "moov")?.let { return it }
             }
             if (pos.toLong() + boxSize > end) break
             pos = (pos.toLong() + boxSize).toInt()
         }
-        return false
+        return null
     }
 
-    private fun hasAlacSampleEntryInContainer(
+    private fun findAlacSpecInContainer(
         bytes: ByteArray,
         start: Int,
         end: Int,
         containerType: String
-    ): Boolean {
+    ): AlacSpec? {
         if (containerType == "stsd") {
             // FullBox: 4 bytes version+flags + 4 bytes entry_count
-            if (start + 8 > end) return false
+            if (start + 8 > end) return null
             val entryCount = readBe32(bytes, start + 4).toInt().coerceIn(0, 64)
             var pos = start + 8
             repeat(entryCount) {
-                if (pos + 8 > end) return false
+                if (pos + 8 > end) return null
                 val entrySize = readBe32(bytes, pos)
                 val format = String(bytes, pos + 4, 4, Charsets.ISO_8859_1)
-                if (format == "alac") return true
-                if (entrySize < 8L || pos.toLong() + entrySize > end) return false
+                val entryEnd = minOf(end.toLong(), pos.toLong() + entrySize).toInt()
+                if (format == "alac") {
+                    return parseAlacSampleEntry(bytes, pos, entryEnd)
+                }
+                if (entrySize < 8L || pos.toLong() + entrySize > end) return null
                 pos = (pos.toLong() + entrySize).toInt()
             }
-            return false
+            return null
         }
         val childTarget = when (containerType) {
             "moov" -> "trak"
@@ -305,7 +402,7 @@ object FlacHeaderInspector {
             "mdia" -> "minf"
             "minf" -> "stbl"
             "stbl" -> "stsd"
-            else -> return false
+            else -> return null
         }
         var pos = start
         while (pos + 8 <= end) {
@@ -319,15 +416,58 @@ object FlacHeaderInspector {
             }
             if (boxSize < headerSize) break
             val boxEnd = minOf(end.toLong(), pos.toLong() + boxSize).toInt()
-            if (type == childTarget &&
-                hasAlacSampleEntryInContainer(bytes, pos + headerSize, boxEnd, childTarget)
-            ) {
-                return true
+            if (type == childTarget) {
+                findAlacSpecInContainer(bytes, pos + headerSize, boxEnd, childTarget)?.let { return it }
             }
             if (pos.toLong() + boxSize > end) break
             pos = (pos.toLong() + boxSize).toInt()
         }
-        return false
+        return null
+    }
+
+    private fun parseAlacSampleEntry(bytes: ByteArray, entryStart: Int, entryEnd: Int): AlacSpec {
+        // AudioSampleEntry header is 36 bytes:
+        // [24..25] channelcount, [26..27] samplesize, [32..33] samplerate integer part (16.16)
+        var fallbackChannels: Int? = null
+        var fallbackBitDepth: Int? = null
+        var fallbackSampleRate: Int? = null
+        if (entryStart + 36 <= entryEnd) {
+            fallbackChannels = readBe16(bytes, entryStart + 24).takeIf { it in 1..16 }
+            fallbackBitDepth = readBe16(bytes, entryStart + 26).takeIf { it in setOf(16, 20, 24, 32) }
+            fallbackSampleRate = readBe16(bytes, entryStart + 32).takeIf { it > 0 }
+        }
+        // Search child boxes after 36-byte AudioSampleEntry header for 'alac' SpecificConfig FullBox (36 bytes total)
+        var childPos = entryStart + 36
+        while (childPos + 8 <= entryEnd) {
+            val childSize = readBe32(bytes, childPos)
+            val childType = String(bytes, childPos + 4, 4, Charsets.ISO_8859_1)
+            if (childSize < 8L) break
+            val childEnd = minOf(entryEnd.toLong(), childPos.toLong() + childSize).toInt()
+            // ALACSpecificConfig starts after 8-byte box header + 4-byte FullBox version/flags = offset + 12, 24 bytes long
+            if (childType == "alac" && childPos + 36 <= childEnd) {
+                val cfg = childPos + 12
+                val bitDepth = (bytes[cfg + 5].toInt() and 0xFF).takeIf { it in setOf(8, 16, 20, 24, 32) }
+                val channels = (bytes[cfg + 9].toInt() and 0xFF).takeIf { it in 1..16 }
+                val sampleRate = readBe32(bytes, cfg + 20).toInt().takeIf { it in 8_000..768_000 }
+                return AlacSpec(
+                    sampleRateHz = sampleRate ?: fallbackSampleRate,
+                    bitDepth = bitDepth ?: fallbackBitDepth,
+                    channelCount = channels ?: fallbackChannels
+                )
+            }
+            if (childPos.toLong() + childSize > entryEnd) break
+            childPos = (childPos.toLong() + childSize).toInt()
+        }
+        return AlacSpec(
+            sampleRateHz = fallbackSampleRate,
+            bitDepth = fallbackBitDepth,
+            channelCount = fallbackChannels
+        )
+    }
+
+    private fun readBe16(data: ByteArray, offset: Int): Int {
+        return ((data[offset].toInt() and 0xFF) shl 8) or
+            (data[offset + 1].toInt() and 0xFF)
     }
 
     private fun readBe32(data: ByteArray, offset: Int): Long {

@@ -31,7 +31,10 @@ internal fun PlayerManager.seekToImpl(
     ) {
         val currentSong = _currentSongFlow.value
         if (currentSong != null) {
-            val durationMs = knownSeekDuration(currentSong)
+            val durationMs = maxOf(
+                knownSeekDuration(currentSong),
+                playbackProgressOwner.duration.value
+            )
             persistLongFormPlaybackProgress(
                 song = currentSong,
                 positionMs = resolvedPositionMs,

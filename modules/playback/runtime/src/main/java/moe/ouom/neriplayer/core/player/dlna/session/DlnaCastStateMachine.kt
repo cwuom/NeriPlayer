@@ -84,15 +84,15 @@ object DlnaCastStateMachine {
                 obs.positionMs >= (obs.durationMs - 4_000L).coerceAtLeast(0L) ||
                     obs.lastPlayingPositionMs >= (obs.durationMs - 5_000L).coerceAtLeast(0L)
                 )
-            val transitionedFromPlaying = obs.previousState == DlnaTransportState.PLAYING ||
-                obs.previousState == DlnaTransportState.TRANSITIONING
-            // Some renderers reset RelTime to 0 as soon as they transition to STOPPED after EOF
-            val resetToZeroAfterPlay = obs.previousState == DlnaTransportState.PLAYING &&
-                obs.positionMs == 0L
-            if (nearEnd || resetToZeroAfterPlay || (transitionedFromPlaying && obs.consecutiveStoppedPolls >= 2)) {
-                return PollDecision.TrackEnded(obs.generationId)
-            }
-            if (obs.consecutiveStoppedPolls >= 3) {
+            val midTrackBeforeStop = obs.durationMs > 10_000L &&
+                obs.lastPlayingPositionMs in 1L until (obs.durationMs - 5_000L)
+            // Some renderers reset RelTime to 0 as soon as they transition to STOPPED after EOF;
+            // sustained STOPPED mid-track (e.g. hardware Stop button on renderer) must NOT advance queue.
+            val resetToZeroAfterPlay = !midTrackBeforeStop &&
+                obs.positionMs == 0L &&
+                (obs.previousState == DlnaTransportState.PLAYING ||
+                    (obs.durationMs <= 0L && obs.consecutiveStoppedPolls >= 2))
+            if (nearEnd || resetToZeroAfterPlay) {
                 return PollDecision.TrackEnded(obs.generationId)
             }
         }

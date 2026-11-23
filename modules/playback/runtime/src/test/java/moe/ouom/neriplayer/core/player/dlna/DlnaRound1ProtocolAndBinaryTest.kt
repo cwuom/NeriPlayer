@@ -341,8 +341,32 @@ class DlnaRound1ProtocolAndBinaryTest {
         assertEquals(didl, parsed.values["TrackMetaData"])
         assertEquals(83_000L, UpnpXmlParser.parseUpnpTimeToMs(parsed.values["RelTime"].orEmpty()))
 
-        // Reject XXE / DOCTYPE
-        val xxe = """<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root><UDN>&xxe;</UDN></root>"""
+        // Valid baseline device XML parses non-null; prepending DOCTYPE or XXE is strictly rejected
+        val validDeviceXml = """
+            <?xml version="1.0"?>
+            <root xmlns="urn:schemas-upnp-org:device-1-0">
+              <device>
+                <UDN>uuid:valid-renderer</UDN>
+                <friendlyName>Valid Renderer</friendlyName>
+              </device>
+            </root>
+        """.trimIndent()
+        val parsedValidDevice = UpnpXmlParser.parseDeviceDescription(validDeviceXml, "http://192.168.1.50/desc.xml")
+        assertEquals("uuid:valid-renderer", parsedValidDevice?.udn)
+
+        val benignDoctype = """
+            <?xml version="1.0"?>
+            <!DOCTYPE root>
+            <root xmlns="urn:schemas-upnp-org:device-1-0">
+              <device>
+                <UDN>uuid:valid-renderer</UDN>
+                <friendlyName>Valid Renderer</friendlyName>
+              </device>
+            </root>
+        """.trimIndent()
+        assertEquals(null, UpnpXmlParser.parseDeviceDescription(benignDoctype, "http://192.168.1.50/desc.xml"))
+
+        val xxe = """<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root><device><UDN>&xxe;</UDN><friendlyName>X</friendlyName></device></root>"""
         assertEquals(null, UpnpXmlParser.parseDeviceDescription(xxe, "http://192.168.1.50/desc.xml"))
     }
 
@@ -783,5 +807,264 @@ class DlnaRound1ProtocolAndBinaryTest {
             options = DlnaDeviceOptions(strictLosslessMode = false, wavFallbackEnabled = false)
         )
         assertTrue(wavDisabled is LosslessSourcePolicy.DeliveryDecision.Blocked)
+    }
+
+    @Test
+    fun round2ReviewRegressions_wildcardSinkWavAliasesRiffJunkAlacMp4AndStagingKeys() {
+        val tempDir = java.nio.file.Files.createTempDirectory("dlna_round2_reg_").toFile()
+        try {
+            // 1. Mixed wildcard + explicit sinkProtocolInfo preserves FLAC/WAV support & WAV MIME alias alignment
+            val mixedWildcardSink = "http-get:*:*:*,http-get:*:audio/mpeg:*"
+            assertTrue(DlnaProtocolInfo.supportsFlac(mixedWildcardSink))
+            assertTrue(DlnaProtocolInfo.supportsWav(mixedWildcardSink))
+            assertTrue(DlnaProtocolInfo.supportsDeliveryMime(mixedWildcardSink, "audio/webm"))
+
+            val waveAliasSink = "http-get:*:audio/wave:*,http-get:*:audio/mp4:*"
+            assertTrue(DlnaProtocolInfo.supportsWav(waveAliasSink))
+            assertFalse(DlnaProtocolInfo.supportsDeliveryMime(waveAliasSink, "audio/webm"))
+            assertTrue(DlnaProtocolInfo.supportsDeliveryMime(waveAliasSink, "audio/mp4"))
+            assertEquals(
+                "audio/wave",
+                DlnaProtocolInfo.contentTypeFor(DlnaStreamMode.LOSSLESS_WAV, sinkProtocolInfo = waveAliasSink)
+            )
+            assertTrue(
+                DlnaProtocolInfo.protocolInfoFor(DlnaStreamMode.LOSSLESS_WAV, sinkProtocolInfo = waveAliasSink)
+                    .startsWith("http-get:*:audio/wave:")
+            )
+
+            // 2. RIFF WAV with 6000-byte JUNK chunk pushing fmt past 4096 bytes inspects real PCM vs lossy ADPCM
+            val junkPayload = ByteArray(6000)
+            val junkChunk = "JUNK".toByteArray(Charsets.US_ASCII) + le32(junkPayload.size.toLong()) + junkPayload
+            val pcmFmt = ByteArray(16).also {
+                putLe16(it, 0, 1) // PCM = 1
+                putLe16(it, 2, 2)
+                putLe32(it, 4, 96_000L)
+                putLe16(it, 14, 24)
+            }
+            val adpcmFmt = pcmFmt.copyOf().also { putLe16(it, 0, 2) } // MS ADPCM = 2 (lossy)
+            val dataChunk = "data".toByteArray(Charsets.US_ASCII) + le32(64L) + ByteArray(64)
+
+            val pcmWavBody = "WAVE".toByteArray(Charsets.US_ASCII) + junkChunk +
+                "fmt ".toByteArray(Charsets.US_ASCII) + le32(16L) + pcmFmt + dataChunk
+            val pcmWavFile = java.io.File(tempDir, "junk_pcm.wav").apply {
+                writeBytes("RIFF".toByteArray(Charsets.US_ASCII) + le32(pcmWavBody.size.toLong()) + pcmWavBody)
+            }
+            val inspectedPcmWav = FlacHeaderInspector.inspectFile(pcmWavFile)
+            assertTrue(inspectedPcmWav.isLossless)
+            assertEquals(96_000, inspectedPcmWav.sampleRateHz)
+            assertEquals(24, inspectedPcmWav.bitDepth)
+            assertEquals(64L, inspectedPcmWav.wavDataSize)
+
+            val adpcmWavBody = "WAVE".toByteArray(Charsets.US_ASCII) + junkChunk +
+                "fmt ".toByteArray(Charsets.US_ASCII) + le32(16L) + adpcmFmt + dataChunk
+            val adpcmWavFile = java.io.File(tempDir, "junk_adpcm.wav").apply {
+                writeBytes("RIFF".toByteArray(Charsets.US_ASCII) + le32(adpcmWavBody.size.toLong()) + adpcmWavBody)
+            }
+            assertFalse(FlacHeaderInspector.inspectFile(adpcmWavFile).isLossless)
+            assertFalse(FlacHeaderInspector.inspectBytes("RIFF".toByteArray() + le32(6020L) + "WAVE".toByteArray() + junkChunk).isLossless)
+
+            // 3. ALAC MP4 inspector reads real 24-bit / 96 kHz specs from inner alac SpecificConfig box
+            val alacMp4Bytes = buildSyntheticAlacMp4(bitDepth = 24, channels = 2, sampleRate = 96_000)
+            val inspectedAlac = FlacHeaderInspector.inspectBytes(alacMp4Bytes)
+            assertEquals(FlacHeaderInspector.ContainerFormat.ALAC_MP4, inspectedAlac.format)
+            assertTrue(inspectedAlac.isLossless)
+            assertEquals(24, inspectedAlac.bitDepth)
+            assertEquals(96_000, inspectedAlac.sampleRateHz)
+            assertEquals(2, inspectedAlac.channelCount)
+
+            // 4. Mp4MetadataWriter preserves existing covr atom and rejects corrupt stco entry_count
+            val covrAtom = wrapMp4Box("covr", wrapMp4Box("data", byteArrayOf(0, 0, 0, 13, 0, 0, 0, 0, 1, 2, 3, 4)))
+            val hdlr = wrapMp4Box("hdlr", ByteArray(4) + ByteArray(4) + "mdirappl".toByteArray(Charsets.ISO_8859_1) + ByteArray(9))
+            val meta = wrapMp4Box("meta", ByteArray(4) + hdlr + wrapMp4Box("ilst", covrAtom))
+            val udta = wrapMp4Box("udta", meta)
+            val baseMp4 = buildSyntheticMp4WithCustomMoovChild(ByteArray(64) { 7 }, udta)
+            val srcWithCovr = java.io.File(tempDir, "with_covr.m4a").apply { writeBytes(baseMp4) }
+            val outWithCovr = java.io.File(tempDir, "out_covr.m4a")
+            assertTrue(Mp4MetadataWriter.writeTags(srcWithCovr, outWithCovr, "NewTitle", "NewArtist", "NewAlbum"))
+            val outCovrBytes = outWithCovr.readBytes()
+            assertTrue("Existing covr atom must be preserved", indexOfAscii(outCovrBytes, "covr") > 0)
+            assertTrue(String(outCovrBytes, Charsets.UTF_8).contains("NewTitle"))
+
+            // Corrupt stco entry_count = 999 -> writeTags must return false cleanly
+            val badStcoPayload = byteArrayOf(0, 0, 0, 0, 0, 0, 3, 0xE7.toByte(), 0, 0, 0, 32)
+            val badMoov = wrapMp4Box("moov", wrapMp4Box("trak", wrapMp4Box("mdia", wrapMp4Box("minf", wrapMp4Box("stbl", wrapMp4Box("stco", badStcoPayload))))))
+            val ftyp = wrapMp4Box("ftyp", "isom\u0000\u0000\u0002\u0000isom".toByteArray(Charsets.ISO_8859_1))
+            val mdat = wrapMp4Box("mdat", ByteArray(32))
+            val badMp4File = java.io.File(tempDir, "bad_stco.m4a").apply { writeBytes(ftyp + mdat + badMoov) }
+            val badOutFile = java.io.File(tempDir, "bad_out.m4a")
+            assertFalse(Mp4MetadataWriter.writeTags(badMp4File, badOutFile, "T", "A", "B"))
+            assertFalse(badOutFile.exists())
+
+            // 5. LosslessSourcePolicy edge cases: WAV unsupported, FLAC fallback when preferOriginalFlac=false, ALAC unverified spec
+            val flacOnlyDevice = DlnaDevice(
+                udn = "uuid:flac-only",
+                friendlyName = "FLAC Only",
+                location = "http://192.168.1.60/desc.xml",
+                host = "192.168.1.60",
+                supportsFlac = true,
+                supportsWav = false
+            )
+            val wavInspected = FlacHeaderInspector.InspectedAudio(
+                format = FlacHeaderInspector.ContainerFormat.WAV,
+                mimeType = "audio/wav",
+                isLossless = true,
+                sampleRateHz = 44_100,
+                bitDepth = 16,
+                channelCount = 2
+            )
+            val blockedWav = LosslessSourcePolicy.evaluate(
+                inspected = wavInspected,
+                audioInfo = null,
+                isPreviewClip = false,
+                requestedLosslessQuality = true,
+                device = flacOnlyDevice,
+                options = DlnaDeviceOptions()
+            )
+            assertTrue(blockedWav is LosslessSourcePolicy.DeliveryDecision.Blocked)
+            assertEquals(
+                LosslessSourcePolicy.BlockReasonKind.WAV_UNSUPPORTED,
+                (blockedWav as LosslessSourcePolicy.DeliveryDecision.Blocked).kind
+            )
+
+            val flacInspected = FlacHeaderInspector.InspectedAudio(
+                format = FlacHeaderInspector.ContainerFormat.FLAC,
+                mimeType = "audio/x-flac",
+                isLossless = true,
+                sampleRateHz = 96_000,
+                bitDepth = 24,
+                channelCount = 2
+            )
+            val flacFallbackDeliver = LosslessSourcePolicy.evaluate(
+                inspected = flacInspected,
+                audioInfo = null,
+                isPreviewClip = false,
+                requestedLosslessQuality = true,
+                device = flacOnlyDevice,
+                options = DlnaDeviceOptions(preferOriginalFlac = false, wavFallbackEnabled = true)
+            ) as LosslessSourcePolicy.DeliveryDecision.Deliver
+            assertEquals(DlnaStreamMode.ORIGINAL_FLAC, flacFallbackDeliver.mode)
+
+            val unknownSpecAlac = FlacHeaderInspector.InspectedAudio(
+                format = FlacHeaderInspector.ContainerFormat.ALAC_MP4,
+                mimeType = "audio/alac",
+                isLossless = true,
+                sampleRateHz = null,
+                bitDepth = null,
+                channelCount = 2
+            )
+            val directAlac = LosslessSourcePolicy.evaluate(
+                inspected = unknownSpecAlac,
+                audioInfo = null,
+                isPreviewClip = false,
+                requestedLosslessQuality = true,
+                device = flacOnlyDevice,
+                options = DlnaDeviceOptions(wavFallbackEnabled = false, strictLosslessMode = false)
+            ) as LosslessSourcePolicy.DeliveryDecision.Deliver
+            assertEquals(DlnaStreamMode.ADAPTIVE_DIRECT, directAlac.mode)
+            assertEquals(0, directAlac.sampleRateHz)
+            assertEquals(0, directAlac.bitDepth)
+
+            // 6. Local song with real "Bilibili|Live" album is preserved; staging key separates preview & representations
+            val localBiliNamedSong = SongItem(
+                id = 88L,
+                name = "Concert",
+                artist = "Band",
+                album = "Bilibili|Live",
+                albumId = 0L,
+                durationMs = 1000L,
+                coverUrl = null
+            )
+            assertEquals(
+                "Bilibili|Live",
+                DlnaTrackMetadataNormalizer.normalize(localBiliNamedSong, PlaybackAudioSource.LOCAL).album
+            )
+
+            val repKeyA = LosslessSourceResolver.buildStableRemoteStagingKey(
+                songKey = "bilibili|BV1xx",
+                url = "https://cdn.bilivideo.com/a.m4s?token=1",
+                audioInfo = PlaybackAudioInfo(PlaybackAudioSource.BILIBILI, qualityKey = "high", mimeType = "audio/mp4"),
+                isPreviewClip = false,
+                representationIdentity = "30280"
+            )
+            val repKeyB = LosslessSourceResolver.buildStableRemoteStagingKey(
+                songKey = "bilibili|BV1xx",
+                url = "https://cdn.bilivideo.com/b.m4s?token=2",
+                audioInfo = PlaybackAudioInfo(PlaybackAudioSource.BILIBILI, qualityKey = "high", mimeType = "audio/mp4"),
+                isPreviewClip = false,
+                representationIdentity = "30216"
+            )
+            val previewKey = LosslessSourceResolver.buildStableRemoteStagingKey(
+                songKey = "bilibili|BV1xx",
+                url = "https://cdn.bilivideo.com/a.m4s?token=1",
+                audioInfo = PlaybackAudioInfo(PlaybackAudioSource.BILIBILI, qualityKey = "high", mimeType = "audio/mp4"),
+                isPreviewClip = true,
+                representationIdentity = "30280"
+            )
+            assertFalse(repKeyA == repKeyB)
+            assertFalse(repKeyA == previewKey)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    private fun buildSyntheticMp4WithCustomMoovChild(mdatPayload: ByteArray, extraMoovChild: ByteArray): ByteArray {
+        val ftyp = wrapMp4Box("ftyp", "isom\u0000\u0000\u0002\u0000isom".toByteArray(Charsets.ISO_8859_1))
+        val mdat = wrapMp4Box("mdat", mdatPayload)
+        val initialChunkOffset = ftyp.size + 8
+        val stcoPayload = byteArrayOf(
+            0, 0, 0, 0,
+            0, 0, 0, 1,
+            ((initialChunkOffset ushr 24) and 0xFF).toByte(),
+            ((initialChunkOffset ushr 16) and 0xFF).toByte(),
+            ((initialChunkOffset ushr 8) and 0xFF).toByte(),
+            (initialChunkOffset and 0xFF).toByte()
+        )
+        val trak = wrapMp4Box("trak", wrapMp4Box("mdia", wrapMp4Box("minf", wrapMp4Box("stbl", wrapMp4Box("stco", stcoPayload)))))
+        val moov = wrapMp4Box("moov", trak + extraMoovChild)
+        return ftyp + mdat + moov
+    }
+
+    private fun buildSyntheticAlacMp4(bitDepth: Int, channels: Int, sampleRate: Int): ByteArray {
+        val ftyp = wrapMp4Box("ftyp", "M4A \u0000\u0000\u0002\u0000M4A ".toByteArray(Charsets.ISO_8859_1))
+        val alacConfig = ByteArray(28).also {
+            // 4-byte FullBox version/flags + 24-byte ALACSpecificConfig
+            it[4 + 5] = bitDepth.toByte()
+            it[4 + 9] = channels.toByte()
+            it[4 + 20] = ((sampleRate ushr 24) and 0xFF).toByte()
+            it[4 + 21] = ((sampleRate ushr 16) and 0xFF).toByte()
+            it[4 + 22] = ((sampleRate ushr 8) and 0xFF).toByte()
+            it[4 + 23] = (sampleRate and 0xFF).toByte()
+        }
+        val innerAlacBox = wrapMp4Box("alac", alacConfig)
+        // 28-byte AudioSampleEntry body (36 bytes including 8-byte 'alac' header)
+        val sampleEntryHeaderBody = ByteArray(28).also {
+            it[16] = 0
+            it[17] = channels.toByte()
+            it[18] = 0
+            it[19] = 16 // MP4 sampleSize often stores 16 even for 24-bit ALAC; inner box holds true 24-bit!
+        }
+        val outerAlacEntry = wrapMp4Box("alac", sampleEntryHeaderBody + innerAlacBox)
+        val stsd = wrapMp4Box("stsd", byteArrayOf(0, 0, 0, 0, 0, 0, 0, 1) + outerAlacEntry)
+        val moov = wrapMp4Box("moov", wrapMp4Box("trak", wrapMp4Box("mdia", wrapMp4Box("minf", wrapMp4Box("stbl", stsd)))))
+        return ftyp + moov
+    }
+
+    private fun le32(v: Long): ByteArray = byteArrayOf(
+        (v and 0xFFL).toByte(),
+        ((v ushr 8) and 0xFFL).toByte(),
+        ((v ushr 16) and 0xFFL).toByte(),
+        ((v ushr 24) and 0xFFL).toByte()
+    )
+
+    private fun putLe16(buf: ByteArray, offset: Int, v: Int) {
+        buf[offset] = (v and 0xFF).toByte()
+        buf[offset + 1] = ((v ushr 8) and 0xFF).toByte()
+    }
+
+    private fun putLe32(buf: ByteArray, offset: Int, v: Long) {
+        buf[offset] = (v and 0xFFL).toByte()
+        buf[offset + 1] = ((v ushr 8) and 0xFFL).toByte()
+        buf[offset + 2] = ((v ushr 16) and 0xFFL).toByte()
+        buf[offset + 3] = ((v ushr 24) and 0xFFL).toByte()
     }
 }

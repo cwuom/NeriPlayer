@@ -17,6 +17,7 @@ object LosslessSourcePolicy {
     enum class BlockReasonKind {
         PREVIEW_CLIP,
         LOSSY_SOURCE,
+        WAV_UNSUPPORTED,
         FLAC_UNSUPPORTED_WAV_DISABLED,
         ALAC_REQUIRES_WAV_FALLBACK
     }
@@ -64,7 +65,8 @@ object LosslessSourcePolicy {
         val effectiveMime = inspected.mimeType.takeIf {
             inspected.format != FlacHeaderInspector.ContainerFormat.UNKNOWN
         } ?: normalizeAudioMime(audioInfo?.mimeType) ?: "application/octet-stream"
-        val sampleRate = inspected.sampleRateHz ?: audioInfo?.sampleRateHz ?: 0
+        val knownSampleRate = (inspected.sampleRateHz ?: audioInfo?.sampleRateHz)?.takeIf { it > 0 } ?: 0
+        val knownBitDepth = (inspected.bitDepth ?: audioInfo?.bitDepth)?.takeIf { it > 0 } ?: 0
         val channels = inspected.channelCount ?: audioInfo?.channelCount ?: 2
 
         if (isPreviewClip && options.strictLosslessMode) {
@@ -74,8 +76,8 @@ object LosslessSourcePolicy {
                 sourceSummary = sourceSummary,
                 resolvedFormat = resolvedFormat,
                 mimeType = effectiveMime,
-                sampleRateHz = sampleRate.takeIf { it > 0 },
-                bitDepth = inspected.bitDepth ?: audioInfo?.bitDepth
+                sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                bitDepth = knownBitDepth.takeIf { it > 0 }
             )
         }
 
@@ -92,8 +94,8 @@ object LosslessSourcePolicy {
                     sourceSummary = sourceSummary,
                     resolvedFormat = resolvedFormat,
                     mimeType = effectiveMime,
-                    sampleRateHz = inspected.sampleRateHz ?: audioInfo?.sampleRateHz,
-                    bitDepth = inspected.bitDepth ?: audioInfo?.bitDepth
+                    sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                    bitDepth = knownBitDepth.takeIf { it > 0 }
                 )
             }
             // Adaptive direct streaming: NEVER transcode lossy MP3/AAC/M4A/OGG/WebM into WAV or MP3,
@@ -106,14 +108,11 @@ object LosslessSourcePolicy {
                 sourceSummary = sourceSummary,
                 resolvedFormat = resolvedFormat,
                 mimeType = effectiveMime,
-                sampleRateHz = sampleRate,
+                sampleRateHz = knownSampleRate,
                 bitDepth = 0,
                 channelCount = channels
             )
         }
-
-        val losslessSampleRate = sampleRate.takeIf { it > 0 } ?: 44_100
-        val losslessBitDepth = inspected.bitDepth ?: audioInfo?.bitDepth ?: 16
 
         val wavMode = if (options.wavEmbedId3Enabled) {
             DlnaStreamMode.LOSSLESS_WAV_ID3
@@ -122,21 +121,34 @@ object LosslessSourcePolicy {
         }
 
         val mode = when (inspected.format) {
-            FlacHeaderInspector.ContainerFormat.WAV -> wavMode
-            FlacHeaderInspector.ContainerFormat.FLAC -> {
-                if (options.preferOriginalFlac && device.supportsFlac) {
-                    DlnaStreamMode.ORIGINAL_FLAC
-                } else if (options.wavFallbackEnabled && device.supportsWav) {
-                    wavMode
-                } else {
+            FlacHeaderInspector.ContainerFormat.WAV -> {
+                if (!device.supportsWav) {
                     return DeliveryDecision.Blocked(
+                        kind = BlockReasonKind.WAV_UNSUPPORTED,
+                        reason = "Renderer does not advertise WAV support.",
+                        sourceSummary = sourceSummary,
+                        resolvedFormat = resolvedFormat,
+                        mimeType = effectiveMime,
+                        sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                        bitDepth = knownBitDepth.takeIf { it > 0 }
+                    )
+                }
+                wavMode
+            }
+            FlacHeaderInspector.ContainerFormat.FLAC -> {
+                val canWav = options.wavFallbackEnabled && device.supportsWav
+                when {
+                    options.preferOriginalFlac && device.supportsFlac -> DlnaStreamMode.ORIGINAL_FLAC
+                    canWav -> wavMode
+                    device.supportsFlac -> DlnaStreamMode.ORIGINAL_FLAC
+                    else -> return DeliveryDecision.Blocked(
                         kind = BlockReasonKind.FLAC_UNSUPPORTED_WAV_DISABLED,
                         reason = "Renderer does not support FLAC and WAV fallback is disabled.",
                         sourceSummary = sourceSummary,
                         resolvedFormat = resolvedFormat,
                         mimeType = effectiveMime,
-                        sampleRateHz = losslessSampleRate,
-                        bitDepth = losslessBitDepth
+                        sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                        bitDepth = knownBitDepth.takeIf { it > 0 }
                     )
                 }
             }
@@ -152,20 +164,31 @@ object LosslessSourcePolicy {
                         sourceSummary = sourceSummary,
                         resolvedFormat = resolvedFormat,
                         mimeType = effectiveMime,
-                        sampleRateHz = losslessSampleRate,
-                        bitDepth = losslessBitDepth
+                        sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                        bitDepth = knownBitDepth.takeIf { it > 0 }
                     )
                 }
             }
             else -> {
-                if (options.preferOriginalFlac && device.supportsFlac) {
-                    DlnaStreamMode.ORIGINAL_FLAC
-                } else if (options.wavFallbackEnabled && device.supportsWav) {
-                    wavMode
-                } else {
-                    DlnaStreamMode.ORIGINAL_FLAC
+                val canWav = options.wavFallbackEnabled && device.supportsWav
+                when {
+                    options.preferOriginalFlac && device.supportsFlac -> DlnaStreamMode.ORIGINAL_FLAC
+                    canWav -> wavMode
+                    else -> DlnaStreamMode.ORIGINAL_FLAC
                 }
             }
+        }
+
+        val isWavDelivery = mode == DlnaStreamMode.LOSSLESS_WAV || mode == DlnaStreamMode.LOSSLESS_WAV_ID3
+        val reportedSampleRate = if (isWavDelivery) {
+            knownSampleRate.takeIf { it > 0 } ?: 44_100
+        } else {
+            knownSampleRate
+        }
+        val reportedBitDepth = if (isWavDelivery) {
+            knownBitDepth.takeIf { it > 0 } ?: 16
+        } else {
+            knownBitDepth
         }
 
         val downgradedFromRequested = requestedLosslessQuality &&
@@ -183,13 +206,9 @@ object LosslessSourcePolicy {
             },
             sourceSummary = sourceSummary,
             resolvedFormat = resolvedFormat,
-            mimeType = if (mode == DlnaStreamMode.LOSSLESS_WAV || mode == DlnaStreamMode.LOSSLESS_WAV_ID3) {
-                "audio/wav"
-            } else {
-                effectiveMime
-            },
-            sampleRateHz = losslessSampleRate,
-            bitDepth = losslessBitDepth,
+            mimeType = if (isWavDelivery) "audio/wav" else effectiveMime,
+            sampleRateHz = reportedSampleRate,
+            bitDepth = reportedBitDepth,
             channelCount = channels
         )
     }
