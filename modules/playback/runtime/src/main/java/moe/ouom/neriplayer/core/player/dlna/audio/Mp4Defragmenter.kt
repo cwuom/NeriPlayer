@@ -7,6 +7,7 @@ import android.media.MediaMuxer
 import moe.ouom.neriplayer.core.player.dlna.protocol.Mp4MetadataWriter
 import java.io.File
 import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Remuxes fragmented MP4 streams (e.g. Bilibili DASH .m4s) into standard
@@ -15,16 +16,21 @@ import java.nio.ByteBuffer
  */
 object Mp4Defragmenter {
 
+    private val attemptCounter = AtomicLong(0L)
+
     fun defragmentIfNeeded(
         sourceFile: File,
         outputFile: File,
         isCancelled: () -> Boolean = { false }
     ): File {
         if (!Mp4MetadataWriter.hasMoofBox(sourceFile)) return sourceFile
-        val tmpFile = File(outputFile.parentFile, "${outputFile.name}.remux_tmp")
+        val attemptId = attemptCounter.incrementAndGet()
+        val tmpFile = File(outputFile.parentFile, "${outputFile.name}.remux_${attemptId}.tmp")
         val extractor = MediaExtractor()
         var muxer: MediaMuxer? = null
         var muxerStarted = false
+        var sampleCount = 0
+        var committed = false
         return try {
             extractor.setDataSource(sourceFile.absolutePath)
             var audioTrack = -1
@@ -66,22 +72,30 @@ object Mp4Defragmenter {
                     0
                 }
                 muxer.writeSampleData(muxTrack, buffer, info)
+                sampleCount++
                 extractor.advance()
             }
 
-            if (isCancelled() || tmpFile.length() <= 0L) {
-                tmpFile.delete()
+            if (isCancelled() || sampleCount <= 0) {
                 return sourceFile
             }
+            // Flush moov & buffered sample data and close fd BEFORE checking file length / renaming
             muxer.stop()
             muxerStarted = false
             muxer.release()
             muxer = null
 
+            if (tmpFile.length() <= 0L) {
+                return sourceFile
+            }
             if (outputFile.exists()) outputFile.delete()
-            if (tmpFile.renameTo(outputFile)) outputFile else sourceFile
+            if (tmpFile.renameTo(outputFile)) {
+                committed = true
+                outputFile
+            } else {
+                sourceFile
+            }
         } catch (_: Throwable) {
-            tmpFile.delete()
             sourceFile
         } finally {
             if (muxerStarted) {
@@ -89,6 +103,9 @@ object Mp4Defragmenter {
             }
             runCatching { muxer?.release() }
             runCatching { extractor.release() }
+            if (!committed && tmpFile.exists()) {
+                tmpFile.delete()
+            }
         }
     }
 }

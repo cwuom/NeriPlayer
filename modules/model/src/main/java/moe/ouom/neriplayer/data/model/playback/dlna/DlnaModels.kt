@@ -116,6 +116,12 @@ data class DlnaCastState(
     val isCastingActive: Boolean
         get() = activeDevice != null && connectionStatus != DlnaConnectionStatus.DISCONNECTED
 
-    fun optionsFor(udn: String): DlnaDeviceOptions =
-        deviceOptionsByUdn[udn] ?: DlnaDeviceOptions()
+    fun optionsFor(udn: String): DlnaDeviceOptions {
+        deviceOptionsByUdn[udn]?.let { return it }
+        val knownDevice = activeDevice?.takeIf { it.udn == udn }
+            ?: discoveredDevices.firstOrNull { it.udn == udn }
+        return DlnaDeviceOptions(
+            wavEmbedId3Enabled = knownDevice?.isLikelyShanlingEm7 == true
+        )
+    }
 }

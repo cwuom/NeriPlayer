@@ -122,6 +122,73 @@ class DlnaRound3StressAndSecurityTest {
             assertEquals(200, resp.code)
             assertArrayEquals(data, resp.body.bytes())
         }
+
+        // GENA NOTIFY must be rejected when no subscription callback path or SID is active
+        val notifyXml = """
+            <e:propertyset xmlns:e="urn:schemas-upnp-org:event-1-0">
+              <e:property><LastChange>&lt;Event&gt;&lt;InstanceID val="0"&gt;&lt;Volume channel="Master" val="77"/&gt;&lt;/InstanceID&gt;&lt;/Event&gt;</LastChange></e:property>
+            </e:propertyset>
+        """.trimIndent()
+        var receivedGenaVolume: String? = null
+        val genaServer = DlnaMediaServer(onGenaNotify = { _, vals -> receivedGenaVolume = vals["Volume"] })
+        genaServer.start()
+        try {
+            val unsubscribedUrl = "http://127.0.0.1:${genaServer.port}/dlna/event/avtransport/any"
+            client.newCall(
+                Request.Builder().url(unsubscribedUrl)
+                    .method("NOTIFY", notifyXml.toByteArray().toRequestBody())
+                    .header("SID", "uuid:spoof")
+                    .build()
+            ).execute().use { resp ->
+                assertEquals(404, resp.code)
+            }
+            assertEquals(null, receivedGenaVolume)
+
+            val secretPath = "/dlna/event/avtransport/secret_uuid_123"
+            genaServer.expectedGenaCallbackPath = secretPath
+            val secretUrl = "http://127.0.0.1:${genaServer.port}$secretPath"
+
+            // Unknown SID while not in-flight -> 412 Precondition Failed
+            client.newCall(
+                Request.Builder().url(secretUrl)
+                    .method("NOTIFY", notifyXml.toByteArray().toRequestBody())
+                    .header("SID", "uuid:spoof")
+                    .build()
+            ).execute().use { resp ->
+                assertEquals(412, resp.code)
+            }
+            assertEquals(null, receivedGenaVolume)
+
+            // Registered SID -> 200 OK & event delivered
+            genaServer.registerGenaSubscription("uuid:real-sid")
+            client.newCall(
+                Request.Builder().url(secretUrl)
+                    .method("NOTIFY", notifyXml.toByteArray().toRequestBody())
+                    .header("SID", "uuid:real-sid")
+                    .build()
+            ).execute().use { resp ->
+                assertEquals(200, resp.code)
+            }
+            assertEquals("77", receivedGenaVolume)
+        } finally {
+            genaServer.stop()
+        }
+
+        // Ephemeral per-generation stream file is deleted on unregister while source file stays intact
+        val ephemeralFile = File(tempDir, "ephemeral_gen1.pcm").apply { writeBytes(ByteArray(32) { 1 }) }
+        val ephPath = server.registerStream(
+            "wav",
+            DlnaMediaServer.StreamContent.FileContent(
+                file = ephemeralFile,
+                contentType = "audio/wav",
+                contentFeatures = "",
+                ephemeralFileToDeleteOnUnregister = ephemeralFile
+            )
+        )
+        assertTrue(ephemeralFile.exists())
+        server.unregisterStream(ephPath)
+        org.junit.Assert.assertFalse(ephemeralFile.exists())
+        assertTrue(file.exists())
     }
 
     @Test

@@ -65,18 +65,88 @@ object UpnpXmlParser {
 
     fun parseDeviceDescription(xml: String, locationUrl: String): ParsedDeviceDescription? {
         val doc = parseDocument(xml) ?: return null
-        val udn = findFirstTextByLocalName(doc.documentElement, "UDN")
-        val friendlyName = findFirstTextByLocalName(doc.documentElement, "friendlyName")
-        val manufacturer = findFirstTextByLocalName(doc.documentElement, "manufacturer")
-        val modelName = findFirstTextByLocalName(doc.documentElement, "modelName")
-        val urlBaseRaw = findFirstTextByLocalName(doc.documentElement, "URLBase")
+        val rootEl = doc.documentElement ?: return null
+        val urlBaseRaw = findDirectChildTextByLocalName(rootEl, "URLBase")
+            .ifEmpty { findFirstTextByLocalName(rootEl, "URLBase") }
         val endpointBaseUrl = resolveValidUrlBase(urlBaseRaw, locationUrl)
 
+        val deviceElements = findAllElementsByLocalName(rootEl, "device")
+        val targetDevice = selectTargetRendererDevice(deviceElements) ?: rootEl
+
+        val udn = findDirectChildTextByLocalName(targetDevice, "UDN")
+            .ifEmpty { findFirstTextByLocalName(targetDevice, "UDN") }
+        val friendlyName = findDirectChildTextByLocalName(targetDevice, "friendlyName")
+            .ifEmpty { findFirstTextByLocalName(targetDevice, "friendlyName") }
+        val manufacturer = findDirectChildTextByLocalName(targetDevice, "manufacturer")
+            .ifEmpty { findFirstTextByLocalName(targetDevice, "manufacturer") }
+        val modelName = findDirectChildTextByLocalName(targetDevice, "modelName")
+            .ifEmpty { findFirstTextByLocalName(targetDevice, "modelName") }
+
+        val services = extractDirectServices(targetDevice, endpointBaseUrl).ifEmpty {
+            extractSubtreeServices(targetDevice, endpointBaseUrl)
+        }
+        if (udn.isEmpty() && friendlyName.isEmpty()) return null
+        return ParsedDeviceDescription(
+            location = locationUrl,
+            udn = udn.ifEmpty { locationUrl },
+            friendlyName = friendlyName.ifEmpty { udn.ifEmpty { locationUrl } },
+            manufacturer = manufacturer,
+            modelName = modelName,
+            services = services
+        )
+    }
+
+    private fun selectTargetRendererDevice(devices: List<Element>): Element? {
+        if (devices.isEmpty()) return null
+        // 1. Prefer device declaring MediaRenderer deviceType AND its own AVTransport service
+        devices.firstOrNull { dev ->
+            val deviceType = findDirectChildTextByLocalName(dev, "deviceType")
+            deviceType.contains("MediaRenderer", ignoreCase = true) && hasDirectAvTransport(dev)
+        }?.let { return it }
+        // 2. Any device whose own serviceList includes AVTransport
+        devices.firstOrNull { dev -> hasDirectAvTransport(dev) }?.let { return it }
+        // 3. Any device declaring MediaRenderer deviceType
+        devices.firstOrNull { dev ->
+            findDirectChildTextByLocalName(dev, "deviceType")
+                .contains("MediaRenderer", ignoreCase = true)
+        }?.let { return it }
+        return devices.first()
+    }
+
+    private fun hasDirectAvTransport(deviceEl: Element): Boolean {
+        val serviceList = findDirectChildElementByLocalName(deviceEl, "serviceList") ?: return false
+        for (serviceEl in findDirectChildElementsByLocalName(serviceList, "service")) {
+            val st = findDirectChildTextByLocalName(serviceEl, "serviceType")
+            if (st.equals(SERVICE_AV_TRANSPORT, ignoreCase = true) ||
+                st.contains(":AVTransport:", ignoreCase = true)
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun extractDirectServices(deviceEl: Element, endpointBaseUrl: String): List<ServiceEndpoint> {
+        val serviceList = findDirectChildElementByLocalName(deviceEl, "serviceList") ?: return emptyList()
         val services = mutableListOf<ServiceEndpoint>()
-        val serviceNodes = doc.getElementsByTagNameNS("*", "service")
-        val fallbackNodes = if (serviceNodes.length == 0) doc.getElementsByTagName("service") else serviceNodes
-        for (i in 0 until fallbackNodes.length) {
-            val node = fallbackNodes.item(i) as? Element ?: continue
+        for (serviceNode in findDirectChildElementsByLocalName(serviceList, "service")) {
+            val serviceType = findDirectChildTextByLocalName(serviceNode, "serviceType")
+            val controlPath = findDirectChildTextByLocalName(serviceNode, "controlURL")
+            val eventSubPath = findDirectChildTextByLocalName(serviceNode, "eventSubURL")
+            if (serviceType.isNotEmpty() && controlPath.isNotEmpty()) {
+                services += ServiceEndpoint(
+                    serviceType = serviceType,
+                    controlUrl = resolveUrl(endpointBaseUrl, controlPath),
+                    eventSubUrl = if (eventSubPath.isNotEmpty()) resolveUrl(endpointBaseUrl, eventSubPath) else ""
+                )
+            }
+        }
+        return services
+    }
+
+    private fun extractSubtreeServices(scopeEl: Element, endpointBaseUrl: String): List<ServiceEndpoint> {
+        val services = mutableListOf<ServiceEndpoint>()
+        for (node in findAllElementsByLocalName(scopeEl, "service")) {
             val serviceType = findFirstTextByLocalName(node, "serviceType")
             val controlPath = findFirstTextByLocalName(node, "controlURL")
             val eventSubPath = findFirstTextByLocalName(node, "eventSubURL")
@@ -88,15 +158,7 @@ object UpnpXmlParser {
                 )
             }
         }
-        if (udn.isEmpty() && friendlyName.isEmpty()) return null
-        return ParsedDeviceDescription(
-            location = locationUrl,
-            udn = udn.ifEmpty { locationUrl },
-            friendlyName = friendlyName.ifEmpty { udn.ifEmpty { locationUrl } },
-            manufacturer = manufacturer,
-            modelName = modelName,
-            services = services
-        )
+        return services
     }
 
     fun buildSoapEnvelope(serviceType: String, action: String, actionBodyXml: String): String {
@@ -141,17 +203,7 @@ object UpnpXmlParser {
         val eventDoc = if (lastChangeText.isNotEmpty()) parseDocument(lastChangeText) else doc
         val root = eventDoc?.documentElement ?: return emptyMap()
         val result = LinkedHashMap<String, String>()
-        val instanceNodes = root.getElementsByTagNameNS("*", "InstanceID")
-        val instanceElements = mutableListOf<Element>()
-        for (i in 0 until instanceNodes.length) {
-            (instanceNodes.item(i) as? Element)?.let { instanceElements += it }
-        }
-        if (instanceElements.isEmpty()) {
-            val fallbackNodes = root.getElementsByTagName("InstanceID")
-            for (i in 0 until fallbackNodes.length) {
-                (fallbackNodes.item(i) as? Element)?.let { instanceElements += it }
-            }
-        }
+        val instanceElements = findAllElementsByLocalName(root, "InstanceID")
         val scopes: List<Element> = if (instanceElements.isNotEmpty()) {
             instanceElements.filter { it.getAttribute("val").trim().let { id -> id.isEmpty() || id == "0" } }
         } else {
@@ -194,8 +246,19 @@ object UpnpXmlParser {
 
     fun parseUpnpTimeToMs(text: String): Long? {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() || trimmed.equals("NOT_IMPLEMENTED", ignoreCase = true)) return null
-        val parts = trimmed.split(':')
+        if (trimmed.isEmpty() ||
+            trimmed.equals("NOT_IMPLEMENTED", ignoreCase = true) ||
+            trimmed.equals("NONE", ignoreCase = true) ||
+            trimmed.startsWith("--")
+        ) {
+            return null
+        }
+        val isNegative = trimmed.startsWith('-')
+        val unsigned = when {
+            trimmed.startsWith('-') || trimmed.startsWith('+') -> trimmed.substring(1).trim()
+            else -> trimmed
+        }
+        val parts = unsigned.split(':')
         if (parts.size !in 2..3) return null
         return runCatching {
             val hours: Long
@@ -205,15 +268,31 @@ object UpnpXmlParser {
                 hours = parts[0].toLong()
                 minutes = parts[1].toLong()
                 secondsPart = parts[2]
+                if (hours < 0L || minutes !in 0L..59L) return null
             } else {
                 hours = 0L
                 minutes = parts[0].toLong()
                 secondsPart = parts[1]
+                if (minutes < 0L) return null
             }
-            val secSplit = secondsPart.split('.')
+            val secNormalized = secondsPart.replace(',', '.')
+            val secSplit = secNormalized.split('.')
             val seconds = secSplit[0].toLong()
-            val millis = secSplit.getOrNull(1)?.padEnd(3, '0')?.take(3)?.toLongOrNull() ?: 0L
-            ((hours * 3600L + minutes * 60L + seconds) * 1000L + millis).coerceAtLeast(0L)
+            if (seconds < 0L || (parts.size == 3 && seconds > 59L) || (parts.size == 2 && seconds > 59L)) {
+                return null
+            }
+            val fracPart = secSplit.getOrNull(1)
+            val millis = if (fracPart.isNullOrEmpty()) {
+                0L
+            } else {
+                if (!fracPart.all { it.isDigit() }) return null
+                fracPart.padEnd(3, '0').take(3).toLong()
+            }
+            if (isNegative) {
+                0L
+            } else {
+                ((hours * 3600L + minutes * 60L + seconds) * 1000L + millis).coerceAtLeast(0L)
+            }
         }.getOrNull()
     }
 
@@ -240,17 +319,48 @@ object UpnpXmlParser {
         }.getOrNull()
     }
 
+    private fun localNameOf(node: Node): String =
+        node.localName ?: node.nodeName.substringAfter(':')
+
+    private fun findDirectChildElementsByLocalName(parent: Element, localName: String): List<Element> {
+        val children = parent.childNodes
+        val list = mutableListOf<Element>()
+        for (i in 0 until children.length) {
+            val child = children.item(i) as? Element ?: continue
+            if (localNameOf(child) == localName) {
+                list += child
+            }
+        }
+        return list
+    }
+
+    private fun findDirectChildElementByLocalName(parent: Element, localName: String): Element? =
+        findDirectChildElementsByLocalName(parent, localName).firstOrNull()
+
+    private fun findDirectChildTextByLocalName(parent: Element, localName: String): String =
+        findDirectChildElementByLocalName(parent, localName)?.textContent?.trim().orEmpty()
+
+    private fun findAllElementsByLocalName(root: Element, localName: String): List<Element> {
+        val nsNodes = root.getElementsByTagNameNS("*", localName)
+        if (nsNodes.length > 0) {
+            return buildList(nsNodes.length) {
+                for (i in 0 until nsNodes.length) {
+                    (nsNodes.item(i) as? Element)?.let(::add)
+                }
+            }
+        }
+        val all = root.getElementsByTagName("*")
+        return buildList {
+            for (i in 0 until all.length) {
+                val el = all.item(i) as? Element ?: continue
+                if (localNameOf(el) == localName) add(el)
+            }
+        }
+    }
+
     private fun findFirstElementByLocalName(root: Element?, localName: String): Element? {
         if (root == null) return null
-        val nodes = root.getElementsByTagNameNS("*", localName)
-        if (nodes.length > 0) return nodes.item(0) as? Element
-        val all = root.getElementsByTagName("*")
-        for (i in 0 until all.length) {
-            val el = all.item(i) as? Element ?: continue
-            val candidate = el.localName ?: el.nodeName.substringAfter(':')
-            if (candidate == localName) return el
-        }
-        return null
+        return findAllElementsByLocalName(root, localName).firstOrNull()
     }
 
     private fun findFirstTextByLocalName(root: Element?, localName: String): String {

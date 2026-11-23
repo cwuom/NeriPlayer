@@ -51,7 +51,10 @@ object LosslessWavDecoder {
 
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
-        val tempFile = File(pcmOutputFile.parentFile, "${pcmOutputFile.name}.tmp")
+        val tempFile = File(
+            pcmOutputFile.parentFile,
+            "${pcmOutputFile.name}.${java.util.UUID.randomUUID().toString().take(8)}.tmp"
+        )
         try {
             extractor.setDataSource(sourceFile.absolutePath)
             var audioTrackIndex = -1

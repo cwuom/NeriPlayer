@@ -204,7 +204,7 @@ fun DlnaOutputAndVolumeSheetContent() {
                     valueRange = 0f..100f,
                     modifier = Modifier.fillMaxWidth()
                 )
-            } else {
+            } else if (castState.connectionStatus != DlnaConnectionStatus.CONNECTING) {
                 Text(
                     text = stringResource(CoreCommonR.string.dlna_volume_unsupported),
                     style = MaterialTheme.typography.bodySmall,

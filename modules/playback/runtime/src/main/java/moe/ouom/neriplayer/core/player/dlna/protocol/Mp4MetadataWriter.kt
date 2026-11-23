@@ -52,7 +52,10 @@ object Mp4MetadataWriter {
         album: String
     ): Boolean {
         if (!sourceFile.isFile || sourceFile.length() < 16L) return false
-        val tmpFile = File(targetFile.parentFile, "${targetFile.name}.m4a_tmp")
+        val tmpFile = File(
+            targetFile.parentFile,
+            "${targetFile.name}.m4a_${java.util.UUID.randomUUID().toString().take(8)}.tmp"
+        )
         var succeeded = false
         return try {
             val boxes = RandomAccessFile(sourceFile, "r").use { raf -> readTopLevelBoxes(raf) }

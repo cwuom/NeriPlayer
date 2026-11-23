@@ -67,7 +67,16 @@ class DlnaAppIntegrationTest {
             location = "http://192.168.1.50:49152/desc.xml",
             host = "192.168.1.50",
             manufacturer = "Shanling",
-            modelName = "EM7"
+            modelName = "EM7",
+            avTransportControlUrl = "http://192.168.1.50:49152/avt/control",
+            avTransportEventSubUrl = "http://192.168.1.50:49152/avt/event",
+            renderingControlUrl = "http://192.168.1.50:49152/rc/control",
+            renderingEventSubUrl = "http://192.168.1.50:49152/rc/event",
+            connectionManagerUrl = "http://192.168.1.50:49152/cm/control",
+            sinkProtocolInfo = "http-get:*:audio/x-flac:*,http-get:*:audio/wav:*",
+            supportsFlac = true,
+            supportsWav = false,
+            supportsSetNextUri = true
         )
         val generic = DlnaDevice(
             udn = "uuid:generic-test",
@@ -85,7 +94,14 @@ class DlnaAppIntegrationTest {
         assertFalse(genericDefaults.strictLosslessMode)
 
         store.saveManualDevice(em7)
-        assertEquals("Shanling EM7", store.loadManualDevices().first().friendlyName)
+        val loadedManual = DlnaPreferencesStore(app).loadManualDevices().first()
+        assertEquals("Shanling EM7", loadedManual.friendlyName)
+        assertEquals("http://192.168.1.50:49152/avt/event", loadedManual.avTransportEventSubUrl)
+        assertEquals("http://192.168.1.50:49152/rc/event", loadedManual.renderingEventSubUrl)
+        assertEquals("http-get:*:audio/x-flac:*,http-get:*:audio/wav:*", loadedManual.sinkProtocolInfo)
+        assertTrue(loadedManual.supportsFlac)
+        assertFalse(loadedManual.supportsWav)
+        assertTrue(loadedManual.supportsSetNextUri)
         store.removeManualDevice(em7.udn)
         assertTrue(store.loadManualDevices().isEmpty())
     }

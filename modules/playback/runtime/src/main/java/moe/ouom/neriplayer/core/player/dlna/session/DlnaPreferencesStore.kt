@@ -134,8 +134,14 @@ class DlnaPreferencesStore(context: Context) {
                             manufacturer = obj.optString("manufacturer"),
                             modelName = obj.optString("modelName"),
                             avTransportControlUrl = obj.optString("avTransportControlUrl"),
+                            avTransportEventSubUrl = obj.optString("avTransportEventSubUrl"),
                             renderingControlUrl = obj.optString("renderingControlUrl"),
+                            renderingEventSubUrl = obj.optString("renderingEventSubUrl"),
                             connectionManagerUrl = obj.optString("connectionManagerUrl"),
+                            sinkProtocolInfo = obj.optString("sinkProtocolInfo"),
+                            supportsFlac = obj.optBoolean("supportsFlac", true),
+                            supportsWav = obj.optBoolean("supportsWav", true),
+                            supportsSetNextUri = obj.optBoolean("supportsSetNextUri", false),
                             online = false,
                             isManual = true
                         )
@@ -168,8 +174,14 @@ class DlnaPreferencesStore(context: Context) {
                     put("manufacturer", d.manufacturer)
                     put("modelName", d.modelName)
                     put("avTransportControlUrl", d.avTransportControlUrl)
+                    put("avTransportEventSubUrl", d.avTransportEventSubUrl)
                     put("renderingControlUrl", d.renderingControlUrl)
+                    put("renderingEventSubUrl", d.renderingEventSubUrl)
                     put("connectionManagerUrl", d.connectionManagerUrl)
+                    put("sinkProtocolInfo", d.sinkProtocolInfo)
+                    put("supportsFlac", d.supportsFlac)
+                    put("supportsWav", d.supportsWav)
+                    put("supportsSetNextUri", d.supportsSetNextUri)
                 }
             )
         }

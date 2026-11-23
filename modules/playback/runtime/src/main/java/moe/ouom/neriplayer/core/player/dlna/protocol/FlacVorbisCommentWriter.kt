@@ -2,10 +2,11 @@ package moe.ouom.neriplayer.core.player.dlna.protocol
 
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
+import java.io.EOFException
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Pure-Kotlin lossless FLAC METADATA_BLOCK_VORBIS_COMMENT writer.
@@ -17,6 +18,9 @@ object FlacVorbisCommentWriter {
     private const val BLOCK_TYPE_STREAMINFO = 0
     private const val BLOCK_TYPE_PADDING = 1
     private const val BLOCK_TYPE_VORBIS_COMMENT = 4
+    private const val MAX_METADATA_BLOCK_BYTES = 0xFFFFFF
+
+    private val attemptCounter = AtomicLong(0L)
 
     fun writeTags(
         sourceFile: File,
@@ -26,7 +30,9 @@ object FlacVorbisCommentWriter {
         album: String
     ): Boolean {
         if (!sourceFile.isFile || sourceFile.length() < 42L) return false
-        val tmpFile = File(targetFile.parentFile, "${targetFile.name}.flac_tmp")
+        val attemptId = attemptCounter.incrementAndGet()
+        val tmpFile = File(targetFile.parentFile, "${targetFile.name}.flac_${attemptId}.tmp")
+        var succeeded = false
         return try {
             val preservedBlocks = mutableListOf<Pair<Int, ByteArray>>()
             var existingComments = emptyList<String>()
@@ -71,6 +77,11 @@ object FlacVorbisCommentWriter {
                 artist = artist,
                 album = album
             )
+            if (vorbisPayload.size > MAX_METADATA_BLOCK_BYTES ||
+                preservedBlocks.any { it.second.size > MAX_METADATA_BLOCK_BYTES }
+            ) {
+                return false
+            }
 
             BufferedOutputStream(FileOutputStream(tmpFile), 64 * 1024).use { out ->
                 out.write("fLaC".toByteArray(Charsets.US_ASCII))
@@ -79,28 +90,36 @@ object FlacVorbisCommentWriter {
                 }
                 writeMetadataBlock(out, isLast = true, blockType = BLOCK_TYPE_VORBIS_COMMENT, payload = vorbisPayload)
 
-                FileInputStream(sourceFile).use { input ->
-                    var skipped = 0L
-                    while (skipped < audioFramesOffset) {
-                        val s = input.skip(audioFramesOffset - skipped)
-                        if (s <= 0L) break
-                        skipped += s
+                RandomAccessFile(sourceFile, "r").use { raf ->
+                    val totalLen = raf.length()
+                    if (audioFramesOffset > totalLen) {
+                        throw EOFException("FLAC audioFramesOffset ($audioFramesOffset) exceeds length ($totalLen)")
                     }
+                    raf.seek(audioFramesOffset)
+                    var remaining = totalLen - audioFramesOffset
                     val buf = ByteArray(64 * 1024)
-                    while (true) {
-                        val read = input.read(buf)
-                        if (read <= 0) break
+                    while (remaining > 0L) {
+                        val want = minOf(buf.size.toLong(), remaining).toInt()
+                        val read = raf.read(buf, 0, want)
+                        if (read <= 0) {
+                            throw EOFException("Unexpected EOF copying FLAC audio frames ($remaining bytes remaining)")
+                        }
                         out.write(buf, 0, read)
+                        remaining -= read
                     }
                 }
                 out.flush()
             }
 
             if (targetFile.exists()) targetFile.delete()
-            tmpFile.renameTo(targetFile)
+            succeeded = tmpFile.renameTo(targetFile)
+            succeeded
         } catch (_: Throwable) {
-            tmpFile.delete()
             false
+        } finally {
+            if (!succeeded && tmpFile.exists()) {
+                tmpFile.delete()
+            }
         }
     }
 
@@ -161,8 +180,11 @@ object FlacVorbisCommentWriter {
         blockType: Int,
         payload: ByteArray
     ) {
-        val flagByte = (if (isLast) 0x80 else 0x00) or (blockType and 0x7F)
         val len = payload.size
+        require(len in 0..MAX_METADATA_BLOCK_BYTES) {
+            "FLAC metadata block exceeds 24-bit size limit: $len"
+        }
+        val flagByte = (if (isLast) 0x80 else 0x00) or (blockType and 0x7F)
         out.write(flagByte)
         out.write((len ushr 16) and 0xFF)
         out.write((len ushr 8) and 0xFF)

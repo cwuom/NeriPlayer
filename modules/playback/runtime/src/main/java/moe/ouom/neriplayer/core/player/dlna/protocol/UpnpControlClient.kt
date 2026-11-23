@@ -19,6 +19,7 @@ class UpnpControlClient(
         .connectTimeout(3_000L, TimeUnit.MILLISECONDS)
         .readTimeout(5_000L, TimeUnit.MILLISECONDS)
         .writeTimeout(5_000L, TimeUnit.MILLISECONDS)
+        .callTimeout(8_000L, TimeUnit.MILLISECONDS)
         .build()
 ) {
     data class PositionInfo(

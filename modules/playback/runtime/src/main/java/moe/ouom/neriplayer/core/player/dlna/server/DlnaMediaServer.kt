@@ -48,11 +48,13 @@ class DlnaMediaServer(
         abstract val totalBytes: Long
         abstract val contentType: String
         abstract val contentFeatures: String
+        abstract val ephemeralFileToDeleteOnUnregister: File?
 
         data class FileContent(
             val file: File,
             override val contentType: String,
-            override val contentFeatures: String
+            override val contentFeatures: String,
+            override val ephemeralFileToDeleteOnUnregister: File? = null
         ) : StreamContent() {
             override val totalBytes: Long = file.length()
         }
@@ -63,7 +65,8 @@ class DlnaMediaServer(
             val pcmDataOffsetInFile: Long = 0L,
             val pcmDataLength: Long = (pcmFile.length() - pcmDataOffsetInFile).coerceAtLeast(0L),
             override val contentType: String = "audio/wav",
-            override val contentFeatures: String = ""
+            override val contentFeatures: String = "",
+            override val ephemeralFileToDeleteOnUnregister: File? = null
         ) : StreamContent() {
             override val totalBytes: Long = headerPrefix.size.toLong() + pcmDataLength + (pcmDataLength and 1L)
         }
@@ -97,6 +100,8 @@ class DlnaMediaServer(
     var allowedPeerHost: String? = null
     @Volatile
     var expectedGenaCallbackPath: String? = null
+    @Volatile
+    var genaSubscriptionInFlight: Boolean = false
     private val artworkLock = Any()
     private val artworkQueue = ArrayDeque<ArtworkEntry>()
     private var artworkTotalBytes = 0
@@ -166,10 +171,13 @@ class DlnaMediaServer(
         activeClientSockets.clear()
         executor?.shutdownNow()
         executor = null
+        val ephemeralFiles = streams.values.mapNotNull { it.ephemeralFileToDeleteOnUnregister }
         streams.clear()
+        ephemeralFiles.forEach { file -> runCatching { file.delete() } }
         retiredTokens.clear()
         activeGenaSids.clear()
         expectedGenaCallbackPath = null
+        genaSubscriptionInFlight = false
         allowedPeerHost = null
         synchronized(artworkLock) {
             artworkQueue.clear()
@@ -188,6 +196,7 @@ class DlnaMediaServer(
     fun clearGenaSubscriptions() {
         activeGenaSids.clear()
         expectedGenaCallbackPath = null
+        genaSubscriptionInFlight = false
     }
 
     fun registerStream(extension: String, content: StreamContent): String {
@@ -200,7 +209,11 @@ class DlnaMediaServer(
 
     fun unregisterStream(path: String?) {
         if (path.isNullOrBlank()) return
-        if (streams.remove(path) != null) {
+        val removed = streams.remove(path)
+        if (removed != null) {
+            removed.ephemeralFileToDeleteOnUnregister?.let { file ->
+                runCatching { file.delete() }
+            }
             retiredTokens.add(path)
             if (retiredTokens.size > 256) {
                 val iter = retiredTokens.iterator()
@@ -309,7 +322,7 @@ class DlnaMediaServer(
         out: OutputStream
     ) {
         val expectedPath = expectedGenaCallbackPath
-        if (!expectedPath.isNullOrBlank() && callbackPath != expectedPath) {
+        if (expectedPath.isNullOrBlank() || callbackPath != expectedPath) {
             sendSimpleResponse(out, "404 Not Found")
             return
         }
@@ -331,8 +344,14 @@ class DlnaMediaServer(
             readTotal += read
         }
         val knownSids = activeGenaSids
-        val sidAccepted = knownSids.isEmpty() || (sid.isNotBlank() && sid in knownSids)
-        if (sidAccepted && readTotal > 0) {
+        val sidAccepted = sid.isNotBlank() && (
+            sid in knownSids || (knownSids.isEmpty() && genaSubscriptionInFlight)
+        )
+        if (!sidAccepted) {
+            sendSimpleResponse(out, "412 Precondition Failed")
+            return
+        }
+        if (readTotal > 0) {
             val xml = String(bodyBytes, 0, readTotal, Charsets.UTF_8)
             val parsed = UpnpXmlParser.parseGenaLastChange(xml)
             if (parsed.isNotEmpty()) {

@@ -1002,6 +1002,69 @@ class DlnaRound1ProtocolAndBinaryTest {
             )
             assertFalse(repKeyA == repKeyB)
             assertFalse(repKeyA == previewKey)
+
+            // 7. Composite UPnP root (MediaServer + embedded MediaRenderer) selects embedded renderer & its own services
+            val compositeXml = """
+                <?xml version="1.0"?>
+                <root xmlns="urn:schemas-upnp-org:device-1-0">
+                  <device>
+                    <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+                    <friendlyName>Home NAS Server</friendlyName>
+                    <UDN>uuid:nas-server</UDN>
+                    <serviceList>
+                      <service>
+                        <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
+                        <controlURL>/nas/ConnectionManager</controlURL>
+                      </service>
+                    </serviceList>
+                    <deviceList>
+                      <device>
+                        <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>
+                        <friendlyName>Living Room AVR</friendlyName>
+                        <UDN>uuid:avr-renderer</UDN>
+                        <serviceList>
+                          <service>
+                            <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+                            <controlURL>/avr/AVTransport</controlURL>
+                          </service>
+                          <service>
+                            <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
+                            <controlURL>/avr/ConnectionManager</controlURL>
+                          </service>
+                        </serviceList>
+                      </device>
+                    </deviceList>
+                  </device>
+                </root>
+            """.trimIndent()
+            val parsedComposite = UpnpXmlParser.parseDeviceDescription(compositeXml, "http://192.168.1.80:8080/desc.xml")!!
+            assertEquals("uuid:avr-renderer", parsedComposite.udn)
+            assertEquals("Living Room AVR", parsedComposite.friendlyName)
+            assertEquals(2, parsedComposite.services.size)
+            assertEquals(
+                "http://192.168.1.80:8080/avr/ConnectionManager",
+                parsedComposite.services.first { it.serviceType == UpnpXmlParser.SERVICE_CONNECTION_MANAGER }.controlUrl
+            )
+
+            // 8. Signed / negative / comma-decimal RelTime parsing & DlnaCastState EM7 default options
+            assertEquals(0L, UpnpXmlParser.parseUpnpTimeToMs("-00:00:02"))
+            assertEquals(83_450L, UpnpXmlParser.parseUpnpTimeToMs("+00:01:23.450"))
+            assertEquals(83_500L, UpnpXmlParser.parseUpnpTimeToMs("00:01:23,5"))
+            assertEquals(null, UpnpXmlParser.parseUpnpTimeToMs("NONE"))
+            assertEquals(null, UpnpXmlParser.parseUpnpTimeToMs("--:--:--"))
+            assertEquals(null, UpnpXmlParser.parseUpnpTimeToMs("00:65:00"))
+
+            val em7Dev = DlnaDevice(
+                udn = "uuid:em7-discovered",
+                friendlyName = "Shanling EM7",
+                location = "http://192.168.1.50/desc.xml",
+                host = "192.168.1.50"
+            )
+            val castStateWithEm7 = moe.ouom.neriplayer.data.model.playback.dlna.DlnaCastState(
+                discoveredDevices = listOf(em7Dev)
+            )
+            assertTrue(castStateWithEm7.optionsFor("uuid:em7-discovered").wavEmbedId3Enabled)
+            assertFalse(castStateWithEm7.optionsFor("uuid:unknown-generic").wavEmbedId3Enabled)
         } finally {
             tempDir.deleteRecursively()
         }

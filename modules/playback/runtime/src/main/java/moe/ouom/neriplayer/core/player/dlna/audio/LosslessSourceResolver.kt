@@ -100,12 +100,16 @@ class LosslessSourceResolver(
             val targetBytes = (maxBytes * 3L) / 4L
             for (file in files.sortedBy { it.lastModified() }) {
                 if (total <= targetBytes) break
-                if (file.absolutePath in pinnedPaths || file.name.endsWith(".tmp")) continue
+                if (file.absolutePath in pinnedPaths || isInFlightTempFileName(file.name)) continue
                 val len = file.length()
                 if (file.delete()) {
                     total -= len
                 }
             }
+        }
+
+        private fun isInFlightTempFileName(name: String): Boolean {
+            return name.endsWith(".tmp") || name.endsWith("_tmp")
         }
 
         private fun sha256Hex(bytes: ByteArray): String {
@@ -273,10 +277,15 @@ class LosslessSourceResolver(
                         } else {
                             sourceFile
                         }
+                        if (isCancelled()) {
+                            if (servedFile != sourceFile) runCatching { servedFile.delete() }
+                            return@withContext ResolutionOutcome.Failed("Cancelled")
+                        }
                         val streamContent = DlnaMediaServer.StreamContent.FileContent(
                             file = servedFile,
                             contentType = contentType,
-                            contentFeatures = contentFeatures
+                            contentFeatures = contentFeatures,
+                            ephemeralFileToDeleteOnUnregister = servedFile.takeIf { it != sourceFile }
                         )
                         val snapshot = DlnaPlaybackSnapshot(
                             generationId = generationId,
@@ -319,90 +328,105 @@ class LosslessSourceResolver(
                     DlnaStreamMode.LOSSLESS_WAV_ID3 -> {
                         evictStagingIfNeeded(setOf(sourceFile.absolutePath))
                         val pcmCacheFile = File(stagingDir, "${sha256.take(24)}_${generationId}.pcm")
-                        val decoded = LosslessWavDecoder.decodeToPcmFile(
-                            sourceFile = sourceFile,
-                            inspected = inspected,
-                            pcmOutputFile = pcmCacheFile,
-                            hintBitDepth = (inspected.bitDepth ?: urlResult.audioInfo?.bitDepth)?.takeIf { it > 0 },
-                            isCancelled = isCancelled
-                        )
-                        val id3Chunk = if (decision.mode == DlnaStreamMode.LOSSLESS_WAV_ID3) {
-                            WavId3TagBuilder.buildId3Chunk(
+                        try {
+                            val decoded = LosslessWavDecoder.decodeToPcmFile(
+                                sourceFile = sourceFile,
+                                inspected = inspected,
+                                pcmOutputFile = pcmCacheFile,
+                                hintBitDepth = (inspected.bitDepth ?: urlResult.audioInfo?.bitDepth)?.takeIf { it > 0 },
+                                isCancelled = isCancelled
+                            )
+                            if (isCancelled()) {
+                                if (decoded.pcmFile != sourceFile) runCatching { decoded.pcmFile.delete() }
+                                return@withContext ResolutionOutcome.Failed("Cancelled")
+                            }
+                            val id3Chunk = if (decision.mode == DlnaStreamMode.LOSSLESS_WAV_ID3) {
+                                WavId3TagBuilder.buildId3Chunk(
+                                    title = normalizedMeta.title,
+                                    artist = normalizedMeta.artist,
+                                    album = normalizedMeta.album
+                                )
+                            } else {
+                                ByteArray(0)
+                            }
+                            val effectiveWavMode = if (id3Chunk.isNotEmpty() && decision.mode == DlnaStreamMode.LOSSLESS_WAV_ID3) {
+                                DlnaStreamMode.LOSSLESS_WAV_ID3
+                            } else {
+                                DlnaStreamMode.LOSSLESS_WAV
+                            }
+                            val layout = WavId3TagBuilder.buildWavLayout(
+                                sampleRateHz = decoded.sampleRateHz,
+                                bitsPerSample = decoded.bitsPerSample,
+                                channels = decoded.channelCount,
+                                pcmDataBytes = decoded.pcmDataBytes,
+                                id3Chunk = id3Chunk
+                            )
+                            val wavContentType = DlnaProtocolInfo.contentTypeFor(
+                                mode = effectiveWavMode,
+                                sinkProtocolInfo = device.sinkProtocolInfo
+                            )
+                            val protocolInfo = DlnaProtocolInfo.protocolInfoFor(
+                                mode = effectiveWavMode,
+                                sinkProtocolInfo = device.sinkProtocolInfo
+                            )
+                            val contentFeatures = DlnaProtocolInfo.contentFeaturesFromProtocolInfo(protocolInfo)
+                            val streamContent = DlnaMediaServer.StreamContent.HybridWavContent(
+                                headerPrefix = layout.headerBytes,
+                                pcmFile = decoded.pcmFile,
+                                pcmDataOffsetInFile = decoded.pcmDataOffsetInFile,
+                                pcmDataLength = decoded.pcmDataBytes,
+                                contentType = wavContentType,
+                                contentFeatures = contentFeatures,
+                                ephemeralFileToDeleteOnUnregister = decoded.pcmFile.takeIf { it != sourceFile }
+                            )
+                            val snapshot = DlnaPlaybackSnapshot(
+                                generationId = generationId,
+                                songKey = songKey,
                                 title = normalizedMeta.title,
                                 artist = normalizedMeta.artist,
-                                album = normalizedMeta.album
+                                album = normalizedMeta.album,
+                                durationMs = durationMs,
+                                streamPath = "",
+                                coverPath = null,
+                                contentType = wavContentType,
+                                protocolInfo = protocolInfo,
+                                totalBytes = layout.totalBytes,
+                                sampleRateHz = decoded.sampleRateHz,
+                                bitDepth = decoded.bitsPerSample,
+                                channelCount = decoded.channelCount,
+                                streamMode = effectiveWavMode
                             )
-                        } else {
-                            ByteArray(0)
+                            val report = DlnaAudioQualityReport(
+                                songKey = songKey,
+                                source = sourceType,
+                                resolvedFormat = if (effectiveWavMode == DlnaStreamMode.LOSSLESS_WAV_ID3) {
+                                    "${decision.resolvedFormat} -> WAV+ID3"
+                                } else {
+                                    "${decision.resolvedFormat} -> WAV"
+                                },
+                                mimeType = wavContentType,
+                                sampleRateHz = decoded.sampleRateHz,
+                                bitDepth = decoded.bitsPerSample,
+                                channelCount = decoded.channelCount,
+                                bitrateKbps = ((decoded.sampleRateHz.toLong() * decoded.bitsPerSample * decoded.channelCount) / 1000L).toInt(),
+                                deliveryMode = effectiveWavMode,
+                                degraded = decision.degraded,
+                                degradationReason = localizedDegradation,
+                                strictLosslessBlocked = false,
+                                sourceSha256 = sha256,
+                                totalBytes = layout.totalBytes,
+                                headerPrefixBytes = layout.headerBytes.size
+                            )
+                            ResolutionOutcome.Ready(snapshot, streamContent, "wav", coverBytes, report)
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            if (pcmCacheFile != sourceFile) runCatching { pcmCacheFile.delete() }
+                            throw e
+                        } catch (t: Throwable) {
+                            if (pcmCacheFile != sourceFile) runCatching { pcmCacheFile.delete() }
+                            ResolutionOutcome.Failed(
+                                t.message ?: getLocalizedString(CoreCommonR.string.dlna_err_materialize_failed, emptyArray())
+                            )
                         }
-                        val effectiveWavMode = if (id3Chunk.isNotEmpty() && decision.mode == DlnaStreamMode.LOSSLESS_WAV_ID3) {
-                            DlnaStreamMode.LOSSLESS_WAV_ID3
-                        } else {
-                            DlnaStreamMode.LOSSLESS_WAV
-                        }
-                        val layout = WavId3TagBuilder.buildWavLayout(
-                            sampleRateHz = decoded.sampleRateHz,
-                            bitsPerSample = decoded.bitsPerSample,
-                            channels = decoded.channelCount,
-                            pcmDataBytes = decoded.pcmDataBytes,
-                            id3Chunk = id3Chunk
-                        )
-                        val wavContentType = DlnaProtocolInfo.contentTypeFor(
-                            mode = effectiveWavMode,
-                            sinkProtocolInfo = device.sinkProtocolInfo
-                        )
-                        val protocolInfo = DlnaProtocolInfo.protocolInfoFor(
-                            mode = effectiveWavMode,
-                            sinkProtocolInfo = device.sinkProtocolInfo
-                        )
-                        val contentFeatures = DlnaProtocolInfo.contentFeaturesFromProtocolInfo(protocolInfo)
-                        val streamContent = DlnaMediaServer.StreamContent.HybridWavContent(
-                            headerPrefix = layout.headerBytes,
-                            pcmFile = decoded.pcmFile,
-                            pcmDataOffsetInFile = decoded.pcmDataOffsetInFile,
-                            pcmDataLength = decoded.pcmDataBytes,
-                            contentType = wavContentType,
-                            contentFeatures = contentFeatures
-                        )
-                        val snapshot = DlnaPlaybackSnapshot(
-                            generationId = generationId,
-                            songKey = songKey,
-                            title = normalizedMeta.title,
-                            artist = normalizedMeta.artist,
-                            album = normalizedMeta.album,
-                            durationMs = durationMs,
-                            streamPath = "",
-                            coverPath = null,
-                            contentType = wavContentType,
-                            protocolInfo = protocolInfo,
-                            totalBytes = layout.totalBytes,
-                            sampleRateHz = decoded.sampleRateHz,
-                            bitDepth = decoded.bitsPerSample,
-                            channelCount = decoded.channelCount,
-                            streamMode = effectiveWavMode
-                        )
-                        val report = DlnaAudioQualityReport(
-                            songKey = songKey,
-                            source = sourceType,
-                            resolvedFormat = if (effectiveWavMode == DlnaStreamMode.LOSSLESS_WAV_ID3) {
-                                "${decision.resolvedFormat} -> WAV+ID3"
-                            } else {
-                                "${decision.resolvedFormat} -> WAV"
-                            },
-                            mimeType = wavContentType,
-                            sampleRateHz = decoded.sampleRateHz,
-                            bitDepth = decoded.bitsPerSample,
-                            channelCount = decoded.channelCount,
-                            bitrateKbps = ((decoded.sampleRateHz.toLong() * decoded.bitsPerSample * decoded.channelCount) / 1000L).toInt(),
-                            deliveryMode = effectiveWavMode,
-                            degraded = decision.degraded,
-                            degradationReason = localizedDegradation,
-                            strictLosslessBlocked = false,
-                            sourceSha256 = sha256,
-                            totalBytes = layout.totalBytes,
-                            headerPrefixBytes = layout.headerBytes.size
-                        )
-                        ResolutionOutcome.Ready(snapshot, streamContent, "wav", coverBytes, report)
                     }
                 }
             }

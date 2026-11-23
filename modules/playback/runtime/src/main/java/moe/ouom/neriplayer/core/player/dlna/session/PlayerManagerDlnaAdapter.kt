@@ -125,6 +125,10 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
     override fun peekNextAutoTrack(): SongItem? {
         val manager = PlayerManager
         if (!manager.initialized || manager.currentPlaylist.isEmpty()) return null
+        val isLastInPlaylist = manager.currentIndex >= manager.currentPlaylist.lastIndex
+        if (manager.sleepTimerManager.shouldStopOnTrackEnd(isLastInPlaylist)) {
+            return null
+        }
         val completion = PlayerQueueNavigationOwner.trackCompletion(
             queueSize = manager.currentPlaylist.size,
             currentIndex = manager.currentIndex,
@@ -151,6 +155,13 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
         val manager = PlayerManager
         if (!manager.initialized || !DlnaCastManager.isCastingActive()) return
         manager.playbackStatsOwner.onTrackEnded(writesEnabled = manager.initialized)
+        val isLastInPlaylist = manager.currentIndex >= manager.currentPlaylist.lastIndex
+        if (manager.sleepTimerManager.shouldStopOnTrackEnd(isLastInPlaylist)) {
+            manager.pause()
+            manager.sleepTimerManager.cancel()
+            DlnaCastManager.onQueueFinishedStop()
+            return
+        }
         val completion = PlayerQueueNavigationOwner.trackCompletion(
             queueSize = manager.currentPlaylist.size,
             currentIndex = manager.currentIndex,
@@ -477,7 +488,7 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
         }
         val tmp = File(
             stagingDir,
-            "${fileName.removeSuffix(".audio")}_${System.nanoTime()}_${Thread.currentThread().id}.tmp"
+            "${fileName.removeSuffix(".audio")}_${java.util.UUID.randomUUID().toString().take(8)}.tmp"
         )
         var committed = false
         return@withContext try {

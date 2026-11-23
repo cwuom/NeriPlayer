@@ -797,9 +797,8 @@ object PlayerManager {
                 sleepTimerManager.cancel()
             },
             onTimerStateChanged = {
-                if (isPlayerInitialized()) {
-                    syncExoRepeatMode()
-                }
+                if (isPlayerInitialized()) syncExoRepeatMode()
+                DlnaCastManager.invalidateQueuedNext()
             }
         )
     }

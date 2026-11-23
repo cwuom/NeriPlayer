@@ -230,6 +230,7 @@ object DlnaCastManager {
                 deviceOptionsByUdn = savedOptions
             )
         }
+        ensureDefaultDeviceOptions(manualDevices)
         initialized = true
     }
 
@@ -333,6 +334,9 @@ object DlnaCastManager {
         prefsStore.saveDeviceOptions(udn, updated)
         _castStateFlow.update { state ->
             state.copy(deviceOptionsByUdn = state.deviceOptionsByUdn + (udn to updated))
+        }
+        if (_castStateFlow.value.activeDevice?.udn == udn && isCastingActive()) {
+            invalidateQueuedNext()
         }
     }
 
@@ -459,8 +463,9 @@ object DlnaCastManager {
                 val initialVolume = volumeResult.getOrNull()
                 val volumeSupported = volumeResult.isSuccess && connectedDevice.renderingControlUrl.isNotBlank()
 
+                val genaCallbackPath = "/dlna/event/avtransport/${java.util.UUID.randomUUID().toString().replace("-", "")}"
                 mediaServer.allowedPeerHost = connectedDevice.host
-                mediaServer.expectedGenaCallbackPath = "/dlna/event/avtransport/$connectionGen"
+                mediaServer.expectedGenaCallbackPath = genaCallbackPath
                 activeBoundNetwork = null
 
                 _castStateFlow.update { state ->
@@ -478,7 +483,7 @@ object DlnaCastManager {
                     )
                 }
 
-                subscribeGenaIfAvailable(connectedDevice, connectionGen)
+                subscribeGenaIfAvailable(connectedDevice, connectionGen, genaCallbackPath)
                 startPollingLoop(connectedDevice, connectionGen)
 
                 val requestToCast = pendingConnectCastRequest
@@ -564,6 +569,7 @@ object DlnaCastManager {
         mediaServer.allowedPeerHost = null
         mediaServer.unregisterStream(oldStreamPath)
         mediaServer.unregisterStream(oldQueued?.streamPath)
+        mediaServer.stop()
 
         if (active != null) {
             scope.launch {
@@ -799,7 +805,12 @@ object DlnaCastManager {
                 options = options,
                 isCancelled = isStale
             )
-            if (isStale()) return
+            if (isStale()) {
+                if (outcome is LosslessSourceResolver.ResolutionOutcome.Ready) {
+                    runCatching { outcome.streamContent.ephemeralFileToDeleteOnUnregister?.delete() }
+                }
+                return
+            }
 
             when (outcome) {
                 is LosslessSourceResolver.ResolutionOutcome.Blocked -> {
@@ -830,6 +841,7 @@ object DlnaCastManager {
                     mediaServer.start()
                     val lanIp = DlnaLanAddressResolver.resolveLanIpv4ForTarget(device.host)
                         ?: run {
+                            runCatching { outcome.streamContent.ephemeralFileToDeleteOnUnregister?.delete() }
                             failCastGeneration(gen, expectedConnectionGen, device, localized(CoreCommonR.string.dlna_err_no_lan_ip))
                             return
                         }
@@ -1331,8 +1343,16 @@ object DlnaCastManager {
                 options = options,
                 isCancelled = isCancelled
             )
-            if (isCancelled() || outcome !is LosslessSourceResolver.ResolutionOutcome.Ready) return@launch
-            val lanIp = DlnaLanAddressResolver.resolveLanIpv4ForTarget(device.host) ?: return@launch
+            if (isCancelled() || outcome !is LosslessSourceResolver.ResolutionOutcome.Ready) {
+                if (outcome is LosslessSourceResolver.ResolutionOutcome.Ready) {
+                    runCatching { outcome.streamContent.ephemeralFileToDeleteOnUnregister?.delete() }
+                }
+                return@launch
+            }
+            val lanIp = DlnaLanAddressResolver.resolveLanIpv4ForTarget(device.host) ?: run {
+                runCatching { outcome.streamContent.ephemeralFileToDeleteOnUnregister?.delete() }
+                return@launch
+            }
             val nextStreamPath = mediaServer.registerStream(
                 extension = outcome.streamExtension,
                 content = outcome.streamContent
@@ -1461,18 +1481,38 @@ object DlnaCastManager {
         }
     }
 
-    private fun subscribeGenaIfAvailable(device: DlnaDevice, connectionGen: Long) {
-        val eventSubUrl = device.avTransportEventSubUrl.takeIf { it.isNotBlank() } ?: return
-        val lanIp = DlnaLanAddressResolver.resolveLanIpv4ForTarget(device.host) ?: return
-        val callbackPath = "/dlna/event/avtransport/$connectionGen"
-        val callbackUrl = mediaServer.buildUrl(lanIp, callbackPath)
-        controlClient.subscribeGena(eventSubUrl, callbackUrl).onSuccess { sub ->
+    private fun subscribeGenaIfAvailable(device: DlnaDevice, connectionGen: Long, callbackPath: String) {
+        val eventSubUrl = device.avTransportEventSubUrl.takeIf { it.isNotBlank() } ?: run {
             if (connectionGen == connectionGenerationCounter.get()) {
-                activeGenaSid = sub.sid
-                activeGenaEventSubUrl = eventSubUrl
-                mediaServer.registerGenaSubscription(sub.sid)
-            } else {
-                runCatching { controlClient.unsubscribeGena(eventSubUrl, sub.sid) }
+                mediaServer.clearGenaSubscriptions()
+            }
+            return
+        }
+        val lanIp = DlnaLanAddressResolver.resolveLanIpv4ForTarget(device.host) ?: run {
+            if (connectionGen == connectionGenerationCounter.get()) {
+                mediaServer.clearGenaSubscriptions()
+            }
+            return
+        }
+        val callbackUrl = mediaServer.buildUrl(lanIp, callbackPath)
+        mediaServer.genaSubscriptionInFlight = true
+        try {
+            controlClient.subscribeGena(eventSubUrl, callbackUrl).onSuccess { sub ->
+                if (connectionGen == connectionGenerationCounter.get()) {
+                    activeGenaSid = sub.sid
+                    activeGenaEventSubUrl = eventSubUrl
+                    mediaServer.registerGenaSubscription(sub.sid)
+                } else {
+                    runCatching { controlClient.unsubscribeGena(eventSubUrl, sub.sid) }
+                }
+            }.onFailure {
+                if (connectionGen == connectionGenerationCounter.get()) {
+                    mediaServer.clearGenaSubscriptions()
+                }
+            }
+        } finally {
+            if (connectionGen == connectionGenerationCounter.get()) {
+                mediaServer.genaSubscriptionInFlight = false
             }
         }
     }
