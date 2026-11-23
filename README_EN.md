@@ -462,7 +462,7 @@ Shipped work is tracked in [Releases](https://github.com/cwuom/NeriPlayer/releas
 - [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui): A karaoke lyrics composable
 - [LDDC](https://github.com/chenmozhijin/LDDC): Multi-platform lyric matching tool; reference for manual matching UX
 - [Metrolist](https://github.com/MetrolistGroup/Metrolist): YouTube Music client for Android
-- [HyperCeiler](https://github.com/ReChronoRain/HyperCeiler): HyperOS enhancement module
+- The original fluid background shader for the Now Playing screen was based on the shader in [HyperCeiler](https://github.com/ReChronoRain/HyperCeiler).
 - [BeatSync](https://github.com/freeman-jiang/beatsync) by freeman-jiang provides the paired-probe clock synchronization algorithm for LAN Listen Together and the reference implementation used to test the Kotlin port.
 - [AndroidX Media3](https://github.com/androidx/media) provides progressive audio playback and pitch-preserving speed adjustments for LAN room members.
 - [Java-WebSocket](https://github.com/TooTallNate/Java-WebSocket) provides the host’s WebSocket server for room control messages.
