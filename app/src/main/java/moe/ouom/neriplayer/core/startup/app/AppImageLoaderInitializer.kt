@@ -33,5 +33,6 @@ internal object AppImageLoaderInitializer {
             }
             .build()
         Coil.setImageLoader(imageLoader)
+        ImageMemoryCacheTrimmer({ imageLoader.memoryCache }).register(app)
     }
 }
