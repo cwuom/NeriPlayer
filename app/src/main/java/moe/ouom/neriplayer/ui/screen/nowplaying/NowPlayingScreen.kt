@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.screen.nowplaying
  * Updated: 2026/3/23
  */
 
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -159,7 +162,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
-import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
+import moe.ouom.neriplayer.ui.component.playback.NeriPlayPauseButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsScreen
 import moe.ouom.neriplayer.ui.screen.lyrics.isSystemPowerSaveMode
@@ -1296,11 +1299,11 @@ fun NowPlayingScreen(
                                                     (controlsLayout.secondaryButtonSize.value /
                                                             secondaryControlButtonSize.value)
                                             ).coerceAtLeast(18.dp)
-                                    val primaryIconSize = (
-                                            nowPlayingMainControlIconSize *
-                                                    (controlsLayout.primaryButtonSize.value /
-                                                            primaryControlButtonSize.value)
-                                            ).coerceAtLeast(18.dp)
+                                    // Clean 的上一首/下一首也没有底座, 字形放大一档与主键呼应
+                                    val skipIconSize = if (NeriDesign.isClean) secondaryIconSize * 1.25f else secondaryIconSize
+                                    // 主键按自身尺寸给字形, Clean 没有底座所以字形更大
+                                    val primaryIconSize = (controlsLayout.primaryButtonSize *
+                                            nowPlayingPrimaryGlyphRatio(NeriDesign.isClean)).coerceAtLeast(20.dp)
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(controlsLayout.spacing),
                                         verticalAlignment = Alignment.CenterVertically
@@ -1335,13 +1338,14 @@ fun NowPlayingScreen(
                                                 .size(controlsLayout.secondaryButtonSize)
                                         ) {
                                             Icon(
-                                                Icons.Outlined.SkipPrevious,
+                                                if (NeriDesign.isClean) Icons.Rounded.SkipPrevious else Icons.Outlined.SkipPrevious,
                                                 contentDescription = stringResource(CoreCommonR.string.player_previous),
-                                                modifier = Modifier.size(secondaryIconSize)
+                                                modifier = Modifier.size(skipIconSize)
                                             )
                                         }
 
-                                        HapticFilledIconButton(
+                                        NeriPlayPauseButton(
+                                            isPlaying = isPlaybackControlPlaying,
                                             onClick = { playbackSource.togglePlayPause() },
                                             enabled = !usbPlaybackPreparing && lanControls.permissions.playPause,
                                             modifier = Modifier
@@ -1364,7 +1368,8 @@ fun NowPlayingScreen(
                                                 restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
                                                 waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
                                                 modifier = Modifier.size(primaryIconSize),
-                                                progressIndicatorSize = primaryIconSize
+                                                progressIndicatorSize = nowPlayingWaitingIndicatorSize(controlsLayout.primaryButtonSize),
+                                                iconSize = primaryIconSize
                                             )
                                         }
 
@@ -1382,9 +1387,9 @@ fun NowPlayingScreen(
                                                 .size(controlsLayout.secondaryButtonSize)
                                         ) {
                                             Icon(
-                                                Icons.Outlined.SkipNext,
+                                                if (NeriDesign.isClean) Icons.Rounded.SkipNext else Icons.Outlined.SkipNext,
                                                 contentDescription = stringResource(CoreCommonR.string.player_next),
-                                                modifier = Modifier.size(secondaryIconSize)
+                                                modifier = Modifier.size(skipIconSize)
                                             )
                                         }
 

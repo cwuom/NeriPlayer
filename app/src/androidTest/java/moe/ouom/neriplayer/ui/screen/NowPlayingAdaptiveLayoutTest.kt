@@ -127,11 +127,9 @@ class NowPlayingAdaptiveLayoutTest {
         assertTrue(lyrics.left > player.right)
         assertTrue(lyrics.width > player.width)
         assertEquals(frame.height, lyrics.height, 1f)
-        assertControlsFit(frame)
-        assertTrue(bounds("controls").bottom < bounds("toolbar").top - logicalPixels(24.dp))
+        assertExpandedTabletOrder()
         assertTrue(bounds("cover").top >= bounds("topBar").bottom + logicalPixels(8.dp) - 1f)
-        assertTrue(bounds("identity").top >= bounds("cover").bottom + logicalPixels(8.dp) - 1f)
-        assertTrue("封面应更突出: ${bounds("cover")}", bounds("cover").width >= logicalPixels(378.dp) - 1f)
+        assertTrue("封面应更突出: ${bounds("cover")}", bounds("cover").width >= logicalPixels(400.dp) - 1f)
         assertSquareCover()
     }
 
@@ -142,9 +140,8 @@ class NowPlayingAdaptiveLayoutTest {
         val frame = bounds("viewport")
         val player = bounds("nowPlayingPlayerPane")
         val lyrics = bounds("nowPlayingLyricPane")
-        assertControlsFit(frame)
-        assertTrue(bounds("cover").width >= logicalPixels(220.dp) - 1f)
-        assertTrue(bounds("controls").bottom < bounds("toolbar").top - logicalPixels(24.dp))
+        assertExpandedTabletOrder()
+        assertTrue(bounds("cover").width >= logicalPixels(260.dp) - 1f)
         assertTrue(lyrics.width > player.width)
         assertEquals(frame.height, lyrics.height, 1f)
         assertSquareCover()
@@ -154,20 +151,14 @@ class NowPlayingAdaptiveLayoutTest {
     fun tablet1280x800_bottomControlsStayNextToTheToolbar() {
         renderLayout(1280.dp, 800.dp, NowPlayingControlPlacement.BOTTOM)
 
-        assertControlsFit(bounds("viewport"))
-        assertTrue(bounds("controls").top > bounds("progress").bottom + logicalPixels(24.dp))
-        assertEquals(logicalPixels(8.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
+        assertExpandedTabletOrder()
     }
 
     @Test
     fun tablet1280x800_bottomProgressMovesWithControls() {
         renderLayout(1280.dp, 800.dp, NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS)
 
-        assertControlsFit(bounds("viewport"))
-        assertTrue(bounds("progress").top > bounds("identity").bottom + logicalPixels(24.dp))
-        assertEquals(logicalPixels(12.dp), bounds("controls").top - bounds("progress").bottom, 1f)
-        assertTrue("进度区应为底部控件保留空间: ${bounds("progress")}",
-            bounds("progress").top - bounds("viewport").top <= logicalPixels(564.dp))
+        assertExpandedTabletOrder()
     }
 
     @Test
@@ -291,7 +282,7 @@ class NowPlayingAdaptiveLayoutTest {
     fun expandedTabletCoverLeavesBalancedSpaceInsideThePlayerPane() {
         renderLayout(1280.dp, 900.dp, NowPlayingControlPlacement.LOWER)
 
-        assertTabletCoverInsets(0.78f)
+        assertTabletCoverInsets(0.88f)
     }
 
     @Test
@@ -465,6 +456,17 @@ class NowPlayingAdaptiveLayoutTest {
     private fun assertSquareCover() {
         val cover = bounds("cover")
         assertEquals(cover.width, cover.height, 1f)
+    }
+
+    /** 宽松横屏平板左栏自上而下: 封面, 歌名, 进度, 播放键, 工具栏 */
+    private fun assertExpandedTabletOrder() {
+        val frame = bounds("viewport")
+        assertControlsFit(frame)
+        assertTrue("歌名应紧贴封面下方", bounds("identity").top >= bounds("cover").bottom - 1f)
+        assertEquals(logicalPixels(6.dp), bounds("progress").top - bounds("identity").bottom, 1f)
+        assertTrue("播放键应在进度下方", bounds("controls").top >= bounds("progress").bottom - 1f)
+        assertEquals(logicalPixels(2.dp), bounds("toolbar").top - bounds("controls").bottom, 1f)
+        assertTrue(bounds("toolbar").bottom <= frame.bottom + 1f)
     }
 
     private fun assertTabletCoverInsets(maximumWidthFraction: Float) {

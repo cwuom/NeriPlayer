@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,10 +41,12 @@ internal val NowPlayingTabletPortraitContentMaxWidth = 560.dp
 private val NowPlayingTabletImmersiveFixedContentReserve = 420.dp
 private val NowPlayingTabletImmersiveMinContentWidth = 360.dp
 internal val NowPlayingTabletImmersiveToolbarSpacing = 16.dp
-private val NowPlayingExpandedCoverIdentitySpacing = 20.dp
+private val NowPlayingExpandedSectionGap = 6.dp
+private val NowPlayingExpandedToolbarGap = 2.dp
+private val NowPlayingExpandedBottomGap = 8.dp
 private const val NOW_PLAYING_EXPANDED_CONTROLS_SPACER_WEIGHT = 0.12f
 private const val NOW_PLAYING_TABLET_LANDSCAPE_COVER_WIDTH_FRACTION = 0.72f
-private const val NOW_PLAYING_EXPANDED_TABLET_COVER_WIDTH_FRACTION = 0.78f
+private const val NOW_PLAYING_EXPANDED_TABLET_COVER_WIDTH_FRACTION = 0.88f
 
 internal fun isNowPlayingPhoneLandscape(
     isLandscape: Boolean,
@@ -94,12 +97,20 @@ internal fun resolveNowPlayingControlBaseSizes(
     compactWideLayout: Boolean,
     compactPortrait: Boolean
 ): NowPlayingControlBaseSizes = when {
-    phoneLandscape -> NowPlayingControlBaseSizes(36.dp, 40.dp, 12.dp, 20.dp)
-    wideLandscape && compactWideLayout -> NowPlayingControlBaseSizes(42.dp, 46.dp, 18.dp, 24.dp)
-    wideLandscape -> NowPlayingControlBaseSizes(46.dp, 50.dp, 22.dp, 24.dp)
-    compactPortrait -> NowPlayingControlBaseSizes(42.dp, 42.dp, 12.dp, 24.dp)
-    else -> NowPlayingControlBaseSizes(42.dp, 42.dp, 20.dp, 24.dp)
+    phoneLandscape -> NowPlayingControlBaseSizes(36.dp, 44.dp, 12.dp, 20.dp)
+    wideLandscape && compactWideLayout -> NowPlayingControlBaseSizes(42.dp, 52.dp, 18.dp, 24.dp)
+    wideLandscape -> NowPlayingControlBaseSizes(46.dp, 56.dp, 22.dp, 24.dp)
+    compactPortrait -> NowPlayingControlBaseSizes(42.dp, 52.dp, 12.dp, 24.dp)
+    // 主键明显大于两侧按钮, 一眼能找到播放/暂停
+    else -> NowPlayingControlBaseSizes(42.dp, 56.dp, 18.dp, 24.dp)
 }
+
+/** Glyph-to-button ratio of the primary transport key; Clean has no container so the glyph fills more */
+internal fun nowPlayingPrimaryGlyphRatio(clean: Boolean): Float = if (clean) 0.72f else 0.42f
+
+/** 缓冲圈是细线, 跟着放大的字形一起放大会显得笨重, 按主键尺寸取一个收敛的大小 */
+internal fun nowPlayingWaitingIndicatorSize(primaryButtonSize: Dp): Dp =
+    (primaryButtonSize * 0.36f).coerceIn(18.dp, 26.dp)
 
 internal data class NowPlayingWideLayoutSpec(
     val compactHeight: Boolean,
@@ -357,8 +368,9 @@ private fun NowPlayingTabletLandscape(
             spec, placement, topBar, cover, tabletIdentity, tabletProgress, tabletControls, tabletToolbar, lyrics
         )
     } else {
+        // 宽松横屏按紧凑间距顺排, 不再用偏移挪位置
         NowPlayingExpandedLandscape(
-            spec, placement, topBar, cover, tabletIdentity, tabletProgress, tabletControls, tabletToolbar, lyrics
+            spec, placement, topBar, cover, identity, progress, controls, toolbar, lyrics
         )
     }
 }
@@ -385,19 +397,27 @@ private fun NowPlayingExpandedLandscape(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             topBar()
+            // 两侧等宽内边距限宽, 只在封面盒内居中一次, 避免两次取整让左右留白差出像素
             cover(
-                Modifier.width(spec.playerPaneWidth * NOW_PLAYING_EXPANDED_TABLET_COVER_WIDTH_FRACTION)
-                    .weight(1f).padding(vertical = spec.coverVerticalPadding)
+                Modifier.fillMaxWidth()
+                    .padding(
+                        horizontal = spec.playerPaneWidth *
+                            ((1f - NOW_PLAYING_EXPANDED_TABLET_COVER_WIDTH_FRACTION) / 2f),
+                        vertical = spec.coverVerticalPadding
+                    )
+                    .weight(1f)
             )
-            Spacer(Modifier.height(NowPlayingExpandedCoverIdentitySpacing))
+            // 封面吃掉剩余高度, 下方固定为歌名, 进度, 播放键, 工具栏的紧凑顺序;
+            // 封面权重已把这组控件压到底部, 置底偏好在这里不再需要额外空白
+            // 封面自带上下留白, 进度下方的音频信息行也自带高度, 这两处不再叠加间距
             identity(false)
-            Spacer(Modifier.height(spec.sectionSpacing))
-            NowPlayingWideControlSection(placement.leading, progress, controls)
-            // 封面多分到一些高度，同时保留 LOWER 与置底控件之间的空白差别
-            Spacer(Modifier.weight(NOW_PLAYING_EXPANDED_CONTROLS_SPACER_WEIGHT))
-            NowPlayingWideControlSection(placement.trailing, progress, controls)
-            Spacer(Modifier.height(spec.sectionSpacing))
+            Spacer(Modifier.height(NowPlayingExpandedSectionGap))
+            progress()
+            Spacer(Modifier.height(NowPlayingExpandedSectionGap))
+            controls()
+            Spacer(Modifier.height(NowPlayingExpandedToolbarGap))
             toolbar(false)
+            Spacer(Modifier.height(NowPlayingExpandedBottomGap))
         }
         NowPlayingWideLyricPane(
             compactHeight = false,

@@ -136,7 +136,7 @@ private fun EditSongSearchInput(
         placeholder = { Text(stringResource(CoreCommonR.string.music_auto_fill_custom_title_hint)) },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+        shape = neriSearchFieldShape(),
         colors = neriSearchFieldColors(),
         trailingIcon = {
             HapticIconButton(onClick = onSearch, enabled = searchEnabled) {

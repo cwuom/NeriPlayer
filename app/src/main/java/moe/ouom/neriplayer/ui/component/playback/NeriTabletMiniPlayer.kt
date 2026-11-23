@@ -338,17 +338,16 @@ private fun TabletMiniPlayerProgress(controls: MiniPlayerTabletControls) {
                 )
             }
     ) {
-        val strokeWidth = NeriMiniPlayerDefaults.TabletProgressThickness.toPx().coerceAtMost(size.height)
-        val y = size.height / 2f
+        // 进度线贴住迷你播放器顶边, 下方剩余高度只作触控区; 拖动时向下加粗代替圆点, 避免圆点被顶边裁半
+        val thickness = if (preview != null) {
+            NeriMiniPlayerDefaults.TabletProgressDragThickness
+        } else {
+            NeriMiniPlayerDefaults.TabletProgressThickness
+        }
+        val strokeWidth = thickness.toPx().coerceAtMost(size.height)
+        val y = strokeWidth / 2f
         val x = progress * size.width
-        val radius = minOf(
-            if (preview != null) 5.dp.toPx() else 3.dp.toPx(),
-            size.width / 2f,
-            size.height / 2f
-        )
-        val thumbX = x.coerceIn(radius, size.width - radius)
         drawLine(track, Offset(0f, y), Offset(size.width, y), strokeWidth, StrokeCap.Butt)
         drawLine(color, Offset(0f, y), Offset(x, y), strokeWidth, StrokeCap.Butt)
-        drawCircle(color, radius, Offset(thumbX, y))
     }
 }

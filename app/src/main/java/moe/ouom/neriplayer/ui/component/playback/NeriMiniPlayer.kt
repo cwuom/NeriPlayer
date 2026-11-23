@@ -129,7 +129,8 @@ object NeriMiniPlayerDefaults {
     val Height = 64.dp
     val TabletHeight = 80.dp
     internal val TabletProgressHeight = 12.dp
-    internal val TabletProgressThickness = 4.dp
+    internal val TabletProgressThickness = 3.dp
+    internal val TabletProgressDragThickness = 6.dp
     internal val TabletMetadataVerticalPadding = 2.dp
     internal val ContentVerticalPadding = 8.dp
     internal val ContentHorizontalPadding = 12.dp
@@ -872,7 +873,10 @@ fun NeriMiniPlayer(
             alpha = if (LocalHasCustomBackground.current) 0.72f else 1f
         )
     } else {
-        MaterialTheme.colorScheme.secondaryContainer
+        // 背景图模式与底栏一样半透明, 不再压出一块实色
+        MaterialTheme.colorScheme.secondaryContainer.copy(
+            alpha = if (LocalHasCustomBackground.current) 0.82f else 1f
+        )
     }
     SideEffect { sharedCoverFlight?.miniPlayerContainerColor = capsuleColor }
     val enhancedEffects = NeriDesign.tokens.enhancedEffects

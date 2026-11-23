@@ -506,6 +506,49 @@ private fun NowPlayingProgressRow(
     lyricSeekHaptic: LyricSeekHapticFeedback,
     modifier: Modifier
 ) {
+    if (NeriDesign.isClean) {
+        // Clean: 进度条占满整行, 时间收到下方两端, 拖动时已播放时间跟随强调
+        Column(modifier = modifier) {
+            NowPlayingSeekSlider(
+                owner = owner,
+                currentPosition = currentPosition,
+                effectivePreviewPositionMs = effectivePreviewPositionMs,
+                durationMs = durationMs,
+                songKey = songKey,
+                isPlaying = isPlaying,
+                isPlaybackWaiting = isPlaybackWaiting,
+                delayedPlaybackWaiting = delayedPlaybackWaiting,
+                playbackSpeed = playbackSpeed,
+                seekEnabled = seekEnabled,
+                activeContentColor = activeContentColor,
+                lyricSeekHaptic = lyricSeekHaptic,
+                modifier = Modifier.fillMaxWidth().height(CleanProgressTouchHeight)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().offset(y = (-6).dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                val timeStyle = MaterialTheme.typography.labelMedium.copy(
+                    fontFeatureSettings = "tnum"
+                )
+                Text(
+                    text = formatDuration(effectivePreviewPositionMs),
+                    style = timeStyle,
+                    color = if (owner.isDragging) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                Text(
+                    text = "-" + formatDuration((durationMs - effectivePreviewPositionMs).coerceAtLeast(0L)),
+                    style = timeStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        return
+    }
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -513,7 +556,7 @@ private fun NowPlayingProgressRow(
     ) {
         Text(
             text = formatDuration(effectivePreviewPositionMs),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         NowPlayingSeekSlider(
@@ -533,11 +576,13 @@ private fun NowPlayingProgressRow(
         )
         Text(
             text = formatDuration(durationMs),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
+
+private val CleanProgressTouchHeight = 32.dp
 
 internal fun nowPlayingProgressFraction(positionMs: Long, durationMs: Long): Float =
     if (durationMs > 0) positionMs.toFloat() / durationMs else 0f

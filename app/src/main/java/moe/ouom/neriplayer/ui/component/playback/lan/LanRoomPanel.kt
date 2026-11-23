@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.ui.component.playback.ListenTogetherPanel
 import moe.ouom.neriplayer.ui.component.playback.ListenTogetherPageTransition
 import moe.ouom.neriplayer.ui.component.playback.ListenTogetherTab
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSheetTextField
+import moe.ouom.neriplayer.ui.theme.neriOutlinedButtonBorder
 
 @Composable
 internal fun LanRoomEntry(showDescription: Boolean = false) {
@@ -51,10 +52,10 @@ internal fun LanRoomEntry(showDescription: Boolean = false) {
 internal fun LanRoomEntryActions(active: Boolean, onCreate: () -> Unit, onJoin: () -> Unit, onManage: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (active) {
-            OutlinedButton(onClick = onManage, modifier = Modifier.weight(1f)) { Text(stringResource(CoreR.string.lan_manage)) }
+            OutlinedButton(border = neriOutlinedButtonBorder(), onClick = onManage, modifier = Modifier.weight(1f)) { Text(stringResource(CoreR.string.lan_manage)) }
         } else {
-            OutlinedButton(onClick = onCreate, modifier = Modifier.weight(1f)) { Text(stringResource(CoreR.string.lan_create)) }
-            OutlinedButton(onClick = onJoin, modifier = Modifier.weight(1f)) { Text(stringResource(CoreR.string.lan_join_room)) }
+            OutlinedButton(border = neriOutlinedButtonBorder(), onClick = onCreate, modifier = Modifier.weight(1f)) { Text(stringResource(CoreR.string.lan_create)) }
+            OutlinedButton(border = neriOutlinedButtonBorder(), onClick = onJoin, modifier = Modifier.weight(1f)) { Text(stringResource(CoreR.string.lan_join_room)) }
         }
     }
 }
@@ -95,7 +96,7 @@ private fun JoinControls(manager: LanSessionManager) {
         placeholder = "192.168.1.2:39001",
         modifier = Modifier.fillMaxWidth()
     )
-    OutlinedButton(onClick = { manager.join(address.trim(), null, name) }, enabled = address.isNotBlank() && name.isNotBlank()) { Text(stringResource(CoreR.string.lan_manual)) }
+    OutlinedButton(onClick = { manager.join(address.trim(), null, name) }, enabled = address.isNotBlank() && name.isNotBlank(), border = neriOutlinedButtonBorder(address.isNotBlank() && name.isNotBlank())) { Text(stringResource(CoreR.string.lan_manual)) }
 }
 @Composable
 private fun RoomControls(manager: LanSessionManager, state: LanSessionState, onDeviceVolume: () -> Unit) {
@@ -117,7 +118,7 @@ private fun RoomControls(manager: LanSessionManager, state: LanSessionState, onD
             enabled = lanPlaybackControls(state).playPause || (state.synced && state.audioSuspended && room?.playback?.playing == true)) {
             Text(stringResource(if (pauseRoom) CoreR.string.lan_pause else CoreR.string.lan_play))
         }
-        OutlinedButton(onClick = manager::sync, enabled = state.synced) { Text(stringResource(CoreR.string.lan_sync)) }
+        OutlinedButton(onClick = manager::sync, enabled = state.synced, border = neriOutlinedButtonBorder(state.synced)) { Text(stringResource(CoreR.string.lan_sync)) }
     }
     if (room != null) {
         Text(stringResource(CoreR.string.lan_volume))
@@ -128,7 +129,7 @@ private fun RoomControls(manager: LanSessionManager, state: LanSessionState, onD
             Text(stringResource(CoreR.string.lan_permissions))
             LanPermissionsRow(room.permissions, manager::setPermissions)
         }
-        OutlinedButton(onClick = onDeviceVolume, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(border = neriOutlinedButtonBorder(), onClick = onDeviceVolume, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.AutoMirrored.Outlined.VolumeUp, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text(stringResource(CoreR.string.lan_device_volume), modifier = Modifier.weight(1f))

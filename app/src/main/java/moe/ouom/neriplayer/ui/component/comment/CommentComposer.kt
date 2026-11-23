@@ -98,7 +98,7 @@ internal fun CommentComposer(
                 onValueChange = onDraft,
                 modifier = Modifier.weight(1f).focusRequester(focusRequester).testTag("comment-draft"),
                 enabled = !ui.isSending,
-                shape = neriSearchFieldShape(MaterialTheme.shapes.extraLarge),
+                shape = neriSearchFieldShape(),
                 colors = neriSearchFieldColors(),
                 placeholder = {
                     Text(stringResource(AppR.string.comment_write_hint),
