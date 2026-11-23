@@ -197,7 +197,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingSyncedLyricPlayb
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingTrailingControls
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingCoverSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingSyncedLyricContent
-import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingCoverPanelModifier
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingParentSizedCover
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.rememberNowPlayingCoverOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverOwnerKey
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverRequestUrl
@@ -1678,15 +1678,7 @@ fun NowPlayingScreen(
                             }
 
                             // 手机竖屏保留原来的控件顺序和封面歌词
-                            val mainColumnContent: @Composable ColumnScope.() -> Unit = {
-                                coverTopBar()
-                                Spacer(Modifier.height(coverPagePresentation.beforeCoverSpacing))
-                                coverPanel(
-                                    Modifier.nowPlayingCoverPanelModifier(false, this),
-                                    coverPagePresentation.preferredCoverSize
-                                )
-                                portraitLeadingContent()
-
+                            val portraitMiddleContent: @Composable ColumnScope.() -> Unit = {
                                 NowPlayingEmbeddedLyrics(
                                     visible = embeddedLyricsVisible,
                                     content = embeddedLyricContent,
@@ -1697,8 +1689,6 @@ fun NowPlayingScreen(
 
                                 // 置底偏好始终以可用内容区的底部为准
                                 Spacer(modifier = Modifier.weight(1f))
-
-                                portraitTrailingContent()
                             }
 
                             if (useWideLandscapeLayout) {
@@ -1795,10 +1785,14 @@ fun NowPlayingScreen(
                                     immersiveLayout(contentModifier)
                                 }
                             } else {
-                                Column(
+                                NowPlayingPhonePortraitLayout(
                                     modifier = contentModifier,
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    content = mainColumnContent
+                                    beforeCoverSpacing = coverPagePresentation.beforeCoverSpacing,
+                                    topBar = coverTopBar,
+                                    cover = { coverPanel(Modifier, NowPlayingParentSizedCover) },
+                                    leadingContent = portraitLeadingContent,
+                                    middleContent = portraitMiddleContent,
+                                    trailingContent = portraitTrailingContent
                                 )
                             }
 
