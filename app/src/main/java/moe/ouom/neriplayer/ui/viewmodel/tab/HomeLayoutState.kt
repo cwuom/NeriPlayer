@@ -25,6 +25,8 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongCardColumns
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionDisplayMode
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
 
 /**
@@ -37,5 +39,9 @@ data class HomeLayoutState(
     val radarOrder: List<String> = HomeRadarSubSectionIds.DEFAULT_ORDER,
     val radarHidden: Set<String> = emptySet(),
     val recommendedOrder: List<String> = HomeRecommendedSubSectionIds.DEFAULT_ORDER,
-    val recommendedHidden: Set<String> = emptySet()
+    val recommendedHidden: Set<String> = emptySet(),
+    /** 歌曲类小模块的展示模式（默认列表 / 榜单卡片）。 */
+    val songSectionModes: Map<String, HomeSongSectionDisplayMode> = emptyMap(),
+    /** 榜单卡片并排数量（1 / 2 / 3）。 */
+    val songCardColumns: Int = HomeSongCardColumns.DEFAULT
 )

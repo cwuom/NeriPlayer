@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicHotVideo
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongCardColumns
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
 import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankPeriod
 import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankSong
@@ -106,6 +107,9 @@ class HomeBilibiliInternationalizationTest {
             MutableStateFlow(HomeRecommendedSubSectionIds.DEFAULT_ORDER)
         )
         `when`(settingsRepo.homeRecommendedHiddenFlow).thenReturn(MutableStateFlow(emptySet<String>()))
+        // 歌曲小模块展示模式与卡片列数：默认全部列表形态、2 列
+        `when`(settingsRepo.homeSongSectionModesFlow).thenReturn(MutableStateFlow(emptyMap()))
+        `when`(settingsRepo.homeSongCardColumnsFlow).thenReturn(MutableStateFlow(HomeSongCardColumns.DEFAULT))
         val youtubeAuthRepo = mock(YouTubeAuthRepository::class.java)
         `when`(youtubeAuthRepo.getAuthOnce()).thenReturn(YouTubeAuthBundle())
         `when`(youtubeAuthRepo.authFlow).thenReturn(MutableStateFlow(YouTubeAuthBundle()))

@@ -81,29 +81,44 @@ internal fun <T> HomeReorderableColumn(
 
 /**
  * 拖拽手柄。
+ *
+ * [nested] 为 true 时表示这是大模块内部的子模块手柄：用主题色和更小的
+ * 尺寸与顶层模块手柄区分，避免两级手柄在视觉上混为一体。
+ * 子模块手柄还收紧了按钮内边距，否则 48dp 的默认触摸区会让图标与标题之间
+ * 留出过大的空隙。
  */
 @Composable
 internal fun ReorderableListItemScope.HomeReorderHandleIcon(
     title: String,
     items: List<String>,
     index: Int,
-    onReorder: (List<String>) -> Unit
+    onReorder: (List<String>) -> Unit,
+    nested: Boolean = false
 ) {
     val haptics = LocalHapticFeedback.current
     var expanded by remember(title) { mutableStateOf(false) }
+    val tint = if (nested) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val iconSize = if (nested) 16.dp else 20.dp
+    val buttonSize = if (nested) 32.dp else 48.dp
     Box {
         IconButton(
             onClick = { expanded = true },
-            modifier = Modifier.draggableHandle(
-                dragGestureDetector = DragGestureDetector.LongPress,
-                onDragStarted = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
-            )
+            modifier = Modifier
+                .size(buttonSize)
+                .draggableHandle(
+                    dragGestureDetector = DragGestureDetector.LongPress,
+                    onDragStarted = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+                )
         ) {
             Icon(
                 imageVector = Icons.Filled.DragHandle,
                 contentDescription = stringResource(CoreCommonR.string.home_reorder_section, title),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
+                tint = tint,
+                modifier = Modifier.size(iconSize)
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {

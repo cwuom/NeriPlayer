@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.settings.route
 
+import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
@@ -102,6 +103,14 @@ internal data class AppMobileAudioQualitySettingsState(
     val mobileDataBiliAudioQuality: String
 )
 
+/**
+ * 首页卡片设置页的状态快照。
+ *
+ * 标注 [Immutable] 是为了让 Compose 的重启作用域把它当作稳定类型：
+ * 未标注时 `Map` 字段会让编译器认为该类型不稳定，从而在每个 Composable
+ * 的重启作用域里多生成一次 `changedInstance` 检查，抬高圈复杂度。
+ */
+@Immutable
 internal data class AppHomeCardsSettingsState(
     val showHomeContinueCard: Boolean,
     val showHomeTrendingCard: Boolean,
@@ -114,7 +123,11 @@ internal data class AppHomeCardsSettingsState(
     val radarOrder: List<String> = moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds.DEFAULT_ORDER,
     val radarHidden: Set<String> = emptySet(),
     val recommendedOrder: List<String> = moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds.DEFAULT_ORDER,
-    val recommendedHidden: Set<String> = emptySet()
+    val recommendedHidden: Set<String> = emptySet(),
+    /** 歌曲类小模块的展示模式（默认列表 / 榜单卡片）。 */
+    val songSectionModes: Map<String, moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionDisplayMode> = emptyMap(),
+    /** 榜单卡片并排数量（1 / 2 / 3）。 */
+    val songCardColumns: Int = moe.ouom.neriplayer.data.model.settings.home.HomeSongCardColumns.DEFAULT
 )
 
 internal data class AppStorageSettingsState(
@@ -345,12 +358,17 @@ private fun homeCardsSettingsFlow(repo: SettingsRepository): Flow<AppHomeCardsSe
         repo.homeRecommendedOrderFlow,
         repo.homeRecommendedHiddenFlow
     ) { order, hidden -> order to hidden }
+    val songCardFlows = combine(
+        repo.homeSongSectionModesFlow,
+        repo.homeSongCardColumnsFlow
+    ) { modes, columns -> modes to columns }
     return combine(
         majorFlows,
         trendingFlows,
         radarFlows,
-        recommendedFlows
-    ) { major, trending, radar, recommended ->
+        recommendedFlows,
+        songCardFlows
+    ) { major, trending, radar, recommended, songCards ->
         AppHomeCardsSettingsState(
             showHomeContinueCard = major.continueEnabled,
             showHomeTrendingCard = major.trending,
@@ -363,7 +381,9 @@ private fun homeCardsSettingsFlow(repo: SettingsRepository): Flow<AppHomeCardsSe
             radarOrder = radar.first,
             radarHidden = radar.second,
             recommendedOrder = recommended.first,
-            recommendedHidden = recommended.second
+            recommendedHidden = recommended.second,
+            songSectionModes = songCards.first,
+            songCardColumns = songCards.second
         )
     }
 }

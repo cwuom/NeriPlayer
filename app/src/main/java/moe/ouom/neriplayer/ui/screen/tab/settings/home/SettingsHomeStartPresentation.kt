@@ -2,12 +2,14 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.home
 
 import android.content.res.Resources
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R as AppR
 
 /**
  * 设置页首页卡片区需要的文案。
  */
+@Immutable
 internal data class SettingsHomeCardCopy(
     val trendingLabelRes: Int,
     val radarLabelRes: Int,

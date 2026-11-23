@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.IntOffset
@@ -588,12 +589,32 @@ private fun CleanSettingsSlider(
     )
 }
 
+/**
+ * 分段选择器。
+ *
+ * [fillWidth] 为 true 时铺满可用宽度，用于独占一行的场景；
+ * 为 false 时宽度由 [modifier] 决定（通常配合 `width` 给一个确定值），
+ * 便于与其他控件排在同一行。
+ *
+ * [unselectedContentColor] 为 null 时未选中项使用默认的 `onSurfaceVariant`。
+ *
+ * [contentPadding] 是控件内部留白。控件变窄时用它压缩留白，
+ * 否则固定 4dp 的内边距会把标签挤到放不下。
+ *
+ * [labelStyle] 是标签文字样式。控件变矮时用它调小字号，
+ * 否则文字会撑出控件边界。
+ */
 @Composable
 internal fun MiuixSettingsSegmentedTabs(
     labels: List<String>,
     selectedIndex: Int,
     onSelectedIndexChange: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fillWidth: Boolean = true,
+    unselectedContentColor: Color? = null,
+    height: Dp = 48.dp,
+    contentPadding: Dp = 4.dp,
+    labelStyle: TextStyle = MaterialTheme.typography.labelLarge
 ) {
     if (labels.isEmpty()) {
         return
@@ -603,11 +624,11 @@ internal fun MiuixSettingsSegmentedTabs(
 
     BoxWithConstraints(
         modifier = modifier
-            .fillMaxWidth()
+            .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
             .clip(MiuixControlShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .height(48.dp)
-            .padding(4.dp)
+            .height(height)
+            .padding(contentPadding)
     ) {
         val tabWidth = maxWidth / labels.size.toFloat()
         val indicatorOffset by animateDpAsState(
@@ -635,7 +656,7 @@ internal fun MiuixSettingsSegmentedTabs(
                     targetValue = if (selected) {
                         MaterialTheme.colorScheme.onPrimary
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        unselectedContentColor ?: MaterialTheme.colorScheme.onSurfaceVariant
                     },
                     animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
                     label = "miuix_segmented_tab_content"
@@ -643,7 +664,7 @@ internal fun MiuixSettingsSegmentedTabs(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(40.dp)
+                        .fillMaxHeight()
                         .clip(MiuixInnerShape)
                         .clickable {
                             if (!selected) {
@@ -654,7 +675,11 @@ internal fun MiuixSettingsSegmentedTabs(
                     contentAlignment = Alignment.Center
                 ) {
                     CompositionLocalProvider(LocalContentColor provides contentColor) {
-                        Text(text = label, style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            text = label,
+                            style = labelStyle,
+                            maxLines = 1
+                        )
                     }
                 }
             }

@@ -45,6 +45,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -214,6 +215,20 @@ internal fun MiuixSettingsHomeScaffold(
         }
     }
 }
+
+/**
+ * 设置页的搜索高亮状态。
+ *
+ * 把「目标 id」「脉冲计数」「结束回调」三个值收在一个对象里，
+ * 这样把它传给 Composable 时只需要一个参数：Compose 编译器会为每个参数
+ * 在重启作用域里生成一次 `changed` 检查，参数越少，圈复杂度越低。
+ */
+@Immutable
+internal class SettingsHighlightState(
+    val targetId: String?,
+    val pulse: Int,
+    val onFinished: (() -> Unit)?
+)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

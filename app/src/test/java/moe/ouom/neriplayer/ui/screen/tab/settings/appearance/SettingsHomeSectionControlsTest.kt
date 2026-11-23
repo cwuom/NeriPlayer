@@ -7,12 +7,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -25,12 +27,15 @@ import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsHomeCardCopy
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHighlightState
 import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.settings.route.AppHomeSettingsActions
 import moe.ouom.neriplayer.ui.theme.NeriTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -135,6 +140,39 @@ class SettingsHomeSectionControlsTest {
         }
     }
 
+    @Test
+    fun songSectionModeTargetExpandsTheGroupsThatOwnSongSubSections() {
+        val groups = setOf(HomeMajorSectionIds.RADAR, HomeMajorSectionIds.TRENDING)
+        assertEquals(
+            groups,
+            homeSectionGroupsToExpand("setting:home_song_section_mode", groups)
+        )
+    }
+
+    @Test
+    fun otherTargetsDoNotForceAnyGroupToExpand() {
+        val groups = setOf(HomeMajorSectionIds.RADAR, HomeMajorSectionIds.TRENDING)
+        assertEquals(
+            emptySet<String>(),
+            homeSectionGroupsToExpand("setting:home_song_card_columns", groups)
+        )
+        assertEquals(
+            emptySet<String>(),
+            homeSectionGroupsToExpand(null, groups)
+        )
+    }
+
+    @Test
+    fun searchingSongSectionModeExpandsTheGroupSoTheSelectorIsReachable() {
+        render(initial, highlightTargetId = "setting:home_song_section_mode")
+        composeRule.waitForIdle()
+
+        // 分组默认折叠时形态选择器不在组合里；自动展开后每个歌曲子模块行都会出现。
+        composeRule.onAllNodesWithText(
+            context.getString(CoreCommonR.string.settings_home_song_section_mode_card)
+        ).assertCountEquals(HomeSongSectionIds.ALL.size)
+    }
+
     private fun switch(titleRes: Int) =
         composeRule.onNode(isToggleable() and hasContentDescription(context.getString(titleRes))).performScrollTo()
 
@@ -153,7 +191,11 @@ class SettingsHomeSectionControlsTest {
         composeRule.onNodeWithText(context.getString(directionRes)).performClick()
     }
 
-    private fun render(state: AppHomeCardsSettingsState, international: Boolean = false) {
+    private fun render(
+        state: AppHomeCardsSettingsState,
+        international: Boolean = false,
+        highlightTargetId: String? = null
+    ) {
         composeRule.setContent {
             NeriTheme(
                 followSystemDark = false,
@@ -172,9 +214,11 @@ class SettingsHomeSectionControlsTest {
                         homeStartAvailable = true,
                         state = state,
                         actions = actions,
-                        highlightTargetId = null,
-                        highlightPulse = 0,
-                        onHighlightFinished = null
+                        highlight = SettingsHighlightState(
+                            targetId = highlightTargetId,
+                            pulse = if (highlightTargetId == null) 0 else 1,
+                            onFinished = null
+                        )
                     )
                 }
             }

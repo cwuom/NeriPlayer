@@ -4,12 +4,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DragHandle
@@ -30,6 +34,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -51,7 +57,11 @@ import moe.ouom.neriplayer.data.model.settings.home.mergeVisibleHomeSectionOrder
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongCardColumns
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionDisplayMode
+import moe.ouom.neriplayer.data.model.settings.home.HomeSongSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.homeSongSectionDisplayModeOf
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.settings.SettingsRepository
@@ -65,17 +75,21 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHighlightState
 import moe.ouom.neriplayer.data.model.settings.home.applyHomeSectionOrder
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.SettingsHomeCardCopy
 import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.settings.route.HomeSectionSettingsActions
+import sh.calvin.reorderable.ReorderableColumnScope
 import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.ReorderableListItemScope
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.PlaybackControlLayoutSettings
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -137,19 +151,54 @@ internal fun SettingsPersonalizationStartCard(
 
 private class HomeSectionOrderEditor(val order: List<String>, val reorder: (List<String>) -> Unit)
 
+/**
+ * 首页卡片设置里的子模块共享设置。
+ *
+ * 把「歌曲形态」「形态选择器是否可见」以及高亮状态组合成一个对象，
+ * 避免在 Composable 之间层层透传多个参数：参数越多，Compose 编译器在重启
+ * 作用域里生成的 `changed` 检查就越多，圈复杂度也越高。
+ */
+@Immutable
+private class HomeSubSectionSettings(
+    val songSectionModes: Map<String, HomeSongSectionDisplayMode>,
+    val showSongSectionModeSelector: Boolean,
+    val highlight: SettingsHighlightState
+)
+
+@Immutable
 private class HomeSubSections(defaults: List<String>, order: List<String>, val hidden: Set<String>) {
     private val order = applyHomeSectionOrder(defaults, order, emptySet())
+
+    /** 该分组下可见的子模块 id。 */
+    fun visibleSubSectionIds(): List<String> = order
 
     fun editor(parentId: String, actions: HomeSectionSettingsActions) =
         HomeSectionOrderEditor(order) { actions.reorderSub(parentId, it) }
 }
 
+@Immutable
 private class HomeMajorRow(
     val titleRes: Int,
     val icon: ImageVector,
     val checked: Boolean,
     val children: HomeSubSections? = null
 )
+
+/**
+ * 哪些大模块分组需要展开，才能让高亮目标出现在屏幕上。
+ *
+ * 歌曲小模块的形态选择器挂在子模块行里，而子模块行只在大模块展开后才渲染。
+ * 搜索跳到设置页时分组默认是折叠的，控件根本不存在，也就无从高亮，
+ * 用户还得自己再展开一次。这里按目标 id 反查需要展开的分组。
+ */
+internal fun homeSectionGroupsToExpand(
+    highlightTargetId: String?,
+    songGroupIds: Set<String>
+): Set<String> = when (highlightTargetId) {
+    // 形态选择器在每个歌曲类子模块行上都有，展开所有含歌曲子模块的分组即可。
+    "setting:home_song_section_mode" -> songGroupIds
+    else -> emptySet()
+}
 
 private fun AppHomeCardsSettingsState.homeRows(copy: SettingsHomeCardCopy, international: Boolean) = mapOf(
     HomeMajorSectionIds.CONTINUE to HomeMajorRow(
@@ -188,39 +237,61 @@ internal fun SettingsPersonalizationHomeCard(
     homeStartAvailable: Boolean,
     state: AppHomeCardsSettingsState,
     actions: HomeSectionSettingsActions,
-    highlightTargetId: String?,
-    highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?
+    highlight: SettingsHighlightState
 ) {
+    val highlightTargetId = highlight.targetId
+    val highlightPulse = highlight.pulse
+    val onHighlightFinished = highlight.onFinished
     val rows = state.homeRows(copy, internationalEnabled)
     val editor = state.majorOrderEditor(internationalEnabled, actions)
+    // 榜单卡片是网易云首页小模块的能力，国际模式下这些小模块走 YouTube Music，
+    // 相关控件整体隐藏。
+    val showSongCardControls = !internationalEnabled
+    // 歌曲类小模块分属「私人雷达」与「热力与榜单」两个大模块分组。
+    val songGroupIds = remember(rows) {
+        rows.filterValues { row ->
+            row.children?.visibleSubSectionIds()?.any { it in HomeSongSectionIds.ALL } == true
+        }.keys
+    }
+    // 搜索定位到形态选择器时，先把包含歌曲子模块的分组展开，
+    // 否则控件不在组合里，高亮不会生效。
+    val autoExpandedGroups = remember(highlightTargetId, songGroupIds) {
+        homeSectionGroupsToExpand(highlightTargetId, songGroupIds)
+    }
+    val subSettings = HomeSubSectionSettings(
+        songSectionModes = state.songSectionModes,
+        showSongSectionModeSelector = showSongCardControls,
+        highlight = highlight
+    )
     PersonalizationCardContainer {
         MiuixSettingsSectionIntro(
             title = stringResource(CoreCommonR.string.settings_personalization_home_section),
             description = stringResource(CoreCommonR.string.settings_personalization_home_section_desc)
         )
         HomeReorderableColumn(items = editor.order, onReorder = editor.reorder) { index, id, _ ->
-            val row = rows.getValue(id)
-            val title = stringResource(row.titleRes)
-            var expanded by remember(id) { mutableStateOf(false) }
-            ReorderableItem {
-                SettingsHomeCardSwitch(
-                    title = title,
-                    icon = row.icon,
-                    checked = row.checked,
-                    onCheckedChange = { actions.setMajorVisible(id, it) },
-                    expanded = expanded,
-                    onToggleExpanded = row.children?.let { { expanded = !expanded } },
-                    targetId = "setting:home_card_$id",
-                    highlightTargetId = highlightTargetId,
-                    highlightPulse = highlightPulse,
-                    onHighlightFinished = onHighlightFinished,
-                    leadingExtra = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) }
-                )
-            }
-            if (expanded) {
-                row.children?.let { HomeSubSectionList(id, it, actions) }
-            }
+            HomeMajorSectionItem(
+                id = id,
+                index = index,
+                row = rows.getValue(id),
+                editor = editor,
+                onCheckedChange = { actions.setMajorVisible(id, it) },
+                actions = actions,
+                autoExpanded = id in autoExpandedGroups,
+                subSettings = subSettings
+            )
+        }
+
+        // 国际模式下首页由 YouTube Music 渲染，不读展示模式与卡片列数，
+        // 这两个控件留着只会让人以为改了有用。
+        if (showSongCardControls) {
+            HomeSongCardColumnsSetting(
+                columns = state.songCardColumns,
+                onColumnsChange = { columns -> actions.setSongCardColumns(columns) },
+                targetId = "setting:home_song_card_columns",
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
         }
 
         LazyAnimatedVisibility(visible = !homeStartAvailable) {
@@ -234,9 +305,60 @@ internal fun SettingsPersonalizationHomeCard(
     }
 }
 
+/**
+ * 首页卡片设置里的大模块行。
+ *
+ * 拆成独立 Composable 是为了压低 [SettingsPersonalizationHomeCard] 的圈复杂度：
+ * 行内部的展开状态、拖拽手柄与子模块列表各自成块，父组件只负责组装。
+ *
+ * 必须是 [ReorderableColumnScope] 的扩展：拖拽手柄要在 [ReorderableItem]
+ * 提供的 [ReorderableListItemScope] 里才能生效。
+ */
+@Composable
+private fun ReorderableColumnScope.HomeMajorSectionItem(
+    id: String,
+    index: Int,
+    row: HomeMajorRow,
+    editor: HomeSectionOrderEditor,
+    onCheckedChange: (Boolean) -> Unit,
+    actions: HomeSectionSettingsActions,
+    autoExpanded: Boolean,
+    subSettings: HomeSubSectionSettings
+) {
+    val title = stringResource(row.titleRes)
+    var expanded by remember(id) { mutableStateOf(false) }
+    // 高亮目标在折叠的分组里时自动展开，用户不必再手动点一次。
+    LaunchedEffect(autoExpanded) {
+        if (autoExpanded) expanded = true
+    }
+    ReorderableItem {
+        SettingsHomeCardSwitch(
+            title = title,
+            icon = row.icon,
+            checked = row.checked,
+            onCheckedChange = onCheckedChange,
+            expanded = expanded,
+            onToggleExpanded = row.children?.let { { expanded = !expanded } },
+            targetId = "setting:home_card_$id",
+            highlightTargetId = subSettings.highlight.targetId,
+            highlightPulse = subSettings.highlight.pulse,
+            onHighlightFinished = subSettings.highlight.onFinished,
+            leadingExtra = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) }
+        )
+    }
+    val children = row.children
+    if (expanded && children != null) {
+        HomeSubSectionList(
+            parentId = id,
+            sections = children,
+            actions = actions,
+            subSettings = subSettings
+        )
+    }
+}
+
 private val homeSubSectionTitles = mapOf(
-    HomeTrendingSubSectionIds.TOP_SOARING to CoreCommonR.string.recommend_trending,
-    HomeTrendingSubSectionIds.PERSONALIZED_NEW_SONGS to CoreCommonR.string.home_netease_new_songs,
+    HomeTrendingSubSectionIds.TOP_SOARING to CoreCommonR.string.recommend_trending,    HomeTrendingSubSectionIds.PERSONALIZED_NEW_SONGS to CoreCommonR.string.home_netease_new_songs,
     HomeTrendingSubSectionIds.TOP_HOT to CoreCommonR.string.home_netease_hot_rank,
     HomeTrendingSubSectionIds.TOP_NEW to CoreCommonR.string.home_netease_new_rank,
     HomeRadarSubSectionIds.PERSONAL_RADAR to CoreCommonR.string.recommend_radar,
@@ -251,36 +373,197 @@ private val homeSubSectionTitles = mapOf(
 )
 
 @Composable
-private fun HomeSubSectionList(parentId: String, sections: HomeSubSections, actions: HomeSectionSettingsActions) {
+private fun HomeSubSectionList(
+    parentId: String,
+    sections: HomeSubSections,
+    actions: HomeSectionSettingsActions,
+    subSettings: HomeSubSectionSettings
+) {
     val editor = sections.editor(parentId, actions)
     HomeReorderableColumn(
         items = editor.order,
         onReorder = editor.reorder,
         modifier = Modifier.fillMaxWidth().padding(start = 12.dp)
     ) { index, id, _ ->
-        val visible = id !in sections.hidden
-        val title = stringResource(homeSubSectionTitles.getValue(id))
-        ReorderableItem {
-            ListItem(
-                leadingContent = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) },
-                headlineContent = {
+        HomeSubSectionItem(
+            id = id,
+            index = index,
+            visible = id !in sections.hidden,
+            editor = editor,
+            onVisibleChange = { actions.setSubVisible(parentId, id, it) },
+            actions = actions,
+            subSettings = subSettings
+        )
+    }
+}
+
+/**
+ * 首页卡片设置里的子模块行。
+ *
+ * 拆成独立 Composable 是为了压低 [HomeSubSectionList] 的圈复杂度：
+ * 行的标题、形态选择器与可见性开关各自成块，父组件只负责遍历与排序。
+ *
+ * 必须是 [ReorderableColumnScope] 的扩展：拖拽手柄要在 [ReorderableItem]
+ * 提供的 [ReorderableListItemScope] 里才能生效。
+ */
+@Composable
+private fun ReorderableColumnScope.HomeSubSectionItem(
+    id: String,
+    index: Int,
+    visible: Boolean,
+    editor: HomeSectionOrderEditor,
+    onVisibleChange: (Boolean) -> Unit,
+    actions: HomeSectionSettingsActions,
+    subSettings: HomeSubSectionSettings
+) {
+    val title = stringResource(homeSubSectionTitles.getValue(id))
+    val isSongSection = id in HomeSongSectionIds.ALL
+    ReorderableItem {
+        ListItem(
+            leadingContent = {
+                Box(
+                    // ListItem 的 leadingContent 槽位自带 16dp 左边距，
+                    // 子模块手柄只有 32dp 宽，这段留白会让手柄与标题离得过远，
+                    // 这里左移半个槽位宽度把间距收回来。
+                    modifier = Modifier.offset(x = (-8).dp)
+                ) {
+                    HomeReorderHandleIcon(
+                        title = title,
+                        items = editor.order,
+                        index = index,
+                        onReorder = editor.reorder,
+                        nested = true
+                    )
+                }
+            },
+            headlineContent = {
+                Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Text(
                         text = title,
+                        // 标题必须限制在单行：给定权重后空间不足时中文会被逐字拆行，
+                        // 「私人雷达」会竖着堆叠。这里单行显示，空间不够就省略号。
+                        modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         color = if (visible) MaterialTheme.colorScheme.onSurface
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                },
-                trailingContent = {
-                    MiuixSettingsSwitch(
-                        checked = visible,
-                        onCheckedChange = { actions.setSubVisible(parentId, id, it) },
-                        modifier = Modifier.semantics { contentDescription = title }
-                    )
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    // 歌曲类小模块额外支持「列表 / 卡片」两种展示形态。
+                    if (isSongSection && subSettings.showSongSectionModeSelector) {
+                        HomeSongSectionDisplayModeSelector(
+                            mode = homeSongSectionDisplayModeOf(subSettings.songSectionModes, id),
+                            onModeChange = { actions.setSongSectionMode(id, it) },
+                            targetId = "setting:home_song_section_mode",
+                            highlightTargetId = subSettings.highlight.targetId,
+                            highlightPulse = subSettings.highlight.pulse,
+                            onHighlightFinished = subSettings.highlight.onFinished
+                        )
+                    }
+                }
+            },
+            trailingContent = {
+                MiuixSettingsSwitch(
+                    checked = visible,
+                    onCheckedChange = onVisibleChange,
+                    modifier = Modifier.semantics { contentDescription = title }
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+    }
+}
+
+/**
+ * 歌曲小模块的展示形态选择器。
+ */
+@Composable
+private fun HomeSongSectionDisplayModeSelector(
+    mode: HomeSongSectionDisplayMode,
+    onModeChange: (HomeSongSectionDisplayMode) -> Unit,
+    targetId: String,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
+    val labels = listOf(
+        stringResource(CoreCommonR.string.settings_home_song_section_mode_default),
+        stringResource(CoreCommonR.string.settings_home_song_section_mode_card)
+    )
+    val selectedIndex = if (mode == HomeSongSectionDisplayMode.CARD) 1 else 0
+    MiuixSettingsSegmentedTabs(
+        labels = labels,
+        selectedIndex = selectedIndex,
+        onSelectedIndexChange = { index ->
+            onModeChange(
+                if (index == 1) {
+                    HomeSongSectionDisplayMode.CARD
+                } else {
+                    HomeSongSectionDisplayMode.DEFAULT
+                }
             )
-        }
+        },
+        // 固定宽度而不是自适应：分段控件内部按权重平分标签，
+        // 宽度不确定时标签会被压缩成一个圆角小块。
+        // 宽度压到刚好放下「列表 / 卡片」两个标签，行内空间才够标题单行显示。
+        modifier = Modifier
+            .settingsHighlightTarget(
+                targetId = targetId,
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            .width(88.dp),
+        fillWidth = false,
+        unselectedContentColor = MaterialTheme.colorScheme.primary,
+        height = 28.dp,
+        contentPadding = 2.dp,
+        labelStyle = MaterialTheme.typography.labelMedium
+    )
+}
+
+/**
+ * 榜单卡片的并排数量设置。
+ */
+@Composable
+private fun HomeSongCardColumnsSetting(
+    columns: Int,
+    onColumnsChange: (Int) -> Unit,
+    targetId: String,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
+    val safeColumns = HomeSongCardColumns.normalize(columns)
+    val labels = (HomeSongCardColumns.MIN..HomeSongCardColumns.MAX).map { value ->
+        stringResource(CoreCommonR.string.settings_home_song_card_columns_option, value)
+    }
+    Column(
+        modifier = Modifier
+            .settingsHighlightTarget(
+                targetId = targetId,
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+    ) {
+        Text(
+            text = stringResource(CoreCommonR.string.settings_home_song_card_columns),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        MiuixSettingsSegmentedTabs(
+            labels = labels,
+            selectedIndex = safeColumns - HomeSongCardColumns.MIN,
+            onSelectedIndexChange = { index ->
+                onColumnsChange(index + HomeSongCardColumns.MIN)
+            },
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+        )
     }
 }
 
