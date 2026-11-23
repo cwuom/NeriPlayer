@@ -75,22 +75,29 @@ internal fun PlaybackStatsRhythm(
     var hourly by rememberSaveable { mutableStateOf(false) }
     val showHours = hours.isNotEmpty() && (hourly || weekdays.isEmpty())
     val buckets = if (showHours) hours else weekdays
-    if (buckets.isEmpty() && insights.activeDays == 0L && insights.summary.totalPlayCount == 0L &&
-        insights.earliestListenAt == null) return
+    val showListeningDays = !singleDay && insights.activeDays > 0
+    val showPlayAverage = insights.summary.totalPlayCount > 1 && insights.averageListenMsPerPlay > 0
+    val hasMetrics = showListeningDays || showPlayAverage
+    val firstListen = insights.earliestListenAt.takeUnless { singleDay }
+    if (!hasMetrics && buckets.isEmpty() && firstListen == null) return
     StatsInsightCard(modifier.testTag("statsRhythm")) {
         StatsHeading(stringResource(R.string.stats_rhythm))
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (insights.activeDays > 0L) {
-                RhythmMetric(stringResource(R.string.stats_active_days), statsNumber(insights.activeDays))
-                RhythmMetric(stringResource(R.string.stats_daily_average), statsDuration(insights.averageDailyListenMs))
-            }
-            if (insights.summary.totalPlayCount > 0L) {
-                RhythmMetric(stringResource(R.string.stats_play_average), statsDuration(insights.averageListenMsPerPlay))
+        if (hasMetrics) {
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (showListeningDays) {
+                    RhythmMetric(stringResource(R.string.stats_active_days), statsNumber(insights.activeDays))
+                    if (insights.activeDays > 1 && insights.averageDailyListenMs > 0) {
+                        RhythmMetric(stringResource(R.string.stats_daily_average), statsDuration(insights.averageDailyListenMs))
+                    }
+                }
+                if (showPlayAverage) {
+                    RhythmMetric(stringResource(R.string.stats_play_average), statsDuration(insights.averageListenMsPerPlay))
+                }
             }
         }
         if (buckets.isNotEmpty()) {
-            HorizontalDivider(Modifier.padding(vertical = 4.dp), color = colors.outlineVariant)
+            if (hasMetrics) HorizontalDivider(Modifier.padding(vertical = 4.dp), color = colors.outlineVariant)
             val modes = listOf(stringResource(R.string.stats_weekday_mode), stringResource(R.string.stats_hour_mode))
             if (weekdays.isNotEmpty() && hours.isNotEmpty()) {
                 StatsChoiceTabs(modes, if (showHours) 1 else 0) { hourly = it == 1 }
@@ -115,7 +122,7 @@ internal fun PlaybackStatsRhythm(
             }
             RhythmChart(buckets, labels, axis, hourly = showHours)
         }
-        insights.earliestListenAt?.let { earliest ->
+        firstListen?.let { earliest ->
             val date = remember(earliest, locale) {
                 java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM, locale).format(Date(earliest))
             }

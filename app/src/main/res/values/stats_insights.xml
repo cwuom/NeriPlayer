@@ -11,9 +11,9 @@
     <string name="stats_peak">高峰</string>
     <string name="stats_previous_slot">上一个时段</string>
     <string name="stats_next_slot">下一个时段</string>
-    <string name="stats_active_days">活跃天数</string>
-    <string name="stats_daily_average">活跃日日均</string>
-    <string name="stats_play_average">每次播放平均</string>
+    <string name="stats_active_days">收听天数</string>
+    <string name="stats_daily_average">收听日均时长</string>
+    <string name="stats_play_average">单次平均时长</string>
     <string name="stats_share_label">时长占比</string>
     <string name="stats_exact_duration">%1$d 小时 %2$d 分 %3$d 秒</string>
     <string name="stats_short_hour">%1$d 小时 %2$d 分</string>

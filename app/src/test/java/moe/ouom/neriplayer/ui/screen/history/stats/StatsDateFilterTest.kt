@@ -13,14 +13,22 @@ class StatsDateFilterTest {
     private val monday = DayOfWeek.MONDAY
 
     @Test
-    fun onlyDailyAndExplicitOneDayRangesUseHourlyRhythm() {
+    fun singleDayRhythmFollowsTheLocalDatesCoveredByTheFilter() {
         val day = today.toEpochDay()
-        assertEquals(true, StatsDateFilter(PlaybackStatsPeriod.DAY).isSingleDay)
-        assertEquals(true, StatsDateFilter(PlaybackStatsPeriod.DAY, anchorDay = day - 1).isSingleDay)
-        assertEquals(true, StatsDateFilter(anchorDay = day, customEndDay = day).isSingleDay)
-        assertEquals(false, StatsDateFilter(anchorDay = day - 1, customEndDay = day).isSingleDay)
-        assertEquals(false, StatsDateFilter(PlaybackStatsPeriod.WEEK).isSingleDay)
-        assertEquals(false, StatsDateFilter().isSingleDay)
+        fun isSingleDay(filter: StatsDateFilter, asOf: LocalDate = today) =
+            filter.dates(asOf, monday).isSingleDay
+
+        assertEquals(true, isSingleDay(StatsDateFilter(PlaybackStatsPeriod.DAY)))
+        assertEquals(true, isSingleDay(StatsDateFilter(PlaybackStatsPeriod.DAY, anchorDay = day - 1)))
+        assertEquals(true, isSingleDay(StatsDateFilter(anchorDay = day, customEndDay = day)))
+        assertEquals(false, isSingleDay(StatsDateFilter(anchorDay = day - 1, customEndDay = day)))
+        assertEquals(true, isSingleDay(StatsDateFilter(trailingDays = 1)))
+        assertEquals(false, isSingleDay(StatsDateFilter()))
+        val firstOfYear = LocalDate.of(2024, 1, 1)
+        for (period in listOf(PlaybackStatsPeriod.WEEK, PlaybackStatsPeriod.MONTH, PlaybackStatsPeriod.YEAR)) {
+            assertEquals(true, isSingleDay(StatsDateFilter(period), firstOfYear))
+            assertEquals(false, isSingleDay(StatsDateFilter(period), firstOfYear.plusDays(1)))
+        }
     }
 
     @Test

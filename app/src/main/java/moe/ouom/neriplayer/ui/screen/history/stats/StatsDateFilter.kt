@@ -16,13 +16,6 @@ internal data class StatsDateFilter(
     val trailingDays: Int = 0,
     val customEndDay: Long? = null
 ) : Parcelable {
-    val isSingleDay: Boolean
-        get() = when (period) {
-            PlaybackStatsPeriod.DAY -> true
-            PlaybackStatsPeriod.ALL -> trailingDays == 1 || (customEndDay != null && customEndDay == anchorDay)
-            else -> false
-        }
-
     fun dates(today: LocalDate, firstWeekday: DayOfWeek): ClosedRange<LocalDate>? {
         val anchor = anchorDay?.let(LocalDate::ofEpochDay) ?: today
         val start = when (period) {
@@ -55,6 +48,9 @@ internal data class StatsDateFilter(
         else -> date.plusDays(distance)
     }
 }
+
+internal val ClosedRange<LocalDate>?.isSingleDay: Boolean
+    get() = this != null && start == endInclusive
 
 internal fun ClosedRange<LocalDate>.toStatsTimeRange(zone: ZoneId) = PlaybackStatsTimeRange(
     startInclusive = start.atStartOfDay(zone).toInstant().toEpochMilli(),

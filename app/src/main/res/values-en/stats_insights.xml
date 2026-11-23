@@ -11,9 +11,9 @@
     <string name="stats_peak">Peak</string>
     <string name="stats_previous_slot">Previous time slot</string>
     <string name="stats_next_slot">Next time slot</string>
-    <string name="stats_active_days">Active days</string>
-    <string name="stats_daily_average">Per active day</string>
-    <string name="stats_play_average">Per play</string>
+    <string name="stats_active_days">Listening days</string>
+    <string name="stats_daily_average">Average per listening day</string>
+    <string name="stats_play_average">Average per play</string>
     <string name="stats_share_label">Time share</string>
     <string name="stats_exact_duration">%1$dh %2$dm %3$ds</string>
     <string name="stats_short_hour">%1$dh %2$dm</string>

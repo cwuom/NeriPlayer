@@ -67,9 +67,9 @@ fun PlaybackStatsScreen(
     val zone = ZoneId.of(queryDay.key.timeZoneId)
     val today = Instant.ofEpochMilli(queryDay.nowMillis).atZone(zone).toLocalDate()
     val firstWeekday = WeekFields.of(LocalConfiguration.current.locales[0]).firstDayOfWeek
-    val range = selection.dates(today, firstWeekday)?.toStatsTimeRange(zone)
+    val dates = selection.dates(today, firstWeekday)
     val sort = if (showRankings) PlaybackStatsSort.valueOf(sortMode.name) else PlaybackStatsSort.LISTEN_TIME
-    val query = rememberPlaybackStatsQuery(selection.period, sort, queryDay.nowMillis).copy(range = range)
+    val query = rememberPlaybackStatsQuery(selection.period, sort, queryDay.nowMillis).copy(range = dates?.toStatsTimeRange(zone))
     val pageRequestState = remember(query) { mutableStateOf(StatsPageRequest()) }
     var pageRequest by pageRequestState
     val insightState = if (showRankings) null else rememberListeningInsights(query, pageRequest.retry).value
@@ -144,7 +144,7 @@ fun PlaybackStatsScreen(
                     },
                     overviewContent = if (insightState == null) null else ({
                         insightState.insights?.let { insights ->
-                            PlaybackStatsInsightsContent(insights, insightState.hours, offlineMode, singleDay = selection.isSingleDay, onTrackClick = {
+                            PlaybackStatsInsightsContent(insights, insightState.hours, offlineMode, singleDay = dates.isSingleDay, onTrackClick = {
                                 onSongClick(listOf(it.toPlaybackStatsSongItem()), 0)
                             })
                         }

@@ -3,8 +3,11 @@ package moe.ouom.neriplayer.ui.screen.history.stats
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +41,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Locale
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.stats.PlaybackStatsInsights
@@ -65,7 +69,6 @@ class PlaybackStatsDialogRenderingTest {
         albums = listOf(album, PlaybackStatsRank("The Greatest Hits", 6, 2_000_000L, 12, 0.1057)),
         albumCount = 2,
         activeDays = 1,
-        weekdayListenMs = List(7) { if (it == 0) hourlyListening.sum() else 0L },
         averageDailyListenMs = hourlyListening.sum(),
         averageListenMsPerPlay = hourlyListening.sum() / 156
     )
@@ -88,18 +91,28 @@ class PlaybackStatsDialogRenderingTest {
                 NeriTheme(followSystemDark = false, forceDark = style == UiStyle.Clean, dynamicColor = false,
                     seedColorHex = "#837057", uiStyle = style, animateColors = false) {
                     Surface(Modifier.fillMaxSize()) {
-                        Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
+                        Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)
+                            .verticalScroll(rememberScrollState()).padding(16.dp)) {
+                            val range = selection.value.dates(today, DayOfWeek.MONDAY)
+                            val listenDay = range?.endInclusive ?: today
+                            val rhythm = insights.copy(
+                                earliestListenAt = listenDay.atTime(6, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                                weekdayListenMs = List(7) { if (it + 1 == listenDay.dayOfWeek.value) hourlyListening.sum() else 0L }
+                            )
                             Text("播放统计", style = MaterialTheme.typography.headlineMedium)
                             StatsPeriodSelector(selection.value.period) { selection.value = StatsDateFilter(it) }
                             StatsDateControls(selection.value, today, DayOfWeek.MONDAY) { selection.value = it }
                             PlaybackStatsRankingInsights(insights, offlineMode = true, onTrackClick = {})
-                            PlaybackStatsRhythm(insights, hourlyListening, selection.value.isSingleDay)
+                            PlaybackStatsRhythm(rhythm, hourlyListening, range.isSingleDay)
                         }
                     }
                 }
             }
         }
 
+        compose.onNodeWithText("收听天数").assertExists()
+        compose.onNodeWithText("收听日均时长").assertDoesNotExist()
+        compose.onNodeWithText("最早记录于", substring = true).assertExists()
         openDateRange()
         capture(style, "range")
         assertEndpointSingleLine("statsDateStart")
@@ -136,6 +149,10 @@ class PlaybackStatsDialogRenderingTest {
         compose.onNodeWithTag("statsRhythmChart").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("小时").assertIsDisplayed()
         compose.onNodeWithText("星期").assertDoesNotExist()
+        compose.onNodeWithText("收听天数").assertDoesNotExist()
+        compose.onNodeWithText("收听日均时长").assertDoesNotExist()
+        compose.onNodeWithText("最早记录于", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("单次平均时长").assertIsDisplayed()
         capture(style, "day-hours")
     }
 

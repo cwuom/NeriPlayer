@@ -48,7 +48,7 @@ class PlaybackStatsInsightsContentTest {
         artists = (1..5).map { PlaybackStatsRank("Artist $it", 2, 61_000, 3, 0.305) },
         albums = listOf(PlaybackStatsRank("Waterline", 3, 122_000, 6, 0.61)),
         artistCount = 5, albumCount = 1, topTrack = song, activeDays = 2,
-        averageDailyListenMs = 100_000L, averageListenMsPerPlay = 13_333L,
+        averageDailyListenMs = 100_000L, averageListenMsPerPlay = 13_333L, earliestListenAt = 10L,
         weekdayListenMs = listOf(61_000L, 139_000L, 0L, 0L, 0L, 0L, 0L)
     )
     private val hours = mutableStateOf(List(24) { if (it == 3) 48_000L else 0L })
@@ -78,6 +78,10 @@ class PlaybackStatsInsightsContentTest {
         compose.onNodeWithText("Close").performClick()
 
         compose.onNodeWithText("Tuesday").assertExists()
+        compose.onNodeWithText("Listening days").assertExists()
+        compose.onNodeWithText("Average per listening day").assertExists()
+        compose.onNodeWithText("Average per play").assertExists()
+        compose.onNodeWithText("First recorded", substring = true).assertExists()
         compose.onNodeWithContentDescription("Previous time slot").performScrollTo().performClick()
         compose.onNodeWithText("Monday").assertExists()
         compose.onNodeWithText("Hour").performScrollTo().performClick()
@@ -108,6 +112,10 @@ class PlaybackStatsInsightsContentTest {
 
     @Test fun dayShowsOnlyHoursEvenWhenLegacyRecordsHaveNoHourlyData() {
         render(UiStyle.Clean, singleDay = true)
+        compose.onNodeWithText("Listening days").assertDoesNotExist()
+        compose.onNodeWithText("Average per listening day").assertDoesNotExist()
+        compose.onNodeWithText("First recorded", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Average per play").assertExists()
         compose.onNodeWithText("Weekday").assertDoesNotExist()
         compose.onNodeWithText("Tuesday").assertDoesNotExist()
         compose.onNodeWithText("Hour").assertExists()
@@ -119,12 +127,35 @@ class PlaybackStatsInsightsContentTest {
         compose.onNodeWithText("Tuesday").assertDoesNotExist()
     }
 
-    private fun render(style: UiStyle, singleDay: Boolean = false) {
+    @Test fun singlePlayWithNoHoursLeavesNoEmptyDailyRhythmCard() {
+        val onePlay = insights.copy(summary = insights.summary.copy(totalPlayCount = 1), activeDays = 1)
+        render(UiStyle.Material, singleDay = true, data = onePlay)
+        compose.onNodeWithTag("statsRhythmChart").assertExists()
+        compose.onNodeWithText("Average per play").assertDoesNotExist()
+        compose.runOnIdle { hours.value = emptyList() }
+        compose.onNodeWithTag("statsRhythm").assertDoesNotExist()
+    }
+
+    @Test fun multiDaySelectionWithOneListeningDayOmitsItsRedundantAverage() {
+        render(UiStyle.Clean, data = insights.copy(activeDays = 1))
+        compose.onNodeWithText("Listening days").assertExists()
+        compose.onNodeWithText("Average per listening day").assertDoesNotExist()
+        compose.onNodeWithText("Average per play").assertExists()
+    }
+
+    @Test fun playsWithoutRecordedTimeHaveNoDurationAverages() {
+        render(UiStyle.Material, data = insights.copy(averageDailyListenMs = 0, averageListenMsPerPlay = 0))
+        compose.onNodeWithText("Listening days").assertExists()
+        compose.onNodeWithText("Average per listening day").assertDoesNotExist()
+        compose.onNodeWithText("Average per play").assertDoesNotExist()
+    }
+
+    private fun render(style: UiStyle, singleDay: Boolean = false, data: PlaybackStatsInsights = insights) {
         compose.setContent {
             NeriTheme(followSystemDark = false, forceDark = style == UiStyle.Clean,
                 dynamicColor = false, seedColorHex = "#6750A4", uiStyle = style, animateColors = false) {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    PlaybackStatsInsightsContent(insights,
+                    PlaybackStatsInsightsContent(data,
                         hours.value, offlineMode = true, onTrackClick = { played = it }, singleDay = singleDay)
                 }
             }
