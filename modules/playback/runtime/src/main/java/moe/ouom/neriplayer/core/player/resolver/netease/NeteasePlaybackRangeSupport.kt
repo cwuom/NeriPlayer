@@ -10,12 +10,15 @@ private val NETEASE_CONTENT_RANGE_PATTERN = Regex(
     RegexOption.IGNORE_CASE
 )
 
+internal fun isNeteasePlaybackHost(host: String): Boolean =
+    host == "music.126.net" || host.endsWith(".music.126.net")
+
 internal fun shouldUseNeteaseFlacResumableRange(uri: Uri): Boolean {
     val scheme = uri.scheme?.lowercase(Locale.US) ?: return false
     if (scheme != "http" && scheme != "https") return false
 
     val host = uri.host?.lowercase(Locale.US) ?: return false
-    if (host != "music.126.net" && !host.endsWith(".music.126.net")) return false
+    if (!isNeteasePlaybackHost(host)) return false
 
     return uri.path?.lowercase(Locale.US)?.endsWith(".flac") == true
 }

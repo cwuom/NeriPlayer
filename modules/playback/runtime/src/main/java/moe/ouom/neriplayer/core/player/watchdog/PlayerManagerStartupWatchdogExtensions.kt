@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.core.player.playback.startPlayerPlaybackWithFade
 import moe.ouom.neriplayer.core.player.playback.startProgressUpdates
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackStartPlan
+import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_RUNTIME_STALL_POLL_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.policy.progress.hasPlaybackProgressAdvancedSinceBaseline
 import moe.ouom.neriplayer.core.player.runtime.refresh.YouTubePlaybackRecoveryStrategy
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_STABLE_RECOVERY_QUALITY
@@ -28,6 +29,7 @@ import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
 import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
 import moe.ouom.neriplayer.core.player.url.allowsCustomCacheKey
 import moe.ouom.neriplayer.core.player.url.offlineCacheKeyFromUrl
+import moe.ouom.neriplayer.core.player.url.refreshCurrentSongUrlImpl
 import moe.ouom.neriplayer.core.player.url.resolvePlaybackAudioInfoForListenTogetherStreamCandidate
 import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
@@ -91,12 +93,17 @@ internal fun PlayerManager.schedulePlaybackStartupWatchdog(reason: String) {
     )
     val startedAtMs = SystemClock.elapsedRealtime()
     val earlyTimeoutMs = startupEarlyWatchdogTimeoutMs(timeoutMs)
+    val refill = PlaybackBufferingProgress()
+    refill.observe(player.playbackState, watchdogBufferedDurationMs(), playbackPositionGeneration)
+    val stillWatching = {
+        playbackStartupWatchdogToken == watchdogToken && playbackRequestToken == requestToken &&
+            shouldWatchPlaybackStartup()
+    }
 
     playbackStartupWatchdogJob = mainScope.launch {
+        var quietMs = 0L
         if (earlyTimeoutMs in 1 until timeoutMs) {
-            delay(earlyTimeoutMs.milliseconds)
-            if (playbackStartupWatchdogToken != watchdogToken) return@launch
-            if (requestToken != playbackRequestToken) return@launch
+            quietMs = awaitStartupBufferQuiet(earlyTimeoutMs, quietMs, refill, stillWatching) ?: return@launch
             if (isEarlyStartupPlaybackStalled(startPositionMs)) {
                 NPLogger.w(
                     "NERI-PlayerManager",
@@ -108,12 +115,8 @@ internal fun PlayerManager.schedulePlaybackStartupWatchdog(reason: String) {
                 recoverPlaybackStartupStall(requestToken)
                 return@launch
             }
-            delay((timeoutMs - earlyTimeoutMs).milliseconds)
-        } else {
-            delay(timeoutMs.milliseconds)
         }
-        if (playbackStartupWatchdogToken != watchdogToken) return@launch
-        if (requestToken != playbackRequestToken) return@launch
+        awaitStartupBufferQuiet(timeoutMs, quietMs, refill, stillWatching) ?: return@launch
         if (!isStartupPlaybackStalled(startPositionMs)) return@launch
 
         NPLogger.w(
@@ -128,6 +131,29 @@ internal fun PlayerManager.schedulePlaybackStartupWatchdog(reason: String) {
     }
 }
 
+private suspend fun PlayerManager.awaitStartupBufferQuiet(
+    thresholdMs: Long,
+    initialQuietMs: Long,
+    refill: PlaybackBufferingProgress,
+    stillWatching: () -> Boolean
+): Long? {
+    var quietMs = initialQuietMs
+    while (quietMs < thresholdMs) {
+        val pollMs = minOf(PLAYBACK_RUNTIME_STALL_POLL_INTERVAL_MS, thresholdMs - quietMs)
+        val beforePollMs = SystemClock.elapsedRealtime()
+        delay(pollMs.milliseconds)
+        if (!stillWatching()) return null
+        val growing = refill.observe(player.playbackState, watchdogBufferedDurationMs(), playbackPositionGeneration)
+        // USB 输出和 YouTube 深度跳转有自己的限时恢复路径
+        quietMs = if (growing && !usbExclusivePlaybackEnabled && !expeditedYouTubeSeekRecoveryPending) {
+            0L
+        } else {
+            quietMs + maxOf(pollMs, SystemClock.elapsedRealtime() - beforePollMs)
+        }
+    }
+    return quietMs
+}
+
 internal fun PlayerManager.cancelPlaybackStartupWatchdog(reason: String) {
     if (playbackStartupWatchdogJob?.isActive == true) {
         NPLogger.d("NERI-PlayerManager", "cancel playback startup watchdog: reason=$reason")
@@ -138,6 +164,7 @@ internal fun PlayerManager.cancelPlaybackStartupWatchdog(reason: String) {
 }
 
 private fun PlayerManager.shouldWatchPlaybackStartup(): Boolean {
+    if (playbackProgressAdvanceReported) return false
     if (!initialized || !resumePlaybackRequested || isPendingMediaLoadActive()) return false
     if (!isPlayerInitialized()) return false
     if (player.currentMediaItem == null || !player.playWhenReady) return false
@@ -181,8 +208,7 @@ private fun PlayerManager.isEarlyStartupPlaybackStalled(startPositionMs: Long): 
         playbackState = player.playbackState,
         playWhenReady = player.playWhenReady,
         advancedMs = advancedMs,
-        bufferedDurationMs = runCatching { player.totalBufferedDuration }
-            .getOrDefault(0L)
+        bufferedDurationMs = watchdogBufferedDurationMs()
     )
 }
 
@@ -415,7 +441,26 @@ internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(
 ): Boolean {
     if (expectedRequestToken != playbackRequestToken) return false
     val nextIndex = activePlaybackUrlIndex + 1
-    val candidate = activePlaybackCandidates.getOrNull(nextIndex) ?: return false
+    val candidate = activePlaybackCandidates.getOrNull(nextIndex)
+    if (candidate == null) {
+        val failedMatch = currentPlaybackCandidate()?.deferredNeteaseAutoBiliCandidateId ?: return false
+        if (!resumePlaybackRequested || isListenTogetherActive()) return false
+        if (urlRefreshController.currentSemantics() != null) return true
+        val position = pendingSeekPositionOrNull()
+            ?: maxOf(player.currentPosition, _playbackPositionMs.value).coerceAtLeast(0L)
+        refreshCurrentSongUrlImpl(
+            resumePositionMs = position,
+            allowFallback = false,
+            reason = "${reason}_bili_alternates",
+            bypassCooldown = true,
+            resumedPlaybackCommandSource = activePlaybackCommandSource,
+            cacheKeyToInvalidateBeforeResolve = if (invalidateCurrentCache) {
+                currentPlaybackCacheKeyForRecovery()
+            } else null,
+            failedNeteaseAutoBiliCandidateId = failedMatch
+        )
+        return true
+    }
 
     val staleCacheKey = currentPlaybackCacheKeyForRecovery()
     val resumePositionMs = player.currentPosition.coerceAtLeast(0L)

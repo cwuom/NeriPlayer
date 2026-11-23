@@ -2,6 +2,10 @@ package moe.ouom.neriplayer.core.player.usb.path
 
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -100,5 +104,26 @@ class UsbExclusiveAudioPathStateTest {
 
         assertTrue(sameUsbExclusiveAudioPathConfiguration(first, samePath))
         assertFalse(sameUsbExclusiveAudioPathConfiguration(first, changedPath))
+    }
+
+    @Test
+    fun `system volume ramps do not repeatedly refresh the service before USB route changes`() = runTest {
+        val initial = UsbExclusiveAudioPathState(requestedVolume = 0f)
+        val fade = (1..24).map { step -> initial.copy(requestedVolume = step / 24f) }
+        val requested = fade.last().copy(requestedPath = UsbExclusiveAudioPathState.REQUESTED_NATIVE_USB)
+        val native = requested.copy(effectivePath = UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB)
+        val playing = native.copy(sinkPlaying = true)
+        val paused = playing.copy(sinkPlaying = false, nativePaused = true)
+        val fallback = paused.copy(
+            effectivePath = UsbExclusiveAudioPathState.EFFECTIVE_SYSTEM,
+            fallbackReason = "device_disconnected"
+        )
+        val routeChanges = listOf(requested, native, playing, paused, fallback)
+
+        val observed = (listOf(initial) + fade + routeChanges).asFlow()
+            .distinctUntilChanged(::sameUsbExclusiveAudioPathConfiguration)
+            .toList()
+
+        assertEquals(listOf(initial) + routeChanges, observed)
     }
 }

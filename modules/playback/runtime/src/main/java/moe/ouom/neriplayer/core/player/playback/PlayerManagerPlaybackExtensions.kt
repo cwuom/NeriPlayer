@@ -653,6 +653,8 @@ internal fun PlayerManager.playAtIndex(
         try {
         val localResult = resolveSongUrl(
             song = song,
+            deferNeteaseAutoBiliAlternates = neteaseAutoSourceSwitchEnabled && !startPaused &&
+                commandSource == PlaybackCommandSource.LOCAL && !isListenTogetherActive(),
             playbackRequestTokenOverride = requestToken,
             shouldApplyCacheMutation = {
                 shouldApplyResolvedMedia(requestToken, playbackRequestToken) && isActive

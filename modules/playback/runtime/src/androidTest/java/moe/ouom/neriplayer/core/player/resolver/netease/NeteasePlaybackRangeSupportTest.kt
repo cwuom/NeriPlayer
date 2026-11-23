@@ -196,7 +196,11 @@ class NeteasePlaybackRangeSupportTest {
         val fixture = RangeFixture(
             content = sampleContent(size = 2 * 1024 * 1024),
             readableBytesForOpen = { openIndex, requestedLength ->
-                if (openIndex == 0 || openIndex == 2) 0 else requestedLength
+                when (openIndex) {
+                    0, 2 -> 0
+                    1 -> minOf(1024 * 1024, requestedLength)
+                    else -> requestedLength
+                }
             }
         )
         val dataSource = createDataSource(fixture)
@@ -280,14 +284,16 @@ private class FixtureHttpDataSource(
 
     override fun open(dataSpec: DataSpec): Long {
         transferInitializing(dataSpec)
-        val startPosition = dataSpec.position.toInt()
+        val range = dataSpec.httpRequestHeaders["Range"]?.removePrefix("bytes=")?.split('-')
+        val startPosition = range?.first()?.toInt() ?: dataSpec.position.toInt()
         val availableLength = (fixture.content.size - startPosition).coerceAtLeast(0)
-        val requestedLength = when (dataSpec.length) {
-            C.LENGTH_UNSET.toLong() -> availableLength
-            else -> minOf(dataSpec.length, availableLength.toLong()).toInt()
+        val requestedLength = when {
+            range != null -> minOf(range.last().toInt() - startPosition + 1, availableLength)
+            dataSpec.length != C.LENGTH_UNSET.toLong() -> minOf(dataSpec.length, availableLength.toLong()).toInt()
+            else -> availableLength
         }
         val openIndex = fixture.requestPositions.size
-        fixture.requestPositions += dataSpec.position
+        fixture.requestPositions += startPosition.toLong()
         val readableLength = fixture.readableBytesForOpen(openIndex, requestedLength)
             .coerceIn(0, requestedLength)
         val endPosition = startPosition + requestedLength
