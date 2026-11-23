@@ -460,7 +460,7 @@ NeriPlayer 可把本地元数据同步到**你自己的** GitHub 仓库或 WebDA
 - [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui)：卡拉 OK 歌词 Composable
 - [LDDC](https://github.com/chenmozhijin/LDDC)：多平台歌词下载匹配工具，手动匹配体验参考
 - [Metrolist](https://github.com/MetrolistGroup/Metrolist)：YouTube Music client for Android
-- [HyperCeiler](https://github.com/ReChronoRain/HyperCeiler)：HyperOS enhancement module
+- 播放页初版流体背景着色器参考了 [HyperCeiler](https://github.com/ReChronoRain/HyperCeiler) 的实现。
 - [BeatSync](https://github.com/freeman-jiang/beatsync)（freeman-jiang）的配对探针算法用于局域网一起听的时钟同步，上游实现也用于校验 Kotlin 移植结果。
 - [AndroidX Media3](https://github.com/androidx/media) 为局域网成员提供渐进式音频播放和保持音高的变速校正。
 - [Java-WebSocket](https://github.com/TooTallNate/Java-WebSocket) 用于房主的 WebSocket 服务，负责收发房间控制消息。
