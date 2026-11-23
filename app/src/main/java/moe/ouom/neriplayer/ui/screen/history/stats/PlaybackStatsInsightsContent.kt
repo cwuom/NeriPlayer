@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Album
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -66,12 +65,13 @@ internal fun PlaybackStatsInsightsContent(
     hourListenMs: List<Long>,
     offlineMode: Boolean,
     onTrackClick: (TrackStat) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    singleDay: Boolean = false
 ) {
     if (insights.summary.trackCount == 0L) return
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         PlaybackStatsRankingInsights(insights, offlineMode, onTrackClick)
-        PlaybackStatsRhythm(insights, hourListenMs)
+        PlaybackStatsRhythm(insights, hourListenMs, singleDay)
     }
 }
 
@@ -87,7 +87,7 @@ internal fun PlaybackStatsRankingInsights(
     val showAlbums = insights.artists.isEmpty() || (albumsSelected && insights.albums.isNotEmpty())
     val ranking = if (showAlbums) insights.albums else insights.artists
     var expanded by rememberSaveable(showAlbums) { mutableStateOf(false) }
-    var details by remember(showAlbums) { mutableStateOf<PlaybackStatsRank?>(null) }
+    var detailIndex by remember(showAlbums, ranking) { mutableStateOf<Int?>(null) }
     val colors = MaterialTheme.colorScheme
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         insights.topTrack?.let { track ->
@@ -134,7 +134,7 @@ internal fun PlaybackStatsRankingInsights(
                     color = colors.onSurfaceVariant)
                 val visible = if (expanded) ranking else ranking.take(4)
                 visible.forEachIndexed { index, rank ->
-                    RankInsightRow(rank, index, offlineMode, round = !showAlbums) { details = rank }
+                    RankInsightRow(rank, index, offlineMode, round = !showAlbums) { detailIndex = index }
                     if (NeriDesign.isClean && index < visible.lastIndex) HorizontalDivider(color = colors.outlineVariant)
                 }
                 if (ranking.size > 4) {
@@ -146,17 +146,8 @@ internal fun PlaybackStatsRankingInsights(
             }
         }
     }
-    details?.let { rank ->
-        AlertDialog(onDismissRequest = { details = null }, title = { Text(rank.name) }, text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatDetail(stringResource(R.string.stats_total_time), statsDuration(rank.totalListenMs, exact = true))
-                StatDetail(stringResource(R.string.stats_track_count), statsNumber(rank.trackCount))
-                StatDetail(stringResource(R.string.stats_total_plays), statsNumber(rank.totalPlayCount))
-                StatDetail(stringResource(R.string.stats_share_label), statsPercent(rank.share, precise = true))
-            }
-        }, confirmButton = {
-            HapticTextButton(onClick = { details = null }) { Text(stringResource(R.string.stats_rank_detail_close)) }
-        }, shape = NeriDesign.tokens.dialogShape)
+    detailIndex?.let { index ->
+        StatsRankDetailDialog(ranking[index], index + 1, showAlbums, offlineMode) { detailIndex = null }
     }
 }
 
@@ -235,16 +226,7 @@ internal fun StatsHeading(text: String) {
 }
 
 @Composable
-internal fun StatDetail(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun statsPercent(value: Double, precise: Boolean = false): String {
+internal fun statsPercent(value: Double, precise: Boolean = false): String {
     val locale = LocalConfiguration.current.locales[0]
     val formatter = remember(locale, precise) {
         NumberFormat.getPercentInstance(locale).apply { maximumFractionDigits = if (precise) 2 else 1 }

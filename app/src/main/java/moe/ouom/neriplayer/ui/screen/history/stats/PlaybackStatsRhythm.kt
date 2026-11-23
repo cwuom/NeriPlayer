@@ -63,6 +63,7 @@ import moe.ouom.neriplayer.ui.theme.NeriDesign
 internal fun PlaybackStatsRhythm(
     insights: PlaybackStatsInsights,
     hourListenMs: List<Long>,
+    singleDay: Boolean,
     modifier: Modifier = Modifier
 ) {
     if (insights.summary.trackCount == 0L) return
@@ -70,7 +71,7 @@ internal fun PlaybackStatsRhythm(
     val locale = LocalConfiguration.current.locales[0]
     val context = LocalContext.current
     val hours = hourListenMs.takeIf { it.size == 24 && it.any { ms -> ms > 0 } }.orEmpty()
-    val weekdays = insights.weekdayListenMs.takeIf { it.size == 7 && it.any { ms -> ms > 0 } }.orEmpty()
+    val weekdays = insights.weekdayListenMs.takeIf { !singleDay && it.size == 7 && it.any { ms -> ms > 0 } }.orEmpty()
     var hourly by rememberSaveable { mutableStateOf(false) }
     val showHours = hours.isNotEmpty() && (hourly || weekdays.isEmpty())
     val buckets = if (showHours) hours else weekdays

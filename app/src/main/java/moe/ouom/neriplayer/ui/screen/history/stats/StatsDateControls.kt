@@ -9,16 +9,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DateRangePicker
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,18 +27,16 @@ import androidx.compose.ui.unit.dp
 import android.icu.text.DateIntervalFormat
 import android.icu.util.DateInterval
 import java.time.DayOfWeek
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.common.R as CommonR
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
 import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
+import moe.ouom.neriplayer.ui.component.overlay.localizedWindowContent
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun StatsDateControls(
     selection: StatsDateFilter,
@@ -78,7 +68,7 @@ internal fun StatsDateControls(
                 Icon(Icons.Outlined.CalendarMonth, contentDescription = null)
                 Text(dateLabel, Modifier.padding(start = 8.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            val menuItems = localizedWindowContent {
                 DropdownMenuItem(text = { Text(stringResource(R.string.stats_all_time)) }, onClick = {
                     menu = false
                     onChange(StatsDateFilter())
@@ -100,6 +90,9 @@ internal fun StatsDateControls(
                     customPicker = true
                 })
             }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                menuItems()
+            }
         }
         if (selection.period != PlaybackStatsPeriod.ALL) {
             HapticIconButton(
@@ -116,61 +109,31 @@ internal fun StatsDateControls(
             }
         }
     }
-    if (!customPicker && !jumpPicker) return
-    val lastAllowed = today.pickerMillis()
-    val selectable = remember(lastAllowed) {
-        object : SelectableDates {
-            override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis <= lastAllowed
-        }
-    }
-    if (jumpPicker) {
-        val state = rememberDatePickerState(
-            initialSelectedDateMillis = (dates?.start ?: today).pickerMillis(),
-            yearRange = 1900..today.year,
-            selectableDates = selectable
-        )
-        DatePickerDialog(
-            onDismissRequest = { jumpPicker = false },
-            confirmButton = {
-                HapticTextButton(enabled = state.selectedDateMillis != null, onClick = {
-                    val day = state.selectedDateMillis ?: return@HapticTextButton
-                    val chosen = selection.copy(anchorDay = day.pickerDay())
+    if (customPicker || jumpPicker) {
+        StatsCalendarDialog(
+            dateRange = customPicker,
+            initialStart = dates?.start ?: today.takeIf { jumpPicker },
+            initialEnd = dates?.endInclusive,
+            today = today,
+            firstWeekday = firstWeekday,
+            onDismiss = {
+                customPicker = false
+                jumpPicker = false
+            },
+            onApply = { start, end ->
+                val result = if (customPicker) {
+                    StatsDateFilter(anchorDay = start.toEpochDay(), customEndDay = end.toEpochDay())
+                } else {
+                    val chosen = selection.copy(anchorDay = start.toEpochDay())
                     val current = StatsDateFilter(selection.period)
-                    onChange(if (chosen.dates(today, firstWeekday) == current.dates(today, firstWeekday)) current else chosen)
-                    jumpPicker = false
-                }) { Text(stringResource(CommonR.string.action_apply)) }
-            },
-            dismissButton = {
-                HapticTextButton(onClick = { jumpPicker = false }) { Text(stringResource(CommonR.string.action_cancel)) }
+                    if (chosen.dates(today, firstWeekday) == current.dates(today, firstWeekday)) current else chosen
+                }
+                onChange(result)
+                customPicker = false
+                jumpPicker = false
             }
-        ) { DatePicker(state = state) }
-    } else {
-        val state = rememberDateRangePickerState(
-            yearRange = 1900..today.year,
-            initialSelectedStartDateMillis = dates?.start?.pickerMillis(),
-            initialSelectedEndDateMillis = dates?.endInclusive?.pickerMillis(),
-            selectableDates = selectable
         )
-        DatePickerDialog(
-            onDismissRequest = { customPicker = false },
-            confirmButton = {
-                HapticTextButton(enabled = state.selectedStartDateMillis != null, onClick = {
-                    val start = state.selectedStartDateMillis ?: return@HapticTextButton
-                    val end = state.selectedEndDateMillis ?: start
-                    onChange(StatsDateFilter(anchorDay = start.pickerDay(), customEndDay = end.pickerDay()))
-                    customPicker = false
-                }) { Text(stringResource(CommonR.string.action_apply)) }
-            },
-            dismissButton = {
-                HapticTextButton(onClick = { customPicker = false }) { Text(stringResource(CommonR.string.action_cancel)) }
-            }
-        ) {
-            DateRangePicker(state = state, title = {
-                Text(stringResource(R.string.stats_custom_dates), Modifier.padding(16.dp), style = MaterialTheme.typography.labelLarge)
-            })
-        }
     }
 }
 
 private fun LocalDate.pickerMillis() = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-private fun Long.pickerDay() = Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate().toEpochDay()

@@ -26,4 +26,6 @@
     <string name="stats_top_track_action">播放 %1$s</string>
     <string name="stats_since_date">最早记录于 %1$s</string>
     <string name="stats_exact_minutes">%1$d 分 %2$d 秒</string>
+    <string name="stats_album_rank">专辑 · 第 %1$d 名</string>
+    <string name="stats_artist_rank">艺人 · 第 %1$d 名</string>
 </resources>

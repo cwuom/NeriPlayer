@@ -106,13 +106,26 @@ class PlaybackStatsInsightsContentTest {
         compose.onNodeWithText("use only records with known dates", substring = true).assertDoesNotExist()
     }
 
-    private fun render(style: UiStyle) {
+    @Test fun dayShowsOnlyHoursEvenWhenLegacyRecordsHaveNoHourlyData() {
+        render(UiStyle.Clean, singleDay = true)
+        compose.onNodeWithText("Weekday").assertDoesNotExist()
+        compose.onNodeWithText("Tuesday").assertDoesNotExist()
+        compose.onNodeWithText("Hour").assertExists()
+        val chart = compose.onNodeWithTag("statsRhythmChart")
+        assertEquals(23f, chart.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].range.endInclusive)
+        compose.runOnIdle { hours.value = emptyList() }
+        chart.assertDoesNotExist()
+        compose.onNodeWithText("Weekday").assertDoesNotExist()
+        compose.onNodeWithText("Tuesday").assertDoesNotExist()
+    }
+
+    private fun render(style: UiStyle, singleDay: Boolean = false) {
         compose.setContent {
             NeriTheme(followSystemDark = false, forceDark = style == UiStyle.Clean,
                 dynamicColor = false, seedColorHex = "#6750A4", uiStyle = style, animateColors = false) {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     PlaybackStatsInsightsContent(insights,
-                        hours.value, offlineMode = true, onTrackClick = { played = it })
+                        hours.value, offlineMode = true, onTrackClick = { played = it }, singleDay = singleDay)
                 }
             }
         }

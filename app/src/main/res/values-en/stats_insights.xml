@@ -26,4 +26,6 @@
     <string name="stats_top_track_action">Play %1$s</string>
     <string name="stats_since_date">First recorded %1$s</string>
     <string name="stats_exact_minutes">%1$dm %2$ds</string>
+    <string name="stats_album_rank">Album · No. %1$d</string>
+    <string name="stats_artist_rank">Artist · No. %1$d</string>
 </resources>

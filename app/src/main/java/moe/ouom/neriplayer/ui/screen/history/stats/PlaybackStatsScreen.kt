@@ -144,7 +144,7 @@ fun PlaybackStatsScreen(
                     },
                     overviewContent = if (insightState == null) null else ({
                         insightState.insights?.let { insights ->
-                            PlaybackStatsInsightsContent(insights, insightState.hours, offlineMode, onTrackClick = {
+                            PlaybackStatsInsightsContent(insights, insightState.hours, offlineMode, singleDay = selection.isSingleDay, onTrackClick = {
                                 onSongClick(listOf(it.toPlaybackStatsSongItem()), 0)
                             })
                         }

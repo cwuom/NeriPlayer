@@ -13,6 +13,17 @@ class StatsDateFilterTest {
     private val monday = DayOfWeek.MONDAY
 
     @Test
+    fun onlyDailyAndExplicitOneDayRangesUseHourlyRhythm() {
+        val day = today.toEpochDay()
+        assertEquals(true, StatsDateFilter(PlaybackStatsPeriod.DAY).isSingleDay)
+        assertEquals(true, StatsDateFilter(PlaybackStatsPeriod.DAY, anchorDay = day - 1).isSingleDay)
+        assertEquals(true, StatsDateFilter(anchorDay = day, customEndDay = day).isSingleDay)
+        assertEquals(false, StatsDateFilter(anchorDay = day - 1, customEndDay = day).isSingleDay)
+        assertEquals(false, StatsDateFilter(PlaybackStatsPeriod.WEEK).isSingleDay)
+        assertEquals(false, StatsDateFilter().isSingleDay)
+    }
+
+    @Test
     fun weeksFollowTheLocaleAndNeverExtendPastToday() {
         val week = StatsDateFilter(PlaybackStatsPeriod.WEEK)
         assertEquals(LocalDate.of(2024, 3, 11)..today, week.dates(today, monday))

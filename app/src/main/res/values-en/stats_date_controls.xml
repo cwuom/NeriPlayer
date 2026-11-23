@@ -13,4 +13,18 @@
     <string name="stats_recent_counts">Play counts of recently played tracks</string>
     <string name="stats_first_counts">Play counts of earliest tracks</string>
     <string name="stats_jump_to_date">Jump to date</string>
+    <string name="stats_date_start">Start date</string>
+    <string name="stats_date_end">End date</string>
+    <string name="stats_date_single">Date</string>
+    <string name="stats_date_choose">Select date</string>
+    <string name="stats_date_keyboard">Enter dates</string>
+    <string name="stats_date_calendar">Open calendar</string>
+    <string name="stats_date_previous_month">Previous month</string>
+    <string name="stats_date_next_month">Next month</string>
+    <string name="stats_date_format_example">Example: %1$s</string>
+    <string name="stats_date_invalid">Invalid date</string>
+    <string name="stats_date_too_early">Choose a date on or after %1$s</string>
+    <string name="stats_date_future">Date cannot be in the future</string>
+    <string name="stats_date_reversed">End date must be on or after the start date</string>
+    <string name="stats_date_missing_start">Enter a start date first</string>
 </resources>
