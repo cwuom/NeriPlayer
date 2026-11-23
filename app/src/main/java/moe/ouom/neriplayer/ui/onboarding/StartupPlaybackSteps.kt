@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,14 +37,12 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -102,51 +99,61 @@ internal fun StartupPlaybackControlsContent(
         onPreferencesChange(linkedPreferences)
     }
 
-    StartupOptionColumn {
-        StartupPreviewHintCard(
-            description = stringResource(AppR.string.onboarding_preview_hint_controls_desc),
-            onOpenPreview = onOpenPreview
-        )
-        StartupOptionGroup(
-            title = stringResource(AppR.string.onboarding_controls_size_title),
-            description = stringResource(AppR.string.onboarding_controls_size_desc)
-        ) {
-            StartupControlSizeSelector(
-                selected = previewPreferences.nowPlayingSize,
-                onSelect = { size -> applyPreferences(previewPreferences.copy(nowPlayingSize = size)) }
+    StartupOptionGrid(
+        {
+            StartupPreviewHintCard(
+                description = stringResource(AppR.string.onboarding_preview_hint_controls_desc),
+                onOpenPreview = onOpenPreview
             )
-        }
-        StartupOptionGroup(
-            title = stringResource(AppR.string.onboarding_controls_position_title),
-            description = stringResource(AppR.string.onboarding_controls_position_desc)
-        ) {
-            StartupPlacementSelector(
-                selected = previewPreferences.nowPlayingPlacement,
-                onSelect = { placement ->
-                    applyPreferences(previewPreferences.copy(nowPlayingPlacement = placement))
+        },
+        {
+            StartupOptionGroup(
+                title = stringResource(AppR.string.onboarding_controls_size_title),
+                description = stringResource(AppR.string.onboarding_controls_size_desc)
+            ) {
+                StartupControlSizeSelector(
+                    selected = previewPreferences.nowPlayingSize,
+                    onSelect = { size -> applyPreferences(previewPreferences.copy(nowPlayingSize = size)) }
+                )
+            }
+        },
+        {
+            StartupOptionGroup(
+                title = stringResource(AppR.string.onboarding_controls_position_title),
+                description = stringResource(AppR.string.onboarding_controls_position_desc)
+            ) {
+                StartupPlacementSelector(
+                    selected = previewPreferences.nowPlayingPlacement,
+                    onSelect = { placement ->
+                        applyPreferences(previewPreferences.copy(nowPlayingPlacement = placement))
+                    }
+                )
+            }
+        },
+        {
+            StartupSwitchOptionGroup(
+                title = stringResource(CoreCommonR.string.settings_nowplaying_immersive_mode),
+                description = stringResource(CoreCommonR.string.settings_nowplaying_immersive_mode_desc),
+                checked = pendingImmersiveMode,
+                onCheckedChange = { enabled ->
+                    pendingImmersiveMode = enabled
+                    onImmersiveModeChange(enabled)
                 }
             )
-        }
-        StartupSwitchOptionGroup(
-            title = stringResource(CoreCommonR.string.settings_nowplaying_immersive_mode),
-            description = stringResource(CoreCommonR.string.settings_nowplaying_immersive_mode_desc),
-            checked = pendingImmersiveMode,
-            onCheckedChange = { enabled ->
-                pendingImmersiveMode = enabled
-                onImmersiveModeChange(enabled)
+        },
+        {
+            StartupOptionGroup(
+                title = stringResource(AppR.string.onboarding_controls_cover_lyrics_size_title),
+                description = stringResource(AppR.string.onboarding_controls_cover_lyrics_size_desc)
+            ) {
+                StartupLyricScaleControl(
+                    value = pendingCoverLyricFontScale,
+                    onValueChange = { pendingCoverLyricFontScale = it },
+                    onValueChangeFinished = { onCoverLyricFontScaleChange(pendingCoverLyricFontScale) }
+                )
             }
-        )
-        StartupOptionGroup(
-            title = stringResource(AppR.string.onboarding_controls_cover_lyrics_size_title),
-            description = stringResource(AppR.string.onboarding_controls_cover_lyrics_size_desc)
-        ) {
-            StartupLyricScaleControl(
-                value = pendingCoverLyricFontScale,
-                onValueChange = { pendingCoverLyricFontScale = it },
-                onValueChangeFinished = { onCoverLyricFontScaleChange(pendingCoverLyricFontScale) }
-            )
         }
-    }
+    )
 }
 
 @Composable
@@ -169,40 +176,46 @@ internal fun StartupLyricsContent(
         onPreferencesChange(previewPreferences)
     }
 
-    StartupOptionColumn {
-        StartupPreviewHintCard(
-            description = stringResource(AppR.string.onboarding_preview_hint_lyrics_desc),
-            onOpenPreview = onOpenPreview
-        )
-        StartupOptionGroup(
-            title = stringResource(AppR.string.onboarding_lyrics_page_size_title),
-            description = stringResource(AppR.string.onboarding_lyrics_page_size_desc)
-        ) {
-            StartupLyricScaleControl(
-                value = pendingLyricFontScale,
-                onValueChange = { pendingLyricFontScale = it },
-                onValueChangeFinished = { onLyricFontScaleChange(pendingLyricFontScale) }
+    StartupOptionGrid(
+        {
+            StartupPreviewHintCard(
+                description = stringResource(AppR.string.onboarding_preview_hint_lyrics_desc),
+                onOpenPreview = onOpenPreview
             )
-        }
-        StartupOptionGroup(
-            title = stringResource(AppR.string.onboarding_lyrics_control_size_title),
-            description = stringResource(AppR.string.onboarding_lyrics_control_size_desc)
-        ) {
-            StartupControlSizeSelector(
-                selected = previewPreferences.lyricsSize,
-                onSelect = { size ->
-                    if (size == previewPreferences.lyricsSize) return@StartupControlSizeSelector
-                    // 与播放页不一致的尺寸会让两页切换时控件跳变, 先确认
-                    if (size != previewPreferences.nowPlayingSize) {
-                        pendingControlSize = size
-                        showControlSizeWarning = true
-                    } else {
-                        applyControlSize(size)
+        },
+        {
+            StartupOptionGroup(
+                title = stringResource(AppR.string.onboarding_lyrics_page_size_title),
+                description = stringResource(AppR.string.onboarding_lyrics_page_size_desc)
+            ) {
+                StartupLyricScaleControl(
+                    value = pendingLyricFontScale,
+                    onValueChange = { pendingLyricFontScale = it },
+                    onValueChangeFinished = { onLyricFontScaleChange(pendingLyricFontScale) }
+                )
+            }
+        },
+        {
+            StartupOptionGroup(
+                title = stringResource(AppR.string.onboarding_lyrics_control_size_title),
+                description = stringResource(AppR.string.onboarding_lyrics_control_size_desc)
+            ) {
+                StartupControlSizeSelector(
+                    selected = previewPreferences.lyricsSize,
+                    onSelect = { size ->
+                        if (size == previewPreferences.lyricsSize) return@StartupControlSizeSelector
+                        // 与播放页不一致的尺寸会让两页切换时控件跳变, 先确认
+                        if (size != previewPreferences.nowPlayingSize) {
+                            pendingControlSize = size
+                            showControlSizeWarning = true
+                        } else {
+                            applyControlSize(size)
+                        }
                     }
-                }
-            )
+                )
+            }
         }
-    }
+    )
     if (showControlSizeWarning) {
         AlertDialog(
             onDismissRequest = { showControlSizeWarning = false },
@@ -263,69 +276,70 @@ internal fun StartupNowPlayingLandscapeContent(
         onPreferencesChange(linkedPreferences)
     }
 
-    StartupOptionColumn {
-        StartupPreviewHintCard(
-            description = stringResource(AppR.string.onboarding_preview_hint_landscape_desc),
-            onOpenPreview = onOpenPreview
-        )
-        StartupInfoCard(
-            icon = Icons.Rounded.ScreenRotation,
-            title = stringResource(AppR.string.onboarding_landscape_portrait_hint_title),
-            description = stringResource(AppR.string.onboarding_landscape_portrait_hint_desc),
-            modifier = Modifier.testTag(StartupLandscapePortraitHintTag)
-        )
-        StartupOptionGroup(
-            title = stringResource(AppR.string.onboarding_controls_size_title),
-            description = stringResource(AppR.string.onboarding_controls_size_desc)
-        ) {
-            StartupControlSizeSelector(
-                selected = previewPreferences.nowPlayingSize,
-                onSelect = { size -> applyPreferences(previewPreferences.copy(nowPlayingSize = size)) }
+    StartupOptionGrid(
+        {
+            StartupPreviewHintCard(
+                description = stringResource(AppR.string.onboarding_preview_hint_landscape_desc),
+                onOpenPreview = onOpenPreview
             )
-        }
-        StartupOptionGroup(
-            title = stringResource(AppR.string.onboarding_landscape_lyrics_size_title),
-            description = stringResource(AppR.string.onboarding_landscape_lyrics_size_desc)
-        ) {
-            StartupLyricScaleControl(
-                value = pendingLyricFontScale,
-                onValueChange = { pendingLyricFontScale = it },
-                onValueChangeFinished = { onLyricFontScaleChange(pendingLyricFontScale) }
+        },
+        {
+            StartupInfoCard(
+                icon = Icons.Rounded.ScreenRotation,
+                title = stringResource(AppR.string.onboarding_landscape_portrait_hint_title),
+                description = stringResource(AppR.string.onboarding_landscape_portrait_hint_desc),
+                modifier = Modifier.testTag(StartupLandscapePortraitHintTag)
             )
+        },
+        {
+            StartupOptionGroup(
+                title = stringResource(AppR.string.onboarding_controls_size_title),
+                description = stringResource(AppR.string.onboarding_controls_size_desc)
+            ) {
+                StartupControlSizeSelector(
+                    selected = previewPreferences.nowPlayingSize,
+                    onSelect = { size -> applyPreferences(previewPreferences.copy(nowPlayingSize = size)) }
+                )
+            }
+        },
+        {
+            StartupOptionGroup(
+                title = stringResource(AppR.string.onboarding_landscape_lyrics_size_title),
+                description = stringResource(AppR.string.onboarding_landscape_lyrics_size_desc)
+            ) {
+                StartupLyricScaleControl(
+                    value = pendingLyricFontScale,
+                    onValueChange = { pendingLyricFontScale = it },
+                    onValueChangeFinished = { onLyricFontScaleChange(pendingLyricFontScale) }
+                )
+            }
         }
-    }
+    )
 }
 
 internal const val StartupLandscapePortraitHintTag = "startupLandscapePortraitHint"
 
 /** 选项在横屏双栏里够宽时排成两列, 单栏布局和手机一样一列 */
 @Composable
-private fun StartupOptionColumn(content: @Composable () -> Unit) {
+private fun StartupOptionGrid(vararg options: @Composable () -> Unit) {
     val twoPane = LocalStartupOnboardingTwoPane.current
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        if (twoPane && maxWidth >= StartupOptionTwoColumnMinWidth) {
-            // 选项卡里含 BoxWithConstraints, FlowRow 的权重项会走固有尺寸测量而崩溃, 改用算好的列宽
-            val columnWidth = (maxWidth - StartupOptionColumnSpacing) / 2
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                maxItemsInEachRow = 2,
-                horizontalArrangement = Arrangement.spacedBy(StartupOptionColumnSpacing),
-                verticalArrangement = Arrangement.spacedBy(StartupOptionColumnSpacing)
-            ) {
-                CompositionLocalProvider(LocalStartupOptionItemModifier provides Modifier.width(columnWidth)) {
-                    content()
+        val columns = if (twoPane && maxWidth >= StartupOptionTwoColumnMinWidth) 2 else 1
+        val spacing = Arrangement.spacedBy(14.dp)
+        Column(verticalArrangement = spacing) {
+            // 按行分配实际宽度，控件可以在测量时再根据可用空间组合内容
+            options.asList().chunked(columns).forEach { row ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = spacing) {
+                    row.forEach { option ->
+                        Box(Modifier.weight(1f)) { option() }
+                    }
                 }
             }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { content() }
         }
     }
 }
 
 private val StartupOptionTwoColumnMinWidth = 600.dp
-private val StartupOptionColumnSpacing = 14.dp
-
-private val LocalStartupOptionItemModifier = staticCompositionLocalOf<Modifier> { Modifier }
 
 /** 提示可以打开实机预览, 点按钮和点下方迷你播放器效果相同 */
 @Composable
@@ -352,7 +366,7 @@ private fun StartupInfoCard(
     val colors = MaterialTheme.colorScheme
     val clean = NeriDesign.isClean
     OnboardingGlassSurface(
-        modifier = LocalStartupOptionItemModifier.current.fillMaxWidth().then(modifier),
+        modifier = modifier.fillMaxWidth(),
         shape = OnboardingCardShape,
         color = colors.surfaceContainerHigh
     ) {
@@ -406,7 +420,7 @@ private fun StartupOptionGroup(
 ) {
     val colors = MaterialTheme.colorScheme
     OnboardingGlassSurface(
-        modifier = LocalStartupOptionItemModifier.current.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         shape = OnboardingCardShape,
         color = colors.surfaceContainerHigh
     ) {
@@ -441,7 +455,7 @@ private fun StartupSwitchOptionGroup(
 ) {
     val colors = MaterialTheme.colorScheme
     OnboardingGlassSurface(
-        modifier = LocalStartupOptionItemModifier.current.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         shape = OnboardingCardShape,
         color = colors.surfaceContainerHigh
     ) {
