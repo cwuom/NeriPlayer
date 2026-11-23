@@ -24,7 +24,6 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -152,11 +151,15 @@ class ArtistResponsiveLayoutTest {
         render(style, fontScale = 2f) { ArtistContent(artistFixture()) }
         val songs = quantity(AppR.plurals.artist_song_count, 99999)
         val albums = quantity(AppR.plurals.artist_album_count, 9999)
-        val songChip = composeRule.onNode(hasText(songs) and hasClickAction())
-        val albumChip = composeRule.onNode(hasText(albums) and hasClickAction())
-        val first = bounds(songChip)
-        val second = bounds(albumChip)
-        assertTrue("统计标签应整体换行，不能挤窄第二枚标签", second.top >= first.bottom - 1f)
+        // 统计压在头图底部, 放不下时按整项换行, 两项不能互相重叠或被挤窄
+        val first = bounds(composeRule.onNodeWithText(songs, useUnmergedTree = true))
+        val second = bounds(composeRule.onNodeWithText(albums, useUnmergedTree = true))
+        assertTrue(
+            "统计项应整体换行，不能互相重叠",
+            second.top >= first.bottom - 1f || second.left >= first.right - 1f
+        )
+        composeRule.onNodeWithText(songs, useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText(albums, useUnmergedTree = true).assertIsDisplayed()
         listOf(songs, albums).forEach { label ->
             val layout = textLayout(label)
             assertEquals("每枚统计标签应保留单行文字", 1, layout.lineCount)

@@ -1,6 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.ButtonColors
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.neriOutlinedButtonBorder
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -86,6 +91,43 @@ internal suspend fun toggleCreatorFollow(
 internal fun List<FavoritePlaylist>.containsCreator(favorite: FavoritePlaylist): Boolean =
     any { it.id == favorite.id && it.source == favorite.source }
 
+/**
+ * 关注按钮两态: 未关注时 Clean 描边 / Material 浅色填充, 关注后统一换成主题色实心且去掉描边;
+ * 颜色渐变过渡, 切换时不跳
+ */
+@Composable
+internal fun creatorFollowButtonColors(followed: Boolean): ButtonColors {
+    val colors = MaterialTheme.colorScheme
+    val clean = NeriDesign.isClean
+    val container by animateColorAsState(
+        targetValue = when {
+            followed -> colors.primary
+            clean -> colors.primary.copy(alpha = 0f)
+            else -> colors.secondaryContainer
+        },
+        label = "creatorFollowContainer"
+    )
+    val content by animateColorAsState(
+        targetValue = when {
+            followed -> colors.onPrimary
+            clean -> colors.onSurface
+            else -> colors.onSecondaryContainer
+        },
+        label = "creatorFollowContent"
+    )
+    // 请求进行中只是暂时禁用, 保持当前配色只降一点透明度, 不闪成灰色
+    return ButtonDefaults.buttonColors(
+        containerColor = container,
+        contentColor = content,
+        disabledContainerColor = container.copy(alpha = container.alpha * 0.7f),
+        disabledContentColor = content.copy(alpha = 0.7f)
+    )
+}
+
+@Composable
+internal fun creatorFollowButtonBorder(followed: Boolean, enabled: Boolean): BorderStroke? =
+    if (NeriDesign.isClean && !followed) neriOutlinedButtonBorder(enabled) else null
+
 @Composable
 internal fun CreatorFollowButton(
     favorite: FavoritePlaylist,
@@ -101,11 +143,6 @@ internal fun CreatorFollowButton(
         val scope = rememberCoroutineScope()
         var updating by remember { mutableStateOf(false) }
         var error by remember { mutableStateOf<UiText?>(null) }
-        val buttonContentColor = if (followed) {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        } else {
-            MaterialTheme.colorScheme.onPrimary
-        }
         Column(modifier = modifier) {
             HapticButton(
                 onClick = {
@@ -130,14 +167,8 @@ internal fun CreatorFollowButton(
                 enabled = !updating,
                 modifier = Modifier.widthIn(min = 132.dp).heightIn(min = 48.dp),
                 shape = neriRoundedShape(18.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (followed) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                    contentColor = buttonContentColor
-                ),
+                colors = creatorFollowButtonColors(followed),
+                border = creatorFollowButtonBorder(followed, enabled = !updating),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
             ) {
                 if (updating) {

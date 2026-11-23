@@ -47,8 +47,7 @@ internal fun NeteaseArtistProfileCard(
             header = header,
             followUpdating = followUpdating,
             onToggleFollow = onToggleFollow,
-            modifier = Modifier.padding(16.dp),
-            tabletProfile = true
+            modifier = Modifier.padding(16.dp)
         )
     }
 }
