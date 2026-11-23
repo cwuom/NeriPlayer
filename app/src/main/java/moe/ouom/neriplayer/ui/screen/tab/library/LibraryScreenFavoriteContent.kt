@@ -391,9 +391,7 @@ internal fun FavoritePlaylistList(
                     }
                     Card(
                         shape = cardShape,
-                        colors = CardDefaults.cardColors(
-                            containerColor = Color.Transparent
-                        ),
+                        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier
                             .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -430,9 +428,7 @@ internal fun FavoritePlaylistList(
             item {
                 Card(
                     shape = cardShape,
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.Transparent
-                    ),
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier
                         .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -737,9 +733,7 @@ internal fun QqMusicPlaylistList(
         item {
             Card(
                 shape = cardShape,
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Transparent
-                ),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -754,12 +748,7 @@ internal fun QqMusicPlaylistList(
                         containerColor = Color.Transparent
                     ),
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(56.dp)
-                        )
+                        LibraryCoverPlaceholder()
                     }
                 )
             }

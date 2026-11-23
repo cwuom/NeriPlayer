@@ -22,12 +22,14 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2026/11/20
  */
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.graphics.Color
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -142,9 +144,9 @@ fun NeteaseHomePlaylistListScreen(
         favorites.mapTo(mutableSetOf()) { "${it.source}:${it.id}" }
     }
     val windowWidthDp = currentWindowWidthDp()
-    val gridColumns = remember(windowWidthDp) {
-        if (windowWidthDp >= 600.dp) GridCells.Adaptive(156.dp) else GridCells.Adaptive(120.dp)
-    }
+    // 与首页网格同一套列宽和间距, 二级页的卡片不会比首页更挤
+    val gridSpec = homeGridSpec(tabletLayout = windowWidthDp >= 720.dp, clean = NeriDesign.isClean)
+    val gridColumns = remember(gridSpec) { gridSpec.columns }
 
     Box(modifier = Modifier.fillMaxSize()) {
       Column(modifier = Modifier.fillMaxSize()) {
@@ -176,8 +178,8 @@ fun NeteaseHomePlaylistListScreen(
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
+                containerColor = Color.Transparent,
+                scrolledContainerColor = Color.Transparent
             )
         )
 
@@ -239,11 +241,13 @@ fun NeteaseHomePlaylistListScreen(
                         columns = gridColumns,
                         state = gridState,
                         contentPadding = PaddingValues(
-                            start = 16.dp,
-                            end = 16.dp,
+                            start = gridSpec.pageHorizontalPadding + gridSpec.contentPadding,
+                            end = gridSpec.pageHorizontalPadding + gridSpec.contentPadding,
                             top = 8.dp,
                             bottom = 24.dp + miniPlayerHeight
                         ),
+                        verticalArrangement = Arrangement.spacedBy(gridSpec.spacing),
+                        horizontalArrangement = Arrangement.spacedBy(gridSpec.spacing),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(
