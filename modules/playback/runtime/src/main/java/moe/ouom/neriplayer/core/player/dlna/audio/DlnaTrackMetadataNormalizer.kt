@@ -30,10 +30,10 @@ object DlnaTrackMetadataNormalizer {
         youtubeFallbackAlbum: String = "YouTube Music",
         localFallbackAlbum: String = "Local Music"
     ): NormalizedMetadata {
-        val isBiliTrack = source == PlaybackAudioSource.BILIBILI ||
-            song.channelId.equals("bilibili", ignoreCase = true) ||
-            (source != PlaybackAudioSource.LOCAL &&
-                source != PlaybackAudioSource.SUBSONIC &&
+        val isBiliTrack = source != PlaybackAudioSource.LOCAL &&
+            source != PlaybackAudioSource.SUBSONIC &&
+            (source == PlaybackAudioSource.BILIBILI ||
+                song.channelId.equals("bilibili", ignoreCase = true) ||
                 INTERNAL_BILI_TAG_REGEX.matches(song.album.trim()))
         val title = (song.customName?.takeIf { it.isNotBlank() } ?: song.name).trim()
             .ifBlank { "Unknown Title" }

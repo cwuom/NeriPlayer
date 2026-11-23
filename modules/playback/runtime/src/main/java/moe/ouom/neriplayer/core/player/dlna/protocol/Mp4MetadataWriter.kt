@@ -26,7 +26,8 @@ object Mp4MetadataWriter {
         val type: String,
         val startOffset: Long,
         val size: Long,
-        val headerSize: Int
+        val headerSize: Int,
+        val extendsToEof: Boolean = false
     )
 
     private data class ParsedChildBox(
@@ -66,6 +67,9 @@ object Mp4MetadataWriter {
             if (mdatBoxes.size != 1) return false
             val mdatBox = mdatBoxes.first()
             if (moovBox.size > MAX_MOOV_BYTES || ftypBox.size > 1024L * 1024L) return false
+            val extraTopLevelBoxes = boxes.filter { it.type !in setOf("ftyp", "moov", "mdat", "free", "skip") }
+            // Never append trailing top-level boxes after an mdat whose size field is 0 (extends to EOF)
+            if (mdatBox.extendsToEof && extraTopLevelBoxes.isNotEmpty()) return false
 
             val ftypBytes = readBoxBytes(sourceFile, ftypBox)
             val originalMoovBytes = readBoxBytes(sourceFile, moovBox)
@@ -91,10 +95,8 @@ object Mp4MetadataWriter {
                 out.write(ftypBytes)
                 out.write(finalMoovBox)
                 copyRange(sourceFile, mdatBox.startOffset, mdatBox.size, out)
-                for (box in boxes) {
-                    if (box.type !in setOf("ftyp", "moov", "mdat", "free", "skip")) {
-                        copyRange(sourceFile, box.startOffset, box.size, out)
-                    }
+                for (box in extraTopLevelBoxes) {
+                    copyRange(sourceFile, box.startOffset, box.size, out)
                 }
                 out.flush()
             }
@@ -140,7 +142,7 @@ object Mp4MetadataWriter {
                 }
             }
             if (boxSize < headerSize || offset + boxSize > totalLen) break
-            result += BoxRange(type, offset, boxSize, headerSize)
+            result += BoxRange(type, offset, boxSize, headerSize, extendsToEof = (size32 == 0L))
             offset += boxSize
         }
         return result
@@ -192,38 +194,48 @@ object Mp4MetadataWriter {
 
         if (existingMeta != null) {
             val metaBodyStart = existingMeta.headerSize + 4 // FullBox 4-byte version/flags
-            if (metaBodyStart <= existingMeta.rawBytes.size) {
-                val parsedMeta = parseChildBoxes(
-                    existingMeta.rawBytes,
-                    metaBodyStart,
-                    existingMeta.rawBytes.size
-                )
-                if (parsedMeta != null) {
-                    existingMetaChildren = parsedMeta
-                    val existingIlst = parsedMeta.firstOrNull { it.type == "ilst" }
-                    if (existingIlst != null && existingIlst.headerSize <= existingIlst.rawBytes.size) {
-                        val parsedIlst = parseChildBoxes(
-                            existingIlst.rawBytes,
-                            existingIlst.headerSize,
-                            existingIlst.rawBytes.size
-                        )
-                        if (parsedIlst != null) {
-                            val replacedTypes = buildSet {
-                                if (title.isNotBlank()) add(ATOM_TITLE)
-                                if (artist.isNotBlank()) {
-                                    add(ATOM_ARTIST)
-                                    add(ATOM_ALBUM_ARTIST)
-                                }
-                                if (album.isNotBlank()) add(ATOM_ALBUM)
-                            }
-                            preservedIlstAtoms = parsedIlst.filter { it.type !in replacedTypes }
-                        }
+            if (metaBodyStart > existingMeta.rawBytes.size) return null
+            val parsedMeta = parseChildBoxes(
+                existingMeta.rawBytes,
+                metaBodyStart,
+                existingMeta.rawBytes.size
+            ) ?: return null
+            existingMetaChildren = parsedMeta
+            val existingIlst = parsedMeta.firstOrNull { it.type == "ilst" }
+            if (existingIlst != null) {
+                if (existingIlst.headerSize > existingIlst.rawBytes.size) return null
+                val parsedIlst = parseChildBoxes(
+                    existingIlst.rawBytes,
+                    existingIlst.headerSize,
+                    existingIlst.rawBytes.size
+                ) ?: return null
+                val replacedTypes = buildSet {
+                    if (title.isNotBlank()) add(ATOM_TITLE)
+                    if (artist.isNotBlank()) {
+                        add(ATOM_ARTIST)
+                        add(ATOM_ALBUM_ARTIST)
                     }
+                    if (album.isNotBlank()) add(ATOM_ALBUM)
                 }
+                preservedIlstAtoms = parsedIlst.filter { it.type !in replacedTypes }
             }
         }
 
-        val hdlrBox = existingMetaChildren.firstOrNull { it.type == "hdlr" }?.rawBytes ?: run {
+        val existingHdlr = existingMetaChildren.firstOrNull { it.type == "hdlr" }
+        if (existingHdlr != null) {
+            // FullBox(4) + pre_defined(4) + handler_type(4) = headerSize + 12
+            if (existingHdlr.rawBytes.size < existingHdlr.headerSize + 12) return null
+            val handlerType = String(
+                existingHdlr.rawBytes,
+                existingHdlr.headerSize + 8,
+                4,
+                Charsets.ISO_8859_1
+            )
+            // Only iTunes 'mdir' uses fourcc ilst atoms (©nam/©ART/©alb); do not corrupt QuickTime 'mdta' keyed metadata
+            if (!handlerType.equals("mdir", ignoreCase = true)) return null
+        }
+
+        val hdlrBox = existingHdlr?.rawBytes ?: run {
             val hdlrPayload = ByteArrayOutputStream().apply {
                 write(byteArrayOf(0, 0, 0, 0)) // version/flags
                 write(byteArrayOf(0, 0, 0, 0)) // pre_defined

@@ -9,6 +9,8 @@ import moe.ouom.neriplayer.data.model.playback.dlna.DlnaTransportState
  */
 object DlnaCastStateMachine {
 
+    private const val MAX_DELAYED_POLL_PROJECTION_MS = 15_000L
+
     data class PollObservation(
         val previousState: DlnaTransportState,
         val currentState: DlnaTransportState,
@@ -20,7 +22,8 @@ object DlnaCastStateMachine {
         val hasStartedPlayingInGeneration: Boolean,
         val consecutiveStoppedPolls: Int,
         val lastPlayingPositionMs: Long = 0L,
-        val consecutiveEndPausedPolls: Int = 0
+        val consecutiveEndPausedPolls: Int = 0,
+        val elapsedSinceLastPlayingPollMs: Long = 0L
     )
 
     sealed class PollDecision {
@@ -53,13 +56,19 @@ object DlnaCastStateMachine {
             return PollDecision.KeepPolling
         }
 
+        val projectedPlayingPositionMs = if (obs.lastPlayingPositionMs > 0L && obs.elapsedSinceLastPlayingPollMs > 0L) {
+            obs.lastPlayingPositionMs + obs.elapsedSinceLastPlayingPollMs.coerceIn(0L, MAX_DELAYED_POLL_PROJECTION_MS)
+        } else {
+            obs.lastPlayingPositionMs
+        }
+
         if (obs.currentState == DlnaTransportState.PAUSED_PLAYBACK) {
             if (!obs.userPausedOrStopped && obs.hasStartedPlayingInGeneration && obs.durationMs > 0L) {
                 val nearEndAtPause =
                     obs.positionMs >= (obs.durationMs - 2_500L).coerceAtLeast(0L) ||
                         obs.lastPlayingPositionMs >= (obs.durationMs - 3_500L).coerceAtLeast(0L)
                 val resetToZeroAtEnd = obs.positionMs == 0L &&
-                    obs.lastPlayingPositionMs >= (obs.durationMs - 5_000L).coerceAtLeast(1_000L)
+                    projectedPlayingPositionMs >= (obs.durationMs - 5_000L).coerceAtLeast(1_000L)
                 if (nearEndAtPause || resetToZeroAtEnd) {
                     return if (obs.consecutiveEndPausedPolls >= 2) {
                         PollDecision.TrackEnded(obs.generationId)
@@ -82,12 +91,17 @@ object DlnaCastStateMachine {
         if (stoppedLike && !obs.userPausedOrStopped && obs.hasStartedPlayingInGeneration) {
             val nearEnd = obs.durationMs > 0L && (
                 obs.positionMs >= (obs.durationMs - 4_000L).coerceAtLeast(0L) ||
-                    obs.lastPlayingPositionMs >= (obs.durationMs - 5_000L).coerceAtLeast(0L)
+                    obs.lastPlayingPositionMs >= (obs.durationMs - 5_000L).coerceAtLeast(0L) ||
+                    (obs.positionMs == 0L &&
+                        obs.previousState == DlnaTransportState.PLAYING &&
+                        projectedPlayingPositionMs >= (obs.durationMs - 5_000L).coerceAtLeast(0L))
                 )
             val midTrackBeforeStop = obs.durationMs > 10_000L &&
-                obs.lastPlayingPositionMs in 1L until (obs.durationMs - 5_000L)
+                obs.lastPlayingPositionMs > 0L &&
+                projectedPlayingPositionMs < (obs.durationMs - 5_000L)
             // Some renderers reset RelTime to 0 as soon as they transition to STOPPED after EOF;
-            // sustained STOPPED mid-track (e.g. hardware Stop button on renderer) must NOT advance queue.
+            // sustained STOPPED mid-track (e.g. hardware Stop button on renderer) must NOT advance queue,
+            // while a delayed SOAP poll across the final seconds projects forward to preserve EOF recovery.
             val resetToZeroAfterPlay = !midTrackBeforeStop &&
                 obs.positionMs == 0L &&
                 (obs.previousState == DlnaTransportState.PLAYING ||
@@ -108,13 +122,19 @@ object DlnaCastStateMachine {
     fun isPausedAtTrackEnd(
         positionMs: Long,
         durationMs: Long,
-        lastPlayingPositionMs: Long
+        lastPlayingPositionMs: Long,
+        elapsedSinceLastPlayingPollMs: Long = 0L
     ): Boolean {
         if (durationMs <= 0L) return false
+        val projectedPlayingMs = if (lastPlayingPositionMs > 0L && elapsedSinceLastPlayingPollMs > 0L) {
+            lastPlayingPositionMs + elapsedSinceLastPlayingPollMs.coerceIn(0L, MAX_DELAYED_POLL_PROJECTION_MS)
+        } else {
+            lastPlayingPositionMs
+        }
         val nearEnd = positionMs >= (durationMs - 2_500L).coerceAtLeast(0L) ||
             lastPlayingPositionMs >= (durationMs - 3_500L).coerceAtLeast(0L)
         val resetToZeroAtEnd = positionMs == 0L &&
-            lastPlayingPositionMs >= (durationMs - 5_000L).coerceAtLeast(1_000L)
+            projectedPlayingMs >= (durationMs - 5_000L).coerceAtLeast(1_000L)
         return nearEnd || resetToZeroAtEnd
     }
 

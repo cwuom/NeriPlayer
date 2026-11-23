@@ -441,4 +441,62 @@ class DlnaRound3StressAndSecurityTest {
         assertTrue(degradedDecision.degraded)
         assertTrue(!degradedDecision.degradationReason.isNullOrBlank())
     }
+
+    @Test
+    fun round3DelayedPollEofAndVersionedCacheExportRegression() {
+        // 1. Delayed poll across natural EOF (174s / 180s + 6.5s poll delay -> STOPPED at 0s) advances queue
+        val delayedNaturalEof = DlnaCastStateMachine.evaluatePoll(
+            DlnaCastStateMachine.PollObservation(
+                previousState = DlnaTransportState.PLAYING,
+                currentState = DlnaTransportState.STOPPED,
+                positionMs = 0L,
+                durationMs = 180_000L,
+                userPausedOrStopped = false,
+                generationId = 11L,
+                activeGenerationId = 11L,
+                hasStartedPlayingInGeneration = true,
+                consecutiveStoppedPolls = 1,
+                lastPlayingPositionMs = 174_000L,
+                elapsedSinceLastPlayingPollMs = 6_500L
+            )
+        )
+        assertEquals(DlnaCastStateMachine.PollDecision.TrackEnded(11L), delayedNaturalEof)
+
+        // 2. Hardware Stop button mid-track even after an 8s poll delay (60s / 180s + 8s = 68s) must NOT advance queue
+        val delayedMidTrackStop = DlnaCastStateMachine.evaluatePoll(
+            DlnaCastStateMachine.PollObservation(
+                previousState = DlnaTransportState.PLAYING,
+                currentState = DlnaTransportState.STOPPED,
+                positionMs = 0L,
+                durationMs = 180_000L,
+                userPausedOrStopped = false,
+                generationId = 11L,
+                activeGenerationId = 11L,
+                hasStartedPlayingInGeneration = true,
+                consecutiveStoppedPolls = 3,
+                lastPlayingPositionMs = 60_000L,
+                elapsedSinceLastPlayingPollMs = 8_000L
+            )
+        )
+        assertEquals(
+            DlnaCastStateMachine.PollDecision.SyncPlayback(
+                isPlaying = false,
+                positionMs = 0L,
+                durationMs = 180_000L,
+                markStartedPlaying = false
+            ),
+            delayedMidTrackStop
+        )
+
+        // 3. Versioned SimpleCache export file name distinguishes same cacheKey across refreshed cache versions
+        val baseExport = moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter
+            .cacheKeyToExportFileName("netease|song-123")
+        val v1Export = moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter
+            .cacheKeyToExportFileName("netease|song-123", "a1b2c3d4")
+        val v2Export = moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter
+            .cacheKeyToExportFileName("netease|song-123", "e5f60718")
+        org.junit.Assert.assertNotEquals(baseExport, v1Export)
+        org.junit.Assert.assertNotEquals(v1Export, v2Export)
+        assertTrue(v1Export.startsWith(baseExport.removeSuffix(".audio") + "_"))
+    }
 }

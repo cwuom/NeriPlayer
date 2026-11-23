@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.dlna.audio
 
+import moe.ouom.neriplayer.core.player.dlna.protocol.DlnaProtocolInfo
 import moe.ouom.neriplayer.core.player.dlna.protocol.FlacHeaderInspector
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
@@ -19,7 +20,8 @@ object LosslessSourcePolicy {
         LOSSY_SOURCE,
         WAV_UNSUPPORTED,
         FLAC_UNSUPPORTED_WAV_DISABLED,
-        ALAC_REQUIRES_WAV_FALLBACK
+        ALAC_REQUIRES_WAV_FALLBACK,
+        HTTP_TRANSPORT_UNSUPPORTED
     }
 
     enum class DegradationKind {
@@ -69,6 +71,18 @@ object LosslessSourcePolicy {
         val knownBitDepth = (inspected.bitDepth ?: audioInfo?.bitDepth)?.takeIf { it > 0 } ?: 0
         val channels = inspected.channelCount ?: audioInfo?.channelCount ?: 2
 
+        if (!DlnaProtocolInfo.supportsHttpTransport(device.sinkProtocolInfo)) {
+            return DeliveryDecision.Blocked(
+                kind = BlockReasonKind.HTTP_TRANSPORT_UNSUPPORTED,
+                reason = "Renderer protocol list does not advertise HTTP transport support.",
+                sourceSummary = sourceSummary,
+                resolvedFormat = resolvedFormat,
+                mimeType = effectiveMime,
+                sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                bitDepth = knownBitDepth.takeIf { it > 0 }
+            )
+        }
+
         if (isPreviewClip && options.strictLosslessMode) {
             return DeliveryDecision.Blocked(
                 kind = BlockReasonKind.PREVIEW_CLIP,
@@ -81,16 +95,16 @@ object LosslessSourcePolicy {
             )
         }
 
-        val isLosslessContainer = when {
-            inspected.format != FlacHeaderInspector.ContainerFormat.UNKNOWN -> inspected.isLossless
-            else -> isDeclaredLosslessMime(audioInfo?.mimeType)
-        }
+        // Only binary-verified lossless containers (FLAC, PCM WAV, ALAC MP4) qualify as lossless;
+        // unverified UNKNOWN containers must not be mislabeled or served as ORIGINAL_FLAC.
+        val isLosslessContainer = inspected.format != FlacHeaderInspector.ContainerFormat.UNKNOWN &&
+            inspected.isLossless
 
         if (!isLosslessContainer) {
             if (options.strictLosslessMode) {
                 return DeliveryDecision.Blocked(
                     kind = BlockReasonKind.LOSSY_SOURCE,
-                    reason = "Strict lossless mode blocked lossy source ($sourceSummary).",
+                    reason = "Strict lossless mode blocked lossy or unverified source ($sourceSummary).",
                     sourceSummary = sourceSummary,
                     resolvedFormat = resolvedFormat,
                     mimeType = effectiveMime,
@@ -169,14 +183,15 @@ object LosslessSourcePolicy {
                     )
                 }
             }
-            else -> {
-                val canWav = options.wavFallbackEnabled && device.supportsWav
-                when {
-                    options.preferOriginalFlac && device.supportsFlac -> DlnaStreamMode.ORIGINAL_FLAC
-                    canWav -> wavMode
-                    else -> DlnaStreamMode.ORIGINAL_FLAC
-                }
-            }
+            else -> return DeliveryDecision.Blocked(
+                kind = BlockReasonKind.LOSSY_SOURCE,
+                reason = "Unverified audio container ($sourceSummary).",
+                sourceSummary = sourceSummary,
+                resolvedFormat = resolvedFormat,
+                mimeType = effectiveMime,
+                sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                bitDepth = knownBitDepth.takeIf { it > 0 }
+            )
         }
 
         val isWavDelivery = mode == DlnaStreamMode.LOSSLESS_WAV || mode == DlnaStreamMode.LOSSLESS_WAV_ID3
@@ -253,10 +268,5 @@ object LosslessSourcePolicy {
             "audio/mp3" -> "audio/mpeg"
             else -> clean
         }
-    }
-
-    private fun isDeclaredLosslessMime(mimeType: String?): Boolean {
-        val clean = mimeType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
-        return clean in setOf("audio/flac", "audio/x-flac", "audio/wav", "audio/x-wav", "audio/alac")
     }
 }

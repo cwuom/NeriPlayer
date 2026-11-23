@@ -116,10 +116,24 @@ object DlnaProtocolInfo {
     private val WAV_MIME_ALIASES = listOf("audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave")
     private val FLAC_MIME_ALIASES = listOf("audio/x-flac", "audio/flac")
     private val MP3_MIME_ALIASES = listOf("audio/mpeg", "audio/mp3")
-    private val MP4_MIME_ALIASES = listOf("audio/mp4", "audio/m4a", "audio/x-m4a", "audio/mp4a-latm")
+    private val MP4_MIME_ALIASES = listOf("audio/mp4", "audio/m4a", "audio/x-m4a")
+    private val OGG_MIME_ALIASES = listOf("audio/ogg", "application/ogg")
     private val DEFAULT_FALLBACK_DLNA_MIMES = (
-        WAV_MIME_ALIASES + FLAC_MIME_ALIASES + MP3_MIME_ALIASES + MP4_MIME_ALIASES + listOf("audio/aac")
+        WAV_MIME_ALIASES + FLAC_MIME_ALIASES + MP3_MIME_ALIASES + MP4_MIME_ALIASES +
+            OGG_MIME_ALIASES + listOf("audio/aac", "audio/mp4a-latm")
         ).toSet()
+
+    private sealed interface ParsedSinkCapabilities {
+        data object Unannounced : ParsedSinkCapabilities
+        data class Announced(val httpEntries: List<Pair<String, String>>) : ParsedSinkCapabilities
+    }
+
+    fun supportsHttpTransport(sinkProtocolInfo: String): Boolean {
+        return when (val parsed = parseSinkCapabilities(sinkProtocolInfo)) {
+            ParsedSinkCapabilities.Unannounced -> true
+            is ParsedSinkCapabilities.Announced -> parsed.httpEntries.isNotEmpty()
+        }
+    }
 
     fun preferredWavMime(sinkProtocolInfo: String = ""): String {
         return selectPreferredMime(
@@ -152,13 +166,18 @@ object DlnaProtocolInfo {
                         preferred = "audio/mpeg",
                         alternatives = MP3_MIME_ALIASES
                     )
-                    "audio/m4a", "audio/mp4", "audio/x-m4a", "audio/mp4a-latm" -> selectPreferredMime(
+                    "audio/m4a", "audio/mp4", "audio/x-m4a" -> selectPreferredMime(
                         sinkProtocolInfo = sinkProtocolInfo,
                         preferred = "audio/mp4",
                         alternatives = MP4_MIME_ALIASES
                     )
+                    "audio/ogg", "application/ogg" -> selectPreferredMime(
+                        sinkProtocolInfo = sinkProtocolInfo,
+                        preferred = "audio/ogg",
+                        alternatives = OGG_MIME_ALIASES
+                    )
                     "audio/aac" -> "audio/aac"
-                    "audio/ogg" -> "audio/ogg"
+                    "audio/mp4a-latm" -> "audio/mp4a-latm"
                     "audio/webm" -> "audio/webm"
                     null, "" -> if (mode == DlnaStreamMode.ORIGINAL_FLAC) {
                         selectPreferredMime(sinkProtocolInfo, "audio/x-flac", FLAC_MIME_ALIASES)
@@ -194,9 +213,13 @@ object DlnaProtocolInfo {
     }
 
     fun supportsFlac(sinkProtocolInfo: String, sampleRateHz: Int? = null): Boolean {
-        if (sinkProtocolInfo.isBlank()) return true
-        val mimeEntries = parseProtocolEntries(sinkProtocolInfo)
-        if (mimeEntries.isEmpty()) return true
+        val mimeEntries = when (val parsed = parseSinkCapabilities(sinkProtocolInfo)) {
+            ParsedSinkCapabilities.Unannounced -> return true
+            is ParsedSinkCapabilities.Announced -> {
+                if (parsed.httpEntries.isEmpty()) return false
+                parsed.httpEntries
+            }
+        }
         var sawExplicitFlac = false
         for ((mime, params) in mimeEntries) {
             if (mime in FLAC_MIME_ALIASES) {
@@ -213,9 +236,13 @@ object DlnaProtocolInfo {
     }
 
     fun supportsWav(sinkProtocolInfo: String): Boolean {
-        if (sinkProtocolInfo.isBlank()) return true
-        val mimeEntries = parseProtocolEntries(sinkProtocolInfo)
-        if (mimeEntries.isEmpty()) return true
+        val mimeEntries = when (val parsed = parseSinkCapabilities(sinkProtocolInfo)) {
+            ParsedSinkCapabilities.Unannounced -> return true
+            is ParsedSinkCapabilities.Announced -> {
+                if (parsed.httpEntries.isEmpty()) return false
+                parsed.httpEntries
+            }
+        }
         return mimeEntries.any { (mime, _) ->
             mime in WAV_MIME_ALIASES || isWildcardAudioMime(mime)
         }
@@ -224,14 +251,17 @@ object DlnaProtocolInfo {
     fun supportsDeliveryMime(sinkProtocolInfo: String, mimeType: String?): Boolean {
         val clean = mimeType?.substringBefore(';')?.trim()?.lowercase(Locale.US).orEmpty()
         if (clean.isEmpty()) return false
-        if (sinkProtocolInfo.isBlank()) {
-            return clean in DEFAULT_FALLBACK_DLNA_MIMES
+        val mimeEntries = when (val parsed = parseSinkCapabilities(sinkProtocolInfo)) {
+            ParsedSinkCapabilities.Unannounced -> return clean in DEFAULT_FALLBACK_DLNA_MIMES
+            is ParsedSinkCapabilities.Announced -> {
+                if (parsed.httpEntries.isEmpty()) return false
+                parsed.httpEntries
+            }
         }
-        val mimeEntries = parseProtocolEntries(sinkProtocolInfo)
-        if (mimeEntries.isEmpty()) {
-            return clean in DEFAULT_FALLBACK_DLNA_MIMES
+        if (mimeEntries.any { (mime, _) -> mime == "*" || mime == "*/*" }) {
+            return true
         }
-        if (mimeEntries.any { (mime, _) -> isWildcardAudioMime(mime) }) {
+        if (clean.startsWith("audio/") && mimeEntries.any { (mime, _) -> mime == "audio/*" }) {
             return true
         }
         val candidates = when (clean) {
@@ -239,7 +269,7 @@ object DlnaProtocolInfo {
             in FLAC_MIME_ALIASES -> FLAC_MIME_ALIASES
             in MP3_MIME_ALIASES -> MP3_MIME_ALIASES
             in MP4_MIME_ALIASES -> MP4_MIME_ALIASES
-            "audio/ogg", "application/ogg" -> listOf("audio/ogg", "application/ogg")
+            in OGG_MIME_ALIASES -> OGG_MIME_ALIASES
             else -> listOf(clean)
         }.toSet()
         return mimeEntries.any { (mime, _) -> mime in candidates }
@@ -254,27 +284,40 @@ object DlnaProtocolInfo {
         preferred: String,
         alternatives: List<String>
     ): String {
-        if (sinkProtocolInfo.isBlank()) return preferred
-        val entries = parseProtocolEntries(sinkProtocolInfo).map { it.first }.toSet()
+        val parsed = parseSinkCapabilities(sinkProtocolInfo)
+        if (parsed !is ParsedSinkCapabilities.Announced || parsed.httpEntries.isEmpty()) {
+            return preferred
+        }
+        val entries = parsed.httpEntries.map { it.first }.toSet()
         if (preferred in entries) return preferred
         return alternatives.firstOrNull { it in entries } ?: preferred
     }
 
-    private fun parseProtocolEntries(sinkProtocolInfo: String): List<Pair<String, String>> {
-        return sinkProtocolInfo.split(',')
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .mapNotNull { entry ->
-                val parts = entry.split(':')
-                if (parts.size < 3) return@mapNotNull null
-                val transport = parts[0].trim().lowercase(Locale.US)
-                if (transport != "*" && transport != "http-get") return@mapNotNull null
-                val third = parts[2].trim()
-                val semi = third.indexOf(';')
-                val mime = (if (semi >= 0) third.substring(0, semi) else third).trim().lowercase(Locale.US)
-                val params = if (semi >= 0) third.substring(semi + 1).trim().lowercase(Locale.US) else ""
-                if (mime.isEmpty()) null else mime to params
+    private fun parseSinkCapabilities(sinkProtocolInfo: String): ParsedSinkCapabilities {
+        if (sinkProtocolInfo.isBlank()) return ParsedSinkCapabilities.Unannounced
+        var sawValidProtocolEntry = false
+        val httpEntries = mutableListOf<Pair<String, String>>()
+        for (rawEntry in sinkProtocolInfo.split(',')) {
+            val entry = rawEntry.trim()
+            if (entry.isEmpty()) continue
+            val parts = entry.split(':')
+            if (parts.size < 3) continue
+            val transport = parts[0].trim().lowercase(Locale.US)
+            val third = parts[2].trim()
+            val semi = third.indexOf(';')
+            val mime = (if (semi >= 0) third.substring(0, semi) else third).trim().lowercase(Locale.US)
+            val params = if (semi >= 0) third.substring(semi + 1).trim().lowercase(Locale.US) else ""
+            if (transport.isEmpty() || mime.isEmpty()) continue
+            sawValidProtocolEntry = true
+            if (transport == "*" || transport == "http-get") {
+                httpEntries += mime to params
             }
+        }
+        return if (!sawValidProtocolEntry) {
+            ParsedSinkCapabilities.Unannounced
+        } else {
+            ParsedSinkCapabilities.Announced(httpEntries)
+        }
     }
 
     private fun extractRateParam(params: String): Int? {

@@ -149,6 +149,7 @@
     <string name="dlna_blocked_flac_unsupported">Renderer does not support FLAC and "Lossless WAV Fallback" is disabled. Enable WAV fallback in device options.</string>
     <string name="dlna_blocked_wav_unsupported">Source is lossless WAV, which this DLNA renderer does not advertise as supported.</string>
     <string name="dlna_blocked_alac_requires_wav">ALAC lossless source requires "Lossless WAV Fallback" enabled for DLNA delivery.</string>
+    <string name="dlna_blocked_http_transport_unsupported">Renderer protocol list does not advertise HTTP streaming support (http-get).</string>
     <string name="dlna_degraded_lossy_detail">Adaptive direct: %1$s</string>
     <string name="dlna_degraded_downgraded_detail">Platform returned: %1$s</string>
     <string name="dlna_allow_lossy_and_retry">Allow Lossy &amp; Play</string>

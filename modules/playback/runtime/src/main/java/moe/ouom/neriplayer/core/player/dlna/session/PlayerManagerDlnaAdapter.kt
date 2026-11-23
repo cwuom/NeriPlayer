@@ -22,6 +22,7 @@ import moe.ouom.neriplayer.core.player.runtime.refresh.RefreshResolverSideEffect
 import moe.ouom.neriplayer.core.player.runtime.refresh.RefreshSideEffectGate
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.url.OFFLINE_CACHE_URL_PREFIX
+import moe.ouom.neriplayer.core.player.url.readCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
 import moe.ouom.neriplayer.core.player.url.tryReadVerifiedOfflineCacheResult
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
@@ -466,14 +467,49 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
         return true
     }
 
-    internal fun cacheKeyToExportFileName(cacheKey: String): String {
+    internal fun cacheKeyToExportFileName(cacheKey: String, versionToken: String? = null): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(cacheKey.toByteArray(Charsets.UTF_8))
         val hex = buildString(digest.size * 2) {
             for (b in digest) {
                 append(String.format(java.util.Locale.US, "%02x", b.toInt() and 0xFF))
             }
         }
-        return "exo_$hex.audio"
+        return if (versionToken.isNullOrBlank()) {
+            "exo_$hex.audio"
+        } else {
+            "exo_${hex}_$versionToken.audio"
+        }
+    }
+
+    internal fun computeVerifiedCacheVersionToken(
+        mediaCache: androidx.media3.datasource.cache.Cache,
+        cacheKey: String,
+        contentLength: Long
+    ): String? {
+        if (contentLength <= 0L) return null
+        val descriptor = mediaCache.readCachedPlaybackDescriptor(cacheKey) ?: return null
+        val spans = mediaCache.getCachedSpans(cacheKey).sortedBy { it.position }
+        if (spans.isEmpty()) return null
+        var covered = 0L
+        val sb = StringBuilder(128)
+        sb.append(descriptor.representationFingerprint).append('|').append(contentLength)
+        for (span in spans) {
+            if (!span.isCached || span.length <= 0L) return null
+            val backingFile = span.file ?: return null
+            covered += span.length
+            sb.append('|')
+                .append(span.position).append(':')
+                .append(span.length).append(':')
+                .append(backingFile.name).append(':')
+                .append(backingFile.length())
+        }
+        if (covered < contentLength) return null
+        val digest = MessageDigest.getInstance("SHA-256").digest(sb.toString().toByteArray(Charsets.UTF_8))
+        return buildString(16) {
+            for (i in 0 until 8) {
+                append(String.format(java.util.Locale.US, "%02x", digest[i].toInt() and 0xFF))
+            }
+        }
     }
 
     private suspend fun extractFromSimpleCache(cacheKey: String): File? = withContext(Dispatchers.IO) {
@@ -481,14 +517,21 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
         val contentLength = ContentMetadata.getContentLength(mediaCache.getContentMetadata(cacheKey))
         if (contentLength <= 0L) return@withContext null
         val stagingDir = File(PlayerManager.application.cacheDir, "dlna_staging").apply { mkdirs() }
-        val fileName = cacheKeyToExportFileName(cacheKey)
+        val keyPrefix = cacheKeyToExportFileName(cacheKey).removeSuffix(".audio")
+        val versionToken = computeVerifiedCacheVersionToken(mediaCache, cacheKey, contentLength)
+        val fileName = if (versionToken != null) {
+            cacheKeyToExportFileName(cacheKey, versionToken)
+        } else {
+            "${keyPrefix}_fresh_${java.util.UUID.randomUUID().toString().take(8)}.audio"
+        }
         val target = File(stagingDir, fileName)
-        if (target.isFile && target.length() == contentLength) {
+        if (versionToken != null && target.isFile && target.length() == contentLength) {
+            cleanupStaleCacheExports(stagingDir, keyPrefix, keepName = target.name)
             return@withContext target
         }
         val tmp = File(
             stagingDir,
-            "${fileName.removeSuffix(".audio")}_${java.util.UUID.randomUUID().toString().take(8)}.tmp"
+            "${keyPrefix}_${java.util.UUID.randomUUID().toString().take(8)}.tmp"
         )
         var committed = false
         return@withContext try {
@@ -522,8 +565,9 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
                 if (target.exists()) target.delete()
                 if (tmp.renameTo(target)) {
                     committed = true
+                    cleanupStaleCacheExports(stagingDir, keyPrefix, keepName = target.name)
                     target
-                } else if (target.isFile && target.length() == contentLength) {
+                } else if (versionToken != null && target.isFile && target.length() == contentLength) {
                     target
                 } else {
                     null
@@ -532,6 +576,17 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
         } finally {
             if (!committed && tmp.exists()) {
                 tmp.delete()
+            }
+        }
+    }
+
+    private fun cleanupStaleCacheExports(stagingDir: File, keyPrefix: String, keepName: String) {
+        val siblings = stagingDir.listFiles() ?: return
+        for (f in siblings) {
+            val name = f.name
+            if (!f.isFile || name == keepName || name.endsWith(".tmp")) continue
+            if (name == "$keyPrefix.audio" || (name.startsWith("${keyPrefix}_") && name.endsWith(".audio"))) {
+                runCatching { f.delete() }
             }
         }
     }

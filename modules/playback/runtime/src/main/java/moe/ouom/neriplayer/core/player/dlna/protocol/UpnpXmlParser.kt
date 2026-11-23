@@ -63,7 +63,11 @@ object UpnpXmlParser {
         }
     }
 
-    fun parseDeviceDescription(xml: String, locationUrl: String): ParsedDeviceDescription? {
+    fun parseDeviceDescription(
+        xml: String,
+        locationUrl: String,
+        preferredUdn: String = ""
+    ): ParsedDeviceDescription? {
         val doc = parseDocument(xml) ?: return null
         val rootEl = doc.documentElement ?: return null
         val urlBaseRaw = findDirectChildTextByLocalName(rootEl, "URLBase")
@@ -71,7 +75,7 @@ object UpnpXmlParser {
         val endpointBaseUrl = resolveValidUrlBase(urlBaseRaw, locationUrl)
 
         val deviceElements = findAllElementsByLocalName(rootEl, "device")
-        val targetDevice = selectTargetRendererDevice(deviceElements) ?: rootEl
+        val targetDevice = selectTargetRendererDevice(deviceElements, preferredUdn.trim()) ?: rootEl
 
         val udn = findDirectChildTextByLocalName(targetDevice, "UDN")
             .ifEmpty { findFirstTextByLocalName(targetDevice, "UDN") }
@@ -96,7 +100,31 @@ object UpnpXmlParser {
         )
     }
 
-    private fun selectTargetRendererDevice(devices: List<Element>): Element? {
+    private fun selectTargetRendererDevice(
+        devices: List<Element>,
+        preferredUdn: String = ""
+    ): Element? {
+        if (devices.isEmpty()) return null
+        if (preferredUdn.isNotEmpty()) {
+            val matchedByUdn = devices.firstOrNull { dev ->
+                findDirectChildTextByLocalName(dev, "UDN").equals(preferredUdn, ignoreCase = true)
+            }
+            if (matchedByUdn != null) {
+                val matchedType = findDirectChildTextByLocalName(matchedByUdn, "deviceType")
+                if (hasDirectAvTransport(matchedByUdn) ||
+                    matchedType.contains("MediaRenderer", ignoreCase = true)
+                ) {
+                    return matchedByUdn
+                }
+                // Composite root matched via rootdevice USN -> select renderer inside its subtree
+                val subtreeDevices = findAllElementsByLocalName(matchedByUdn, "device")
+                selectBestRendererFromList(subtreeDevices)?.let { return it }
+            }
+        }
+        return selectBestRendererFromList(devices) ?: devices.first()
+    }
+
+    private fun selectBestRendererFromList(devices: List<Element>): Element? {
         if (devices.isEmpty()) return null
         // 1. Prefer device declaring MediaRenderer deviceType AND its own AVTransport service
         devices.firstOrNull { dev ->
@@ -110,7 +138,7 @@ object UpnpXmlParser {
             findDirectChildTextByLocalName(dev, "deviceType")
                 .contains("MediaRenderer", ignoreCase = true)
         }?.let { return it }
-        return devices.first()
+        return null
     }
 
     private fun hasDirectAvTransport(deviceEl: Element): Boolean {

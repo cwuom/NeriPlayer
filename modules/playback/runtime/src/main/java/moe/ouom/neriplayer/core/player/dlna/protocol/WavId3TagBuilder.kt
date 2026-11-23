@@ -13,11 +13,16 @@ import java.io.ByteArrayOutputStream
 object WavId3TagBuilder {
 
     const val STANDARD_WAV_HEADER_BYTES = 44
+    const val EXTENSIBLE_WAV_HEADER_BYTES = 68
     const val MAX_WAV_ID3_CHUNK_BYTES = 64 * 1024
     const val MAX_WAV_ID3_TEXT_BYTES = 16 * 1024
     const val MAX_RIFF_TOTAL_BYTES = 0xFFFF_FFFFL + 8L
 
     private val ALLOWED_FRAME_IDS = setOf("TIT2", "TPE1", "TALB")
+    private val KSDATAFORMAT_SUBTYPE_PCM = byteArrayOf(
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00,
+        0x80.toByte(), 0x00, 0x00, 0xAA.toByte(), 0x00, 0x38, 0x9B.toByte(), 0x71
+    )
 
     data class WavLayout(
         val headerBytes: ByteArray,
@@ -153,13 +158,20 @@ object WavId3TagBuilder {
         bitsPerSample: Int,
         channels: Int,
         pcmDataBytes: Long,
-        id3Chunk: ByteArray = ByteArray(0)
+        id3Chunk: ByteArray = ByteArray(0),
+        channelMask: Int? = null,
+        validBitsPerSample: Int? = null,
+        useExtensibleHeader: Boolean = false
     ): WavLayout {
         require(sampleRateHz > 0) { "sampleRateHz must be positive: $sampleRateHz" }
         require(bitsPerSample == 8 || bitsPerSample == 16 || bitsPerSample == 24 || bitsPerSample == 32) {
             "Unsupported WAV PCM bit depth: $bitsPerSample"
         }
-        require(channels in 1..8) { "Unsupported channel count: $channels" }
+        val emitExtensible = useExtensibleHeader ||
+            channelMask != null ||
+            (validBitsPerSample != null && validBitsPerSample != bitsPerSample)
+        val maxChannels = if (emitExtensible) 16 else 8
+        require(channels in 1..maxChannels) { "Unsupported channel count: $channels" }
         require(pcmDataBytes >= 0L) { "pcmDataBytes must be non-negative: $pcmDataBytes" }
 
         val safeId3 = if (id3Chunk.isNotEmpty()) {
@@ -169,7 +181,8 @@ object WavId3TagBuilder {
             ByteArray(0)
         }
 
-        val prefixBytes = STANDARD_WAV_HEADER_BYTES + safeId3.size
+        val fixedHeaderBytes = if (emitExtensible) EXTENSIBLE_WAV_HEADER_BYTES else STANDARD_WAV_HEADER_BYTES
+        val prefixBytes = fixedHeaderBytes + safeId3.size
         val dataPadBytes = pcmDataBytes and 1L
         val totalBytes = prefixBytes.toLong() + pcmDataBytes + dataPadBytes
         if (totalBytes > MAX_RIFF_TOTAL_BYTES) {
@@ -183,13 +196,27 @@ object WavId3TagBuilder {
         writeLe32(out, totalBytes - 8L)
         out.write("WAVE".toByteArray(Charsets.US_ASCII))
         out.write("fmt ".toByteArray(Charsets.US_ASCII))
-        writeLe32(out, 16L) // PCM fmt chunk size
-        writeLe16(out, 1) // AudioFormat = 1 (PCM)
-        writeLe16(out, channels)
-        writeLe32(out, sampleRateHz.toLong())
-        writeLe32(out, byteRate)
-        writeLe16(out, blockAlign)
-        writeLe16(out, bitsPerSample)
+        if (emitExtensible) {
+            writeLe32(out, 40L) // WAVE_FORMAT_EXTENSIBLE fmt chunk size
+            writeLe16(out, 0xFFFE) // AudioFormat = WAVE_FORMAT_EXTENSIBLE
+            writeLe16(out, channels)
+            writeLe32(out, sampleRateHz.toLong())
+            writeLe32(out, byteRate)
+            writeLe16(out, blockAlign)
+            writeLe16(out, bitsPerSample)
+            writeLe16(out, 22) // cbSize = 22
+            writeLe16(out, (validBitsPerSample ?: bitsPerSample).coerceIn(1, bitsPerSample))
+            writeLe32(out, (channelMask ?: 0).toLong() and 0xFFFF_FFFFL)
+            out.write(KSDATAFORMAT_SUBTYPE_PCM)
+        } else {
+            writeLe32(out, 16L) // PCM fmt chunk size
+            writeLe16(out, 1) // AudioFormat = 1 (PCM)
+            writeLe16(out, channels)
+            writeLe32(out, sampleRateHz.toLong())
+            writeLe32(out, byteRate)
+            writeLe16(out, blockAlign)
+            writeLe16(out, bitsPerSample)
+        }
         if (safeId3.isNotEmpty()) {
             out.write(safeId3)
         }

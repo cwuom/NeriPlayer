@@ -149,6 +149,7 @@
     <string name="dlna_blocked_flac_unsupported">当前 DLNA 设备未声明支持 FLAC，且已关闭「无损 WAV 兼容后备」。请在设备选项中开启 WAV 后备后重试。</string>
     <string name="dlna_blocked_wav_unsupported">当前音源为 WAV 无损格式，但该 DLNA 设备未声明支持 WAV。</string>
     <string name="dlna_blocked_alac_requires_wav">当前音源为 ALAC 无损格式，需要在设备选项中开启「无损 WAV 兼容后备」才能投送至 DLNA 设备。</string>
+    <string name="dlna_blocked_http_transport_unsupported">当前 DLNA 设备公告的传输协议不包含 HTTP 流媒体（http-get），无法投送。</string>
     <string name="dlna_degraded_lossy_detail">自适应直传：%1$s</string>
     <string name="dlna_degraded_downgraded_detail">平台返回：%1$s</string>
     <string name="dlna_allow_lossy_and_retry">关闭严格无损并播放</string>

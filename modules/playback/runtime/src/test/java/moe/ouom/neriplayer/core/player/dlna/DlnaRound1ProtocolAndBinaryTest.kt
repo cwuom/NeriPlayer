@@ -882,7 +882,7 @@ class DlnaRound1ProtocolAndBinaryTest {
             val outWithCovr = java.io.File(tempDir, "out_covr.m4a")
             assertTrue(Mp4MetadataWriter.writeTags(srcWithCovr, outWithCovr, "NewTitle", "NewArtist", "NewAlbum"))
             val outCovrBytes = outWithCovr.readBytes()
-            assertTrue("Existing covr atom must be preserved", indexOfAscii(outCovrBytes, "covr") > 0)
+            assertTrue("Existing covr atom must be preserved byte-for-byte", containsSubArray(outCovrBytes, covrAtom))
             assertTrue(String(outCovrBytes, Charsets.UTF_8).contains("NewTitle"))
 
             // Corrupt stco entry_count = 999 -> writeTags must return false cleanly
@@ -1070,6 +1070,274 @@ class DlnaRound1ProtocolAndBinaryTest {
         }
     }
 
+    @Test
+    fun round3CodeRabbitProtocolAndAudioRegressionTests() {
+        val tempDir = java.nio.file.Files.createTempDirectory("dlna_r3_cr_audit").toFile()
+        try {
+            // 1. WAVE_FORMAT_EXTENSIBLE (0xFFFE) preserves dwChannelMask, wValidBitsPerSample, and verifies full 16-byte PCM SubFormat GUID
+            val ksSubFormatPcmGuid = byteArrayOf(
+                0x01, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x10, 0x00,
+                0x80.toByte(), 0x00, 0x00, 0xAA.toByte(),
+                0x00, 0x38, 0x9B.toByte(), 0x71
+            )
+            val extensibleFmtPayload = ByteArray(40).also {
+                putLe16(it, 0, 0xFFFE) // WAVE_FORMAT_EXTENSIBLE
+                putLe16(it, 2, 4) // 4 channels (Quad: FL|FR|BL|BR)
+                putLe32(it, 4, 96_000L)
+                putLe32(it, 8, 96_000L * 4 * 3) // byteRate (24-bit container)
+                putLe16(it, 12, 12) // blockAlign
+                putLe16(it, 14, 24) // bitsPerSample (container)
+                putLe16(it, 16, 22) // cbSize = 22
+                putLe16(it, 18, 20) // wValidBitsPerSample = 20
+                putLe32(it, 20, 0x0033L) // dwChannelMask = FL|FR|BL|BR
+                System.arraycopy(ksSubFormatPcmGuid, 0, it, 24, 16)
+            }
+            val quadPcmData = ByteArray(48) { (it + 1).toByte() }
+            val extWavBody = "WAVEfmt ".toByteArray(Charsets.US_ASCII) +
+                le32(40L) + extensibleFmtPayload +
+                "data".toByteArray(Charsets.US_ASCII) + le32(quadPcmData.size.toLong()) + quadPcmData
+            val extWavBytes = "RIFF".toByteArray(Charsets.US_ASCII) + le32(extWavBody.size.toLong()) + extWavBody
+            val extWavFile = java.io.File(tempDir, "quad_ext.wav").apply { writeBytes(extWavBytes) }
+
+            val inspectedExt = FlacHeaderInspector.inspectFile(extWavFile)
+            assertTrue(inspectedExt.isLossless)
+            assertEquals(0xFFFE, inspectedExt.wavAudioFormatTag)
+            assertEquals(20, inspectedExt.wavValidBitsPerSample)
+            assertEquals(0x0033, inspectedExt.wavChannelMask)
+
+            // Rebuilt WAV+ID3 layout preserves 0xFFFE extensible header, validBits=20, and channelMask=0x0033
+            val id3Chunk = WavId3TagBuilder.buildId3Chunk(
+                title = "Quad Symphony",
+                artist = "Ensemble",
+                album = "Surround"
+            )
+            val rebuiltLayout = WavId3TagBuilder.buildWavLayout(
+                sampleRateHz = 96_000,
+                bitsPerSample = 24,
+                channels = 4,
+                pcmDataBytes = quadPcmData.size.toLong(),
+                id3Chunk = id3Chunk,
+                channelMask = inspectedExt.wavChannelMask,
+                validBitsPerSample = inspectedExt.wavValidBitsPerSample ?: 24,
+                useExtensibleHeader = true
+            )
+            assertEquals(WavId3TagBuilder.EXTENSIBLE_WAV_HEADER_BYTES + id3Chunk.size, rebuiltLayout.headerBytes.size)
+            val headerTag = (rebuiltLayout.headerBytes[20].toInt() and 0xFF) or
+                ((rebuiltLayout.headerBytes[21].toInt() and 0xFF) shl 8)
+            val headerValidBits = (rebuiltLayout.headerBytes[38].toInt() and 0xFF) or
+                ((rebuiltLayout.headerBytes[39].toInt() and 0xFF) shl 8)
+            val headerChannelMask = (rebuiltLayout.headerBytes[40].toInt() and 0xFF) or
+                ((rebuiltLayout.headerBytes[41].toInt() and 0xFF) shl 8)
+            assertEquals(0xFFFE, headerTag)
+            assertEquals(20, headerValidBits)
+            assertEquals(0x0033, headerChannelMask)
+
+            // Bogus GUID sharing 0x0001 prefix with non-KSDATAFORMAT tail must NOT be treated as PCM lossless
+            val fakeGuidFmt = extensibleFmtPayload.copyOf().also { it[39] = 0x72 }
+            val fakeGuidBody = "WAVEfmt ".toByteArray(Charsets.US_ASCII) + le32(40L) + fakeGuidFmt +
+                "data".toByteArray(Charsets.US_ASCII) + le32(12L) + ByteArray(12)
+            val fakeGuidWav = "RIFF".toByteArray(Charsets.US_ASCII) + le32(fakeGuidBody.size.toLong()) + fakeGuidBody
+            assertFalse(FlacHeaderInspector.inspectBytes(fakeGuidWav).isLossless)
+
+            // 2. Multi-track MP4: Track 1 AAC + Track 2 ALAC -> AAC_OR_MP4 (lossy); Track 1 video + Track 2 ALAC -> ALAC_MP4 (lossless)
+            val sounHdlr = wrapMp4Box("hdlr", ByteArray(8) + "soun".toByteArray(Charsets.ISO_8859_1) + ByteArray(12))
+            val videHdlr = wrapMp4Box("hdlr", ByteArray(8) + "vide".toByteArray(Charsets.ISO_8859_1) + ByteArray(12))
+            val aacEntry = wrapMp4Box("mp4a", ByteArray(28))
+            val aacStsd = wrapMp4Box("stsd", byteArrayOf(0, 0, 0, 0, 0, 0, 0, 1) + aacEntry)
+            val aacTrak = wrapMp4Box("trak", wrapMp4Box("mdia", sounHdlr + wrapMp4Box("minf", wrapMp4Box("stbl", aacStsd))))
+            val videoTrak = wrapMp4Box("trak", wrapMp4Box("mdia", videHdlr + wrapMp4Box("minf", wrapMp4Box("stbl", wrapMp4Box("stsd", byteArrayOf(0, 0, 0, 0, 0, 0, 0, 1) + wrapMp4Box("avc1", ByteArray(28)))))))
+            val alacMp4Ref = buildSyntheticAlacMp4(bitDepth = 24, channels = 2, sampleRate = 96_000, includeSounHdlr = true)
+            val ftyp = wrapMp4Box("ftyp", "M4A \u0000\u0000\u0002\u0000M4A ".toByteArray(Charsets.ISO_8859_1))
+            val alacTrakBytes = alacMp4Ref.copyOfRange(ftyp.size + 8, alacMp4Ref.size)
+
+            val dualAudioAacFirst = ftyp + wrapMp4Box("moov", aacTrak + alacTrakBytes)
+            val inspectedAacFirst = FlacHeaderInspector.inspectBytes(dualAudioAacFirst)
+            assertEquals(FlacHeaderInspector.ContainerFormat.AAC_OR_MP4, inspectedAacFirst.format)
+            assertFalse(inspectedAacFirst.isLossless)
+
+            val videoPlusAlac = ftyp + wrapMp4Box("moov", videoTrak + alacTrakBytes)
+            val inspectedVideoPlusAlac = FlacHeaderInspector.inspectBytes(videoPlusAlac)
+            assertEquals(FlacHeaderInspector.ContainerFormat.ALAC_MP4, inspectedVideoPlusAlac.format)
+            assertTrue(inspectedVideoPlusAlac.isLossless)
+
+            // 3. DlnaProtocolInfo & LosslessSourcePolicy strict MIME / transport / UNKNOWN container guards
+            assertFalse(DlnaProtocolInfo.supportsDeliveryMime(sinkProtocolInfo = "http-get:*:audio/mp4:*", mimeType = "audio/mp4a-latm"))
+            assertTrue(DlnaProtocolInfo.supportsDeliveryMime(sinkProtocolInfo = "http-get:*:audio/mp4a-latm:*", mimeType = "audio/mp4a-latm"))
+
+            val rtspOnlySink = "rtsp-rtp-udp:*:audio/wav:*,rtsp-rtp-udp:*:audio/flac:*"
+            assertFalse(DlnaProtocolInfo.supportsHttpTransport(rtspOnlySink))
+            assertFalse(DlnaProtocolInfo.supportsFlac(rtspOnlySink))
+            assertFalse(DlnaProtocolInfo.supportsWav(rtspOnlySink))
+            assertFalse(DlnaProtocolInfo.supportsDeliveryMime(sinkProtocolInfo = rtspOnlySink, mimeType = "audio/wav"))
+
+            val rtspDevice = DlnaDevice(
+                udn = "uuid:rtsp-only",
+                friendlyName = "RTSP Sink",
+                location = "http://192.168.1.77/desc.xml",
+                host = "192.168.1.77",
+                sinkProtocolInfo = rtspOnlySink,
+                supportsFlac = false,
+                supportsWav = false
+            )
+            val rtspDecision = LosslessSourcePolicy.evaluate(
+                inspected = FlacHeaderInspector.InspectedAudio(
+                    format = FlacHeaderInspector.ContainerFormat.WAV,
+                    mimeType = "audio/wav",
+                    isLossless = true,
+                    sampleRateHz = 44_100,
+                    bitDepth = 16,
+                    channelCount = 2
+                ),
+                audioInfo = null,
+                isPreviewClip = false,
+                requestedLosslessQuality = true,
+                device = rtspDevice,
+                options = DlnaDeviceOptions(strictLosslessMode = false)
+            )
+            assertTrue(rtspDecision is LosslessSourcePolicy.DeliveryDecision.Blocked)
+            assertEquals(
+                LosslessSourcePolicy.BlockReasonKind.HTTP_TRANSPORT_UNSUPPORTED,
+                (rtspDecision as LosslessSourcePolicy.DeliveryDecision.Blocked).kind
+            )
+
+            assertFalse(DlnaProtocolInfo.supportsDeliveryMime(sinkProtocolInfo = "http-get:*:audio/*:*", mimeType = "video/webm"))
+            assertTrue(DlnaProtocolInfo.supportsDeliveryMime(sinkProtocolInfo = "http-get:*:audio/*:*", mimeType = "audio/webm"))
+            assertEquals(
+                "application/ogg",
+                DlnaProtocolInfo.contentTypeFor(DlnaStreamMode.ADAPTIVE_DIRECT, "audio/ogg", "http-get:*:application/ogg:*")
+            )
+
+            val unknownWithWavMime = FlacHeaderInspector.InspectedAudio(
+                format = FlacHeaderInspector.ContainerFormat.UNKNOWN,
+                mimeType = "audio/wav",
+                isLossless = false
+            )
+            val httpWavDevice = DlnaDevice(
+                udn = "uuid:http-wav",
+                friendlyName = "HTTP WAV",
+                location = "http://192.168.1.78/desc.xml",
+                host = "192.168.1.78",
+                sinkProtocolInfo = "http-get:*:audio/wav:*",
+                supportsFlac = false,
+                supportsWav = true
+            )
+            val strictUnknown = LosslessSourcePolicy.evaluate(
+                inspected = unknownWithWavMime,
+                audioInfo = null,
+                isPreviewClip = false,
+                requestedLosslessQuality = true,
+                device = httpWavDevice,
+                options = DlnaDeviceOptions(strictLosslessMode = true)
+            )
+            assertTrue(strictUnknown is LosslessSourcePolicy.DeliveryDecision.Blocked)
+            val adaptiveUnknown = LosslessSourcePolicy.evaluate(
+                inspected = unknownWithWavMime,
+                audioInfo = null,
+                isPreviewClip = false,
+                requestedLosslessQuality = true,
+                device = httpWavDevice,
+                options = DlnaDeviceOptions(strictLosslessMode = false)
+            ) as LosslessSourcePolicy.DeliveryDecision.Deliver
+            assertEquals(DlnaStreamMode.ADAPTIVE_DIRECT, adaptiveUnknown.mode)
+
+            // 4. Local song with channelId="bilibili" still preserves real "Bilibili|Live" album when source is LOCAL
+            val importedLocalSong = SongItem(
+                id = 99L,
+                name = "Imported Concert",
+                artist = "Band",
+                album = "Bilibili|Live",
+                albumId = 0L,
+                durationMs = 1000L,
+                coverUrl = null,
+                channelId = "bilibili",
+                mediaUri = "content://media/external/audio/media/99"
+            )
+            assertEquals(
+                "Bilibili|Live",
+                DlnaTrackMetadataNormalizer.normalize(importedLocalSong, PlaybackAudioSource.LOCAL).album
+            )
+
+            // 5. Mp4MetadataWriter rejects mdta handler and size=0 EOF mdat followed by extra box
+            val mdtaHdlr = wrapMp4Box("hdlr", ByteArray(8) + "mdtaappl".toByteArray(Charsets.ISO_8859_1) + ByteArray(9))
+            val mdtaUdta = wrapMp4Box("udta", wrapMp4Box("meta", ByteArray(4) + mdtaHdlr))
+            val mdtaMp4 = buildSyntheticMp4WithCustomMoovChild(ByteArray(32) { 3 }, mdtaUdta)
+            val mdtaSrc = java.io.File(tempDir, "qt_mdta.m4a").apply { writeBytes(mdtaMp4) }
+            val mdtaOut = java.io.File(tempDir, "qt_mdta_out.m4a")
+            assertFalse(Mp4MetadataWriter.writeTags(mdtaSrc, mdtaOut, "T", "A", "B"))
+
+            val uuidBox = wrapMp4Box("uuid", ByteArray(24) { 9 })
+            val sizeZeroMdat = byteArrayOf(0, 0, 0, 0) + "mdat".toByteArray(Charsets.ISO_8859_1) + ByteArray(32) { 5 }
+            val eofMdatWithUuid = wrapMp4Box("ftyp", "isom\u0000\u0000\u0002\u0000isom".toByteArray(Charsets.ISO_8859_1)) +
+                wrapMp4Box("moov", wrapMp4Box("trak", ByteArray(16))) +
+                uuidBox +
+                sizeZeroMdat
+            val eofSrc = java.io.File(tempDir, "eof_mdat_uuid.m4a").apply { writeBytes(eofMdatWithUuid) }
+            val eofOut = java.io.File(tempDir, "eof_mdat_uuid_out.m4a")
+            assertFalse(Mp4MetadataWriter.writeTags(eofSrc, eofOut, "T", "A", "B"))
+
+            // 6. Multi-zone composite UPnP description selects exact embedded renderer matching preferredUdn
+            val multiZoneXml = """
+                <?xml version="1.0"?>
+                <root xmlns="urn:schemas-upnp-org:device-1-0">
+                  <device>
+                    <deviceType>urn:schemas-upnp-org:device:Basic:1</deviceType>
+                    <friendlyName>Multi-Zone Chassis</friendlyName>
+                    <UDN>uuid:chassis-root</UDN>
+                    <deviceList>
+                      <device>
+                        <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>
+                        <friendlyName>Zone 1 Living Room</friendlyName>
+                        <UDN>uuid:zone-1</UDN>
+                        <serviceList>
+                          <service>
+                            <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+                            <controlURL>/zone1/AVTransport</controlURL>
+                          </service>
+                        </serviceList>
+                      </device>
+                      <device>
+                        <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>
+                        <friendlyName>Zone 2 Study</friendlyName>
+                        <UDN>uuid:zone-2</UDN>
+                        <serviceList>
+                          <service>
+                            <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+                            <controlURL>/zone2/AVTransport</controlURL>
+                          </service>
+                        </serviceList>
+                      </device>
+                    </deviceList>
+                  </device>
+                </root>
+            """.trimIndent()
+            val zone2 = UpnpXmlParser.parseDeviceDescription(
+                xml = multiZoneXml,
+                locationUrl = "http://192.168.1.81:8080/desc.xml",
+                preferredUdn = "uuid:zone-2"
+            )!!
+            assertEquals("uuid:zone-2", zone2.udn)
+            assertEquals("Zone 2 Study", zone2.friendlyName)
+            assertEquals(
+                "http://192.168.1.81:8080/zone2/AVTransport",
+                zone2.services.single().controlUrl
+            )
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    private fun containsSubArray(haystack: ByteArray, needle: ByteArray): Boolean {
+        if (needle.isEmpty() || haystack.size < needle.size) return false
+        outer@ for (i in 0..(haystack.size - needle.size)) {
+            for (j in needle.indices) {
+                if (haystack[i + j] != needle[j]) continue@outer
+            }
+            return true
+        }
+        return false
+    }
+
     private fun buildSyntheticMp4WithCustomMoovChild(mdatPayload: ByteArray, extraMoovChild: ByteArray): ByteArray {
         val ftyp = wrapMp4Box("ftyp", "isom\u0000\u0000\u0002\u0000isom".toByteArray(Charsets.ISO_8859_1))
         val mdat = wrapMp4Box("mdat", mdatPayload)
@@ -1087,7 +1355,12 @@ class DlnaRound1ProtocolAndBinaryTest {
         return ftyp + mdat + moov
     }
 
-    private fun buildSyntheticAlacMp4(bitDepth: Int, channels: Int, sampleRate: Int): ByteArray {
+    private fun buildSyntheticAlacMp4(
+        bitDepth: Int,
+        channels: Int,
+        sampleRate: Int,
+        includeSounHdlr: Boolean = false
+    ): ByteArray {
         val ftyp = wrapMp4Box("ftyp", "M4A \u0000\u0000\u0002\u0000M4A ".toByteArray(Charsets.ISO_8859_1))
         val alacConfig = ByteArray(28).also {
             // 4-byte FullBox version/flags + 24-byte ALACSpecificConfig
@@ -1108,7 +1381,12 @@ class DlnaRound1ProtocolAndBinaryTest {
         }
         val outerAlacEntry = wrapMp4Box("alac", sampleEntryHeaderBody + innerAlacBox)
         val stsd = wrapMp4Box("stsd", byteArrayOf(0, 0, 0, 0, 0, 0, 0, 1) + outerAlacEntry)
-        val moov = wrapMp4Box("moov", wrapMp4Box("trak", wrapMp4Box("mdia", wrapMp4Box("minf", wrapMp4Box("stbl", stsd)))))
+        val sounHdlr = if (includeSounHdlr) {
+            wrapMp4Box("hdlr", ByteArray(8) + "soun".toByteArray(Charsets.ISO_8859_1) + ByteArray(12))
+        } else {
+            ByteArray(0)
+        }
+        val moov = wrapMp4Box("moov", wrapMp4Box("trak", wrapMp4Box("mdia", sounHdlr + wrapMp4Box("minf", wrapMp4Box("stbl", stsd)))))
         return ftyp + moov
     }
 

@@ -22,6 +22,16 @@ object FlacHeaderInspector {
         UNKNOWN
     }
 
+    private val PCM_EXTENSIBLE_GUID_TAIL = byteArrayOf(
+        0x00, 0x00, 0x00, 0x00, 0x10, 0x00,
+        0x80.toByte(), 0x00, 0x00, 0xAA.toByte(), 0x00, 0x38, 0x9B.toByte(), 0x71
+    )
+
+    private val NON_AUDIO_MP4_SAMPLE_ENTRIES = setOf(
+        "avc1", "avc3", "hvc1", "hev1", "vp08", "vp09", "av01", "mp4v", "encv",
+        "jpeg", "png ", "tx3g", "wvtt", "stpp", "text", "mett", "meta", "tmcd"
+    )
+
     data class InspectedAudio(
         val format: ContainerFormat,
         val mimeType: String,
@@ -32,7 +42,9 @@ object FlacHeaderInspector {
         val totalSamples: Long? = null,
         val wavDataOffset: Long? = null,
         val wavDataSize: Long? = null,
-        val wavAudioFormatTag: Int? = null
+        val wavAudioFormatTag: Int? = null,
+        val wavValidBitsPerSample: Int? = null,
+        val wavChannelMask: Int? = null
     )
 
     private data class AlacSpec(
@@ -51,7 +63,9 @@ object FlacHeaderInspector {
             raf.readFully(head)
             val initial = inspectBytes(head, file.length())
             if (initial.format == ContainerFormat.WAV &&
-                (initial.wavAudioFormatTag == null || initial.wavDataOffset == null)
+                (initial.wavAudioFormatTag == null ||
+                    initial.wavDataOffset == null ||
+                    (initial.wavAudioFormatTag == 0xFFFE && initial.wavChannelMask == null))
             ) {
                 return inspectWavFile(raf, file.length())
             }
@@ -174,7 +188,9 @@ object FlacHeaderInspector {
         var bitDepth: Int? = null
         var channelCount: Int? = null
         var audioFormatTag: Int? = null
-        var subFormatTag: Int? = null
+        var validBitsPerSample: Int? = null
+        var channelMask: Int? = null
+        var extensiblePcmVerified = false
         var dataOffset: Long? = null
         var dataSize: Long? = null
 
@@ -187,8 +203,12 @@ object FlacHeaderInspector {
                 channelCount = readLe16(bytes, payloadOffset + 2)
                 sampleRateHz = readLe32(bytes, payloadOffset + 4).toInt()
                 bitDepth = readLe16(bytes, payloadOffset + 14)
-                if (audioFormatTag == 0xFFFE && chunkSize >= 40L && payloadOffset + 26 <= bytes.size) {
-                    subFormatTag = readLe16(bytes, payloadOffset + 24)
+                if (audioFormatTag == 0xFFFE && chunkSize >= 40L && payloadOffset + 40 <= bytes.size) {
+                    validBitsPerSample = readLe16(bytes, payloadOffset + 18).takeIf { it > 0 }
+                    channelMask = readLe32(bytes, payloadOffset + 20).toInt()
+                    val subFormatTag = readLe16(bytes, payloadOffset + 24)
+                    extensiblePcmVerified = subFormatTag == 1 &&
+                        matchesPcmExtensibleTail(bytes, payloadOffset + 26)
                 }
             } else if (chunkId == "data") {
                 dataOffset = payloadOffset.toLong()
@@ -202,7 +222,7 @@ object FlacHeaderInspector {
             offset = next.toInt()
         }
 
-        val lossless = isLosslessWavFormat(audioFormatTag, subFormatTag)
+        val lossless = isLosslessWavFormat(audioFormatTag, extensiblePcmVerified)
         return InspectedAudio(
             format = ContainerFormat.WAV,
             mimeType = "audio/wav",
@@ -212,7 +232,9 @@ object FlacHeaderInspector {
             channelCount = channelCount,
             wavDataOffset = dataOffset,
             wavDataSize = dataSize,
-            wavAudioFormatTag = if (lossless && audioFormatTag == 0xFFFE && subFormatTag == 1) 1 else audioFormatTag
+            wavAudioFormatTag = audioFormatTag,
+            wavValidBitsPerSample = validBitsPerSample,
+            wavChannelMask = channelMask
         )
     }
 
@@ -224,7 +246,9 @@ object FlacHeaderInspector {
         var bitDepth: Int? = null
         var channelCount: Int? = null
         var audioFormatTag: Int? = null
-        var subFormatTag: Int? = null
+        var validBitsPerSample: Int? = null
+        var channelMask: Int? = null
+        var extensiblePcmVerified = false
         var dataOffset: Long? = null
         var dataSize: Long? = null
 
@@ -244,8 +268,11 @@ object FlacHeaderInspector {
                 channelCount = readLe16(fmtBuf, 2)
                 sampleRateHz = readLe32(fmtBuf, 4).toInt()
                 bitDepth = readLe16(fmtBuf, 14)
-                if (audioFormatTag == 0xFFFE && toRead >= 26) {
-                    subFormatTag = readLe16(fmtBuf, 24)
+                if (audioFormatTag == 0xFFFE && chunkSize >= 40L && toRead >= 40) {
+                    validBitsPerSample = readLe16(fmtBuf, 18).takeIf { it > 0 }
+                    channelMask = readLe32(fmtBuf, 20).toInt()
+                    val subFormatTag = readLe16(fmtBuf, 24)
+                    extensiblePcmVerified = subFormatTag == 1 && matchesPcmExtensibleTail(fmtBuf, 26)
                 }
             } else if (chunkId == "data") {
                 dataOffset = payloadOffset
@@ -260,7 +287,7 @@ object FlacHeaderInspector {
             offset = next
         }
 
-        val lossless = isLosslessWavFormat(audioFormatTag, subFormatTag)
+        val lossless = isLosslessWavFormat(audioFormatTag, extensiblePcmVerified)
         return InspectedAudio(
             format = ContainerFormat.WAV,
             mimeType = "audio/wav",
@@ -270,17 +297,27 @@ object FlacHeaderInspector {
             channelCount = channelCount,
             wavDataOffset = dataOffset,
             wavDataSize = dataSize,
-            wavAudioFormatTag = if (lossless && audioFormatTag == 0xFFFE && subFormatTag == 1) 1 else audioFormatTag
+            wavAudioFormatTag = audioFormatTag,
+            wavValidBitsPerSample = validBitsPerSample,
+            wavChannelMask = channelMask
         )
     }
 
-    private fun isLosslessWavFormat(audioFormatTag: Int?, subFormatTag: Int?): Boolean {
-        // Never treat an unread/missing fmt chunk as lossless
+    private fun isLosslessWavFormat(audioFormatTag: Int?, extensiblePcmVerified: Boolean): Boolean {
+        // Never treat an unread/missing fmt chunk or unverified extensible SubFormat GUID as lossless
         return when (audioFormatTag) {
             1 -> true
-            0xFFFE -> subFormatTag == null || subFormatTag == 1
+            0xFFFE -> extensiblePcmVerified
             else -> false
         }
+    }
+
+    private fun matchesPcmExtensibleTail(buf: ByteArray, offset: Int): Boolean {
+        if (offset + PCM_EXTENSIBLE_GUID_TAIL.size > buf.size) return false
+        for (i in PCM_EXTENSIBLE_GUID_TAIL.indices) {
+            if (buf[offset + i] != PCM_EXTENSIBLE_GUID_TAIL[i]) return false
+        }
+        return true
     }
 
     private fun inspectMp4Container(bytes: ByteArray): InspectedAudio {
@@ -378,32 +415,8 @@ object FlacHeaderInspector {
         end: Int,
         containerType: String
     ): AlacSpec? {
-        if (containerType == "stsd") {
-            // FullBox: 4 bytes version+flags + 4 bytes entry_count
-            if (start + 8 > end) return null
-            val entryCount = readBe32(bytes, start + 4).toInt().coerceIn(0, 64)
-            var pos = start + 8
-            repeat(entryCount) {
-                if (pos + 8 > end) return null
-                val entrySize = readBe32(bytes, pos)
-                val format = String(bytes, pos + 4, 4, Charsets.ISO_8859_1)
-                val entryEnd = minOf(end.toLong(), pos.toLong() + entrySize).toInt()
-                if (format == "alac") {
-                    return parseAlacSampleEntry(bytes, pos, entryEnd)
-                }
-                if (entrySize < 8L || pos.toLong() + entrySize > end) return null
-                pos = (pos.toLong() + entrySize).toInt()
-            }
-            return null
-        }
-        val childTarget = when (containerType) {
-            "moov" -> "trak"
-            "trak" -> "mdia"
-            "mdia" -> "minf"
-            "minf" -> "stbl"
-            "stbl" -> "stsd"
-            else -> return null
-        }
+        if (containerType != "moov") return null
+        // Inspect ONLY the first audio 'trak' in moov so inspector and LosslessWavDecoder always agree on the delivered track
         var pos = start
         while (pos + 8 <= end) {
             val size32 = readBe32(bytes, pos)
@@ -416,10 +429,72 @@ object FlacHeaderInspector {
             }
             if (boxSize < headerSize) break
             val boxEnd = minOf(end.toLong(), pos.toLong() + boxSize).toInt()
-            if (type == childTarget) {
-                findAlacSpecInContainer(bytes, pos + headerSize, boxEnd, childTarget)?.let { return it }
+            if (type == "trak") {
+                val trackClassification = classifyMp4Trak(bytes, pos + headerSize, boxEnd)
+                if (trackClassification != null) {
+                    // First audio track found: return its ALAC spec if ALAC, or null if lossy audio (e.g. AAC)
+                    return trackClassification.alacSpec
+                }
             }
             if (pos.toLong() + boxSize > end) break
+            pos = (pos.toLong() + boxSize).toInt()
+        }
+        return null
+    }
+
+    private data class Mp4AudioTrackClassification(val alacSpec: AlacSpec?)
+
+    private fun classifyMp4Trak(bytes: ByteArray, trakStart: Int, trakEnd: Int): Mp4AudioTrackClassification? {
+        val (mdiaStart, mdiaEnd) = findChildBoxPayload(bytes, trakStart, trakEnd, "mdia") ?: return null
+        val hdlrRange = findChildBoxPayload(bytes, mdiaStart, mdiaEnd, "hdlr")
+        if (hdlrRange != null) {
+            val (hdlrStart, hdlrEnd) = hdlrRange
+            // FullBox(4) + pre_defined(4) + handler_type(4)
+            if (hdlrStart + 12 <= hdlrEnd) {
+                val handlerType = String(bytes, hdlrStart + 8, 4, Charsets.ISO_8859_1)
+                if (handlerType != "soun") return null
+            }
+        }
+        val (minfStart, minfEnd) = findChildBoxPayload(bytes, mdiaStart, mdiaEnd, "minf") ?: return null
+        val (stblStart, stblEnd) = findChildBoxPayload(bytes, minfStart, minfEnd, "stbl") ?: return null
+        val (stsdStart, stsdEnd) = findChildBoxPayload(bytes, stblStart, stblEnd, "stsd") ?: return null
+        // stsd FullBox: 4 bytes version+flags + 4 bytes entry_count
+        if (stsdStart + 8 > stsdEnd) return null
+        val entryCount = readBe32(bytes, stsdStart + 4).toInt().coerceIn(0, 64)
+        if (entryCount <= 0) return null
+        val pos = stsdStart + 8
+        if (pos + 8 > stsdEnd) return null
+        val entrySize = readBe32(bytes, pos)
+        if (entrySize < 8L) return null
+        val entryFormat = String(bytes, pos + 4, 4, Charsets.ISO_8859_1)
+        if (hdlrRange == null && entryFormat in NON_AUDIO_MP4_SAMPLE_ENTRIES) {
+            return null
+        }
+        val entryEnd = minOf(stsdEnd.toLong(), pos.toLong() + entrySize).toInt()
+        return if (entryFormat == "alac") {
+            Mp4AudioTrackClassification(parseAlacSampleEntry(bytes, pos, entryEnd))
+        } else {
+            Mp4AudioTrackClassification(alacSpec = null)
+        }
+    }
+
+    private fun findChildBoxPayload(bytes: ByteArray, start: Int, end: Int, targetType: String): Pair<Int, Int>? {
+        var pos = start
+        while (pos + 8 <= end) {
+            val size32 = readBe32(bytes, pos)
+            val type = String(bytes, pos + 4, 4, Charsets.ISO_8859_1)
+            val headerSize = if (size32 == 1L) 16 else 8
+            val boxSize = when (size32) {
+                1L -> if (pos + 16 <= end) readBe64(bytes, pos + 8) else return null
+                0L -> (end - pos).toLong()
+                else -> size32
+            }
+            if (boxSize < headerSize) return null
+            val boxEnd = minOf(end.toLong(), pos.toLong() + boxSize).toInt()
+            if (type == targetType) {
+                return (pos + headerSize) to boxEnd
+            }
+            if (pos.toLong() + boxSize > end) return null
             pos = (pos.toLong() + boxSize).toInt()
         }
         return null

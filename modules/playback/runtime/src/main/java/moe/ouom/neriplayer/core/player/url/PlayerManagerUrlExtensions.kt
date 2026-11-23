@@ -332,7 +332,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
 
 private fun isMp4CompatibleMime(mimeType: String?): Boolean {
     val clean = mimeType?.substringBefore(';')?.trim()?.lowercase() ?: return false
-    return clean == "audio/mp4" || clean == "audio/m4a" || clean == "audio/x-m4a" || clean == "audio/mp4a-latm"
+    return clean == "audio/mp4" || clean == "audio/m4a" || clean == "audio/x-m4a"
 }
 
 internal suspend fun PlayerManager.tryReadVerifiedOfflineCacheResult(

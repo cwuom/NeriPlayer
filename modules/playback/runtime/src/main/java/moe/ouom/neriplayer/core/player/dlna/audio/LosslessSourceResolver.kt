@@ -78,15 +78,30 @@ class LosslessSourceResolver(
             val repToken = representationIdentity?.trim().orEmpty()
             val overrideToken = cacheKeyOverride?.trim().orEmpty()
             val lenToken = expectedContentLength?.takeIf { it > 0L }?.toString().orEmpty()
-            val specToken = "${audioInfo?.codecLabel.orEmpty()}:${audioInfo?.bitrateKbps ?: 0}:" +
-                "${audioInfo?.sampleRateHz ?: 0}:${audioInfo?.bitDepth ?: 0}"
+            val specToken = "${audioInfo?.source?.name.orEmpty()}:${audioInfo?.codecLabel.orEmpty()}:" +
+                "${audioInfo?.bitrateKbps ?: 0}:${audioInfo?.sampleRateHz ?: 0}:" +
+                "${audioInfo?.bitDepth ?: 0}:${audioInfo?.channelCount ?: 0}"
+            val unannotatedPathFallback = if (
+                audioInfo == null && repToken.isEmpty() && overrideToken.isEmpty() && lenToken.isEmpty()
+            ) {
+                extractUrlResourcePath(urlWithoutQuery)
+            } else {
+                ""
+            }
             val raw = if (songKey.isNotBlank()) {
                 "$songKey|$previewToken|${audioInfo?.qualityKey.orEmpty()}|${audioInfo?.mimeType.orEmpty()}|" +
-                    "$repToken|$overrideToken|$lenToken|$specToken|$extHint"
+                    "$repToken|$overrideToken|$lenToken|$specToken|$unannotatedPathFallback|$extHint"
             } else {
                 "$urlWithoutQuery|$previewToken|$repToken|$overrideToken|$lenToken"
             }
             return sha256Hex(raw.toByteArray()).take(24)
+        }
+
+        private fun extractUrlResourcePath(urlWithoutQuery: String): String {
+            val schemeEnd = urlWithoutQuery.indexOf("://")
+            if (schemeEnd < 0) return urlWithoutQuery
+            val pathStart = urlWithoutQuery.indexOf('/', schemeEnd + 3)
+            return if (pathStart >= 0) urlWithoutQuery.substring(pathStart) else ""
         }
 
         internal fun evictStagingDirectory(
@@ -203,6 +218,8 @@ class LosslessSourceResolver(
                         getLocalizedString(CoreCommonR.string.dlna_blocked_flac_unsupported, emptyArray())
                     LosslessSourcePolicy.BlockReasonKind.ALAC_REQUIRES_WAV_FALLBACK ->
                         getLocalizedString(CoreCommonR.string.dlna_blocked_alac_requires_wav, emptyArray())
+                    LosslessSourcePolicy.BlockReasonKind.HTTP_TRANSPORT_UNSUPPORTED ->
+                        getLocalizedString(CoreCommonR.string.dlna_blocked_http_transport_unsupported, emptyArray())
                 }
                 val report = DlnaAudioQualityReport(
                     songKey = songKey,
@@ -326,6 +343,71 @@ class LosslessSourceResolver(
 
                     DlnaStreamMode.LOSSLESS_WAV,
                     DlnaStreamMode.LOSSLESS_WAV_ID3 -> {
+                        val wavContentType = DlnaProtocolInfo.contentTypeFor(
+                            mode = decision.mode,
+                            sinkProtocolInfo = device.sinkProtocolInfo
+                        )
+                        val wavProtocolInfo = DlnaProtocolInfo.protocolInfoFor(
+                            mode = decision.mode,
+                            sinkProtocolInfo = device.sinkProtocolInfo
+                        )
+                        val wavContentFeatures = DlnaProtocolInfo.contentFeaturesFromProtocolInfo(wavProtocolInfo)
+
+                        // When source is already a verified lossless WAV and no ID3 tag embedding is needed,
+                        // serve the original WAV container byte-for-byte so extensible fmt/channelMask & chunks stay intact.
+                        if (inspected.format == FlacHeaderInspector.ContainerFormat.WAV &&
+                            decision.mode == DlnaStreamMode.LOSSLESS_WAV
+                        ) {
+                            val totalLen = sourceFile.length()
+                            val sr = inspected.sampleRateHz ?: decision.sampleRateHz
+                            val bd = inspected.bitDepth ?: decision.bitDepth
+                            val ch = inspected.channelCount ?: decision.channelCount
+                            val streamContent = DlnaMediaServer.StreamContent.FileContent(
+                                file = sourceFile,
+                                contentType = wavContentType,
+                                contentFeatures = wavContentFeatures
+                            )
+                            val snapshot = DlnaPlaybackSnapshot(
+                                generationId = generationId,
+                                songKey = songKey,
+                                title = normalizedMeta.title,
+                                artist = normalizedMeta.artist,
+                                album = normalizedMeta.album,
+                                durationMs = durationMs,
+                                streamPath = "",
+                                coverPath = null,
+                                contentType = wavContentType,
+                                protocolInfo = wavProtocolInfo,
+                                totalBytes = totalLen,
+                                sampleRateHz = sr,
+                                bitDepth = bd,
+                                channelCount = ch,
+                                streamMode = DlnaStreamMode.LOSSLESS_WAV
+                            )
+                            val report = DlnaAudioQualityReport(
+                                songKey = songKey,
+                                source = sourceType,
+                                resolvedFormat = "WAV",
+                                mimeType = wavContentType,
+                                sampleRateHz = sr.takeIf { it > 0 },
+                                bitDepth = bd.takeIf { it > 0 },
+                                channelCount = ch.takeIf { it > 0 },
+                                bitrateKbps = if (sr > 0 && bd > 0 && ch > 0) {
+                                    ((sr.toLong() * bd * ch) / 1000L).toInt()
+                                } else {
+                                    urlResult.audioInfo?.bitrateKbps
+                                },
+                                deliveryMode = DlnaStreamMode.LOSSLESS_WAV,
+                                degraded = decision.degraded,
+                                degradationReason = localizedDegradation,
+                                strictLosslessBlocked = false,
+                                sourceSha256 = sha256,
+                                totalBytes = totalLen,
+                                headerPrefixBytes = 0
+                            )
+                            return@withContext ResolutionOutcome.Ready(snapshot, streamContent, "wav", coverBytes, report)
+                        }
+
                         evictStagingIfNeeded(setOf(sourceFile.absolutePath))
                         val pcmCacheFile = File(stagingDir, "${sha256.take(24)}_${generationId}.pcm")
                         try {
@@ -354,14 +436,61 @@ class LosslessSourceResolver(
                             } else {
                                 DlnaStreamMode.LOSSLESS_WAV
                             }
+                            // If ID3 chunk ended up empty on a WAV source, serve original WAV directly
+                            if (inspected.format == FlacHeaderInspector.ContainerFormat.WAV && id3Chunk.isEmpty()) {
+                                val totalLen = sourceFile.length()
+                                val streamContent = DlnaMediaServer.StreamContent.FileContent(
+                                    file = sourceFile,
+                                    contentType = wavContentType,
+                                    contentFeatures = wavContentFeatures
+                                )
+                                val snapshot = DlnaPlaybackSnapshot(
+                                    generationId = generationId,
+                                    songKey = songKey,
+                                    title = normalizedMeta.title,
+                                    artist = normalizedMeta.artist,
+                                    album = normalizedMeta.album,
+                                    durationMs = durationMs,
+                                    streamPath = "",
+                                    coverPath = null,
+                                    contentType = wavContentType,
+                                    protocolInfo = wavProtocolInfo,
+                                    totalBytes = totalLen,
+                                    sampleRateHz = decoded.sampleRateHz,
+                                    bitDepth = decoded.bitsPerSample,
+                                    channelCount = decoded.channelCount,
+                                    streamMode = DlnaStreamMode.LOSSLESS_WAV
+                                )
+                                val report = DlnaAudioQualityReport(
+                                    songKey = songKey,
+                                    source = sourceType,
+                                    resolvedFormat = "WAV",
+                                    mimeType = wavContentType,
+                                    sampleRateHz = decoded.sampleRateHz,
+                                    bitDepth = decoded.bitsPerSample,
+                                    channelCount = decoded.channelCount,
+                                    bitrateKbps = ((decoded.sampleRateHz.toLong() * decoded.bitsPerSample * decoded.channelCount) / 1000L).toInt(),
+                                    deliveryMode = DlnaStreamMode.LOSSLESS_WAV,
+                                    degraded = decision.degraded,
+                                    degradationReason = localizedDegradation,
+                                    strictLosslessBlocked = false,
+                                    sourceSha256 = sha256,
+                                    totalBytes = totalLen,
+                                    headerPrefixBytes = 0
+                                )
+                                return@withContext ResolutionOutcome.Ready(snapshot, streamContent, "wav", coverBytes, report)
+                            }
                             val layout = WavId3TagBuilder.buildWavLayout(
                                 sampleRateHz = decoded.sampleRateHz,
                                 bitsPerSample = decoded.bitsPerSample,
                                 channels = decoded.channelCount,
                                 pcmDataBytes = decoded.pcmDataBytes,
-                                id3Chunk = id3Chunk
+                                id3Chunk = id3Chunk,
+                                channelMask = decoded.channelMask,
+                                validBitsPerSample = decoded.validBitsPerSample,
+                                useExtensibleHeader = decoded.isExtensibleWave
                             )
-                            val wavContentType = DlnaProtocolInfo.contentTypeFor(
+                            val effectiveContentType = DlnaProtocolInfo.contentTypeFor(
                                 mode = effectiveWavMode,
                                 sinkProtocolInfo = device.sinkProtocolInfo
                             )
@@ -375,7 +504,7 @@ class LosslessSourceResolver(
                                 pcmFile = decoded.pcmFile,
                                 pcmDataOffsetInFile = decoded.pcmDataOffsetInFile,
                                 pcmDataLength = decoded.pcmDataBytes,
-                                contentType = wavContentType,
+                                contentType = effectiveContentType,
                                 contentFeatures = contentFeatures,
                                 ephemeralFileToDeleteOnUnregister = decoded.pcmFile.takeIf { it != sourceFile }
                             )
@@ -388,7 +517,7 @@ class LosslessSourceResolver(
                                 durationMs = durationMs,
                                 streamPath = "",
                                 coverPath = null,
-                                contentType = wavContentType,
+                                contentType = effectiveContentType,
                                 protocolInfo = protocolInfo,
                                 totalBytes = layout.totalBytes,
                                 sampleRateHz = decoded.sampleRateHz,
@@ -404,7 +533,7 @@ class LosslessSourceResolver(
                                 } else {
                                     "${decision.resolvedFormat} -> WAV"
                                 },
-                                mimeType = wavContentType,
+                                mimeType = effectiveContentType,
                                 sampleRateHz = decoded.sampleRateHz,
                                 bitDepth = decoded.bitsPerSample,
                                 channelCount = decoded.channelCount,

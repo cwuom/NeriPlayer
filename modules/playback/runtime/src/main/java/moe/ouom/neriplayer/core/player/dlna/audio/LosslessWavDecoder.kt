@@ -24,7 +24,10 @@ object LosslessWavDecoder {
         val pcmDataBytes: Long,
         val sampleRateHz: Int,
         val bitsPerSample: Int,
-        val channelCount: Int
+        val channelCount: Int,
+        val validBitsPerSample: Int? = null,
+        val channelMask: Int? = null,
+        val isExtensibleWave: Boolean = false
     )
 
     fun decodeToPcmFile(
@@ -35,9 +38,10 @@ object LosslessWavDecoder {
         isCancelled: () -> Boolean = { false }
     ): DecodedPcmResult {
         if (inspected.format == FlacHeaderInspector.ContainerFormat.WAV &&
+            inspected.isLossless &&
             inspected.wavDataOffset != null &&
             inspected.wavDataSize != null &&
-            inspected.wavAudioFormatTag == 1
+            (inspected.wavAudioFormatTag == 1 || inspected.wavAudioFormatTag == 0xFFFE)
         ) {
             return DecodedPcmResult(
                 pcmFile = sourceFile,
@@ -45,7 +49,10 @@ object LosslessWavDecoder {
                 pcmDataBytes = inspected.wavDataSize,
                 sampleRateHz = inspected.sampleRateHz ?: 44_100,
                 bitsPerSample = inspected.bitDepth ?: hintBitDepth?.takeIf { it > 0 } ?: 16,
-                channelCount = inspected.channelCount ?: 2
+                channelCount = inspected.channelCount ?: 2,
+                validBitsPerSample = inspected.wavValidBitsPerSample,
+                channelMask = inspected.wavChannelMask,
+                isExtensibleWave = inspected.wavAudioFormatTag == 0xFFFE
             )
         }
 
@@ -70,6 +77,17 @@ object LosslessWavDecoder {
             }
             val selectedFormat = inputFormat ?: error("No audio track found in ${sourceFile.name}")
             val mime = selectedFormat.getString(MediaFormat.KEY_MIME) ?: error("Missing audio MIME")
+            if (inspected.format == FlacHeaderInspector.ContainerFormat.ALAC_MP4 &&
+                !mime.equals("audio/alac", ignoreCase = true)
+            ) {
+                error("Selected MP4 audio track is $mime, expected audio/alac")
+            }
+            if (inspected.format == FlacHeaderInspector.ContainerFormat.FLAC &&
+                !mime.equals("audio/flac", ignoreCase = true) &&
+                !mime.equals("audio/x-flac", ignoreCase = true)
+            ) {
+                error("Selected audio track is $mime, expected audio/flac")
+            }
             extractor.selectTrack(audioTrackIndex)
 
             val expectedSampleRate = inspected.sampleRateHz

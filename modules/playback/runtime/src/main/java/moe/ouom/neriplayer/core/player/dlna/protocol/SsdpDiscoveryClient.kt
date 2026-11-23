@@ -106,7 +106,14 @@ class SsdpDiscoveryClient(
                                 continue
                             }
                             val usnUdn = headers["usn"]?.substringBefore("::")?.trim().orEmpty()
-                            candidates.putIfAbsent(location, SsdpCandidate(location, usnUdn, sourceHost))
+                            val candidateKey = "$location|$usnUdn"
+                            if (usnUdn.isNotEmpty()) {
+                                // Replace any earlier blank-UDN entry for the same LOCATION
+                                candidates.remove("$location|")
+                                candidates.putIfAbsent(candidateKey, SsdpCandidate(location, usnUdn, sourceHost))
+                            } else if (candidates.keys.none { it.startsWith("$location|") }) {
+                                candidates[candidateKey] = SsdpCandidate(location, "", sourceHost)
+                            }
                         }
                     }
                 }.onFailure { err ->
@@ -115,12 +122,19 @@ class SsdpDiscoveryClient(
             }
         }
 
+        val descriptionCache = java.util.concurrent.ConcurrentHashMap<String, String>()
         if (candidates.isNotEmpty()) {
             val pool = Executors.newFixedThreadPool(minOf(4, candidates.size))
             try {
                 val tasks = candidates.values.map { cand ->
                     Callable {
-                        fetchDeviceDescription(cand.location, cand.usnUdn, isManual = false, onLog = onLog)
+                        fetchDeviceDescription(
+                            locationUrl = cand.location,
+                            fallbackUdn = cand.usnUdn,
+                            isManual = false,
+                            onLog = onLog,
+                            sharedXmlCache = descriptionCache
+                        )
                     }
                 }
                 for (future in pool.invokeAll(tasks)) {
@@ -135,7 +149,13 @@ class SsdpDiscoveryClient(
         // Direct unicast probe for known/manual devices that didn't respond to multicast
         for (known in knownDevices) {
             if (discovered.containsKey(known.udn)) continue
-            val revived = fetchDeviceDescription(known.location, known.udn, isManual = known.isManual, onLog = onLog)
+            val revived = fetchDeviceDescription(
+                locationUrl = known.location,
+                fallbackUdn = known.udn,
+                isManual = known.isManual,
+                onLog = onLog,
+                sharedXmlCache = descriptionCache
+            )
             if (revived != null) {
                 discovered[revived.udn] = revived
             }
@@ -185,13 +205,20 @@ class SsdpDiscoveryClient(
         locationUrl: String,
         fallbackUdn: String = "",
         isManual: Boolean = false,
-        onLog: (String) -> Unit = {}
+        onLog: (String) -> Unit = {},
+        sharedXmlCache: MutableMap<String, String>? = null
     ): DlnaDevice? {
-        val body = httpGetText(locationUrl) ?: run {
+        val body = sharedXmlCache?.get(locationUrl) ?: httpGetText(locationUrl)?.also {
+            sharedXmlCache?.put(locationUrl, it)
+        } ?: run {
             onLog("Description GET failed: $locationUrl")
             return null
         }
-        val parsed = UpnpXmlParser.parseDeviceDescription(body, locationUrl) ?: run {
+        val parsed = UpnpXmlParser.parseDeviceDescription(
+            xml = body,
+            locationUrl = locationUrl,
+            preferredUdn = fallbackUdn
+        ) ?: run {
             onLog("Description XML invalid: $locationUrl")
             return null
         }
