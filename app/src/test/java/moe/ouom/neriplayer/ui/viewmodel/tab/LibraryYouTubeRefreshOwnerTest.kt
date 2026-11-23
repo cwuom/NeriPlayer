@@ -4,6 +4,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.platform.youtube.settings.PlaylistSuggestionSource
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentPreferences
+import java.util.Locale
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -22,6 +27,41 @@ import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryYouTubeRefreshOwnerTest {
+    @Test
+    fun `catalog changes replace old library requests while playlist suggestion changes do not`() = runTest {
+        val prefs = MutableStateFlow(YouTubeContentPreferences())
+        val auth = MutableStateFlow(YouTubeAuthBundle(cookies = mapOf("LOGIN_INFO" to "test-account")))
+        val feature = MutableStateFlow(true)
+        withFixture {
+            val observer = backgroundScope.launch {
+                libraryYouTubeCatalog(auth, feature, prefs) { Locale.US }.collect { source ->
+                    if (source.account == null) owner.clear() else owner.onSessionChanged()
+                }
+            }
+            testScheduler.runCurrent()
+            assertEquals(1, requests.size)
+            val japanese = prefs.value.copy(languageTag = "ja")
+            val japan = japanese.copy(countryCode = "JP")
+            val hideExplicit = japan.copy(hideExplicit = true)
+            val settings = listOf(japanese, japan, hideExplicit, hideExplicit.copy(hideMusicVideos = true))
+            for ((index, selected) in settings.withIndex()) {
+                prefs.value = selected
+                testScheduler.runCurrent()
+                assertEquals(index + 2, requests.size)
+                requests[index].complete(listOf(playlist("old")))
+                testScheduler.runCurrent()
+                assertTrue(state.value.youtubeMusicPlaylists.isEmpty())
+            }
+            requests.last().complete(listOf(playlist("current")))
+            testScheduler.runCurrent()
+            assertEquals(listOf("current"), state.value.youtubeMusicPlaylists.map { it.playlistId })
+            prefs.value = prefs.value.copy(playlistSuggestionSource = PlaylistSuggestionSource.Tracks)
+            testScheduler.runCurrent()
+            assertEquals(settings.size + 1, requests.size)
+            observer.cancel()
+        }
+    }
+
     @Test
     fun `session change starts the new account without waiting for old account IO`() = runTest {
         withFixture {

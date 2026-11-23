@@ -31,6 +31,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,6 +62,22 @@ class YouTubeMusicPlaylistCachedFailureTest {
     fun closeOwnedResources() {
         viewModels.forEach { it.viewModelScope.cancel() }
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `filtering every track replaces stale tracks with a successful empty playlist`() = runBlocking {
+        val preview = remoteDetail().copy(tracks = emptyList(), filteredEmpty = true)
+        val gateway = FakeGateway(previewResult = CompletableDeferred(preview))
+        val vm = viewModel(gateway)
+
+        vm.start(playlist())
+        awaitJobs(vm)
+
+        assertTrue(vm.uiState.value.allTracksLoaded)
+        assertTrue(vm.uiState.value.tracks.isEmpty())
+        assertNull(vm.uiState.value.error)
+        assertEquals(0, gateway.detailRequests)
+        assertEquals(0, prefetches.size)
     }
 
     @Test

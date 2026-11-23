@@ -36,6 +36,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
+import moe.ouom.neriplayer.network.weblogin.WebViewNetworkRoute
 import android.webkit.WebViewClient
 import androidx.webkit.ScriptHandler
 import java.util.UUID
@@ -452,6 +453,7 @@ class YouTubeWebPoTokenProvider(
             preparedCookieFingerprint != authFingerprint ||
             System.currentTimeMillis() - preparedAtMs > WEBVIEW_RELOAD_TTL_MS
         if (!shouldReload) {
+            if (!WebViewNetworkRoute.awaitCurrent(applicationContext)) return null
             setWebViewActive(active = true)
             return readPageSnapshot()
         }
@@ -463,11 +465,14 @@ class YouTubeWebPoTokenProvider(
 
         for (bootstrapUrl in bootstrapUrls) {
             var readyWithoutClientCount = 0
-            withContext(Dispatchers.Main) {
+            val loaded = withContext(Dispatchers.Main) {
                 activeWebView.settings.userAgentString = auth.resolveBootstrapUserAgent()
                 activeWebView.stopLoading()
+                if (!WebViewNetworkRoute.awaitCurrent(activeWebView.context)) return@withContext false
                 activeWebView.loadUrl(bootstrapUrl)
+                true
             }
+            if (!loaded) return null
 
             val resolvedAttempts = maxAttempts.coerceAtLeast(1)
             for (attempt in 0 until resolvedAttempts) {

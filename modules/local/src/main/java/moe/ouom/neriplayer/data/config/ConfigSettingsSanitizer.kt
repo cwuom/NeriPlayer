@@ -23,6 +23,8 @@ import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.settings.playback.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
+import moe.ouom.neriplayer.platform.youtube.settings.PlaylistSuggestionSource
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
@@ -165,6 +167,15 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
             onAdjusted = onAdjusted
         )
         sanitizeQualityStrings(strings, onAdjusted)
+        sanitizeStringValue(strings, SettingsKeys.YOUTUBE_CONTENT_LANGUAGE.name, onAdjusted) {
+            it.takeIf(YouTubeContentSettings.languageTags::contains)
+        }
+        sanitizeStringValue(strings, SettingsKeys.YOUTUBE_CONTENT_COUNTRY.name, onAdjusted) {
+            it.takeIf(YouTubeContentSettings.countryCodes::contains)
+        }
+        sanitizeStringValue(strings, SettingsKeys.YOUTUBE_PLAYLIST_SUGGESTION_SOURCE.name, onAdjusted) { raw ->
+            PlaylistSuggestionSource.entries.firstOrNull { it.name == raw }?.name
+        }
         sanitizePlaybackStrings(strings, onAdjusted)
         sanitizeThemeStrings(strings, onAdjusted)
         sanitizeFloatingLyricsStrings(strings, onAdjusted)

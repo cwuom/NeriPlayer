@@ -46,6 +46,7 @@ internal object YouTubeMusicUiGatewayInitializer {
             coverUrl = coverUrl,
             trackCount = trackCount ?: tracks.size,
             fullyLoaded = fullyLoaded,
+            filteredEmpty = filteredEmpty,
             tracks = tracks.map { track ->
                 YouTubeMusicTrack(
                     videoId = track.videoId,
@@ -53,7 +54,8 @@ internal object YouTubeMusicUiGatewayInitializer {
                     artist = track.artist,
                     albumName = track.album,
                     durationMs = track.durationMs,
-                    coverUrl = track.coverUrl
+                    coverUrl = track.coverUrl,
+                    contentLabel = track.contentLabel
                 )
             }
         )

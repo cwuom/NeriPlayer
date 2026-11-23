@@ -1,0 +1,16 @@
+<resources>
+    <string name="stats_all_time">All time</string>
+    <plurals name="stats_recent_days">
+        <item quantity="one">Last %1$d day</item>
+        <item quantity="other">Last %1$d days</item>
+    </plurals>
+    <string name="stats_custom_dates">Choose dates</string>
+    <string name="stats_previous_period">Previous period</string>
+    <string name="stats_next_period">Next period</string>
+    <string name="stats_overview_tab">Overview</string>
+    <string name="stats_tracks_tab">Track rankings</string>
+    <string name="stats_top_duration">Most listening time</string>
+    <string name="stats_recent_counts">Play counts of recently played tracks</string>
+    <string name="stats_first_counts">Play counts of earliest tracks</string>
+    <string name="stats_jump_to_date">Jump to date</string>
+</resources>

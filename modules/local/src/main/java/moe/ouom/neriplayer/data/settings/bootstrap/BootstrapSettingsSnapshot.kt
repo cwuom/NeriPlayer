@@ -145,6 +145,8 @@ fun persistBootstrapSettingsSnapshot(
             .edit {
                 putBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, true)
                     .putBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, normalizedSnapshot.bypassProxy)
+                    .putString(AutoSettingsSchema.network.proxyEndpoint.key, normalizedSnapshot.proxyEndpoint)
+                    .putString(AutoSettingsSchema.network.dohEndpoint.key, normalizedSnapshot.dohEndpoint)
                     .putBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, normalizedSnapshot.youtubeEnabled)
                     .putBoolean(
                         BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY,
@@ -196,6 +198,8 @@ internal fun updateBootstrapDownloadFollowPlaybackAudioQuality(
 fun Preferences.toBootstrapSettingsSnapshot(): BootstrapSettingsSnapshot {
     return BootstrapSettingsSnapshot(
         bypassProxy = this[SettingsKeys.BYPASS_PROXY] ?: true,
+        proxyEndpoint = valueOf(AutoSettingsSchema.network.proxyEndpoint),
+        dohEndpoint = valueOf(AutoSettingsSchema.network.dohEndpoint),
         youtubeEnabled = this[SettingsKeys.YOUTUBE_ENABLED] ?: true,
         preferHighRefreshRate = valueOf(AutoSettingsSchema.general.preferHighRefreshRate),
         downloadDirectoryUri = this[SettingsKeys.DOWNLOAD_DIRECTORY_URI],
@@ -250,6 +254,8 @@ private fun readCachedBootstrapSettingsSnapshot(context: Context): BootstrapSett
         ?: DEFAULT_DOWNLOAD_PARALLELISM
     return BootstrapSettingsSnapshot(
         bypassProxy = prefs.getBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, true),
+        proxyEndpoint = prefs.getString(AutoSettingsSchema.network.proxyEndpoint.key, "").orEmpty(),
+        dohEndpoint = prefs.getString(AutoSettingsSchema.network.dohEndpoint.key, "").orEmpty(),
         youtubeEnabled = prefs.getBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, true),
         preferHighRefreshRate = prefs.getBoolean(
             BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY,

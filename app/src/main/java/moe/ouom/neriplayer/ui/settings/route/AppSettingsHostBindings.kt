@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.settings.route
 
 import androidx.compose.ui.geometry.Offset
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
@@ -24,6 +25,9 @@ internal class AppSettingsHostEnvironment(
     val onBeforeLanguageRestart: () -> Unit,
     val onLanguageChanged: (LanguageManager.Language) -> Unit,
     val coherentFeedbackEnabled: Boolean,
+    val requestedPage: SettingsPage? = null,
+    val onPageRequestConsumed: () -> Unit = {},
+    val onReturnFromHomeShortcut: () -> Unit = {},
     val settingsVisible: Boolean = true
 )
 

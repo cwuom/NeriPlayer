@@ -31,6 +31,8 @@ import java.io.IOException
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.Locale
+import moe.ouom.neriplayer.platform.youtube.api.parser.filterCatalogItems
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -39,10 +41,14 @@ import moe.ouom.neriplayer.platform.youtube.api.auth.YouTubeAuthRefresher
 import moe.ouom.neriplayer.platform.youtube.api.auth.shouldStartYouTubeWebAuthRecovery
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorBrowseEndpoint
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorDetail
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItemType
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItemsPage
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicDebugProbeResult
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeCursor
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomePage
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicLyrics
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicPlayableAudio
@@ -50,8 +56,9 @@ import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicPlaylistTrack
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicRequestLocale
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchFilter
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchCursor
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchPage
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResult
-import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResultType
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicVideoMetadata
 import moe.ouom.neriplayer.platform.youtube.api.parser.YouTubeMusicParser
 import moe.ouom.neriplayer.platform.youtube.api.protocol.YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT
@@ -210,6 +217,8 @@ internal suspend fun collectYouTubeMusicPlaylistDetail(
     fetchRoot: suspend (JSONObject) -> JSONObject
 ): YouTubeMusicPlaylistDetail {
     var detail: YouTubeMusicPlaylistDetail? = null
+    val isAlbum = browseId.startsWith("MPRE")
+    var albumArtist = ""
     val tracks = mutableListOf<YouTubeMusicPlaylistTrack>()
     var continuation: String? = null
     var page = 0
@@ -232,6 +241,7 @@ internal suspend fun collectYouTubeMusicPlaylistDetail(
             break
         }
         if (detail == null) {
+            if (isAlbum) albumArtist = YouTubeMusicParser.parseAlbumArtist(root)
             detail = YouTubeMusicParser.parsePlaylistDetail(
                 root = root,
                 browseId = browseId,
@@ -259,7 +269,10 @@ internal suspend fun collectYouTubeMusicPlaylistDetail(
         trackCount = null,
         tracks = emptyList()
     )
-    val distinctTracks = tracks.distinctBy { it.videoId }
+    val distinctTracks = tracks.distinctBy { it.videoId }.let { unique ->
+        if (isAlbum) unique.map { it.copy(artist = it.artist.ifBlank { albumArtist }, album = baseDetail.title) }
+        else unique
+    }
     val loadedTrackCount = distinctTracks.size.takeIf { it > 0 }
     val declaredTrackCount = baseDetail.trackCount
     val resolvedTrackCount = when {
@@ -577,111 +590,106 @@ class YouTubeMusicClient(
         query: String,
         limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT,
         filter: YouTubeMusicSearchFilter = YouTubeMusicSearchFilter.Song
-    ): List<YouTubeMusicSearchResult> {
-        require(filter != YouTubeMusicSearchFilter.Creator) {
-            "Use searchCreators for YouTube Music creator results"
+    ): List<YouTubeMusicSearchResult> = collectSearchResults(limit, YouTubeMusicSearchResult::videoId) { cursor ->
+        searchPage(query, filter, cursor)
+    }
+
+    suspend fun searchPage(
+        query: String,
+        filter: YouTubeMusicSearchFilter,
+        cursor: YouTubeMusicSearchCursor? = null
+    ): YouTubeMusicSearchPage<YouTubeMusicSearchResult> {
+        if (filter == YouTubeMusicSearchFilter.Video && YouTubeContentSettings.preferences.value.hideMusicVideos) {
+            return YouTubeMusicSearchPage(emptyList())
         }
-        val resultType = when (filter) {
-            YouTubeMusicSearchFilter.Song -> YouTubeMusicSearchResultType.Song
-            YouTubeMusicSearchFilter.Video -> YouTubeMusicSearchResultType.Video
-            YouTubeMusicSearchFilter.Creator -> error("Creator results require searchCreators")
+        val parser = when (filter) {
+            YouTubeMusicSearchFilter.Song -> YouTubeMusicParser::parseSongSearchResults
+            YouTubeMusicSearchFilter.Video -> YouTubeMusicParser::parseVideoSearchResults
+            YouTubeMusicSearchFilter.Creator -> throw IllegalArgumentException("Use searchCreators for YouTube Music creator results")
+            else -> throw IllegalArgumentException("Expected a song or video search filter")
         }
-        return collectSearchResults(
-            query = query,
-            limit = limit,
-            filter = filter,
-            keyOf = YouTubeMusicSearchResult::videoId,
-            parse = { root, resultLimit ->
-                when (resultType) {
-                    YouTubeMusicSearchResultType.Song -> {
-                        YouTubeMusicParser.parseSongSearchResults(root, resultLimit)
-                    }
-                    YouTubeMusicSearchResultType.Video -> {
-                        YouTubeMusicParser.parseVideoSearchResults(root, resultLimit)
-                    }
-                }
-            }
-        )
+        return fetchSearchPage(query, filter, cursor, parser)
+    }
+
+    suspend fun searchCollectionsPage(
+        query: String,
+        filter: YouTubeMusicSearchFilter,
+        cursor: YouTubeMusicSearchCursor? = null
+    ): YouTubeMusicSearchPage<YouTubeMusicCreatorItem> {
+        val type = when (filter) {
+            YouTubeMusicSearchFilter.Album -> YouTubeMusicCreatorItemType.Album
+            YouTubeMusicSearchFilter.FeaturedPlaylist,
+            YouTubeMusicSearchFilter.CommunityPlaylist -> YouTubeMusicCreatorItemType.Playlist
+            else -> throw IllegalArgumentException("Expected an album or playlist search filter")
+        }
+        return fetchSearchPage(query, filter, cursor) { root, limit ->
+            YouTubeMusicParser.parseCollectionSearchResults(root, type, limit)
+        }
     }
 
     suspend fun searchCreators(
         query: String,
         limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT
-    ): List<YouTubeMusicCreatorSummary> {
-        return collectSearchResults(
-            query = query,
-            limit = limit,
-            filter = YouTubeMusicSearchFilter.Creator,
-            keyOf = YouTubeMusicCreatorSummary::browseId,
-            parse = YouTubeMusicParser::parseCreatorSearchResults
+    ): List<YouTubeMusicCreatorSummary> = collectSearchResults(limit, YouTubeMusicCreatorSummary::browseId) { cursor ->
+        searchCreatorsPage(query, cursor)
+    }
+
+    suspend fun searchCreatorsPage(
+        query: String,
+        cursor: YouTubeMusicSearchCursor? = null
+    ): YouTubeMusicSearchPage<YouTubeMusicCreatorSummary> =
+        fetchSearchPage(query, YouTubeMusicSearchFilter.Creator, cursor, YouTubeMusicParser::parseCreatorSearchResults)
+
+    private suspend fun <T> fetchSearchPage(
+        query: String,
+        filter: YouTubeMusicSearchFilter,
+        cursor: YouTubeMusicSearchCursor?,
+        parse: (JSONObject, Int) -> List<T>
+    ): YouTubeMusicSearchPage<T> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext YouTubeMusicSearchPage(emptyList())
+        val payload = JSONObject()
+            .put("query", query)
+            .put("params", YouTubeMusicSearchParams.forFilter(filter))
+        cursor?.let { payload.put("continuation", it.token) }
+        val response = postMusicSearchWithRetry(
+            bootstrap = bootstrap(),
+            payload = payload,
+            preferredLocale = cursor?.locale ?: YouTubeMusicLocaleResolver.preferred(),
+            expectSearchShelf = cursor == null
         )
+        val visited = cursor?.visitedTokens.orEmpty()
+        val token = YouTubeMusicParser.extractSearchContinuation(response.root)
+        val next = if (!token.isNullOrBlank() && token !in visited && visited.size < YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT - 1) {
+            YouTubeMusicSearchCursor(token, response.requestLocale, visited + token)
+        } else {
+            null
+        }
+        YouTubeMusicSearchPage(parse(response.root, Int.MAX_VALUE), next)
     }
 
     private suspend fun <T> collectSearchResults(
-        query: String,
         limit: Int,
-        filter: YouTubeMusicSearchFilter,
         keyOf: (T) -> String,
-        parse: (JSONObject, Int) -> List<T>
-    ): List<T> = withContext(Dispatchers.IO) {
-        if (query.isBlank()) {
-            return@withContext emptyList()
-        }
-        NPLogger.d(TAG, "search start: query=$query, filter=$filter, limit=$limit")
+        fetch: suspend (YouTubeMusicSearchCursor?) -> YouTubeMusicSearchPage<T>
+    ): List<T> {
         val requestedLimit = limit.coerceAtLeast(1)
-        var bootstrap = bootstrap()
-        var requestLocale = YouTubeMusicLocaleResolver.preferred()
-        val items = mutableListOf<T>()
-        val seenKeys = linkedSetOf<String>()
-        var continuation: String? = null
-        var page = 0
-
-        while (page < YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT && items.size < requestedLimit) {
-            val payload = JSONObject()
-                .put("query", query)
-                .put("params", YouTubeMusicSearchParams.forFilter(filter))
-            if (!continuation.isNullOrBlank()) {
-                payload.put("continuation", continuation)
-            }
-            val root = try {
-                val response = postMusicSearchWithRetry(
-                    bootstrap = bootstrap,
-                    payload = payload,
-                    preferredLocale = requestLocale,
-                    expectSearchShelf = continuation.isNullOrBlank()
-                )
-                bootstrap = response.bootstrap
-                requestLocale = response.requestLocale
-                response.root
+        val items = linkedMapOf<String, T>()
+        var cursor: YouTubeMusicSearchCursor? = null
+        do {
+            val page = try {
+                fetch(cursor)
             } catch (error: IOException) {
-                if (page == 0) {
-                    NPLogger.e(TAG, "search failed on first page: query=$query", error)
-                    throw error
-                }
-                NPLogger.w(
-                    TAG,
-                    "search continuation stopped: query=$query, page=$page, message=${error.message}"
-                )
+                if (cursor == null) throw error
+                NPLogger.w(TAG, "Search continuation failed", error)
                 break
             }
-            parse(root, requestedLimit - items.size).forEach { result ->
-                if (seenKeys.add(keyOf(result))) {
-                    items += result
-                }
+            page.items.forEach { item ->
+                items.putIfAbsent(keyOf(item), item)
+                if (items.size >= requestedLimit) return items.values.toList()
             }
-            continuation = YouTubeMusicParser.extractSearchContinuation(root)
-            if (continuation.isNullOrBlank()) {
-                break
-            }
-            page++
-        }
-
-        val results = items.take(requestedLimit)
-        NPLogger.d(
-            TAG,
-            "search success: query=$query, filter=$filter, count=${results.size}, pages=${page + 1}"
-        )
-        results
+            cursor = page.next
+        } while (cursor != null)
+        return items.values.toList()
     }
 
     suspend fun getCreatorDetail(
@@ -896,12 +904,20 @@ class YouTubeMusicClient(
         playlists
     }
 
+    suspend fun getExplorePlaylists(): List<YouTubeMusicLibraryPlaylist> {
+        if (authRepo.getAuthOnce().hasEffectiveAuth()) {
+            val library = getLibraryPlaylists(resolveMissingTrackCounts = false)
+            if (library.isNotEmpty()) return library
+        }
+        return getHomePlaylistRecommendations()
+    }
+
     suspend fun getHomePlaylistRecommendations(
         limit: Int = YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT
     ): List<YouTubeMusicLibraryPlaylist> = withContext(Dispatchers.IO) {
         val shelves = getHomeFeed(
             fillShelfContinuations = false,
-            requireLogin = true
+            requireLogin = authRepo.getAuthOnce().hasEffectiveAuth()
         )
         val playlists = YouTubeMusicParser.parseHomePlaylistRecommendations(
             shelves = shelves,
@@ -951,35 +967,50 @@ class YouTubeMusicClient(
         authRefreshRetryCount = 0
     )
 
+    suspend fun getHomeFeedPage(cursor: YouTubeMusicHomeCursor? = null): YouTubeMusicHomePage = withContext(Dispatchers.IO) {
+        val requireLogin = cursor == null && authRepo.getAuthOnce().hasEffectiveAuth()
+        val locale = cursor?.locale ?: YouTubeMusicLocaleResolver.preferred()
+        val payload = homeFeedPayload(cursor?.token)
+        val response = postMusicBrowseWithRetry(homeFeedBootstrap(requireLogin), payload, locale)
+        val page = response.toHomePage(cursor)
+        if (cursor == null && page.next == null && page.shelves.isEmpty() && response.filteredItems == 0 &&
+            refreshEmptyHomeAuth(response.bootstrap, 0)
+        ) {
+            return@withContext postMusicBrowseWithRetry(homeFeedBootstrap(requireLogin), payload, locale).toHomePage(null)
+        }
+        page
+    }
+
+    private fun homeFeedPayload(token: String?): JSONObject = if (token.isNullOrBlank()) {
+        JSONObject().put("browseId", "FEmusic_home")
+    } else JSONObject().put("continuation", token)
+
+    private suspend fun homeFeedBootstrap(requireLogin: Boolean): YouTubeMusicBootstrapConfig {
+        if (!requireLogin) return bootstrap()
+        warnIfMissingYouTubeMusicCookieContext(reason = "home_feed")
+        return authenticatedBootstrap(reason = "home_feed")
+    }
+
     private suspend fun getHomeFeedInternal(
         fillShelfContinuations: Boolean,
         requireLogin: Boolean,
         authRefreshRetryCount: Int
     ): List<YouTubeMusicHomeShelf> = withContext(Dispatchers.IO) {
         NPLogger.d(TAG, "getHomeFeed start")
-        if (requireLogin) {
-            warnIfMissingYouTubeMusicCookieContext(reason = "home_feed")
-        }
-        var bootstrap = if (requireLogin) {
-            authenticatedBootstrap(reason = "home_feed")
-        } else {
-            bootstrap()
-        }
+        var bootstrap = homeFeedBootstrap(requireLogin)
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
+        val visitedTokens = mutableSetOf<String>()
         val result = mutableListOf<YouTubeMusicHomeShelf>()
         var continuation: String? = null
         var page = 0
+        var filteredItems = 0
 
         while (
             page < YOUTUBE_MUSIC_HOME_PAGE_LIMIT &&
             result.size < YOUTUBE_MUSIC_HOME_MAX_SHELVES
         ) {
-            val payload = if (continuation.isNullOrBlank()) {
-                JSONObject().put("browseId", "FEmusic_home")
-            } else {
-                JSONObject().put("continuation", continuation)
-            }
-            val response = postMusicBrowseWithRetry(bootstrap, payload, requestLocale)
+            val response = postMusicBrowseWithRetry(bootstrap, homeFeedPayload(continuation), requestLocale)
+            filteredItems += response.filteredItems
             bootstrap = response.bootstrap
             requestLocale = response.requestLocale
 
@@ -1017,6 +1048,7 @@ class YouTubeMusicClient(
                         )
                         break
                     }
+                    filteredItems += shelfResponse.filteredItems
                     bootstrap = shelfResponse.bootstrap
                     requestLocale = shelfResponse.requestLocale
                     items += YouTubeMusicParser.parseHomeShelfContinuationItems(shelfResponse.root)
@@ -1035,39 +1067,30 @@ class YouTubeMusicClient(
                 }
             }
 
-            continuation = YouTubeMusicParser.extractHomeContinuation(response.root)
+            page++
+            continuation = YouTubeMusicParser.extractHomeContinuation(response.root)?.takeIf(visitedTokens::add)
             if (continuation.isNullOrBlank()) {
                 break
             }
-            page++
         }
 
-        val auth = authRepo.getAuthOnce()
-        if (result.isEmpty() && shouldRefreshYouTubeAuthAfterEmptyResponse(
-                bootstrapLoggedIn = bootstrap.loggedIn,
-                hasLoginCookies = auth.hasLoginCookies()
+        if (continuation == null && result.isEmpty() && filteredItems == 0 && refreshEmptyHomeAuth(bootstrap, authRefreshRetryCount)) {
+            return@withContext getHomeFeedInternal(
+                fillShelfContinuations = fillShelfContinuations,
+                requireLogin = requireLogin,
+                authRefreshRetryCount = authRefreshRetryCount + 1
             )
-        ) {
-            val refreshResult = authAutoRefreshManager?.refreshIfNeeded(
-                reason = "home_feed_empty",
-                force = true
-            )
-            if (
-                refreshResult?.refreshed == true &&
-                shouldRetryYouTubeMusicAuthRefresh(authRefreshRetryCount)
-            ) {
-                NPLogger.w(TAG, "getHomeFeed empty, retry after auth refresh")
-                bootstrapCache = null
-                return@withContext getHomeFeedInternal(
-                    fillShelfContinuations = fillShelfContinuations,
-                    requireLogin = requireLogin,
-                    authRefreshRetryCount = authRefreshRetryCount + 1
-                )
-            }
         }
-        val shelves = result.take(YOUTUBE_MUSIC_HOME_MAX_SHELVES)
-        NPLogger.d(TAG, "getHomeFeed success: shelves=${shelves.size}, pages=${page + 1}")
-        shelves
+        NPLogger.d(TAG, "getHomeFeed success: shelves=${result.size}, pages=$page")
+        result
+    }
+
+    private suspend fun refreshEmptyHomeAuth(bootstrap: YouTubeMusicBootstrapConfig, retryCount: Int): Boolean {
+        if (!shouldRefreshYouTubeAuthAfterEmptyResponse(bootstrap.loggedIn, authRepo.getAuthOnce().hasLoginCookies())) return false
+        val refreshed = authAutoRefreshManager?.refreshIfNeeded(reason = "home_feed_empty", force = true)
+        if (refreshed?.refreshed != true || !shouldRetryYouTubeMusicAuthRefresh(retryCount)) return false
+        bootstrapCache = null
+        return true
     }
 
     suspend fun getPlaylistDetail(
@@ -1111,18 +1134,27 @@ class YouTubeMusicClient(
             bootstrap()
         }
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
-        collectYouTubeMusicPlaylistDetail(
+        val preferences = YouTubeContentSettings.preferences.value
+        val detail = collectYouTubeMusicPlaylistDetail(
             browseId = resolvedBrowseId,
             fallbackTitle = fallbackTitle,
             fallbackSubtitle = fallbackSubtitle,
             fallbackCoverUrl = fallbackCoverUrl,
             pageLimit = pageLimit
         ) { payload ->
-                val response = postMusicBrowseWithRetry(bootstrap, payload, requestLocale)
-                bootstrap = response.bootstrap
-                requestLocale = response.requestLocale
-                response.root
+            val response = postMusicBrowseWithRetry(bootstrap, payload, requestLocale, filterCatalog = false)
+            bootstrap = response.bootstrap
+            requestLocale = response.requestLocale
+            response.root
         }
+        if (!preferences.hideExplicit && !preferences.hideMusicVideos) return@withContext detail
+        val visible = detail.tracks.filterNot { preferences.hides(it.contentLabel) }
+        val hiddenCount = detail.tracks.size - visible.size
+        detail.copy(
+            tracks = visible,
+            trackCount = detail.trackCount?.let { (it - hiddenCount).coerceAtLeast(visible.size) },
+            filteredEmpty = detail.fullyLoaded && hiddenCount > 0 && visible.isEmpty()
+        )
     }
 
     suspend fun getPlayableAudio(videoId: String): YouTubeMusicPlayableAudio = withContext(Dispatchers.IO) {
@@ -1613,7 +1645,8 @@ class YouTubeMusicClient(
     private suspend fun postMusicBrowseWithRetry(
         bootstrap: YouTubeMusicBootstrapConfig,
         payload: JSONObject,
-        preferredLocale: YouTubeMusicRequestLocale
+        preferredLocale: YouTubeMusicRequestLocale,
+        filterCatalog: Boolean = true
     ): YouTubeMusicBrowseResponse {
         var activeBootstrap = bootstrap
         var lastError: IOException? = null
@@ -1639,7 +1672,8 @@ class YouTubeMusicClient(
                     return YouTubeMusicBrowseResponse(
                         bootstrap = activeBootstrap,
                         root = root,
-                        requestLocale = requestLocale
+                        requestLocale = requestLocale,
+                        filteredItems = if (filterCatalog) root.filterCatalogItems(YouTubeContentSettings.preferences.value) else 0
                     )
                 } catch (error: IOException) {
                     lastError = error
@@ -1703,7 +1737,8 @@ class YouTubeMusicClient(
                     return YouTubeMusicBrowseResponse(
                         bootstrap = activeBootstrap,
                         root = root,
-                        requestLocale = requestLocale
+                        requestLocale = requestLocale,
+                        filteredItems = root.filterCatalogItems(YouTubeContentSettings.preferences.value)
                     )
                 } catch (error: IOException) {
                     lastError = error

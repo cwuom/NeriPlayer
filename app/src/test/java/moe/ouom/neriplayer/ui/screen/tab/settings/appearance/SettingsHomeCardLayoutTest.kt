@@ -17,7 +17,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
-import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsHomeCardCopy
 import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.Assert.assertEquals
@@ -47,8 +46,7 @@ class SettingsHomeCardLayoutTest {
 
     private fun verifyLayout(style: UiStyle) {
         val context = ApplicationProvider.getApplicationContext<Application>()
-        val copy = settingsHomeCardCopy(false)
-        val radarTitle = context.getString(copy.radarLabelRes)
+        val radarTitle = context.getString(CoreCommonR.string.settings_home_card_netease_radar)
         val dailyTitle = context.getString(CoreCommonR.string.home_netease_daily_songs)
         val expand = context.getString(CoreCommonR.string.settings_home_sub_section_expand, radarTitle)
         val actions = mock(HomeSectionSettingsActions::class.java)
@@ -65,7 +63,6 @@ class SettingsHomeCardLayoutTest {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     SettingsPersonalizationHomeCard(
                         internationalEnabled = false,
-                        copy = copy,
                         homeStartAvailable = true,
                         state = AppHomeCardsSettingsState(true, true, true, true, true),
                         actions = actions,

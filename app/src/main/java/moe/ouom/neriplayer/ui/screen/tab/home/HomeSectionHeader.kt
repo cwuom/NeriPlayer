@@ -265,6 +265,7 @@ internal fun HomeGreetingLine(
 }
 
 private val HomeGreetingPullUp = 14.dp
+private const val MaxHomePagerDots = 7
 
 /** 横滑分页的页码点: 当前页拉长成主色胶囊, 切页时宽度和颜色平滑过渡 */
 @Composable
@@ -282,8 +283,10 @@ internal fun HomePagerDots(
         verticalAlignment = Alignment.CenterVertically
     ) {
         val selected = currentPage()
-        repeat(pageCount) { index ->
-            val isSelected = index == selected
+        val dotCount = minOf(pageCount, MaxHomePagerDots)
+        val firstPage = (selected - dotCount / 2).coerceIn(0, pageCount - dotCount)
+        repeat(dotCount) { index ->
+            val isSelected = firstPage + index == selected
             val width by animateDpAsState(
                 targetValue = if (isSelected) 18.dp else 6.dp,
                 animationSpec = NeriMotion.smooth(),

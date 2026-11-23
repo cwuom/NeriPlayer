@@ -36,6 +36,7 @@ internal object PlaybackStatsJournalCodec {
             addProperty("scheduleSync", snapshot.scheduleSync)
             addProperty("playedAt", snapshot.playedAt)
             addProperty("observedClearedAt", snapshot.observedClearedAt)
+            snapshot.playedZone?.let { addProperty("playedZone", it) }
             add("localPlaylistId", snapshot.localPlaylistId?.let { com.google.gson.JsonPrimitive(it) } ?: JsonNull.INSTANCE)
             add("song", songPayload(snapshot.song))
         }
@@ -101,7 +102,8 @@ internal object PlaybackStatsJournalCodec {
                 scheduleSync = value.scheduleSyncFlag(),
                 localPlaylistId = value.optionalNumber("localPlaylistId"),
                 eventId = value.text("eventId"), playedAt = value.number("playedAt"),
-                observedClearedAt = value.number("observedClearedAt")
+                observedClearedAt = value.number("observedClearedAt"),
+                playedZone = if (value.has("playedZone")) value.optionalText("playedZone") else null
             )
             if (!snapshot.hasValidEvent()) throw IOException("Invalid playback journal event")
             return snapshot

@@ -1,15 +1,15 @@
 package moe.ouom.neriplayer.data.local.database.store.stats
 
 import androidx.sqlite.db.SimpleSQLiteQuery
-import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.model.stats.TrackStat
-import moe.ouom.neriplayer.data.model.stats.resolvePlaybackStatsTimeRange
 import moe.ouom.neriplayer.data.stats.PlaybackStatsCursor
 import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
 import moe.ouom.neriplayer.data.stats.PlaybackStatsSort
 
 internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasBuckets: Boolean, hasLegacyStats: Boolean = !hasBuckets) {
-    val usesLegacyBreakdown = query.period != PlaybackStatsPeriod.ALL && hasLegacyStats
+    private val range = query.resolvedRange
+    private val allTime = range.startInclusive == null && range.endExclusive == Long.MAX_VALUE
+    val usesLegacyBreakdown = !allTime && hasLegacyStats
     private val arguments = mutableListOf<Any>()
     private val source: String = sourceSql(hasBuckets)
     private val sortColumn = query.sort.sqlColumn()
@@ -24,6 +24,25 @@ internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasB
             "COALESCE(SUM(MAX(total_listen_ms, 0) & 4294967295), 0) AS lo FROM ($source) WHERE $filter)",
         (arguments + query.minimumListenMs).toTypedArray()
     )
+
+    fun hourlyListening(): SimpleSQLiteQuery {
+        val range = query.resolvedRange
+        val params = mutableListOf<Any>(range.startInclusive ?: Long.MIN_VALUE, range.endExclusive)
+        val tracks = if (query.minimumListenMs > 0 || query.requirePlayCount) {
+            params.addAll(arguments)
+            params.add(query.minimumListenMs)
+            " AND identity_key IN (SELECT identity_key FROM ($source) WHERE $filter)"
+        } else ""
+        return SimpleSQLiteQuery(
+            "SELECT local_hour AS localHour, SUM(listened_ms) AS listenedMs FROM playback_stat_hour " +
+                "WHERE hour_start_at >= ? AND hour_start_at < ?$tracks GROUP BY local_hour",
+            params.toTypedArray()
+        )
+    }
+
+    fun filteredTracksSql(): String = "SELECT * FROM ($source) WHERE $filter"
+
+    fun filteredArguments(): List<Any> = arguments + query.minimumListenMs
 
     fun page(after: PlaybackStatsCursor?, limit: Int, before: Boolean = false): SimpleSQLiteQuery {
         val params = (arguments + query.minimumListenMs).toMutableList()
@@ -69,25 +88,20 @@ internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasB
     )
 
     private fun sourceSql(hasBuckets: Boolean): String = when {
-        query.period == PlaybackStatsPeriod.ALL -> "SELECT * FROM playback_stat"
+        allTime -> "SELECT * FROM playback_stat"
         hasBuckets -> bucketSource() + " UNION ALL " + legacySource(onlyWithoutBuckets = true)
         else -> legacySource()
     }
 
     private fun legacySource(onlyWithoutBuckets: Boolean = false): String {
-        val range = query.period.resolvePlaybackStatsTimeRange(query.nowMillis)
-        arguments.add(checkNotNull(range.startInclusive))
+        arguments.add(range.startInclusive ?: Long.MIN_VALUE)
         arguments.add(range.endExclusive)
         val withoutBuckets = if (onlyWithoutBuckets) " AND NOT EXISTS (SELECT 1 FROM playback_stat_bucket b WHERE b.identity_key = playback_stat.identity_key)" else ""
         return "SELECT * FROM playback_stat WHERE (CASE WHEN first_played_at > 0 THEN first_played_at ELSE last_played_at END) >= ? AND last_played_at < ?$withoutBuckets"
     }
 
-    // 两个整数 limb 分开聚合，在千万行和 Long 上限输入下仍保持精度
-    private fun saturatedSum(): String = "CASE WHEN hi + (lo >> 32) > 2147483647 THEN 9223372036854775807 ELSE ((hi + (lo >> 32)) << 32) + (lo & 4294967295) END"
-
     private fun bucketSource(): String {
-        val range = query.period.resolvePlaybackStatsTimeRange(query.nowMillis)
-        val start = checkNotNull(range.startInclusive)
+        val start = range.startInclusive ?: Long.MIN_VALUE
         repeat(3) { arguments.add(start); arguments.add(range.endExclusive) }
         return "WITH bucket_sums AS (SELECT identity_key, SUM(MAX(total_listen_ms, 0) >> 32) AS hi, " +
             "SUM(MAX(total_listen_ms, 0) & 4294967295) AS lo, MIN(SUM(play_count), 2147483647) AS play_count, " +
@@ -111,3 +125,6 @@ private fun PlaybackStatsSort.sqlColumn(): String = when (this) {
     PlaybackStatsSort.RECENT -> "last_played_at"
     PlaybackStatsSort.FIRST_PLAYED -> "first_played_at"
 }
+
+// 两个整数 limb 分开聚合，在千万行和 Long 上限输入下仍保持精度
+internal fun saturatedSum(): String = "CASE WHEN hi + (lo >> 32) > 2147483647 THEN 9223372036854775807 ELSE ((hi + (lo >> 32)) << 32) + (lo & 4294967295) END"

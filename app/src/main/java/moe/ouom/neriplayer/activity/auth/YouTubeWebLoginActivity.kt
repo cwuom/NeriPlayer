@@ -74,6 +74,7 @@ import moe.ouom.neriplayer.platform.youtube.api.transport.YOUTUBE_DEFAULT_WEB_US
 import moe.ouom.neriplayer.platform.youtube.api.transport.isTrustedYouTubeLoginHost
 import moe.ouom.neriplayer.platform.youtube.api.transport.resolveYouTubeMobileWebLoginUserAgent
 import moe.ouom.neriplayer.network.proxy.DynamicProxySelector
+import moe.ouom.neriplayer.network.proxy.NetworkDns
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.ui.feedback.showNeriViewSnackbar
 import moe.ouom.neriplayer.network.security.isAllowedMainFrameRequest
@@ -143,6 +144,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     private val loginCompletionWatcher = WebLoginCompletionWatcher(::maybeReturnObservedAuth)
     private val loginVerificationClient by lazy {
         OkHttpClient.Builder()
+            .dns(NetworkDns)
             .proxySelector(DynamicProxySelector)
             .build()
     }
@@ -175,6 +177,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installLoginRoute()
         if (finishIfWebViewUnavailable()) return
         lockPortraitIfPhone()
         enableNeriEdgeToEdge()
@@ -271,7 +274,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, webBackNavigation.callback)
 
-        webView.loadUrl(TARGET_URL)
+        lifecycleScope.launch { webView.loadLoginUrl(TARGET_URL) }
     }
 
     override fun onPause() {

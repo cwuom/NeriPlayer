@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Home -->
+    <string name="international_home_spotlight">今日精选</string>
+    <string name="international_home_feed">为你推荐</string>
+    <string name="international_home_sections_desc">调整国际首页的栏目顺序和显示状态。今日精选和为你推荐需要启用 YouTube。</string>
     <string name="recommend_for_you">为你推荐</string>
     <string name="recommend_refresh">刷新推荐</string>
     <string name="recommend_trending">热力飙升</string>

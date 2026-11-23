@@ -20,6 +20,8 @@ import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapsho
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotDeletedBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsPendingDeltaEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsEventReceiptEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatHourEntity
+import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackStatHourMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackStatsPagedMigration
 import moe.ouom.neriplayer.data.local.database.dao.stats.PlaybackStatsDao
 import moe.ouom.neriplayer.data.local.database.dao.FavoritePlaylistDao
@@ -87,7 +89,7 @@ import moe.ouom.neriplayer.data.local.database.migration.download.DownloadFinali
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadBatchMigration
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadRecoveryCursorMigration
 
-private const val NERI_USER_DATA_FINAL_VERSION = 21
+private const val NERI_USER_DATA_FINAL_VERSION = 22
 
 @Database(
     entities = [
@@ -114,6 +116,7 @@ private const val NERI_USER_DATA_FINAL_VERSION = 21
         PlaybackStatsSnapshotDeletedBucketEntity::class,
         PlaybackStatsPendingDeltaEntity::class,
         PlaybackStatsEventReceiptEntity::class,
+        PlaybackStatHourEntity::class,
         PlaybackStatBucketEntity::class,
         PlaybackStatCounterShardEntity::class,
         PlaybackStatDailyCounterShardEntity::class,
@@ -228,7 +231,8 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
             MIGRATION_17_18,
             MIGRATION_18_19,
             MIGRATION_19_20,
-            MIGRATION_20_21
+            MIGRATION_20_21,
+            MIGRATION_21_22
         )
 
         private fun checkMainProcess(context: Context) {
@@ -260,6 +264,7 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
         val MIGRATION_18_19: Migration = LyricSyncPersistenceMigration
         val MIGRATION_19_20: Migration = PlaybackStatsPagedMigration
         val MIGRATION_20_21: Migration = LocalSourceProvenanceMigration
+        val MIGRATION_21_22: Migration = PlaybackStatHourMigration
 
         const val FINAL_DB_VERSION = NERI_USER_DATA_FINAL_VERSION
     }

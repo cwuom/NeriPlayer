@@ -116,6 +116,32 @@ class YouTubeMusicClientPlaybackSearchTest {
     }
 
     @Test
+    fun `album playlist and creator searches each send their own category parameter`() = runTest {
+        val http = YouTubeMusicTestHttp { call ->
+            if (call.isBootstrap) bootstrapPage() else json(searchPage())
+        }
+        val client = YouTubeMusicClient(FakeYouTubeAuth(GUEST_AUTH), http.client)
+
+        client.searchCollectionsPage("album query", YouTubeMusicSearchFilter.Album)
+        client.searchCollectionsPage("featured query", YouTubeMusicSearchFilter.FeaturedPlaylist)
+        client.searchCollectionsPage("community query", YouTubeMusicSearchFilter.CommunityPlaylist)
+        client.searchCreatorsPage("creator query")
+
+        assertEquals(
+            listOf(
+                "album query" to "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D",
+                "featured query" to "EgeKAQQoADgBagwQDhAKEAMQBRAJEAQ%3D",
+                "community query" to "EgeKAQQoAEABagoQAxAEEAoQCRAF",
+                "creator query" to "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D"
+            ),
+            http.innertubeCalls("search").map { call ->
+                val payload = requireNotNull(call.payload)
+                payload.getString("query") to payload.getString("params")
+            }
+        )
+    }
+
+    @Test
     fun `search follows continuation tokens until the limit is reached`() = runTest {
         val firstPage = searchPage(songRow("song-1", "First")).replace(
             """"contents":[${songRow("song-1", "First")}]""",
@@ -139,6 +165,32 @@ class YouTubeMusicClientPlaybackSearchTest {
         assertEquals("page 2", continuation.request.url.queryParameter("ctoken"))
         assertEquals("page 2", continuation.request.url.queryParameter("continuation"))
         assertEquals("page 2", continuation.payload!!.getString("continuation"))
+    }
+
+    @Test
+    fun `an empty shelf retains its cursor and an appended page stops on a repeated token`() = runTest {
+        val continuation = """{"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"next"}}}}"""
+        val items = (1..35).map { songRow("song-$it", "Song $it") }
+        val http = YouTubeMusicTestHttp { call ->
+            when {
+                call.isBootstrap -> bootstrapPage()
+                call.payload!!.has("continuation") -> json(
+                    """{"onResponseReceivedActions":[{"appendContinuationItemsAction":{"continuationItems":[""" +
+                        (items + continuation).joinToString(",") + "]}}]}"
+                )
+                else -> json(searchPage(continuation))
+            }
+        }
+        val client = YouTubeMusicClient(FakeYouTubeAuth(GUEST_AUTH), http.client)
+        val first = client.searchPage("mix", YouTubeMusicSearchFilter.Song)
+
+        assertTrue(first.items.isEmpty())
+        assertEquals("next", first.next?.token)
+        assertEquals(1, http.innertubeCalls("search").size)
+        val second = client.searchPage("mix", YouTubeMusicSearchFilter.Song, requireNotNull(first.next))
+        assertEquals((1..35).map { "song-$it" }, second.items.map { it.videoId })
+        assertNull(second.next)
+        assertEquals("next", http.innertubeCalls("search").last().request.url.queryParameter("ctoken"))
     }
 
     @Test

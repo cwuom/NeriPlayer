@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.platform.youtube.api.protocol
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasEffectiveAuth
 import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import java.util.Locale
 import moe.ouom.neriplayer.platform.youtube.api.auth.shouldStartYouTubeWebAuthRecovery
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
@@ -55,26 +56,18 @@ object YouTubeMusicLocaleResolver {
         gl = YOUTUBE_MUSIC_SAFE_FALLBACK_GL
     )
 
-    fun preferred(locale: Locale = Locale.getDefault()): YouTubeMusicRequestLocale {
-        var country = locale.country
-        if (country.isBlank() || country.equals("CN", ignoreCase = true)) {
-            country = safeFallback.gl
-        }
-        val language = locale.language.ifBlank { safeFallback.hl.substringBefore('-') }
-        return YouTubeMusicRequestLocale(
-            hl = if (language.equals("zh", ignoreCase = true)) "zh-CN" else "$language-$country",
-            gl = country
-        )
-    }
+    fun preferred(locale: Locale = YouTubeContentSettings.systemLocale()): YouTubeMusicRequestLocale =
+        YouTubeContentSettings.preferences.value.resolveLocale(locale)
 
     fun requestCandidates(
         preferredLocale: YouTubeMusicRequestLocale = preferred()
     ): List<YouTubeMusicRequestLocale> {
-        return if (preferredLocale == safeFallback) {
-            listOf(safeFallback)
-        } else {
-            listOf(preferredLocale, safeFallback)
-        }
+        val prefs = YouTubeContentSettings.preferences.value
+        val fallback = YouTubeMusicRequestLocale(
+            hl = prefs.languageTag.ifBlank { safeFallback.hl },
+            gl = prefs.countryCode.ifBlank { safeFallback.gl }
+        )
+        return listOf(preferredLocale, fallback).distinct()
     }
 
     fun shouldRetryWithSafeFallback(payload: JSONObject, root: JSONObject): Boolean {
@@ -95,6 +88,9 @@ internal object YouTubeMusicSearchParams {
         return when (filter) {
             YouTubeMusicSearchFilter.Song -> SONGS
             YouTubeMusicSearchFilter.Video -> VIDEOS
+            YouTubeMusicSearchFilter.Album -> "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D"
+            YouTubeMusicSearchFilter.FeaturedPlaylist -> "EgeKAQQoADgBagwQDhAKEAMQBRAJEAQ%3D"
+            YouTubeMusicSearchFilter.CommunityPlaylist -> "EgeKAQQoAEABagoQAxAEEAoQCRAF"
             YouTubeMusicSearchFilter.Creator -> CREATORS
         }
     }

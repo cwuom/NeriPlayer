@@ -37,10 +37,14 @@ import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.platform.netease.api.auth.NeteaseYdDeviceTokenProvider
 import android.app.Application
 import android.content.Context
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.data.settings.toYouTubeContentPreferences
 import androidx.datastore.preferences.core.Preferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
@@ -76,7 +80,9 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.platform.bilibili.auth.BiliCookieRepository
 import moe.ouom.neriplayer.platform.netease.auth.NeteaseCookieRepository
 import moe.ouom.neriplayer.network.weblogin.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.network.weblogin.WebViewNetworkRoute
 import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthAutoRefreshManager
+import moe.ouom.neriplayer.platform.youtube.auth.hasYouTubeRotationPrerequisites
 import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthRepository
 import moe.ouom.neriplayer.platform.youtube.auth.mergeYouTubeAuthCookieUpdates
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
@@ -119,6 +125,7 @@ import moe.ouom.neriplayer.platform.comments.repository.CommentRepository
 import moe.ouom.neriplayer.platform.comments.repository.BiliCommentRepository
 import moe.ouom.neriplayer.platform.comments.repository.NeteaseCommentRepository
 import moe.ouom.neriplayer.network.proxy.DynamicProxySelector
+import moe.ouom.neriplayer.network.proxy.NetworkDns
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -266,6 +273,7 @@ object AppContainer {
     internal fun isInitialized(): Boolean = initialized
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private lateinit var networkRoute: NetworkRoute
     private const val YOUTUBE_DOWNLOAD_PLAYBACK_CALL_TIMEOUT_MS = 20_000L
 
     val subsonicAccounts by lazy { SubsonicAccounts(application) }
@@ -294,7 +302,7 @@ object AppContainer {
     internal suspend fun changeYouTubeAuth(updateAuth: () -> Unit) {
         withYouTubeAuthChange(
             updateAuth = updateAuth,
-            stopRefresh = youtubeAuthAutoRefreshManager::cancelAndAwaitRefresh,
+            stopRefresh = youtubeAuthAutoRefreshManager::resetForAccountChange,
             clearWebState = {
                 moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState(
                     application,
@@ -339,6 +347,7 @@ object AppContainer {
     // 共享 OkHttpClient: 受 DynamicProxySelector 管理
     val sharedOkHttpClient by lazy {
         val clientBuilder = OkHttpClient.Builder()
+            .dns(NetworkDns)
             .proxySelector(DynamicProxySelector)
             .addInterceptor(SubsonicResourceInterceptor { subsonicAccounts })
             .addInterceptor { chain ->
@@ -449,6 +458,7 @@ object AppContainer {
     // 资料请求保留授权快照，不经过会更新账号 Cookie 的共享拦截器
     private val youtubeAccountProfileHttpClientDelegate = lazy {
         val clientBuilder = OkHttpClient.Builder()
+            .dns(NetworkDns)
             .proxySelector(DynamicProxySelector)
             .followRedirects(false)
             .addInterceptor { chain ->
@@ -566,6 +576,8 @@ object AppContainer {
 
     fun initialize(app: Application) {
         this.application = app
+        primeProxySetting()
+        YouTubeContentSettings.initialize(app)
         initialized = true
         moe.ouom.neriplayer.core.integration.download.installDownloadDependencies()
         moe.ouom.neriplayer.core.di.player.installPlayerDependencies(app)
@@ -598,7 +610,6 @@ object AppContainer {
         warmLocalPlaylistRepository()
         warmBiliVideoSkipRepository()
         warmCoverUrlMapper()
-        primeProxySetting()
         startCookieObserver()
         startYouTubeAuthObserver()
         startSettingsObserver()
@@ -641,7 +652,8 @@ object AppContainer {
 
     private fun primeProxySetting() {
         val initialBootstrapSettings = readBootstrapSettingsSnapshotSync(application)
-        DynamicProxySelector.bypassProxy = initialBootstrapSettings.bypassProxy
+        networkRoute = initialBootstrapSettings.networkRoute().also(NetworkRoute::install)
+        WebViewNetworkRoute.refresh(scope, application)
         YouTubeFeatureGate.update(initialBootstrapSettings.youtubeEnabled)
         ManagedDownloadStorage.primeSettings(
             directoryUri = initialBootstrapSettings.downloadDirectoryUri,
@@ -661,6 +673,15 @@ object AppContainer {
     }
 
     private fun startYouTubeAuthObserver() {
+        combine(settingsRepo.youtubeEnabledFlow, youtubeAuthRepo.authFlow) { enabled, auth ->
+            enabled && hasYouTubeRotationPrerequisites(auth.cookies)
+        }.distinctUntilChanged()
+            .onEach { eligible ->
+                if (eligible) YouTubeAuthRotationWorker.schedulePeriodicRotation(application)
+                else YouTubeAuthRotationWorker.cancelPeriodicRotation(application)
+            }
+            .launchIn(scope)
+
         youtubeAuthRepo.authFlow
             .drop(1)
             .distinctUntilChangedBy { bundle -> bundle.toWarmBootstrapKey() }
@@ -690,17 +711,19 @@ object AppContainer {
     private fun startSettingsObserver() {
         application.dataStore.data
             .onEach { preferences ->
+                YouTubeContentSettings.publish(preferences.toYouTubeContentPreferences())
                 persistStartupSettingsSnapshots(application, preferences)
             }
             .launchIn(scope)
 
-        settingsRepo.bypassProxyFlow
-            .onEach { enabled ->
-                applyBypassProxyChange(
-                    enabled = enabled,
-                    currentValue = DynamicProxySelector.bypassProxy,
-                    applyValue = { DynamicProxySelector.bypassProxy = it },
+        application.dataStore.data
+            .onEach { preferences ->
+                applyNetworkRouteChange(
+                    next = preferences.toBootstrapSettingsSnapshot().networkRoute(),
+                    currentValue = networkRoute,
+                    applyValue = { networkRoute = it.also(NetworkRoute::install) },
                     onChanged = {
+                        WebViewNetworkRoute.refresh(scope, application)
                         sharedOkHttpClient.connectionPool.evictAll()
                         if (youtubeAccountProfileHttpClientDelegate.isInitialized()) {
                             youtubeAccountProfileHttpClientDelegate.value.connectionPool.evictAll()
@@ -735,7 +758,6 @@ object AppContainer {
                 val wasEnabled = YouTubeFeatureGate.isEnabled()
                 YouTubeFeatureGate.update(enabled)
                 if (wasEnabled && !enabled) {
-                    YouTubeAuthRotationWorker.cancelPeriodicRotation(application)
                     if (youtubeMusicClientDelegate.isInitialized()) {
                         youtubeMusicClientDelegate.value.clearBootstrapCache()
                     }
@@ -748,7 +770,6 @@ object AppContainer {
                     AudioDownloadManager.cancelActiveYouTubeDownloads()
                     cancelYouTubeCalls()
                 } else if (!wasEnabled && enabled) {
-                    YouTubeAuthRotationWorker.schedulePeriodicRotation(application)
                     warmYouTubePlaybackOnAppStart()
                 }
             }

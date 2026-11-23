@@ -323,6 +323,7 @@ class YouTubeMusicCreatorTabletLayoutTest {
             YouTubeMusicCreatorItemsContent(
                 uiState = state.value, listState = worksList, onRetry = { retryCount += 1 },
                 onLoadMore = { loadMoreCount += 1 }, onSongClick = { selectedItem = it },
+                onBrowseItemClick = { selectedItem = it },
                 offlineMode = true, isTabletLayout = LocalConfiguration.current.smallestScreenWidthDp >= 600
             )
         }

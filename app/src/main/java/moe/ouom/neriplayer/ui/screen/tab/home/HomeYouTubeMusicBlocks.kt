@@ -22,231 +22,105 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2026/11/20
  */
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.Explore
-import androidx.compose.material.icons.outlined.Star
-import moe.ouom.neriplayer.ui.i18n.asString
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.ui.screen.playlist.FavoriteSongLookup
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 
-/**
- * 国际模式下的「热力与榜单」大模块：YouTube Music 的「猜你喜欢」。
- */
-internal fun LazyGridScope.addHomeYouTubeMusicTrendingBlock(env: HomeMajorSectionEnv) {
-    if (!env.showTrending || !env.showOnlineFeeds) return
-    val shelf = env.ytmSections.guessYouLike ?: return
-    addYouTubeMusicSongShelfSection(
-        sectionKey = HomeScrollKeyYtGuess,
-        registerKey = env.registerKey,
-        shelf = shelf,
-        icon = Icons.Outlined.Bolt,
-        title = env.guessYouLikeTitle,
-        onSongClick = env.onSongClick,
-        favoriteSongLookup = env.favoriteSongLookup,
-        downloadPresenceVersion = env.downloadPresenceVersion,
-        onFavoriteToggle = env.onFavoriteToggle,
-        onShowSnackbar = env.onShowSnackbar,
-        offlineMode = env.offlineMode
-    )
-}
-
-/**
- * 国际模式下的「私人雷达」大模块：YouTube Music 的「每日发现」。
- */
-internal fun LazyGridScope.addHomeYouTubeMusicRadarBlock(env: HomeMajorSectionEnv) {
-    if (!env.showRadar || !env.showOnlineFeeds) return
-    val shelf = env.ytmSections.dailyDiscover ?: return
-    addYouTubeMusicSongShelfSection(
-        sectionKey = HomeScrollKeyYtDaily,
-        registerKey = env.registerKey,
-        shelf = shelf,
-        icon = Icons.Outlined.Explore,
-        title = env.dailyDiscoverTitle,
-        onSongClick = env.onSongClick,
-        favoriteSongLookup = env.favoriteSongLookup,
-        downloadPresenceVersion = env.downloadPresenceVersion,
-        onFavoriteToggle = env.onFavoriteToggle,
-        onShowSnackbar = env.onShowSnackbar,
-        offlineMode = env.offlineMode
-    )
-}
-
-/**
- * 国际模式下的「推荐歌单」大模块：YouTube Music 推荐歌单与其它货架。
- */
-internal fun LazyGridScope.addHomeYouTubeMusicRecommendedBlock(env: HomeMajorSectionEnv) {
-    if (!env.showRecommended || !env.showOnlineFeeds) return
-
+internal fun LazyGridScope.addInternationalHomeShelf(
+    shelf: InternationalHomeShelf,
+    registerKey: (String) -> String,
+    onSongClick: (List<SongItem>, Int) -> Unit,
+    onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
+    onYouTubeCreatorClick: (YouTubeMusicCreatorSummary) -> Unit,
+    favoriteKeys: Set<String>,
+    favoriteSongLookup: FavoriteSongLookup,
+    downloadPresenceVersion: Int,
+    onFavoriteToggle: (SongItem, Boolean) -> Unit,
+    onShowSnackbar: (String) -> Unit,
+    offlineMode: Boolean
+) {
+    val trackShelf = shelf.entries.size == shelf.songs.size
     item(
-        key = env.registerKey(HomeScrollKeyYtMoreHeader),
+        key = registerKey(shelf.key),
         span = { GridItemSpan(maxLineSpan) },
-        contentType = HomeContentTypeHeader
+        contentType = if (trackShelf) "youtube:tracks" else "youtube:artwork"
     ) {
-        SectionHeader(
-            icon = Icons.Outlined.Star,
-            title = env.moreRecommendationsTitle
-        )
-    }
-
-    when {
-        env.ui.ytMusicPlaylists.items.isNotEmpty() -> {
-            env.ui.ytMusicPlaylists.items.forEach { playlist ->
-                item(
-                    key = env.registerKey(homeYtMusicPlaylistScrollKey(playlist)),
-                    contentType = HomeContentTypeYtPlaylistCard
-                ) {
-                    YtMusicPlaylistCard(
-                        playlist = playlist,
-                        isFavorite = env.favoriteKeys.contains("youtubeMusic:${playlist.favoriteId()}"),
-                        onClick = { env.onYouTubeMusicPlaylistClick(playlist) },
-                        onShowSnackbar = env.onShowSnackbar,
-                        offlineMode = env.offlineMode
-                    )
-                }
+        val clean = NeriDesign.isClean
+        LaunchedEffect(shelf.songs, offlineMode) {
+            if (!offlineMode && shelf.songs.isNotEmpty()) {
+                PlayerManager.prefetchYouTubePlayableUrlWindow(shelf.songs, 0, "yt_home_shelf_visible")
             }
         }
-        env.ui.ytMusicPlaylists.loading -> {
-            item(
-                key = env.registerKey(HomeScrollKeyYtMoreLoading),
-                span = { GridItemSpan(maxLineSpan) },
-                contentType = HomeContentTypeLoading
-            ) {
-                SectionLoadingState(env.loadingText)
-            }
-        }
-        env.ui.ytMusicPlaylists.error != null -> {
-            item(
-                key = env.registerKey(HomeScrollKeyYtMoreError),
-                span = { GridItemSpan(maxLineSpan) },
-                contentType = HomeContentTypeError
-            ) {
-                SectionErrorState(detail = env.ui.ytMusicPlaylists.error.asString())
-            }
-        }
-    }
-
-    when {
-        env.ytmSections.remaining.any { shelf ->
-            shelf.shouldRenderAsSongShelf() || shelf.hasRenderablePlaylistItems()
-        } -> {
-            env.ytmSections.remaining.forEachIndexed { shelfIndex, shelf ->
-                val shelfKey = homeYtMusicShelfScrollKey(
-                    shelfIndex = shelfIndex,
-                    title = shelf.title
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (shelf.title.isNotBlank()) {
+                Text(
+                    text = shelf.title,
+                    modifier = Modifier.semantics { heading() },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = if (clean) FontWeight.Bold else FontWeight.SemiBold
                 )
-                if (shelf.shouldRenderAsSongShelf()) {
-                    addYouTubeMusicSongShelfSection(
-                        sectionKey = shelfKey,
-                        registerKey = env.registerKey,
-                        shelf = shelf,
-                        icon = Icons.Outlined.Explore,
-                        title = shelf.title,
-                        onSongClick = env.onSongClick,
-                        favoriteSongLookup = env.favoriteSongLookup,
-                        downloadPresenceVersion = env.downloadPresenceVersion,
-                        onFavoriteToggle = env.onFavoriteToggle,
-                        onShowSnackbar = env.onShowSnackbar,
-                        offlineMode = env.offlineMode
-                    )
-                } else {
-                    val playlistItems = shelf.items.filter { it.isPlaylistItem() }
-                    if (playlistItems.isEmpty()) {
-                        return@forEachIndexed
-                    }
-                    item(
-                        key = env.registerKey("$shelfKey:header"),
-                        span = { GridItemSpan(maxLineSpan) },
-                        contentType = HomeContentTypeHeader
-                    ) {
-                        SectionHeader(
-                            icon = Icons.Outlined.Explore,
-                            title = shelf.title
+            }
+            if (trackShelf) {
+                ResponsiveSongPagerList(
+                    songs = shelf.songs,
+                    onSongClick = onSongClick,
+                    favoriteSongLookup = favoriteSongLookup,
+                    downloadPresenceVersion = downloadPresenceVersion,
+                    onFavoriteToggle = onFavoriteToggle,
+                    onShowSnackbar = onShowSnackbar,
+                    offlineMode = offlineMode,
+                    maxVisibleSongs = shelf.songs.size
+                )
+            } else {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(if (clean) 14.dp else 12.dp)) {
+                    itemsIndexed(
+                        items = shelf.entries,
+                        key = { index, entry -> "$index:${entry.item.browseId}:${entry.item.videoId}" },
+                        contentType = { _, entry -> entry.kind }
+                    ) { _, entry ->
+                        val isFavorite = when (entry) {
+                            is InternationalHomeEntry.Collection -> "youtubeMusic:${entry.playlist.favoriteId()}" in favoriteKeys
+                            is InternationalHomeEntry.Track -> favoriteSongLookup.contains(entry.song)
+                            is InternationalHomeEntry.Artist -> false
+                        }
+                        InternationalHomeArtworkCard(
+                            entry = entry,
+                            modifier = Modifier.width(if (clean) 150.dp else 142.dp),
+                            isFavorite = isFavorite,
+                            onClick = {
+                                when (entry) {
+                                    is InternationalHomeEntry.Track -> onSongClick(shelf.songs, entry.queueIndex)
+                                    is InternationalHomeEntry.Collection -> onYouTubeMusicPlaylistClick(entry.playlist)
+                                    is InternationalHomeEntry.Artist -> onYouTubeCreatorClick(entry.creator)
+                                }
+                            },
+                            downloadPresenceVersion = downloadPresenceVersion,
+                            onFavoriteToggle = onFavoriteToggle,
+                            onShowSnackbar = onShowSnackbar,
+                            offlineMode = offlineMode
                         )
                     }
-                    playlistItems.forEachIndexed { itemIndex, homeItem ->
-                        item(
-                            key = env.registerKey(
-                                homeYtMusicHomeItemScrollKey(
-                                    shelfKey = shelfKey,
-                                    itemIndex = itemIndex,
-                                    item = homeItem
-                                )
-                            ),
-                            contentType = HomeContentTypeYtHomeItemCard
-                        ) {
-                            YtMusicHomeItemCard(
-                                item = homeItem,
-                                isFavorite = homeItem.toPlaylist()
-                                    ?.favoriteId()
-                                    ?.let { env.favoriteKeys.contains("youtubeMusic:$it") } == true,
-                                onClick = {
-                                    val playlist = homeItem.toPlaylist()
-                                    if (playlist != null) {
-                                        env.onYouTubeMusicPlaylistClick(playlist)
-                                    } else if (homeItem.videoId.isNotBlank()) {
-                                        val songs = listOfNotNull(
-                                            homeItem.toPlayableSongItem(shelf.title)
-                                        )
-                                        if (songs.isNotEmpty()) {
-                                            env.onSongClick(songs, 0)
-                                        }
-                                    }
-                                },
-                                onShowSnackbar = env.onShowSnackbar,
-                                offlineMode = env.offlineMode
-                            )
-                        }
-                    }
                 }
-            }
-        }
-        env.ui.ytMusicHomeShelves.loading -> {
-            item(
-                key = env.registerKey(HomeScrollKeyYtShelvesLoading),
-                span = { GridItemSpan(maxLineSpan) },
-                contentType = HomeContentTypeLoading
-            ) {
-                SectionLoadingState(env.loadingText)
-            }
-        }
-        env.ui.ytMusicHomeShelves.error != null -> {
-            item(
-                key = env.registerKey(HomeScrollKeyYtShelvesError),
-                span = { GridItemSpan(maxLineSpan) },
-                contentType = HomeContentTypeError
-            ) {
-                SectionErrorState(detail = env.ui.ytMusicHomeShelves.error.asString())
-            }
-        }
-    }
-}
-
-/**
- * 国际模式下没有任何可见内容时的占位（加载中或错误）。
- */
-internal fun LazyGridScope.addHomeYouTubeMusicEmptyFeedBlock(env: HomeMajorSectionEnv) {
-    if (!env.showOnlineFeeds) return
-    if (env.ytmSections.hasVisibleFeed()) return
-    if (!env.showTrending && !env.showRadar && !env.showRecommended) return
-    when {
-        env.ui.ytMusicHomeShelves.loading -> {
-            item(
-                key = env.registerKey(HomeScrollKeyYtEmptyFeedLoading),
-                span = { GridItemSpan(maxLineSpan) },
-                contentType = HomeContentTypeLoading
-            ) {
-                SectionLoadingState(env.loadingText)
-            }
-        }
-        env.ui.ytMusicHomeShelves.error != null -> {
-            item(
-                key = env.registerKey(HomeScrollKeyYtEmptyFeedError),
-                span = { GridItemSpan(maxLineSpan) },
-                contentType = HomeContentTypeError
-            ) {
-                SectionErrorState(detail = env.ui.ytMusicHomeShelves.error.asString().orEmpty())
             }
         }
     }

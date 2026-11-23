@@ -25,6 +25,8 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
 
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import android.app.Application
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +71,7 @@ data class YouTubeMusicPlaylistDetailUiState(
     val loading: Boolean = true,
     val error: PlaylistLoadFailure? = null,
     val tracksUnavailable: Boolean = false,
+    val filteredEmpty: Boolean = false,
     val playlist: YouTubeMusicPlaylist? = null,
     val tracks: List<SongItem> = emptyList(),
     val allTracksLoaded: Boolean = false
@@ -138,6 +141,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
     private val _uiState = MutableStateFlow(YouTubeMusicPlaylistDetailUiState())
     val uiState: StateFlow<YouTubeMusicPlaylistDetailUiState> = _uiState
 
+    private var currentCatalogKey: String = ""
     private var currentPlaylist: YouTubeMusicPlaylist? = null
     private var currentOfflineMode: Boolean = false
     private var currentOwner: Any? = null
@@ -145,9 +149,11 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
 
     fun start(playlist: YouTubeMusicPlaylist, forceRefresh: Boolean = false, offlineMode: Boolean = false, owner: Any? = null) {
         playlistLoadJob?.cancel()
+        val catalogKey = YouTubeContentSettings.catalogKey()
         val previous = _uiState.value.takeIf {
-            it.playlist?.browseId == playlist.browseId
+            it.playlist?.browseId == playlist.browseId && currentCatalogKey == catalogKey
         }
+        currentCatalogKey = catalogKey
         val resolvedPlaylist = retainYouTubeMusicPlaylistCreatorContext(
             playlist = playlist,
             previousPlaylist = previous?.playlist
@@ -232,19 +238,20 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                         publishCachedPlaylist(cached, playlist, error = playlistLoadFailure(error))
                         return@launch
                     }
-                    if (!preview.hasUsableTracks() ||
-                        preview.firstPageSignature() == cached.firstPageSignature
-                    ) {
-                        publishCachedPlaylist(cached, playlist)
-                        return@launch
-                    }
-                    if (preview.fullyLoaded && preview.hasUsableTracks()) {
+                    if (preview.fullyLoaded && (preview.hasUsableTracks() || preview.filteredEmpty)) {
                         publishRemotePlaylist(
                             detail = preview,
                             fallback = playlist,
                             loading = false,
                             prefetchSource = "yt_playlist_detail_complete"
                         )
+                        return@launch
+                    }
+                    val filtersActive = YouTubeContentSettings.preferences.value.let { it.hideExplicit || it.hideMusicVideos }
+                    if ((!preview.hasUsableTracks() && !filtersActive) ||
+                        (preview.hasUsableTracks() && preview.firstPageSignature() == cached.firstPageSignature)
+                    ) {
+                        publishCachedPlaylist(cached, playlist)
                         return@launch
                     }
                     if (preview.hasUsableTracks()) {
@@ -262,7 +269,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                             gateway.getPlaylistDetailPreview(playlist.browseId)
                         }
                     }.getOrNull()?.let { preview ->
-                        if (preview.fullyLoaded && preview.hasUsableTracks()) {
+                        if (preview.fullyLoaded && (preview.hasUsableTracks() || preview.filteredEmpty)) {
                             publishRemotePlaylist(
                                 detail = preview,
                                 fallback = playlist,
@@ -287,7 +294,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                     gateway.getPlaylistDetail(playlist.browseId)
                 }
                 val hasUsableTracks = detail.hasUsableTracks()
-                if (hasUsableTracks || !shouldMarkYouTubeMusicPlaylistTracksUnavailable(
+                if (detail.filteredEmpty || hasUsableTracks || !shouldMarkYouTubeMusicPlaylistTracksUnavailable(
                         declaredTrackCount = playlist.trackCount,
                         hasUsableTracks = hasUsableTracks
                     )
@@ -355,6 +362,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                 loading = loading,
                 error = error,
                 playlist = cachedPlaylist,
+                filteredEmpty = cached.filteredEmpty,
                 tracks = cachedTracks,
                 allTracksLoaded = true
             )
@@ -378,18 +386,21 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                 .map { it.toPlaylistSongItem(resolvedPlaylist) }
                 .map { overlayUserEdits(it, localPlaylists) }
         }
-        if (detail.fullyLoaded && detail.hasUsableTracks()) {
+        val catalogKey = currentCatalogKey
+        if (detail.fullyLoaded && (detail.hasUsableTracks() || detail.filteredEmpty) && catalogKey == YouTubeContentSettings.catalogKey()) {
             withContext(Dispatchers.IO) {
                 cacheFullPlaylist(
                     browseId = fallback.browseId,
                     detail = detail,
-                    playlist = resolvedPlaylist
+                    playlist = resolvedPlaylist,
+                    catalogKey = catalogKey
                 )
             }
         }
         _uiState.value = YouTubeMusicPlaylistDetailUiState(
             loading = loading,
             playlist = resolvedPlaylist,
+            filteredEmpty = detail.filteredEmpty,
             tracks = resolvedTracks,
             allTracksLoaded = detail.fullyLoaded
         )
@@ -406,7 +417,8 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
     private fun cacheFullPlaylist(
         browseId: String,
         detail: YouTubeMusicPlaylistDetail,
-        playlist: YouTubeMusicPlaylist
+        playlist: YouTubeMusicPlaylist,
+        catalogKey: String
     ) {
         playlistCacheRepo.save(
             CachedYouTubeMusicPlaylistDetail(
@@ -418,6 +430,8 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                 coverUrl = playlist.coverUrl,
                 trackCount = playlist.trackCount,
                 firstPageSignature = detail.firstPageSignature(),
+                catalogKey = catalogKey,
+                filteredEmpty = detail.filteredEmpty,
                 tracks = detail.tracks.map { it.toCachedTrack() }
             )
         )
@@ -426,6 +440,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
     private fun YouTubeMusicTrack.toCachedTrack(): CachedYouTubeMusicPlaylistTrack {
         return CachedYouTubeMusicPlaylistTrack(
             videoId = videoId,
+            contentLabel = contentLabel,
             name = name,
             artist = artist,
             albumName = albumName,
@@ -473,7 +488,7 @@ internal fun YouTubeMusicPlaylistDetail.toYouTubeMusicPlaylist(
         title = title,
         subtitle = subtitle,
         coverUrl = coverUrl,
-        trackCount = resolveYouTubeMusicPlaylistTrackCount(trackCount, tracks.size, fallback.trackCount)
+        trackCount = resolveYouTubeMusicPlaylistTrackCount(trackCount, tracks.size, fallback.trackCount, filteredEmpty)
     )
 }
 
@@ -485,7 +500,7 @@ internal fun CachedYouTubeMusicPlaylistDetail.toYouTubeMusicPlaylist(
         title = title,
         subtitle = subtitle,
         coverUrl = coverUrl,
-        trackCount = resolveYouTubeMusicPlaylistTrackCount(trackCount, tracks.size, fallback.trackCount)
+        trackCount = resolveYouTubeMusicPlaylistTrackCount(trackCount, tracks.size, fallback.trackCount, filteredEmpty)
     ).copy(
         creatorName = creatorName.orEmpty().trim().ifBlank { fallback.creatorName.trim() }
     )
@@ -507,8 +522,9 @@ private fun YouTubeMusicPlaylist.withDetailMetadata(
     )
 }
 
-private fun resolveYouTubeMusicPlaylistTrackCount(declared: Int, loaded: Int, fallback: Int): Int {
+private fun resolveYouTubeMusicPlaylistTrackCount(declared: Int, loaded: Int, fallback: Int, filteredEmpty: Boolean): Int {
     return when {
+        filteredEmpty -> 0
         declared > 0 -> declared
         loaded > 0 -> loaded
         else -> fallback
@@ -516,11 +532,11 @@ private fun resolveYouTubeMusicPlaylistTrackCount(declared: Int, loaded: Int, fa
 }
 
 internal fun YouTubeMusicTrack.toPlaylistSongItem(playlist: YouTubeMusicPlaylist): SongItem {
-    return buildYouTubeMusicPlaylistSong(playlist, videoId, name, artist, albumName, durationMs, coverUrl)
+    return buildYouTubeMusicPlaylistSong(playlist, videoId, name, artist, albumName, durationMs, coverUrl, contentLabel)
 }
 
 internal fun CachedYouTubeMusicPlaylistTrack.toPlaylistSongItem(playlist: YouTubeMusicPlaylist): SongItem {
-    return buildYouTubeMusicPlaylistSong(playlist, videoId, name, artist, albumName, durationMs, coverUrl)
+    return buildYouTubeMusicPlaylistSong(playlist, videoId, name, artist, albumName, durationMs, coverUrl, contentLabel)
 }
 
 private fun buildYouTubeMusicPlaylistSong(
@@ -530,7 +546,8 @@ private fun buildYouTubeMusicPlaylistSong(
     artist: String,
     albumName: String,
     durationMs: Long,
-    coverUrl: String
+    coverUrl: String,
+    contentLabel: YouTubeContentLabel?
 ): SongItem {
     val resolvedArtist = resolveYouTubeMusicPlaylistTrackArtist(
         trackArtist = artist,
@@ -541,6 +558,7 @@ private fun buildYouTubeMusicPlaylistSong(
     }.ifBlank { playlist.coverUrl }
     val playlistContextId = playlist.playlistId.ifBlank { null }
     return SongItem(
+        youtubeContentLabel = contentLabel,
         id = stableYouTubeMusicId(videoId),
         name = name,
         artist = resolvedArtist,

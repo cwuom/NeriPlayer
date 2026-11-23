@@ -76,6 +76,7 @@ import moe.ouom.neriplayer.platform.bilibili.api.parser.parseBiliUploaderVideoPa
 import moe.ouom.neriplayer.platform.bilibili.api.stream.prioritizeBiliStreamUrls
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.network.proxy.DynamicProxySelector
+import moe.ouom.neriplayer.network.proxy.NetworkDns
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -205,6 +206,7 @@ class BiliClient(
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
         .connectTimeout(10, TimeUnit.SECONDS)
+        .dns(NetworkDns)
         .proxySelector(DynamicProxySelector)
         .build()
 

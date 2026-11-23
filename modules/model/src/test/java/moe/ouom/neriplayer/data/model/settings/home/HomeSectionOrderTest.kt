@@ -6,6 +6,21 @@ import org.junit.Test
 class HomeSectionOrderTest {
 
     @Test
+    fun internationalLayoutNormalizesSavedSectionsAndKeepsTheFeedIndependentlyReachable() {
+        val defaults = InternationalHomeLayout()
+        assertEquals(listOf("spotlight", "continue", "feed"), defaults.visibleSections)
+        val layout = InternationalHomeLayout(
+            order = listOf("feed", "radar", "feed"),
+            hidden = setOf("spotlight", "continue", "bilibili")
+        )
+        assertEquals(listOf("feed"), layout.visibleSections)
+        assertEquals(true, layout.isHomeAvailable(hasRecentUsage = false))
+        val continueOnly = defaults.copy(hidden = setOf("spotlight", "feed"))
+        assertEquals(false, continueOnly.isHomeAvailable(hasRecentUsage = false))
+        assertEquals(true, continueOnly.isHomeAvailable(hasRecentUsage = true))
+    }
+
+    @Test
     fun radarPrecedesTrendingUnlessTheUserSavedAnotherOrder() {
         val defaults = HomeMajorSectionIds.DEFAULT_ORDER
         assertEquals(

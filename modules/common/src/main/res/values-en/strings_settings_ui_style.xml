@@ -18,8 +18,8 @@
     <string name="settings_nowplaying_immersive_mode_desc">Large-cover layout: full-width artwork, left-aligned title and no cover lyrics; long-press play on Now Playing to toggle</string>
     <string name="nowplaying_immersive_mode_on">Immersive mode on</string>
     <string name="nowplaying_immersive_mode_off">Immersive mode off</string>
-    <string name="settings_page_language">Language &amp; region</string>
-    <string name="settings_page_language_desc">Interface language and international content sources</string>
+    <string name="settings_page_language">Language and content</string>
+    <string name="settings_page_language_desc">App language, international mode, and content preferences</string>
     <string name="settings_page_home_start">Home &amp; startup</string>
     <string name="settings_page_home_start_desc">Default start screen, home sections and input behavior</string>
     <string name="settings_home_card_bilibili">Bilibili music</string>

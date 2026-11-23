@@ -17,8 +17,38 @@ data class PlaybackStatsSummaryRow(
     val totalListenMs: Long
 )
 
+data class PlaybackStatsHourRow(val localHour: Int, val listenedMs: Long)
+
+data class PlaybackStatsRankRow(
+    val name: String, val coverUrl: String?, val totalListenMs: Long, val totalPlayCount: Long,
+    val trackCount: Long, val groupCount: Long
+)
+
+data class PlaybackStatsWeekdayRow(
+    val weekday: Int, val activeDays: Long, val totalListenMs: Long
+)
+
 @Dao
 interface PlaybackStatsDao {
+    @Query(
+        "INSERT OR REPLACE INTO playback_stat_hour (hour_start_at, identity_key, local_hour, listened_ms, epoch_started_at) " +
+            "VALUES (:start, :key, :hour, :duration + COALESCE((SELECT listened_ms FROM playback_stat_hour " +
+            "WHERE hour_start_at = :start AND identity_key = :key AND local_hour = :hour), 0), :epoch)"
+    )
+    suspend fun addHourlyListening(start: Long, key: String, hour: Int, duration: Long, epoch: Long)
+
+    @RawQuery
+    suspend fun queryHourlyListening(query: SupportSQLiteQuery): List<PlaybackStatsHourRow>
+
+    @Query("DELETE FROM playback_stat_hour WHERE epoch_started_at < :epoch")
+    suspend fun clearHoursBeforeEpoch(epoch: Long)
+
+    @Query("DELETE FROM playback_stat_hour WHERE identity_key IN (:keys)")
+    suspend fun deleteTrackHours(keys: List<String>)
+
+    @Query("DELETE FROM playback_stat_hour WHERE NOT EXISTS (SELECT 1 FROM playback_stat s WHERE s.identity_key = playback_stat_hour.identity_key)")
+    suspend fun deleteOrphanHours()
+
     @Query(
         "SELECT * FROM playback_stat " +
             "ORDER BY last_played_at DESC, identity_key ASC"
@@ -162,6 +192,15 @@ interface PlaybackStatsDao {
 
     @RawQuery
     suspend fun queryStats(query: SupportSQLiteQuery): List<PlaybackStatEntity>
+
+    @RawQuery
+    suspend fun queryRanking(query: SupportSQLiteQuery): List<PlaybackStatsRankRow>
+
+    @RawQuery
+    suspend fun queryWeekdays(query: SupportSQLiteQuery): List<PlaybackStatsWeekdayRow>
+
+    @RawQuery
+    suspend fun queryFirstListenAt(query: SupportSQLiteQuery): Long?
 
     @RawQuery
     suspend fun querySummary(query: SupportSQLiteQuery): PlaybackStatsSummaryRow

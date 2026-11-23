@@ -80,6 +80,7 @@ class PlaybackStatsRoomStoreJournalTest {
 
         assertFalse(store.enqueueDelta("event", "{}", 500, 1, playedAt = 150, deviceId = "phone"))
         val reused = expectFailure<IOException> { store.enqueueDelta("event", "{}", 999, 1, playedAt = 150, deviceId = "phone") }
+        expectFailure<IOException> { store.enqueueDelta("event", "{}", 500, 1, 150, "phone", playedZone = "UTC") }
 
         assertEquals("Playback event identity reused with different content", reused.message)
         assertEquals("1", metadata.value(JOURNAL_SEQUENCE_METADATA_KEY))

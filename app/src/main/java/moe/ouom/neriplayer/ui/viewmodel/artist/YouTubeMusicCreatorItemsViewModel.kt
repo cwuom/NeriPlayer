@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.common.logging.NPLogger
 
@@ -168,7 +169,7 @@ class YouTubeMusicCreatorItemsViewModel(application: Application) : AndroidViewM
             try {
                 val queue = withContext(Dispatchers.IO) {
                     loadYouTubeMusicCreatorPlaybackQueue(
-                        section = section,
+                        section = section.copy(items = _uiState.value.items),
                         selectedItem = item,
                         fetchFirstPage = client::getCreatorItems,
                         fetchContinuation = client::getCreatorItemsContinuation
@@ -206,7 +207,7 @@ class YouTubeMusicCreatorItemsViewModel(application: Application) : AndroidViewM
 }
 
 private fun creatorSectionKey(section: YouTubeMusicCreatorSection): String {
-    return youtubeMusicCreatorSectionKey(section)
+    return "${youtubeMusicCreatorSectionKey(section)}:${YouTubeContentSettings.catalogKey()}"
 }
 
 private fun creatorItemKey(item: YouTubeMusicCreatorItem): String {

@@ -5,5 +5,6 @@ import org.json.JSONObject
 data class YouTubeMusicBrowseResponse(
     val bootstrap: YouTubeMusicBootstrapConfig,
     val root: JSONObject,
-    val requestLocale: YouTubeMusicRequestLocale
+    val requestLocale: YouTubeMusicRequestLocale,
+    val filteredItems: Int = 0
 )

@@ -40,6 +40,25 @@ object HomeMajorSectionIds {
     )
 }
 
+object InternationalHomeSectionIds {
+    const val SPOTLIGHT = "spotlight"
+    const val CONTINUE = "continue"
+    const val FEED = "feed"
+
+    val DEFAULT_ORDER = listOf(SPOTLIGHT, CONTINUE, FEED)
+}
+
+data class InternationalHomeLayout(
+    val order: List<String> = InternationalHomeSectionIds.DEFAULT_ORDER,
+    val hidden: Set<String> = emptySet()
+) {
+    val visibleSections: List<String>
+        get() = applyHomeSectionOrder(InternationalHomeSectionIds.DEFAULT_ORDER, order, hidden)
+
+    fun isHomeAvailable(hasRecentUsage: Boolean): Boolean =
+        visibleSections.any { it != InternationalHomeSectionIds.CONTINUE || hasRecentUsage }
+}
+
 /** 热力与榜单（大模块 trending）内部小模块稳定标识。 */
 object HomeTrendingSubSectionIds {
     const val TOP_SOARING = "top_soaring"

@@ -1,0 +1,16 @@
+<resources>
+    <string name="stats_all_time">全部时间</string>
+    <plurals name="stats_recent_days">
+        <item quantity="one">近 %1$d 天</item>
+        <item quantity="other">近 %1$d 天</item>
+    </plurals>
+    <string name="stats_custom_dates">自选日期</string>
+    <string name="stats_previous_period">上一个时段</string>
+    <string name="stats_next_period">下一个时段</string>
+    <string name="stats_overview_tab">概览</string>
+    <string name="stats_tracks_tab">曲目排行</string>
+    <string name="stats_top_duration">收听时长排行</string>
+    <string name="stats_recent_counts">最近播放曲目的播放次数</string>
+    <string name="stats_first_counts">最早播放曲目的播放次数</string>
+    <string name="stats_jump_to_date">跳转到日期</string>
+</resources>

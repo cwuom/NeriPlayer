@@ -34,7 +34,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.AltRoute
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +55,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -66,6 +67,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
@@ -76,6 +78,8 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.ui.settings.route.AppSettingsHostBindings
 import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
+import moe.ouom.neriplayer.ui.screen.tab.settings.content.YouTubeContentSettingsSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.content.YouTubeLocaleSettingsSection
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.PlaybackServiceIdleShutdownSetting
@@ -91,6 +95,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.YouTubePlay
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsPreferenceDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
+import moe.ouom.neriplayer.ui.screen.tab.settings.network.NetworkSettingsSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.LocalSettingsPageNavigator
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.XiaomiSuperIslandSettingsPage
@@ -101,6 +106,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHomeScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsResponsiveDetailScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.destination
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.miuixSettingsSectionCardItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
@@ -262,7 +268,7 @@ internal fun SettingsScreen(
     val homeStartPresentation = rememberSettingsHomeStartPresentation(
         resources = composeResources,
         configuredDestination = environment.defaultStartDestination,
-        internationalEnabled = otherState.internationalizationEnabled,
+        internationalLayout = otherState.homeCards.internationalLayout.takeIf { otherState.internationalizationEnabled },
         showTrending = otherState.homeCards.showHomeTrendingCard,
         showRadar = otherState.homeCards.showHomeRadarCard,
         showRecommended = otherState.homeCards.showHomeRecommendedCard,
@@ -271,7 +277,6 @@ internal fun SettingsScreen(
         showBilibili = otherState.homeCards.showHomeBilibiliCard
     )
     val homeStartAvailable = homeStartPresentation.available
-    val homeCardCopy = homeStartPresentation.copy
     val effectiveDefaultStartDestination = homeStartPresentation.destination
     val defaultStartDestinationLabel = homeStartPresentation.destinationLabel
     val navigation = rememberSettingsNavigationState(
@@ -281,6 +286,15 @@ internal fun SettingsScreen(
         backgroundImageUri = appearanceState.visualBackground.backgroundImageUri,
         internationalEnabled = otherState.internationalizationEnabled
     )
+    var homeShortcut by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
+    LaunchedEffect(environment.settingsVisible, environment.requestedPage) {
+        if (!environment.settingsVisible) homeShortcut = null
+        if (environment.settingsVisible) environment.requestedPage?.let { page ->
+            navigation.activePage = page
+            homeShortcut = navigation.activePage
+            environment.onPageRequestConsumed()
+        }
+    }
     val isSettingsSplitLayout = navigation.splitLayout
     val activeSettingsPage = navigation.activePage
     val accountProfilesActive = shouldLoadSettingsAccountProfiles(
@@ -302,9 +316,19 @@ internal fun SettingsScreen(
     val settingsHighlightPulse by navigation.highlightPulseState
     val onSettingsHighlightFinished: () -> Unit = navigation::clearHighlight
 
-    fun navigateBackFromActiveSettingsPage() = navigation.navigateBack()
+    val returnToHome = homeShortcut != null && homeShortcut?.destination == activeSettingsPage
+    LaunchedEffect(activeSettingsPage) {
+        if (navigation.activePage != homeShortcut?.destination) homeShortcut = null
+    }
+    fun navigateBackFromActiveSettingsPage() {
+        navigation.navigateBack()
+        if (returnToHome) {
+            homeShortcut = null
+            environment.onReturnFromHomeShortcut()
+        }
+    }
 
-    val showSplitDetailBackButton = navigation.showSplitDetailBackButton
+    val showSplitDetailBackButton = returnToHome || navigation.showSplitDetailBackButton
     val isolateAdvancedGlassTransitions = LocalAdvancedGlassController.current.isEnabled
     val settingsHomeTitle: @Composable () -> Unit = {
         Row(
@@ -409,6 +433,10 @@ internal fun SettingsScreen(
                                         highlightTargetId = settingsHighlightTargetId,
                                         highlightPulse = settingsHighlightPulse,
                                         onHighlightFinished = onSettingsHighlightFinished
+                                    ).toggleable(
+                                        value = otherState.internationalizationEnabled,
+                                        role = Role.Switch,
+                                        onValueChange = appearanceActions.onInternationalizationEnabledChange
                                     ),
                                     leadingContent = {
                                         SettingRowIcon(
@@ -428,11 +456,27 @@ internal fun SettingsScreen(
                                     trailingContent = {
                                         MiuixSettingsSwitch(
                                             checked = otherState.internationalizationEnabled,
-                                            onCheckedChange = appearanceActions.onInternationalizationEnabledChange
+                                            onCheckedChange = null
                                         )
                                     },
                                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                                 )
+                                YouTubeLocaleSettingsSection(
+                                    enabled = otherState.internationalizationEnabled,
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
+                                    onHighlightFinished = onSettingsHighlightFinished
+                                )
+                            }
+                            if (otherState.internationalizationEnabled) {
+                                miuixSettingsSectionCardItem("${selectedPage.name}:discovery") {
+                                    MiuixSettingsSectionIntro(title = stringResource(AppR.string.youtube_content_page))
+                                    YouTubeContentSettingsSection(
+                                        highlightTargetId = settingsHighlightTargetId,
+                                        highlightPulse = settingsHighlightPulse,
+                                        onHighlightFinished = onSettingsHighlightFinished
+                                    )
+                                }
                             }
                         },
 
@@ -572,7 +616,6 @@ internal fun SettingsScreen(
                             item(key = "${selectedPage.name}:card:1") {
                                 SettingsPersonalizationHomeCard(
                                     internationalEnabled = otherState.internationalizationEnabled,
-                                    copy = homeCardCopy,
                                     homeStartAvailable = homeStartAvailable,
                                     state = otherState.homeCards,
                                     actions = homeActions,
@@ -806,26 +849,13 @@ internal fun SettingsScreen(
 
                         SettingsPage.Network to {
                             miuixSettingsSectionCardItem("${selectedPage.name}:content") {
-                                AutoSettingsListItem(
-                                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BYPASS_PROXY),
-                                    leadingContent = {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Outlined.AltRoute,
-                                            contentDescription = stringResource(CoreCommonR.string.settings_bypass_proxy),
-                                            modifier = Modifier.size(24.dp),
-                                            tint = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    },
-                                    trailingContent = {
-                                        MiuixSettingsSwitch(
-                                            checked = otherState.storage.bypassProxy,
-                                            onCheckedChange = storageActions.onBypassProxyChange
-                                        )
-                                    },
+                                NetworkSettingsSection(
+                                    repository = repository,
+                                    bypassSystemProxy = otherState.storage.bypassProxy,
+                                    onBypassSystemProxyChange = storageActions.onBypassProxyChange,
                                     highlightTargetId = settingsHighlightTargetId,
                                     highlightPulse = settingsHighlightPulse,
-                                    onHighlightFinished = onSettingsHighlightFinished,
-                                    onClick = { storageActions.onBypassProxyChange(!otherState.storage.bypassProxy) }
+                                    onHighlightFinished = onSettingsHighlightFinished
                                 )
                             }
                         },
@@ -1206,7 +1236,7 @@ internal fun SettingsScreen(
         activePage = activeSettingsPage,
         splitLayout = isSettingsSplitLayout,
         isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
-        backEnabled = canNavigateBackFromSettingsPage(activeSettingsPage, isSettingsSplitLayout),
+        backEnabled = returnToHome || canNavigateBackFromSettingsPage(activeSettingsPage, isSettingsSplitLayout),
         onBack = ::navigateBackFromActiveSettingsPage,
         content = settingsPageContent
     )

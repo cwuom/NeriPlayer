@@ -93,7 +93,7 @@ class YouTubeMusicCreatorDetailScreenTest {
     }
 
     @Test
-    fun sectionMore_isHiddenForNonPlayableSections() {
+    fun sectionMore_opensBrowsableAlbumSections() {
         val section = YouTubeMusicCreatorSection(
             title = "Albums",
             items = listOf(
@@ -111,7 +111,8 @@ class YouTubeMusicCreatorDetailScreenTest {
             )
         )
 
-        assertFalse(shouldShowYouTubeMusicCreatorSectionMore(section))
+        assertTrue(shouldShowYouTubeMusicCreatorSectionMore(section))
+        assertFalse(shouldShowYouTubeMusicCreatorSectionMore(section.copy(moreEndpoint = null)))
     }
 
     @Test

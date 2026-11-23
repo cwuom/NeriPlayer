@@ -1,0 +1,14 @@
+<resources>
+    <string name="settings_custom_proxy">Custom proxy</string>
+    <string name="settings_custom_proxy_desc">Route music service requests, playback and downloads through an HTTP or SOCKS5 proxy without authentication. Changes take effect when connections are re-established.</string>
+    <string name="network_proxy_disabled">Custom proxy off</string>
+    <string name="network_proxy_priority">The custom proxy is active.</string>
+    <string name="network_proxy_host">Hostname or IP address</string>
+    <string name="network_proxy_port">Port (1–65535)</string>
+    <string name="settings_dns_over_https">DNS over HTTPS (DoH)</string>
+    <string name="settings_dns_over_https_desc">Resolve music service hostnames over HTTPS. Local names use system DNS. When a proxy handles a request, it resolves the destination. Changes take effect when connections are re-established.</string>
+    <string name="network_system_dns">System DNS</string>
+    <string name="network_custom_dns">Custom provider</string>
+    <string name="network_resolver_url">HTTPS resolver URL</string>
+    <string name="network_webview_proxy_unavailable">Android System WebView could not apply this proxy. Update WebView or turn off both the custom proxy and Bypass system proxy in Network settings, then reopen sign-in.</string>
+</resources>

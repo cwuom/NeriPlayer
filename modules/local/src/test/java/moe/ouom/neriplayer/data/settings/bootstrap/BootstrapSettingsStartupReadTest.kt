@@ -8,6 +8,8 @@ import moe.ouom.neriplayer.data.model.settings.bootstrap.BootstrapSettingsSnapsh
 import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.data.settings.IsolatedSettingsDataStore
 import moe.ouom.neriplayer.data.settings.SettingsKeys
+import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
+import moe.ouom.neriplayer.data.settings.setAutoSetting
 import moe.ouom.neriplayer.data.testing.InMemorySharedPreferencesRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -21,6 +23,18 @@ class BootstrapSettingsStartupReadTest {
     private val preferences = InMemorySharedPreferencesRegistry()
     private val context = IsolatedSettingsDataStore.context(preferences)
     private val mirror get() = preferences[BOOTSTRAP_MIRROR]
+
+    @Test
+    fun `network endpoints are available to synchronous startup immediately after save`() = runTest {
+        IsolatedSettingsDataStore.withEmptySettings(context) {
+            context.setAutoSetting(AutoSettingsSchema.network.proxyEndpoint, "http://127.0.0.1:8123")
+            context.setAutoSetting(AutoSettingsSchema.network.dohEndpoint, "https://example.org/dns-query")
+
+            val snapshot = readBootstrapSettingsSnapshotSync(context)
+            assertEquals("http://127.0.0.1:8123", snapshot.proxyEndpoint)
+            assertEquals("https://example.org/dns-query", snapshot.dohEndpoint)
+        }
+    }
 
     @Test
     fun `persisting the same bootstrap snapshot does not submit another editor`() {

@@ -83,7 +83,9 @@ internal fun PlaybackStatsContent(
     offlineMode: Boolean,
     miniPlayerHeight: Dp,
     tablet: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    filters: @Composable () -> Unit = {},
+    overviewContent: (@Composable () -> Unit)? = null
 ) {
     val rankingListState = rememberLazyListState()
     val displayedRequest = state.loadedRequest ?: request
@@ -94,6 +96,7 @@ internal fun PlaybackStatsContent(
         if (layout.useColumns) {
             Column(contentModifier.testTag("statsTabletColumns")) {
                 StatsPeriodSelector(selectedPeriod, onPeriodSelected)
+                filters()
                 StatsRefreshStatus(state, request, onPageRequest)
                 StatsCompatibilityNotice(state)
                 Spacer(Modifier.height(12.dp))
@@ -112,7 +115,7 @@ internal fun PlaybackStatsContent(
                             state.summary.trackCount, compact = true, stackMetrics = true,
                             modifier = Modifier.testTag("statsOverview")
                         )
-                        if (displayedRequest.offset == 0 && state.page.tracks.size >= 2) {
+                        if (overviewContent == null && displayedRequest.offset == 0 && state.page.tracks.size >= 2) {
                             StatsChartCard(state, displayedSortMode)
                         }
                     }
@@ -129,6 +132,12 @@ internal fun PlaybackStatsContent(
                                 modifier = Modifier.fillMaxWidth().testTag("statsRankings"),
                                 contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 16.dp, bottom = 16.dp)
                             ) {
+                                if (overviewContent != null) {
+                                    item {
+                                        if (state.summary.trackCount > 0) overviewContent() else StatsEmptyResult(state)
+                                    }
+                                    return@LazyColumn
+                                }
                                 item {
                                     Text(
                                         stringResource(displayedSortMode.labelRes),
@@ -161,11 +170,12 @@ internal fun PlaybackStatsContent(
             ) {
                 item {
                     StatsPeriodSelector(selectedPeriod, onPeriodSelected)
+                    filters()
                     StatsRefreshStatus(state, request, onPageRequest)
                     Spacer(Modifier.height(12.dp))
                 }
                 item { StatsCompatibilityNotice(state) }
-                if (state.page.tracks.isEmpty()) {
+                if (state.page.tracks.isEmpty() && (overviewContent == null || state.summary.trackCount == 0L)) {
                     item { StatsEmptyResult(state) }
                 } else {
                     item {
@@ -176,6 +186,10 @@ internal fun PlaybackStatsContent(
                         )
                         Spacer(Modifier.height(16.dp))
                     }
+                    if (overviewContent != null) {
+                        item { overviewContent() }
+                        return@LazyColumn
+                    }
                     if (displayedRequest.offset == 0 && state.page.tracks.size >= 2) {
                         item {
                             if (tablet) StatsChartCard(state, displayedSortMode)
@@ -185,7 +199,7 @@ internal fun PlaybackStatsContent(
                     }
                     statsTrackItems(state, displayedRequest, offlineMode, onSongClick)
                 }
-                statsPageNavigation(state, request, onPageRequest)
+                if (overviewContent == null) statsPageNavigation(state, request, onPageRequest)
             }
         }
     }

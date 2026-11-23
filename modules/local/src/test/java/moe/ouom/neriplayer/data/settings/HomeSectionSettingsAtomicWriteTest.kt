@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.data.settings
 
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionHidden
 import moe.ouom.neriplayer.data.testing.InMemorySharedPreferencesRegistry
 import kotlinx.coroutines.async
@@ -21,6 +23,31 @@ import org.junit.Test
  * 后一次写入会覆盖前一次的选择，用户就会看到其中一个设置没有生效。
  */
 class HomeSectionSettingsAtomicWriteTest {
+
+    @Test
+    fun `international order and visibility survive reopen independently of legacy cards`() = runTest {
+        val context = IsolatedSettingsDataStore.context(InMemorySharedPreferencesRegistry())
+        IsolatedSettingsDataStore.withEmptySettings(context) {
+            val repository = SettingsRepository(context)
+            repository.setHomeMajorOrder(listOf("radar", "bilibili", "recommended", "trending", "continue"))
+            repository.setHomeCardContinue(false)
+            assertEquals(InternationalHomeLayout(), repository.internationalHomeLayoutFlow.first())
+
+            val ids = InternationalHomeSectionIds
+            repository.setInternationalHomeOrder(listOf(ids.FEED, "radar", ids.FEED))
+            listOf(ids.SPOTLIGHT, ids.FEED).map { id ->
+                async { repository.setInternationalHomeSectionVisible(id, false) }
+            }.awaitAll()
+
+            val reopened = SettingsRepository(context)
+            assertEquals(
+                InternationalHomeLayout(listOf(ids.FEED, ids.SPOTLIGHT, ids.CONTINUE), setOf(ids.FEED, ids.SPOTLIGHT)),
+                reopened.internationalHomeLayoutFlow.first()
+            )
+            assertFalse(reopened.homeCardContinueFlow.first())
+            assertEquals("radar", reopened.homeMajorOrderFlow.first().first())
+        }
+    }
 
     @Test
     fun `concurrent hidden toggles keep both sections hidden`() = runTest {

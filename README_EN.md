@@ -55,7 +55,7 @@ user-owned data.
 >
 > The project provides no media content, keys, or paywall / DRM / region-bypass mechanisms, and no public cloud library, media proxy, or redistribution service.
 >
-> Online features depend on your authorization on third-party platforms, and VIP or restricted content follows the original platform's rules. YouTube Music capabilities in this document cover account sessions, playback compatibility, and error recovery only.
+> You can browse, search, and play public YouTube Music content available in the selected region as a guest. Personal libraries require account authorization. Member-only and restricted content remains subject to the provider's rules.
 >
 > This project and its maintainer do not accept any sponsorship, donation, or commercial funding.
 
@@ -85,7 +85,7 @@ user-owned data.
 
 ## About
 
-NeriPlayer is a native Android audio player built with **Jetpack Compose + Media3**. It brings **NetEase Cloud Music**, **Bilibili**, **YouTube Music**, **self-hosted music servers**, and **local audio** into one playback and library experience. Local playback needs no account; online features use your authorization on the corresponding platform.
+NeriPlayer is a native Android audio player built with **Jetpack Compose + Media3**. It brings **NetEase Cloud Music**, **Bilibili**, **YouTube Music**, **self-hosted music servers**, and **local audio** into one playback and library experience. Local playback and public YouTube Music content are available to guests. Personal libraries require signing in to the corresponding platform.
 
 - **Self-hosted music (Preview)**: connect Navidrome / OpenSubsonic under Library → Music servers to browse and search albums, songs, and artists, with the existing player, artwork, lyrics, local favorites, playlists, and original-file offline downloads (see [Connecting a music server](#connecting-a-music-server)).
 - **Local-first**: cache, downloads, playlists, history, settings, and auth data are stored on the device.
@@ -158,8 +158,8 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
   - Requires sign-in and a network connection.
   - The entry is hidden when playback falls back to Bilibili or local audio.
 - **Category browsing**: local, favorites, NetEase Cloud Music, YouTube Music, and Bilibili entries. YouTube Music can be disabled entirely, and Bilibili music can be hidden from the home page alone.
-- **Home discovery**: recently used playlists, charts, new songs, daily picks, Private FM, curated playlists, and radar playlists; a refresh updates every section.
-- **Search**: per-platform search, with paging on NetEase Cloud Music and Bilibili.
+- **Home discovery**: the domestic home shows charts, daily picks, and radar playlists. The international home follows YouTube Music’s shelves and lets you filter by track, playlist, album, or artist. Each home keeps its own section order and visibility.
+- **Search**: per-platform search, with paging on NetEase Cloud Music, Bilibili, and YouTube Music.
 - **Link recognition**: paste a share text with a title or short link to resolve NetEase Cloud Music, Bilibili, and YouTube Music content.
 - **Import and batch artwork**: share import and folder scanning, plus one-tap batch matching and embedding of lyrics and artwork for local songs.
 - **Local artists and playlists**: grouped by display artist, with sorting, block insertion, and undo for deletions.
@@ -177,7 +177,7 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 ### 🔄 Sync, stats, and backup
 
 - **GitHub / WebDAV sync**: playlists, favorites, recent plays, deletion records, and playback stats, stored on remotes you own.
-- **Playback stats**: play counts and listening time per track, with day / week / month / year views.
+- **Playback stats**: explore track, artist, and album rankings, active days, and listening by weekday and hour. Browse previous days, weeks, months, and years or choose a custom date range. This version starts recording hourly listening on each device.
 - **Traffic stats**: split into Wi-Fi, mobile, and roaming.
 - **Backup and restore**: playlist JSON import and export.
 - **Configuration export**: excludes login state by default; optionally encrypted with auth included.
@@ -282,7 +282,9 @@ For release build and signing details, see [CONTRIBUTING_EN.md](./CONTRIBUTING_E
 
 ### YouTube Music
 
-- Login, home and library playlist browsing, playlist details, search, and playback compatibility.
+- Enable international mode in Settings → Language and content to show YouTube Music recommendations on Home. Explore supports songs, videos, artists, albums, featured playlists, and community playlists.
+- You can change the app language at any time. With international mode on, select your content language and region on the same page. Under Content & discovery, choose how playlists are recommended and whether to hide explicit content or music videos. The globe icon on the international home screen opens this page. Devices with their system region set to mainland China default to Simplified Chinese for the content language and Japan for the content region.
+- Eligible signed-in sessions renew automatically. Account settings show the renewal status. Network settings support HTTP and SOCKS5 proxies and DNS over HTTPS (DoH).
 - Content access is subject to platform rules and account permissions.
 
 ### Self-Hosted Music Server (Navidrome / OpenSubsonic)

@@ -268,6 +268,7 @@ class YouTubeMusicCreatorScreensTest {
                     onRetry = { events += "retry" },
                     onLoadMore = { events += "loadMore" },
                     onSongClick = { events += "item:${it.videoId}" },
+                    onBrowseItemClick = { events += "browse:${it.browseId}" },
                     offlineMode = false,
                     isTabletLayout = false
                 )
@@ -289,7 +290,7 @@ class YouTubeMusicCreatorScreensTest {
         composeRule.onNodeWithText("Stale items").assertExists()
         composeRule.onNodeWithText("Queue failed").assertExists()
         composeRule.onNodeWithText("Next page failed").assertExists()
-        composeRule.onNodeWithText("Album card").assertDoesNotExist()
+        composeRule.onNodeWithText("Album card").performClick()
         composeRule.onNodeWithText("First hit").performClick()
         composeRule.onNodeWithText(string(CoreCommonR.string.youtube_creator_load_more)).performClick()
 
@@ -298,8 +299,10 @@ class YouTubeMusicCreatorScreensTest {
             .assertIsNotEnabled()
 
         uiState = YouTubeMusicCreatorItemsUiState(loading = false, items = albums.items.take(1))
+        composeRule.onNodeWithText("Album card").assertExists()
+        uiState = YouTubeMusicCreatorItemsUiState(loading = false)
         composeRule.onNodeWithText(string(CoreCommonR.string.youtube_creator_items_empty)).assertExists()
-        assertEquals(listOf("retry", "item:v1", "loadMore"), events)
+        assertEquals(listOf("retry", "browse:MPREalbum", "item:v1", "loadMore"), events)
     }
 
     @Test

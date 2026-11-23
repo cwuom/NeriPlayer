@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.platform.youtube.auth
 import android.app.Application
 import android.content.Context
 import android.webkit.WebView
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CompletableDeferred
@@ -10,13 +11,16 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationState
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -39,6 +43,29 @@ import org.robolectric.annotation.Config
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
 class YouTubeAuthRefreshLifecycleTest {
+    @Test
+    fun `changing accounts clears persisted rotation status after the previous worker finishes`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val rotation = SharedPreferencesYouTubeCookieRotationStateStore(context)
+        val manager = YouTubeAuthAutoRefreshManager(context, { error("unexpected request") }, RefreshTestAuthStore())
+        val previousAttempt = YouTubeCookieRotationState(lastRotatedAtMs = 42, consecutiveRejections = 4)
+        val releaseWorker = CompletableDeferred<Unit>()
+        val worker = launch {
+            youtubeAuthRotationMutex.withLock {
+                releaseWorker.await()
+                rotation.write(previousAttempt)
+            }
+        }
+        runCurrent()
+        val reset = launch { manager.resetForAccountChange() }
+        runCurrent()
+        assertFalse(reset.isCompleted)
+        releaseWorker.complete(Unit)
+        worker.join()
+        reset.join()
+        assertEquals(YouTubeCookieRotationState(), rotation.observe().first())
+    }
+
     @Test
     fun `logout waits for teardown after the refresh caller is cancelled`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)

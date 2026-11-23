@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.data.settings
 
 import moe.ouom.neriplayer.data.settings.bootstrap.updateBootstrapSettingsSnapshot
+import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
+import moe.ouom.neriplayer.data.settings.bootstrap.toBootstrapSettingsSnapshot
 import android.content.Context
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
@@ -69,7 +71,10 @@ fun <T> Context.autoSettingFlow(setting: AutoSettingSpec<T>): Flow<T> {
 }
 
 suspend fun <T> Context.setAutoSetting(setting: AutoSettingSpec<T>, value: T) {
-    dataStore.edit { prefs ->
+    val updated = dataStore.edit { prefs ->
         prefs[setting] = value
+    }
+    if (setting == AutoSettingsSchema.network.proxyEndpoint || setting == AutoSettingsSchema.network.dohEndpoint) {
+        persistBootstrapSettingsSnapshot(this, updated.toBootstrapSettingsSnapshot())
     }
 }

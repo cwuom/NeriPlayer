@@ -333,6 +333,8 @@ internal class AppPlaybackSettingsActions(
 internal interface HomeSectionSettingsActions {
     fun setMajorVisible(id: String, visible: Boolean)
     fun reorderMajor(order: List<String>)
+    fun setInternationalVisible(id: String, visible: Boolean)
+    fun reorderInternational(order: List<String>)
     fun setSubVisible(parentId: String, id: String, visible: Boolean)
     fun reorderSub(parentId: String, order: List<String>)
 }
@@ -369,6 +371,14 @@ internal class AppHomeSettingsActions(
 
     override fun reorderMajor(order: List<String>) {
         scope.launch { repo.setHomeMajorOrder(order) }
+    }
+
+    override fun setInternationalVisible(id: String, visible: Boolean) {
+        scope.launch { repo.setInternationalHomeSectionVisible(id, visible) }
+    }
+
+    override fun reorderInternational(order: List<String>) {
+        scope.launch { repo.setInternationalHomeOrder(order) }
     }
 
     override fun setSubVisible(parentId: String, id: String, visible: Boolean) {

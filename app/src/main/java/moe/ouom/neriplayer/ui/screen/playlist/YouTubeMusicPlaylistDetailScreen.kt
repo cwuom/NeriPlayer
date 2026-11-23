@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import android.content.ClipData
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -172,7 +173,9 @@ fun YouTubeMusicPlaylistDetailScreen(
     val visibleTracks = if (hasRequestedPlaylistState) ui.tracks else emptyList()
     val requestedAllTracksLoaded = hasRequestedPlaylistState && ui.allTracksLoaded
     val requestedError = ui.error.takeIf { hasRequestedPlaylistState }
-    val pageOwner = remember(playlist.browseId) { Any() }
+    val contentPreferences by YouTubeContentSettings.preferences.collectAsState()
+    val catalogKey = contentPreferences.catalogKey(YouTubeContentSettings.systemLocale())
+    val pageOwner = remember(playlist.browseId, catalogKey) { Any() }
     val retryPlaylist: () -> Unit = {
         if (viewModel.uiState.value.playlist?.browseId == playlist.browseId) {
             viewModel.retry(offlineMode = offlineMode, owner = pageOwner)
@@ -458,7 +461,7 @@ fun YouTubeMusicPlaylistDetailScreen(
     }
 
     LaunchedEffect(isFavorite, resolvedPlaylist, visibleTracks, requestedAllTracksLoaded) {
-        if (!isFavorite) return@LaunchedEffect
+        if (!isFavorite || contentPreferences.hideExplicit || contentPreferences.hideMusicVideos) return@LaunchedEffect
         if (!requestedAllTracksLoaded) return@LaunchedEffect
         favoriteRepo.updateFavoriteMeta(
             id = playlistFavoriteId,
@@ -814,11 +817,11 @@ fun YouTubeMusicPlaylistDetailScreen(
                                     offlineMode = offlineMode
                                 ) {
                                     EmptyBlock(
-                                        text = if (searchQuery.isBlank()) {
-                                            stringResource(CoreCommonR.string.library_youtube_music_empty)
-                                        } else {
-                                            stringResource(CoreCommonR.string.search_no_match)
-                                        }
+                                        text = stringResource(when {
+                                            searchQuery.isNotBlank() -> CoreCommonR.string.search_no_match
+                                            hasRequestedPlaylistState && ui.filteredEmpty -> AppR.string.youtube_tracks_filtered
+                                            else -> AppR.string.youtube_tracks_empty
+                                        })
                                     )
                                 }
                             }

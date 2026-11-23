@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="youtube_session_disabled">Background session renewal is paused while YouTube Music is turned off.</string>
+    <string name="youtube_session_incomplete">The saved session is missing information needed for background renewal. Sign in again using the browser.</string>
+    <string name="youtube_session_waiting">Automatic renewal is on. The first background check is pending.</string>
+    <string name="youtube_session_checked">Automatic renewal is on. The last check succeeded (%1$s).</string>
+    <string name="youtube_session_failed">The last renewal check failed (%1$s). The app will try again. If this keeps happening, sign in again.</string>
+</resources>

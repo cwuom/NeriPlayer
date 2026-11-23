@@ -117,7 +117,8 @@ class DatabaseUpgradeInstrumentedTest {
             NeriUserDataDatabase.MIGRATION_17_18,
             NeriUserDataDatabase.MIGRATION_18_19,
             NeriUserDataDatabase.MIGRATION_19_20,
-            NeriUserDataDatabase.MIGRATION_20_21
+            NeriUserDataDatabase.MIGRATION_20_21,
+            NeriUserDataDatabase.MIGRATION_21_22
         ).use { database ->
             database.query("SELECT state, bytes_written FROM download_operation WHERE operation_id = 'operation'").use { cursor ->
                 check(cursor.moveToFirst())
@@ -158,7 +159,7 @@ class DatabaseUpgradeInstrumentedTest {
         }
 
         helper.runMigrationsAndValidate(databaseName, NeriUserDataDatabase.FINAL_DB_VERSION, true,
-            NeriUserDataDatabase.MIGRATION_20_21).use { database ->
+            NeriUserDataDatabase.MIGRATION_20_21, NeriUserDataDatabase.MIGRATION_21_22).use { database ->
             database.query("SELECT name, media_uri, resume_position_ms, lyric_sync_payload_json, " +
                 "explicit_local_source_reference FROM play_history WHERE id = 42").use { cursor ->
                 check(cursor.moveToFirst())
@@ -185,6 +186,43 @@ class DatabaseUpgradeInstrumentedTest {
         }
     }
 
+    @Test
+    fun version21KeepsListenTotalsAndPendingWorkWithoutInventingHourRecords() {
+        val databaseName = "database-upgrade-listening-hours-v21"
+        helper.createDatabase(databaseName, 21).use { database ->
+            database.execSQL(
+                "INSERT INTO playback_stat (identity_key, id, name, artist, album, album_id, " +
+                    "duration_ms, total_listen_ms, play_count, last_played_at, first_played_at) " +
+                    "VALUES ('track', 1, 'Track', 'Artist', 'Album', 0, 180000, 300000, 2, 900000, 1000)"
+            )
+            database.execSQL(
+                "INSERT INTO playback_stats_pending_delta " +
+                    "(id, sequence, track_json, listened_ms, played_at, epoch_started_at, device_id) " +
+                    "VALUES ('pending', 7, '{}', 5000, 905000, 0, 'local')"
+            )
+        }
+        helper.runMigrationsAndValidate(databaseName, 22, true, NeriUserDataDatabase.MIGRATION_21_22)
+            .use { database ->
+                database.query("SELECT total_listen_ms, play_count FROM playback_stat WHERE identity_key = 'track'")
+                    .use { cursor ->
+                        assertTrue(cursor.moveToFirst())
+                        assertEquals(300000L, cursor.getLong(0))
+                        assertEquals(2, cursor.getInt(1))
+                    }
+                database.query("SELECT sequence, listened_ms, played_zone FROM playback_stats_pending_delta WHERE id = 'pending'")
+                    .use { cursor ->
+                        assertTrue(cursor.moveToFirst())
+                        assertEquals(7L, cursor.getLong(0))
+                        assertEquals(5000L, cursor.getLong(1))
+                        assertTrue(cursor.isNull(2))
+                    }
+                database.query("SELECT COUNT(*) FROM playback_stat_hour").use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(0L, cursor.getLong(0))
+                }
+            }
+    }
+
     private fun allMigrations(): Array<Migration> = arrayOf(
         NeriUserDataDatabase.MIGRATION_1_2,
         NeriUserDataDatabase.MIGRATION_2_3,
@@ -205,6 +243,7 @@ class DatabaseUpgradeInstrumentedTest {
         NeriUserDataDatabase.MIGRATION_17_18,
         NeriUserDataDatabase.MIGRATION_18_19,
         NeriUserDataDatabase.MIGRATION_19_20,
-        NeriUserDataDatabase.MIGRATION_20_21
+        NeriUserDataDatabase.MIGRATION_20_21,
+        NeriUserDataDatabase.MIGRATION_21_22
     )
 }

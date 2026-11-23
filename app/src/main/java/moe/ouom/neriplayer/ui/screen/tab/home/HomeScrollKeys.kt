@@ -27,11 +27,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import java.util.Locale
-import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
-import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 
 /**
  * 首页滚动锚点 key。LazyGrid item 的 key 需要在重组之间保持稳定，
@@ -43,15 +40,6 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 
 internal const val HomeScrollKeyContinueHeader = "home:continue:header"
 internal const val HomeScrollKeyContinueContent = "home:continue:content"
-internal const val HomeScrollKeyYtGuess = "home:ytmusic:guess"
-internal const val HomeScrollKeyYtDaily = "home:ytmusic:daily"
-internal const val HomeScrollKeyYtMoreHeader = "home:ytmusic:more:header"
-internal const val HomeScrollKeyYtMoreLoading = "home:ytmusic:more:loading"
-internal const val HomeScrollKeyYtMoreError = "home:ytmusic:more:error"
-internal const val HomeScrollKeyYtShelvesLoading = "home:ytmusic:shelves:loading"
-internal const val HomeScrollKeyYtShelvesError = "home:ytmusic:shelves:error"
-internal const val HomeScrollKeyYtEmptyFeedLoading = "home:ytmusic:empty-feed:loading"
-internal const val HomeScrollKeyYtEmptyFeedError = "home:ytmusic:empty-feed:error"
 internal const val HomeScrollKeyNeteaseRadarPlaylists = "home:netease:radar-playlists"
 internal const val HomeScrollKeyNeteaseRadarPlaylistsHeader = "$HomeScrollKeyNeteaseRadarPlaylists:header"
 internal const val HomeScrollKeyNeteaseRadarPlaylistsContent = "$HomeScrollKeyNeteaseRadarPlaylists:content"
@@ -68,8 +56,6 @@ internal const val HomeContentTypeBiliRankCard = "home:bili-rank-card"
 internal const val HomeContentTypeBiliHotStrip = "home:bili-hot-strip"
 internal const val HomeContentTypeBiliHotCard = "home:bili-hot-card"
 internal const val HomeContentTypePlaylistCard = "home:playlist-card"
-internal const val HomeContentTypeYtPlaylistCard = "home:yt-playlist-card"
-internal const val HomeContentTypeYtHomeItemCard = "home:yt-home-item-card"
 internal const val HomeContentTypeLoading = "home:loading"
 internal const val HomeContentTypeError = "home:error"
 
@@ -148,24 +134,4 @@ internal fun homeNeteasePlaylistScrollKey(
 
 internal fun homeNeteaseRadarPlaylistScrollKey(id: Long): String {
     return "$HomeScrollKeyNeteaseRadarPlaylists:playlist:$id"
-}
-
-internal fun homeYtMusicPlaylistScrollKey(playlist: YouTubeMusicPlaylist): String {
-    return "home:ytmusic:playlist:${playlist.favoriteId()}"
-}
-
-internal fun homeYtMusicShelfScrollKey(
-    shelfIndex: Int,
-    title: String
-): String {
-    return "home:ytmusic:shelf:$shelfIndex:${title.hashCode()}"
-}
-
-internal fun homeYtMusicHomeItemScrollKey(
-    shelfKey: String,
-    itemIndex: Int,
-    item: YouTubeMusicHomeItem
-): String {
-    val stableId = item.browseId.ifBlank { item.videoId }.ifBlank { item.title }
-    return "$shelfKey:item:$itemIndex:${stableId.hashCode()}"
 }

@@ -68,7 +68,8 @@ data class PlaybackStatsPendingDeltaEntity(
     @ColumnInfo(name = "play_count_increment") val playCountIncrement: Int?,
     @ColumnInfo(name = "played_at") val playedAt: Long,
     @ColumnInfo(name = "epoch_started_at") val epochStartedAt: Long,
-    @ColumnInfo(name = "device_id") val deviceId: String
+    @ColumnInfo(name = "device_id") val deviceId: String,
+    @ColumnInfo(name = "played_zone") val playedZone: String? = null
 )
 
 data class PlaybackStatsSnapshotTrackData(

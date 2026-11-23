@@ -1,0 +1,13 @@
+<resources>
+    <string name="youtube_content_page">Content &amp; discovery</string>
+    <string name="youtube_featured_playlists">Featured playlists</string>
+    <string name="youtube_community_playlists">Community playlists</string>
+    <string name="youtube_home_no_items">No recommendations match your current content and home settings.</string>
+    <string name="youtube_explore_no_playlists">No playlists to show. Search for a song, artist, or album.</string>
+    <string name="international_home_all">All</string>
+    <string name="international_home_offline">Offline mode</string>
+    <string name="international_home_disabled">YouTube Music is turned off</string>
+    <string name="international_home_open_general">Open general settings</string>
+    <string name="international_home_no_category">No matches in the recommendations loaded so far.</string>
+    <string name="international_home_no_history">No recent listening</string>
+</resources>

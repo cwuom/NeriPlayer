@@ -24,6 +24,8 @@ package moe.ouom.neriplayer.data.settings
  */
 
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.combine
+import moe.ouom.neriplayer.common.locale.DeviceLocale
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
 import moe.ouom.neriplayer.platform.youtube.settings.YouTubePlaybackSourcePreferencePolicy
@@ -106,9 +108,12 @@ import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettingsCodec
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.applyHomeSectionOrder
 import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionHidden
 import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionOrder
 import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionHidden
@@ -577,6 +582,14 @@ class SettingsRepository(private val context: Context) {
     val homeCardBilibiliFlow: Flow<Boolean> =
         autoSettingsRepository.homeCardBilibiliFlow
 
+    val internationalHomeLayoutFlow: Flow<InternationalHomeLayout> = dataStoreSettingFlow { prefs ->
+        val defaults = InternationalHomeSectionIds.DEFAULT_ORDER
+        InternationalHomeLayout(
+            order = parseHomeSectionOrder(prefs[AutoSettingsKeys.INTERNATIONAL_HOME_ORDER], defaults),
+            hidden = parseHomeSectionHidden(prefs[AutoSettingsKeys.INTERNATIONAL_HOME_HIDDEN], defaults)
+        )
+    }
+
     val homeMajorOrderFlow: Flow<List<String>> =
         autoSettingsRepository.homeMajorOrderFlow.map { raw ->
             parseHomeSectionOrder(raw, HomeMajorSectionIds.DEFAULT_ORDER)
@@ -755,12 +768,12 @@ class SettingsRepository(private val context: Context) {
     val preemptAudioFocusFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: true }
 
-    // 中文系统默认关闭国际化
-    private val defaultInternationalization: Boolean
-        get() = !Locale.getDefault().language.startsWith("zh")
-
-    val internationalizationEnabledFlow: Flow<Boolean> =
-        dataStoreSettingFlow { it[SettingsKeys.INTERNATIONALIZATION_ENABLED] ?: defaultInternationalization }
+    val internationalizationEnabledFlow: Flow<Boolean> = combine(
+        dataStoreSettingFlow { it[SettingsKeys.INTERNATIONALIZATION_ENABLED] },
+        DeviceLocale.observe(context)
+    ) { saved, systemLocale ->
+        saved ?: (systemLocale.language != "zh")
+    }.distinctUntilChanged()
 
     val youtubeEnabledFlow: Flow<Boolean> =
         settingFlow(AutoSettingsSchema.general.youtubeEnabled)
@@ -1388,6 +1401,21 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setHomeCardBilibili(enabled: Boolean) {
         autoSettingsRepository.setHomeCardBilibili(enabled)
+    }
+
+    suspend fun setInternationalHomeOrder(order: List<String>) {
+        val normalized = applyHomeSectionOrder(InternationalHomeSectionIds.DEFAULT_ORDER, order, emptySet())
+        context.dataStore.edit { it[AutoSettingsKeys.INTERNATIONAL_HOME_ORDER] = encodeHomeSectionOrder(normalized) }
+    }
+
+    suspend fun setInternationalHomeSectionVisible(id: String, visible: Boolean) {
+        if (id !in InternationalHomeSectionIds.DEFAULT_ORDER) return
+        updateHomeSectionHiddenAtomically(
+            key = AutoSettingsKeys.INTERNATIONAL_HOME_HIDDEN,
+            defaults = InternationalHomeSectionIds.DEFAULT_ORDER,
+            id = id,
+            visible = visible
+        )
     }
 
     suspend fun setHomeMajorOrder(order: List<String>) {

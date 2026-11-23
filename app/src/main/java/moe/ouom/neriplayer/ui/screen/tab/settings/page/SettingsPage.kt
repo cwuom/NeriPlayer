@@ -44,6 +44,12 @@ internal enum class SettingsPage(
         descriptionRes = CoreCommonR.string.settings_page_language_desc,
         icon = Icons.Outlined.Translate
     ),
+    // 旧版本通过 rememberSaveable 保存了这个枚举值
+    Content(
+        titleRes = CoreCommonR.string.settings_page_language,
+        descriptionRes = CoreCommonR.string.settings_page_language_desc,
+        icon = Icons.Outlined.Translate
+    ),
     AudioEffects(
         titleRes = AppR.string.settings_audio_effects_title,
         descriptionRes = AppR.string.settings_audio_effects_desc,
@@ -202,6 +208,9 @@ internal val SettingsHomePageGroups: List<List<SettingsPage>> = listOf(
 /** Card indices of the shared lyrics section rendered on each lyrics page, in display order. */
 internal val LyricsPageCards = listOf(4, 1, 3)
 internal val ExternalLyricsPageCards = listOf(0, 2)
+
+internal val SettingsPage.destination: SettingsPage
+    get() = if (this == SettingsPage.Content) SettingsPage.Language else this
 
 internal fun SettingsPage.backTargetPage(): SettingsPage? = when (this) {
     SettingsPage.MusicServers -> SettingsPage.Accounts

@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.tab.library
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.platform.youtube.settings.visiblePlaylistSongs
 import androidx.compose.runtime.CompositionLocalProvider
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.content.Context
@@ -261,6 +263,13 @@ fun LibraryScreen(
 ) {
     val vm: LibraryViewModel = viewModel()
     val ui by vm.uiState.collectAsStateWithLifecycle()
+    val contentPreferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
+    val localPlaylists = remember(ui.localPlaylists, contentPreferences.hideExplicit, contentPreferences.hideMusicVideos) {
+        ui.localPlaylists.map { playlist ->
+            val visible = contentPreferences.visiblePlaylistSongs(playlist.songs)
+            if (visible.size == playlist.songs.size) playlist else playlist.copy(songs = visible.toMutableList())
+        }
+    }
     val context = LocalContext.current
     val defaultPlaylistName = stringResource(CoreCommonR.string.library_create_playlist_default)
     val localPlaylistRepo = remember(context) {
@@ -434,7 +443,7 @@ fun LibraryScreen(
                             offlineMode = offlineMode
                         )
                         LibraryTab.LOCAL -> LocalPlaylistList(
-                            playlists = ui.localPlaylists,
+                            playlists = localPlaylists,
                             listState = localListState,
                             onCreate = { name ->
                                 val finalName = name.trim().ifBlank { defaultPlaylistName }

@@ -96,6 +96,7 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.artist.toCreatorPlaylist
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.ui.viewmodel.artist.toCreatorSongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.toCreatorSummary
 import moe.ouom.neriplayer.ui.viewmodel.artist.youtubeMusicCreatorSectionKey
@@ -111,7 +112,7 @@ internal fun shouldShowYouTubeMusicCreatorSectionMore(
     section: YouTubeMusicCreatorSection
 ): Boolean {
     return section.moreEndpoint != null && section.items.any { item ->
-        item.videoId.isNotBlank()
+        item.videoId.isNotBlank() || item.browseId.isNotBlank()
     }
 }
 
@@ -204,7 +205,9 @@ fun YouTubeMusicCreatorDetailScreen(
     }
     val sectionStateHolder = rememberSaveableStateHolder()
 
-    LaunchedEffect(creator.browseId) {
+    val preferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
+    val catalogKey = preferences.catalogKey(YouTubeContentSettings.systemLocale())
+    LaunchedEffect(creator.browseId, catalogKey) {
         viewModel.start(creator)
     }
     LaunchedEffect(viewModel, onSongClick) {

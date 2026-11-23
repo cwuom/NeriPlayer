@@ -101,7 +101,7 @@ class AppPlaybackStatsWritePortTest {
             val snapshot = snapshot()
             doAnswer { throw IOException("song storage unavailable") }.`when`(fixture.injectedStats)
                 .recordListenDeltaNow(snapshot.song, snapshot.listenedMs, snapshot.playCountIncrement,
-                    snapshot.scheduleSync, snapshot.eventId, snapshot.playedAt, snapshot.observedClearedAt)
+                    snapshot.scheduleSync, snapshot.eventId, snapshot.playedAt, snapshot.observedClearedAt, snapshot.playedZone)
             try {
                 AppPlaybackStatsWritePort.record(snapshot)
                 error("the song write must fail")
@@ -172,7 +172,7 @@ class AppPlaybackStatsWritePortTest {
 
         suspend fun verifySongRecord(stats: PlaybackStatsRepository, snapshot: PlaybackStatsSnapshot) {
             verify(stats).recordListenDeltaNow(snapshot.song, snapshot.listenedMs, snapshot.playCountIncrement,
-                snapshot.scheduleSync, snapshot.eventId, snapshot.playedAt, snapshot.observedClearedAt)
+                snapshot.scheduleSync, snapshot.eventId, snapshot.playedAt, snapshot.observedClearedAt, snapshot.playedZone)
         }
 
         override fun close() {
@@ -186,5 +186,5 @@ class AppPlaybackStatsWritePortTest {
     }
 
     private fun snapshot() = PlaybackStatsSnapshot(SongItem(1, "synthetic", "artist", "album", 1, 60_000, null),
-        15_000, 1, false, 42, "event", 1_700_000_000_000, 100)
+        15_000, 1, false, 42, "event", 1_700_000_000_000, 100, "Asia/Kathmandu")
 }

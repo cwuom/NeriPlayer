@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
+import moe.ouom.neriplayer.data.local.database.store.stats.readInsights
 import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStore
 import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomSnapshotAccess
 import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomDiffAccess
@@ -169,14 +170,15 @@ class PlaybackStatsRepository internal constructor(
         scheduleSync: Boolean = true,
         eventId: String = UUID.randomUUID().toString(),
         playedAt: Long = System.currentTimeMillis(),
-        observedClearedAt: Long? = null
+        observedClearedAt: Long? = null,
+        playedZone: String? = null
     ) {
         if (listenedMs <= 0 && playCountIncrement <= 0) return
-        recordDelta(song, listenedMs, playCountIncrement.coerceAtLeast(0), scheduleSync, eventId, playedAt, observedClearedAt)
+        recordDelta(song, listenedMs, playCountIncrement.coerceAtLeast(0), scheduleSync, eventId, playedAt, observedClearedAt, playedZone)
     }
 
     private suspend fun recordDelta(song: SongItem, listenedMs: Long, count: Int?, scheduleSync: Boolean, eventId: String, playedAt: Long,
-        observedClearedAt: Long? = null) = withContext(Dispatchers.IO) {
+        observedClearedAt: Long? = null, playedZone: String? = null) = withContext(Dispatchers.IO) {
         require(eventId.isNotBlank())
         initialLoad.await()
         mutex.withLock {
@@ -184,7 +186,7 @@ class PlaybackStatsRepository internal constructor(
             val deviceId = readDeviceId()
             check(deviceId.isNotBlank()) { "Playback counter device identity unavailable" }
             val accepted = roomStore.enqueueDelta(eventId, gson.toJson(song.toStatisticsMetadata()), listenedMs.coerceAtLeast(0), count,
-                playedAt, deviceId, observedClearedAt, observeCurrentClear = true)
+                playedAt, deviceId, observedClearedAt, observeCurrentClear = true, playedZone = playedZone)
             // 入队已经是持久确认，应用失败由后续 drain 重试，不能让调用方重复增加计数
             pendingWrites = true
             drainPendingLocked()
@@ -402,9 +404,19 @@ class PlaybackStatsRepository internal constructor(
         roomStore.readTrack(identityKey)
     }
 
+    suspend fun readInsights(query: PlaybackStatsQuery, rankLimit: Int = 10): PlaybackStatsInsights = withContext(Dispatchers.IO) {
+        if (!awaitInitialized()) throw IOException("Playback statistics unavailable", initialLoadFailure)
+        roomStore.readInsights(query, rankLimit)
+    }
+
     suspend fun readSummary(query: PlaybackStatsQuery): PlaybackStatsSummary = withContext(Dispatchers.IO) {
         if (!awaitInitialized()) throw IOException("Playback statistics unavailable", initialLoadFailure)
         roomStore.readSummary(query)
+    }
+
+    suspend fun readHourlyListening(query: PlaybackStatsQuery): List<Long> = withContext(Dispatchers.IO) {
+        if (!awaitInitialized()) throw IOException("Playback statistics unavailable", initialLoadFailure)
+        roomStore.readHourlyListening(query)
     }
 
     suspend fun readPage(query: PlaybackStatsQuery, after: PlaybackStatsCursor? = null, pageSize: Int = 100, before: Boolean = false): PlaybackStatsPage = withContext(Dispatchers.IO) {

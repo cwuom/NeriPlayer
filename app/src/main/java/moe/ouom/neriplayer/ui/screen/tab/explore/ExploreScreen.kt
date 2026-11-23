@@ -97,6 +97,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Clear
@@ -175,6 +176,8 @@ import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.platform.youtube.auth.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.search.ExploreSearchHistoryRepository
 import moe.ouom.neriplayer.data.search.exploreSearchHistoryRecordKeyword
 import moe.ouom.neriplayer.data.search.exploreSearchHistoryForDisplay
@@ -248,12 +251,6 @@ internal fun shouldClearExploreSearchQuery(
             current == SearchSource.LINK_RECOGNITION
         )
 }
-
-internal fun shouldDefaultExploreToYouTube(
-    isInternational: Boolean,
-    youtubeEnabled: Boolean,
-    searchQuery: String
-): Boolean = isInternational && youtubeEnabled && searchQuery.isBlank()
 
 @Composable
 internal fun ExploreSearchPagerEffect(
@@ -410,6 +407,9 @@ private fun youtubeSearchTypeLabel(type: YouTubeExploreSearchType): String {
     return when (type) {
         YouTubeExploreSearchType.SONG -> stringResource(CoreCommonR.string.explore_search_type_song)
         YouTubeExploreSearchType.VIDEO -> stringResource(CoreCommonR.string.explore_search_type_video)
+        YouTubeExploreSearchType.ALBUM -> stringResource(CoreCommonR.string.artist_tab_albums)
+        YouTubeExploreSearchType.FEATURED_PLAYLIST -> stringResource(AppR.string.youtube_featured_playlists)
+        YouTubeExploreSearchType.COMMUNITY_PLAYLIST -> stringResource(AppR.string.youtube_community_playlists)
         YouTubeExploreSearchType.CREATOR -> stringResource(CoreCommonR.string.explore_search_type_creator)
     }
 }
@@ -418,6 +418,9 @@ private fun youtubeSearchTypeIcon(type: YouTubeExploreSearchType): ImageVector {
     return when (type) {
         YouTubeExploreSearchType.SONG -> Icons.Outlined.MusicNote
         YouTubeExploreSearchType.VIDEO -> Icons.Filled.PlayCircle
+        YouTubeExploreSearchType.ALBUM -> Icons.Filled.Album
+        YouTubeExploreSearchType.FEATURED_PLAYLIST,
+        YouTubeExploreSearchType.COMMUNITY_PLAYLIST -> Icons.AutoMirrored.Outlined.QueueMusic
         YouTubeExploreSearchType.CREATOR -> Icons.Filled.AccountCircle
     }
 }
@@ -515,8 +518,9 @@ fun ExploreScreen(
 
     var showExportSheet by remember { mutableStateOf(false) }
 
-    val isInternational by AppContainer.settingsRepo.internationalizationEnabledFlow
-        .collectAsStateWithLifecycle(initialValue = false)
+    val internationalSetting by AppContainer.settingsRepo.internationalizationEnabledFlow
+        .collectAsStateWithLifecycle(initialValue = null)
+    val isInternational = internationalSetting == true
     val youtubeEnabled by AppContainer.settingsRepo.youtubeEnabledFlow
         .collectAsStateWithLifecycle(initialValue = YouTubeFeatureGate.isEnabled())
     val orderedSearchSources = remember(isInternational, youtubeEnabled) {
@@ -584,23 +588,27 @@ fun ExploreScreen(
         selectedParts = emptySet()
     }
 
-    LaunchedEffect(Unit) {
-        if (ui.playlists.isEmpty()) vm.loadHighQuality()
-    }
-
     ExploreSearchPagerEffect(pagerState, orderedSearchSources, ui.selectedSearchSource, vm::setSearchSource)
-    LaunchedEffect(ui.selectedSearchSource) {
-        if (ui.selectedSearchSource == SearchSource.YOUTUBE_MUSIC && ui.ytMusicPlaylists.isEmpty()) {
-            vm.loadYtMusicPlaylists()
-        }
+    var browseReady by remember(internationalSetting, youtubeEnabled) { mutableStateOf(false) }
+    LaunchedEffect(internationalSetting, youtubeEnabled) {
+        if (internationalSetting == null) return@LaunchedEffect
+        vm.applyBrowseDefault(orderedSearchSources.first(), searchQuery)
+        browseReady = true
     }
-
-    // 国际化模式默认跳到 YouTube Music 标签
-    LaunchedEffect(isInternational, youtubeEnabled) {
-        if (shouldDefaultExploreToYouTube(isInternational, youtubeEnabled, searchQuery)) {
-            if (ui.selectedSearchSource != SearchSource.YOUTUBE_MUSIC) {
-                vm.setSearchSource(SearchSource.YOUTUBE_MUSIC)
-            }
+    val contentPreferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
+    val catalogKey = contentPreferences.catalogKey(YouTubeContentSettings.systemLocale())
+    val auth by AppContainer.youtubeAuthRepo.authFlow.collectAsStateWithLifecycle(
+        initialValue = remember { AppContainer.youtubeAuthRepo.getAuthOnce() }
+    )
+    val accountKey = remember(auth) { auth.buildRefreshObserverFingerprint() }
+    LaunchedEffect(browseReady, ui.selectedSearchSource, catalogKey, accountKey) {
+        if (!browseReady) return@LaunchedEffect
+        vm.updateYouTubeBrowseContext(catalogKey, accountKey)
+        val state = vm.uiState.value
+        when (state.selectedSearchSource) {
+            SearchSource.YOUTUBE_MUSIC -> if (state.ytMusicPlaylists.isEmpty() && !state.ytMusicPlaylistsLoading) vm.loadYtMusicPlaylists()
+            SearchSource.NETEASE -> if (state.playlists.isEmpty() && !state.loading) vm.loadHighQuality()
+            else -> Unit
         }
     }
 
@@ -715,6 +723,7 @@ fun ExploreScreen(
     LaunchedEffect(
         shouldLoadMoreSearch,
         ui.searchItems.size,
+        ui.searchPage,
         ui.selectedSearchSource,
         ui.selectedBilibiliSearchType,
         ui.selectedNeteaseSearchType,
@@ -846,13 +855,13 @@ fun ExploreScreen(
                             }
                         },
                         colors = neriSearchFieldColors(),
-                        leadingIcon = { Icon(Icons.Default.Search, "Search") },
+                        leadingIcon = { Icon(Icons.Default.Search, stringResource(CoreCommonR.string.action_search)) },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
                                 HapticIconButton(onClick = {
                                     onSearchQueryChange("")
                                     vm.search("")
-                                }) { Icon(Icons.Default.Clear, "Clear") }
+                                }) { Icon(Icons.Default.Clear, stringResource(CoreCommonR.string.cd_clear)) }
                             }
                         },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -964,7 +973,17 @@ fun ExploreScreen(
                                         .fillMaxSize()
                                         .padding(bottom = miniPlayerHeight),
                                     Alignment.Center
-                                ) { Text(stringResource(CoreCommonR.string.search_no_result)) }
+                                ) {
+                                    val loadError = ui.searchLoadMoreError
+                                    when {
+                                        ui.searchLoadingMore -> SearchLoadingMoreRow()
+                                        loadError != null -> SearchLoadMoreErrorRow(loadError.asString(), vm::loadMoreSearchResults)
+                                        ui.searchHasMore -> HapticTextButton(onClick = vm::loadMoreSearchResults) {
+                                            Text(stringResource(CoreCommonR.string.youtube_creator_load_more))
+                                        }
+                                        else -> Text(stringResource(CoreCommonR.string.search_no_result))
+                                    }
+                                }
                             }
                             else -> {
                                 val songs = ui.searchResults
@@ -1778,6 +1797,7 @@ internal fun ExploreSearchTypeBar(
     unselectedAlpha: Float,
     borderAlpha: Float
 ) {
+    val preferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
     AnimatedContent(
         targetState = source,
         modifier = Modifier.testTag(EXPLORE_SEARCH_TYPE_BAR_CONTAINER_TAG),
@@ -1898,7 +1918,8 @@ internal fun ExploreSearchTypeBar(
                     { bilibiliSearchTypeLabel(it) }, ::bilibiliSearchTypeIcon, onBilibiliSearchTypeClick
                 )
                 SearchSource.YOUTUBE_MUSIC -> typeChips(
-                    YouTubeExploreSearchType.entries, selectedYouTubeSearchType,
+                    YouTubeExploreSearchType.entries.filterNot { it == YouTubeExploreSearchType.VIDEO && preferences.hideMusicVideos },
+                    selectedYouTubeSearchType,
                     { youtubeSearchTypeLabel(it) }, ::youtubeSearchTypeIcon, onYouTubeSearchTypeClick
                 )
             }

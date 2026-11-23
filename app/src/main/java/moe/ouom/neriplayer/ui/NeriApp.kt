@@ -138,7 +138,10 @@ import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
 import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
 import moe.ouom.neriplayer.ui.screen.host.rememberHomeHostRuntimeState
-import moe.ouom.neriplayer.ui.screen.tab.home.shouldShowHomeContinueSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.isSettingsHomeStartAvailable
 import moe.ouom.neriplayer.ui.screen.tab.home.rememberHomeUsageSnapshot
 import moe.ouom.neriplayer.ui.screen.tab.home.HomeContinueDiagnostics
 import moe.ouom.neriplayer.ui.theme.NeriTheme
@@ -475,8 +478,11 @@ private fun NeriAppContent(
     val showHomeRadarCard by repo.homeCardRadarFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRecommendedCard by repo.homeCardRecommendedFlow.collectAsStateWithLifecycle(initialValue = true)
     val homeBilibiliCardEnabled by repo.homeCardBilibiliFlow.collectAsStateWithLifecycle(initialValue = true)
-    val internationalizationEnabled by repo.internationalizationEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
-    val showHomeBilibiliCard = homeBilibiliCardEnabled && !internationalizationEnabled
+    val internationalizationEnabled: Boolean? by repo.internationalizationEnabledFlow.collectAsStateWithLifecycle(initialValue = null)
+    val internationalHomeLayout by repo.internationalHomeLayoutFlow.collectAsStateWithLifecycle(
+        initialValue = InternationalHomeLayout()
+    )
+    val showHomeBilibiliCard = homeBilibiliCardEnabled && internationalizationEnabled == false
     val storedUsbExclusivePlayback by repo.usbExclusivePlaybackFlow
         .collectAsStateWithLifecycle(initialValue = null)
     val usbExclusivePlayback = storedUsbExclusivePlayback
@@ -491,17 +497,20 @@ private fun NeriAppContent(
     val homeUsageSnapshot by rememberHomeUsageSnapshot(context) {
         AppContainer.playlistUsageRepo
     }
-    HomeContinueDiagnostics(showHomeContinueCard, homeUsageSnapshot)
-    val showHomeTab =
-        shouldShowHomeContinueSection(
-            showContinueCard = showHomeContinueCard,
-            usageLoaded = homeUsageSnapshot.isLoaded,
-            hasUsage = homeUsageSnapshot.entries.isNotEmpty()
-        ) ||
-            showHomeTrendingCard ||
-            showHomeRadarCard ||
-            showHomeRecommendedCard ||
-            showHomeBilibiliCard
+    val activeInternationalLayout = internationalHomeLayout.takeIf { internationalizationEnabled == true }
+    val showActiveContinue = activeInternationalLayout?.let { InternationalHomeSectionIds.CONTINUE !in it.hidden }
+        ?: showHomeContinueCard
+    HomeContinueDiagnostics(showActiveContinue, homeUsageSnapshot)
+    val homeHasRecentUsage = !homeUsageSnapshot.isLoaded || homeUsageSnapshot.entries.isNotEmpty()
+    val showHomeTab = internationalizationEnabled == null || isSettingsHomeStartAvailable(
+        showTrending = showHomeTrendingCard,
+        showRadar = showHomeRadarCard,
+        showRecommended = showHomeRecommendedCard,
+        showContinue = showHomeContinueCard,
+        hasRecentUsage = homeHasRecentUsage,
+        showBilibili = showHomeBilibiliCard,
+        internationalLayout = activeInternationalLayout
+    )
     var pendingFollowSystemDark by remember { mutableStateOf<Boolean?>(null) }
     var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
     var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -1474,6 +1483,7 @@ private fun NeriAppContent(
 
             val snackbarHostState = remember { SnackbarHostState() }
             val homeHostRuntimeState = rememberHomeHostRuntimeState()
+            var homeSettingsPage by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
 
             val navigationSceneRenderer = AppNavigationSceneRenderer(
                 advancedGlassController = advancedGlassController,
@@ -1490,6 +1500,11 @@ private fun NeriAppContent(
             fun RenderMainTabRoute(route: String) {
                 val homeContent: @Composable () -> Unit = {
                     HomeHostScreen(
+                        onOpenHomeSettings = { page ->
+                            homeSettingsPage = page
+                            navigateToMainTab(Destinations.Settings.route)
+                        },
+                        onYouTubeCreatorClick = ::navigateToYouTubeMusicCreator,
                         showContinueCard = showHomeContinueCard,
                         showTrendingCard = showHomeTrendingCard,
                         showRadarCard = showHomeRadarCard,
@@ -1515,6 +1530,8 @@ private fun NeriAppContent(
                 }
                 val exploreContent: @Composable () -> Unit = {
                     ExploreHostScreen(
+                        onOpenYouTubePlaylist = ::navigateToYouTubeMusicPlaylist,
+                        onOpenYouTubeCreator = ::navigateToYouTubeMusicCreator,
                         onBiliUploaderClick = ::navigateToBiliUploader,
                         offlineMode = offlineMode,
                         onSongClick = ::playSongsAndOpenNowPlaying,
@@ -1567,10 +1584,13 @@ private fun NeriAppContent(
                             onThemeModeRequest = ::requestThemeModeChange,
                             backgroundImageAlpha = effectiveBackgroundImageAlpha,
                             defaultStartDestination = currentDefaultStartDestination,
-                            homeHasRecentUsage = homeUsageSnapshot.entries.isNotEmpty(),
+                            homeHasRecentUsage = homeHasRecentUsage,
                             onBeforeLanguageRestart = clearThemeRevealState,
                             onLanguageChanged = onLanguageChanged,
                             coherentFeedbackEnabled = coherentFeedbackEnabled,
+                            requestedPage = homeSettingsPage,
+                            onPageRequestConsumed = { homeSettingsPage = null },
+                            onReturnFromHomeShortcut = { navigateToMainTab(if (showHomeTab) Destinations.Home.route else Destinations.Explore.route) },
                             settingsVisible = isAppSettingsVisible(selectedMainTabRoute, showNowPlaying)
                         ),
                         onBackgroundImageAlphaPreview = { pendingBackgroundImageAlpha = it },

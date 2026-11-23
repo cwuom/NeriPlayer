@@ -25,19 +25,50 @@ package moe.ouom.neriplayer.network.proxy
 
 
 import java.io.IOException
+import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
 import java.net.SocketAddress
 import java.net.URI
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
-/**
- * A ProxySelector that can be toggled at runtime to bypass the system proxy.
- * When [bypassProxy] is true, all requests use Proxy.NO_PROXY.
- * When false, it delegates to the system default ProxySelector.
- */
+class NetworkProxyEndpoint private constructor(val type: Proxy.Type, val host: String, val port: Int) {
+    val uri: String
+        get() = URI(if (type == Proxy.Type.HTTP) "http" else "socks5", null, host, port, null, null, null).toASCIIString()
+
+    fun toProxy(): Proxy = Proxy(type, InetSocketAddress.createUnresolved(host.removeSurrounding("[", "]"), port))
+
+    companion object {
+        fun parse(raw: String): NetworkProxyEndpoint? {
+            val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return null
+            val type = when (uri.scheme?.lowercase()) {
+                "http" -> Proxy.Type.HTTP
+                "socks5" -> Proxy.Type.SOCKS
+                else -> return null
+            }
+            val host = uri.host ?: return null
+            if (uri.rawUserInfo != null || uri.port !in 1..65535 ||
+                !uri.rawPath.isNullOrEmpty() || uri.rawQuery != null || uri.rawFragment != null
+            ) return null
+            return NetworkProxyEndpoint(type, host.removeSurrounding("[", "]"), uri.port)
+        }
+    }
+}
+
 object DynamicProxySelector : ProxySelector() {
+    // null follows Android, NO_PROXY connects directly, and a concrete proxy overrides Android
     @Volatile
-    var bypassProxy: Boolean = true
+    var overrideProxy: Proxy? = Proxy.NO_PROXY
+
+    private val systemProxyHosts = ConcurrentHashMap.newKeySet<String>()
+
+    internal fun isProxyHost(hostname: String): Boolean {
+        val host = hostname.trimEnd('.').lowercase(Locale.ROOT)
+        val custom = (overrideProxy?.address() as? InetSocketAddress)?.hostString
+        return host.equals(custom?.trimEnd('.'), ignoreCase = true) || host in systemProxyHosts
+    }
+
     private fun systemDefault(): ProxySelector? {
         val current = getDefault()
         return if (current === this) null else current
@@ -45,12 +76,17 @@ object DynamicProxySelector : ProxySelector() {
 
     override fun select(uri: URI?): List<Proxy> {
         if (uri == null) return listOf(Proxy.NO_PROXY)
-        return if (bypassProxy) listOf(Proxy.NO_PROXY)
-        else systemDefault()?.select(uri).takeUnless { it.isNullOrEmpty() } ?: listOf(Proxy.NO_PROXY)
+        overrideProxy?.let { return listOf(it) }
+        val proxies = systemDefault()?.select(uri).takeUnless { it.isNullOrEmpty() } ?: return listOf(Proxy.NO_PROXY)
+        for (proxy in proxies) {
+            val address = proxy.address() as? InetSocketAddress ?: continue
+            systemProxyHosts.add(address.hostString.trimEnd('.').lowercase(Locale.ROOT))
+        }
+        return proxies
     }
 
     override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: IOException?) {
-        systemDefault()?.connectFailed(uri, sa, ioe)
+        if (overrideProxy == null) systemDefault()?.connectFailed(uri, sa, ioe)
     }
 }
 

@@ -581,15 +581,30 @@ class SettingsPageTest {
     }
 
     @Test
+    fun internationalAndDomesticSearchExposeOnlyTheirOwnHomeEditor() {
+        val resources = settingsStringResources()
+        val domestic = buildSettingsSearchEntries(resources, internationalEnabled = false)
+        val international = buildSettingsSearchEntries(resources, internationalEnabled = true)
+
+        assertTrue(domestic.any { it.id == "setting:home_card_bilibili" })
+        assertTrue(domestic.any { it.id == "setting:home_trending_order" })
+        assertTrue(domestic.none { it.id.startsWith("manual:international_home_") })
+        assertTrue(international.none { it.id.startsWith("setting:home_") })
+        val order = international.single { it.id == "manual:international_home_order" }
+        assertEquals("manual:international_home_spotlight", order.targetId)
+        assertEquals(2, settingsSearchScrollAnchor(order.page, order.targetId).itemIndex)
+    }
+
+    @Test
     fun internationalHomeCardTitlesAreSearchable() {
-        val entries = buildSettingsSearchEntries(settingsStringResources())
+        val entries = buildSettingsSearchEntries(settingsStringResources(), internationalEnabled = true)
         val expectedTargets = listOf(
-            "guess you like" to "setting:home_card_trending",
-            "猜你喜欢" to "setting:home_card_trending",
-            "daily discover" to "setting:home_card_radar",
-            "每日发现" to "setting:home_card_radar",
-            "more recommendations" to "setting:home_card_recommended",
-            "更多推荐" to "setting:home_card_recommended"
+            "spotlight" to "manual:international_home_spotlight",
+            "今日精选" to "manual:international_home_spotlight",
+            "continue" to "manual:international_home_continue",
+            "继续播放" to "manual:international_home_continue",
+            "recommendations" to "manual:international_home_feed",
+            "为你推荐" to "manual:international_home_feed"
         )
 
         expectedTargets.forEach { (query, targetId) ->

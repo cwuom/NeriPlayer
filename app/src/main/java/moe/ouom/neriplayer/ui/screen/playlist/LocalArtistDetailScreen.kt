@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.platform.youtube.settings.visiblePlaylistSongs
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.stableKey
 
@@ -214,7 +217,10 @@ fun LocalArtistDetailScreen(
     }
 
     val artist = resolvedArtistSnapshot.artist
-    val songs = artist?.songs.orEmpty()
+    val contentPreferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
+    val songs = remember(artist, contentPreferences.hideExplicit, contentPreferences.hideMusicVideos) {
+        contentPreferences.visiblePlaylistSongs(artist?.songs.orEmpty())
+    }
     val baseSongs = remember(songs) { songs.toList() }
     val headerCover = rememberLocalArtistDisplayCoverUrl(artist)
     val title = artist?.name ?: artistName

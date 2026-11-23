@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.CoroutineScope
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.destination
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsSearchEntry
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.backTargetPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.buildSettingsSearchEntries
@@ -131,8 +132,8 @@ internal class SettingsNavigationState(
         get() = searchResultsState.value
 
     var activePage: SettingsPage?
-        get() = ensureSplitSettingsPage(splitLayout, activePageState.value)
-        set(value) { activePageState.value = value }
+        get() = ensureSplitSettingsPage(splitLayout, activePageState.value)?.destination
+        set(value) { activePageState.value = value?.destination }
 
     val backTarget: SettingsPage?
         get() = activePage?.backTargetPage()

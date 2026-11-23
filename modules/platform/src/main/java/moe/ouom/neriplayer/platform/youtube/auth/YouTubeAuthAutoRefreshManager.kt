@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.platform.youtube.auth.web.applyYouTubeWebCookies
 import moe.ouom.neriplayer.platform.youtube.auth.web.collectYouTubeWebCookies
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationOutcome
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationState
 import org.json.JSONObject
 import org.json.JSONTokener
 
@@ -218,9 +219,10 @@ class YouTubeAuthAutoRefreshManager(
     private val accessMutex = Mutex()
     private val refreshJobLock = Any()
     private val refreshJobs = mutableSetOf<Deferred<YouTubeAuthAutoRefreshResult>>()
+    private val rotationState = createCookieRotationStateStore(applicationContext)
     private val cookieRotator = YouTubeCookieRotator(
         httpClientProvider = httpClientProvider,
-        stateStore = createCookieRotationStateStore(applicationContext)
+        stateStore = rotationState
     )
 
     @Volatile
@@ -256,6 +258,17 @@ class YouTubeAuthAutoRefreshManager(
             }
         }
         pending.joinAll()
+    }
+
+    suspend fun resetForAccountChange() {
+        cancelAndAwaitRefresh()
+        youtubeAuthRotationMutex.withLock {
+            lastAttemptAtMs = 0L
+            consecutiveFailures = 0
+            circuitOpenUntilMs = 0L
+            runCatching { rotationState.write(YouTubeCookieRotationState()) }
+                .onFailure { NPLogger.w(TAG, "Failed to reset rotation status after an account change", it) }
+        }
     }
 
     override suspend fun refreshIfNeeded(
@@ -327,6 +340,7 @@ class YouTubeAuthAutoRefreshManager(
 
             // *PSIDTS 十分钟就换一次, 先走一次轻量轮换, 成了就完全不必起 WebView
             val rotationOutcome = youtubeAuthRotationMutex.withLock {
+                if (!authStore.isCurrent(snapshot)) return@refresh staleAuthResult()
                 val outcome = cookieRotator.rotateDetailed(
                     cookies = initialAuth.cookies,
                     userAgent = initialAuth.userAgent.ifBlank { webViewUserAgent },

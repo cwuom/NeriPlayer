@@ -1,12 +1,15 @@
 package moe.ouom.neriplayer.data.model.youtube.cache
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
+
 data class CachedYouTubeMusicPlaylistTrack(
     val videoId: String,
     val name: String,
     val artist: String,
     val albumName: String,
     val durationMs: Long,
-    val coverUrl: String
+    val coverUrl: String,
+    val contentLabel: YouTubeContentLabel? = null
 )
 
 data class CachedYouTubeMusicPlaylistDetail(
@@ -19,5 +22,7 @@ data class CachedYouTubeMusicPlaylistDetail(
     val trackCount: Int,
     val firstPageSignature: String,
     val tracks: List<CachedYouTubeMusicPlaylistTrack>,
-    val savedAtMs: Long = System.currentTimeMillis()
+    val savedAtMs: Long = System.currentTimeMillis(),
+    val catalogKey: String? = null,
+    val filteredEmpty: Boolean = false
 )

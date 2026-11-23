@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItemsPage
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
@@ -56,25 +57,29 @@ class YouTubeMusicCreatorDetailViewModel(
     internal val playbackRequests: SharedFlow<YouTubeMusicCreatorPlaybackQueue> =
         _playbackRequests.asSharedFlow()
 
+    private var currentCatalogKey: String? = null
     private var currentCreator: YouTubeMusicCreatorSummary? = null
     private var loadJob: Job? = null
     private var playbackQueueJob: Job? = null
 
     fun start(creator: YouTubeMusicCreatorSummary, forceRefresh: Boolean = false) {
+        val catalogKey = YouTubeContentSettings.catalogKey()
+        val sameCatalog = catalogKey == currentCatalogKey
         if (
-            !forceRefresh &&
+            sameCatalog && !forceRefresh &&
             creator.browseId == currentCreator?.browseId &&
             _uiState.value.detail != null
         ) {
             return
         }
+        currentCatalogKey = catalogKey
         currentCreator = creator
         loadJob?.cancel()
         playbackQueueJob?.cancel()
         _uiState.value = YouTubeMusicCreatorDetailUiState(
             loading = true,
             detail = _uiState.value.detail?.takeIf {
-                it.header.browseId == creator.browseId
+                sameCatalog && it.header.browseId == creator.browseId
             }
         )
         loadJob = viewModelScope.launch {
@@ -144,7 +149,8 @@ class YouTubeMusicCreatorDetailViewModel(
         }
     }
 
-    private fun isCurrentCreator(browseId: String): Boolean = currentCreator?.browseId == browseId
+    private fun isCurrentCreator(browseId: String): Boolean =
+        currentCreator?.browseId == browseId && currentCatalogKey == YouTubeContentSettings.catalogKey()
 
     private fun markPlaybackQueueLoading(creatorBrowseId: String, sectionKey: String) {
         _uiState.update { current ->
@@ -195,6 +201,7 @@ internal fun YouTubeMusicCreatorItem.toCreatorSongItem(): SongItem? {
     val displayAlbum = album.ifBlank { "YouTube Music" }
     val cover = coverUrl.ifBlank { youtubeMusicThumbnailUrl(videoId) }
     return SongItem(
+        youtubeContentLabel = contentLabel,
         id = stableYouTubeMusicId(videoId),
         name = title,
         artist = displayArtist,
