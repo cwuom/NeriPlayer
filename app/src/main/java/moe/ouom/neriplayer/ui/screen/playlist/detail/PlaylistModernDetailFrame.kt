@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.screen.playlist.detail
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,6 +56,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.screen.playlist.LOCAL_PLAYLIST_ACTIONS_KEY
+import moe.ouom.neriplayer.ui.screen.playlist.PlaylistHeroMeta
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistModernActionSheet
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistModernDockedSearchSlotHeight
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistModernHeroHeader
@@ -63,6 +65,10 @@ import moe.ouom.neriplayer.ui.screen.playlist.PlaylistModernHeroSearchField
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistModernHeroSearchHeight
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistModernStableSearchField
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistModernVisualColorsProvider
+import moe.ouom.neriplayer.ui.screen.playlist.PlaylistTwoPaneBody
+import moe.ouom.neriplayer.ui.screen.playlist.PlaylistTwoPaneListTopGap
+import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistTwoPaneAllowed
+import moe.ouom.neriplayer.ui.screen.playlist.isPlaylistTwoPaneWindow
 import moe.ouom.neriplayer.ui.screen.playlist.interpolatePlaylistColor
 import moe.ouom.neriplayer.ui.screen.playlist.interpolatePlaylistDp
 import moe.ouom.neriplayer.ui.screen.playlist.playlistModernCollapsedTopBarContentColor
@@ -92,7 +98,8 @@ internal data class PlaylistModernDetailHeader(
     val coverUrl: String?,
     val subtitle: String,
     val offlineMode: Boolean,
-    val hasCustomBackground: Boolean
+    val hasCustomBackground: Boolean,
+    val metaItems: List<PlaylistHeroMeta>? = null
 )
 
 internal class PlaylistModernDetailSearch(
@@ -141,296 +148,299 @@ internal fun PlaylistModernDetailFrame(
     val selectionMode = selectionCount != null
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    PlaylistModernVisualColorsProvider(
-        coverUrl = headerCover,
-        offlineMode = offlineMode
-    ) {
-        val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
+    // 按框架实际可用尺寸判断两栏, 分屏或嵌在小容器里时自动回到单列
+    BoxWithConstraints(modifier) {
+        val twoPane = LocalPlaylistTwoPaneAllowed.current &&
+            isPlaylistTwoPaneWindow(maxWidth.value.toInt(), maxHeight.value.toInt())
+        PlaylistModernVisualColorsProvider(
             coverUrl = headerCover,
             offlineMode = offlineMode
-        )
-        val density = LocalDensity.current
-        val searchVisible = shouldShowPlaylistSearch(
-            showSearch = showSearch,
-            selectionMode = selectionMode
-        )
-        val searchVisibilityProgress = playlistModernSearchVisibilityProgress(
-            searchVisible = searchVisible,
-            label = "playlist-search-visibility"
-        )
-        val searchSlotProgress = searchVisibilityProgress.coerceIn(0f, 1f)
-        val searchVisibilityEased = FastOutSlowInEasing.transform(searchSlotProgress)
-        val searchDockedRevealProgress by remember(
-            listState,
-            density
         ) {
-            derivedStateOf {
-                resolvePlaylistDockedSearchRevealProgress(
-                    firstVisibleItemIndex = listState.firstVisibleItemIndex,
-                    firstVisibleItemScrollOffsetPx =
-                        listState.firstVisibleItemScrollOffset,
-                    revealDistancePx = with(density) {
-                        PlaylistModernDockedSearchSlotHeight.roundToPx()
-                    }
-                )
+            val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
+                coverUrl = headerCover,
+                offlineMode = offlineMode
+            )
+            val density = LocalDensity.current
+            val searchVisible = shouldShowPlaylistSearch(
+                showSearch = showSearch,
+                selectionMode = selectionMode
+            )
+            val searchVisibilityProgress = playlistModernSearchVisibilityProgress(
+                searchVisible = searchVisible,
+                label = "playlist-search-visibility"
+            )
+            val searchSlotProgress = searchVisibilityProgress.coerceIn(0f, 1f)
+            val searchVisibilityEased = FastOutSlowInEasing.transform(searchSlotProgress)
+            val searchDockedRevealProgress by remember(
+                listState,
+                density,
+                twoPane
+            ) {
+                derivedStateOf {
+                    if (twoPane) return@derivedStateOf 0f
+                    resolvePlaylistDockedSearchRevealProgress(
+                        firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                        firstVisibleItemScrollOffsetPx =
+                            listState.firstVisibleItemScrollOffset,
+                        revealDistancePx = with(density) {
+                            PlaylistModernDockedSearchSlotHeight.roundToPx()
+                        }
+                    )
+                }
             }
-        }
-        val searchDockedVisualProgress = FastOutSlowInEasing.transform(
-            searchDockedRevealProgress
-        )
-        val dockedSearchProgress = resolvePlaylistDockedSearchSlotProgress(
-            searchVisibilityProgress = searchSlotProgress,
-            dockedRevealProgress = searchDockedRevealProgress
-        )
-        val searchSlotVisible = shouldComposePlaylistSearchSlot(
-            searchVisible = searchVisible,
-            visibilityProgress = dockedSearchProgress
-        )
-        val searchSlotHeight = interpolatePlaylistDp(
-            start = 0.dp,
-            end = PlaylistModernDockedSearchSlotHeight,
-            fraction = dockedSearchProgress
-        )
-        val searchSlotAlpha = FastOutSlowInEasing.transform(dockedSearchProgress)
-        val playlistHeroHeight = interpolatePlaylistDp(
-            start = PlaylistModernHeroHeight,
-            end = PlaylistModernHeroSearchHeight,
-            fraction = searchVisibilityEased
-        )
-        val playlistChromeCollapseProgress by remember(
-            listState,
-            density,
-            playlistHeroHeight
-        ) {
-            derivedStateOf {
-                resolvePlaylistChromeCollapseProgress(
-                    firstVisibleItemIndex = listState.firstVisibleItemIndex,
-                    firstVisibleItemScrollOffsetPx =
-                        listState.firstVisibleItemScrollOffset,
-                    expandedHeroHeightPx = listState.layoutInfo.visibleItemsInfo
-                        .firstOrNull { it.index == 0 }?.size ?: with(density) {
-                        playlistHeroHeight.roundToPx()
-                    }
-                )
+            val searchDockedVisualProgress = FastOutSlowInEasing.transform(
+                searchDockedRevealProgress
+            )
+            val dockedSearchProgress = resolvePlaylistDockedSearchSlotProgress(
+                searchVisibilityProgress = searchSlotProgress,
+                dockedRevealProgress = searchDockedRevealProgress
+            )
+            val searchSlotVisible = shouldComposePlaylistSearchSlot(
+                searchVisible = searchVisible,
+                visibilityProgress = dockedSearchProgress
+            )
+            val searchSlotHeight = interpolatePlaylistDp(
+                start = 0.dp,
+                end = PlaylistModernDockedSearchSlotHeight,
+                fraction = dockedSearchProgress
+            )
+            val searchSlotAlpha = FastOutSlowInEasing.transform(dockedSearchProgress)
+            val playlistHeroHeight = interpolatePlaylistDp(
+                start = PlaylistModernHeroHeight,
+                end = PlaylistModernHeroSearchHeight,
+                fraction = searchVisibilityEased
+            )
+            val playlistChromeCollapseProgress by remember(
+                listState,
+                density,
+                playlistHeroHeight,
+                twoPane
+            ) {
+                derivedStateOf {
+                    if (twoPane) return@derivedStateOf 1f
+                    resolvePlaylistChromeCollapseProgress(
+                        firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                        firstVisibleItemScrollOffsetPx =
+                            listState.firstVisibleItemScrollOffset,
+                        expandedHeroHeightPx = listState.layoutInfo.visibleItemsInfo
+                            .firstOrNull { it.index == 0 }?.size ?: with(density) {
+                            playlistHeroHeight.roundToPx()
+                        }
+                    )
+                }
             }
-        }
-        val playlistChromeVisualProgress =
-            FastOutSlowInEasing.transform(playlistChromeCollapseProgress)
-        val headerSearchAlpha = resolvePlaylistHeaderSearchAlpha(
-            searchVisibilityProgress = searchSlotProgress,
-            chromeCollapseProgress = playlistChromeCollapseProgress
-        )
-        val headerSearchVisible = shouldComposePlaylistSearchSlot(
-            searchVisible = searchVisible,
-            visibilityProgress = headerSearchAlpha
-        )
-        val playlistTopBarColor = resolvePlaylistTranslucentTopBarColor(
-            playlistColor = playlistChromeColor,
-            collapseProgress = playlistChromeVisualProgress
-        )
-        val playlistTopBarContentColor = interpolatePlaylistColor(
-            start = resolvePlaylistSolidTopBarContentColor(playlistChromeColor),
-            end = playlistModernCollapsedTopBarContentColor(),
-            fraction = playlistChromeVisualProgress
-        )
-        val playlistSelectionTopBarColor = resolvePlaylistSelectionTopBarColor(
-            playlistColor = playlistChromeColor,
-            collapseProgress = playlistChromeCollapseProgress
-        )
-        val playlistSelectionTopBarContentColor = resolvePlaylistSelectionTopBarContentColor(
-            playlistColor = playlistChromeColor,
-            collapsedContentColor = playlistModernCollapsedTopBarContentColor(),
-            collapseProgress = playlistChromeCollapseProgress
-        )
-        val dockedSearchGlassColor = playlistModernDockedSearchGlassColor(
-            playlistColor = playlistChromeColor
-        )
-        val searchFieldFocusInHeader =
-            headerSearchVisible && searchDockedRevealProgress < 0.5f
-        val searchFieldComposed = headerSearchVisible || searchSlotVisible
-        LaunchedEffect(
-            showSearch,
-            selectionMode,
-            autoShowKeyboard,
-            searchFieldComposed,
-            searchFieldFocusInHeader
-        ) {
-            if (!searchFieldComposed) return@LaunchedEffect
-            val shouldAutoFocus = shouldRequestPlaylistSearchFocus(
+            val playlistChromeVisualProgress =
+                FastOutSlowInEasing.transform(playlistChromeCollapseProgress)
+            val headerSearchAlpha = resolvePlaylistHeaderSearchAlpha(
+                searchVisibilityProgress = searchSlotProgress,
+                chromeCollapseProgress = if (twoPane) 0f else playlistChromeCollapseProgress
+            )
+            val headerSearchVisible = shouldComposePlaylistSearchSlot(
+                searchVisible = searchVisible,
+                visibilityProgress = headerSearchAlpha
+            )
+            val playlistTopBarColor = resolvePlaylistTranslucentTopBarColor(
+                playlistColor = playlistChromeColor,
+                collapseProgress = playlistChromeVisualProgress
+            )
+            val playlistTopBarContentColor = interpolatePlaylistColor(
+                start = resolvePlaylistSolidTopBarContentColor(playlistChromeColor),
+                end = playlistModernCollapsedTopBarContentColor(),
+                fraction = playlistChromeVisualProgress
+            )
+            val playlistSelectionTopBarColor = resolvePlaylistSelectionTopBarColor(
+                playlistColor = playlistChromeColor,
+                collapseProgress = playlistChromeCollapseProgress
+            )
+            val playlistSelectionTopBarContentColor = resolvePlaylistSelectionTopBarContentColor(
+                playlistColor = playlistChromeColor,
+                collapsedContentColor = playlistModernCollapsedTopBarContentColor(),
+                collapseProgress = playlistChromeCollapseProgress
+            )
+            val dockedSearchGlassColor = playlistModernDockedSearchGlassColor(
+                playlistColor = playlistChromeColor
+            )
+            val searchFieldFocusInHeader =
+                headerSearchVisible && searchDockedRevealProgress < 0.5f
+            val searchFieldComposed = headerSearchVisible || searchSlotVisible
+            LaunchedEffect(
                 showSearch,
                 selectionMode,
-                autoShowKeyboard
-            )
-            val shouldTransferFocus = shouldTransferPlaylistSearchFocus(
-                showSearch = showSearch,
-                selectionMode = selectionMode,
-                searchFieldComposed = searchFieldComposed,
-                searchInputFocused = headerSearchFocused || dockedSearchFocused,
-                searchQuery = searchQuery
-            )
-            if (!shouldAutoFocus && !shouldTransferFocus) return@LaunchedEffect
-            if (shouldAutoFocus) delay(120.milliseconds)
-            searchFocusRequester.requestFocus()
-            keyboardController?.show()
-        }
-        Scaffold(
-            modifier = modifier,
-            containerColor = Color.Transparent,
-            snackbarHost = {
-                NeriSnackbarHost(
-                    hostState = snackbarHostState,
-                    bottomPadding = LocalMiniPlayerHeight.current
-                )
-            },
-            topBar = {
-                if (!selectionMode) {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                header.title,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        navigationIcon = {
-                            HapticIconButton(onClick = onBack) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = stringResource(CoreCommonR.string.action_back)
-                                )
-                            }
-                        },
-                        actions = {
-                            HapticIconButton(onClick = {
-                                val openingSearch = !showSearch
-                                if (!openingSearch) {
-                                    search.onQueryChange("")
-                                    focusManager.clearFocus()
-                                    keyboardController?.hide()
-                                }
-                                search.onVisibleChange(openingSearch)
-                            }) {
-                                Icon(
-                                    Icons.Filled.Search,
-                                    contentDescription = stringResource(CoreCommonR.string.cd_search_songs)
-                                )
-                            }
-
-                            normalActions(playlistTopBarContentColor)
-                        },
-                        windowInsets = WindowInsets.statusBars,
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = playlistTopBarColor,
-                            scrolledContainerColor = playlistTopBarColor,
-                            titleContentColor = playlistTopBarContentColor,
-                            navigationIconContentColor = playlistTopBarContentColor,
-                            actionIconContentColor = playlistTopBarContentColor
-                        )
-                    )
-                } else {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                pluralStringResource(
-                                    AppR.plurals.common_selected_count,
-                                    selectionCount,
-                                    selectionCount
-                                ),
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        navigationIcon = {
-                            HapticIconButton(onClick = onExitSelection) {
-                                Icon(
-                                    Icons.Filled.Close,
-                                    contentDescription = stringResource(CoreCommonR.string.cd_exit_select)
-                                )
-                            }
-                        },
-                        actions = {
-                            selectionActions()
-                        },
-                        windowInsets = WindowInsets.statusBars,
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = playlistSelectionTopBarColor,
-                            scrolledContainerColor = playlistSelectionTopBarColor,
-                            titleContentColor = playlistSelectionTopBarContentColor,
-                            navigationIconContentColor = playlistSelectionTopBarContentColor,
-                            actionIconContentColor = playlistSelectionTopBarContentColor
-                        )
-                    )
-                }
-            }
-        ) { padding ->
-            val miniPlayerHeight = LocalMiniPlayerHeight.current
-            Column(
-                Modifier
-                    .padding(padding)
-                    .fillMaxSize()
+                autoShowKeyboard,
+                searchFieldComposed,
+                searchFieldFocusInHeader
             ) {
-                beforeList(playlistTopBarColor)
-                if (searchSlotVisible) {
-                    PlaylistModernVisualColorsProvider(
-                        coverUrl = headerCover,
-                        offlineMode = offlineMode
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(searchSlotHeight)
-                                .clipToBounds()
-                                .graphicsLayer {
-                                    alpha = searchSlotAlpha
+                if (!searchFieldComposed) return@LaunchedEffect
+                val shouldAutoFocus = shouldRequestPlaylistSearchFocus(
+                    showSearch,
+                    selectionMode,
+                    autoShowKeyboard
+                )
+                val shouldTransferFocus = shouldTransferPlaylistSearchFocus(
+                    showSearch = showSearch,
+                    selectionMode = selectionMode,
+                    searchFieldComposed = searchFieldComposed,
+                    searchInputFocused = headerSearchFocused || dockedSearchFocused,
+                    searchQuery = searchQuery
+                )
+                if (!shouldAutoFocus && !shouldTransferFocus) return@LaunchedEffect
+                if (shouldAutoFocus) delay(120.milliseconds)
+                searchFocusRequester.requestFocus()
+                keyboardController?.show()
+            }
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                containerColor = Color.Transparent,
+                snackbarHost = {
+                    NeriSnackbarHost(
+                        hostState = snackbarHostState,
+                        bottomPadding = LocalMiniPlayerHeight.current
+                    )
+                },
+                topBar = {
+                    if (!selectionMode) {
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    header.title,
+                                    // 标题已在头部大字展示, 顶栏只在头部滚走后淡入, 避免同屏出现两遍
+                                    modifier = Modifier.graphicsLayer {
+                                        alpha = if (twoPane) 0f else playlistChromeVisualProgress
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            navigationIcon = {
+                                HapticIconButton(onClick = onBack) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = stringResource(CoreCommonR.string.action_back)
+                                    )
                                 }
-                        ) {
-                            PlaylistModernStableSearchField(
-                                query = searchQuery,
-                                onQueryChange = search.onQueryChange,
-                                placeholder = stringResource(CoreCommonR.string.search_playlist),
-                                inputState = searchInputState,
-                                onFocusChanged = search.onDockedFocusChanged,
-                                focusRequester = if (searchFieldFocusInHeader) {
-                                    null
-                                } else {
-                                    searchFocusRequester
-                                },
-                                dockedProgress = searchDockedVisualProgress,
-                                glassColor = dockedSearchGlassColor,
-                                modifier = Modifier.graphicsLayer {
-                                    translationY = with(density) {
-                                        ((1f - searchSlotAlpha) * -8.dp.toPx())
+                            },
+                            actions = {
+                                HapticIconButton(onClick = {
+                                    val openingSearch = !showSearch
+                                    if (!openingSearch) {
+                                        search.onQueryChange("")
+                                        focusManager.clearFocus()
+                                        keyboardController?.hide()
                                     }
+                                    search.onVisibleChange(openingSearch)
+                                }) {
+                                    Icon(
+                                        Icons.Filled.Search,
+                                        contentDescription = stringResource(CoreCommonR.string.cd_search_songs)
+                                    )
                                 }
+
+                                normalActions(playlistTopBarContentColor)
+                            },
+                            windowInsets = WindowInsets.statusBars,
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = playlistTopBarColor,
+                                scrolledContainerColor = playlistTopBarColor,
+                                titleContentColor = playlistTopBarContentColor,
+                                navigationIconContentColor = playlistTopBarContentColor,
+                                actionIconContentColor = playlistTopBarContentColor
                             )
-                        }
+                        )
+                    } else {
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    pluralStringResource(
+                                        AppR.plurals.common_selected_count,
+                                        selectionCount,
+                                        selectionCount
+                                    ),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            navigationIcon = {
+                                HapticIconButton(onClick = onExitSelection) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = stringResource(CoreCommonR.string.cd_exit_select)
+                                    )
+                                }
+                            },
+                            actions = {
+                                selectionActions()
+                            },
+                            windowInsets = WindowInsets.statusBars,
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = playlistSelectionTopBarColor,
+                                scrolledContainerColor = playlistSelectionTopBarColor,
+                                titleContentColor = playlistSelectionTopBarContentColor,
+                                navigationIconContentColor = playlistSelectionTopBarContentColor,
+                                actionIconContentColor = playlistSelectionTopBarContentColor
+                            )
+                        )
                     }
                 }
-                Box(Modifier.fillMaxSize()) {
-                    key(header.key) {
+            ) { padding ->
+                val miniPlayerHeight = LocalMiniPlayerHeight.current
+                Column(
+                    Modifier
+                        .padding(padding)
+                        .fillMaxSize()
+                ) {
+                    beforeList(playlistTopBarColor)
+                    if (searchSlotVisible) {
                         PlaylistModernVisualColorsProvider(
                             coverUrl = headerCover,
                             offlineMode = offlineMode
                         ) {
-                            LazyColumn(
-                                state = listState,
-                                contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .then(listModifier)
+                                    .fillMaxWidth()
+                                    .height(searchSlotHeight)
+                                    .clipToBounds()
+                                    .graphicsLayer {
+                                        alpha = searchSlotAlpha
+                                    }
                             ) {
-                                item(
-                                    key = header.headerKey,
-                                    contentType = "playlist_header"
-                                ) {
+                                PlaylistModernStableSearchField(
+                                    query = searchQuery,
+                                    onQueryChange = search.onQueryChange,
+                                    placeholder = stringResource(CoreCommonR.string.search_playlist),
+                                    inputState = searchInputState,
+                                    onFocusChanged = search.onDockedFocusChanged,
+                                    focusRequester = if (searchFieldFocusInHeader) {
+                                        null
+                                    } else {
+                                        searchFocusRequester
+                                    },
+                                    dockedProgress = searchDockedVisualProgress,
+                                    glassColor = dockedSearchGlassColor,
+                                    modifier = Modifier.graphicsLayer {
+                                        translationY = with(density) {
+                                            ((1f - searchSlotAlpha) * -8.dp.toPx())
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    Box(Modifier.fillMaxSize()) {
+                        key(header.key) {
+                            PlaylistModernVisualColorsProvider(
+                                coverUrl = headerCover,
+                                offlineMode = offlineMode
+                            ) {
+                                val heroBlock: @Composable () -> Unit = {
                                     PlaylistModernHeroHeader(
                                         displayName = header.title,
                                         coverUrl = headerCover,
                                         subtitle = header.subtitle,
                                         offlineMode = offlineMode,
                                         height = playlistHeroHeight,
+                                        metaItems = header.metaItems,
                                         actionsRevealProgress = searchVisibilityEased,
                                         actions = if (headerSearchVisible) {
                                             {
@@ -460,11 +470,7 @@ internal fun PlaylistModernDetailFrame(
                                         }
                                     )
                                 }
-
-                                item(
-                                    key = LOCAL_PLAYLIST_ACTIONS_KEY,
-                                    contentType = "playlist_actions"
-                                ) {
+                                val actionsBlock: @Composable () -> Unit = {
                                     PlaylistModernActionSheet(
                                         coverUrl = headerCover,
                                         offlineMode = offlineMode,
@@ -473,33 +479,64 @@ internal fun PlaylistModernDetailFrame(
                                         playbackActions()
                                     }
                                 }
+                                PlaylistTwoPaneBody(
+                                    twoPane = twoPane,
+                                    modifier = Modifier.fillMaxSize(),
+                                    pane = {
+                                        heroBlock()
+                                        actionsBlock()
+                                    }
+                                ) {
+                                    LazyColumn(
+                                        state = listState,
+                                        contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .then(listModifier)
+                                    ) {
+                                        // 两栏时头部和操作区搬进侧栏, 这里留空位保住索引, 定位和恢复滚动仍按固定偏移计算
+                                        item(
+                                            key = header.headerKey,
+                                            contentType = "playlist_header"
+                                        ) {
+                                            if (twoPane) PlaylistTwoPaneListTopGap() else heroBlock()
+                                        }
 
-                                content()
+                                        item(
+                                            key = LOCAL_PLAYLIST_ACTIONS_KEY,
+                                            contentType = "playlist_actions"
+                                        ) {
+                                            if (!twoPane) actionsBlock()
+                                        }
+
+                                        content()
+                                    }
+                                }
                             }
                         }
-                    }
-                    if (onLocatePlaying != null) {
-                        HapticFloatingActionButton(
-                            onClick = onLocatePlaying,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(
-                                    bottom = 16.dp + miniPlayerHeight,
-                                    end = 16.dp
+                        if (onLocatePlaying != null) {
+                            HapticFloatingActionButton(
+                                onClick = onLocatePlaying,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(
+                                        bottom = 16.dp + miniPlayerHeight,
+                                        end = 16.dp
+                                    )
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                    contentDescription = stringResource(CoreCommonR.string.cd_locate_playing)
                                 )
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                contentDescription = stringResource(CoreCommonR.string.cd_locate_playing)
-                            )
+                            }
                         }
+
+
                     }
-
-
                 }
-            }
 
-            overlays()
+                overlays()
+            }
         }
     }
 }

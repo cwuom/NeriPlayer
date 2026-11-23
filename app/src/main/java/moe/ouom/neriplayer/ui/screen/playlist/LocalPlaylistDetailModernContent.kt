@@ -250,6 +250,7 @@ internal fun LocalPlaylistDetailModernContent(
 
         val deletionInProgress = deletingSongCount > 0 ||
                 isDownloadedSongDeletionRunning(deleteProgress)
+        val playCountText = formatPlayCount(context, playlistPlayCount)
         PlaylistModernDetailFrame(
             header = PlaylistModernDetailHeader(
                 key = playlistId,
@@ -260,10 +261,11 @@ internal fun LocalPlaylistDetailModernContent(
                     CoreCommonR.string.local_playlist_total_duration,
                     totalDurationText,
                     tabSongs.size,
-                    formatPlayCount(context, playlistPlayCount)
+                    playCountText
                 ),
                 offlineMode = offlineMode,
-                hasCustomBackground = hasCustomBackground
+                hasCustomBackground = hasCustomBackground,
+                metaItems = localPlaylistHeroMeta(totalDurationText, tabSongs.size, playCountText)
             ),
             search = PlaylistModernDetailSearch(
                 visible = showSearch,
@@ -521,6 +523,10 @@ internal fun LocalPlaylistDetailModernContent(
                         },
                         onExportToLocalPlaylist = {
                             showExportAllSheet = true
+                        },
+                        onEnterSelection = {
+                            selectedKeysState.value = emptySet()
+                            selectionMode = true
                         }
                     )
                 }
