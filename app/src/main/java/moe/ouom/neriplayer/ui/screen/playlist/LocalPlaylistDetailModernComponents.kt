@@ -607,6 +607,11 @@ private fun PlaylistHeroVisualColors?.readableAccentOr(fallback: Color): Color =
 
 private fun PlaylistHeroVisualColors?.backgroundOr(fallback: Color): Color = this?.background ?: fallback
 
+/** 侧栏卡片里叠在头部色上的白底控件, 用头部色做选中文字 */
+@Composable
+internal fun playlistHeroBackgroundColor(): Color =
+    LocalPlaylistHeroVisualColors.current.backgroundOr(MaterialTheme.colorScheme.inverseSurface)
+
 private fun Modifier.focusRequesterIfPresent(focusRequester: FocusRequester?): Modifier =
     if (focusRequester == null) this else focusRequester(focusRequester)
 
