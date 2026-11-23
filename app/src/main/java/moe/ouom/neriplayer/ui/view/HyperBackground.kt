@@ -57,7 +57,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.animation.AMBIENT_ANIMATION_FRAME_INTERVAL_NANOS
 import moe.ouom.neriplayer.ui.animation.isNewAmbientFrameSlot
@@ -183,7 +182,7 @@ fun HyperBackground(
     }
     val painter = painterState.value
 
-    var hostView by remember { mutableStateOf<View?>(null) }
+    var hostView by remember { mutableStateOf<HyperBackgroundShaderView?>(null) }
     var shaderInitialized by remember(painter, hostView, currentIsDark) {
         mutableStateOf(false)
     }
@@ -195,14 +194,11 @@ fun HyperBackground(
         mutableStateOf<DynamicBackgroundShaderPalette?>(null)
     }
 
+    // 宿主本身透明, 直接用 Paint 画 shader 与 RenderEffect 输出一致, 省掉全屏离屏层和逐帧新建 RenderEffect
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
-            View(ctx).apply {
-                setWillNotDraw(false)
-                setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                hostView = this
-            }
+            HyperBackgroundShaderView(ctx).also { hostView = it }
         },
         update = { v ->
             hostView = v
@@ -213,10 +209,7 @@ fun HyperBackground(
         val view = hostView
         onDispose {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                runCatching { view?.setRenderEffect(null) }
-                    .onFailure { error ->
-                        NPLogger.w("NERI-HyperBg", "clear render effect failed", error)
-                    }
+                view?.effectPainter = null
             }
         }
     }
@@ -323,8 +316,7 @@ fun HyperBackground(
                     painter.setSaturateOffset(palette.saturateOffset)
                 }
                 activeShaderPalette = restoredPalette
-                v.setRenderEffect(painter.renderEffect)
-                v.postInvalidateOnAnimation()
+                v.effectPainter = painter
                 shaderInitialized = true
             } catch (_: Throwable) { return@LaunchedEffect }
         }
@@ -382,7 +374,6 @@ fun HyperBackground(
                                 lastRenderHeight = height
                             }
                             painter.updateMaterials()
-                            v.setRenderEffect(painter.renderEffect)
                             // 在本帧内失效；postInvalidateOnAnimation 会再排一帧，整窗口出帧翻倍
                             v.invalidate()
                         }
