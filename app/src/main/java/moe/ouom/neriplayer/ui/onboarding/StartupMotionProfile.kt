@@ -208,8 +208,8 @@ internal fun startupMotionConfigFor(
                 blurSupported -> AdvancedBlurQuality.High
                 else -> deviceDefaultQuality
             },
-            // 透镜在天玑兼容策略下只随高画质启用, 超低画质时设置值与实际效果保持一致
-            liquidGlass = blurSupported && !spec.dimensityBlurCompatibility,
+            // 两套天玑识别规则覆盖的型号不同, 任一命中都按天玑处理, 超低画质下不开透镜
+            liquidGlass = blurSupported && !spec.dimensityDevice && !spec.dimensityBlurCompatibility,
             enhancedVisualEffects = true,
             nowPlayingDynamicBackground = true,
             nowPlayingAudioReactive = true,

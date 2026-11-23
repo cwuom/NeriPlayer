@@ -144,6 +144,16 @@ class StartupMotionProfileTest {
     }
 
     @Test
+    fun `immersive keeps the lens off when only the newer dimensity rule matches`() {
+        // MTK6893 这类型号只被新规则识别, 旧的兼容策略识别不到
+        val device = spec(socClass = StartupSocClass.Flagship, ramGb = 16)
+            .copy(dimensityDevice = true, dimensityBlurCompatibility = false)
+        val immersive = startupMotionConfigFor(StartupMotionPreset.Immersive, device)
+        assertEquals(AdvancedBlurQuality.UltraLow, immersive.advancedBlurQuality)
+        assertFalse(immersive.liquidGlass)
+    }
+
+    @Test
     fun `light turns every costly effect off`() {
         val config = startupMotionConfigFor(StartupMotionPreset.Light, spec())
         assertFalse(config.advancedBlur)

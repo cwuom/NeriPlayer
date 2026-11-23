@@ -10,6 +10,11 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.layout.layout
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import java.util.Calendar
+import androidx.compose.runtime.produceState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalConfiguration
@@ -158,11 +163,41 @@ private val DigitBeforeCjk = Regex("(?<=[0-9])(?=[\\u4e00-\\u9fff])")
 internal fun spaceCjkAndDigits(text: String): String =
     text.replace(CjkBeforeDigit, " ").replace(DigitBeforeCjk, " ")
 
+/** 距下一个整点的毫秒数; 问候按小时变, 日期在午夜变, 整点刷新就够了 */
+internal fun homeGreetingNextRefreshDelayMs(nowMs: Long): Long {
+    val next = Calendar.getInstance().apply {
+        timeInMillis = nowMs
+        add(Calendar.HOUR_OF_DAY, 1)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    return (next.timeInMillis - nowMs).coerceAtLeast(1L)
+}
+
+/**
+ * 停在首页时问候也要跟着时间走: 回到前台先刷新一次, 之后每个整点再刷新;
+ * 页面暂停或离开组合时协程随之取消
+ */
+@Composable
+private fun rememberHomeGreetingClock(): Calendar {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val nowMs by produceState(System.currentTimeMillis(), lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                value = System.currentTimeMillis()
+                delay(homeGreetingNextRefreshDelayMs(value))
+            }
+        }
+    }
+    return remember(nowMs) { Calendar.getInstance().apply { timeInMillis = nowMs } }
+}
+
 /** "晚上好～ · 11 月 22 日 星期日"; 语气在一次会话内固定, 不会每次重组都变 */
 @Composable
 internal fun rememberHomeGreeting(): String {
     val locale = LocalConfiguration.current.locales[0]
-    val now = Calendar.getInstance()
+    val now = rememberHomeGreetingClock()
     val period = homeGreetingPeriod(now.get(Calendar.HOUR_OF_DAY))
     val toneSeed = rememberSaveable { (0..2).random() }
     val greeting = stringResource(
