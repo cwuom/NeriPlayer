@@ -304,13 +304,15 @@ private fun StartupOptionColumn(content: @Composable () -> Unit) {
     val twoPane = LocalStartupOnboardingTwoPane.current
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         if (twoPane && maxWidth >= StartupOptionTwoColumnMinWidth) {
+            // 选项卡里含 BoxWithConstraints, FlowRow 的权重项会走固有尺寸测量而崩溃, 改用算好的列宽
+            val columnWidth = (maxWidth - StartupOptionColumnSpacing) / 2
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 maxItemsInEachRow = 2,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                horizontalArrangement = Arrangement.spacedBy(StartupOptionColumnSpacing),
+                verticalArrangement = Arrangement.spacedBy(StartupOptionColumnSpacing)
             ) {
-                CompositionLocalProvider(LocalStartupOptionItemModifier provides Modifier.weight(1f)) {
+                CompositionLocalProvider(LocalStartupOptionItemModifier provides Modifier.width(columnWidth)) {
                     content()
                 }
             }
@@ -321,6 +323,7 @@ private fun StartupOptionColumn(content: @Composable () -> Unit) {
 }
 
 private val StartupOptionTwoColumnMinWidth = 600.dp
+private val StartupOptionColumnSpacing = 14.dp
 
 private val LocalStartupOptionItemModifier = staticCompositionLocalOf<Modifier> { Modifier }
 

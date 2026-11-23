@@ -52,7 +52,7 @@
     <string name="library_create_playlist_default">New Playlist</string>
     <string name="library_name_reserved">This name is reserved for \"%s\", please choose another name~</string>
     <string name="library_name_exists">A playlist with this name already exists, please choose another name</string>
-    <string name="library_create_new">+ Create Playlist</string>
+    <string name="library_create_new">Create playlist</string>
     <string name="library_qqmusic_coming">Coming Soon</string>
     <string name="library_netease_tab_playlists">Playlists</string>
     <string name="library_netease_tab_albums">Albums</string>

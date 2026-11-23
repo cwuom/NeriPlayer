@@ -11,8 +11,8 @@ import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 
 /**
- * Hosts a search field. Over a custom background in the clean style the field becomes a glass
- * region so the advanced blur reaches it; elsewhere it is a plain box with no extra cost.
+ * Hosts a search field. Over a custom background the field becomes a glass region in both styles,
+ * blurred when advanced blur is on and a translucent tint otherwise; on a plain canvas it is a box
  */
 @Composable
 fun NeriSearchFieldGlass(
@@ -20,7 +20,7 @@ fun NeriSearchFieldGlass(
     shape: Shape = NeriDesign.tokens.groupShape,
     content: @Composable () -> Unit
 ) {
-    if (NeriDesign.isClean && LocalHasCustomBackground.current) {
+    if (LocalHasCustomBackground.current) {
         AdvancedGlassSurface(
             role = AdvancedGlassRole.ScreenTopTab,
             modifier = modifier,

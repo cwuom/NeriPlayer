@@ -50,7 +50,7 @@
     <string name="library_create_playlist_default">新建歌单</string>
     <string name="library_name_reserved">该名称已保留为\"%s\"，请换一个名称哦~</string>
     <string name="library_name_exists">已存在同名歌单，请换一个名称</string>
-    <string name="library_create_new">＋ 新建歌单</string>
+    <string name="library_create_new">新建歌单</string>
     <string name="library_qqmusic_coming">QQ音乐功能开发中…</string>
     <string name="library_netease_tab_playlists">歌单</string>
     <string name="library_netease_tab_albums">专辑</string>

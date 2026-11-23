@@ -151,21 +151,23 @@ private class HomeMajorRow(
     val children: HomeSubSections? = null
 )
 
+// 子栏目都是网易云专属; 国际化时首页换成 YouTube Music 整块货架, 展开它们只会得到无效开关
 private fun AppHomeCardsSettingsState.homeRows(copy: SettingsHomeCardCopy, international: Boolean) = mapOf(
     HomeMajorSectionIds.CONTINUE to HomeMajorRow(
         CoreCommonR.string.player_continue, Icons.Outlined.History, showHomeContinueCard
     ),
     HomeMajorSectionIds.RADAR to HomeMajorRow(
         copy.radarLabelRes, homeRadarIcon(international), showHomeRadarCard,
-        HomeSubSections(HomeRadarSubSectionIds.DEFAULT_ORDER, radarOrder, radarHidden)
+        HomeSubSections(HomeRadarSubSectionIds.DEFAULT_ORDER, radarOrder, radarHidden).takeUnless { international }
     ),
     HomeMajorSectionIds.TRENDING to HomeMajorRow(
         copy.trendingLabelRes, Icons.Outlined.Bolt, showHomeTrendingCard,
-        HomeSubSections(HomeTrendingSubSectionIds.DEFAULT_ORDER, trendingOrder, trendingHidden)
+        HomeSubSections(HomeTrendingSubSectionIds.DEFAULT_ORDER, trendingOrder, trendingHidden).takeUnless { international }
     ),
     HomeMajorSectionIds.RECOMMENDED to HomeMajorRow(
         copy.recommendedLabelRes, Icons.Outlined.Star, showHomeRecommendedCard,
         HomeSubSections(HomeRecommendedSubSectionIds.DEFAULT_ORDER, recommendedOrder, recommendedHidden)
+            .takeUnless { international }
     ),
     HomeMajorSectionIds.BILIBILI to HomeMajorRow(
         CoreCommonR.string.settings_home_card_bilibili, Icons.Outlined.LiveTv, showHomeBilibiliCard

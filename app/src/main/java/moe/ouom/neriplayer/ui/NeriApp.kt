@@ -219,7 +219,6 @@ import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.navigation.PredictiveBackPreviewGate
 import moe.ouom.neriplayer.ui.theme.reveal.shouldReverseThemeReveal
 import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
-import moe.ouom.neriplayer.ui.screen.tab.home.LocalHomeOpenSearch
 import moe.ouom.neriplayer.ui.theme.reveal.AppThemeRevealOverlayHost
 import moe.ouom.neriplayer.ui.theme.reveal.THEME_REVEAL_WATCHDOG_DELAY_MILLIS
 import moe.ouom.neriplayer.ui.theme.reveal.appThemeRevealPresentation
@@ -1490,9 +1489,6 @@ private fun NeriAppContent(
             @Composable
             fun RenderMainTabRoute(route: String) {
                 val homeContent: @Composable () -> Unit = {
-                    CompositionLocalProvider(
-                        LocalHomeOpenSearch provides { navigateToMainTab(Destinations.Explore.route) }
-                    ) {
                     HomeHostScreen(
                         showContinueCard = showHomeContinueCard,
                         showTrendingCard = showHomeTrendingCard,
@@ -1516,7 +1512,6 @@ private fun NeriAppContent(
                             navigationSceneRenderer.RenderMainTabNavigationScene(sceneMotion, sceneDepth, sceneContent)
                         }
                     )
-                }
                 }
                 val exploreContent: @Composable () -> Unit = {
                     ExploreHostScreen(

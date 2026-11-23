@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.playback.visual
 
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.geometry.Offset
 import android.content.Context
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -372,6 +374,13 @@ private fun vignetteAlpha(isDark: Boolean): Float = if (isDark) 0.12f else 0.25f
 
 private fun whiteMaskAlpha(isDark: Boolean): Float = if (isDark) 0f else 0.05f
 
+private const val BackdropAuraRadiusFraction = 0.62f
+private const val BackdropAuraCenterYFraction = 0.24f
+
+internal fun backdropAuraLift(isDark: Boolean): Float = if (isDark) 0.14f else 0.32f
+
+internal fun backdropFloorShade(isDark: Boolean): Float = if (isDark) 0.28f else 0.06f
+
 internal data class BackdropAccentRequest(
     val coverUrl: String?,
     val songKey: String?,
@@ -462,6 +471,24 @@ private fun AccentBackdropSurface(target: Color?, isDark: Boolean, modifier: Mod
             .background(bgColor)
             .drawWithContent {
                 drawContent()
+                // 封面后方的柔光与底部压暗只用静态渐变, 不引入模糊或逐帧动画
+                val auraRadius = size.maxDimension * BackdropAuraRadiusFraction
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            lerp(bgColor, Color.White, backdropAuraLift(isDark)),
+                            bgColor.copy(alpha = 0f)
+                        ),
+                        center = Offset(size.width / 2f, size.height * BackdropAuraCenterYFraction),
+                        radius = auraRadius
+                    )
+                )
+                drawRect(
+                    Brush.verticalGradient(
+                        0.55f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = backdropFloorShade(isDark))
+                    )
+                )
                 drawRect(
                     Brush.verticalGradient(
                         colors = listOf(
