@@ -34,6 +34,7 @@ import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
 import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.lyrics.MIN_LYRIC_FONT_SCALE
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -254,20 +255,29 @@ class StartupOnboardingExtrasComposeTest {
     }
 
     @Test
+    @Config(sdk = [35, 36], qualifiers = "w1280dp-h800dp-land-mdpi")
     fun `tablet landscape step keeps only options that apply beside the lyrics and points to portrait`() {
         val changes = mutableListOf<PlaybackControlLayoutPreferences>()
         val scales = mutableListOf<Float>()
         var previewRequests = 0
         setStep {
-            StartupNowPlayingLandscapeContent(
-                preferences = PlaybackControlLayoutPreferences(),
-                lyricFontScale = 1f,
-                onLyricFontScaleChange = { scales += it },
-                onPreferencesChange = { changes += it },
-                onOpenPreview = { previewRequests += 1 }
-            )
+            StartupOnboardingLayout(header = {}, actions = {}) {
+                StartupNowPlayingLandscapeContent(
+                    preferences = PlaybackControlLayoutPreferences(),
+                    lyricFontScale = 1f,
+                    onLyricFontScaleChange = { scales += it },
+                    onPreferencesChange = { changes += it },
+                    onOpenPreview = { previewRequests += 1 }
+                )
+            }
         }
 
+        val controls = composeRule.onNodeWithText(string(AppR.string.onboarding_controls_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        val lyrics = composeRule.onNodeWithText(string(AppR.string.onboarding_landscape_lyrics_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(controls.top, lyrics.top, 1f)
+        assertTrue(controls.right < lyrics.left)
         composeRule.onNodeWithTag(StartupLandscapePortraitHintTag).assertExists()
         composeRule.onNodeWithText(string(AppR.string.onboarding_landscape_portrait_hint_title)).assertExists()
         // 横屏播放页里不生效的选项不能出现
