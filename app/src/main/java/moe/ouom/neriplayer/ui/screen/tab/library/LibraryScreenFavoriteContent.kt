@@ -114,6 +114,8 @@ import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.platform.youtube.settings.visiblePlaylistSongs
 import moe.ouom.neriplayer.R as AppR
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -132,7 +134,19 @@ internal fun FavoritePlaylistList(
 ) {
     val context = LocalContext.current
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
-    val favorites by favoriteRepo.favorites.collectAsStateWithLifecycle()
+    val storedFavorites by favoriteRepo.favorites.collectAsStateWithLifecycle()
+    val contentPrefs by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
+    val favorites = remember(storedFavorites, contentPrefs.hideExplicit, contentPrefs.hideMusicVideos) {
+        if (!contentPrefs.hideExplicit && !contentPrefs.hideMusicVideos) storedFavorites else storedFavorites.map { favorite ->
+            if (favorite.source != "youtubeMusic") return@map favorite
+            val visible = contentPrefs.visiblePlaylistSongs(favorite.songs)
+            val hiddenCount = favorite.songs.size - visible.size
+            if (hiddenCount == 0) favorite else favorite.copy(
+                songs = visible,
+                trackCount = (favorite.trackCount - hiddenCount).coerceAtLeast(visible.size)
+            )
+        }
+    }
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val scope = rememberCoroutineScope()
     val importState by importViewModel.uiState.collectAsStateWithLifecycle()

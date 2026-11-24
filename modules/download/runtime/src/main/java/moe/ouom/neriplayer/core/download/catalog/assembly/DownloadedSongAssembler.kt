@@ -72,6 +72,7 @@ internal class DownloadedSongAssembler(
             sourceChannelId = metadata.channelId,
             sourceAudioId = metadata.audioId,
             sourceSubAudioId = metadata.subAudioId,
+            youtubeContentLabel = metadata.youtubeContentLabel,
             sourcePlaylistContextId = metadata.playlistContextId,
             localFileName = file.logicalName
         ).withRecoveredRemoteSourceStableKey()

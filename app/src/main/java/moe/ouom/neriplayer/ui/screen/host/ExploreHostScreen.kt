@@ -151,6 +151,8 @@ internal fun resolveExploreSelectedDetailBackTarget(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ExploreHostScreen(
+    onOpenYouTubePlaylist: (YouTubeMusicPlaylist) -> Unit,
+    onOpenYouTubeCreator: (YouTubeMusicCreatorSummary) -> Unit,
     onBiliUploaderClick: (BiliUploaderSummary) -> Unit,
     offlineMode: Boolean = false,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
@@ -522,6 +524,8 @@ internal fun ExploreHostScreen(
                                 YouTubeMusicCreatorItemsScreen(
                                     section = current.section,
                                     creatorName = current.creator.title,
+                                    onPlaylistClick = onOpenYouTubePlaylist,
+                                    onCreatorClick = onOpenYouTubeCreator,
                                     onBack = ::closeSelectedDetail,
                                     onSongClick = onSongClick,
                                     offlineMode = offlineMode

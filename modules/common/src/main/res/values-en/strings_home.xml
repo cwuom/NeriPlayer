@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Home -->
+    <string name="international_home_spotlight">Spotlight</string>
+    <string name="international_home_feed">Your recommendations</string>
+    <string name="international_home_sections_desc">Reorder or hide international Home sections. Spotlight and recommendations require YouTube.</string>
     <string name="recommend_for_you">For You</string>
     <string name="recommend_refresh">Refresh</string>
     <string name="recommend_trending">Trending</string>

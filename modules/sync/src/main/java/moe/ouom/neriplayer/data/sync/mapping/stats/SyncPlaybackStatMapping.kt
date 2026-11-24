@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
+import moe.ouom.neriplayer.data.model.sync.validRecordedPlaybackDate
 import moe.ouom.neriplayer.data.sync.policy.sanitizeCoverUrlForSync
 
 object SyncPlaybackStatMapping {
@@ -54,6 +55,7 @@ object SyncPlaybackStatMapping {
         val normalizedShards = normalizeCounterShards(counterShards)
         return SyncPlaybackStatBucket(
             dayStartAt = bucket.dayStartAt,
+            recordedLocalDate = bucket.recordedLocalDate,
             identityKey = bucket.identityKey,
             name = bucket.name,
             artist = bucket.artist,
@@ -107,6 +109,7 @@ object SyncPlaybackStatMapping {
         }
         return bucket.copy(
             dayStartAt = bucket.dayStartAt.coerceAtLeast(0L),
+            recordedLocalDate = bucket.recordedLocalDate.validRecordedPlaybackDate(),
             totalListenMs = bucket.totalListenMs.coerceAtLeast(0L),
             playCount = bucket.playCount.coerceAtLeast(0),
             lastPlayedAt = lastPlayedAt,
@@ -139,7 +142,7 @@ object SyncPlaybackStatMapping {
             a.firstPlayedAt == b.firstPlayedAt && a.counterBaseListenMs == b.counterBaseListenMs && a.counterBasePlayCount == b.counterBasePlayCount
 
     fun sameMetadata(a: SyncPlaybackStatBucket, b: SyncPlaybackStatBucket): Boolean =
-        a.dayStartAt == b.dayStartAt &&
+        a.dayStartAt == b.dayStartAt && a.recordedLocalDate == b.recordedLocalDate &&
             sameBucketIdentity(a, b) &&
             sameBucketDescription(a, b) &&
             sameBucketCounters(a, b) &&

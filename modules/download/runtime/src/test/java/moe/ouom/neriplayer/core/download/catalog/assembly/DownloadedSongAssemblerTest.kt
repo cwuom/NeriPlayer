@@ -2,7 +2,14 @@ package moe.ouom.neriplayer.core.download.catalog.assembly
 
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.catalog.fallbackDownloadedSongId
+import moe.ouom.neriplayer.core.download.catalog.deserializeDownloadedSongsCatalog
+import moe.ouom.neriplayer.core.download.catalog.serializeDownloadedSongsCatalog
+import moe.ouom.neriplayer.core.download.policy.toPlaybackSongItem
+import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentPreferences
+import moe.ouom.neriplayer.platform.youtube.settings.visiblePlaylistSongs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -178,6 +185,31 @@ class DownloadedSongAssemblerTest {
             throw AssertionError("complete metadata must not inspect local source")
         }.assemble()
         assertEquals("123|netease|", song.stableKey)
+    }
+
+    @Test
+    fun `downloaded files filter explicit tracks and music videos after rescanning and reopening the catalog`() {
+        val labels = listOf(
+            null, YouTubeContentLabel.EXPLICIT, YouTubeContentLabel.MUSIC_VIDEO, YouTubeContentLabel.EXPLICIT_MUSIC_VIDEO
+        )
+        val downloads = labels.mapIndexed { index, label ->
+            val sourceUri = "ytmusic://video/source-$index"
+            val metadata = completeMetadata.copy(
+                stableKey = "${index + 1}|youtube_music|$sourceUri",
+                identityAlbum = "youtube_music", mediaUri = sourceUri, youtubeContentLabel = label
+            )
+            val json = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataToJson(metadata)
+            assembler(ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(json)).assemble()
+        }
+        val catalog = serializeDownloadedSongsCatalog("root", downloads)
+        val playback = requireNotNull(deserializeDownloadedSongsCatalog(catalog, "root")).map { it.toPlaybackSongItem() }
+
+        assertEquals(labels, playback.map { it.youtubeContentLabel })
+        assertEquals(listOf(file.playbackUri), playback.map { it.mediaUri }.distinct())
+        val hideExplicit = YouTubeContentPreferences(hideExplicit = true)
+        val hideVideos = YouTubeContentPreferences(hideMusicVideos = true)
+        assertEquals(listOf(playback[0], playback[2]), hideExplicit.visiblePlaylistSongs(playback))
+        assertEquals(listOf(playback[0], playback[1]), hideVideos.visiblePlaylistSongs(playback))
     }
 
     private fun assembler(

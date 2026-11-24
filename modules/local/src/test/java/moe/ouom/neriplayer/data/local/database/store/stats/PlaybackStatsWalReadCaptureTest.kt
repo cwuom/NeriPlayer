@@ -54,7 +54,8 @@ class PlaybackStatsWalReadCaptureTest {
         assertEquals(listOf("a", "b"), tracks.map { it.identityKey })
         assertEquals(listOf(listOf(shard("phone")), emptyList()), tracks.map { it.counterShards })
         assertEquals(listOf(DAY to "a", DAY to "b", 2 * DAY to "a"), buckets.map { it.dayStartAt to it.identityKey })
-        assertEquals(listOf(listOf(shard("tablet")), emptyList(), listOf(shard("phone"))), buckets.map { it.counterShards })
+        assertEquals("1970-01-02", buckets.first().recordedLocalDate)
+        assertEquals(listOf(listOf(shard("tablet").copy(recordedLocalDate = "1970-01-02")), emptyList(), listOf(shard("phone"))), buckets.map { it.counterShards })
     }
 
     @Test
@@ -105,15 +106,18 @@ class PlaybackStatsWalReadCaptureTest {
         val store = promotedStore(TRUNCATE_NAME, RoomDatabase.JournalMode.TRUNCATE)
         val capture = PlaybackStatsRoomExportCapture.open(store)
         val tracks = mutableListOf<String>()
+        val buckets = mutableListOf<SyncPlaybackStatBucket>()
 
         try {
             assertFalse(capture is PlaybackStatsWalReadCapture)
-            capture.export(context, { page -> tracks += page.map { it.identityKey } }, {})
+            capture.export(context, { page -> tracks += page.map { it.identityKey } }, { buckets += it })
         } finally {
             capture.release()
         }
 
         assertEquals(listOf("a", "b"), tracks)
+        assertEquals("1970-01-02", buckets.first().recordedLocalDate)
+        assertEquals("1970-01-02", buckets.first().counterShards.single().recordedLocalDate)
     }
 
     @Test
@@ -145,11 +149,11 @@ class PlaybackStatsWalReadCaptureTest {
         return store.apply {
             importLegacyAndPromote(
                 stats = listOf(stat("a"), stat("b")),
-                dailyStats = listOf(bucket(DAY, "a"), bucket(DAY, "b"), bucket(2 * DAY, "a")),
+                dailyStats = listOf(bucket(DAY, "a").copy(recordedLocalDate = "1970-01-02"), bucket(DAY, "b"), bucket(2 * DAY, "a")),
                 counterSnapshot = PlaybackStatsSyncCounterSnapshot(
                     trackShardsByIdentity = mapOf("a" to listOf(shard("phone"))),
                     dailyShardsByBucketKey = mapOf(
-                        PlaybackStatsSyncCounterSnapshot.dailyCounterKey(DAY, "a") to listOf(shard("tablet")),
+                        PlaybackStatsSyncCounterSnapshot.dailyCounterKey(DAY, "a") to listOf(shard("tablet").copy(recordedLocalDate = "1970-01-02")),
                         PlaybackStatsSyncCounterSnapshot.dailyCounterKey(2 * DAY, "a") to listOf(shard("phone"))
                     )
                 ),

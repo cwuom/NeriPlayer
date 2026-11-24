@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.data.local.database
 
-import androidx.room.migration.Migration
 import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
@@ -24,13 +23,34 @@ class DatabaseUpgradeInstrumentedTest {
     )
 
     @Test
+    fun version22PreservesLegacyHourTotalsWithoutInventingIntervals() {
+        val databaseName = "database-upgrade-listening-intervals-v22"
+        helper.createDatabase(databaseName, 22).use { database ->
+            database.execSQL("INSERT INTO playback_stat_hour VALUES (5400000, 'track', 7, 900000, 0)")
+        }
+        helper.runMigrationsAndValidate(databaseName, 23, true, NeriUserDataDatabase.MIGRATION_22_23)
+            .use { database ->
+                database.query("SELECT hour_start_at, local_hour, listened_ms FROM playback_stat_hour").use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(5400000L, cursor.getLong(0))
+                    assertEquals(7, cursor.getInt(1))
+                    assertEquals(900000L, cursor.getLong(2))
+                }
+                database.query("SELECT COUNT(*) FROM playback_listening_interval").use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(0, cursor.getInt(0))
+                }
+            }
+    }
+
+    @Test
     fun everyHistoricalUpgradeReachesTheCurrentRoomSchema() {
         for (version in 1 until NeriUserDataDatabase.FINAL_DB_VERSION) {
             val databaseName = "database-upgrade-from-v$version"
             helper.createDatabase(databaseName, version).close()
             helper.runMigrationsAndValidate(
                 databaseName, NeriUserDataDatabase.FINAL_DB_VERSION, false,
-                *allMigrations()
+                *NeriUserDataDatabase.allMigrations()
             ).use { database ->
                 assertOnlyDeclaredAndUpgradeTables(
                     database,
@@ -52,7 +72,7 @@ class DatabaseUpgradeInstrumentedTest {
         }
         helper.runMigrationsAndValidate(
             "database-upgrade-from-v15", NeriUserDataDatabase.FINAL_DB_VERSION, false,
-            *allMigrations()
+            *NeriUserDataDatabase.allMigrations()
         ).use { database ->
             assertOnlyDeclaredAndUpgradeTables(database)
             database.query("SELECT payload_json FROM legacy_download_upgrade_payload WHERE stable_key = 'song'").use { cursor ->
@@ -114,10 +134,7 @@ class DatabaseUpgradeInstrumentedTest {
         }
         helper.runMigrationsAndValidate(
             "database-upgrade-from-v17", NeriUserDataDatabase.FINAL_DB_VERSION, true,
-            NeriUserDataDatabase.MIGRATION_17_18,
-            NeriUserDataDatabase.MIGRATION_18_19,
-            NeriUserDataDatabase.MIGRATION_19_20,
-            NeriUserDataDatabase.MIGRATION_20_21
+            *NeriUserDataDatabase.allMigrations()
         ).use { database ->
             database.query("SELECT state, bytes_written FROM download_operation WHERE operation_id = 'operation'").use { cursor ->
                 check(cursor.moveToFirst())
@@ -157,8 +174,9 @@ class DatabaseUpgradeInstrumentedTest {
             )
         }
 
-        helper.runMigrationsAndValidate(databaseName, NeriUserDataDatabase.FINAL_DB_VERSION, true,
-            NeriUserDataDatabase.MIGRATION_20_21).use { database ->
+        helper.runMigrationsAndValidate(
+            databaseName, NeriUserDataDatabase.FINAL_DB_VERSION, true, *NeriUserDataDatabase.allMigrations()
+        ).use { database ->
             database.query("SELECT name, media_uri, resume_position_ms, lyric_sync_payload_json, " +
                 "explicit_local_source_reference FROM play_history WHERE id = 42").use { cursor ->
                 check(cursor.moveToFirst())
@@ -185,26 +203,40 @@ class DatabaseUpgradeInstrumentedTest {
         }
     }
 
-    private fun allMigrations(): Array<Migration> = arrayOf(
-        NeriUserDataDatabase.MIGRATION_1_2,
-        NeriUserDataDatabase.MIGRATION_2_3,
-        NeriUserDataDatabase.MIGRATION_3_4,
-        NeriUserDataDatabase.MIGRATION_4_5,
-        NeriUserDataDatabase.MIGRATION_5_6,
-        NeriUserDataDatabase.MIGRATION_6_7,
-        NeriUserDataDatabase.MIGRATION_7_8,
-        NeriUserDataDatabase.MIGRATION_8_9,
-        NeriUserDataDatabase.MIGRATION_9_10,
-        NeriUserDataDatabase.MIGRATION_10_11,
-        NeriUserDataDatabase.MIGRATION_11_12,
-        NeriUserDataDatabase.MIGRATION_12_13,
-        NeriUserDataDatabase.MIGRATION_13_14,
-        NeriUserDataDatabase.MIGRATION_14_15,
-        NeriUserDataDatabase.MIGRATION_15_FINAL,
-        NeriUserDataDatabase.MIGRATION_16_17,
-        NeriUserDataDatabase.MIGRATION_17_18,
-        NeriUserDataDatabase.MIGRATION_18_19,
-        NeriUserDataDatabase.MIGRATION_19_20,
-        NeriUserDataDatabase.MIGRATION_20_21
-    )
+    @Test
+    fun version21KeepsListenTotalsAndPendingWorkWithoutInventingHourRecords() {
+        val databaseName = "database-upgrade-listening-hours-v21"
+        helper.createDatabase(databaseName, 21).use { database ->
+            database.execSQL(
+                "INSERT INTO playback_stat (identity_key, id, name, artist, album, album_id, " +
+                    "duration_ms, total_listen_ms, play_count, last_played_at, first_played_at) " +
+                    "VALUES ('track', 1, 'Track', 'Artist', 'Album', 0, 180000, 300000, 2, 900000, 1000)"
+            )
+            database.execSQL(
+                "INSERT INTO playback_stats_pending_delta " +
+                    "(id, sequence, track_json, listened_ms, played_at, epoch_started_at, device_id) " +
+                    "VALUES ('pending', 7, '{}', 5000, 905000, 0, 'local')"
+            )
+        }
+        helper.runMigrationsAndValidate(databaseName, 22, true, NeriUserDataDatabase.MIGRATION_21_22)
+            .use { database ->
+                database.query("SELECT total_listen_ms, play_count FROM playback_stat WHERE identity_key = 'track'")
+                    .use { cursor ->
+                        assertTrue(cursor.moveToFirst())
+                        assertEquals(300000L, cursor.getLong(0))
+                        assertEquals(2, cursor.getInt(1))
+                    }
+                database.query("SELECT sequence, listened_ms, played_zone FROM playback_stats_pending_delta WHERE id = 'pending'")
+                    .use { cursor ->
+                        assertTrue(cursor.moveToFirst())
+                        assertEquals(7L, cursor.getLong(0))
+                        assertEquals(5000L, cursor.getLong(1))
+                        assertTrue(cursor.isNull(2))
+                    }
+                database.query("SELECT COUNT(*) FROM playback_stat_hour").use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(0L, cursor.getLong(0))
+                }
+            }
+    }
 }

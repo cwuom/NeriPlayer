@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store
 
 import com.google.gson.Gson
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
@@ -12,6 +13,19 @@ import org.junit.Test
 
 class LocalPlaylistRoomWriteSetMapperTest {
     private val mapper = LocalPlaylistRoomMapper()
+
+    @Test
+    fun `youtube classification round trips without changing song identity and old rows read without a label`() {
+        val original = song(1L).copy(channelId = "youtubeMusic")
+        val tagged = original.copy(youtubeContentLabel = YouTubeContentLabel.EXPLICIT_MUSIC_VIDEO)
+        val previous = playlist(1L, original)
+        val changes = mapper.toWriteSet(listOf(previous), listOf(playlist(1L, tagged)))
+
+        assertEquals(original.stableKey(), changes.members.single().identityKey)
+        assertEquals(tagged, decode(changes.members.single().memberPayloadJson))
+        assertEquals(tagged, decode(changes.tracks.single().durablePayloadJson))
+        assertEquals(null, decode(Gson().toJson(original)).youtubeContentLabel)
+    }
 
     @Test
     fun `temporary stream refresh does not change durable members tracks or tokens`() {

@@ -84,7 +84,7 @@ class PlaybackStatsContentTest {
 
         composeRule.onNodeWithTag("statsSingleColumn").assertExists()
         composeRule.onNodeWithTag("statsChart").assertExists()
-        composeRule.onNodeWithText(string(AppR.string.stats_top_tracks)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.stats_top_duration)).assertExists()
         assertEquals(2, composeRule.onAllNodesWithText("1h 1m").fetchSemanticsNodes().size)
         assertEquals(2, composeRule.onAllNodesWithText("45s").fetchSemanticsNodes().size)
         composeRule.onNodeWithTag("statsOverview").assertExists()

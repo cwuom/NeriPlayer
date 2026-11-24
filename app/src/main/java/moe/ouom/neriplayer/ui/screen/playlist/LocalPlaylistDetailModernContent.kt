@@ -107,6 +107,8 @@ import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionActions
 import moe.ouom.neriplayer.ui.screen.playlist.curation.LocalCurationEntryAction
 import moe.ouom.neriplayer.ui.screen.playlist.curation.LocalCurationSheet
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.platform.youtube.settings.visiblePlaylistSongs
 import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertDialog
 import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertPreview
 import moe.ouom.neriplayer.ui.screen.playlist.insert.isPlaylistInsertPreviewCurrent
@@ -773,6 +775,16 @@ internal fun LocalPlaylistDetailModernContent(
                         }
                     }
                 }
+                if (!offlineMode && !selectionMode && !isSystemPlaylist) {
+                    item(key = "youtube_playlist_suggestions") {
+                        PlaylistYouTubeSuggestions(
+                            title = playlist.name,
+                            songs = tabSongs,
+                            onPlay = onSongClick,
+                            onAdd = { song -> scope.launch { repo.addSongToPlaylist(playlistId, song) } }
+                        )
+                    }
+                }
             },
             overlays = {
                 // 删除歌单二次确认
@@ -1190,17 +1202,18 @@ internal fun LocalPlaylistDetailModernContent(
 
                 if (showInsertDialog && selectionMode && canReorderCurrentSongs) {
                     PlaylistInsertDialog(
-                        songs = localSongs.toList(),
+                        songs = tabSongs,
                         selectedKeys = selectedKeysState.value,
                         offlineMode = offlineMode,
                         onDismiss = { showInsertDialog = false },
                         onConfirm = { preview ->
                             val sourceSongs = localSongs.toList()
-                            val currentKeys = sourceSongs.map { it.stableKey() }
-                            if (blockSync || insertInProgress || !isPlaylistInsertPreviewCurrent(
-                                    preview, currentKeys, selectedKeysState.value
-                                )
-                            ) {
+                            val visibleKeys = YouTubeContentSettings.preferences.value.visiblePlaylistSongs(sourceSongs)
+                                .map { it.stableKey() }
+                            val merged = if (isPlaylistInsertPreviewCurrent(preview, visibleKeys, selectedKeysState.value)) {
+                                reorderVisiblePlaylistSlots(sourceSongs, preview.orderedKeys) { it.stableKey() }
+                            } else null
+                            if (blockSync || insertInProgress || merged == null) {
                                 showInsertDialog = false
                                 scope.launch {
                                     snackbarHostState.showNeriSnackbar(
@@ -1208,9 +1221,8 @@ internal fun LocalPlaylistDetailModernContent(
                                     )
                                 }
                             } else {
-                                val songsByKey = sourceSongs.associateBy { it.stableKey() }
                                 val originalOrder = sourceSongs.map { it.identity() }
-                                val newOrder = preview.orderedKeys.map { songsByKey.getValue(it).identity() }
+                                val newOrder = merged.map { it.identity() }
                                 showInsertDialog = false
                                 insertInProgress = true
                                 scope.launchLocalPlaylistMutation(

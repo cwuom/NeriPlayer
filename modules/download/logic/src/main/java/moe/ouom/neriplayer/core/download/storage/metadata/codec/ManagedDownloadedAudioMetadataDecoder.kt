@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.metadata.codec
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.core.download.storage.metadata.serialization.fromJson
 
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
@@ -51,6 +52,7 @@ class ManagedDownloadedAudioMetadataDecoder(private val root: JSONObject) {
             channelId = nonblankString("channelId"),
             audioId = nonblankString("audioId"),
             subAudioId = nonblankString("subAudioId"),
+            youtubeContentLabel = YouTubeContentLabel.fromName(nonblankString("youtubeContentLabel")),
             playlistContextId = nonblankString("playlistContextId"),
             coverPath = nonblankString(
                 "coverPath", overrides.coverReference ?: baseline.coverReference

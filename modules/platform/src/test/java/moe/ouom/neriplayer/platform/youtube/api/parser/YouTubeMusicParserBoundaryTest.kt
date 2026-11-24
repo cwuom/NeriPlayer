@@ -96,6 +96,68 @@ class YouTubeMusicParserBoundaryTest {
     }
 
     @Test
+    fun homeSongRowsUseLinkedCreditsAndKeepPlayableRoutesAndDurations() {
+        fun linked(text: String, id: String, pageType: String = "") = obj(
+            "text" to text, "navigationEndpoint" to obj("browseEndpoint" to obj(
+                "browseId" to id,
+                "browseEndpointContextSupportedConfigs" to obj(
+                    "browseEndpointContextMusicConfig" to obj("pageType" to pageType)
+                )
+            ))
+        )
+        fun credits(vararg runs: JSONObject) = obj(
+            "musicResponsiveListItemFlexColumnRenderer" to obj("text" to obj("runs" to array(*runs)))
+        )
+        fun row(title: String, album: JSONObject, watch: Boolean) = obj(
+            "musicResponsiveListItemRenderer" to obj(
+                "navigationEndpoint" to if (watch) obj("watchEndpoint" to obj("videoId" to "watch-track")) else null,
+                "playlistItemData" to obj("videoId" to "playlist-track"),
+                "flexColumns" to array(
+                    flexColumn(title),
+                    credits(linked(" A ", "UC-a"), obj("text" to " / "), linked("A", "UC-a"),
+                        linked("B", "artist-b", "MUSIC_PAGE_TYPE_ARTIST"), linked(" ", "UC-blank"),
+                        linked("Other playlist", "VLmix", "MUSIC_PAGE_TYPE_PLAYLIST")),
+                    credits(album), flexColumn("3:01")
+                ),
+                "fixedColumns" to if (watch) array(obj(
+                    "musicResponsiveListItemFixedColumnRenderer" to obj("text" to obj("simpleText" to "4:02"))
+                )) else null
+            )
+        )
+        val items = YouTubeMusicParser.parseHomeShelfPages(browseRoot(obj("musicShelfRenderer" to obj(
+            "title" to obj("simpleText" to "Songs"),
+            "contents" to array(
+                row(" ", linked("Ignored", "MPRE-blank"), false),
+                row("One", linked("First album", "MPRE-album"), true),
+                row("Two", linked("Second album", "album-b", "MUSIC_PAGE_TYPE_ALBUM"), false),
+                row("Three", linked("Third album", "release_detail?id=c"), false)
+            )
+        )))).single().items
+
+        assertEquals(listOf("One", "Two", "Three"), items.map { it.title })
+        assertEquals(listOf("First album", "Second album", "Third album"), items.map { it.album })
+        assertTrue(items.all { it.artist == "A / B" })
+        assertEquals(listOf("watch-track", "playlist-track", "playlist-track"), items.map { it.videoId })
+        assertEquals(listOf(242_000L, 181_000L, 181_000L), items.map { it.durationMs })
+    }
+
+    @Test
+    fun collectionSearchFiltersTypeAndAppliesTheLimitAfterDeduplicatingBrowseIds() {
+        fun card(id: String, title: String) = obj("musicTwoRowItemRenderer" to obj(
+            "navigationEndpoint" to obj("browseEndpoint" to obj("browseId" to id)),
+            "title" to obj("simpleText" to title)
+        ))
+        val root = searchRoot(
+            card("VLmix", "Mix"), card("MPRE-a", "First album"), card("MPRE-a", "Duplicate"),
+            card("UC-creator", "Artist"), card("MPRE-b", "Second album"), card("MPRE-c", "Third album")
+        )
+        val albums = YouTubeMusicParser.parseCollectionSearchResults(root, YouTubeMusicCreatorItemType.Album, 2)
+        assertEquals(listOf("First album", "Second album"), albums.map { it.title })
+        val playlists = YouTubeMusicParser.parseCollectionSearchResults(root, YouTubeMusicCreatorItemType.Playlist, 2)
+        assertEquals(listOf("VLmix"), playlists.map { it.browseId })
+    }
+
+    @Test
     fun playlistDetailPreservesMissingShelfAndBlankIdFallbackRules() {
         val empty = YouTubeMusicParser.parsePlaylistDetail(JSONObject(), "VLbrowse", "Fallback", "", "")
         assertEquals("", empty.playlistId)
@@ -263,6 +325,18 @@ class YouTubeMusicParserBoundaryTest {
         ))
         val continuation = YouTubeMusicParser.parseCreatorItemsContinuation(continuationRoot)
         assertEquals("song", continuation.items.single().videoId)
+    }
+
+    @Test
+    fun creatorItemsRetainContinuationWhenAllRowsWereFilteredOut() {
+        val page = YouTubeMusicParser.parseCreatorItemsContinuation(obj(
+            "continuationContents" to obj("gridContinuation" to obj(
+                "items" to array(),
+                "continuations" to array(obj("nextContinuationData" to obj("continuation" to "after-hidden")))
+            ))
+        ))
+        assertTrue(page.items.isEmpty())
+        assertEquals("after-hidden", page.continuation)
     }
 
     private fun browseRoot(vararg sections: JSONObject): JSONObject = obj(

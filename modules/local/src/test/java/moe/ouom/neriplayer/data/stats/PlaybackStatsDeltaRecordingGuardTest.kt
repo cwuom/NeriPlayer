@@ -66,7 +66,7 @@ class PlaybackStatsDeltaRecordingGuardTest {
 
     @Test
     fun `a replayed event refused by the journal still settles pending writes`() = runTest {
-        doReturn(false).`when`(room).enqueueDelta(anyString(), anyString(), anyLong(), any(), anyLong(), anyString(), any(), anyBoolean())
+        doReturn(false).`when`(room).enqueueDelta(anyString(), anyString(), anyLong(), any(), anyLong(), anyString(), any(), anyBoolean(), any())
         val repository = initializedRepository(backgroundScope) { "phone" }
 
         repository.recordListenDeltaNow(
@@ -76,17 +76,18 @@ class PlaybackStatsDeltaRecordingGuardTest {
             scheduleSync = false,
             eventId = "replayed",
             playedAt = 40,
-            observedClearedAt = 30
+            observedClearedAt = 30,
+            playedZone = "Australia/Lord_Howe"
         )
 
-        verify(room).enqueueDelta(sameString("replayed"), anyString(), eq(100L), eq(0), eq(40L), sameString("phone"), eq(30L), eq(true))
+        verify(room).enqueueDelta(sameString("replayed"), anyString(), eq(100L), eq(0), eq(40L), sameString("phone"), eq(30L), eq(true), sameString("Australia/Lord_Howe"))
         assertFalse(repository.hasPendingWrites())
     }
 
     private fun sameString(value: String): String = eq(value) ?: value
 
     private suspend fun verifyNothingEnqueued() {
-        verify(room, never()).enqueueDelta(anyString(), anyString(), anyLong(), any(), anyLong(), anyString(), any(), anyBoolean())
+        verify(room, never()).enqueueDelta(anyString(), anyString(), anyLong(), any(), anyLong(), anyString(), any(), anyBoolean(), any())
     }
 
     private suspend fun initializedRepository(scope: CoroutineScope, device: () -> String): PlaybackStatsRepository {

@@ -32,7 +32,8 @@ data class PlaybackStatBucket(
     val customName: String?,
     val customArtist: String?,
     val customCoverUrl: String?,
-    val identityKey: String
+    val identityKey: String,
+    val recordedLocalDate: String? = null
 )
 
 data class PlaybackStatsHotPlaylist(

@@ -57,6 +57,7 @@ import java.security.SecureRandom
 import java.util.Locale
 import java.util.zip.GZIPInputStream
 import moe.ouom.neriplayer.network.proxy.DynamicProxySelector
+import moe.ouom.neriplayer.network.proxy.NetworkDns
 
 internal fun mergeNeteaseRequestCookies(
     persistedCookies: Map<String, String>,
@@ -186,6 +187,7 @@ internal class NeteaseRequestSession(
     internal val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)
         // use a dynamic ProxySelector so bypass can be toggled at runtime
+        .dns(NetworkDns)
         .proxySelector(DynamicProxySelector)
         .build()
     internal val http1RetryClient: OkHttpClient = okHttpClient.newBuilder()

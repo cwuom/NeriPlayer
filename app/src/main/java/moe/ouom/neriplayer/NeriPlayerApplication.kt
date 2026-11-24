@@ -25,6 +25,7 @@ package moe.ouom.neriplayer
 
 import android.app.Application
 import android.content.res.Configuration
+import moe.ouom.neriplayer.common.locale.DeviceLocale
 import android.os.Build
 import android.webkit.WebView
 import androidx.work.Configuration as WorkConfiguration
@@ -48,7 +49,6 @@ import moe.ouom.neriplayer.core.startup.app.AppStartupPlanner
 import moe.ouom.neriplayer.core.startup.app.WebViewDataDirectorySuffix
 import moe.ouom.neriplayer.core.startup.app.YouTubeMusicUiGatewayInitializer
 import moe.ouom.neriplayer.core.player.shizuku.AndroidRuntimeCompatibility
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
@@ -121,6 +121,7 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        DeviceLocale.refresh(this)
         LanguageManager.applyLanguage(this)
         if (AppProcessClassifier.isMainProcess(
                 currentProcessName = getProcessName(),
@@ -150,6 +151,7 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
 
             NativeCrashHandler.init(this)
             AppContainer.initialize(this)
+            AppContainer.startYouTubeRotationScheduling()
             AppContainer.launchBackgroundIo {
                 val recoveredMetadataWrites = LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(
                     this@NeriPlayerApplication
@@ -204,9 +206,6 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
             ManagedDownloadStorage.initialize(this)
 
             YouTubeMusicUiGatewayInitializer.initialize()
-
-            // 长期不开 App 时没有任何前台流程会去续期, 靠这个周期任务把会话保活
-            YouTubeAuthRotationWorker.schedulePeriodicRotation(this)
 
             // 初始化全局下载管理器
             GlobalDownloadManager.initialize(this)

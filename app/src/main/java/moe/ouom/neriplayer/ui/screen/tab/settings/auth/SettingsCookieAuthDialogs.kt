@@ -25,7 +25,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.auth
  * Updated: 2026/3/23
  */
 
-import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -47,6 +46,7 @@ import androidx.compose.runtime.Composable
 import moe.ouom.neriplayer.ui.i18n.UiText
 import moe.ouom.neriplayer.ui.i18n.asString
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -56,10 +56,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import moe.ouom.neriplayer.activity.auth.loginIntent
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.activity.auth.BiliQrLoginActivity
 import moe.ouom.neriplayer.activity.auth.YouTubeWebLoginActivity
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationState
+import moe.ouom.neriplayer.platform.youtube.auth.SharedPreferencesYouTubeCookieRotationStateStore
+import moe.ouom.neriplayer.platform.youtube.auth.hasYouTubeRotationPrerequisites
+import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
+import moe.ouom.neriplayer.network.weblogin.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
@@ -124,7 +132,7 @@ internal fun SettingsBiliAuthDialogs(
             val defaultBrowserLogin: () -> Unit = {
                 onInlineMsgChange(null)
                 AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
-                webLoginLauncher.launch(Intent(context, BiliQrLoginActivity::class.java))
+                webLoginLauncher.launch(loginIntent(context, BiliQrLoginActivity::class.java))
             }
             defaultBrowserLogin
         }
@@ -180,7 +188,7 @@ internal fun SettingsYouTubeAuthDialogs(
     if (showSavedCookieDialog) {
         SavedCookieActionDialog(
             title = stringResource(CoreCommonR.string.settings_youtube_saved_cookie_title),
-            message = stringResource(CoreCommonR.string.settings_youtube_saved_cookie_message),
+            message = youTubeSessionRenewalSummary(),
             onDismiss = onDismissSavedCookieDialog,
             onContinueLogin = {
                 onDismissSavedCookieDialog()
@@ -201,9 +209,12 @@ internal fun SettingsYouTubeAuthDialogs(
                 injectedBrowserLogin()
             }
         } ?: run {
+            val browserLogin = remember { ForegroundWebLoginGuard.Launcher("youtube_browser") }
+            DisposableEffect(browserLogin) { onDispose(browserLogin::close) }
             val webLoginLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.StartActivityForResult()
             ) { result ->
+                browserLogin.close()
                 if (result.resultCode == android.app.Activity.RESULT_OK) {
                     val json = result.data?.getStringExtra(YouTubeWebLoginActivity.RESULT_AUTH_JSON) ?: "{}"
                     vm.importAuthFromJson(json)
@@ -213,8 +224,10 @@ internal fun SettingsYouTubeAuthDialogs(
             }
             val defaultBrowserLogin: () -> Unit = {
                 onInlineMsgChange(null)
-                AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
-                webLoginLauncher.launch(Intent(context, YouTubeWebLoginActivity::class.java))
+                browserLogin.launch {
+                    AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
+                    webLoginLauncher.launch(loginIntent(context, YouTubeWebLoginActivity::class.java))
+                }
             }
             defaultBrowserLogin
         }
@@ -254,6 +267,22 @@ internal fun SettingsYouTubeAuthDialogs(
         )
     }
 
+}
+
+@Composable
+private fun youTubeSessionRenewalSummary(): String {
+    val enabled by AppContainer.settingsRepo.youtubeEnabledFlow.collectAsStateWithLifecycle(
+        initialValue = YouTubeFeatureGate.isEnabled()
+    )
+    if (!enabled) return stringResource(AppR.string.youtube_session_disabled)
+    val auth by AppContainer.youtubeAuthRepo.authFlow.collectAsStateWithLifecycle()
+    if (!hasYouTubeRotationPrerequisites(auth.cookies)) return stringResource(AppR.string.youtube_session_incomplete)
+    val context = LocalContext.current
+    val attempts = remember(context) { SharedPreferencesYouTubeCookieRotationStateStore(context).observe() }
+    val state by attempts.collectAsStateWithLifecycle(initialValue = YouTubeCookieRotationState())
+    if (state.lastRotatedAtMs <= 0L) return stringResource(AppR.string.youtube_session_waiting)
+    val status = if (state.consecutiveRejections > 0) AppR.string.youtube_session_failed else AppR.string.youtube_session_checked
+    return stringResource(status, formatSyncTime(state.lastRotatedAtMs))
 }
 
 @Composable

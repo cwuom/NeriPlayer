@@ -9,6 +9,28 @@ import org.junit.Test
 class YouTubeMusicPlaylistDetailPaginationTest {
 
     @Test
+    fun albumTracksUseTheHeaderArtistAndAlbumInsteadOfLocalizedViewCounts() = runBlocking {
+        val root = JSONObject("""
+            {"contents":{"twoColumnBrowseResultsRenderer":{
+              "tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{"contents":[{"musicResponsiveHeaderRenderer":{
+                "title":{"runs":[{"text":"ABBA Gold"}]},"straplineTextOne":{"runs":[{"text":"ABBA"}]}
+              }}]}}}}],
+              "secondaryContents":{"sectionListRenderer":{"contents":[{"musicShelfRenderer":{"contents":[{
+                "musicResponsiveListItemRenderer":{"playlistItemData":{"videoId":"track"},"flexColumns":[
+                  {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Dancing Queen"}]}}},
+                  {"musicResponsiveListItemFlexColumnRenderer":{}},
+                  {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"1,7 Mrd. Wiedergaben"}]}}}
+                ]}
+              }]}}]}}
+            }}}
+        """.trimIndent())
+        val detail = collectYouTubeMusicPlaylistDetail("MPREbExample") { root }
+        assertEquals("Dancing Queen", detail.tracks.single().title)
+        assertEquals("ABBA", detail.tracks.single().artist)
+        assertEquals("ABBA Gold", detail.tracks.single().album)
+    }
+
+    @Test
     fun getPlaylistDetail_collectsTracksAcrossMultipleContinuationPages() = runBlocking {
         val responses = listOf(
             initialPageRoot(videoId = "video-1", title = "Song 1", continuation = "token-a"),

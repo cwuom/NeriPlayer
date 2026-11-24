@@ -25,7 +25,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.auth
  * Updated: 2026/3/23
  */
 
-import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +34,7 @@ import moe.ouom.neriplayer.ui.i18n.UiText
 import moe.ouom.neriplayer.ui.i18n.asString
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import moe.ouom.neriplayer.activity.auth.loginIntent
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.activity.auth.NeteaseQrLoginActivity
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -127,7 +127,7 @@ internal fun SettingsNeteaseAuthDialogs(
             val defaultBrowserLogin: () -> Unit = {
                 onInlineMsgChange(null)
                 AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
-                webLoginLauncher.launch(Intent(context, NeteaseQrLoginActivity::class.java))
+                webLoginLauncher.launch(loginIntent(context, NeteaseQrLoginActivity::class.java))
             }
             defaultBrowserLogin
         }

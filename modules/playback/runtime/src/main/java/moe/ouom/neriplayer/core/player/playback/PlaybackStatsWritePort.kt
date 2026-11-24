@@ -29,7 +29,8 @@ internal object AppPlaybackStatsWritePort : PlaybackStatsWritePort {
             scheduleSync = snapshot.scheduleSync,
             eventId = snapshot.eventId,
             playedAt = snapshot.playedAt,
-            observedClearedAt = snapshot.observedClearedAt
+            observedClearedAt = snapshot.observedClearedAt,
+            playedZone = snapshot.playedZone
         )
         countedLocalPlaylistId(snapshot)?.let { playlistId ->
             playlistRepository().recordPlayNow(playlistId, snapshot.playedAt, snapshot.eventId)

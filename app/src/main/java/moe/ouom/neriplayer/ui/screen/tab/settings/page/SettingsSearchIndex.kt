@@ -10,6 +10,12 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSections
 import moe.ouom.neriplayer.ksp.annotations.SettingUiType
 import moe.ouom.neriplayer.common.search.SearchTextMatcher
 import moe.ouom.neriplayer.ui.settings.unavailableSettingKeys
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeSectionTitles
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeFeedKindSearchId
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeFeedKindTargets
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeFeedKindTitles
 import moe.ouom.neriplayer.R as AppR
 
 internal data class SettingsSearchEntry(
@@ -31,7 +37,7 @@ internal fun buildSettingsSearchEntries(
     resources: Resources,
     internationalEnabled: Boolean = false
 ): List<SettingsSearchEntry> {
-    val pageEntries = SettingsPage.entries.map { page ->
+    val pageEntries = SettingsPage.entries.filter { it == it.destination }.map { page ->
         val title = resources.safeString(page.titleRes)
         val description = resources.safeString(page.descriptionRes)
         SettingsSearchEntry(
@@ -50,7 +56,7 @@ internal fun buildSettingsSearchEntries(
             it.ui != SettingUiType.None &&
                 it.titleRes != 0 &&
                 it.keyName !in unavailableSettingKeys &&
-                (!internationalEnabled || it.keyName != "home_card_bilibili")
+                !(internationalEnabled && it.section == AutoSettingsSections.personalization && it.keyName.startsWith("home_"))
         }
         .mapNotNull { setting ->
             val page = setting.settingsPage() ?: return@mapNotNull null
@@ -70,7 +76,7 @@ internal fun buildSettingsSearchEntries(
             )
         }
 
-    return pageEntries + settingEntries + manualSettingsSearchEntries(resources)
+    return pageEntries + settingEntries + manualSettingsSearchEntries(resources, internationalEnabled)
 }
 
 internal fun searchSettingsEntries(
@@ -221,6 +227,11 @@ internal fun settingsSearchScrollAnchor(
 
     return when (page) {
         SettingsPage.Accounts -> SettingsSearchScrollAnchor(itemIndex = 0)
+        SettingsPage.Language -> when (targetId) {
+            "manual:youtube_content_suggestion_basis", "manual:youtube_content_hide_explicit",
+            "manual:youtube_content_hide_videos" -> SettingsSearchScrollAnchor(itemIndex = 2)
+            else -> SettingsSearchScrollAnchor(itemIndex = 1)
+        }
         SettingsPage.Theme -> when (targetId) {
             "setting:ui_style" -> SettingsSearchScrollAnchor(itemIndex = 1)
             "manual:theme_mode" -> SettingsSearchScrollAnchor(itemIndex = 2)
@@ -367,7 +378,7 @@ private val PersonalizationHomeTargets = setOf(
     "setting:home_card_radar",
     "setting:home_card_recommended",
     "setting:home_card_bilibili"
-)
+) + internationalHomeSectionTitles.keys.map { "manual:international_home_$it" } + internationalHomeFeedKindTargets.values
 
 private val PersonalizationPlaybackInfoTargets = setOf(
     "setting:show_cover_source_badge",
@@ -426,7 +437,7 @@ private fun SettingsPage.searchAliases(): List<String> {
     return PageSearchAliases[this].orEmpty()
 }
 
-internal fun manualSettingsSearchEntries(resources: Resources): List<SettingsSearchEntry> {
+internal fun manualSettingsSearchEntries(resources: Resources, internationalEnabled: Boolean = false): List<SettingsSearchEntry> {
     fun entry(
         page: SettingsPage,
         titleRes: Int,
@@ -453,6 +464,37 @@ internal fun manualSettingsSearchEntries(resources: Resources): List<SettingsSea
         )
     }
 
+    val discoveryEntries = if (internationalEnabled) {
+        val section = resources.safeString(AppR.string.youtube_content_page)
+        listOf(
+            entry(SettingsPage.Language, AppR.string.youtube_content_suggestion_basis, CoreCommonR.string.settings_page_language,
+                "youtube_content_suggestion_basis", listOf(section, "playlist recommendations", "playlist suggestions", "歌单推荐依据", "歌单收藏依据")),
+            entry(SettingsPage.Language, AppR.string.youtube_content_hide_explicit, CoreCommonR.string.settings_page_language,
+                "youtube_content_hide_explicit", listOf(section, "explicit", "露骨")),
+            entry(SettingsPage.Language, AppR.string.youtube_content_hide_videos, CoreCommonR.string.settings_page_language,
+                "youtube_content_hide_videos", listOf(section, "music videos", "MV", "音乐视频"))
+        )
+    } else emptyList()
+    val internationalHomeEntries = if (internationalEnabled) {
+        internationalHomeSectionTitles.map { (id, title) ->
+            val aliases = when (id) {
+                InternationalHomeSectionIds.SPOTLIGHT -> listOf("spotlight", "今日精选")
+                InternationalHomeSectionIds.CONTINUE -> listOf("continue", "recent", "继续播放", "最近")
+                else -> listOf("recommendations", "feed", "为你推荐", "推荐流")
+            }
+            entry(SettingsPage.Personalization, title, CoreCommonR.string.settings_personalization_home_section,
+                "international_home_$id", aliases)
+        } + entry(
+            SettingsPage.Personalization, CoreCommonR.string.settings_home_major_order,
+            CoreCommonR.string.settings_home_major_order_desc, "international_home_order",
+            listOf("home order", "reorder", "sort", "首页顺序", "排序", "拖拽"),
+            targetId = "manual:international_home_${InternationalHomeSectionIds.SPOTLIGHT}"
+        ) + internationalHomeFeedKindTitles.map { (kind, title) ->
+            val aliases = listOf("YouTube Music", kind, "recommendations", "首页推荐")
+            entry(SettingsPage.Personalization, title, CoreCommonR.string.international_home_feed,
+                internationalHomeFeedKindSearchId(kind), if (kind == InternationalHomeFeedKindIds.ARTIST) aliases + "艺人" else aliases)
+        }
+    } else emptyList()
     return listOf(
         entry(
             page = SettingsPage.Language,
@@ -477,6 +519,10 @@ internal fun manualSettingsSearchEntries(resources: Resources): List<SettingsSea
             ),
             order = 4
         ),
+        entry(SettingsPage.Language, AppR.string.youtube_content_language, CoreCommonR.string.settings_page_language,
+            "youtube_content_language", listOf("content language", "语言", "hl")),
+        entry(SettingsPage.Language, AppR.string.youtube_content_country, CoreCommonR.string.settings_page_language,
+            "youtube_content_country", listOf("region", "国家", "地区", "gl")),
         entry(
             page = SettingsPage.Language,
             titleRes = CoreCommonR.string.settings_internationalization,
@@ -814,7 +860,7 @@ internal fun manualSettingsSearchEntries(resources: Resources): List<SettingsSea
             id = "about_debug",
             aliases = listOf("about", "version", "debug", "banben", "tiaoshi")
         )
-    ) + audioEffectsSearchEntries(::entry)
+    ) + audioEffectsSearchEntries(::entry) + internationalHomeEntries + discoveryEntries
 }
 
 private typealias ManualSearchEntryFactory =
@@ -894,7 +940,10 @@ private val PageSearchAliases = mapOf(
     SettingsPage.Personalization to listOf("home", "start", "startup", "keyboard", "shouye", "qidong"),
     SettingsPage.NowPlaying to listOf("now playing", "player", "cover", "badge", "controls", "immersive", "bofangye", "fengmian"),
     SettingsPage.Background to listOf("background", "wallpaper", "image", "beijing", "bizhi"),
-    SettingsPage.Language to listOf("language", "locale", "international", "yuyan", "guojihua"),
+    SettingsPage.Language to listOf(
+        "language", "locale", "language and region", "region", "country", "yuyan",
+        "界面语言", "内容语言", "语言与地区", "国家", "地区"
+    ),
     SettingsPage.ExternalLyrics to listOf(
         "floating", "desktop lyrics", "status bar", "island", "bluetooth", "lyricon", "amll",
         "live update", "xuanfu", "zhuangtailan", "lingdongdao", "chaojidao"
@@ -905,7 +954,7 @@ private val PageSearchAliases = mapOf(
         "lyric source", "lyrics source", "lyric provider", "word timed", "word by word",
         "kugou", "netease", "qq music", "lrclib", "ttml", "geciyuan", "zhuci"
     ),
-    SettingsPage.Network to listOf("network", "proxy", "bypass", "daili", "wangluo"),
+    SettingsPage.Network to listOf("network", "proxy", "bypass", "DoH", "DNS", "HTTP", "SOCKS5", "daili", "wangluo"),
     SettingsPage.Playback to listOf("playback", "audio", "queue", "volume", "fade", "crossfade", "bofang"),
     SettingsPage.UsbExclusive to listOf("usb", "dac", "pcm", "uac", "exclusive", "bit perfect", "dizhan"),
     SettingsPage.PlaybackSource to listOf("source", "fallback", "bili", "netease", "yinyuan", "huanyuan"),
@@ -960,9 +1009,7 @@ private val SettingSearchAliases = mapOf(
         "hot",
         "biao sheng",
         "xin ge",
-        "new song",
-        "guess you like",
-        "猜你喜欢"
+        "new song"
     ),
     "home_card_radar" to listOf(
         "radar",
@@ -970,18 +1017,14 @@ private val SettingSearchAliases = mapOf(
         "siren leidar",
         "fm",
         "leida gedan",
-        "private",
-        "daily discover",
-        "每日发现"
+        "private"
     ),
     "home_card_recommended" to listOf(
         "recommend",
         "tuijian",
         "daily playlist",
         "high quality",
-        "acg",
-        "more recommendations",
-        "更多推荐"
+        "acg"
     ),
     "home_major_order" to listOf(
         "home order",

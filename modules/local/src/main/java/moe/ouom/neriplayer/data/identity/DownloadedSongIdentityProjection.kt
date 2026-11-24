@@ -129,6 +129,7 @@ fun DownloadedSong.toPlaybackSongItem(
         channelId = resolvedSourceChannel,
         audioId = playbackAudioId(remoteSourceChannel, resolvedSourceChannel, remoteSourceIdentity),
         subAudioId = playbackSubAudioId(),
+        youtubeContentLabel = youtubeContentLabel,
         playlistContextId = sourcePlaylistContextId,
         sourceStableKey = playbackStableKey(remoteSourceIdentity),
         logicalCreatedAtMs = creation.createdAtMs,
@@ -141,7 +142,10 @@ private val DownloadedSong.hasLegacyBiliSource: Boolean
     get() = album.startsWith(BILIBILI_SOURCE_ALBUM_PREFIX, ignoreCase = true)
 
 private fun DownloadedSong.playbackChannel(remoteSourceChannel: String?, identity: SongIdentity?): String? =
-    remoteSourceChannel ?: identity?.album ?: sourceChannelId ?: BILIBILI_CHANNEL.takeIf { hasLegacyBiliSource }
+    when (identity?.album) {
+        YOUTUBE_MUSIC_IDENTITY_ALBUM -> "youtubeMusic"
+        else -> remoteSourceChannel ?: identity?.album ?: sourceChannelId ?: BILIBILI_CHANNEL.takeIf { hasLegacyBiliSource }
+    }
 
 private fun DownloadedSong.playbackAudioId(
     remoteSourceChannel: String?,

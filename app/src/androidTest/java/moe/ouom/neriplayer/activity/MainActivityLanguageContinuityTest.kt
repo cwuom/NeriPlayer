@@ -7,6 +7,8 @@ import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -49,6 +51,9 @@ import moe.ouom.neriplayer.core.startup.debug.debugBuildWarningDataStore
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.toYouTubeContentPreferences
+import moe.ouom.neriplayer.data.settings.updateYouTubeContentPreferences
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.data.settings.appearance.PreviewThemePromptRepository
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.navigation.Destinations
@@ -170,7 +175,7 @@ class MainActivityLanguageContinuityTest {
 
     @Test
     fun settingsLanguageRoundTripsKeepTheLanguagePageAndLocalizeItsDialog() =
-        withPreparedActivity(onboarding = false) { scenario, originalActivity ->
+        withPreparedActivity(onboarding = false, startInDomesticMode = true) { scenario, originalActivity ->
             val languagePage = settingsPageRowTestTag(SettingsPage.Language)
             val homeScene = settingsPageTransitionSceneTag(null)
             waitForTag(homeScene)
@@ -179,9 +184,13 @@ class MainActivityLanguageContinuityTest {
                     hasAnyAncestor(hasTestTag(homeScene)),
                 useUnmergedTree = true
             ).performScrollToNode(hasTestTag(languagePage))
+            composeRule.onNodeWithTag("settings-page-row-Content").assertDoesNotExist()
             composeRule.onNodeWithTag(languagePage).performClick()
             val detailScene = settingsPageTransitionSceneTag(SettingsPage.Language)
             waitForTag(detailScene)
+            assertLocaleControlsOnPage(Language.CHINESE)
+            assertDiscoveryControls(Language.CHINESE, visible = false)
+            capture("language-content-disabled")
 
             LanguageRoundTrips.forEach { language ->
                 val previous = LanguageManager.getCurrentLanguage(context)
@@ -196,6 +205,8 @@ class MainActivityLanguageContinuityTest {
                 awaitUi { composeRule.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
                 waitForText(label(CoreCommonR.string.language_setting_title, language))
                 waitForTag(detailScene)
+                assertLocaleControlsOnPage(language)
+                assertDiscoveryControls(language, visible = false)
                 assertSameActivity(scenario, originalActivity)
                 capture("settings-${language.code}")
             }
@@ -206,6 +217,39 @@ class MainActivityLanguageContinuityTest {
             assertDialogText(CoreCommonR.string.action_close)
             clickText(CoreCommonR.string.action_close, Language.CHINESE)
             waitForTag(detailScene)
+            val preferences = YouTubeContentSettings.preferences.value
+            val toggle = composeRule.onNode(isToggleable() and hasText(label(CoreCommonR.string.settings_internationalization, Language.CHINESE)))
+            val country = hasText(label(AppR.string.youtube_content_country, Language.CHINESE))
+            fun switchInternational(enabled: Boolean) {
+                toggle.performScrollTo().performClick()
+                awaitUi { composeRule.onAllNodes(country and isEnabled()).fetchSemanticsNodes().isNotEmpty() == enabled }
+                assertLocaleControlsOnPage(Language.CHINESE, enabled)
+                assertDiscoveryControls(Language.CHINESE, enabled)
+            }
+            switchInternational(true)
+            assertEquals(preferences, YouTubeContentSettings.preferences.value)
+            val changed = preferences.copy(hideExplicit = !preferences.hideExplicit)
+            try {
+                composeRule.onNode(isToggleable() and hasText(label(AppR.string.youtube_content_hide_explicit, Language.CHINESE)))
+                    .performScrollTo().performClick()
+                awaitUi { YouTubeContentSettings.preferences.value == changed }
+                switchInternational(false)
+                assertEquals(changed, YouTubeContentSettings.preferences.value)
+                switchInternational(true)
+                assertEquals(changed, YouTubeContentSettings.preferences.value)
+                composeRule.onNode(hasScrollToIndexAction() and hasAnyAncestor(hasTestTag(detailScene)))
+                    .performScrollToIndex(0)
+                composeRule.waitForIdle()
+                capture("language-content-enabled")
+            } finally {
+                runBlocking { context.updateYouTubeContentPreferences { it.copy(hideExplicit = preferences.hideExplicit) } }
+                assertEquals(preferences, runBlocking { context.dataStore.data.first().toYouTubeContentPreferences() })
+            }
+            Espresso.pressBack()
+            waitForTag(homeScene)
+            settingsHomeList().performScrollToNode(hasTestTag(languagePage))
+            composeRule.onNodeWithTag(languagePage).assertIsDisplayed()
+            composeRule.onNodeWithTag("settings-page-row-Content").assertDoesNotExist()
             assertSameActivity(scenario, originalActivity)
         }
 
@@ -254,6 +298,39 @@ class MainActivityLanguageContinuityTest {
     private fun settingsHomeList() = composeRule.onNode(
         hasScrollToIndexAction() and hasAnyAncestor(hasTestTag(settingsPageTransitionSceneTag(null)))
     )
+
+    private fun assertDiscoveryControls(language: Language, visible: Boolean) {
+        val inPage = hasAnyAncestor(hasTestTag(settingsPageTransitionSceneTag(SettingsPage.Language)))
+        val list = composeRule.onNode(hasScrollToIndexAction() and inPage)
+        for (title in listOf(AppR.string.youtube_content_suggestion_basis, AppR.string.youtube_content_hide_explicit, AppR.string.youtube_content_hide_videos)) {
+            val text = hasText(label(title, language))
+            val row = composeRule.onNode(text and inPage)
+            if (visible) {
+                list.performScrollToNode(text)
+                row.performScrollTo().assertIsDisplayed().assertIsEnabled()
+            } else row.assertDoesNotExist()
+        }
+    }
+
+    private fun assertLocaleControlsOnPage(language: Language, internationalEnabled: Boolean = false) {
+        val inPage = hasAnyAncestor(hasTestTag(settingsPageTransitionSceneTag(SettingsPage.Language)))
+        listOf(
+            AppR.string.youtube_content_country,
+            AppR.string.youtube_content_language,
+            CoreCommonR.string.language_setting_title
+        ).forEach { title ->
+            val match = hasText(label(title, language)) and inPage
+            val row = composeRule.onNode(match)
+            when {
+                title == CoreCommonR.string.language_setting_title || internationalEnabled ->
+                    row.performScrollTo().assertIsDisplayed().assertIsEnabled()
+                else -> {
+                    row.performScrollTo().assertIsDisplayed().assertIsNotEnabled()
+                    composeRule.onNode(match and hasClickAction()).assertDoesNotExist()
+                }
+            }
+        }
+    }
 
     private fun assertBluetoothSearchResults(language: Language) {
         val homeScene = settingsPageTransitionSceneTag(null)
@@ -324,6 +401,7 @@ class MainActivityLanguageContinuityTest {
 
     private fun withPreparedActivity(
         onboarding: Boolean,
+        startInDomesticMode: Boolean = false,
         verify: (ActivityScenario<MainActivity>, MainActivity) -> Unit
     ) {
         assertTrue("真实宿主回归只能在模拟器执行", Build.HARDWARE in setOf("ranchu", "goldfish"))
@@ -349,6 +427,7 @@ class MainActivityLanguageContinuityTest {
         val savedPreview = runBlocking { context.dataStore.data.first()[previewKey] }
         // 风格卡片测试会改写界面风格, 结束后按原值还原
         val savedUiStyle = runBlocking { context.dataStore.data.first()[SettingsKeys.UI_STYLE] }
+        val savedInternational = runBlocking { context.dataStore.data.first()[SettingsKeys.INTERNATIONALIZATION_ENABLED] }
         val savedWarning = runBlocking { context.debugBuildWarningDataStore.data.first()[warningKey] }
         var scenario: ActivityScenario<MainActivity>? = null
         var failure: Throwable? = null
@@ -358,6 +437,7 @@ class MainActivityLanguageContinuityTest {
                 PreviewThemePromptRepository(context).answer(enable = false)
                 settings.setDisclaimerAccepted(true)
                 settings.setStartupOnboardingCompleted(!onboarding)
+                if (startInDomesticMode) settings.setInternationalizationEnabled(false)
                 if (onboarding) settings.setNeteasePlaybackSourceFallback(false)
                 else settings.setDefaultStartDestination(Destinations.Settings.route)
             }
@@ -389,6 +469,10 @@ class MainActivityLanguageContinuityTest {
                     context.dataStore.edit {
                         if (savedPreview == null) it.remove(previewKey) else it[previewKey] = savedPreview
                         if (savedUiStyle == null) it.remove(SettingsKeys.UI_STYLE) else it[SettingsKeys.UI_STYLE] = savedUiStyle
+                        if (startInDomesticMode) {
+                            if (savedInternational == null) it.remove(SettingsKeys.INTERNATIONALIZATION_ENABLED)
+                            else it[SettingsKeys.INTERNATIONALIZATION_ENABLED] = savedInternational
+                        }
                     }
                     context.debugBuildWarningDataStore.edit {
                         if (savedWarning == null) it.remove(warningKey) else it[warningKey] = savedWarning

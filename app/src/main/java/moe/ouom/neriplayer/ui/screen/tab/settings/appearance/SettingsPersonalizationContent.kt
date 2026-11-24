@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -47,7 +48,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.data.model.settings.home.mergeVisibleHomeSectionOrder
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
@@ -72,10 +74,13 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.data.model.settings.home.applyHomeSectionOrder
-import moe.ouom.neriplayer.ui.screen.tab.settings.home.SettingsHomeCardCopy
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeSectionTitles
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeFeedKindTitles
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeFeedKindTargets
 import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.settings.route.HomeSectionSettingsActions
 import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.ReorderableColumnScope
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.PlaybackControlLayoutSettings
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -137,56 +142,82 @@ internal fun SettingsPersonalizationStartCard(
 
 private class HomeSectionOrderEditor(val order: List<String>, val reorder: (List<String>) -> Unit)
 
-private class HomeSubSections(defaults: List<String>, order: List<String>, val hidden: Set<String>) {
+private sealed interface HomeSectionChildren
+
+private class HomeSubSections(defaults: List<String>, order: List<String>, val hidden: Set<String>) : HomeSectionChildren {
     private val order = applyHomeSectionOrder(defaults, order, emptySet())
 
     fun editor(parentId: String, actions: HomeSectionSettingsActions) =
         HomeSectionOrderEditor(order) { actions.reorderSub(parentId, it) }
 }
 
+private class HomeFeedKindRow(val kind: String, val visible: Boolean, private val actions: HomeSectionSettingsActions) {
+    fun setVisible(visible: Boolean) = actions.setSubVisible(InternationalHomeSectionIds.FEED, kind, visible)
+}
+
+private class HomeFeedKinds(hidden: Set<String>, actions: HomeSectionSettingsActions) : HomeSectionChildren {
+    val rows = InternationalHomeFeedKindIds.DEFAULT_ORDER.map { kind -> HomeFeedKindRow(kind, kind !in hidden, actions) }
+}
+
 private class HomeMajorRow(
     val titleRes: Int,
     val icon: ImageVector,
     val checked: Boolean,
-    val children: HomeSubSections? = null
+    val children: HomeSectionChildren? = null
 )
 
-// 子栏目都是网易云专属; 国际化时首页换成 YouTube Music 整块货架, 展开它们只会得到无效开关
-private fun AppHomeCardsSettingsState.homeRows(copy: SettingsHomeCardCopy, international: Boolean) = mapOf(
+private class HomeSectionLayout(
+    val rows: Map<String, HomeMajorRow>,
+    val editor: HomeSectionOrderEditor,
+    val descriptionRes: Int,
+    val targetPrefix: String,
+    val setVisible: (String, Boolean) -> Unit
+)
+
+private fun AppHomeCardsSettingsState.domesticHomeRows() = mapOf(
     HomeMajorSectionIds.CONTINUE to HomeMajorRow(
         CoreCommonR.string.player_continue, Icons.Outlined.History, showHomeContinueCard
     ),
     HomeMajorSectionIds.RADAR to HomeMajorRow(
-        copy.radarLabelRes, homeRadarIcon(international), showHomeRadarCard,
-        HomeSubSections(HomeRadarSubSectionIds.DEFAULT_ORDER, radarOrder, radarHidden).takeUnless { international }
+        CoreCommonR.string.settings_home_card_netease_radar, Icons.Outlined.Radar, showHomeRadarCard,
+        HomeSubSections(HomeRadarSubSectionIds.DEFAULT_ORDER, radarOrder, radarHidden)
     ),
     HomeMajorSectionIds.TRENDING to HomeMajorRow(
-        copy.trendingLabelRes, Icons.Outlined.Bolt, showHomeTrendingCard,
-        HomeSubSections(HomeTrendingSubSectionIds.DEFAULT_ORDER, trendingOrder, trendingHidden).takeUnless { international }
+        CoreCommonR.string.settings_home_card_netease_trending, Icons.Outlined.Bolt, showHomeTrendingCard,
+        HomeSubSections(HomeTrendingSubSectionIds.DEFAULT_ORDER, trendingOrder, trendingHidden)
     ),
     HomeMajorSectionIds.RECOMMENDED to HomeMajorRow(
-        copy.recommendedLabelRes, Icons.Outlined.Star, showHomeRecommendedCard,
+        CoreCommonR.string.settings_home_card_netease_recommended, Icons.Outlined.Star, showHomeRecommendedCard,
         HomeSubSections(HomeRecommendedSubSectionIds.DEFAULT_ORDER, recommendedOrder, recommendedHidden)
-            .takeUnless { international }
     ),
     HomeMajorSectionIds.BILIBILI to HomeMajorRow(
         CoreCommonR.string.settings_home_card_bilibili, Icons.Outlined.LiveTv, showHomeBilibiliCard
     )
 )
 
-private fun AppHomeCardsSettingsState.majorOrderEditor(
-    international: Boolean,
-    actions: HomeSectionSettingsActions
-): HomeSectionOrderEditor {
-    val hidden = if (international) setOf(HomeMajorSectionIds.BILIBILI) else emptySet()
-    val visible = applyHomeSectionOrder(HomeMajorSectionIds.DEFAULT_ORDER, majorOrder, hidden)
-    return HomeSectionOrderEditor(visible) { actions.reorderMajor(mergeVisibleHomeSectionOrder(majorOrder, it)) }
-}
+private fun AppHomeCardsSettingsState.internationalHomeRows(actions: HomeSectionSettingsActions) =
+    internationalHomeSectionTitles.mapValues { (id, title) ->
+        val icon = when (id) {
+            InternationalHomeSectionIds.CONTINUE -> Icons.Outlined.History
+            InternationalHomeSectionIds.SPOTLIGHT -> Icons.Outlined.Star
+            else -> Icons.Outlined.Explore
+        }
+        val children = if (id == InternationalHomeSectionIds.FEED) HomeFeedKinds(internationalLayout.hiddenFeedKinds, actions) else null
+        HomeMajorRow(title, icon, id !in internationalLayout.hidden, children)
+    }
+
+private fun AppHomeCardsSettingsState.homeSectionLayout(international: Boolean, actions: HomeSectionSettingsActions) =
+    if (international) HomeSectionLayout(
+        internationalHomeRows(actions), HomeSectionOrderEditor(internationalLayout.order, actions::reorderInternational),
+        CoreCommonR.string.international_home_sections_desc, "manual:international_home_", actions::setInternationalVisible
+    ) else HomeSectionLayout(
+        domesticHomeRows(), HomeSectionOrderEditor(majorOrder, actions::reorderMajor),
+        CoreCommonR.string.settings_personalization_home_section_desc, "setting:home_card_", actions::setMajorVisible
+    )
 
 @Composable
 internal fun SettingsPersonalizationHomeCard(
     internationalEnabled: Boolean,
-    copy: SettingsHomeCardCopy,
     homeStartAvailable: Boolean,
     state: AppHomeCardsSettingsState,
     actions: HomeSectionSettingsActions,
@@ -194,35 +225,14 @@ internal fun SettingsPersonalizationHomeCard(
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
 ) {
-    val rows = state.homeRows(copy, internationalEnabled)
-    val editor = state.majorOrderEditor(internationalEnabled, actions)
+    val layout = state.homeSectionLayout(internationalEnabled, actions)
     PersonalizationCardContainer {
         MiuixSettingsSectionIntro(
             title = stringResource(CoreCommonR.string.settings_personalization_home_section),
-            description = stringResource(CoreCommonR.string.settings_personalization_home_section_desc)
+            description = stringResource(layout.descriptionRes)
         )
-        HomeReorderableColumn(items = editor.order, onReorder = editor.reorder) { index, id, _ ->
-            val row = rows.getValue(id)
-            val title = stringResource(row.titleRes)
-            var expanded by remember(id) { mutableStateOf(false) }
-            ReorderableItem {
-                SettingsHomeCardSwitch(
-                    title = title,
-                    icon = row.icon,
-                    checked = row.checked,
-                    onCheckedChange = { actions.setMajorVisible(id, it) },
-                    expanded = expanded,
-                    onToggleExpanded = row.children?.let { { expanded = !expanded } },
-                    targetId = "setting:home_card_$id",
-                    highlightTargetId = highlightTargetId,
-                    highlightPulse = highlightPulse,
-                    onHighlightFinished = onHighlightFinished,
-                    leadingExtra = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) }
-                )
-            }
-            if (expanded) {
-                row.children?.let { HomeSubSectionList(id, it, actions) }
-            }
+        HomeReorderableColumn(items = layout.editor.order, onReorder = layout.editor.reorder) { index, id, _ ->
+            HomeSectionSettingsRow(layout, index, id, actions, highlightTargetId, highlightPulse, onHighlightFinished)
         }
 
         LazyAnimatedVisibility(visible = !homeStartAvailable) {
@@ -231,6 +241,76 @@ internal fun SettingsPersonalizationHomeCard(
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReorderableColumnScope.HomeSectionSettingsRow(
+    layout: HomeSectionLayout,
+    index: Int,
+    id: String,
+    actions: HomeSectionSettingsActions,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
+    val row = layout.rows.getValue(id)
+    val title = stringResource(row.titleRes)
+    val children = row.children
+    val expansion = remember(id) { mutableStateOf(false) }
+    if (children is HomeFeedKinds) RevealFeedOnSearch(expansion, highlightTargetId, highlightPulse)
+    ReorderableItem {
+        SettingsHomeCardSwitch(
+            title = title, icon = row.icon, checked = row.checked,
+            onCheckedChange = { layout.setVisible(id, it) },
+            expanded = expansion.value,
+            onToggleExpanded = if (children != null) ({ expansion.value = !expansion.value }) else null,
+            targetId = layout.targetPrefix + id,
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished,
+            leadingExtra = { HomeReorderHandleIcon(title, layout.editor.order, index, layout.editor.reorder) }
+        )
+    }
+    when (val openChildren = children.takeIf { expansion.value }) {
+        is HomeSubSections -> HomeSubSectionList(id, openChildren, actions)
+        is HomeFeedKinds -> HomeFeedKindSwitches(openChildren, highlightTargetId, highlightPulse, onHighlightFinished)
+        null -> Unit
+    }
+}
+
+@Composable
+private fun RevealFeedOnSearch(
+    expansion: MutableState<Boolean>,
+    highlightTargetId: String?,
+    highlightPulse: Int
+) {
+    if (highlightPulse > 0 && highlightTargetId in internationalHomeFeedKindTargets.values) {
+        LaunchedEffect(highlightTargetId, highlightPulse) {
+            expansion.value = true
+        }
+    }
+}
+
+@Composable
+private fun HomeFeedKindSwitches(
+    kinds: HomeFeedKinds,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
+    Column(Modifier.fillMaxWidth().padding(start = 28.dp)) {
+        kinds.rows.forEach { row ->
+            HomeSubSectionSwitch(
+                title = stringResource(internationalHomeFeedKindTitles.getValue(row.kind)),
+                checked = row.visible,
+                onCheckedChange = row::setVisible,
+                toggleFromRow = true,
+                modifier = Modifier.settingsHighlightTarget(
+                    internationalHomeFeedKindTargets.getValue(row.kind), highlightTargetId, highlightPulse, onHighlightFinished
+                )
             )
         }
     }
@@ -263,31 +343,39 @@ private fun HomeSubSectionList(parentId: String, sections: HomeSubSections, acti
         val visible = id !in sections.hidden
         val title = stringResource(homeSubSectionTitles.getValue(id))
         ReorderableItem {
-            ListItem(
-                leadingContent = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) },
-                headlineContent = {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (visible) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingContent = {
-                    MiuixSettingsSwitch(
-                        checked = visible,
-                        onCheckedChange = { actions.setSubVisible(parentId, id, it) },
-                        modifier = Modifier.semantics { contentDescription = title }
-                    )
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            HomeSubSectionSwitch(
+                title = title,
+                checked = visible,
+                onCheckedChange = { actions.setSubVisible(parentId, id, it) },
+                leadingContent = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) }
             )
         }
     }
 }
 
-private fun homeRadarIcon(internationalEnabled: Boolean): ImageVector =
-    if (internationalEnabled) Icons.Outlined.Explore else Icons.Outlined.Radar
+@Composable
+private fun HomeSubSectionSwitch(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    toggleFromRow: Boolean = false,
+    leadingContent: (@Composable () -> Unit)? = null
+) {
+    ListItem(
+        modifier = if (toggleFromRow) modifier.settingsItemClickable { onCheckedChange(!checked) } else modifier,
+        leadingContent = leadingContent,
+        headlineContent = {
+            Text(title, style = MaterialTheme.typography.bodyMedium,
+                color = if (checked) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        trailingContent = {
+            MiuixSettingsSwitch(checked = checked, onCheckedChange = onCheckedChange,
+                modifier = Modifier.semantics { contentDescription = title })
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
 
 @Composable
 internal fun SettingsPersonalizationPlaybackInfoCard(

@@ -318,7 +318,7 @@ internal fun YouTubeMusicExploreContent(
                 Alignment.Center
             ) {
                 Text(
-                    stringResource(AppR.string.explore_tag_youtube_music),
+                    stringResource(AppR.string.youtube_explore_no_playlists),
                     style = MaterialTheme.typography.bodyLarge
                 )
             }

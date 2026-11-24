@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * Created: 2025/8/11
  */
 
-import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -38,7 +37,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,7 +44,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.collection.FavFolder
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.platform.youtube.auth.buildRefreshObserverFingerprint
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -96,9 +94,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         )
     )
     val uiState: StateFlow<LibraryUiState> = _uiState
-    private var lastYouTubeAuthFingerprint: String? = null
     private var youtubeEnabled = YouTubeFeatureGate.isEnabled()
-    private var lastObservedYouTubeEnabled: Boolean? = null
     private val neteaseRefreshOwner = LibraryNeteaseRefreshOwner(
         scope = viewModelScope,
         state = _uiState,
@@ -165,28 +161,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
         // YouTube Music
         viewModelScope.launch {
-            combine(
+            libraryYouTubeCatalog(
                 youtubeAuthRepo.authFlow,
-                AppContainer.settingsRepo.youtubeEnabledFlow
-            ) { bundle, enabled ->
-                bundle to enabled
-            }.collect { (bundle, enabled) ->
-                youtubeEnabled = enabled
-                val nextFingerprint = bundle.buildRefreshObserverFingerprint()
-                val authChanged = nextFingerprint != lastYouTubeAuthFingerprint
-                val enabledChanged = enabled != lastObservedYouTubeEnabled
-                if (!authChanged && !enabledChanged) {
-                    return@collect
-                }
-                lastYouTubeAuthFingerprint = nextFingerprint
-                lastObservedYouTubeEnabled = enabled
-                if (!enabled || !bundle.hasYouTubeMusicCookieContext()) {
-                    youtubeRefreshOwner.clear()
-                } else if (authChanged) {
-                    youtubeRefreshOwner.onSessionChanged()
-                } else {
-                    refreshYouTubeMusicPlaylists()
-                }
+                AppContainer.settingsRepo.youtubeEnabledFlow,
+                YouTubeContentSettings.preferences
+            ).collect { source ->
+                youtubeEnabled = source.enabled
+                if (source.account == null) youtubeRefreshOwner.clear() else youtubeRefreshOwner.onSessionChanged()
             }
         }
 
@@ -350,10 +331,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             runLocalPlaylistMutationSafely(operation, mutation)
         }
-    }
-
-    private fun moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
-        return hasSavedAuthMaterial()
     }
 
     private fun mapYouTubeMusicPlaylist(

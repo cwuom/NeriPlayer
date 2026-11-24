@@ -21,7 +21,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
-import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsHomeCardCopy
 import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.Assert.assertEquals
@@ -68,11 +67,9 @@ class SettingsHomeCardInternationalizationTest {
                 uiStyle = style,
                 animateColors = false
             ) {
-                val copy = settingsHomeCardCopy(internationalEnabled)
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     SettingsPersonalizationHomeCard(
                         internationalEnabled = internationalEnabled,
-                        copy = copy,
                         homeStartAvailable = true,
                         state = AppHomeCardsSettingsState(true, true, true, true, checked),
                         actions = actions,

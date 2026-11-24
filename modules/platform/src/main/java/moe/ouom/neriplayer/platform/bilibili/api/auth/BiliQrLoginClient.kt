@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.model.bilibili.auth.BiliQrLoginCheckResult
 import moe.ouom.neriplayer.data.model.bilibili.auth.BiliQrLoginSession
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.network.proxy.DynamicProxySelector
+import moe.ouom.neriplayer.network.proxy.NetworkDns
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -31,6 +32,7 @@ class BiliQrLoginClient {
     private val cookieStore: LinkedHashMap<String, String> = linkedMapOf()
     private val cookieLock = Any()
     private val http = OkHttpClient.Builder()
+        .dns(NetworkDns)
         .proxySelector(DynamicProxySelector)
         .build()
 

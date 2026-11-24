@@ -14,10 +14,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeResetActions
 import moe.ouom.neriplayer.data.model.settings.navigation.StartDestinationSnapshot
+import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.bootstrap.readBootstrapSettingsSnapshotSync
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.navigation.readStartDestinationSnapshotOrNull
+import moe.ouom.neriplayer.data.settings.setAutoSetting
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -30,6 +33,37 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = Application::class)
 class StartupSettingsSnapshotObserverTest {
     private val application = ApplicationProvider.getApplicationContext<Application>()
+
+    @Test
+    fun delayedObserverCannotUndoNewerNetworkSettings() = runBlocking {
+        val context = object : ContextWrapper(application) {
+            override fun getApplicationContext(): Context = this
+
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
+                super.getSharedPreferences("network-observer-$name", mode)
+        }
+        val savedSettings = context.dataStore.data.first()
+        val proxy = AutoSettingsSchema.network.proxyEndpoint
+        val dns = AutoSettingsSchema.network.dohEndpoint
+        try {
+            context.setAutoSetting(proxy, "http://localhost:8123")
+            context.setAutoSetting(dns, "")
+            val oldEmission = context.dataStore.data.first()
+
+            context.setAutoSetting(proxy, "http://localhost:8456")
+            context.setAutoSetting(dns, "https://example.org/dns-query")
+            persistStartupSettingsSnapshots(context, oldEmission)
+
+            val snapshot = readBootstrapSettingsSnapshotSync(context)
+            assertEquals("http://localhost:8456", snapshot.proxyEndpoint)
+            assertEquals("https://example.org/dns-query", snapshot.dohEndpoint)
+        } finally {
+            context.dataStore.updateData { savedSettings }
+            SnapshotCaches.forEach { name ->
+                context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
+            }
+        }
+    }
 
     @Test
     fun pendingBootstrapSnapshotCannotOverwriteANewerStartDestination() = runBlocking {

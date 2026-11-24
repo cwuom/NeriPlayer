@@ -92,6 +92,7 @@ class BiliQrLoginActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installLoginRoute()
         lockPortraitIfPhone()
         enableNeriEdgeToEdge()
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("bilibili")
@@ -365,7 +366,7 @@ class BiliQrLoginActivity : ComponentActivity() {
     private fun openWebFallback() {
         pollJob?.cancel()
         NPLogger.d(LOG_TAG, "Open web fallback login")
-        webLoginLauncher.launch(Intent(this, BiliWebLoginActivity::class.java))
+        webLoginLauncher.launch(loginIntent(this, BiliWebLoginActivity::class.java))
     }
 
     private fun setLoadingState(loading: Boolean) {

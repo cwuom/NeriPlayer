@@ -145,6 +145,7 @@ class HomeRadarSubSectionOrderTest {
     private fun renderRadarHome(radarOrder: List<String>): Float {
         val state = MutableStateFlow(
             HomeUiState(
+                homeSourceReady = true,
                 radarSongSections = listOf(
                     HomeNeteaseSongSectionState(
                         source = NeteaseHomeSongSource.PERSONAL_RADAR,

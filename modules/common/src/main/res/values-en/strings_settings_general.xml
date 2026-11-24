@@ -73,7 +73,7 @@
     <string name="settings_personalization_background_section_desc">Choose a custom background and display strength.</string>
     <string name="settings_display">Display Settings</string>
     <string name="settings_display_desc">Control cover, lyrics, and background display.</string>
-    <string name="settings_home_hidden_notice">All home cards are hidden, so Home will disappear from the bottom bar.</string>
+    <string name="settings_home_hidden_notice">Home is hidden from the bottom bar while it has no sections to show.</string>
     <string name="settings_playback">Playback Settings</string>
     <string name="settings_playback_expand">Fades, progress memory, and audio output</string>
     <string name="settings_playback_section_behavior">Playback Behavior</string>
@@ -389,7 +389,7 @@
     <string name="language_display_chinese">Chinese / 简体中文</string>
     <string name="language_display_english">English / 英语</string>
     <string name="language_display_system">Follow system / 跟随系统</string>
-    <string name="language_setting_title">Language</string>
+    <string name="language_setting_title">App language</string>
     <string name="language_select_title">Select Language</string>
     <string name="settings_color_picker_hint">Long press color or tap × to delete custom color</string>
     <string name="settings_phone_number_hint">+86 Phone Number</string>

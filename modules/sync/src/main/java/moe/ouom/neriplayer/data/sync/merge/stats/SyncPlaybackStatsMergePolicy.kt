@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.sync.merge.stats
 
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
+import moe.ouom.neriplayer.data.model.sync.mergeRecordedPlaybackDates
 
 object SyncPlaybackStatsMergePolicy {
     fun merge(
@@ -138,6 +139,7 @@ object SyncPlaybackStatsMergePolicy {
         )
         return SyncPlaybackStatBucket(
             dayStartAt = existing.dayStartAt,
+            recordedLocalDate = mergeRecordedPlaybackDates(existing.recordedLocalDate, bucket.recordedLocalDate),
             identityKey = existing.identityKey,
             name = newer.name,
             artist = newer.artist,

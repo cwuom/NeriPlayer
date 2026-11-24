@@ -3,31 +3,26 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.home
 import android.content.res.Resources
 import androidx.compose.runtime.Composable
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.ui.screen.tab.home.InternationalHomeKind
+import moe.ouom.neriplayer.ui.screen.tab.home.labelRes
+import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 
-/**
- * 设置页首页卡片区需要的文案。
- */
-internal data class SettingsHomeCardCopy(
-    val trendingLabelRes: Int,
-    val radarLabelRes: Int,
-    val recommendedLabelRes: Int
+internal val internationalHomeSectionTitles = mapOf(
+    InternationalHomeSectionIds.SPOTLIGHT to CoreCommonR.string.international_home_spotlight,
+    InternationalHomeSectionIds.CONTINUE to CoreCommonR.string.player_continue,
+    InternationalHomeSectionIds.FEED to CoreCommonR.string.international_home_feed
 )
 
-internal fun settingsHomeCardCopy(internationalEnabled: Boolean): SettingsHomeCardCopy =
-    if (internationalEnabled) {
-        SettingsHomeCardCopy(
-            trendingLabelRes = CoreCommonR.string.home_ytmusic_guess_you_like,
-            radarLabelRes = CoreCommonR.string.home_ytmusic_daily_discover,
-            recommendedLabelRes = CoreCommonR.string.home_ytmusic_more_recommendations
-        )
-    } else {
-        SettingsHomeCardCopy(
-            trendingLabelRes = CoreCommonR.string.settings_home_card_netease_trending,
-            radarLabelRes = CoreCommonR.string.settings_home_card_netease_radar,
-            recommendedLabelRes = CoreCommonR.string.settings_home_card_netease_recommended
-        )
-    }
+internal val internationalHomeFeedKindTitles = InternationalHomeKind.entries.associate { it.id to it.labelRes }
+
+internal fun internationalHomeFeedKindSearchId(kind: String) = "international_home_feed_$kind"
+
+internal val internationalHomeFeedKindTargets = internationalHomeFeedKindTitles.keys.associateWith { kind ->
+    "manual:${internationalHomeFeedKindSearchId(kind)}"
+}
 
 internal fun isSettingsHomeStartAvailable(
     showTrending: Boolean,
@@ -36,9 +31,9 @@ internal fun isSettingsHomeStartAvailable(
     showContinue: Boolean,
     hasRecentUsage: Boolean,
     showBilibili: Boolean = false,
-    internationalEnabled: Boolean = false
-): Boolean = showTrending || showRadar || showRecommended ||
-    (showBilibili && !internationalEnabled) || (showContinue && hasRecentUsage)
+    internationalLayout: InternationalHomeLayout? = null
+): Boolean = internationalLayout?.isHomeAvailable(hasRecentUsage)
+    ?: (showTrending || showRadar || showRecommended || showBilibili || (showContinue && hasRecentUsage))
 
 internal fun effectiveSettingsStartDestination(
     configured: String,
@@ -56,7 +51,6 @@ internal fun settingsStartDestinationLabelRes(destination: String): Int =
 
 internal data class SettingsHomeStartPresentation(
     val available: Boolean,
-    val copy: SettingsHomeCardCopy,
     val destination: String,
     val destinationLabel: String
 )
@@ -65,27 +59,22 @@ internal data class SettingsHomeStartPresentation(
 internal fun rememberSettingsHomeStartPresentation(
     resources: Resources,
     configuredDestination: String,
-    internationalEnabled: Boolean,
-    showTrending: Boolean,
-    showRadar: Boolean,
-    showRecommended: Boolean,
-    showContinue: Boolean,
-    hasRecentUsage: Boolean,
-    showBilibili: Boolean
+    cards: AppHomeCardsSettingsState,
+    international: Boolean,
+    hasRecentUsage: Boolean
 ): SettingsHomeStartPresentation {
     val available = isSettingsHomeStartAvailable(
-        showTrending,
-        showRadar,
-        showRecommended,
-        showContinue,
+        cards.showHomeTrendingCard,
+        cards.showHomeRadarCard,
+        cards.showHomeRecommendedCard,
+        cards.showHomeContinueCard,
         hasRecentUsage,
-        showBilibili,
-        internationalEnabled
+        cards.showHomeBilibiliCard,
+        cards.internationalLayout.takeIf { international }
     )
     val destination = effectiveSettingsStartDestination(configuredDestination, available)
     return SettingsHomeStartPresentation(
         available = available,
-        copy = settingsHomeCardCopy(internationalEnabled),
         destination = destination,
         destinationLabel = resources.getString(settingsStartDestinationLabelRes(destination))
     )

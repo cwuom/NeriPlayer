@@ -226,6 +226,21 @@ object AutoSettingsSchema {
             iconRes = CoreCommonR.drawable.ic_youtube
         )
 
+        @AutoSetting(key = "youtube_content_language", type = SettingValueType.String, order = 101, access = SettingAccessMode.KeyOnly)
+        val youtubeContentLanguage = Unit
+
+        @AutoSetting(key = "youtube_content_country", type = SettingValueType.String, order = 102, access = SettingAccessMode.KeyOnly)
+        val youtubeContentCountry = Unit
+
+        @AutoSetting(key = "youtube_playlist_suggestion_source", type = SettingValueType.String, defaultString = "Both", order = 103, access = SettingAccessMode.KeyOnly)
+        val youtubePlaylistSuggestionSource = Unit
+
+        @AutoSetting(key = "youtube_hide_explicit", order = 104, access = SettingAccessMode.KeyOnly)
+        val youtubeHideExplicit = Unit
+
+        @AutoSetting(key = "youtube_hide_music_videos", order = 105, access = SettingAccessMode.KeyOnly)
+        val youtubeHideMusicVideos = Unit
+
         @AutoSetting(order = 110)
         val biliSkipSegmentPromptEnabled = autoSwitchSetting(
             key = "bili_skip_segment_prompt_enabled",
@@ -621,6 +636,30 @@ object AutoSettingsSchema {
         val homeRecommendedHidden = autoSetting(
             titleRes = CoreCommonR.string.settings_home_recommended_visible
         )
+
+        @AutoSetting(
+            key = "international_home_order",
+            type = SettingValueType.String,
+            order = 78,
+            access = SettingAccessMode.KeyOnly
+        )
+        val internationalHomeOrder = autoSetting(titleRes = CoreCommonR.string.settings_home_major_order)
+
+        @AutoSetting(
+            key = "international_home_hidden",
+            type = SettingValueType.String,
+            order = 79,
+            access = SettingAccessMode.KeyOnly
+        )
+        val internationalHomeHidden = autoSetting(titleRes = CoreCommonR.string.settings_personalization_home_section)
+
+        @AutoSetting(
+            key = "international_home_feed_hidden",
+            type = SettingValueType.String,
+            order = 80,
+            access = SettingAccessMode.KeyOnly
+        )
+        val internationalHomeFeedHidden = autoSetting(titleRes = CoreCommonR.string.international_home_feed)
     }
 
     /*
@@ -1679,6 +1718,22 @@ object AutoSettingsSchema {
         val bypassProxy = autoSetting(
             titleRes = CoreCommonR.string.settings_bypass_proxy,
             descriptionRes = CoreCommonR.string.settings_bypass_proxy_desc
+        )
+
+        @AutoSetting(key = "network_proxy_endpoint", type = SettingValueType.String, order = 20, ui = SettingUiType.Custom)
+        val proxyEndpoint = autoStringSetting(
+            key = "network_proxy_endpoint",
+            titleRes = CoreCommonR.string.settings_custom_proxy,
+            descriptionRes = CoreCommonR.string.settings_custom_proxy_desc,
+            icon = AutoSettingIcon.Router
+        )
+
+        @AutoSetting(key = "network_doh_endpoint", type = SettingValueType.String, order = 30, ui = SettingUiType.Custom)
+        val dohEndpoint = autoStringSetting(
+            key = "network_doh_endpoint",
+            titleRes = CoreCommonR.string.settings_dns_over_https,
+            descriptionRes = CoreCommonR.string.settings_dns_over_https_desc,
+            icon = AutoSettingIcon.Cloud
         )
     }
 

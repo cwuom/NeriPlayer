@@ -7,10 +7,9 @@ data class YouTubeMusicRequestLocale(
     val gl: String
 ) {
     val acceptLanguage: String
-        get() = buildString {
-            append(hl)
-            append(",")
-            append(gl.lowercase(Locale.US))
-            append(";q=0.9,en;q=0.8")
+        get() {
+            val base = Locale.forLanguageTag(hl).language
+            return listOfNotNull(hl, base.takeUnless { it.isBlank() || it == hl }?.let { "$it;q=0.9" })
+                .joinToString(",")
         }
 }

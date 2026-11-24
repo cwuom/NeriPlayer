@@ -68,6 +68,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.LocalArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.home.HomeScreen
 import moe.ouom.neriplayer.ui.screen.tab.home.NeteaseHomePlaylistListScreen
@@ -86,6 +87,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
@@ -217,6 +219,7 @@ fun rememberHomeHostRuntimeState(): HomeHostRuntimeState {
 
 @Composable
 internal fun HomeHostScreen(
+    onYouTubeCreatorClick: (YouTubeMusicCreatorSummary) -> Unit = {},
     showContinueCard: Boolean = true,
     showTrendingCard: Boolean = true,
     showRadarCard: Boolean = true,
@@ -246,7 +249,8 @@ internal fun HomeHostScreen(
     biliPlaylistSourceRoute: (BiliPlaylist) -> String? = { null },
     localPlaylistSourceRoute: (Long) -> String? = { null },
     coherentFeedbackEnabled: Boolean = false,
-    renderScene: HostSceneRenderer = PassThroughHostSceneRenderer
+    renderScene: HostSceneRenderer = PassThroughHostSceneRenderer,
+    onOpenHomeSettings: (SettingsPage) -> Unit = {}
 ) {
     var selected by rememberSaveable(stateSaver = homeSelectedItemSaver) {
         mutableStateOf(null)
@@ -466,6 +470,8 @@ internal fun HomeHostScreen(
                                 )
                         ) {
                             HomeScreen(
+                                onOpenLanguageSettings = { onOpenHomeSettings(SettingsPage.Language) },
+                                onOpenGeneralSettings = { onOpenHomeSettings(SettingsPage.General) },
                                 showContinueCard = showContinueCard,
                                 showTrendingCard = showTrendingCard,
                                 showRadarCard = showRadarCard,
@@ -500,6 +506,7 @@ internal fun HomeHostScreen(
                                     }
                                     openHomeSelectedItem(HomeSelectedItem.Netease(pl))
                                 },
+                                onYouTubeCreatorClick = onYouTubeCreatorClick,
                                 onYouTubeMusicPlaylistClick = { pl ->
                                     skipDetailCloseAnimation = false
                                     captureHomeScrollPosition()

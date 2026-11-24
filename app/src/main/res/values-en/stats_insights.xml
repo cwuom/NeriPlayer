@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="stats_rotation">In rotation</string>
+    <string name="stats_rank_description">Share of listening time</string>
+    <string name="stats_artist_tab">Artists · %1$s</string>
+    <string name="stats_album_tab">Albums · %1$s</string>
+    <string name="stats_spotlight">Top song by listening time</string>
+    <string name="stats_weekday_mode">Weekday</string>
+    <string name="stats_hour_mode">Hour</string>
+    <string name="stats_rhythm">Listening rhythm</string>
+    <string name="stats_peak">Peak</string>
+    <string name="stats_previous_slot">Previous time slot</string>
+    <string name="stats_next_slot">Next time slot</string>
+    <string name="stats_active_days">Listening days</string>
+    <string name="stats_daily_average">Average per listening day</string>
+    <string name="stats_play_average">Average per play</string>
+    <string name="stats_share_label">Time share</string>
+    <string name="stats_exact_duration">%1$dh %2$dm %3$ds</string>
+    <string name="stats_short_hour">%1$dh %2$dm</string>
+    <string name="stats_short_min">%1$dm</string>
+    <string name="stats_short_sec">%1$ds</string>
+    <string name="stats_rank_detail_close">Close</string>
+    <string name="stats_chart_selected">%1$s, %2$s listened</string>
+    <string name="stats_rank_more">Show top %1$d</string>
+    <string name="stats_rank_less">Show less</string>
+    <string name="stats_top_track_action">Play %1$s</string>
+    <string name="stats_since_date">First recorded %1$s</string>
+    <string name="stats_exact_minutes">%1$dm %2$ds</string>
+    <string name="stats_album_rank">Album · No. %1$d</string>
+    <string name="stats_artist_rank">Artist · No. %1$d</string>
+</resources>

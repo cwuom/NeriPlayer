@@ -283,7 +283,7 @@ internal fun Modifier.settingsHighlightTarget(
 @Composable
 internal fun MiuixSettingsSectionIntro(
     title: String,
-    description: String,
+    description: String? = null,
     modifier: Modifier = Modifier
 ) {
     val clean = NeriDesign.isClean
@@ -298,15 +298,17 @@ internal fun MiuixSettingsSectionIntro(
             style = if (clean) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
             color = if (clean) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
         )
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (clean) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.76f)
-            }
-        )
+        if (description != null) {
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (clean) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.76f)
+                }
+            )
+        }
     }
 }
 

@@ -501,6 +501,8 @@ internal fun mergeCatalogBackupWithPreviews(
                 downloadTime = preview.downloadTime.takeIf { it > 0L } ?: backup.downloadTime,
                 name = backup.name.ifBlank { preview.name },
                 artist = backup.artist.ifBlank { preview.artist },
+                youtubeContentLabel = preview.youtubeContentLabel?.takeIf { stableKey != null && preview.stableKey == stableKey }
+                    ?: backup.youtubeContentLabel,
                 album = backup.album.ifBlank { preview.album },
                 coverPath = preview.coverPath?.trim()
                     ?.takeIf(String::isNotBlank)

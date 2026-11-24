@@ -139,6 +139,8 @@ internal fun GlobalDownloadManager.buildOptimisticDownloadedSongImpl(
         sourceChannelId = sourceChannel,
         sourceAudioId = sourceAudioId,
         sourceSubAudioId = sourceSubAudioId,
+        youtubeContentLabel = song.youtubeContentLabel
+            ?: previousSong?.takeIf { it.stableKey == song.stableKey() }?.youtubeContentLabel,
         sourcePlaylistContextId = song.playlistContextId?.takeIf { remoteSource != null },
         localFileName = storedAudio.logicalName
     )

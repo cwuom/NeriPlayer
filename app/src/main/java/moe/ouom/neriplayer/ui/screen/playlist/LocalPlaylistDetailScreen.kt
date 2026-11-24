@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.platform.youtube.settings.visiblePlaylistSongs
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -1086,6 +1089,13 @@ fun LocalPlaylistDetailScreen(
             } else {
                 LocalFilesSongTab.MANUALLY_ADDED
             }
+            val unfilteredQueue by remember(localSongs) {
+                derivedStateOf { snapshotDisplayOrderList(localSongs) }
+            }
+            val contentPreferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
+            val baseQueue = remember(unfilteredQueue, contentPreferences.hideExplicit, contentPreferences.hideMusicVideos) {
+                contentPreferences.visiblePlaylistSongs(unfilteredQueue)
+            }
             val canReorderCurrentSongs = !isLocalFilesPlaylist ||
                 selectedLocalFilesTab == LocalFilesSongTab.MANUALLY_ADDED
             val canReorderCurrentSongsState = rememberUpdatedState(canReorderCurrentSongs)
@@ -1095,13 +1105,23 @@ fun LocalPlaylistDetailScreen(
                     if (!canReorderCurrentSongsState.value) {
                         return@rememberLocalPlaylistReorderState
                     }
-                    if (!blockSync) blockSync = true
                     val fromKey = from.key as? String ?: return@rememberLocalPlaylistReorderState
                     val toKey = to.key as? String ?: return@rememberLocalPlaylistReorderState
-                    val fromIdx = localSongs.indexOfFirst { it.stableKey() == fromKey }
-                    val toIdx = localSongs.indexOfFirst { it.stableKey() == toKey }
-                    if (fromIdx != -1 && toIdx != -1 && fromIdx != toIdx) {
+                    val visible = YouTubeContentSettings.preferences.value.visiblePlaylistSongs(localSongs)
+                    val fromIdx = visible.indexOfFirst { it.stableKey() == fromKey }
+                    val toIdx = visible.indexOfFirst { it.stableKey() == toKey }
+                    if (fromIdx < 0 || toIdx < 0 || fromIdx == toIdx) return@rememberLocalPlaylistReorderState
+                    if (visible.size == localSongs.size) {
+                        blockSync = true
                         localSongs.add(toIdx, localSongs.removeAt(fromIdx))
+                    } else {
+                        val keys = visible.mapTo(ArrayList(visible.size)) { it.stableKey() }
+                        keys.add(toIdx, keys.removeAt(fromIdx))
+                        val merged = reorderVisiblePlaylistSlots(localSongs, keys) { it.stableKey() }
+                            ?: return@rememberLocalPlaylistReorderState
+                        blockSync = true
+                        localSongs.clear()
+                        localSongs.addAll(merged)
                     }
                 },
                 canDragOver = localPlaylistCanDragOver {
@@ -1132,9 +1152,6 @@ fun LocalPlaylistDetailScreen(
                 sessionKey = playlistId to selectedLocalFilesTab,
                 isScrollInProgress = isListScrolling
             )
-            val baseQueue by remember(localSongs) {
-                derivedStateOf { snapshotDisplayOrderList(localSongs) }
-            }
             val downloadedPlaybackSongs = remember(downloadedSongs) {
                 downloadedSongs.map { it.toPlaybackSongItem() }
             }
@@ -1155,10 +1172,13 @@ fun LocalPlaylistDetailScreen(
                     }
                 }
             }
+            val visibleDownloads = remember(downloadedPlaybackSongs, contentPreferences.hideExplicit, contentPreferences.hideMusicVideos) {
+                contentPreferences.visiblePlaylistSongs(downloadedPlaybackSongs)
+            }
             val tabSongs = if (isLocalFilesPlaylist) {
                 localFilesSongsForTab(
                     manuallyAddedSongs = baseQueue,
-                    downloadedSongs = downloadedPlaybackSongs,
+                    downloadedSongs = visibleDownloads,
                     tab = selectedLocalFilesTab
                 )
             } else {

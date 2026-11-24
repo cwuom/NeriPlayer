@@ -47,6 +47,8 @@ fun YouTubeMusicCreatorNavigationScreen(
             YouTubeMusicCreatorItemsScreen(
                 section = section,
                 creatorName = creator.title,
+                onPlaylistClick = onPlaylistClick,
+                onCreatorClick = onCreatorClick,
                 onBack = { selectedSection = null },
                 onSongClick = onSongClick,
                 offlineMode = offlineMode

@@ -218,6 +218,17 @@ enum class ConflictResolution {
     MANUAL_REQUIRED
 }
 
+fun mergeRecordedPlaybackDates(left: String?, right: String?): String? = when {
+    left == null -> right
+    right == null -> left
+    else -> minOf(left, right)
+}
+
+fun String?.validRecordedPlaybackDate(): String? {
+    if (this == null || length != 10) return null
+    return runCatching { java.time.LocalDate.parse(this).toString() }.getOrNull()
+}
+
 @Serializable
 data class SyncPlaybackCounterShard(
     @ProtoNumber(1) val deviceId: String = "",
@@ -225,7 +236,8 @@ data class SyncPlaybackCounterShard(
     @ProtoNumber(3) val totalListenMs: Long = 0L,
     @ProtoNumber(4) val playCount: Int = 0,
     @ProtoNumber(5) val firstPlayedAt: Long = 0L,
-    @ProtoNumber(6) val lastPlayedAt: Long = 0L
+    @ProtoNumber(6) val lastPlayedAt: Long = 0L,
+    @ProtoNumber(7) val recordedLocalDate: String? = null
 )
 
 @Serializable
@@ -266,7 +278,8 @@ data class SyncPlaybackStatBucket(
     @ProtoNumber(14) val albumId: Long = 0L,
     @ProtoNumber(15) val counterBaseListenMs: Long = 0L,
     @ProtoNumber(16) val counterBasePlayCount: Int = 0,
-    @ProtoNumber(17) val counterShards: List<SyncPlaybackCounterShard> = emptyList()
+    @ProtoNumber(17) val counterShards: List<SyncPlaybackCounterShard> = emptyList(),
+    @ProtoNumber(18) val recordedLocalDate: String? = null
 )
 
 @Serializable

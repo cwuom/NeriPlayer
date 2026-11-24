@@ -20,6 +20,7 @@ class SettingsSplitLayoutCrossingTest {
     val composeRule = createComposeRule()
 
     private var splitLayout by mutableStateOf(false)
+    private var international by mutableStateOf(false)
     private lateinit var navigation: SettingsNavigationState
 
     private fun render(initialSplit: Boolean) {
@@ -30,7 +31,8 @@ class SettingsSplitLayoutCrossingTest {
                 dynamicColor = false,
                 mobileDataFollowDefaultAudioQuality = false,
                 backgroundImageUri = null,
-                splitLayout = splitLayout
+                splitLayout = splitLayout,
+                internationalEnabled = international
             )
         }
         composeRule.waitForIdle()
@@ -39,6 +41,53 @@ class SettingsSplitLayoutCrossingTest {
     private fun resize(split: Boolean) {
         composeRule.runOnIdle { splitLayout = split }
         composeRule.waitForIdle()
+    }
+
+    @Test
+    fun `home shortcut handles Back only while its target is still open`() {
+        render(initialSplit = true)
+        var consumed = 0
+        var returns = 0
+        composeRule.runOnIdle {
+            navigation.consumeHomeShortcut(true, SettingsPage.Content) { consumed++ }
+            assertEquals(SettingsPage.Language, navigation.activePage)
+            assertEquals(true, navigation.canNavigateBack)
+            assertEquals(true, navigation.showSplitDetailBackButton)
+            navigation.consumeHomeShortcut(true, null) { consumed++ }
+            navigation.navigateBackFromPage { returns++ }
+            assertEquals(1, returns)
+
+            navigation.consumeHomeShortcut(true, SettingsPage.Language) { consumed++ }
+            navigation.activePage = SettingsPage.Storage
+            navigation.navigateBackFromPage { returns++ }
+            navigation.consumeHomeShortcut(true, SettingsPage.Language) { consumed++ }
+            navigation.consumeHomeShortcut(false, SettingsPage.General) { consumed++ }
+            navigation.navigateBackFromPage { returns++ }
+            assertEquals(3, consumed)
+            assertEquals(1, returns)
+        }
+    }
+
+    @Test
+    fun `restored content opens language in either mode and window layout`() {
+        render(initialSplit = true)
+        composeRule.runOnIdle { navigation.activePageState.value = SettingsPage.Content }
+        composeRule.runOnIdle {
+            assertEquals(SettingsPage.Language, navigation.activePage)
+            international = true
+        }
+        composeRule.runOnIdle {
+            assertEquals(SettingsPage.Language, navigation.activePage)
+            navigation.activePage = SettingsPage.Content
+            assertEquals(SettingsPage.Language, navigation.activePageState.value)
+            international = false
+        }
+        composeRule.runOnIdle {
+            assertEquals(SettingsPage.Language, navigation.activePage)
+            assertEquals(SettingsPage.Language, navigation.activePageState.value)
+        }
+        resize(split = false)
+        composeRule.runOnIdle { assertEquals(SettingsPage.Language, navigation.activePage) }
     }
 
     @Test

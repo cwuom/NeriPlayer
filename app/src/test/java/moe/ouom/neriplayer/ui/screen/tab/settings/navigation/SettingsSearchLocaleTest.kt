@@ -17,8 +17,14 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHomePageGroups
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsSearchScrollAnchor
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.buildSettingsSearchEntries
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.resolveSettingsSearchHighlightTarget
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.searchSettingsEntries
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -39,6 +45,69 @@ class SettingsSearchLocaleTest {
     private val language = mutableStateOf("en")
     private val internationalEnabled = mutableStateOf(false)
     private lateinit var navigation: SettingsNavigationState
+
+    @Test
+    fun languageAndContentSearchFindsEachAvailableControlOnItsCard() {
+        val controls = mapOf(
+            CoreCommonR.string.language_setting_title to "manual:language",
+            CoreCommonR.string.settings_internationalization to "manual:internationalization",
+            AppR.string.youtube_content_language to "manual:youtube_content_language",
+            AppR.string.youtube_content_country to "manual:youtube_content_country"
+        )
+        val discoveryControls = mapOf(
+            AppR.string.youtube_content_suggestion_basis to "manual:youtube_content_suggestion_basis",
+            AppR.string.youtube_content_hide_explicit to "manual:youtube_content_hide_explicit",
+            AppR.string.youtube_content_hide_videos to "manual:youtube_content_hide_videos"
+        )
+        assertEquals(1, SettingsHomePageGroups.flatten().count { it == SettingsPage.Language })
+        assertTrue(SettingsPage.Content !in SettingsHomePageGroups.flatten())
+        for (locale in listOf("en", "zh")) {
+            val resources = resourcesFor(locale)
+            for (international in listOf(false, true)) {
+                val entries = buildSettingsSearchEntries(resources, international)
+                assertTrue(entries.none { it.page == SettingsPage.Content })
+                assertEquals(1, entries.count { it.id == "page:Language" })
+                val expectedControls = if (international) controls + discoveryControls else controls
+                if (!international) assertTrue(entries.none { it.targetId in discoveryControls.values })
+                expectedControls.forEach { (title, target) ->
+                    val label = resources.getString(title)
+                    val control = entries.single { it.title == label }
+                    assertEquals(SettingsPage.Language, control.page)
+                    assertEquals(target, control.id)
+                    assertEquals(target, resolveSettingsSearchHighlightTarget(control, dynamicColor = false))
+                    val card = if (target in discoveryControls.values) 2 else 1
+                    assertEquals(card, settingsSearchScrollAnchor(control.page, control.targetId).itemIndex)
+                    assertTrue(searchSettingsEntries(entries, label, limit = 8).contains(control))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun internationalRecommendationKindsFindTheirLocalizedSwitchesOnlyInInternationalMode() {
+        val titles = mapOf(
+            "track" to CoreCommonR.string.artist_tab_songs,
+            "playlist" to CoreCommonR.string.library_netease_tab_playlists,
+            "album" to CoreCommonR.string.library_netease_tab_albums,
+            "artist" to CoreCommonR.string.explore_search_type_artist
+        )
+        for (locale in listOf("en", "zh")) {
+            val resources = resourcesFor(locale)
+            val international = buildSettingsSearchEntries(resources, internationalEnabled = true)
+            val domestic = buildSettingsSearchEntries(resources, internationalEnabled = false)
+            titles.forEach { (kind, title) ->
+                val target = "manual:international_home_feed_$kind"
+                val label = resources.getString(title)
+                val entry = international.single { it.targetId == target }
+                assertEquals(label, entry.title)
+                assertEquals(resources.getString(CoreCommonR.string.international_home_feed), entry.description)
+                assertEquals(SettingsPage.Personalization, entry.page)
+                assertEquals(2, settingsSearchScrollAnchor(entry.page, target).itemIndex)
+                assertTrue(searchSettingsEntries(international, label).contains(entry))
+                assertTrue(domestic.none { it.targetId == target })
+            }
+        }
+    }
 
     @Test
     fun searchTitlesAndTokensFollowLanguageChangesWhenTheContextIsReused() {
@@ -73,7 +142,7 @@ class SettingsSearchLocaleTest {
     }
 
     @Test
-    fun internationalModeRemovesOnlyTheBilibiliHomeSwitchWithoutResettingSearchState() {
+    fun internationalModeRemovesTheBilibiliHomeSwitchWithoutResettingSearchState() {
         render(updateHostResources = true)
         composeRule.runOnIdle { navigation.searchQueryState.value = "bilibili" }
         val queryState = navigation.searchQueryState

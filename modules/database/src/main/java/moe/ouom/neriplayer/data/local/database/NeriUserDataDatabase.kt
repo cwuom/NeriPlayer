@@ -20,6 +20,10 @@ import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapsho
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotDeletedBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsPendingDeltaEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsEventReceiptEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatHourEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackListeningIntervalEntity
+import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackListeningIntervalMigration
+import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackStatHourMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackStatsPagedMigration
 import moe.ouom.neriplayer.data.local.database.dao.stats.PlaybackStatsDao
 import moe.ouom.neriplayer.data.local.database.dao.FavoritePlaylistDao
@@ -87,7 +91,7 @@ import moe.ouom.neriplayer.data.local.database.migration.download.DownloadFinali
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadBatchMigration
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadRecoveryCursorMigration
 
-private const val NERI_USER_DATA_FINAL_VERSION = 21
+private const val NERI_USER_DATA_FINAL_VERSION = 23
 
 @Database(
     entities = [
@@ -114,6 +118,8 @@ private const val NERI_USER_DATA_FINAL_VERSION = 21
         PlaybackStatsSnapshotDeletedBucketEntity::class,
         PlaybackStatsPendingDeltaEntity::class,
         PlaybackStatsEventReceiptEntity::class,
+        PlaybackStatHourEntity::class,
+        PlaybackListeningIntervalEntity::class,
         PlaybackStatBucketEntity::class,
         PlaybackStatCounterShardEntity::class,
         PlaybackStatDailyCounterShardEntity::class,
@@ -208,7 +214,7 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
         }
 
         /** 新版本只在这里登记，漏登会让旧版本用户升级时无法打开数据库 */
-        internal fun allMigrations(): Array<Migration> = arrayOf(
+        fun allMigrations(): Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
             MIGRATION_3_4,
@@ -228,7 +234,9 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
             MIGRATION_17_18,
             MIGRATION_18_19,
             MIGRATION_19_20,
-            MIGRATION_20_21
+            MIGRATION_20_21,
+            MIGRATION_21_22,
+            MIGRATION_22_23
         )
 
         private fun checkMainProcess(context: Context) {
@@ -260,6 +268,8 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
         val MIGRATION_18_19: Migration = LyricSyncPersistenceMigration
         val MIGRATION_19_20: Migration = PlaybackStatsPagedMigration
         val MIGRATION_20_21: Migration = LocalSourceProvenanceMigration
+        val MIGRATION_21_22: Migration = PlaybackStatHourMigration
+        val MIGRATION_22_23: Migration = PlaybackListeningIntervalMigration
 
         const val FINAL_DB_VERSION = NERI_USER_DATA_FINAL_VERSION
     }

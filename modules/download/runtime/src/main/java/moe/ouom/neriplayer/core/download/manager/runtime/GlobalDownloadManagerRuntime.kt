@@ -338,6 +338,7 @@ internal suspend fun GlobalDownloadManager.updateFastIndexAfterMetadataEdit(
                 channelId = song.channelId ?: existing.channelId,
                 audioId = song.audioId ?: existing.audioId,
                 subAudioId = song.subAudioId ?: existing.subAudioId,
+                youtubeContentLabel = song.youtubeContentLabel ?: existing.youtubeContentLabel,
                 playlistContextId = song.playlistContextId
                     ?: existing.playlistContextId,
                 durationMs = song.durationMs.takeIf { it > 0L }

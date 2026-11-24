@@ -321,6 +321,28 @@ class YouTubeMusicParserTest {
     }
 
     @Test
+    fun homeReadsTypedSubtitleLinksAndResponsiveCollectionRoutes() {
+        val root = JSONObject("""
+            {"continuationContents":{"musicShelfContinuation":{"contents":[
+                {"musicTwoRowItemRenderer":{
+                    "title":{"simpleText":"曲"},
+                    "navigationEndpoint":{"watchEndpoint":{"videoId":"track"}},
+                    "subtitle":{"runs":[{"text":"楽曲"},{"text":" • "},
+                        {"text":"歌手","navigationEndpoint":{"browseEndpoint":{"browseId":"UCartist"}}},
+                        {"text":" • "},{"text":"盤","navigationEndpoint":{"browseEndpoint":{"browseId":"MPREalbum"}}}]}
+                }},
+                {"musicResponsiveListItemRenderer":{"flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{
+                    "text":{"runs":[{"text":"作品集","navigationEndpoint":{"browseEndpoint":{"browseId":"MPREcollection"}}}]}
+                }}]}}
+            ]}}}
+        """)
+        val (song, collection) = YouTubeMusicParser.parseHomeShelfContinuationItems(root)
+        assertEquals("歌手", song.artist)
+        assertEquals("盤", song.album)
+        assertEquals("MPREcollection", collection.browseId)
+    }
+
+    @Test
     fun parseHomeShelfPages_keepsItemsWhenHeaderTitleIsMissing() {
         val root = JSONObject(
             """
@@ -1038,6 +1060,15 @@ class YouTubeMusicParserTest {
 
         assertEquals("Owner A", metadata.artist)
         assertEquals("翻唱与混音", metadata.album)
+    }
+
+    @Test
+    fun homeSongMetadataKeepsArtistNamesAndIgnoresLocalizedPlayCounts() {
+        listOf("2,4 Mrd. Wiedergaben", "2,4 mil M de reproducciones", "視聴回数 24億回").forEach { count ->
+            val metadata = YouTubeMusicParser.parseHomeSongMetadata("Mountain View • $count", "Mix")
+            assertEquals("Mountain View", metadata.artist)
+            assertEquals("Mix", metadata.album)
+        }
     }
 
     @Test

@@ -2,8 +2,8 @@ package moe.ouom.neriplayer.data.stats
 
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
 import moe.ouom.neriplayer.data.model.stats.TrackStat
-
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.model.sync.mergeRecordedPlaybackDates
 
 internal fun shouldKeepTrackStatAfterClear(stat: TrackStat, playbackStatsClearedAt: Long): Boolean {
     if (playbackStatsClearedAt <= 0L) return true
@@ -45,6 +45,7 @@ internal fun mergeDailyBucket(
         playCount = remoteBucket.playCount,
         lastPlayedAt = remoteBucket.lastPlayedAt,
         firstPlayedAt = remoteBucket.firstPlayedAt,
+        recordedLocalDate = mergeRecordedPlaybackDates(local.recordedLocalDate, remoteBucket.recordedLocalDate),
         mediaUri = metadata.mediaUri
     )
 }
@@ -52,6 +53,7 @@ internal fun mergeDailyBucket(
 internal fun SyncPlaybackStatBucket.toPlaybackStatBucket(): PlaybackStatBucket {
     return PlaybackStatBucket(
         dayStartAt = dayStartAt,
+        recordedLocalDate = recordedLocalDate,
         id = id,
         name = name,
         artist = artist,

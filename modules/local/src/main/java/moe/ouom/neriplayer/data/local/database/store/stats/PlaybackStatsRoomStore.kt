@@ -6,16 +6,21 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.util.UUID
+import moe.ouom.neriplayer.data.stats.listeningDayStart
+import moe.ouom.neriplayer.data.stats.recordedZone
+import moe.ouom.neriplayer.data.stats.PlaybackStatsDeltaPolicy
 import java.io.IOException
 import java.security.MessageDigest
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsPendingDeltaEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsEventReceiptEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackListeningIntervalEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.toEntity
 import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPage
 import moe.ouom.neriplayer.data.stats.PlaybackStatsSummary
 import moe.ouom.neriplayer.data.stats.PlaybackStatsCursor
+import moe.ouom.neriplayer.data.stats.playbackListeningHours
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
@@ -275,6 +280,13 @@ internal class PlaybackStatsRoomStore(
         counterEpochStartedAt: Long,
         now: Long
     ) {
+        val stats = database.playbackStatsDao()
+        if (clearedAt > readLong(CLEARED_AT_METADATA_KEY)) {
+            stats.clearHoursBeforeEpoch(clearedAt)
+            stats.clearIntervalsBeforeEpoch(clearedAt)
+        }
+        stats.deleteOrphanHours()
+        stats.deleteOrphanIntervals()
         database.syncMetadataDao().upsertMigrationMetadata(
             metadata(CUTOVER_STATE_METADATA_KEY, ROOM_PRIMARY_STATE, now)
         )
@@ -484,16 +496,17 @@ internal class PlaybackStatsRoomStore(
     }
 
     suspend fun enqueueDelta(eventId: String, trackJson: String, listenedMs: Long, playCountIncrement: Int?, playedAt: Long,
-        deviceId: String, observedClearedAt: Long? = null, observeCurrentClear: Boolean = false): Boolean = database.withTransaction {
+        deviceId: String, observedClearedAt: Long? = null, observeCurrentClear: Boolean = false,
+        playedZone: String? = null): Boolean = database.withTransaction {
         require(observedClearedAt == null || observedClearedAt >= 0)
-        val payloadHash = playbackDeltaPayloadHash(trackJson, listenedMs, playCountIncrement, playedAt, observedClearedAt)
+        val payloadHash = playbackDeltaPayloadHash(trackJson, listenedMs, playCountIncrement, playedAt, observedClearedAt, playedZone)
         if (isRecordedEvent(eventId, payloadHash)) return@withTransaction false
         val state = checkNotNull(readPrimaryState()) { "Playback statistics are unavailable" }
         val sequence = readLong(JOURNAL_SEQUENCE_METADATA_KEY)
         check(sequence < Long.MAX_VALUE) { "Playback journal sequence exhausted" }
         val admission = admitPlaybackDelta(state.clearedAt, playedAt, observedClearedAt, observeCurrentClear)
         val delta = PlaybackStatsPendingDeltaEntity(eventId, sequence + 1, trackJson, listenedMs, playCountIncrement,
-            playedAt, admission.epochStartedAt, deviceId)
+            playedAt, admission.epochStartedAt, deviceId, playedZone)
         database.playbackStatsSnapshotDao().insertReceipt(PlaybackStatsEventReceiptEntity(eventId, playedAt, payloadHash))
         if (admission.accepted) database.playbackStatsSnapshotDao().insertPendingDelta(delta)
         database.syncMetadataDao().upsertMigrationMetadata(metadata(JOURNAL_SEQUENCE_METADATA_KEY, delta.sequence.toString(), playedAt))
@@ -523,17 +536,47 @@ internal class PlaybackStatsRoomStore(
             pruneEventReceipts()
             return@withTransaction
         }
-        val day = moe.ouom.neriplayer.data.model.stats.playbackStatsDayStartAt(delta.playedAt)
+        val zone = delta.recordedZone()
+        val day = listeningDayStart(delta.playedAt, zone)
         val current = PlaybackStatsDeltaRows(
             dao.getTrack(identityKey), dao.getBucket(day, identityKey),
             dao.getOwnedCounter(identityKey, delta.deviceId, delta.epochStartedAt),
             dao.getOwnedDailyCounter(day, identityKey, delta.deviceId, delta.epochStartedAt)
         )
         val rows = update(current)
-        dao.upsertStats(listOf(checkNotNull(rows.track)))
-        dao.upsertBuckets(listOf(checkNotNull(rows.bucket)))
+        val track = checkNotNull(rows.track)
+        val bucket = checkNotNull(rows.bucket)
+        val daily = checkNotNull(rows.dailyCounter)
+        dao.upsertStats(listOf(track))
         dao.upsertCounterShards(listOf(checkNotNull(rows.counter)))
-        dao.upsertDailyCounterShards(listOf(checkNotNull(rows.dailyCounter)))
+        // a flush at midnight may have time only on the previous day and no play count on the new day
+        if (zone == null || delta.playedAt > day || daily.playCount > (current.dailyCounter?.playCount ?: 0)) {
+            dao.upsertBuckets(listOf(bucket))
+            dao.upsertDailyCounterShards(listOf(daily))
+        }
+        if (zone != null) {
+            val start = delta.playedAt - delta.listenedMs
+            var boundary = day
+            while (boundary > start) {
+                val lastPlayed = boundary - 1
+                val previousDay = listeningDayStart(lastPlayed, zone)
+                val duration = boundary - maxOf(start, previousDay)
+                val (earlierBucket, earlierDaily) = PlaybackStatsDeltaPolicy.dailyRows(
+                    delta, track, previousDay, duration, 0, lastPlayed,
+                    dao.getBucket(previousDay, identityKey),
+                    dao.getOwnedDailyCounter(previousDay, identityKey, delta.deviceId, delta.epochStartedAt)
+                )
+                dao.upsertBuckets(listOf(earlierBucket))
+                dao.upsertDailyCounterShards(listOf(earlierDaily))
+                boundary = previousDay
+            }
+            for (hour in playbackListeningHours(delta.playedAt, delta.listenedMs, zone)) {
+                dao.appendListeningInterval(PlaybackListeningIntervalEntity(
+                    identityKey = identityKey, startAt = hour.startAt, endAt = hour.startAt + hour.durationMs,
+                    localHour = hour.localHour, epochStartedAt = delta.epochStartedAt
+                ))
+            }
+        }
         database.playbackStatsSnapshotDao().deletePendingDelta(delta.id)
         pruneEventReceipts()
         advanceRevision(delta.playedAt)
@@ -552,8 +595,21 @@ internal class PlaybackStatsRoomStore(
     }
 
     suspend fun removeTracks(keys: Set<String>) = database.withTransaction {
-        keys.asSequence().chunked(500).forEach { database.playbackStatsDao().deleteStats(it) }
+        val dao = database.playbackStatsDao()
+        keys.asSequence().chunked(500).forEach {
+            dao.deleteTrackHours(it)
+            dao.deleteTrackIntervals(it)
+            dao.deleteStats(it)
+        }
         if (keys.isNotEmpty()) advanceRevision()
+    }
+
+    suspend fun readHourlyListening(query: PlaybackStatsQuery): List<Long> = database.withTransaction {
+        val dao = database.playbackStatsDao()
+        val sql = PlaybackStatsSqlQuery(query, dao.hasBuckets())
+        val hours = LongArray(24)
+        dao.queryHourlyListening(sql.hourlyListening()).forEach { hours[it.localHour] = it.listenedMs }
+        hours.toList()
     }
 
     suspend fun readSummary(query: PlaybackStatsQuery): PlaybackStatsSummary {
@@ -614,10 +670,14 @@ internal fun admitPlaybackDelta(clearedAt: Long, playedAt: Long, observedCleared
     return PlaybackDeltaAdmission((eventEpoch ?: playedAt) >= clearedAt, maxOf(clearedAt, eventEpoch ?: 0))
 }
 
-private fun playbackDeltaPayloadHash(trackJson: String, listenedMs: Long, playCountIncrement: Int?, playedAt: Long, observedClearedAt: Long?): String =
-    MessageDigest.getInstance("SHA-256")
-        .digest((trackJson + "|" + listenedMs + "|" + playCountIncrement + "|" + playedAt + "|" + observedClearedAt).toByteArray(Charsets.UTF_8))
+private fun playbackDeltaPayloadHash(trackJson: String, listenedMs: Long, playCountIncrement: Int?, playedAt: Long,
+    observedClearedAt: Long?, playedZone: String?): String {
+    val original = "$trackJson|$listenedMs|$playCountIncrement|$playedAt|$observedClearedAt"
+    val payload = if (playedZone == null) original else "$original|$playedZone"
+    return MessageDigest.getInstance("SHA-256")
+        .digest(payload.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
+}
 
 private suspend fun <T> Sequence<T>.writeBatches(write: suspend (List<T>) -> Unit) {
     // 按数据库行分批，单曲的日桶或因果分片也不能一次展开到内存
@@ -670,6 +730,7 @@ internal fun PlaybackStatEntity.toDomain(): TrackStat {
 internal fun PlaybackStatBucketEntity.toDomain(): PlaybackStatBucket {
     return PlaybackStatBucket(
         dayStartAt = dayStartAt,
+        recordedLocalDate = recordedLocalDate,
         id = id,
         name = name,
         artist = artist,
@@ -705,6 +766,7 @@ internal fun PlaybackStatCounterShardEntity.toDomain(): SyncPlaybackCounterShard
 internal fun PlaybackStatDailyCounterShardEntity.toDomain(): SyncPlaybackCounterShard {
     return SyncPlaybackCounterShard(
         deviceId = deviceId,
+        recordedLocalDate = recordedLocalDate,
         epochStartedAt = epochStartedAt,
         totalListenMs = totalListenMs,
         playCount = playCount,
@@ -733,6 +795,7 @@ internal fun SyncPlaybackCounterShard.toDailyEntity(
 ): PlaybackStatDailyCounterShardEntity {
     return PlaybackStatDailyCounterShardEntity(
         dayStartAt = dayStartAt,
+        recordedLocalDate = recordedLocalDate,
         identityKey = identityKey,
         deviceId = deviceId,
         epochStartedAt = epochStartedAt,

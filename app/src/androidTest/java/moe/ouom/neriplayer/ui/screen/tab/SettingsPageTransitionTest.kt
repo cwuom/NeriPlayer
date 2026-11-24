@@ -271,7 +271,8 @@ class SettingsPageTransitionTest {
                     listState = homeListState,
                     dynamicColor = false,
                     mobileDataFollowDefaultAudioQuality = true,
-                    backgroundImageUri = null
+                    backgroundImageUri = null,
+                    internationalEnabled = false
                 )
                 val ownerScope = rememberCoroutineScope()
                 SideEffect {

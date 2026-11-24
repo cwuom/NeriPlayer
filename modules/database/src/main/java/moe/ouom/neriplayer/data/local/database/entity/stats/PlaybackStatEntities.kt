@@ -114,7 +114,9 @@ data class PlaybackStatBucketEntity(
     @ColumnInfo(name = "custom_artist")
     val customArtist: String?,
     @ColumnInfo(name = "custom_cover_url")
-    val customCoverUrl: String?
+    val customCoverUrl: String?,
+    @ColumnInfo(name = "recorded_local_date")
+    val recordedLocalDate: String? = null
 )
 
 @Entity(
@@ -183,7 +185,9 @@ data class PlaybackStatDailyCounterShardEntity(
     @ColumnInfo(name = "first_played_at")
     val firstPlayedAt: Long,
     @ColumnInfo(name = "last_played_at")
-    val lastPlayedAt: Long
+    val lastPlayedAt: Long,
+    @ColumnInfo(name = "recorded_local_date")
+    val recordedLocalDate: String? = null
 )
 
 fun TrackStat.toEntity(): PlaybackStatEntity {
@@ -212,6 +216,7 @@ fun TrackStat.toEntity(): PlaybackStatEntity {
 fun PlaybackStatBucket.toEntity(): PlaybackStatBucketEntity {
     return PlaybackStatBucketEntity(
         dayStartAt = dayStartAt,
+        recordedLocalDate = recordedLocalDate,
         identityKey = identityKey,
         id = id,
         name = name,
