@@ -151,6 +151,7 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
 
             NativeCrashHandler.init(this)
             AppContainer.initialize(this)
+            AppContainer.startYouTubeRotationScheduling()
             AppContainer.launchBackgroundIo {
                 val recoveredMetadataWrites = LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(
                     this@NeriPlayerApplication

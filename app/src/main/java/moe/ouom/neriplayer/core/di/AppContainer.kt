@@ -104,7 +104,7 @@ import moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi
 import moe.ouom.neriplayer.data.ltw.ListenTogetherSessionManager
 import moe.ouom.neriplayer.api.ltw.ws.ListenTogetherWebSocketClient
 import moe.ouom.neriplayer.data.settings.dataStore
-import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
+import moe.ouom.neriplayer.data.settings.bootstrap.synchronizeBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.playback.persistPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.navigation.synchronizeStartDestinationSnapshot
 import moe.ouom.neriplayer.data.settings.bootstrap.readBootstrapSettingsSnapshotSync
@@ -254,9 +254,9 @@ private fun moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle.toWarm
     )
 }
 
-/** 将设置发射同步到启动缓存，启动页重读当前真值以排除延迟的旧发射 */
+/** 同步启动缓存时重读基础设置和启动页，避免延迟的旧发射覆盖新选择 */
 internal suspend fun persistStartupSettingsSnapshots(context: Context, preferences: Preferences) {
-    persistBootstrapSettingsSnapshot(context, preferences.toBootstrapSettingsSnapshot())
+    synchronizeBootstrapSettingsSnapshot(context)
     persistPlaybackPreferenceSnapshot(context, preferences.toPlaybackPreferenceSnapshot())
     synchronizeStartDestinationSnapshot(context)
 }
@@ -674,7 +674,7 @@ object AppContainer {
             .launchIn(scope)
     }
 
-    private fun startYouTubeAuthObserver() {
+    internal fun startYouTubeRotationScheduling() {
         combine(settingsRepo.youtubeEnabledFlow, youtubeAuthRepo.authFlow) { enabled, auth ->
             enabled && hasYouTubeRotationPrerequisites(auth.cookies)
         }.distinctUntilChanged()
@@ -683,7 +683,9 @@ object AppContainer {
                 else YouTubeAuthRotationWorker.cancelPeriodicRotation(application)
             }
             .launchIn(scope)
+    }
 
+    private fun startYouTubeAuthObserver() {
         youtubeAuthRepo.authFlow
             .drop(1)
             .distinctUntilChangedBy { bundle -> bundle.toWarmBootstrapKey() }

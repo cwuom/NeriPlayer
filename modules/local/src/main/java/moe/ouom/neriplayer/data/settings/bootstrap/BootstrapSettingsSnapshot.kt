@@ -42,6 +42,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.policy.settings.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.download.policy.settings.normalizeDownloadParallelism
@@ -61,6 +63,7 @@ private const val BOOTSTRAP_DOWNLOAD_PARALLELISM_KEY = "download_parallelism"
 private val bootstrapSnapshotWarmupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val bootstrapSnapshotWarmupRunning = AtomicBoolean(false)
 private val bootstrapSnapshotPersistenceLock = Any()
+private val bootstrapSnapshotRefreshMutex = Mutex()
 
 fun readBootstrapSettingsSnapshotSync(context: Context): BootstrapSettingsSnapshot {
     readCachedBootstrapSettingsSnapshot(context)?.let { snapshot ->
@@ -80,12 +83,10 @@ fun readBootstrapSettingsSnapshotSync(context: Context): BootstrapSettingsSnapsh
 
     return runCatching {
         runBlocking {
-            context.dataStore.data.first().toBootstrapSettingsSnapshot()
+            synchronizeBootstrapSettingsSnapshot(context)
         }
     }.getOrElse {
         BootstrapSettingsSnapshot()
-    }.also { snapshot ->
-        persistBootstrapSettingsSnapshot(context, snapshot)
     }
 }
 
@@ -120,15 +121,13 @@ internal fun persistWarmedBootstrapSettingsSnapshot(
     }
 }
 
-internal suspend fun updateBootstrapSettingsSnapshot(
-    context: Context,
-    transform: (BootstrapSettingsSnapshot) -> BootstrapSettingsSnapshot
-) {
-    val currentSnapshot = readCachedBootstrapSettingsSnapshot(context)
-        ?.takeIf { hasCompleteBootstrapSettingsSnapshot(context) }
-        ?: context.dataStore.data.first().toBootstrapSettingsSnapshot()
-    persistBootstrapSettingsSnapshot(context, transform(currentSnapshot))
-}
+/** 在同一个锁内读取并发布当前设置，延迟恢复的写入者也会拿到最新值 */
+suspend fun synchronizeBootstrapSettingsSnapshot(context: Context): BootstrapSettingsSnapshot =
+    bootstrapSnapshotRefreshMutex.withLock {
+        val snapshot = context.dataStore.data.first().toBootstrapSettingsSnapshot()
+        persistBootstrapSettingsSnapshot(context, snapshot)
+        snapshot
+    }
 
 fun persistBootstrapSettingsSnapshot(
     context: Context,

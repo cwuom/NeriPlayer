@@ -3,12 +3,17 @@ package moe.ouom.neriplayer.data.settings.bootstrap
 import android.os.Looper
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.preferencesOf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.settings.bootstrap.BootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.data.settings.IsolatedSettingsDataStore
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
+import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.setAutoSetting
 import moe.ouom.neriplayer.data.testing.InMemorySharedPreferencesRegistry
 import org.junit.Assert.assertEquals
@@ -33,6 +38,28 @@ class BootstrapSettingsStartupReadTest {
             val snapshot = readBootstrapSettingsSnapshotSync(context)
             assertEquals("http://127.0.0.1:8123", snapshot.proxyEndpoint)
             assertEquals("https://example.org/dns-query", snapshot.dohEndpoint)
+        }
+    }
+
+    @Test
+    fun `concurrent network saves leave the startup mirror at the committed settings`() = runTest {
+        IsolatedSettingsDataStore.withEmptySettings(context) {
+            val proxy = AutoSettingsSchema.network.proxyEndpoint
+            val dns = AutoSettingsSchema.network.dohEndpoint
+            coroutineScope {
+                repeat(8) { index ->
+                    launch(Dispatchers.IO) {
+                        context.setAutoSetting(proxy, "http://localhost:${8100 + index}")
+                    }
+                    launch(Dispatchers.IO) {
+                        context.setAutoSetting(dns, "https://dns$index.example.org/dns-query")
+                    }
+                }
+            }
+            assertEquals(
+                context.dataStore.data.first().toBootstrapSettingsSnapshot(),
+                readBootstrapSettingsSnapshotSync(context)
+            )
         }
     }
 

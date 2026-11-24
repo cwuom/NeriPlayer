@@ -1,8 +1,6 @@
 package moe.ouom.neriplayer.data.settings
 
-import moe.ouom.neriplayer.data.settings.bootstrap.updateBootstrapSettingsSnapshot
-import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
-import moe.ouom.neriplayer.data.settings.bootstrap.toBootstrapSettingsSnapshot
+import moe.ouom.neriplayer.data.settings.bootstrap.synchronizeBootstrapSettingsSnapshot
 import android.content.Context
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
@@ -37,9 +35,7 @@ class AutoSettingSpecRepository(
             AutoSettingsSchema.download.downloadParallelism,
             normalizedValue
         )
-        updateBootstrapSettingsSnapshot(context) { snapshot ->
-            snapshot.copy(downloadParallelism = normalizedValue)
-        }
+        synchronizeBootstrapSettingsSnapshot(context)
         onDownloadParallelismChanged(normalizedValue)
     }
 }
@@ -71,10 +67,10 @@ fun <T> Context.autoSettingFlow(setting: AutoSettingSpec<T>): Flow<T> {
 }
 
 suspend fun <T> Context.setAutoSetting(setting: AutoSettingSpec<T>, value: T) {
-    val updated = dataStore.edit { prefs ->
+    dataStore.edit { prefs ->
         prefs[setting] = value
     }
     if (setting == AutoSettingsSchema.network.proxyEndpoint || setting == AutoSettingsSchema.network.dohEndpoint) {
-        persistBootstrapSettingsSnapshot(this, updated.toBootstrapSettingsSnapshot())
+        synchronizeBootstrapSettingsSnapshot(this)
     }
 }

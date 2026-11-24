@@ -40,7 +40,7 @@ import moe.ouom.neriplayer.data.settings.appearance.persistThemeForceDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeModeSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeUiStyle
 import moe.ouom.neriplayer.data.settings.navigation.synchronizeStartDestinationSnapshot
-import moe.ouom.neriplayer.data.settings.bootstrap.updateBootstrapSettingsSnapshot
+import moe.ouom.neriplayer.data.settings.bootstrap.synchronizeBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
@@ -1280,7 +1280,7 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setBypassProxy(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.BYPASS_PROXY] = enabled }
-        updateBootstrapSettingsSnapshot(context) { it.copy(bypassProxy = enabled) }
+        synchronizeBootstrapSettingsSnapshot(context)
     }
 
     suspend fun setHapticFeedbackEnabled(enabled: Boolean) {
@@ -1306,7 +1306,7 @@ class SettingsRepository(private val context: Context) {
                 it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] = normalizedUri
             }
         }
-        updateBootstrapSettingsSnapshot(context) { it.copy(downloadDirectoryUri = normalizedUri) }
+        synchronizeBootstrapSettingsSnapshot(context)
     }
 
     suspend fun setBackgroundImageBlur(blur: Float) {
@@ -1338,12 +1338,7 @@ class SettingsRepository(private val context: Context) {
                 }
             }
         }
-        updateBootstrapSettingsSnapshot(context) {
-            it.copy(
-                downloadDirectoryUri = normalizedUri,
-                downloadDirectoryLabel = label
-            )
-        }
+        synchronizeBootstrapSettingsSnapshot(context)
     }
 
     suspend fun setDownloadFileNameTemplate(template: String?) {
@@ -1355,9 +1350,7 @@ class SettingsRepository(private val context: Context) {
                 it[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE] = normalized
             }
         }
-        updateBootstrapSettingsSnapshot(context) {
-            it.copy(downloadFileNameTemplate = normalized)
-        }
+        synchronizeBootstrapSettingsSnapshot(context)
     }
 
     suspend fun setDownloadMetadataPostProcessingEnabled(enabled: Boolean) {
