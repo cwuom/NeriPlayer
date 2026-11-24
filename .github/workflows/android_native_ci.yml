@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - '.github/workflows/android_native_ci.yml'
+      - '.github/scripts/maven-central-mirror.init.gradle'
       - 'modules/native/**'
       - 'app/src/main/jniLibs/**'
       - 'app/build.gradle*'
@@ -21,6 +22,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/android_native_ci.yml'
+      - '.github/scripts/maven-central-mirror.init.gradle'
       - 'modules/native/**'
       - 'app/src/main/jniLibs/**'
       - 'app/build.gradle*'
@@ -132,6 +134,7 @@ jobs:
       - name: Build Android Native Debug libraries
         run: |
           ./gradlew :native:externalNativeBuildDebug \
+            --init-script .github/scripts/maven-central-mirror.init.gradle \
             --no-daemon \
             --warning-mode all \
             --stacktrace
