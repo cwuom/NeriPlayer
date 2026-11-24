@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -157,7 +158,8 @@ class SettingsHomeSectionControlsTest {
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.artist_tab_songs)).assertDoesNotExist()
         expand(CoreCommonR.string.international_home_feed)
         switch(CoreCommonR.string.artist_tab_songs).assertIsOn().performClick()
-        switch(CoreCommonR.string.library_netease_tab_playlists).assertIsOn().performClick()
+        switch(CoreCommonR.string.library_netease_tab_playlists).assertIsOn()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.library_netease_tab_playlists)).performScrollTo().performClick()
         switch(CoreCommonR.string.library_netease_tab_albums).assertIsOff().performClick()
         switch(CoreCommonR.string.explore_search_type_artist).assertIsOn().performClick()
         composeRule.waitForIdle()
@@ -170,10 +172,17 @@ class SettingsHomeSectionControlsTest {
     }
 
     @Test
-    fun cleanSearchTargetExpandsTheFeedAndRevealsItsSwitch() {
-        render(initial, international = true, style = UiStyle.Clean, target = "manual:international_home_feed_album")
+    fun cleanSearchReopensTheFeedAfterTheUserCollapsesIt() {
+        val pulse = mutableIntStateOf(1)
+        render(initial, international = true, style = UiStyle.Clean, target = "manual:international_home_feed_album") {
+            pulse.intValue
+        }
         switch(CoreCommonR.string.library_netease_tab_albums).assertIsOn()
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.settings_home_card_netease_radar)).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.international_home_feed)).performScrollTo().performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.library_netease_tab_albums)).assertDoesNotExist()
+        composeRule.runOnIdle { pulse.intValue++ }
+        switch(CoreCommonR.string.library_netease_tab_albums).assertIsOn()
     }
 
     @Test
@@ -214,7 +223,8 @@ class SettingsHomeSectionControlsTest {
         state: AppHomeCardsSettingsState,
         international: Boolean = false,
         style: UiStyle = UiStyle.Material,
-        target: String? = null
+        target: String? = null,
+        highlightPulse: () -> Int = { 0 }
     ) {
         composeRule.setContent {
             NeriTheme(
@@ -234,7 +244,7 @@ class SettingsHomeSectionControlsTest {
                         state = state,
                         actions = actions,
                         highlightTargetId = target,
-                        highlightPulse = if (target == null) 0 else 1,
+                        highlightPulse = highlightPulse(),
                         onHighlightFinished = null
                     )
                 }
