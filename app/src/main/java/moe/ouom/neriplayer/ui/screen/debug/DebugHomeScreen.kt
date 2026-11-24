@@ -76,6 +76,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
@@ -434,7 +435,7 @@ private fun DebugCrashTypeDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(AppR.string.debug_test_exception_picker_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = stringResource(AppR.string.debug_test_exception_picker_desc),
                     style = MaterialTheme.typography.bodyMedium,

@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -127,42 +125,40 @@ internal fun PlaylistInsertDialog(
                                 )
                             }
                         } else {
-                            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                                MiuixSettingsDialogContent(verticalSpacing = 10.dp) {
-                                    Text(
-                                        text = pluralStringResource(
-                                            AppR.plurals.playlist_insert_description,
-                                            selectedSnapshot.size,
-                                            selectedSnapshot.size
-                                        ),
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    MiuixSettingsTextField(
-                                        value = input,
-                                        onValueChange = {
-                                            input = it
-                                            preview = null
-                                        },
-                                        label = {
-                                            Text(stringResource(AppR.string.playlist_insert_position_label))
-                                        },
-                                        placeholder = {
-                                            Text(stringResource(AppR.string.playlist_insert_position_hint, maxPosition))
-                                        },
-                                        singleLine = true,
-                                        keyboardOptions = KeyboardOptions(
-                                            keyboardType = KeyboardType.Number,
-                                            imeAction = ImeAction.Done
-                                        ),
-                                        keyboardActions = KeyboardActions(onDone = { showPreview() })
-                                    )
-                                    PlaylistInsertSupportText(
-                                        selectionValid = selectionValid,
-                                        sourceChanged = sourceChanged || (preview != null && currentPreview == null),
-                                        invalidInput = input.isNotBlank() && position == null,
-                                        maxPosition = maxPosition
-                                    )
-                                }
+                            MiuixSettingsDialogContent(verticalSpacing = 10.dp) {
+                                Text(
+                                    text = pluralStringResource(
+                                        AppR.plurals.playlist_insert_description,
+                                        selectedSnapshot.size,
+                                        selectedSnapshot.size
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                MiuixSettingsTextField(
+                                    value = input,
+                                    onValueChange = {
+                                        input = it
+                                        preview = null
+                                    },
+                                    label = {
+                                        Text(stringResource(AppR.string.playlist_insert_position_label))
+                                    },
+                                    placeholder = {
+                                        Text(stringResource(AppR.string.playlist_insert_position_hint, maxPosition))
+                                    },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    keyboardActions = KeyboardActions(onDone = { showPreview() })
+                                )
+                                PlaylistInsertSupportText(
+                                    selectionValid = selectionValid,
+                                    sourceChanged = sourceChanged || (preview != null && currentPreview == null),
+                                    invalidInput = input.isNotBlank() && position == null,
+                                    maxPosition = maxPosition
+                                )
                             }
                         }
                     }

@@ -52,6 +52,7 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Timer
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -648,7 +649,7 @@ private fun PlaybackStatsAction(song: SongItem) {
         title = { Text(stringResource(AppR.string.stats_title)) },
         shape = neriRoundedShape(28.dp),
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatsCard(AppR.string.stats_song_first_played, firstPlayedText)
                 StatsCard(AppR.string.stats_song_total_listen, totalListenText)
                 StatsCard(

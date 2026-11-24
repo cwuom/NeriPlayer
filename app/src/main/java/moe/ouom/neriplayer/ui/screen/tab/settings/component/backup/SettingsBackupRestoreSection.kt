@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component.backup
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
@@ -1079,7 +1080,7 @@ internal fun SettingsBackupRestoreSection(
                 onDismissRequest = { pendingDataSaverMode = null },
                 title = { Text(stringResource(CoreCommonR.string.sync_data_saver_warning_title)) },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(stringResource(CoreCommonR.string.sync_data_saver_warning_message))
                         if (dataSaverSaveFailed) MiuixSettingsInlineMessage(
                             message = stringResource(CoreCommonR.string.sync_secure_storage_unavailable),
@@ -1273,7 +1274,7 @@ private fun PlayHistoryModeDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(CoreCommonR.string.sync_history_frequency)) },
         text = {
-            Column {
+            ScrollableDialogColumn {
                 Text(
                     text = stringResource(CoreCommonR.string.sync_frequency_desc),
                     style = MaterialTheme.typography.bodyMedium

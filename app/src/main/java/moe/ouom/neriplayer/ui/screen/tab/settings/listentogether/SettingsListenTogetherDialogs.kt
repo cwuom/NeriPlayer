@@ -1,7 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.listentogether
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
@@ -13,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSheetTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -80,7 +82,7 @@ private fun SettingsListenTogetherNicknameDialog(controller: SettingsListenToget
 
 @Composable
 private fun SettingsListenTogetherNicknameInput(controller: SettingsListenTogetherController) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         PlaybackSheetTextField(
             value = controller.nicknameInput,
             onValueChange = controller.updateNicknameAction,
@@ -121,7 +123,7 @@ internal fun listenTogetherJoinButtonLabelId(joining: Boolean): Int =
 
 @Composable
 private fun SettingsListenTogetherJoinInput(controller: SettingsListenTogetherController) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(CoreCommonR.string.settings_listen_together_join_room_desc))
         PlaybackSheetTextField(
             value = controller.inviteInput,
@@ -170,7 +172,7 @@ private fun SettingsListenTogetherServerDialog(controller: SettingsListenTogethe
 
 @Composable
 private fun SettingsListenTogetherServerDialogContent(controller: SettingsListenTogetherController) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(stringResource(listenTogetherServerDescriptionId(controller.isUsingDefaultServer)))
         SettingsListenTogetherServerInput(controller)
         if (controller.serverInput.trim().startsWith("http://", ignoreCase = true)) {
@@ -221,8 +223,12 @@ private fun SettingsListenTogetherServerResult(message: String?) {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun SettingsListenTogetherServerActions(controller: SettingsListenTogetherController) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         SettingsListenTogetherTestServerButton(controller)
         SettingsListenTogetherResetServerButton(controller)
     }

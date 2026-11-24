@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.AlertDialog as MaterialAlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BottomSheetDefaults
@@ -83,10 +84,18 @@ internal fun DensityScaledAlertDialog(
     titleContentColor: Color = AlertDialogDefaults.titleContentColor,
     textContentColor: Color = AlertDialogDefaults.textContentColor,
     tonalElevation: Dp = AlertDialogDefaults.TonalElevation,
-    properties: DialogProperties = DialogProperties(),
+    properties: DialogProperties? = null,
     neutralButton: @Composable (() -> Unit)? = null
 ) {
     val surfaceScale = LocalOverlaySurfaceScale.current
+    val compact = text != null && useCompactAlertLayout()
+    val windowProperties = properties ?: DialogProperties(
+        decorFitsSystemWindows = false,
+        usePlatformDefaultWidth = !compact
+    )
+    // 让弹窗的可用高度跟随键盘，避免系统只平移到输入框而遮住底部操作
+    val safeSurface = if (windowProperties.decorFitsSystemWindows) Modifier else Modifier.safeDrawingPadding()
+    val dialogModifier = safeSurface.scaleOverlaySurfaceWidth(surfaceScale).then(modifier)
     if (NeriDesign.isClean) {
         CleanAlertDialog(
             onDismissRequest = onDismissRequest,
@@ -94,14 +103,23 @@ internal fun DensityScaledAlertDialog(
                 ApplyOverlayWindowNavigationBarPolicy()
                 confirmButton()
             },
-            modifier = Modifier.scaleOverlaySurfaceWidth(surfaceScale).then(modifier),
+            modifier = dialogModifier,
             dismissButton = dismissButton,
             icon = icon,
             title = title,
             text = text,
-            properties = properties,
-            neutralButton = neutralButton
+            properties = windowProperties,
+            neutralButton = neutralButton,
+            compact = compact
         )
+        return
+    }
+    if (compact) {
+        CompactMaterialAlertDialog(onDismissRequest, windowProperties, dialogModifier, shape, containerColor, tonalElevation) {
+            CompactAlertContent(icon, title, text, iconContentColor, titleContentColor, textContentColor) {
+                CompactMaterialActions(confirmButton, dismissButton, neutralButton)
+            }
+        }
         return
     }
     val localizedDismissButton = dismissButton?.let { localizedWindowContent(it) }
@@ -112,7 +130,7 @@ internal fun DensityScaledAlertDialog(
             ApplyOverlayWindowNavigationBarPolicy()
             confirmButton()
         },
-        modifier = Modifier.scaleOverlaySurfaceWidth(surfaceScale).then(modifier),
+        modifier = dialogModifier,
         dismissButton = if (localizedNeutralButton != null) {
             {
                 localizedDismissButton?.invoke()
@@ -130,7 +148,7 @@ internal fun DensityScaledAlertDialog(
         titleContentColor = titleContentColor,
         textContentColor = textContentColor,
         tonalElevation = tonalElevation,
-        properties = properties
+        properties = windowProperties
     )
 }
 

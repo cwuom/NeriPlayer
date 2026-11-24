@@ -77,7 +77,8 @@ internal fun CleanAlertDialog(
     title: @Composable (() -> Unit)?,
     text: @Composable (() -> Unit)?,
     properties: DialogProperties,
-    neutralButton: @Composable (() -> Unit)? = null
+    neutralButton: @Composable (() -> Unit)? = null,
+    compact: Boolean = false
 ) {
     val enhanced = NeriDesign.tokens.enhancedEffects
     val motion = rememberCleanDialogMotion(enhanced, onDismissRequest)
@@ -96,7 +97,7 @@ internal fun CleanAlertDialog(
             val dialogShape = NeriDesign.tokens.dialogShape
             Surface(
                 modifier = Modifier
-                    .widthIn(min = 280.dp, max = 420.dp)
+                    .widthIn(min = 280.dp, max = if (compact) 560.dp else 420.dp)
                     .graphicsLayer {
                         scaleX = motion.scale.value
                         scaleY = motion.scale.value
@@ -120,7 +121,11 @@ internal fun CleanAlertDialog(
                             blurRadius = EnhancedDialogBlurRadius
                         )
                     }
-                    Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 20.dp)) {
+                    if (compact && text != null) {
+                        CompactAlertContent(icon, title, text, colors.primary, colors.onSurface, colors.onSurfaceVariant) {
+                            CleanDialogButtonRow(dismissButton, confirmButton, neutralButton)
+                        }
+                    } else Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 20.dp)) {
                         val centered = icon != null
                         icon?.let { iconContent ->
                             CompositionLocalProvider(LocalContentColor provides colors.primary) {

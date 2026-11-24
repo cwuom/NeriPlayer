@@ -58,12 +58,12 @@ import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
@@ -976,7 +976,7 @@ class MainActivity : ComponentActivity() {
                                                     )
                                                 },
                                                 text = {
-                                                    Column(
+                                                    ScrollableDialogColumn(
                                                         verticalArrangement = Arrangement.spacedBy(8.dp)
                                                     ) {
                                                         Text(warningMessage)
@@ -1017,7 +1017,7 @@ class MainActivity : ComponentActivity() {
                                             AlertDialog(
                                                 onDismissRequest = { showDialog = false },
                                                 title = { Text(stringResource(AppR.string.dialog_hint)) },
-                                                text = { Text(dialogMessage) },
+                                                text = { ScrollableDialogColumn { Text(dialogMessage) } },
                                                 confirmButton = {
                                                     HapticTextButton(onClick = {
                                                         showDialog = false
@@ -1146,7 +1146,7 @@ class MainActivity : ComponentActivity() {
                                             AlertDialog(
                                                 onDismissRequest = { showErrorDialog = false },
                                                 title = { Text(errorTitle) },
-                                                text = { Text(errorMessage) },
+                                                text = { ScrollableDialogColumn { Text(errorMessage) } },
                                                 confirmButton = {
                                                     HapticTextButton(onClick = {
                                                         showErrorDialog = false
@@ -1875,19 +1875,20 @@ private fun StartupCrashReportDialog(
                 )
             }
         },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HapticTextButton(onClick = onCopy) {
-                    Text(stringResource(AppR.string.debug_copy_all))
-                }
-                HapticTextButton(onClick = onExport) {
-                    Text(stringResource(AppR.string.log_export))
-                }
-                HapticTextButton(onClick = onClose) {
-                    Text(stringResource(CoreCommonR.string.action_close))
-                }
+        dismissButton = {
+            HapticTextButton(onClick = onCopy) {
+                Text(stringResource(AppR.string.debug_copy_all))
             }
         },
-        dismissButton = null
+        neutralButton = {
+            HapticTextButton(onClick = onExport) {
+                Text(stringResource(AppR.string.log_export))
+            }
+        },
+        confirmButton = {
+            HapticTextButton(onClick = onClose) {
+                Text(stringResource(CoreCommonR.string.action_close))
+            }
+        }
     )
 }

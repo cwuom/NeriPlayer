@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.component.playback
 
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.AutoSettingSpecListItem
-import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -51,7 +51,7 @@ internal fun PlaybackServiceIdleShutdownSetting(
         onDismissRequest = { showDialog = false },
         title = { Text(stringResource(CoreCommonR.string.settings_playback_idle_shutdown_dialog_title)) },
         text = {
-            Column {
+            ScrollableDialogColumn {
                 PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTE_OPTIONS.forEach { minutes ->
                     MiuixSettingsChoiceRow(
                         title = playbackServiceIdleShutdownLabel(minutes),

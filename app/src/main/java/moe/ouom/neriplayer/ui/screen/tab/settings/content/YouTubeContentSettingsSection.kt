@@ -1,14 +1,13 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.content
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +40,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 
 @Composable
 internal fun YouTubeLocaleSettingsSection(
@@ -128,7 +128,7 @@ private fun localizedChoices(codes: List<String>, displayLocale: Locale, label: 
 }
 
 @Composable
-private fun ContentChoice(
+internal fun ContentChoice(
     modifier: Modifier,
     title: String,
     selected: String,
@@ -154,23 +154,23 @@ private fun ContentChoice(
             onDismissRequest = { open = false },
             title = { Text(title) },
             text = {
-                Column {
+                LazyColumn(Modifier.heightIn(max = 400.dp)) {
                     if (choices.size > PlaylistSuggestionSource.entries.size) {
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            label = { Text(stringResource(CommonR.string.action_search)) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    LazyColumn(Modifier.heightIn(max = 400.dp)) {
-                        items(visibleChoices, key = { it.first }) { (code, label) ->
-                            MiuixSettingsChoiceRow(title = label, selected = code == selected, onClick = {
-                                onSelect(code)
-                                open = false
-                            })
+                        item {
+                            MiuixSettingsTextField(
+                                value = query,
+                                onValueChange = { query = it },
+                                label = { Text(stringResource(CommonR.string.action_search)) },
+                                singleLine = true,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
                         }
+                    }
+                    items(visibleChoices, key = { it.first }) { (code, label) ->
+                        MiuixSettingsChoiceRow(title = label, selected = code == selected, onClick = {
+                            onSelect(code)
+                            open = false
+                        })
                     }
                 }
             },
