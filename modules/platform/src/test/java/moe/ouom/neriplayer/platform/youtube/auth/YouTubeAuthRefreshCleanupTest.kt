@@ -81,7 +81,7 @@ class YouTubeAuthRefreshCleanupTest {
     private fun manager(): YouTubeAuthAutoRefreshManager {
         val context = mock(Context::class.java)
         `when`(context.applicationContext).thenReturn(context)
-        return YouTubeAuthAutoRefreshManager(context, { OkHttpClient() }, RefreshTestAuthStore())
+        return YouTubeAuthAutoRefreshManager(context, { OkHttpClient() }, RefreshTestAuthStore()) { true }
     }
 
     private fun YouTubeAuthAutoRefreshManager.field(name: String): Any? =

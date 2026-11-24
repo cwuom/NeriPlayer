@@ -72,7 +72,7 @@ class YouTubeAuthRefreshLifecycleTest {
     fun `changing accounts clears persisted rotation status after the previous worker finishes`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val rotation = SharedPreferencesYouTubeCookieRotationStateStore(context)
-        val manager = YouTubeAuthAutoRefreshManager(context, { error("unexpected request") }, RefreshTestAuthStore())
+        val manager = YouTubeAuthAutoRefreshManager(context, { error("unexpected request") }, RefreshTestAuthStore()) { true }
         val previousAttempt = YouTubeCookieRotationState(lastRotatedAtMs = 42, consecutiveRejections = 4)
         val releaseWorker = CompletableDeferred<Unit>()
         val worker = launch {

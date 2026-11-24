@@ -296,7 +296,8 @@ object AppContainer {
         YouTubeAuthAutoRefreshManager(
             httpClientProvider = { sharedOkHttpClient },
             context = application,
-            authStore = youtubeAuthRepo
+            authStore = youtubeAuthRepo,
+            awaitWebViewRoute = { context -> WebViewNetworkRoute.awaitBackgroundAuthRoute(context) }
         )
     }
 
