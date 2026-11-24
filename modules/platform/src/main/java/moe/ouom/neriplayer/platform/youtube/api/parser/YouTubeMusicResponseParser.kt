@@ -561,7 +561,7 @@ object YouTubeMusicParser {
         val metadata = homeLinkedMetadata(subtitleNode?.optJSONArray("runs").asObjectSequence())
         val route = homeItemRoute(renderer)
         return YouTubeMusicHomeItem(
-            contentLabel = renderer.contentLabel(),
+            contentLabel = renderer.contentLabel(twoRow = true),
             title = title,
             subtitle = extractText(subtitleNode),
             coverUrl = extractMusicThumbnailUrl(renderer.optJSONObject("thumbnailRenderer")),
@@ -1298,7 +1298,7 @@ object YouTubeMusicParser {
         )
         val durationText = metadata.durationText.ifBlank { extractSearchDurationText(renderer) }
         return YouTubeMusicCreatorItem(
-            contentLabel = renderer.contentLabel(),
+            contentLabel = renderer.contentLabel(type == YouTubeMusicCreatorItemType.Video),
             type = type,
             title = title,
             subtitle = extractColumnText(
@@ -1343,7 +1343,7 @@ object YouTubeMusicParser {
             .filterNot(::looksLikeDurationText)
             .filterNot(::looksLikeHomeSongTypeLabel)
         return YouTubeMusicCreatorItem(
-            contentLabel = renderer.contentLabel(),
+            contentLabel = renderer.contentLabel(type == YouTubeMusicCreatorItemType.Video),
             type = type,
             title = title,
             subtitle = subtitle,
@@ -1495,10 +1495,14 @@ object YouTubeMusicParser {
     private fun resolveSearchResultType(renderer: JSONObject): YouTubeMusicSearchResultType? {
         return searchTypeFromMusicVideoType(musicVideoType(renderer))
             ?: searchTypeFromLabel(extractSearchMetadataParts(renderer).firstOrNull().orEmpty())
+            ?: searchTypeFromLabel(extractTextParts(renderer.optJSONObject("subtitle")).firstOrNull().orEmpty())
     }
 
-    internal fun isMusicVideo(renderer: JSONObject): Boolean =
-        resolveSearchResultType(renderer) == YouTubeMusicSearchResultType.Video
+    internal fun isMusicVideo(renderer: JSONObject, twoRow: Boolean): Boolean {
+        val type = resolveSearchResultType(renderer)
+        if (type != null) return type == YouTubeMusicSearchResultType.Video
+        return twoRow && creatorTwoRowVideoId(renderer).isNotBlank()
+    }
 
     private fun musicVideoType(renderer: JSONObject): String {
         return firstNonBlank(

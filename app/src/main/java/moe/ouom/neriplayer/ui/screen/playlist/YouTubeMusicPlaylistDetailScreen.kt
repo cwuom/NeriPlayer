@@ -171,6 +171,7 @@ fun YouTubeMusicPlaylistDetailScreen(
     val ui by viewModel.uiState.collectAsState()
     val hasRequestedPlaylistState = ui.playlist?.browseId == playlist.browseId
     val visibleTracks = if (hasRequestedPlaylistState) ui.tracks else emptyList()
+    val favoriteSnapshot = ui.favoriteSnapshot.takeIf { hasRequestedPlaylistState }
     val requestedAllTracksLoaded = hasRequestedPlaylistState && ui.allTracksLoaded
     val requestedError = ui.error.takeIf { hasRequestedPlaylistState }
     val contentPreferences by YouTubeContentSettings.preferences.collectAsState()
@@ -460,19 +461,18 @@ fun YouTubeMusicPlaylistDetailScreen(
         onSongClick(visibleTracks, startIndex)
     }
 
-    LaunchedEffect(isFavorite, resolvedPlaylist, visibleTracks, requestedAllTracksLoaded) {
-        if (!isFavorite || contentPreferences.hideExplicit || contentPreferences.hideMusicVideos) return@LaunchedEffect
-        if (!requestedAllTracksLoaded) return@LaunchedEffect
+    LaunchedEffect(isFavorite, resolvedPlaylist, favoriteSnapshot) {
+        if (!isFavorite || favoriteSnapshot == null) return@LaunchedEffect
         favoriteRepo.updateFavoriteMeta(
             id = playlistFavoriteId,
             name = resolvedPlaylist.title,
             coverUrl = resolvedPlaylist.coverUrl,
-            trackCount = resolvedTrackCount,
+            trackCount = favoriteSnapshot.trackCount,
             source = "youtubeMusic",
             browseId = resolvedPlaylist.browseId,
             playlistId = resolvedPlaylist.playlistId,
             subtitle = resolvedPlaylist.subtitle,
-            songs = visibleTracks
+            songs = favoriteSnapshot.songs
         )
     }
 
@@ -534,7 +534,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                     if (isFavorite) {
                                         favoriteRepo.removeFavorite(playlistFavoriteId, "youtubeMusic")
                                     } else {
-                                        if (!requestedAllTracksLoaded) {
+                                        if (favoriteSnapshot == null) {
                                             showWaitForFullLoadMessage()
                                             return@launch
                                         }
@@ -542,12 +542,12 @@ fun YouTubeMusicPlaylistDetailScreen(
                                             id = playlistFavoriteId,
                                             name = resolvedPlaylist.title,
                                             coverUrl = resolvedPlaylist.coverUrl,
-                                            trackCount = resolvedTrackCount,
+                                            trackCount = favoriteSnapshot.trackCount,
                                             source = "youtubeMusic",
                                             browseId = resolvedPlaylist.browseId,
                                             playlistId = resolvedPlaylist.playlistId,
                                             subtitle = resolvedPlaylist.subtitle,
-                                            songs = visibleTracks
+                                            songs = favoriteSnapshot.songs
                                         )
                                     }
                                 }

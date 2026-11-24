@@ -46,10 +46,12 @@ class YouTubeContentPlaylistCacheTest {
             )
             repo.save(empty)
             assertEquals(empty, repo.read(cache.browseId))
+            assertEquals(cache, repo.read(cache.browseId, includeHiddenTracks = true))
             YouTubeContentSettings.publish(defaults)
             assertEquals(cache, repo.read(cache.browseId))
             YouTubeContentSettings.publish(defaults.copy(countryCode = if (defaults.resolveLocale(system).gl == "JP") "US" else "JP"))
             assertNull(repo.read(cache.browseId))
+            assertNull(repo.read(cache.browseId, includeHiddenTracks = true))
         } finally {
             YouTubeContentSettings.publish(original)
             database.close()

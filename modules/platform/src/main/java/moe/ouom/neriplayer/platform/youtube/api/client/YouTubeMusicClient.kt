@@ -1097,26 +1097,30 @@ class YouTubeMusicClient(
         browseId: String,
         fallbackTitle: String = "",
         fallbackSubtitle: String = "",
-        fallbackCoverUrl: String = ""
+        fallbackCoverUrl: String = "",
+        includeHiddenTracks: Boolean = false
     ): YouTubeMusicPlaylistDetail = fetchPlaylistDetail(
         browseId = browseId,
         fallbackTitle = fallbackTitle,
         fallbackSubtitle = fallbackSubtitle,
         fallbackCoverUrl = fallbackCoverUrl,
-        pageLimit = YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT
+        pageLimit = YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT,
+        includeHiddenTracks = includeHiddenTracks
     )
 
     suspend fun getPlaylistDetailPreview(
         browseId: String,
         fallbackTitle: String = "",
         fallbackSubtitle: String = "",
-        fallbackCoverUrl: String = ""
+        fallbackCoverUrl: String = "",
+        includeHiddenTracks: Boolean = false
     ): YouTubeMusicPlaylistDetail = fetchPlaylistDetail(
         browseId = browseId,
         fallbackTitle = fallbackTitle,
         fallbackSubtitle = fallbackSubtitle,
         fallbackCoverUrl = fallbackCoverUrl,
-        pageLimit = 1
+        pageLimit = 1,
+        includeHiddenTracks = includeHiddenTracks
     )
 
     private suspend fun fetchPlaylistDetail(
@@ -1124,7 +1128,8 @@ class YouTubeMusicClient(
         fallbackTitle: String,
         fallbackSubtitle: String,
         fallbackCoverUrl: String,
-        pageLimit: Int
+        pageLimit: Int,
+        includeHiddenTracks: Boolean
     ): YouTubeMusicPlaylistDetail = withContext(Dispatchers.IO) {
         authAutoRefreshManager?.refreshIfNeeded(reason = "playlist_detail", force = false)
         val resolvedBrowseId = normalizePlaylistBrowseId(browseId)
@@ -1147,7 +1152,7 @@ class YouTubeMusicClient(
             requestLocale = response.requestLocale
             response.root
         }
-        if (!preferences.hideExplicit && !preferences.hideMusicVideos) return@withContext detail
+        if (includeHiddenTracks || (!preferences.hideExplicit && !preferences.hideMusicVideos)) return@withContext detail
         val visible = detail.tracks.filterNot { preferences.hides(it.contentLabel) }
         val hiddenCount = detail.tracks.size - visible.size
         detail.copy(

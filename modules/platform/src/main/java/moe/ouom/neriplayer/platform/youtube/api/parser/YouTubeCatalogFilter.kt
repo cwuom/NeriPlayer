@@ -18,11 +18,11 @@ internal fun JSONObject.filterCatalogItems(preferences: YouTubeCatalogPolicy): I
             }
             is JSONArray -> for (i in node.length() - 1 downTo 0) {
                 val child = node.opt(i)
-                val renderer = (child as? JSONObject)?.let {
-                    it.optJSONObject("musicResponsiveListItemRenderer") ?: it.optJSONObject("musicTwoRowItemRenderer")
-                }
+                val row = child as? JSONObject
+                val twoRow = row?.optJSONObject("musicTwoRowItemRenderer")
+                val renderer = twoRow ?: row?.optJSONObject("musicResponsiveListItemRenderer")
                 if (renderer != null) {
-                    if (preferences.hides(renderer.contentLabel())) {
+                    if (preferences.hides(renderer.contentLabel(twoRow = twoRow != null))) {
                         node.remove(i)
                         removed++
                     }
@@ -35,8 +35,8 @@ internal fun JSONObject.filterCatalogItems(preferences: YouTubeCatalogPolicy): I
     return removed
 }
 
-internal fun JSONObject.contentLabel(knownVideo: Boolean = false): YouTubeContentLabel? =
-    YouTubeContentLabel.from(hasExplicitBadge(), knownVideo || YouTubeMusicParser.isMusicVideo(this))
+internal fun JSONObject.contentLabel(knownVideo: Boolean = false, twoRow: Boolean = false): YouTubeContentLabel? =
+    YouTubeContentLabel.from(hasExplicitBadge(), knownVideo || YouTubeMusicParser.isMusicVideo(this, twoRow))
 
 private fun JSONObject.hasExplicitBadge(): Boolean =
     sequenceOf(optJSONArray("badges"), optJSONArray("subtitleBadges")).filterNotNull().any { badges ->

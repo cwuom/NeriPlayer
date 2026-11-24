@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.platform.youtube.api.parser
 
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItemType
 import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentPreferences
 import org.json.JSONArray
 import org.json.JSONObject
@@ -58,6 +59,33 @@ class YouTubeContentFilterTest {
         assertEquals("Discover", shelf.title)
         assertEquals("visible", shelf.items.single().videoId)
         assertEquals("next", YouTubeMusicParser.extractHomeContinuation(root))
+    }
+
+    @Test
+    fun twoRowPlaybackCardsUseTheSameTypeForCreatorHomeAndFiltering() {
+        fun row(title: String, subtitle: String, type: String = ""): JSONObject =
+            card(title, type, false).also {
+                val renderer = it.getJSONObject("musicTwoRowItemRenderer")
+                renderer.put("title", JSONObject().put("simpleText", title))
+                renderer.put("subtitle", JSONObject().put("simpleText", subtitle))
+                renderer.getJSONObject("navigationEndpoint").getJSONObject("watchEndpoint").put("videoId", title)
+            }
+        val cards = JSONArray().put(row("video", "Video · Artist")).put(row("fallback", "Artist"))
+            .put(row("song", "Song · Artist")).put(row("audio", "Video", "MUSIC_VIDEO_TYPE_ATV"))
+        val grid = JSONObject("""{"header":{"gridHeaderRenderer":{"title":{"simpleText":"Featured"}}}}""").put("items", cards)
+        val sections = JSONArray().put(JSONObject().put("gridRenderer", grid))
+        val root = JSONObject().put("contents", JSONObject().put("sectionListRenderer", JSONObject().put("contents", sections)))
+        val creatorItems = YouTubeMusicParser.parseCreatorItemsPage(root, "Featured").items
+        assertEquals(
+            listOf(YouTubeMusicCreatorItemType.Video, YouTubeMusicCreatorItemType.Video,
+                YouTubeMusicCreatorItemType.Song, YouTubeMusicCreatorItemType.Song),
+            creatorItems.map { it.type }
+        )
+        val labels = listOf(YouTubeContentLabel.MUSIC_VIDEO, YouTubeContentLabel.MUSIC_VIDEO, null, null)
+        assertEquals(labels, creatorItems.map { it.contentLabel })
+        assertEquals(labels, YouTubeMusicParser.parseHomeShelfPages(root).single().items.map { it.contentLabel })
+        assertEquals(2, root.filterCatalogItems(YouTubeContentPreferences(hideMusicVideos = true)))
+        assertEquals(listOf("song", "audio"), YouTubeMusicParser.parseCreatorItemsPage(root, "Featured").items.map { it.title })
     }
 
     @Test

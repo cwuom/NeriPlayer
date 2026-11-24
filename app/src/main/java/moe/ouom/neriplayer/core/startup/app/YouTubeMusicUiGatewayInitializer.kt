@@ -27,12 +27,12 @@ internal object YouTubeMusicUiGatewayInitializer {
             }
 
             override suspend fun getPlaylistDetail(browseId: String): YouTubeMusicPlaylistDetail {
-                val detail = AppContainer.youtubeMusicClient.getPlaylistDetail(browseId)
+                val detail = AppContainer.youtubeMusicClient.getPlaylistDetail(browseId, includeHiddenTracks = true)
                 return detail.toUiDetail()
             }
 
             override suspend fun getPlaylistDetailPreview(browseId: String): YouTubeMusicPlaylistDetail {
-                val detail = AppContainer.youtubeMusicClient.getPlaylistDetailPreview(browseId)
+                val detail = AppContainer.youtubeMusicClient.getPlaylistDetailPreview(browseId, includeHiddenTracks = true)
                 return detail.toUiDetail()
             }
         }

@@ -41,6 +41,8 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistTrack
 import moe.ouom.neriplayer.platform.youtube.playlist.YouTubeMusicPlaylistCacheRepository
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentPreferences
+import moe.ouom.neriplayer.platform.youtube.settings.visiblePlaylistSongs
 import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
@@ -62,7 +64,7 @@ internal fun isYouTubeMusicPlaylistCacheFresh(
     cache: CachedYouTubeMusicPlaylistDetail,
     nowMs: Long = System.currentTimeMillis()
 ): Boolean {
-    return cache.tracks.isNotEmpty() &&
+    return cache.containsUnfilteredTracks && cache.tracks.isNotEmpty() &&
         cache.savedAtMs > 0L &&
         nowMs - cache.savedAtMs in 0 until YOUTUBE_MUSIC_PLAYLIST_CACHE_FRESHNESS_MS
 }
@@ -74,8 +76,30 @@ data class YouTubeMusicPlaylistDetailUiState(
     val filteredEmpty: Boolean = false,
     val playlist: YouTubeMusicPlaylist? = null,
     val tracks: List<SongItem> = emptyList(),
-    val allTracksLoaded: Boolean = false
+    val allTracksLoaded: Boolean = false,
+    val favoriteSnapshot: YouTubeMusicFavoriteSnapshot? = null
 )
+
+data class YouTubeMusicFavoriteSnapshot(val songs: List<SongItem>, val trackCount: Int)
+
+private fun YouTubeMusicPlaylistDetailUiState.forDisplay(
+    preferences: YouTubeContentPreferences,
+    containsUnfilteredTracks: Boolean
+): YouTubeMusicPlaylistDetailUiState {
+    val metadata = requireNotNull(playlist)
+    val visible = preferences.visiblePlaylistSongs(tracks)
+    val hiddenCount = tracks.size - visible.size
+    val allHidden = allTracksLoaded && visible.isEmpty() && hiddenCount > 0
+    val visibleCount = if (allHidden) 0 else (metadata.trackCount - hiddenCount).coerceAtLeast(visible.size)
+    return copy(
+        playlist = metadata.copy(trackCount = visibleCount),
+        tracks = visible,
+        filteredEmpty = filteredEmpty || allHidden,
+        favoriteSnapshot = if (allTracksLoaded && containsUnfilteredTracks) {
+            YouTubeMusicFavoriteSnapshot(tracks, metadata.trackCount)
+        } else null
+    )
+}
 
 internal fun shouldMarkYouTubeMusicPlaylistTracksUnavailable(
     declaredTrackCount: Int,
@@ -168,7 +192,8 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                 tracks = previous?.tracks.orEmpty(),
                 creatorName = resolvedPlaylist.creatorName
             ),
-            allTracksLoaded = previous?.allTracksLoaded == true
+            allTracksLoaded = previous?.allTracksLoaded == true,
+            favoriteSnapshot = previous?.favoriteSnapshot
         )
         loadPlaylist(forceRefresh = forceRefresh)
     }
@@ -196,7 +221,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
         val playlist = currentPlaylist ?: return
         if (currentOfflineMode) {
             playlistLoadJob = viewModelScope.launch {
-                val cached = withContext(Dispatchers.IO) { playlistCacheRepo.read(playlist.browseId) }
+                val cached = withContext(Dispatchers.IO) { playlistCacheRepo.read(playlist.browseId, includeHiddenTracks = true) }
                 if (cached != null) {
                     publishCachedPlaylist(cached, playlist, allowPrefetch = false)
                 } else {
@@ -220,7 +245,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
             var previewPublished = false
             try {
                 val cached = withContext(Dispatchers.IO) {
-                    if (forceRefresh) null else playlistCacheRepo.read(playlist.browseId)
+                    if (forceRefresh) null else playlistCacheRepo.read(playlist.browseId, includeHiddenTracks = true)
                 }
                 if (cached != null) {
                     val cacheFresh = isYouTubeMusicPlaylistCacheFresh(cached)
@@ -247,10 +272,8 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                         )
                         return@launch
                     }
-                    val filtersActive = YouTubeContentSettings.preferences.value.let { it.hideExplicit || it.hideMusicVideos }
-                    if ((!preview.hasUsableTracks() && !filtersActive) ||
-                        (preview.hasUsableTracks() && preview.firstPageSignature() == cached.firstPageSignature)
-                    ) {
+                    if (cached.containsUnfilteredTracks &&
+                        (!preview.hasUsableTracks() || preview.firstPageSignature() == cached.firstPageSignature)) {
                         publishCachedPlaylist(cached, playlist)
                         return@launch
                     }
@@ -324,7 +347,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                 throw error
             } catch (error: Exception) {
                 val cached = withContext(Dispatchers.IO) {
-                    playlistCacheRepo.read(playlist.browseId)
+                    playlistCacheRepo.read(playlist.browseId, includeHiddenTracks = true)
                 }
                 if (cached != null) {
                     publishCachedPlaylist(cached, playlist, error = playlistLoadFailure(error))
@@ -365,7 +388,7 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
                 filteredEmpty = cached.filteredEmpty,
                 tracks = cachedTracks,
                 allTracksLoaded = true
-            )
+            ).forDisplay(YouTubeContentSettings.preferences.value, cached.containsUnfilteredTracks)
         }
         _uiState.value = cachedState
         if (allowPrefetch && !loading && error == null && cachedState.tracks.isNotEmpty()) {
@@ -381,36 +404,33 @@ class YouTubeMusicPlaylistDetailViewModel internal constructor(
     ) {
         val resolvedPlaylist = detail.toYouTubeMusicPlaylist(fallback = fallback)
         val localPlaylists = localPlaylistsSnapshot()
-        val resolvedTracks = withContext(Dispatchers.Default) {
-            detail.tracks
+        val preferences = YouTubeContentSettings.preferences.value
+        val locale = YouTubeContentSettings.systemLocale()
+        val state = withContext(Dispatchers.Default) {
+            val tracks = detail.tracks
                 .map { it.toPlaylistSongItem(resolvedPlaylist) }
                 .map { overlayUserEdits(it, localPlaylists) }
+            YouTubeMusicPlaylistDetailUiState(
+                loading = loading,
+                playlist = resolvedPlaylist,
+                filteredEmpty = detail.filteredEmpty,
+                tracks = tracks,
+                allTracksLoaded = detail.fullyLoaded
+            ).forDisplay(preferences, containsUnfilteredTracks = !detail.filteredEmpty)
         }
-        val catalogKey = currentCatalogKey
-        if (detail.fullyLoaded && (detail.hasUsableTracks() || detail.filteredEmpty) && catalogKey == YouTubeContentSettings.catalogKey()) {
+        if (detail.fullyLoaded && detail.hasUsableTracks() && currentCatalogKey == preferences.catalogKey(locale)) {
             withContext(Dispatchers.IO) {
                 cacheFullPlaylist(
                     browseId = fallback.browseId,
                     detail = detail,
                     playlist = resolvedPlaylist,
-                    catalogKey = catalogKey
+                    catalogKey = preferences.copy(hideExplicit = false, hideMusicVideos = false).catalogKey(locale)
                 )
             }
         }
-        _uiState.value = YouTubeMusicPlaylistDetailUiState(
-            loading = loading,
-            playlist = resolvedPlaylist,
-            filteredEmpty = detail.filteredEmpty,
-            tracks = resolvedTracks,
-            allTracksLoaded = detail.fullyLoaded
-        )
-        if (resolvedTracks.isEmpty()) {
-            return
-        }
-        if (detail.fullyLoaded && !loading) {
-            prefetchQueue(resolvedTracks, 0, prefetchSource)
-        } else {
-            prefetchQueue(resolvedTracks, 0, prefetchSource)
+        _uiState.value = state
+        if (state.tracks.isNotEmpty()) {
+            prefetchQueue(state.tracks, 0, prefetchSource)
         }
     }
 

@@ -63,10 +63,11 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
         cacheDir = cacheDir
     )
 
-    fun read(browseId: String): CachedYouTubeMusicPlaylistDetail? {
+    fun read(browseId: String, includeHiddenTracks: Boolean = false): CachedYouTubeMusicPlaylistDetail? {
         val settings = YouTubeContentSettings.preferences.value
         val system = YouTubeContentSettings.systemLocale()
-        val unfiltered = readRoom(browseId)?.toYouTubeMusicPlaylistDetail()?.forPreferences(settings, system)
+        val unfiltered = readRoom(browseId)?.toYouTubeMusicPlaylistDetail()?.forPreferences(settings, system, includeHiddenTracks)
+        if (includeHiddenTracks && unfiltered != null) return unfiltered
         if (settings.hideExplicit || settings.hideMusicVideos) {
             val filtered = readRoom(filteredCacheKey(browseId))?.toYouTubeMusicPlaylistDetail()?.forPreferences(settings, system)
             return if (filtered != null && (unfiltered == null || filtered.savedAtMs >= unfiltered.savedAtMs)) filtered else unfiltered
@@ -185,7 +186,7 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
     private fun CachedYouTubeMusicPlaylistDetail.toRecord(): PlatformPlaylistCacheRecord {
         return PlatformPlaylistCacheRecord(
             platform = PLATFORM,
-            cacheKey = if (catalogKey?.endsWith("/false/false") != false) browseId else filteredCacheKey(browseId),
+            cacheKey = if (containsUnfilteredTracks) browseId else filteredCacheKey(browseId),
             alternateKey = playlistId,
             title = title,
             subtitle = subtitle,
@@ -260,12 +261,14 @@ private fun CachedYouTubeMusicPlaylistDetail.catalogSignature(): String? {
 
 internal fun CachedYouTubeMusicPlaylistDetail.forPreferences(
     preferences: YouTubeContentPreferences,
-    system: Locale
+    system: Locale,
+    includeHiddenTracks: Boolean = false
 ): CachedYouTubeMusicPlaylistDetail? {
     val desired = preferences.catalogKey(system)
     if (catalogKey == desired || (catalogKey == null && preferences.acceptsLegacyCache)) return this
     val unfiltered = preferences.copy(hideExplicit = false, hideMusicVideos = false).catalogKey(system)
     if (catalogKey != unfiltered) return null
+    if (includeHiddenTracks) return this
     val visible = tracks.filterNot { preferences.hides(it.contentLabel) }
     return copy(
         tracks = visible, trackCount = visible.size, catalogKey = desired,

@@ -25,4 +25,7 @@ data class CachedYouTubeMusicPlaylistDetail(
     val savedAtMs: Long = System.currentTimeMillis(),
     val catalogKey: String? = null,
     val filteredEmpty: Boolean = false
-)
+) {
+    val containsUnfilteredTracks: Boolean
+        get() = !filteredEmpty && catalogKey?.endsWith("/false/false") != false
+}
