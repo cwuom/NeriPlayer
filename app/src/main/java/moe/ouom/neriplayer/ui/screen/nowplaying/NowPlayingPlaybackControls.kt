@@ -54,6 +54,7 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackQualityOption
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.playback.rememberDelayedPlaybackWaiting
@@ -336,7 +337,7 @@ fun NowPlayingQualityOptionsDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            ScrollableDialogColumn {
                 options.forEach { option ->
                     ListItem(
                         headlineContent = { Text(option.label) },

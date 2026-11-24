@@ -28,6 +28,7 @@ import androidx.datastore.preferences.core.Preferences
 import kotlinx.coroutines.flow.Flow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
@@ -687,7 +688,7 @@ internal fun AdvancedBlurQualitySettingItem(
             onDismissRequest = { showDialog = false },
             title = { Text(stringResource(CoreCommonR.string.settings_advanced_blur_quality)) },
             text = {
-                Column {
+                ScrollableDialogColumn {
                     AdvancedBlurQuality.entries.forEach { option ->
                         val enabled = option.canBeSelectedWhen(enhancedAdvancedBlurEnabled)
                         MiuixSettingsChoiceRow(

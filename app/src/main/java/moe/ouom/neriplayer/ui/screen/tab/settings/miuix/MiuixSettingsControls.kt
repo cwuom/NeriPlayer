@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -47,6 +48,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TextFieldDefaults
@@ -67,6 +69,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.IntOffset
@@ -77,6 +80,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import moe.ouom.neriplayer.ui.component.overlay.DialogButtonSlot
 import moe.ouom.neriplayer.ui.component.overlay.LocalDialogButtonSlot
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
+import moe.ouom.neriplayer.ui.component.overlay.useCompactAlertLayout
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.ui.window.DialogProperties
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
@@ -104,7 +109,7 @@ private fun Modifier.dialogSlotButtonSize(defaultHeight: Dp): Modifier =
     if (NeriDesign.isClean && LocalDialogButtonSlot.current != DialogButtonSlot.None) {
         fillMaxWidth().heightIn(min = 46.dp)
     } else {
-        height(defaultHeight)
+        heightIn(min = defaultHeight)
     }
 
 @Composable
@@ -116,12 +121,12 @@ internal fun MiuixSettingsDialog(
     icon: @Composable (() -> Unit)? = null,
     title: @Composable (() -> Unit)? = null,
     text: @Composable (() -> Unit)? = null,
-    properties: DialogProperties = DialogProperties()
+    properties: DialogProperties? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = confirmButton,
-        modifier = modifier.widthIn(max = 340.dp),
+        modifier = if (useCompactAlertLayout()) modifier else modifier.widthIn(max = 340.dp),
         dismissButton = dismissButton,
         icon = icon,
         title = title,
@@ -213,8 +218,7 @@ internal fun MiuixSettingsTextButton(
         colors = ButtonDefaults.textButtonColors(
             containerColor = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.primary,
-            disabledContainerColor = Color.Transparent,
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            disabledContainerColor = Color.Transparent
         ),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
     ) {
@@ -659,13 +663,14 @@ internal fun MiuixSettingsChoiceRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(MiuixControlShape)
-            .clickable(enabled = enabled) {
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton) {
                 context.performHapticFeedback()
                 onClick()
             }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Column(
             modifier = Modifier.weight(1f),
@@ -680,7 +685,11 @@ internal fun MiuixSettingsChoiceRow(
                 )
             }
         }
-        MiuixChoiceIndicator(selected = selected, enabled = enabled)
+        if (NeriDesign.isClean) {
+            MiuixChoiceIndicator(selected = selected, enabled = enabled)
+        } else {
+            RadioButton(selected = selected, onClick = null, enabled = enabled)
+        }
     }
 }
 
@@ -704,7 +713,7 @@ private fun MiuixChoiceIndicator(selected: Boolean, enabled: Boolean) {
     )
     Box(
         modifier = Modifier
-            .size(28.dp)
+            .size(24.dp)
             .clip(CircleShape)
             .background(fill),
         contentAlignment = Alignment.Center
@@ -753,8 +762,7 @@ internal fun MiuixSettingsDialogContent(
     verticalSpacing: androidx.compose.ui.unit.Dp = 12.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
+    ScrollableDialogColumn(
         verticalArrangement = Arrangement.spacedBy(verticalSpacing),
         content = content
     )

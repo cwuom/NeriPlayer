@@ -71,6 +71,29 @@ class DynamicProxySelectorTest {
     }
 
     @Test
+    fun `proxy fields accept international domain names and literal addresses`() {
+        assertEquals("http://xn--mnq481g.example:1",
+            NetworkProxyEndpoint.fromFields(Proxy.Type.HTTP, " 代理.example ", "1")?.uri)
+        assertEquals("http://127.0.0.1:65535",
+            NetworkProxyEndpoint.fromFields(Proxy.Type.HTTP, "127.0.0.1", "65535")?.uri)
+        for (host in listOf("2001:db8::1", "[2001:db8::1]")) {
+            assertEquals("socks5://[2001:db8::1]:1080",
+                NetworkProxyEndpoint.fromFields(Proxy.Type.SOCKS, host, "1080")?.uri)
+        }
+    }
+
+    @Test
+    fun `proxy fields reject malformed hosts and out of range ports`() {
+        for (host in listOf("", "bad host", "a..example", "user@host", "host/path", "host:8080", "[2001:db8:::1]")) {
+            assertEquals(host, null, NetworkProxyEndpoint.fromFields(Proxy.Type.HTTP, host, "8080"))
+        }
+        for (port in listOf("", "abc", "-1", "0", "65536")) {
+            assertEquals(port, null, NetworkProxyEndpoint.fromFields(Proxy.Type.SOCKS, "proxy.example", port))
+        }
+        assertEquals(null, NetworkProxyEndpoint.fromFields(Proxy.Type.DIRECT, "proxy.example", "80"))
+    }
+
+    @Test
     fun `invalid ports, paths and credentials are not proxy endpoints`() {
         for (value in listOf("http://host", "http://host:0", "socks5://host:65536", "http://host:99/path",
             "http://user@proxy:80", "https://host:443", "http://host:99?q=x")) {

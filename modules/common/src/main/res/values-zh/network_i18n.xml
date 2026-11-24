@@ -1,12 +1,13 @@
 <resources>
     <string name="settings_custom_proxy">自定义代理</string>
-    <string name="settings_custom_proxy_desc">通过指定的 HTTP 或 SOCKS5 代理连接音乐服务，适用于 API、媒体播放和下载。支持免认证代理。更改会在重新建立连接后生效。</string>
+    <string name="settings_custom_proxy_desc">音乐请求、播放和下载使用免认证代理，重新连接后生效。</string>
+    <string name="network_proxy_off">关闭</string>
     <string name="network_proxy_disabled">关闭自定义代理</string>
     <string name="network_proxy_priority">正在使用自定义代理</string>
     <string name="network_proxy_host">主机名或 IP 地址</string>
     <string name="network_proxy_port">端口（1–65535）</string>
     <string name="settings_dns_over_https">DNS over HTTPS（DoH）</string>
-    <string name="settings_dns_over_https_desc">通过 HTTPS 解析在线音乐服务的域名。本地域名使用系统 DNS。连接代理时，目标域名由代理解析。更改会在重新建立连接后生效。</string>
+    <string name="settings_dns_over_https_desc">新连接使用所选 DNS。本地域名由系统解析，代理连接由代理解析。</string>
     <string name="network_system_dns">系统 DNS</string>
     <string name="network_custom_dns">自定义提供商</string>
     <string name="network_resolver_url">HTTPS 解析服务地址</string>

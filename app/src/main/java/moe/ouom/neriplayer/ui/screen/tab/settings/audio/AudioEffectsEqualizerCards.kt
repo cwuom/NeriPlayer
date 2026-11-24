@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.audio
 
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.component.common.NeriChoiceChip
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -338,7 +338,7 @@ private fun ParametricBandDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(AppR.string.audio_effects_peq_edit)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 AudioEffectsSwitchRow(
                     title = stringResource(AppR.string.audio_effects_peq_band_enabled),
                     description = null,

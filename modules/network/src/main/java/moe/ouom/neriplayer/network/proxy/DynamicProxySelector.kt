@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.network.proxy
 
 
 import java.io.IOException
+import java.net.IDN
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
@@ -40,6 +41,17 @@ class NetworkProxyEndpoint private constructor(val type: Proxy.Type, val host: S
     fun toProxy(): Proxy = Proxy(type, InetSocketAddress.createUnresolved(host.removeSurrounding("[", "]"), port))
 
     companion object {
+        fun fromFields(type: Proxy.Type, host: String, port: String): NetworkProxyEndpoint? {
+            if (type == Proxy.Type.DIRECT) return null
+            val portNumber = port.toIntOrNull() ?: return null
+            val input = host.trim()
+            val uri = runCatching {
+                val asciiHost = if (':' in input) input else IDN.toASCII(input, IDN.USE_STD3_ASCII_RULES)
+                NetworkProxyEndpoint(type, asciiHost, portNumber).uri
+            }.getOrNull() ?: return null
+            return parse(uri)
+        }
+
         fun parse(raw: String): NetworkProxyEndpoint? {
             val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return null
             val type = when (uri.scheme?.lowercase()) {

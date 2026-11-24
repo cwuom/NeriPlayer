@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.theme.NeriDesign
@@ -152,7 +153,7 @@ fun FillOptionsDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(CoreCommonR.string.music_auto_fill_select)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 显示选中的歌曲信息
                 Card(
                     modifier = Modifier.fillMaxWidth(),

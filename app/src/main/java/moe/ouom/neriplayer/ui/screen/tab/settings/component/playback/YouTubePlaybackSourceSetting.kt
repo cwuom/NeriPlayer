@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.component.playback
 
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.AutoSettingSpecListItem
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -58,7 +59,7 @@ internal fun YouTubePlaybackSourceSetting(
         onDismissRequest = { showDialog = false },
         title = { Text(stringResource(CoreCommonR.string.settings_youtube_playback_source)) },
         text = {
-            androidx.compose.foundation.layout.Column {
+            ScrollableDialogColumn {
                 YouTubePlaybackSourcePreference.entries.forEach { option ->
                     MiuixSettingsChoiceRow(
                         title = youTubePlaybackSourceLabel(option),

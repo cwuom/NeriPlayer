@@ -1,9 +1,12 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.network
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -14,10 +17,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.net.Proxy
-import java.net.URI
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CommonR
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
@@ -27,8 +31,9 @@ import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.network.proxy.DnsProvider
 import moe.ouom.neriplayer.network.proxy.NetworkProxyEndpoint
 import moe.ouom.neriplayer.network.proxy.parseDohEndpoint
+import moe.ouom.neriplayer.ui.component.common.NeriChoiceChip
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.AutoSettingSpecListItem
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
@@ -110,51 +115,44 @@ internal fun NetworkSettingsSection(
 }
 
 @Composable
-private fun ProxyDialog(current: NetworkProxyEndpoint?, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+internal fun ProxyDialog(current: NetworkProxyEndpoint?, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var type by rememberSaveable { mutableStateOf(current?.type ?: Proxy.Type.DIRECT) }
     var host by rememberSaveable { mutableStateOf(current?.host.orEmpty()) }
     var port by rememberSaveable { mutableStateOf(current?.port?.toString() ?: "8080") }
-    val endpoint = remember(type, host, port) {
-        val portNumber = port.toIntOrNull()?.takeIf { it in 1..65535 } ?: return@remember null
-        val scheme = if (type == Proxy.Type.SOCKS) "socks5" else "http"
-        val address = runCatching { URI(scheme, null, host.trim(), portNumber, null, null, null) }.getOrNull()
-        address?.toASCIIString()?.let(NetworkProxyEndpoint::parse)
-    }
+    val endpoint = remember(type, host, port) { NetworkProxyEndpoint.fromFields(type, host, port) }
     NetworkDialog(
         title = stringResource(CommonR.string.settings_custom_proxy),
+        description = stringResource(CommonR.string.settings_custom_proxy_desc),
         onDismiss = onDismiss,
         valid = type == Proxy.Type.DIRECT || endpoint != null,
         onSave = { onSave(if (type == Proxy.Type.DIRECT) "" else requireNotNull(endpoint).uri) }
     ) {
-        listOf(Proxy.Type.DIRECT, Proxy.Type.HTTP, Proxy.Type.SOCKS).forEach { option ->
-            MiuixSettingsChoiceRow(
-                title = when (option) {
-                    Proxy.Type.DIRECT -> stringResource(CommonR.string.network_proxy_disabled)
-                    Proxy.Type.HTTP -> "HTTP"
-                    Proxy.Type.SOCKS -> "SOCKS5"
-                },
-                selected = option == type,
-                onClick = { type = option }
+        NetworkChoices {
+            NeriChoiceChip(
+                selected = type == Proxy.Type.DIRECT,
+                onClick = { type = Proxy.Type.DIRECT },
+                label = stringResource(CommonR.string.network_proxy_off)
             )
+            NeriChoiceChip(type == Proxy.Type.HTTP, { type = Proxy.Type.HTTP }, "HTTP")
+            NeriChoiceChip(type == Proxy.Type.SOCKS, { type = Proxy.Type.SOCKS }, "SOCKS5")
         }
         if (type != Proxy.Type.DIRECT) {
             MiuixSettingsTextField(
                 value = host, onValueChange = { host = it }, singleLine = true,
                 label = { Text(stringResource(CommonR.string.network_proxy_host)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next)
             )
             MiuixSettingsTextField(
                 value = port, onValueChange = { port = it }, singleLine = true,
                 label = { Text(stringResource(CommonR.string.network_proxy_port)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done)
             )
         }
-        Text(stringResource(CommonR.string.settings_custom_proxy_desc))
     }
 }
 
 @Composable
-private fun DohDialog(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+internal fun DohDialog(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     val custom = "custom"
     val preset = DnsProvider.entries.find { it.url == current }
     var selected by rememberSaveable { mutableStateOf(preset?.url ?: if (current.isEmpty()) "" else custom) }
@@ -162,29 +160,42 @@ private fun DohDialog(current: String, onDismiss: () -> Unit, onSave: (String) -
     val customEndpoint = parseDohEndpoint(url)
     NetworkDialog(
         title = stringResource(CommonR.string.settings_dns_over_https),
+        description = stringResource(CommonR.string.settings_dns_over_https_desc),
         onDismiss = onDismiss,
         valid = selected != custom || customEndpoint != null,
         onSave = { onSave(if (selected == custom) requireNotNull(customEndpoint).toString() else selected) }
     ) {
-        MiuixSettingsChoiceRow(stringResource(CommonR.string.network_system_dns), selected.isEmpty(), { selected = "" })
-        DnsProvider.entries.forEach { provider ->
-            MiuixSettingsChoiceRow(provider.title, selected == provider.url, { selected = provider.url })
+        NetworkChoices {
+            NeriChoiceChip(selected.isEmpty(), { selected = "" }, stringResource(CommonR.string.network_system_dns))
+            DnsProvider.entries.forEach { provider ->
+                NeriChoiceChip(selected == provider.url, { selected = provider.url }, provider.title)
+            }
+            NeriChoiceChip(selected == custom, { selected = custom }, stringResource(CommonR.string.network_custom_dns))
         }
-        MiuixSettingsChoiceRow(stringResource(CommonR.string.network_custom_dns), selected == custom, { selected = custom })
         if (selected == custom) {
             MiuixSettingsTextField(
                 value = url, onValueChange = { url = it }, singleLine = true,
                 label = { Text(stringResource(CommonR.string.network_resolver_url)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done)
             )
         }
-        Text(stringResource(CommonR.string.settings_dns_over_https_desc))
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun NetworkChoices(content: @Composable () -> Unit) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth().selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) { content() }
 }
 
 @Composable
 private fun NetworkDialog(
     title: String,
+    description: String,
     onDismiss: () -> Unit,
     valid: Boolean,
     onSave: () -> Unit,
@@ -193,7 +204,12 @@ private fun NetworkDialog(
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { Column(Modifier.verticalScroll(rememberScrollState())) { content() } },
+        text = {
+            ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                content()
+                Text(description, style = MaterialTheme.typography.bodySmall)
+            }
+        },
         confirmButton = {
             MiuixSettingsTextButton(onClick = onSave, enabled = valid, text = { Text(stringResource(CommonR.string.action_confirm)) })
         },

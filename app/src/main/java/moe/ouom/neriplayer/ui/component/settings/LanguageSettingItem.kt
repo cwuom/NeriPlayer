@@ -27,13 +27,11 @@ package moe.ouom.neriplayer.ui.component.settings
 import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material3.*
-import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -42,9 +40,11 @@ import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.locale.getDisplayName
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
 private val LanguageSettingItemShape = RoundedCornerShape(18.dp)
-private val LanguageOptionShape = RoundedCornerShape(16.dp)
 
 /**
  * 语言选择对话框
@@ -76,47 +76,29 @@ fun LanguageSettingItem(
     )
 
     if (showDialog) {
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = { showDialog = false },
             title = { Text(stringResource(CoreCommonR.string.language_select_title)) },
             text = {
-                Column {
+                ScrollableDialogColumn {
                     LanguageManager.Language.entries.forEach { language ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(LanguageOptionShape)
-                                .clickable {
-                                    showDialog = false
-                                    if (currentLanguage == language) return@clickable
+                        MiuixSettingsChoiceRow(
+                            title = language.getDisplayName(context),
+                            selected = currentLanguage == language,
+                            onClick = {
+                                showDialog = false
+                                if (currentLanguage != language) {
                                     LanguageManager.setLanguage(context, language)
                                     currentLanguage = language
                                     onLanguageChanged(language)
                                 }
-                                .padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = currentLanguage == language,
-                                onClick = {
-                                    showDialog = false
-                                    if (currentLanguage == language) return@RadioButton
-                                    LanguageManager.setLanguage(context, language)
-                                    currentLanguage = language
-                                    onLanguageChanged(language)
-                                }
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = language.getDisplayName(context),
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        }
+                            }
+                        )
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showDialog = false }) {
+                MiuixSettingsTextButton(onClick = { showDialog = false }) {
                     Text(stringResource(CoreCommonR.string.action_close))
                 }
             }

@@ -1,10 +1,12 @@
 package moe.ouom.neriplayer.ui.dialog
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentWidth
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -86,6 +88,7 @@ internal fun TrafficRiskDownloadDialog(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 internal fun MobileDataDownloadInterruptionDialog(
     request: GlobalDownloadManager.MobileDataDownloadInterruptionRequest,
     onContinue: () -> Unit,
@@ -100,7 +103,7 @@ internal fun MobileDataDownloadInterruptionDialog(
         confirmButton = {},
         dismissButton = {},
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     pluralStringResource(
                         AppR.plurals.mobile_data_download_interruption_message,
@@ -109,9 +112,10 @@ internal fun MobileDataDownloadInterruptionDialog(
                         request.taskCount
                     )
                 )
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     HapticTextButton(onClick = onWaitWifi) {
                         Text(stringResource(CoreCommonR.string.mobile_data_download_wait_wifi))
@@ -138,6 +142,7 @@ internal fun MobileDataDownloadInterruptionDialog(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 internal fun UsbExclusiveBackgroundPermissionDialog(
     batteryOptimizationAllowed: Boolean,
     onRequestBatteryOptimization: () -> Unit,
@@ -153,7 +158,7 @@ internal fun UsbExclusiveBackgroundPermissionDialog(
         confirmButton = {},
         dismissButton = {},
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(CoreCommonR.string.settings_usb_exclusive_background_permission_desc))
                 if (!batteryOptimizationAllowed) {
                     HapticTextButton(
@@ -169,9 +174,10 @@ internal fun UsbExclusiveBackgroundPermissionDialog(
                 ) {
                     Text(stringResource(CoreCommonR.string.settings_usb_exclusive_background_permission_app_settings))
                 }
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     HapticTextButton(onClick = onNeverShowAgain) {
                         Text(stringResource(CoreCommonR.string.settings_usb_exclusive_background_permission_never))
