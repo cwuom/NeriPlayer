@@ -176,6 +176,25 @@ class SettingsHomeSectionControlsTest {
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.settings_home_card_netease_radar)).assertDoesNotExist()
     }
 
+    @Test
+    fun cleanHiddenHomeCanRestoreARecommendationFromItsRow() {
+        val sections = InternationalHomeSectionIds
+        val kinds = InternationalHomeFeedKindIds
+        val layout = InternationalHomeLayout(
+            hidden = setOf(sections.CONTINUE, sections.SPOTLIGHT),
+            hiddenFeedKinds = kinds.DEFAULT_ORDER.toSet()
+        )
+        render(initial.copy(internationalLayout = layout), international = true, style = UiStyle.Clean)
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.settings_home_hidden_notice)).assertExists()
+        expand(CoreCommonR.string.international_home_feed)
+        switch(CoreCommonR.string.library_netease_tab_albums).assertIsOff()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.library_netease_tab_albums)).performScrollTo().performClick()
+        composeRule.waitForIdle()
+        runBlocking { verify(repository).setInternationalHomeFeedKindVisible(kinds.ALBUM, true) }
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.international_home_feed)).performScrollTo().performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.library_netease_tab_albums)).assertDoesNotExist()
+    }
+
     private fun expand(titleRes: Int) {
         val description = context.getString(CoreCommonR.string.settings_home_sub_section_expand, context.getString(titleRes))
         composeRule.onNodeWithContentDescription(description).performScrollTo().performClick()
@@ -211,7 +230,7 @@ class SettingsHomeSectionControlsTest {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     SettingsPersonalizationHomeCard(
                         internationalEnabled = international,
-                        homeStartAvailable = true,
+                        homeStartAvailable = !international || state.internationalLayout.isHomeAvailable(hasRecentUsage = false),
                         state = state,
                         actions = actions,
                         highlightTargetId = target,

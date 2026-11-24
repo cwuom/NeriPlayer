@@ -79,8 +79,9 @@ class PlaybackStatsDialogRenderingTest {
     private fun verifyDialogs(style: UiStyle) {
         compose.setContent {
             val base = LocalContext.current
-            val localized = remember(base) {
-                base.createConfigurationContext(Configuration(base.resources.configuration).apply {
+            val configuration = LocalConfiguration.current
+            val localized = remember(base, configuration) {
+                base.createConfigurationContext(Configuration(configuration).apply {
                     setLocale(Locale.SIMPLIFIED_CHINESE)
                 })
             }

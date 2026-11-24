@@ -107,7 +107,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHomeScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsResponsiveDetailScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
-import moe.ouom.neriplayer.ui.screen.tab.settings.page.destination
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.miuixSettingsSectionCardItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
@@ -157,7 +156,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsDownloadsPageI
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStorageCacheDetailsItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStoragePageItems
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStorageProcessingItem
-import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.canNavigateBackFromSettingsPage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -269,13 +267,9 @@ internal fun SettingsScreen(
     val homeStartPresentation = rememberSettingsHomeStartPresentation(
         resources = composeResources,
         configuredDestination = environment.defaultStartDestination,
-        internationalLayout = otherState.homeCards.internationalLayout.takeIf { otherState.internationalizationEnabled },
-        showTrending = otherState.homeCards.showHomeTrendingCard,
-        showRadar = otherState.homeCards.showHomeRadarCard,
-        showRecommended = otherState.homeCards.showHomeRecommendedCard,
-        showContinue = otherState.homeCards.showHomeContinueCard,
-        hasRecentUsage = environment.homeHasRecentUsage,
-        showBilibili = otherState.homeCards.showHomeBilibiliCard
+        cards = otherState.homeCards,
+        international = otherState.internationalizationEnabled,
+        hasRecentUsage = environment.homeHasRecentUsage
     )
     val homeStartAvailable = homeStartPresentation.available
     val effectiveDefaultStartDestination = homeStartPresentation.destination
@@ -287,14 +281,8 @@ internal fun SettingsScreen(
         backgroundImageUri = appearanceState.visualBackground.backgroundImageUri,
         internationalEnabled = otherState.internationalizationEnabled
     )
-    var homeShortcut by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
     LaunchedEffect(environment.settingsVisible, environment.requestedPage) {
-        if (!environment.settingsVisible) homeShortcut = null
-        if (environment.settingsVisible) environment.requestedPage?.let { page ->
-            navigation.activePage = page
-            homeShortcut = navigation.activePage
-            environment.onPageRequestConsumed()
-        }
+        navigation.consumeHomeShortcut(environment.settingsVisible, environment.requestedPage, environment.onPageRequestConsumed)
     }
     val isSettingsSplitLayout = navigation.splitLayout
     val activeSettingsPage = navigation.activePage
@@ -317,19 +305,11 @@ internal fun SettingsScreen(
     val settingsHighlightPulse by navigation.highlightPulseState
     val onSettingsHighlightFinished: () -> Unit = navigation::clearHighlight
 
-    val returnToHome = homeShortcut != null && homeShortcut?.destination == activeSettingsPage
-    LaunchedEffect(activeSettingsPage) {
-        if (navigation.activePage != homeShortcut?.destination) homeShortcut = null
-    }
     fun navigateBackFromActiveSettingsPage() {
-        navigation.navigateBack()
-        if (returnToHome) {
-            homeShortcut = null
-            environment.onReturnFromHomeShortcut()
-        }
+        navigation.navigateBackFromPage(environment.onReturnFromHomeShortcut)
     }
 
-    val showSplitDetailBackButton = returnToHome || navigation.showSplitDetailBackButton
+    val showSplitDetailBackButton = navigation.showSplitDetailBackButton
     val isolateAdvancedGlassTransitions = LocalAdvancedGlassController.current.isEnabled
     val settingsHomeTitle: @Composable () -> Unit = {
         Row(
@@ -1238,7 +1218,7 @@ internal fun SettingsScreen(
         activePage = activeSettingsPage,
         splitLayout = isSettingsSplitLayout,
         isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
-        backEnabled = returnToHome || canNavigateBackFromSettingsPage(activeSettingsPage, isSettingsSplitLayout),
+        backEnabled = navigation.canNavigateBack,
         onBack = ::navigateBackFromActiveSettingsPage,
         content = settingsPageContent
     )

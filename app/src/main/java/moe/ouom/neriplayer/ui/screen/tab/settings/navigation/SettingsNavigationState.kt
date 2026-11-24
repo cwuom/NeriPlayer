@@ -126,20 +126,45 @@ internal class SettingsNavigationState(
     private val dynamicColor: Boolean,
     private val mobileDataFollowDefaultAudioQuality: Boolean,
     private val hasCustomBackground: Boolean,
-    private val cleanStyle: Boolean = false
+    private val cleanStyle: Boolean = false,
+    private val homeShortcut: MutableState<SettingsPage?> = mutableStateOf(null)
 ) {
     val searchResults: List<SettingsSearchEntry>
         get() = searchResultsState.value
 
     var activePage: SettingsPage?
         get() = ensureSplitSettingsPage(splitLayout, activePageState.value)?.destination
-        set(value) { activePageState.value = value?.destination }
+        set(value) {
+            val destination = value?.destination
+            if (homeShortcut.value != destination) homeShortcut.value = null
+            activePageState.value = destination
+        }
 
     val backTarget: SettingsPage?
         get() = activePage?.backTargetPage()
 
     val showSplitDetailBackButton: Boolean
-        get() = backTarget != null
+        get() = homeShortcut.value != null || backTarget != null
+
+    val canNavigateBack: Boolean
+        get() = homeShortcut.value != null || canNavigateBackFromSettingsPage(activePage, splitLayout)
+
+    fun consumeHomeShortcut(visible: Boolean, page: SettingsPage?, onConsumed: () -> Unit) {
+        if (!visible) {
+            homeShortcut.value = null
+        } else if (page != null) {
+            activePage = page
+            homeShortcut.value = activePage
+            onConsumed()
+        }
+    }
+
+    fun navigateBackFromPage(onReturnHome: () -> Unit) {
+        val fromHome = homeShortcut.value != null
+        homeShortcut.value = null
+        navigateBack()
+        if (fromHome) onReturnHome()
+    }
 
     fun navigateBack() {
         activePage = backTarget
@@ -248,7 +273,7 @@ internal fun rememberSettingsNavigationState(
     mobileDataFollowDefaultAudioQuality: Boolean,
     backgroundImageUri: String?,
     splitLayout: Boolean = settingsSplitLayout(),
-    internationalEnabled: Boolean = false
+    internationalEnabled: Boolean
 ): SettingsNavigationState {
     val activePageState = rememberInitialSettingsPageState()
     val homeTopAppBarState = rememberTopAppBarState()
@@ -278,7 +303,8 @@ internal fun rememberSettingsNavigationState(
         dynamicColor = dynamicColor,
         mobileDataFollowDefaultAudioQuality = mobileDataFollowDefaultAudioQuality,
         hasCustomBackground = backgroundImageUri != null,
-        cleanStyle = NeriDesign.isClean
+        cleanStyle = NeriDesign.isClean,
+        homeShortcut = rememberSaveable { mutableStateOf(null) }
     )
 
     // 分栏时默认显示通用页只是展示兜底，不写回状态，窗口变窄后仍回到设置首页

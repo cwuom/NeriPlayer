@@ -179,7 +179,7 @@ import moe.ouom.neriplayer.ui.navigation.AppNavigationMediaActions
 import moe.ouom.neriplayer.ui.navigation.AppNavigationScaffold
 import moe.ouom.neriplayer.ui.navigation.AppNavigationSceneRenderer
 import moe.ouom.neriplayer.ui.navigation.AppStartupDestinationEffect
-import moe.ouom.neriplayer.ui.navigation.rememberStartupGraphRoute
+import moe.ouom.neriplayer.ui.navigation.rememberStartupNavigationRoutes
 import moe.ouom.neriplayer.ui.navigation.startupHomeAvailability
 import moe.ouom.neriplayer.ui.navigation.MainTabGlassOwner
 import moe.ouom.neriplayer.ui.navigation.MainTabLayerHost
@@ -1230,10 +1230,10 @@ private fun NeriAppContent(
             animateColors = themeRevealSnapshot == null
     ) {
             // 恢复导航栈时保留原起点，避免启动页偏好变化后 popUpTo 找不到栈内目标
-            val preferredRoute = defaultStartDestination ?: initialStartDestinationSnapshot?.startDestination
-            val navHostStartDestination = rememberStartupGraphRoute(preferredRoute, homeAvailable, devModeEnabled)
+            val routes = rememberStartupNavigationRoutes(defaultStartDestination, initialStartDestinationSnapshot, homeAvailable, devModeEnabled)
                 ?: return@NeriTheme
-            val currentDefaultStartDestination = preferredRoute ?: navHostStartDestination
+            val navHostStartDestination = routes.graphRoot
+            val currentDefaultStartDestination = routes.preferred
             val navController = rememberNavController()
             val navigationVisibility = rememberAppNavigationVisibility(navController, lifecycleOwner)
             val currentRoute = navigationVisibility.currentRoute

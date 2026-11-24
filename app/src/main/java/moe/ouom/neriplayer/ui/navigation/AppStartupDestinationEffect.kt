@@ -9,6 +9,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.navigation.NavHostController
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.data.model.settings.navigation.StartDestinationSnapshot
 import moe.ouom.neriplayer.navigation.Destinations
 
 internal fun startupHomeAvailability(
@@ -47,6 +48,20 @@ internal fun rememberStartupGraphRoute(
     val route = resolvedStartupGraphRoute(preferredRoute, homeAvailable, devModeEnabled) ?: return null
     SideEffect { savedRoute = route }
     return route
+}
+
+internal data class StartupNavigationRoutes(val graphRoot: String, val preferred: String)
+
+@Composable
+internal fun rememberStartupNavigationRoutes(
+    configured: String?,
+    snapshot: StartDestinationSnapshot?,
+    homeAvailable: Boolean?,
+    devModeEnabled: Boolean
+): StartupNavigationRoutes? {
+    val preferred = configured ?: snapshot?.startDestination
+    val root = rememberStartupGraphRoute(preferred, homeAvailable, devModeEnabled) ?: return null
+    return StartupNavigationRoutes(root, preferred ?: root)
 }
 
 @Composable

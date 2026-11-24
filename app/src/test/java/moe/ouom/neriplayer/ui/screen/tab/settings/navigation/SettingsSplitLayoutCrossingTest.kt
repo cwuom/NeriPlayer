@@ -44,6 +44,31 @@ class SettingsSplitLayoutCrossingTest {
     }
 
     @Test
+    fun `home shortcut handles Back only while its target is still open`() {
+        render(initialSplit = true)
+        var consumed = 0
+        var returns = 0
+        composeRule.runOnIdle {
+            navigation.consumeHomeShortcut(true, SettingsPage.Content) { consumed++ }
+            assertEquals(SettingsPage.Language, navigation.activePage)
+            assertEquals(true, navigation.canNavigateBack)
+            assertEquals(true, navigation.showSplitDetailBackButton)
+            navigation.consumeHomeShortcut(true, null) { consumed++ }
+            navigation.navigateBackFromPage { returns++ }
+            assertEquals(1, returns)
+
+            navigation.consumeHomeShortcut(true, SettingsPage.Language) { consumed++ }
+            navigation.activePage = SettingsPage.Storage
+            navigation.navigateBackFromPage { returns++ }
+            navigation.consumeHomeShortcut(true, SettingsPage.Language) { consumed++ }
+            navigation.consumeHomeShortcut(false, SettingsPage.General) { consumed++ }
+            navigation.navigateBackFromPage { returns++ }
+            assertEquals(3, consumed)
+            assertEquals(1, returns)
+        }
+    }
+
+    @Test
     fun `restored content opens language in either mode and window layout`() {
         render(initialSplit = true)
         composeRule.runOnIdle { navigation.activePageState.value = SettingsPage.Content }

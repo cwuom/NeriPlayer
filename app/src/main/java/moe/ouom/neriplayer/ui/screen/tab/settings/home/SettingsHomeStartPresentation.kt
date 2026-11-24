@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.ui.screen.tab.home.InternationalHomeKind
 import moe.ouom.neriplayer.ui.screen.tab.home.labelRes
+import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 
 internal val internationalHomeSectionTitles = mapOf(
     InternationalHomeSectionIds.SPOTLIGHT to CoreCommonR.string.international_home_spotlight,
@@ -58,22 +59,18 @@ internal data class SettingsHomeStartPresentation(
 internal fun rememberSettingsHomeStartPresentation(
     resources: Resources,
     configuredDestination: String,
-    internationalLayout: InternationalHomeLayout?,
-    showTrending: Boolean,
-    showRadar: Boolean,
-    showRecommended: Boolean,
-    showContinue: Boolean,
-    hasRecentUsage: Boolean,
-    showBilibili: Boolean
+    cards: AppHomeCardsSettingsState,
+    international: Boolean,
+    hasRecentUsage: Boolean
 ): SettingsHomeStartPresentation {
     val available = isSettingsHomeStartAvailable(
-        showTrending,
-        showRadar,
-        showRecommended,
-        showContinue,
+        cards.showHomeTrendingCard,
+        cards.showHomeRadarCard,
+        cards.showHomeRecommendedCard,
+        cards.showHomeContinueCard,
         hasRecentUsage,
-        showBilibili,
-        internationalLayout
+        cards.showHomeBilibiliCard,
+        cards.internationalLayout.takeIf { international }
     )
     val destination = effectiveSettingsStartDestination(configuredDestination, available)
     return SettingsHomeStartPresentation(
