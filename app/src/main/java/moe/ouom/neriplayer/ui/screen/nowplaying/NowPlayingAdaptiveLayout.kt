@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -19,7 +20,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
@@ -28,6 +31,8 @@ import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingLeadingControls
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingLeadingProgress
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingTrailingControls
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.currentNowPlayingCoverViewport
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverSize
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 
 private val NowPlayingCompactLandscapeHeight = 520.dp
@@ -589,6 +594,69 @@ private fun NowPlayingWideLyricPane(
     Box(modifier = modifier.testTag("nowPlayingLyricPane")) {
         Box(Modifier.fillMaxSize().padding(horizontal = if (compactHeight) 8.dp else 20.dp)) {
             lyrics(compactHeight)
+        }
+    }
+}
+
+/**
+ * 手机竖屏先量顶栏、封面下方的歌名到播放键和底部工具栏, 封面在原有尺寸和剩余高度之间取小;
+ * 按顺序测量的 Column 在偏矮的竖屏上会让封面占满高度, 最后测量的工具栏被压成没有图标的空底座
+ */
+@Composable
+internal fun NowPlayingPhonePortraitLayout(
+    modifier: Modifier,
+    beforeCoverSpacing: Dp,
+    topBar: @Composable () -> Unit,
+    cover: @Composable () -> Unit,
+    leadingContent: @Composable ColumnScope.() -> Unit,
+    middleContent: @Composable ColumnScope.() -> Unit,
+    trailingContent: @Composable ColumnScope.() -> Unit
+) {
+    val viewport = currentNowPlayingCoverViewport()
+    Layout(
+        modifier = modifier.testTag("nowPlayingPhonePortraitLayout"),
+        content = {
+            Box { topBar() }
+            Box(Modifier.testTag("nowPlayingPhonePortraitCover")) { cover() }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, content = leadingContent)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, content = middleContent)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, content = trailingContent)
+        }
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val (topBarMeasurable, coverMeasurable, leadingMeasurable, middleMeasurable, trailingMeasurable) =
+            measurables
+        val topBarPlaceable = topBarMeasurable.measure(childConstraints)
+        val leadingPlaceable = leadingMeasurable.measure(childConstraints)
+        val trailingPlaceable = trailingMeasurable.measure(childConstraints)
+        val coverTop = topBarPlaceable.height + beforeCoverSpacing.roundToPx()
+        val coverAvailableHeight = (height - coverTop).coerceAtLeast(0)
+        val coverBudget = (coverAvailableHeight - leadingPlaceable.height - trailingPlaceable.height)
+            .coerceAtLeast(0)
+        // 高度充足时保持原来按顶栏以下高度算出的边长, 只有放不下时才收进剩余预算
+        val preferredCoverSize = resolveNowPlayingCoverSize(
+            viewport.wideLandscape, viewport.landscape, viewport.windowWidth,
+            width.toDp(), coverAvailableHeight.toDp()
+        ).roundToPx()
+        val coverPlaceable = coverMeasurable.measure(
+            childConstraints.copy(maxHeight = minOf(preferredCoverSize, coverBudget))
+        )
+        // 歌词和置底留白共享剩余高度, 和原来 Column 的权重分配一致
+        val middleHeight = (coverBudget - coverPlaceable.height).coerceAtLeast(0)
+        val middlePlaceable = middleMeasurable.measure(
+            Constraints(maxWidth = width, minHeight = middleHeight, maxHeight = middleHeight)
+        )
+        layout(width, height) {
+            fun centerX(placeableWidth: Int) =
+                Alignment.CenterHorizontally.align(placeableWidth, width, layoutDirection)
+            topBarPlaceable.place(centerX(topBarPlaceable.width), 0)
+            coverPlaceable.place(centerX(coverPlaceable.width), coverTop)
+            val leadingTop = coverTop + coverPlaceable.height
+            leadingPlaceable.place(centerX(leadingPlaceable.width), leadingTop)
+            middlePlaceable.place(centerX(middlePlaceable.width), leadingTop + leadingPlaceable.height)
+            trailingPlaceable.place(centerX(trailingPlaceable.width), height - trailingPlaceable.height)
         }
     }
 }
