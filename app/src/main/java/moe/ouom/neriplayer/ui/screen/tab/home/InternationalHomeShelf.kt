@@ -1,12 +1,19 @@
 package moe.ouom.neriplayer.ui.screen.tab.home
 
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 
-internal enum class InternationalHomeKind { TRACK, PLAYLIST, ALBUM, ARTIST }
+internal enum class InternationalHomeKind(val id: String) {
+    TRACK(InternationalHomeFeedKindIds.TRACK),
+    PLAYLIST(InternationalHomeFeedKindIds.PLAYLIST),
+    ALBUM(InternationalHomeFeedKindIds.ALBUM),
+    ARTIST(InternationalHomeFeedKindIds.ARTIST)
+}
 
 internal sealed class InternationalHomeEntry(val item: YouTubeMusicHomeItem, val kind: InternationalHomeKind) {
     class Track(item: YouTubeMusicHomeItem, val song: SongItem, val queueIndex: Int) :
@@ -65,10 +72,20 @@ internal fun buildInternationalHomeShelves(shelves: List<YouTubeMusicHomeShelf>)
     }
 }
 
-internal fun List<InternationalHomeShelf>.filterHomeShelves(kind: InternationalHomeKind?): List<InternationalHomeShelf> {
-    if (kind == null) return this
+internal class InternationalHomeFeed(
+    shelves: List<InternationalHomeShelf>,
+    layout: InternationalHomeLayout,
+    selectedKind: InternationalHomeKind?
+) {
+    val kinds = InternationalHomeKind.entries.filter { it.id !in layout.hiddenFeedKinds }
+    val selected = selectedKind?.takeIf { it in kinds }
+    val shelves = shelves.filterHomeShelves(selected?.let(::listOf) ?: kinds)
+}
+
+private fun List<InternationalHomeShelf>.filterHomeShelves(kinds: List<InternationalHomeKind>): List<InternationalHomeShelf> {
+    if (kinds.size == InternationalHomeKind.entries.size) return this
     return mapNotNull { shelf ->
-        val matches = shelf.entries.filter { it.kind == kind }
+        val matches = shelf.entries.filter { it.kind in kinds }
         when (matches.size) {
             0 -> null
             shelf.entries.size -> shelf

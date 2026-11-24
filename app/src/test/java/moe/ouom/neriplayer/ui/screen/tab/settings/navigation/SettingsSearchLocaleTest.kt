@@ -84,6 +84,32 @@ class SettingsSearchLocaleTest {
     }
 
     @Test
+    fun internationalRecommendationKindsFindTheirLocalizedSwitchesOnlyInInternationalMode() {
+        val titles = mapOf(
+            "track" to CoreCommonR.string.artist_tab_songs,
+            "playlist" to CoreCommonR.string.library_netease_tab_playlists,
+            "album" to CoreCommonR.string.library_netease_tab_albums,
+            "artist" to CoreCommonR.string.explore_search_type_artist
+        )
+        for (locale in listOf("en", "zh")) {
+            val resources = resourcesFor(locale)
+            val international = buildSettingsSearchEntries(resources, internationalEnabled = true)
+            val domestic = buildSettingsSearchEntries(resources, internationalEnabled = false)
+            titles.forEach { (kind, title) ->
+                val target = "manual:international_home_feed_$kind"
+                val label = resources.getString(title)
+                val entry = international.single { it.targetId == target }
+                assertEquals(label, entry.title)
+                assertEquals(resources.getString(CoreCommonR.string.international_home_feed), entry.description)
+                assertEquals(SettingsPage.Personalization, entry.page)
+                assertEquals(2, settingsSearchScrollAnchor(entry.page, target).itemIndex)
+                assertTrue(searchSettingsEntries(international, label).contains(entry))
+                assertTrue(domestic.none { it.targetId == target })
+            }
+        }
+    }
+
+    @Test
     fun searchTitlesAndTokensFollowLanguageChangesWhenTheContextIsReused() {
         render(updateHostResources = true)
         composeRule.runOnIdle { navigation.searchQueryState.value = "blueto" }

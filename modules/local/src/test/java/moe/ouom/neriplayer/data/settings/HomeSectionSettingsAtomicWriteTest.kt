@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.settings
 
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionHidden
@@ -23,6 +24,38 @@ import org.junit.Test
  * 后一次写入会覆盖前一次的选择，用户就会看到其中一个设置没有生效。
  */
 class HomeSectionSettingsAtomicWriteTest {
+
+    @Test
+    fun `feed kinds survive concurrent changes and mode switches on an existing layout`() = runTest {
+        val context = IsolatedSettingsDataStore.context(InMemorySharedPreferencesRegistry())
+        IsolatedSettingsDataStore.withEmptySettings(context, seed = {
+            it[SettingsKeys.INTERNATIONAL_HOME_ORDER] = "feed,spotlight,continue"
+            it[SettingsKeys.INTERNATIONAL_HOME_HIDDEN] = "continue"
+            it[SettingsKeys.HOME_RECOMMENDED_HIDDEN] = "personalized"
+        }) {
+            val repository = SettingsRepository(context)
+            val kinds = InternationalHomeFeedKindIds
+            val original = repository.internationalHomeLayoutFlow.first()
+            assertEquals(kinds.DEFAULT_ORDER, original.visibleFeedKinds)
+            repository.setInternationalizationEnabled(true)
+            kinds.DEFAULT_ORDER.map { id ->
+                async { repository.setInternationalHomeFeedKindVisible(id, false) }
+            }.awaitAll()
+            repository.setInternationalHomeFeedKindVisible("unknown", false)
+            val hidden = original.copy(hiddenFeedKinds = kinds.DEFAULT_ORDER.toSet())
+            assertEquals(hidden, context.dataStore.data.first().toInternationalHomeLayout())
+            repository.setInternationalizationEnabled(false)
+            assertEquals(setOf("personalized"), repository.homeRecommendedHiddenFlow.first())
+
+            val reopened = SettingsRepository(context)
+            reopened.setInternationalizationEnabled(true)
+            assertEquals(hidden, reopened.internationalHomeLayoutFlow.first())
+            reopened.setInternationalHomeFeedKindVisible(kinds.ALBUM, true)
+            val restored = reopened.internationalHomeLayoutFlow.first()
+            assertEquals(listOf(kinds.ALBUM), restored.visibleFeedKinds)
+            assertEquals(original.visibleSections, restored.visibleSections)
+        }
+    }
 
     @Test
     fun `international order and visibility survive reopen independently of legacy cards`() = runTest {

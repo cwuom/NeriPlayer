@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
@@ -77,6 +78,26 @@ class InternationalHomeContentTest {
         assertEquals("retry-page", action)
     }
 
+    @Test fun hidingTheSelectedKindShowsTheRemainingRecommendationsAndKeepsSpotlight() {
+        val album = YouTubeMusicHomeItem("First album", "", "", browseId = "MPREfirst")
+        val song = YouTubeMusicHomeItem("Next song", "", "https://example.invalid/cover.jpg", videoId = "track")
+        val shelves = listOf(YouTubeMusicHomeShelf("Albums first", listOf(album)), YouTubeMusicHomeShelf("Songs next", listOf(song)))
+        var layout by mutableStateOf(InternationalHomeLayout())
+        render(InternationalHomeKind.ALBUM) {
+            state.copy(youtubeHomeEnabled = true, internationalHomeLayout = layout, ytMusicHomeShelves = HomeSectionState(items = shelves))
+        }
+        compose.onNodeWithText("Albums first").assertExists()
+        compose.onNodeWithText("Songs next").assertDoesNotExist()
+        compose.runOnIdle { layout = layout.copy(hiddenFeedKinds = setOf(InternationalHomeFeedKindIds.ALBUM)) }
+        compose.onNodeWithText("Albums first").assertDoesNotExist()
+        compose.onNodeWithText("Albums").assertDoesNotExist()
+        compose.onNodeWithText("Songs next").assertExists()
+        compose.onNodeWithTag("internationalHomeSpotlight").assertExists()
+        compose.runOnIdle { layout = layout.copy(hiddenFeedKinds = InternationalHomeFeedKindIds.DEFAULT_ORDER.toSet()) }
+        compose.onNodeWithTag("internationalHomeFeed").assertDoesNotExist()
+        compose.onNodeWithTag("internationalHomeSpotlight").assertExists()
+    }
+
     @Test fun spotlightPlaysFromItsShelfWhenDomesticSectionsAreDisabled() {
         val shelf = YouTubeMusicHomeShelf("Tokyo picks", listOf(
             YouTubeMusicHomeItem("One", "Singer", "", videoId = "videoA"),
@@ -116,7 +137,7 @@ class InternationalHomeContentTest {
                 radarPlaylistListState = rememberLazyListState(), loadingText = "Loading", registerKey = { it },
                 onSongClick = { songs, index -> action = "$index:" + songs.joinToString(",") { it.name } })
             LazyVerticalGrid(columns = GridCells.Fixed(2)) {
-                addInternationalHome(env, shelves, shelves.filterHomeShelves(kind), kind, {}, { action = "refresh" },
+                addInternationalHome(env, shelves, InternationalHomeFeed(shelves, snapshot.internationalHomeLayout, kind), {}, { action = "refresh" },
                     { action = "retry-page" }, { action = "settings" })
             }
         }

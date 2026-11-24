@@ -55,7 +55,6 @@ import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankType
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeCursor
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
-import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.viewmodel.tab.bili.BiliMusicHomeRepository
@@ -432,7 +431,7 @@ class HomeViewModel @JvmOverloads constructor(
                 AppContainer.settingsRepo.internationalHomeLayoutFlow
             ) { international, enabled, catalogKey, auth, layout ->
                 val useYouTube = international && enabled
-                val showFeed = useYouTube && layout.visibleSections.any { it != InternationalHomeSectionIds.CONTINUE }
+                val showFeed = useYouTube && layout.hasOnlineSections
                 val source = if (showFeed) {
                     HomeFeedSource(true, true, catalogKey, auth.buildRefreshObserverFingerprint())
                 } else HomeFeedSource(international, useYouTube)

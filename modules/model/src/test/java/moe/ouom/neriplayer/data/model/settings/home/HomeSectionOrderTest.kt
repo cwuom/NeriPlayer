@@ -21,6 +21,28 @@ class HomeSectionOrderTest {
     }
 
     @Test
+    fun internationalFeedUsesOnlyEnabledKindsAndKeepsSpotlightIndependent() {
+        val kinds = InternationalHomeFeedKindIds
+        val defaults = InternationalHomeLayout()
+        assertEquals(listOf("track", "playlist", "album", "artist"), defaults.visibleFeedKinds)
+        val partlyHidden = defaults.copy(hiddenFeedKinds = setOf(kinds.TRACK, kinds.ALBUM, "unknown"))
+        assertEquals(listOf(kinds.PLAYLIST, kinds.ARTIST), partlyHidden.visibleFeedKinds)
+        assertEquals(defaults.visibleSections, partlyHidden.visibleSections)
+
+        val allHidden = defaults.copy(hiddenFeedKinds = kinds.DEFAULT_ORDER.toSet())
+        assertEquals(listOf("spotlight", "continue"), allHidden.visibleSections)
+        assertEquals(true, allHidden.hasOnlineSections)
+        assertEquals(true, allHidden.isHomeAvailable(hasRecentUsage = false))
+        val continueOnly = allHidden.copy(hidden = setOf("spotlight"))
+        assertEquals(false, continueOnly.hasOnlineSections)
+        assertEquals(false, continueOnly.isHomeAvailable(hasRecentUsage = false))
+        assertEquals(true, continueOnly.isHomeAvailable(hasRecentUsage = true))
+        val feedOnly = allHidden.copy(hidden = setOf("spotlight", "continue"))
+        assertEquals(emptyList<String>(), feedOnly.visibleSections)
+        assertEquals(false, feedOnly.isHomeAvailable(hasRecentUsage = true))
+    }
+
+    @Test
     fun radarPrecedesTrendingUnlessTheUserSavedAnotherOrder() {
         val defaults = HomeMajorSectionIds.DEFAULT_ORDER
         assertEquals(

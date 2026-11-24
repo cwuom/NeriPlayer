@@ -27,7 +27,8 @@ class ConfigSettingsPreferencesTest {
         val source = mutablePreferencesOf(
             SettingsKeys.HOME_MAJOR_ORDER to "radar,continue,trending,recommended,bilibili",
             SettingsKeys.INTERNATIONAL_HOME_ORDER to "feed,continue,spotlight",
-            SettingsKeys.INTERNATIONAL_HOME_HIDDEN to "spotlight"
+            SettingsKeys.INTERNATIONAL_HOME_HIDDEN to "spotlight",
+            SettingsKeys.INTERNATIONAL_HOME_FEED_HIDDEN to "album,artist"
         )
         val restored = mutablePreferencesOf()
         restored.replaceSettingsWith(source.toTypedPreferenceSnapshot())

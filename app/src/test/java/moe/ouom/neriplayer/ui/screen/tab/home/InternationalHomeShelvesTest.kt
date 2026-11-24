@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.home
 
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
 import org.junit.Assert.assertEquals
@@ -59,13 +60,14 @@ class InternationalHomeShelvesTest {
             )
         )
         assertEquals(3, shelves.map { it.key }.toSet().size)
-        assertEquals(shelves, shelves.filterHomeShelves(null))
-        val tracks = shelves.filterHomeShelves(InternationalHomeKind.TRACK)
+        fun feed(kind: InternationalHomeKind?) = InternationalHomeFeed(shelves, InternationalHomeLayout(), kind).shelves
+        assertEquals(shelves, feed(null))
+        val tracks = feed(InternationalHomeKind.TRACK)
         assertEquals(shelves.take(2).map { it.key }, tracks.map { it.key })
         assertEquals(listOf(song, song), tracks.flatMap { it.entries }.map { it.item })
-        assertEquals(listOf(shelves.first().key), shelves.filterHomeShelves(InternationalHomeKind.PLAYLIST).map { it.key })
-        assertEquals(shelves.drop(1).map { it.key }, shelves.filterHomeShelves(InternationalHomeKind.ALBUM).map { it.key })
-        assertEquals(emptyList<InternationalHomeShelf>(), shelves.filterHomeShelves(InternationalHomeKind.ARTIST))
+        assertEquals(listOf(shelves.first().key), feed(InternationalHomeKind.PLAYLIST).map { it.key })
+        assertEquals(shelves.drop(1).map { it.key }, feed(InternationalHomeKind.ALBUM).map { it.key })
+        assertEquals(emptyList<InternationalHomeShelf>(), feed(InternationalHomeKind.ARTIST))
     }
 
     @Test

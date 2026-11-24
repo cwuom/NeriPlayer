@@ -29,8 +29,7 @@ import moe.ouom.neriplayer.ui.i18n.asString
 internal fun LazyGridScope.addInternationalHome(
     env: HomeMajorSectionEnv,
     shelves: List<InternationalHomeShelf>,
-    displayed: List<InternationalHomeShelf>,
-    kind: InternationalHomeKind?,
+    recommendations: InternationalHomeFeed,
     onSelectKind: (InternationalHomeKind?) -> Unit,
     onRetry: () -> Unit,
     onRetryContinuation: () -> Unit,
@@ -81,14 +80,14 @@ internal fun LazyGridScope.addInternationalHome(
             }
             InternationalHomeSectionIds.FEED -> {
                 fullRow(env.registerKey("international:filters")) {
-                    InternationalHomeFilters(kind, onSelectKind)
+                    InternationalHomeFilters(recommendations, onSelectKind)
                 }
-                displayed.forEach { shelf ->
+                recommendations.shelves.forEach { shelf ->
                     addInternationalHomeShelf(shelf, env.registerKey, env.onSongClick, env.onYouTubeMusicPlaylistClick,
                         env.onYouTubeCreatorClick, env.favoriteKeys, env.favoriteSongLookup, env.downloadPresenceVersion,
                         env.onFavoriteToggle, env.onShowSnackbar, env.offlineMode)
                 }
-                if (displayed.isEmpty() && feed.error == null && ui.youTubeHomeLoadMoreError == null) {
+                if (recommendations.shelves.isEmpty() && feed.error == null && ui.youTubeHomeLoadMoreError == null) {
                     fullRow(env.registerKey("international:category-status")) {
                         if (feed.loading || ui.loadingMoreYouTubeHome) {
                             SectionLoadingState(env.loadingText)
@@ -123,14 +122,16 @@ private fun HomeFeedMessage(message: String, @StringRes action: Int, onClick: ()
 }
 
 @Composable
-private fun InternationalHomeFilters(selected: InternationalHomeKind?, onSelect: (InternationalHomeKind?) -> Unit) {
+private fun InternationalHomeFilters(feed: InternationalHomeFeed, onSelect: (InternationalHomeKind?) -> Unit) {
     Column(Modifier.fillMaxWidth().testTag("internationalHomeFeed"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(stringResource(CommonR.string.international_home_feed), style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected == null, onClick = { onSelect(null) }, label = { Text(stringResource(R.string.international_home_all)) })
-            InternationalHomeKind.entries.forEach { kind ->
-                FilterChip(selected == kind, onClick = { onSelect(kind) }, label = { Text(stringResource(kind.labelRes)) })
+        if (feed.kinds.size > 1) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(feed.selected == null, onClick = { onSelect(null) }, label = { Text(stringResource(R.string.international_home_all)) })
+                feed.kinds.forEach { kind ->
+                    FilterChip(feed.selected == kind, onClick = { onSelect(kind) }, label = { Text(stringResource(kind.labelRes)) })
+                }
             }
         }
     }

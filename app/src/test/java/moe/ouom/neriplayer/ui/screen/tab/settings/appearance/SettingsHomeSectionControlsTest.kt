@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.settings.route.AppHomeSettingsActions
@@ -148,6 +149,33 @@ class SettingsHomeSectionControlsTest {
     private fun switch(titleRes: Int) =
         composeRule.onNode(isToggleable() and hasContentDescription(context.getString(titleRes))).performScrollTo()
 
+    @Test
+    fun internationalFeedExpandsAndWritesOnlyItsKindVisibility() {
+        val kinds = InternationalHomeFeedKindIds
+        val layout = InternationalHomeLayout(hiddenFeedKinds = setOf(kinds.ALBUM))
+        render(initial.copy(internationalLayout = layout), international = true)
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.artist_tab_songs)).assertDoesNotExist()
+        expand(CoreCommonR.string.international_home_feed)
+        switch(CoreCommonR.string.artist_tab_songs).assertIsOn().performClick()
+        switch(CoreCommonR.string.library_netease_tab_playlists).assertIsOn().performClick()
+        switch(CoreCommonR.string.library_netease_tab_albums).assertIsOff().performClick()
+        switch(CoreCommonR.string.explore_search_type_artist).assertIsOn().performClick()
+        composeRule.waitForIdle()
+        runBlocking {
+            verify(repository).setInternationalHomeFeedKindVisible(kinds.TRACK, false)
+            verify(repository).setInternationalHomeFeedKindVisible(kinds.PLAYLIST, false)
+            verify(repository).setInternationalHomeFeedKindVisible(kinds.ALBUM, true)
+            verify(repository).setInternationalHomeFeedKindVisible(kinds.ARTIST, false)
+        }
+    }
+
+    @Test
+    fun cleanSearchTargetExpandsTheFeedAndRevealsItsSwitch() {
+        render(initial, international = true, style = UiStyle.Clean, target = "manual:international_home_feed_album")
+        switch(CoreCommonR.string.library_netease_tab_albums).assertIsOn()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.settings_home_card_netease_radar)).assertDoesNotExist()
+    }
+
     private fun expand(titleRes: Int) {
         val description = context.getString(CoreCommonR.string.settings_home_sub_section_expand, context.getString(titleRes))
         composeRule.onNodeWithContentDescription(description).performScrollTo().performClick()
@@ -165,7 +193,9 @@ class SettingsHomeSectionControlsTest {
 
     private fun render(
         state: AppHomeCardsSettingsState,
-        international: Boolean = false
+        international: Boolean = false,
+        style: UiStyle = UiStyle.Material,
+        target: String? = null
     ) {
         composeRule.setContent {
             NeriTheme(
@@ -173,7 +203,7 @@ class SettingsHomeSectionControlsTest {
                 forceDark = false,
                 dynamicColor = false,
                 seedColorHex = "#6750A4",
-                uiStyle = UiStyle.Material,
+                uiStyle = style,
                 animateColors = false
             ) {
                 val scope = rememberCoroutineScope()
@@ -184,8 +214,8 @@ class SettingsHomeSectionControlsTest {
                         homeStartAvailable = true,
                         state = state,
                         actions = actions,
-                        highlightTargetId = null,
-                        highlightPulse = 0,
+                        highlightTargetId = target,
+                        highlightPulse = if (target == null) 0 else 1,
                         onHighlightFinished = null
                     )
                 }

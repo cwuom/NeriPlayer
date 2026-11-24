@@ -350,7 +350,9 @@ fun HomeScreen(
     val internationalLayout = ui.internationalHomeLayout
     val shelves = remember(ui.ytMusicHomeShelves.items) { buildInternationalHomeShelves(ui.ytMusicHomeShelves.items) }
     var homeKind by rememberSaveable(isInternational) { mutableStateOf<InternationalHomeKind?>(null) }
-    val visibleShelves = remember(shelves, homeKind) { shelves.filterHomeShelves(homeKind) }
+    val feed = remember(shelves, homeKind, internationalLayout.hiddenFeedKinds) {
+        InternationalHomeFeed(shelves, internationalLayout, homeKind)
+    }
     val scope = rememberCoroutineScope()
     val showContinue = shouldShowHomeContinueSection(
         showContinueCard = if (isInternational) InternationalHomeSectionIds.CONTINUE in internationalLayout.visibleSections else showContinueCard,
@@ -447,7 +449,7 @@ fun HomeScreen(
                     }
                 }
                 HapticIconButton(
-                    enabled = !offlineMode && (!isInternational || ui.youtubeHomeEnabled),
+                    enabled = !offlineMode && (!isInternational || (ui.youtubeHomeEnabled && internationalLayout.hasOnlineSections)),
                     onClick = {
                         if (isInternational) {
                             vm.refreshYtMusicHome()
@@ -568,7 +570,7 @@ fun HomeScreen(
                 ) {
                     if (isInternational) {
                         addInternationalHome(
-                            env = majorEnv, shelves = shelves, displayed = visibleShelves, kind = homeKind,
+                            env = majorEnv, shelves = shelves, recommendations = feed,
                             onSelectKind = { homeKind = it }, onRetry = vm::refreshYtMusicHome,
                             onRetryContinuation = vm::retryYouTubeHomeContinuation,
                             onEnableYouTube = onOpenGeneralSettings

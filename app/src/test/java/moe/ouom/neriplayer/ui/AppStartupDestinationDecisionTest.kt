@@ -1,16 +1,55 @@
 package moe.ouom.neriplayer.ui
 
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.ui.navigation.AppStartupDestinationDecision
 import moe.ouom.neriplayer.ui.navigation.AppStartupDestinationInput
 import moe.ouom.neriplayer.ui.navigation.appStartupDestinationDecision
 import moe.ouom.neriplayer.ui.navigation.dispatch
+import moe.ouom.neriplayer.ui.navigation.resolvedStartupGraphRoute
+import moe.ouom.neriplayer.ui.navigation.startupHomeAvailability
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppStartupDestinationDecisionTest {
+    @Test
+    fun hiddenInternationalHomeStartsAtExploreWithoutMountingHomeFirst() {
+        val layout = InternationalHomeLayout(
+            hidden = setOf(InternationalHomeSectionIds.SPOTLIGHT, InternationalHomeSectionIds.CONTINUE),
+            hiddenFeedKinds = InternationalHomeFeedKindIds.DEFAULT_ORDER.toSet()
+        )
+        val availability = listOf(
+            startupHomeAvailability(null, null, null, domesticAvailable = true),
+            startupHomeAvailability(true, null, null, domesticAvailable = true),
+            startupHomeAvailability(true, layout, null, domesticAvailable = true)
+        )
+        assertEquals(listOf(null, null, "explore"), availability.map {
+            resolvedStartupGraphRoute("home", it, devModeEnabled = false)
+        })
+    }
+
+    @Test
+    fun onlyContinueNeedsHistoryAndExplicitTabsCanStartImmediately() {
+        val onlyContinue = InternationalHomeLayout(
+            hidden = setOf(InternationalHomeSectionIds.SPOTLIGHT, InternationalHomeSectionIds.FEED)
+        )
+        assertEquals(null, startupHomeAvailability(true, onlyContinue, null, false))
+        assertEquals(false, startupHomeAvailability(true, onlyContinue, false, false))
+        assertEquals(true, startupHomeAvailability(true, onlyContinue, true, false))
+        assertEquals(true, startupHomeAvailability(true, InternationalHomeLayout(), null, false))
+        assertEquals(false, startupHomeAvailability(false, InternationalHomeLayout(), null, false))
+        assertEquals(null, resolvedStartupGraphRoute(null, true, false))
+        assertEquals("home", resolvedStartupGraphRoute("home", true, false))
+        for (route in listOf("explore", "library", "settings")) {
+            assertEquals(route, resolvedStartupGraphRoute(route, null, false))
+            assertEquals(route, resolvedStartupGraphRoute(route, false, false))
+        }
+    }
+
     @Test
     fun persistedDestinationReplacesFallbackOnlyWhileStartupIsAwaitingIt() {
         val fallback = Destinations.Home.route

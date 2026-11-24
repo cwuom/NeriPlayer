@@ -10,8 +10,12 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSections
 import moe.ouom.neriplayer.ksp.annotations.SettingUiType
 import moe.ouom.neriplayer.common.search.SearchTextMatcher
 import moe.ouom.neriplayer.ui.settings.unavailableSettingKeys
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeSectionTitles
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeFeedKindSearchId
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeFeedKindTargets
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeFeedKindTitles
 import moe.ouom.neriplayer.R as AppR
 
 internal data class SettingsSearchEntry(
@@ -374,7 +378,7 @@ private val PersonalizationHomeTargets = setOf(
     "setting:home_card_radar",
     "setting:home_card_recommended",
     "setting:home_card_bilibili"
-) + internationalHomeSectionTitles.keys.map { "manual:international_home_$it" }
+) + internationalHomeSectionTitles.keys.map { "manual:international_home_$it" } + internationalHomeFeedKindTargets.values
 
 private val PersonalizationPlaybackInfoTargets = setOf(
     "setting:show_cover_source_badge",
@@ -485,7 +489,11 @@ internal fun manualSettingsSearchEntries(resources: Resources, internationalEnab
             CoreCommonR.string.settings_home_major_order_desc, "international_home_order",
             listOf("home order", "reorder", "sort", "首页顺序", "排序", "拖拽"),
             targetId = "manual:international_home_${InternationalHomeSectionIds.SPOTLIGHT}"
-        )
+        ) + internationalHomeFeedKindTitles.map { (kind, title) ->
+            val aliases = listOf("YouTube Music", kind, "recommendations", "首页推荐")
+            entry(SettingsPage.Personalization, title, CoreCommonR.string.international_home_feed,
+                internationalHomeFeedKindSearchId(kind), if (kind == InternationalHomeFeedKindIds.ARTIST) aliases + "艺人" else aliases)
+        }
     } else emptyList()
     return listOf(
         entry(

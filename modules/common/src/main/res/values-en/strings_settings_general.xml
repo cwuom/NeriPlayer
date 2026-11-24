@@ -73,7 +73,7 @@
     <string name="settings_personalization_background_section_desc">Choose a custom background and display strength.</string>
     <string name="settings_display">Display Settings</string>
     <string name="settings_display_desc">Control cover, lyrics, and background display.</string>
-    <string name="settings_home_hidden_notice">All home cards are hidden, so Home will disappear from the bottom bar.</string>
+    <string name="settings_home_hidden_notice">Home is hidden from the bottom bar while it has no sections to show.</string>
     <string name="settings_playback">Playback Settings</string>
     <string name="settings_playback_expand">Fades, progress memory, and audio output</string>
     <string name="settings_playback_section_behavior">Playback Behavior</string>

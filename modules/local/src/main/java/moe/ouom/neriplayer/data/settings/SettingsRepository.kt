@@ -109,6 +109,7 @@ import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettingsCodec
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
@@ -585,13 +586,8 @@ class SettingsRepository(private val context: Context) {
     val homeCardBilibiliFlow: Flow<Boolean> =
         autoSettingsRepository.homeCardBilibiliFlow
 
-    val internationalHomeLayoutFlow: Flow<InternationalHomeLayout> = dataStoreSettingFlow { prefs ->
-        val defaults = InternationalHomeSectionIds.DEFAULT_ORDER
-        InternationalHomeLayout(
-            order = parseHomeSectionOrder(prefs[AutoSettingsKeys.INTERNATIONAL_HOME_ORDER], defaults),
-            hidden = parseHomeSectionHidden(prefs[AutoSettingsKeys.INTERNATIONAL_HOME_HIDDEN], defaults)
-        )
-    }
+    val internationalHomeLayoutFlow: Flow<InternationalHomeLayout> =
+        dataStoreSettingFlow(Preferences::toInternationalHomeLayout)
 
     val homeMajorOrderFlow: Flow<List<String>> =
         autoSettingsRepository.homeMajorOrderFlow.map { raw ->
@@ -1414,6 +1410,16 @@ class SettingsRepository(private val context: Context) {
         )
     }
 
+    suspend fun setInternationalHomeFeedKindVisible(id: String, visible: Boolean) {
+        if (id !in InternationalHomeFeedKindIds.DEFAULT_ORDER) return
+        updateHomeSectionHiddenAtomically(
+            key = AutoSettingsKeys.INTERNATIONAL_HOME_FEED_HIDDEN,
+            defaults = InternationalHomeFeedKindIds.DEFAULT_ORDER,
+            id = id,
+            visible = visible
+        )
+    }
+
     suspend fun setHomeMajorOrder(order: List<String>) {
         autoSettingsRepository.setHomeMajorOrder(
             encodeHomeSectionOrder(order.ifEmpty { HomeMajorSectionIds.DEFAULT_ORDER })
@@ -1771,6 +1777,18 @@ class SettingsRepository(private val context: Context) {
     suspend fun setYouTubeEnabled(enabled: Boolean) {
         setSetting(AutoSettingsSchema.general.youtubeEnabled, enabled)
     }
+}
+
+fun Preferences.toInternationalHomeLayout(): InternationalHomeLayout {
+    val sections = InternationalHomeSectionIds.DEFAULT_ORDER
+    return InternationalHomeLayout(
+        order = parseHomeSectionOrder(this[AutoSettingsKeys.INTERNATIONAL_HOME_ORDER], sections),
+        hidden = parseHomeSectionHidden(this[AutoSettingsKeys.INTERNATIONAL_HOME_HIDDEN], sections),
+        hiddenFeedKinds = parseHomeSectionHidden(
+            this[AutoSettingsKeys.INTERNATIONAL_HOME_FEED_HIDDEN],
+            InternationalHomeFeedKindIds.DEFAULT_ORDER
+        )
+    )
 }
 
 private val HEX_COLOR_REGEX = Regex("^[0-9A-F]{6}$")

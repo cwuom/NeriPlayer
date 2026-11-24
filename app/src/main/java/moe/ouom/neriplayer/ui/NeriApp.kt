@@ -179,6 +179,8 @@ import moe.ouom.neriplayer.ui.navigation.AppNavigationMediaActions
 import moe.ouom.neriplayer.ui.navigation.AppNavigationScaffold
 import moe.ouom.neriplayer.ui.navigation.AppNavigationSceneRenderer
 import moe.ouom.neriplayer.ui.navigation.AppStartupDestinationEffect
+import moe.ouom.neriplayer.ui.navigation.rememberStartupGraphRoute
+import moe.ouom.neriplayer.ui.navigation.startupHomeAvailability
 import moe.ouom.neriplayer.ui.navigation.MainTabGlassOwner
 import moe.ouom.neriplayer.ui.navigation.MainTabLayerHost
 import moe.ouom.neriplayer.ui.navigation.MainTabPredictiveBackHandler
@@ -284,7 +286,7 @@ internal fun localPlaylistIdFromSourceRoute(sourceRoute: String?): Long? {
  *
  * @param initialThemeSnapshot 启动时同步读到的主题偏好, 让首帧就用正确的明暗与样式.
  * @param initialStartDestinationSnapshot 启动时同步读到的启动页偏好.
- *   `null` 表示缓存尚未就绪, 此时沿用"先落在兜底路由, 真值到达后再纠正"的原有路径.
+ *   缓存未就绪时等待已保存的设置，再确定首次导航的起点
  */
 @Composable
 fun NeriApp(
@@ -478,8 +480,8 @@ private fun NeriAppContent(
     val showHomeRecommendedCard by repo.homeCardRecommendedFlow.collectAsStateWithLifecycle(initialValue = true)
     val homeBilibiliCardEnabled by repo.homeCardBilibiliFlow.collectAsStateWithLifecycle(initialValue = true)
     val internationalizationEnabled: Boolean? by repo.internationalizationEnabledFlow.collectAsStateWithLifecycle(initialValue = null)
-    val internationalHomeLayout by repo.internationalHomeLayoutFlow.collectAsStateWithLifecycle(
-        initialValue = InternationalHomeLayout()
+    val internationalHomeLayout: InternationalHomeLayout? by repo.internationalHomeLayoutFlow.collectAsStateWithLifecycle(
+        initialValue = null
     )
     val showHomeBilibiliCard = homeBilibiliCardEnabled && internationalizationEnabled == false
     val storedUsbExclusivePlayback by repo.usbExclusivePlaybackFlow
@@ -501,15 +503,19 @@ private fun NeriAppContent(
         ?: showHomeContinueCard
     HomeContinueDiagnostics(showActiveContinue, homeUsageSnapshot)
     val homeHasRecentUsage = !homeUsageSnapshot.isLoaded || homeUsageSnapshot.entries.isNotEmpty()
-    val showHomeTab = internationalizationEnabled == null || isSettingsHomeStartAvailable(
+    val domesticHomeAvailable = isSettingsHomeStartAvailable(
         showTrending = showHomeTrendingCard,
         showRadar = showHomeRadarCard,
         showRecommended = showHomeRecommendedCard,
         showContinue = showHomeContinueCard,
         hasRecentUsage = homeHasRecentUsage,
-        showBilibili = showHomeBilibiliCard,
-        internationalLayout = activeInternationalLayout
+        showBilibili = showHomeBilibiliCard
     )
+    val homeAvailable = startupHomeAvailability(
+        internationalizationEnabled, activeInternationalLayout,
+        homeHasRecentUsage.takeIf { homeUsageSnapshot.isLoaded }, domesticHomeAvailable
+    )
+    val showHomeTab = homeAvailable != false
     var pendingFollowSystemDark by remember { mutableStateOf<Boolean?>(null) }
     var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
     var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -886,14 +892,6 @@ private fun NeriAppContent(
         mode = themeMode,
         systemDark = systemDark
     )
-    val initialMainStartDestination = resolveMainStartDestination(
-        preferredRoute = defaultStartDestination
-            ?: initialStartDestinationSnapshot?.startDestination,
-        showHomeTab = showHomeTab,
-        devModeEnabled = devModeEnabled
-    )
-    val currentDefaultStartDestination =
-        defaultStartDestination ?: initialMainStartDestination
     val backgroundGlassBackdrop = rememberAdvancedGlassBackdrop()
     val contentGlassBackdrop = rememberAdvancedGlassBackdrop()
     val visualEffectsDeviceProfile = rememberVisualEffectsDeviceProfile()
@@ -1232,7 +1230,10 @@ private fun NeriAppContent(
             animateColors = themeRevealSnapshot == null
     ) {
             // 恢复导航栈时保留原起点，避免启动页偏好变化后 popUpTo 找不到栈内目标
-            val navHostStartDestination = rememberSaveable { initialMainStartDestination }
+            val preferredRoute = defaultStartDestination ?: initialStartDestinationSnapshot?.startDestination
+            val navHostStartDestination = rememberStartupGraphRoute(preferredRoute, homeAvailable, devModeEnabled)
+                ?: return@NeriTheme
+            val currentDefaultStartDestination = preferredRoute ?: navHostStartDestination
             val navController = rememberNavController()
             val navigationVisibility = rememberAppNavigationVisibility(navController, lifecycleOwner)
             val currentRoute = navigationVisibility.currentRoute

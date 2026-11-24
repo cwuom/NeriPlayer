@@ -158,7 +158,7 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
   - Requires sign-in and a network connection.
   - The entry is hidden when playback falls back to Bilibili or local audio.
 - **Category browsing**: local, favorites, NetEase Cloud Music, YouTube Music, and Bilibili entries. YouTube Music can be disabled entirely, and Bilibili music can be hidden from the home page alone.
-- **Home discovery**: the domestic home shows charts, daily picks, and radar playlists. The international home follows YouTube Music’s shelves and lets you filter by track, playlist, album, or artist. Each home keeps its own section order and visibility.
+- **Home discovery**: the domestic home shows charts, daily picks, and radar playlists. To choose which types of YouTube Music recommendations appear on the international home, open **Home & startup → Your recommendations** and toggle tracks, playlists, albums, or artists. Each home keeps its own layout.
 - **Search**: per-platform search, with paging on NetEase Cloud Music, Bilibili, and YouTube Music.
 - **Link recognition**: paste a share text with a title or short link to resolve NetEase Cloud Music, Bilibili, and YouTube Music content.
 - **Import and batch artwork**: share import and folder scanning, plus one-tap batch matching and embedding of lyrics and artwork for local songs.

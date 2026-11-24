@@ -6,12 +6,22 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.ui.screen.tab.home.InternationalHomeKind
+import moe.ouom.neriplayer.ui.screen.tab.home.labelRes
 
 internal val internationalHomeSectionTitles = mapOf(
     InternationalHomeSectionIds.SPOTLIGHT to CoreCommonR.string.international_home_spotlight,
     InternationalHomeSectionIds.CONTINUE to CoreCommonR.string.player_continue,
     InternationalHomeSectionIds.FEED to CoreCommonR.string.international_home_feed
 )
+
+internal val internationalHomeFeedKindTitles = InternationalHomeKind.entries.associate { it.id to it.labelRes }
+
+internal fun internationalHomeFeedKindSearchId(kind: String) = "international_home_feed_$kind"
+
+internal val internationalHomeFeedKindTargets = internationalHomeFeedKindTitles.keys.associateWith { kind ->
+    "manual:${internationalHomeFeedKindSearchId(kind)}"
+}
 
 internal fun isSettingsHomeStartAvailable(
     showTrending: Boolean,

@@ -652,6 +652,14 @@ object AutoSettingsSchema {
             access = SettingAccessMode.KeyOnly
         )
         val internationalHomeHidden = autoSetting(titleRes = CoreCommonR.string.settings_personalization_home_section)
+
+        @AutoSetting(
+            key = "international_home_feed_hidden",
+            type = SettingValueType.String,
+            order = 80,
+            access = SettingAccessMode.KeyOnly
+        )
+        val internationalHomeFeedHidden = autoSetting(titleRes = CoreCommonR.string.international_home_feed)
     }
 
     /*

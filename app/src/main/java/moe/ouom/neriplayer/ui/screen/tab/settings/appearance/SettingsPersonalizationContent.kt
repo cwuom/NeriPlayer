@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
 import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
@@ -73,6 +74,8 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.data.model.settings.home.applyHomeSectionOrder
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeSectionTitles
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeFeedKindTitles
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeFeedKindTargets
 import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.settings.route.HomeSectionSettingsActions
 import sh.calvin.reorderable.ReorderableItem
@@ -210,7 +213,13 @@ internal fun SettingsPersonalizationHomeCard(
         HomeReorderableColumn(items = editor.order, onReorder = editor.reorder) { index, id, _ ->
             val row = rows.getValue(id)
             val title = stringResource(row.titleRes)
+            val isInternationalFeed = internationalEnabled && id == InternationalHomeSectionIds.FEED
             var expanded by remember(id) { mutableStateOf(false) }
+            if (isInternationalFeed) {
+                LaunchedEffect(highlightTargetId, highlightPulse) {
+                    if (highlightPulse > 0 && highlightTargetId in internationalHomeFeedKindTargets.values) expanded = true
+                }
+            }
             ReorderableItem {
                 SettingsHomeCardSwitch(
                     title = title,
@@ -218,7 +227,7 @@ internal fun SettingsPersonalizationHomeCard(
                     checked = row.checked,
                     onCheckedChange = { setVisible(id, it) },
                     expanded = expanded,
-                    onToggleExpanded = row.children?.let { { expanded = !expanded } },
+                    onToggleExpanded = if (row.children != null || isInternationalFeed) ({ expanded = !expanded }) else null,
                     targetId = if (internationalEnabled) "manual:international_home_$id" else "setting:home_card_$id",
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
@@ -226,7 +235,21 @@ internal fun SettingsPersonalizationHomeCard(
                     leadingExtra = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) }
                 )
             }
-            if (expanded) {
+            if (expanded && isInternationalFeed) {
+                Column(Modifier.fillMaxWidth().padding(start = 28.dp)) {
+                    InternationalHomeFeedKindIds.DEFAULT_ORDER.forEach { kind ->
+                        val visible = kind !in state.internationalLayout.hiddenFeedKinds
+                        HomeSubSectionSwitch(
+                            title = stringResource(internationalHomeFeedKindTitles.getValue(kind)),
+                            checked = visible,
+                            onCheckedChange = { actions.setSubVisible(id, kind, it) },
+                            modifier = Modifier.settingsHighlightTarget(
+                                internationalHomeFeedKindTargets.getValue(kind), highlightTargetId, highlightPulse, onHighlightFinished
+                            ).settingsItemClickable { actions.setSubVisible(id, kind, !visible) }
+                        )
+                    }
+                }
+            } else if (expanded) {
                 row.children?.let { HomeSubSectionList(id, it, actions) }
             }
         }
@@ -269,27 +292,37 @@ private fun HomeSubSectionList(parentId: String, sections: HomeSubSections, acti
         val visible = id !in sections.hidden
         val title = stringResource(homeSubSectionTitles.getValue(id))
         ReorderableItem {
-            ListItem(
-                leadingContent = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) },
-                headlineContent = {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (visible) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingContent = {
-                    MiuixSettingsSwitch(
-                        checked = visible,
-                        onCheckedChange = { actions.setSubVisible(parentId, id, it) },
-                        modifier = Modifier.semantics { contentDescription = title }
-                    )
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            HomeSubSectionSwitch(
+                title = title,
+                checked = visible,
+                onCheckedChange = { actions.setSubVisible(parentId, id, it) },
+                leadingContent = { HomeReorderHandleIcon(title, editor.order, index, editor.reorder) }
             )
         }
     }
+}
+
+@Composable
+private fun HomeSubSectionSwitch(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    leadingContent: (@Composable () -> Unit)? = null
+) {
+    ListItem(
+        modifier = modifier,
+        leadingContent = leadingContent,
+        headlineContent = {
+            Text(title, style = MaterialTheme.typography.bodyMedium,
+                color = if (checked) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        trailingContent = {
+            MiuixSettingsSwitch(checked = checked, onCheckedChange = onCheckedChange,
+                modifier = Modifier.semantics { contentDescription = title })
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
 }
 
 @Composable

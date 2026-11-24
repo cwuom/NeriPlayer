@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
@@ -357,7 +358,8 @@ internal class AppHomeSettingsActions(
     private val subVisibility = mapOf(
         HomeMajorSectionIds.TRENDING to repo::setHomeTrendingSubSectionVisible,
         HomeMajorSectionIds.RADAR to repo::setHomeRadarSubSectionVisible,
-        HomeMajorSectionIds.RECOMMENDED to repo::setHomeRecommendedSubSectionVisible
+        HomeMajorSectionIds.RECOMMENDED to repo::setHomeRecommendedSubSectionVisible,
+        InternationalHomeSectionIds.FEED to repo::setInternationalHomeFeedKindVisible
     )
     private val subOrder = mapOf(
         HomeMajorSectionIds.TRENDING to repo::setHomeTrendingOrder,

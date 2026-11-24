@@ -48,15 +48,34 @@ object InternationalHomeSectionIds {
     val DEFAULT_ORDER = listOf(SPOTLIGHT, CONTINUE, FEED)
 }
 
+object InternationalHomeFeedKindIds {
+    const val TRACK = "track"
+    const val PLAYLIST = "playlist"
+    const val ALBUM = "album"
+    const val ARTIST = "artist"
+
+    val DEFAULT_ORDER = listOf(TRACK, PLAYLIST, ALBUM, ARTIST)
+}
+
 data class InternationalHomeLayout(
     val order: List<String> = InternationalHomeSectionIds.DEFAULT_ORDER,
-    val hidden: Set<String> = emptySet()
+    val hidden: Set<String> = emptySet(),
+    val hiddenFeedKinds: Set<String> = emptySet()
 ) {
+    val visibleFeedKinds: List<String>
+        get() = InternationalHomeFeedKindIds.DEFAULT_ORDER.filterNot { it in hiddenFeedKinds }
+
     val visibleSections: List<String>
-        get() = applyHomeSectionOrder(InternationalHomeSectionIds.DEFAULT_ORDER, order, hidden)
+        get() {
+            val hiddenSections = if (visibleFeedKinds.isEmpty()) hidden + InternationalHomeSectionIds.FEED else hidden
+            return applyHomeSectionOrder(InternationalHomeSectionIds.DEFAULT_ORDER, order, hiddenSections)
+        }
+
+    val hasOnlineSections: Boolean
+        get() = visibleSections.any { it != InternationalHomeSectionIds.CONTINUE }
 
     fun isHomeAvailable(hasRecentUsage: Boolean): Boolean =
-        visibleSections.any { it != InternationalHomeSectionIds.CONTINUE || hasRecentUsage }
+        if (hasRecentUsage) visibleSections.isNotEmpty() else hasOnlineSections
 }
 
 /** 热力与榜单（大模块 trending）内部小模块稳定标识。 */
