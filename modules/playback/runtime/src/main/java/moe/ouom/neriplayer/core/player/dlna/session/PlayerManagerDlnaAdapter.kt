@@ -41,7 +41,7 @@ import java.security.MessageDigest
  */
 internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
 
-    override fun onSwitchToDlnaPauseLocal() {
+    override fun onSwitchToDlnaPauseLocal(willAutoPlay: Boolean) {
         val manager = PlayerManager
         if (!manager.initialized) return
         manager.runPlayerActionOnMainThread {
@@ -52,6 +52,12 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
                 debugReason = "dlna_switch",
                 flushPlayerOutput = true
             )
+            if (willAutoPlay && DlnaCastManager.isCastingActive()) {
+                manager.pendingMediaLoadActive = false
+                manager.updateResumePlaybackRequested(true)
+                manager._playWhenReadyFlow.value = true
+                manager._isPlayingFlow.value = true
+            }
             AudioPlayerService.startSyncService(
                 context = manager.application,
                 source = "dlna_switch",
@@ -174,6 +180,8 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
                 manager.clearPendingSeekPosition()
                 manager._playbackPositionMs.value = 0L
                 manager.updateResumePlaybackRequested(true)
+                manager._playWhenReadyFlow.value = true
+                manager._isPlayingFlow.value = true
                 manager.scheduleStatePersist(positionMs = 0L, shouldResumePlayback = true)
             }
             QueueTrackCompletion.ADVANCE,
@@ -192,6 +200,8 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
                     manager.setCurrentSongForPlayback(targetSong, syncLyricon = true)
                     manager._playbackPositionMs.value = 0L
                     manager.updateResumePlaybackRequested(true)
+                    manager._playWhenReadyFlow.value = true
+                    manager._isPlayingFlow.value = true
                     manager.scheduleStatePersist(positionMs = 0L, shouldResumePlayback = true)
                     manager.bumpCurrentQueueDisplayRevision()
                 } else {
@@ -362,7 +372,12 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
     override fun currentPositionMs(): Long = PlayerManager.playbackPositionFlow.value
 
     override fun isLocalPlaying(): Boolean =
-        PlayerManager.isPlayingFlow.value && !DlnaCastManager.isCastingActive()
+        !DlnaCastManager.isCastingActive() && (
+            PlayerManager.isPlayingFlow.value ||
+                PlayerManager.playbackControlPlayingFlow.value ||
+                PlayerManager.playWhenReadyFlow.value ||
+                PlayerManager.resumePlaybackRequested
+            )
 
     internal fun tryInterceptPlayAtIndex(
         song: SongItem,
@@ -378,9 +393,11 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
             manager.player.clearMediaItems()
         }
         manager.pendingMediaLoadActive = false
+        manager.updateResumePlaybackRequested(!startPaused)
         manager._playWhenReadyFlow.value = !startPaused
         manager._isPlayingFlow.value = !startPaused
         manager._playbackPositionMs.value = resumePositionMs
+        DlnaCastManager.renewCastLocks(forceRenew = true)
         DlnaCastManager.castSong(
             song = song,
             startPositionMs = resumePositionMs,
@@ -396,7 +413,10 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
     internal fun tryInterceptPlay(commandSource: PlaybackCommandSource): Boolean {
         if (!DlnaCastManager.isCastingActive()) return false
         val manager = PlayerManager
+        manager.updateResumePlaybackRequested(true)
         manager._playWhenReadyFlow.value = true
+        manager._isPlayingFlow.value = true
+        DlnaCastManager.renewCastLocks(forceRenew = true)
         DlnaCastManager.playRemote()
         manager.scheduleStatePersist(
             positionMs = manager._playbackPositionMs.value,

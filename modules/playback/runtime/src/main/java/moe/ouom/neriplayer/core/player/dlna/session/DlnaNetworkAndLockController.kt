@@ -8,6 +8,7 @@ import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
+import android.os.SystemClock
 import moe.ouom.neriplayer.common.logging.NPLogger
 
 /**
@@ -23,6 +24,8 @@ internal class DlnaNetworkAndLockController(
 ) {
     companion object {
         private const val TAG = "NERI-DlnaLocks"
+        private const val WAKE_LOCK_LEASE_TIMEOUT_MS = 10L * 60L * 1000L
+        private const val WAKE_LOCK_RENEW_AFTER_MS = 3L * 60L * 1000L
     }
 
     private val appContext = context.applicationContext ?: context
@@ -34,6 +37,7 @@ internal class DlnaNetworkAndLockController(
     private var multicastLock: WifiManager.MulticastLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wakeLockLeaseAcquiredAtMs = 0L
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val activeLanNetworks = LinkedHashSet<Network>()
 
@@ -61,7 +65,7 @@ internal class DlnaNetworkAndLockController(
     }
 
     @Synchronized
-    fun acquireCastLocks() {
+    fun acquireCastLocks(forceRenew: Boolean = false) {
         runCatching {
             val wLock = wifiLock ?: wifiManager?.let { manager ->
                 val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -88,9 +92,19 @@ internal class DlnaNetworkAndLockController(
             )?.apply {
                 setReferenceCounted(false)
             }?.also { wakeLock = it }
-            if (pLock != null && !pLock.isHeld) {
-                // Released deterministically in releaseCastLocks() on disconnect/release
-                pLock.acquire()
+            if (pLock != null) {
+                val nowMs = runCatching { SystemClock.elapsedRealtime() }.getOrDefault(0L)
+                    .takeIf { it > 0L } ?: (System.nanoTime() / 1_000_000L)
+                val alreadyHeld = pLock.isHeld
+                val needsRenew = forceRenew ||
+                    !alreadyHeld ||
+                    (nowMs - wakeLockLeaseAcquiredAtMs) !in 0 until WAKE_LOCK_RENEW_AFTER_MS
+                if (needsRenew) {
+                    // Timed lease periodically renewed in background so OEM WakeLock watchdogs
+                    // (e.g. Samsung One UI MARs/Freecess) treat it as active rather than leaked.
+                    pLock.acquire(WAKE_LOCK_LEASE_TIMEOUT_MS)
+                    wakeLockLeaseAcquiredAtMs = nowMs
+                }
             }
         }.onFailure { err ->
             NPLogger.w(TAG, "Failed to acquire WakeLock: ${err.message}")
@@ -99,6 +113,7 @@ internal class DlnaNetworkAndLockController(
 
     @Synchronized
     fun releaseCastLocks() {
+        wakeLockLeaseAcquiredAtMs = 0L
         runCatching {
             wifiLock?.let { if (it.isHeld) it.release() }
         }.onFailure { err ->
@@ -110,6 +125,10 @@ internal class DlnaNetworkAndLockController(
             NPLogger.w(TAG, "Failed to release WakeLock: ${err.message}")
         }
     }
+
+    @Synchronized
+    fun isCastWakeLockHeld(): Boolean =
+        runCatching { wakeLock?.isHeld == true }.getOrDefault(false)
 
     @Synchronized
     fun registerNetworkCallback() {

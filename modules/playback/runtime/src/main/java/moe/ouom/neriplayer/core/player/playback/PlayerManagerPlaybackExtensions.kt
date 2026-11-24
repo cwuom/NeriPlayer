@@ -202,7 +202,7 @@ internal fun resolveAudioRouteMuteRestoreVolume(
 }
 
 internal fun PlayerManager.suppressPlaybackForAudioRouteLoss(reason: String) {
-    if (!isPlayerInitialized()) return
+    if (!isPlayerInitialized() || moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()) return
     runPlayerActionOnMainThread {
         if (!isPlayerInitialized()) return@runPlayerActionOnMainThread
         val requiresExplicitRestore = shouldMuteListenTogetherListenerForAudioRouteLoss()
@@ -294,6 +294,7 @@ internal fun PlayerManager.restorePlaybackAfterTransientAudioRouteLoss(reason: S
 }
 
 internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
+    if (moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()) return
     if (shouldMuteListenTogetherListenerForAudioRouteLoss()) {
         NPLogger.d(
             "NERI-PlayerManager",

@@ -9,7 +9,9 @@ import moe.ouom.neriplayer.data.model.playback.dlna.DlnaTransportState
  */
 object DlnaCastStateMachine {
 
-    private const val MAX_DELAYED_POLL_PROJECTION_MS = 15_000L
+    private const val MAX_SLEEP_POLL_PROJECTION_MS = 4L * 60L * 60L * 1000L
+    private const val STARTUP_STOPPED_GRACE_POLLS = 8
+    private const val STARTUP_STOPPED_GRACE_MS = 12_000L
 
     data class PollObservation(
         val previousState: DlnaTransportState,
@@ -23,7 +25,10 @@ object DlnaCastStateMachine {
         val consecutiveStoppedPolls: Int,
         val lastPlayingPositionMs: Long = 0L,
         val consecutiveEndPausedPolls: Int = 0,
-        val elapsedSinceLastPlayingPollMs: Long = 0L
+        val elapsedSinceLastPlayingPollMs: Long = 0L,
+        val playCommandSentInGeneration: Boolean = false,
+        val playCommandStartPositionMs: Long = 0L,
+        val elapsedSincePlayCommandMs: Long = 0L
     )
 
     sealed class PollDecision {
@@ -56,14 +61,23 @@ object DlnaCastStateMachine {
             return PollDecision.KeepPolling
         }
 
-        val projectedPlayingPositionMs = if (obs.lastPlayingPositionMs > 0L && obs.elapsedSinceLastPlayingPollMs > 0L) {
-            obs.lastPlayingPositionMs + obs.elapsedSinceLastPlayingPollMs.coerceIn(0L, MAX_DELAYED_POLL_PROJECTION_MS)
-        } else {
-            obs.lastPlayingPositionMs
+        val projectedPlayingPositionMs = when {
+            obs.lastPlayingPositionMs > 0L && obs.elapsedSinceLastPlayingPollMs > 0L ->
+                obs.lastPlayingPositionMs +
+                    obs.elapsedSinceLastPlayingPollMs.coerceIn(0L, MAX_SLEEP_POLL_PROJECTION_MS)
+            obs.lastPlayingPositionMs > 0L ->
+                obs.lastPlayingPositionMs
+            obs.playCommandSentInGeneration && obs.elapsedSincePlayCommandMs > 0L ->
+                obs.playCommandStartPositionMs.coerceAtLeast(0L) +
+                    obs.elapsedSincePlayCommandMs.coerceIn(0L, MAX_SLEEP_POLL_PROJECTION_MS)
+            else -> 0L
         }
 
         if (obs.currentState == DlnaTransportState.PAUSED_PLAYBACK) {
-            if (!obs.userPausedOrStopped && obs.hasStartedPlayingInGeneration && obs.durationMs > 0L) {
+            if (!obs.userPausedOrStopped &&
+                (obs.hasStartedPlayingInGeneration || obs.playCommandSentInGeneration) &&
+                obs.durationMs > 0L
+            ) {
                 val nearEndAtPause =
                     obs.positionMs >= (obs.durationMs - 2_500L).coerceAtLeast(0L) ||
                         obs.lastPlayingPositionMs >= (obs.durationMs - 3_500L).coerceAtLeast(0L)
@@ -89,25 +103,48 @@ object DlnaCastStateMachine {
             obs.currentState == DlnaTransportState.NO_MEDIA_PRESENT
 
         if (stoppedLike && !obs.userPausedOrStopped && obs.hasStartedPlayingInGeneration) {
+            val endThresholdMs = (obs.durationMs - 5_000L).coerceAtLeast(1_000L)
             val nearEnd = obs.durationMs > 0L && (
                 obs.positionMs >= (obs.durationMs - 4_000L).coerceAtLeast(0L) ||
                     obs.lastPlayingPositionMs >= (obs.durationMs - 5_000L).coerceAtLeast(0L) ||
-                    (obs.positionMs == 0L &&
-                        obs.previousState == DlnaTransportState.PLAYING &&
-                        projectedPlayingPositionMs >= (obs.durationMs - 5_000L).coerceAtLeast(0L))
+                    (obs.positionMs == 0L && projectedPlayingPositionMs >= endThresholdMs)
                 )
             val midTrackBeforeStop = obs.durationMs > 10_000L &&
                 obs.lastPlayingPositionMs > 0L &&
-                projectedPlayingPositionMs < (obs.durationMs - 5_000L)
-            // Some renderers reset RelTime to 0 as soon as they transition to STOPPED after EOF;
-            // sustained STOPPED mid-track (e.g. hardware Stop button on renderer) must NOT advance queue,
-            // while a delayed SOAP poll across the final seconds projects forward to preserve EOF recovery.
+                projectedPlayingPositionMs < endThresholdMs
+            // Renderers often reset RelTime to 0 upon STOPPED after EOF; boot-clock projection across
+            // screen-off Doze/sleep distinguishes natural full-track EOF from mid-track hardware Stop.
             val resetToZeroAfterPlay = !midTrackBeforeStop &&
                 obs.positionMs == 0L &&
                 (obs.previousState == DlnaTransportState.PLAYING ||
+                    projectedPlayingPositionMs >= endThresholdMs ||
                     (obs.durationMs <= 0L && obs.consecutiveStoppedPolls >= 2))
             if (nearEnd || resetToZeroAfterPlay) {
                 return PollDecision.TrackEnded(obs.generationId)
+            }
+        }
+
+        if (stoppedLike && !obs.userPausedOrStopped && !obs.hasStartedPlayingInGeneration) {
+            if (!obs.playCommandSentInGeneration) {
+                // SetAVTransportURI loaded, Play still in flight — never clobber playback intent to PAUSED
+                return PollDecision.KeepPolling
+            }
+            val endThresholdMs = (obs.durationMs - 5_000L).coerceAtLeast(1_000L)
+            if (obs.durationMs > 0L && projectedPlayingPositionMs >= endThresholdMs) {
+                // Screen locked immediately after Play and polling stayed frozen across the entire track
+                return PollDecision.TrackEnded(obs.generationId)
+            }
+            if (obs.durationMs <= 0L &&
+                obs.elapsedSincePlayCommandMs >= 30_000L &&
+                obs.consecutiveStoppedPolls >= 2
+            ) {
+                return PollDecision.TrackEnded(obs.generationId)
+            }
+            if (obs.consecutiveStoppedPolls <= STARTUP_STOPPED_GRACE_POLLS &&
+                (obs.elapsedSincePlayCommandMs <= 0L || obs.elapsedSincePlayCommandMs < STARTUP_STOPPED_GRACE_MS)
+            ) {
+                // Renderer is still opening HTTP stream and transitioning STOPPED -> PLAYING
+                return PollDecision.KeepPolling
             }
         }
 
@@ -127,7 +164,7 @@ object DlnaCastStateMachine {
     ): Boolean {
         if (durationMs <= 0L) return false
         val projectedPlayingMs = if (lastPlayingPositionMs > 0L && elapsedSinceLastPlayingPollMs > 0L) {
-            lastPlayingPositionMs + elapsedSinceLastPlayingPollMs.coerceIn(0L, MAX_DELAYED_POLL_PROJECTION_MS)
+            lastPlayingPositionMs + elapsedSinceLastPlayingPollMs.coerceIn(0L, MAX_SLEEP_POLL_PROJECTION_MS)
         } else {
             lastPlayingPositionMs
         }

@@ -261,6 +261,7 @@ class OwnedMainSourceLineBudgetTest {
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaCastStateMachine.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaNetworkAndLockController.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaPreferencesStore.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaServiceKeepAliveController.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/PlayerManagerDlnaAdapter.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/nowplaying/dlna/DlnaOutputControlSheet.kt"
         ).forEach { path ->

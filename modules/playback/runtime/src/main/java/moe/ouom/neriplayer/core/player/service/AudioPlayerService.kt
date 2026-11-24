@@ -46,6 +46,8 @@ import moe.ouom.neriplayer.core.player.service.presentation.AndroidPlaybackServi
 import moe.ouom.neriplayer.core.player.service.presentation.AndroidPlaybackServicePresentationSource
 import moe.ouom.neriplayer.core.player.service.presentation.PlaybackServicePresentationOwner
 import moe.ouom.neriplayer.core.player.service.presentation.resolveListenTogetherMediaSessionPosition
+import moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager
+import moe.ouom.neriplayer.core.player.dlna.session.DlnaServiceKeepAliveController
 import moe.ouom.neriplayer.core.player.service.usb.AndroidUsbExclusiveKeepAlivePort
 import moe.ouom.neriplayer.core.player.service.usb.UsbExclusiveKeepAliveServiceHost
 import moe.ouom.neriplayer.core.player.service.usb.UsbExclusiveServiceKeepAliveOwner
@@ -506,6 +508,11 @@ class AudioPlayerService : Service() {
         scope = serviceScope,
         port = AndroidUsbExclusiveKeepAlivePort(this, UsbKeepAliveHost()),
     )
+    private val dlnaKeepAliveController = DlnaServiceKeepAliveController(
+        context = this,
+        scope = serviceScope,
+        host = UsbKeepAliveHost(),
+    )
     private val artworkOwnerDelegate = lazy {
         PlaybackArtworkOwner(
             resolver = PlaybackCoverSourceResolver(AndroidPlaybackCoverSources(applicationContext)),
@@ -681,11 +688,13 @@ class AudioPlayerService : Service() {
 
     private fun updateUsbExclusiveBackgroundAudioAnchor(reason: String) {
         usbKeepAliveOwner.updateAnchor(reason)
+        dlnaKeepAliveController.update(reason)
     }
 
     private fun updateUsbExclusiveServiceKeepAlive(reason: String) {
         if (!hasReceivedStartCommand) return
         usbKeepAliveOwner.update(reason)
+        dlnaKeepAliveController.update(reason)
     }
 
     private fun requestUsbExclusiveBackgroundForegroundReassert(reason: String) {
@@ -1071,6 +1080,19 @@ class AudioPlayerService : Service() {
                     updateUsbExclusiveServiceKeepAlive("usb_path_state")
                     refreshIdleShutdown("usb_path_state")
                 }
+        }
+        serviceScope.launch {
+            DlnaCastManager.castStateFlow.collectSafely("dlnaCastState") { state ->
+                dlnaKeepAliveController.onCastStateChanged(
+                    state = state,
+                    session = presentationOwner.sessionOrNull(),
+                    localAudioAttributes = presentationPort.audioAttributes(),
+                )
+                updateMetadata()
+                updatePlaybackState(force = true)
+                updateNotification()
+                refreshIdleShutdown("dlna_cast_state")
+            }
         }
         serviceScope.launch {
             PlayerManager.playbackPositionFlow
@@ -1533,6 +1555,7 @@ class AudioPlayerService : Service() {
     private fun onScreenInteractiveChanged(interactive: Boolean) {
         screenInteractive = interactive
         LyriconManager.setScreenInteractive(interactive)
+        dlnaKeepAliveController.onScreenInteractiveChanged(interactive)
         if (!interactive || !presentationOwnerDelegate.isInitialized()) return
         presentationOwner.onScreenInteractive(
             foregroundStarted = isForegroundStarted,
@@ -1621,6 +1644,7 @@ class AudioPlayerService : Service() {
 
     private fun cancelUsbKeepAliveForDestroy() {
         usbKeepAliveOwner.close()
+        dlnaKeepAliveController.close()
     }
 
     private fun unregisterNoisyReceiverForDestroy() {
@@ -1769,6 +1793,7 @@ class AudioPlayerService : Service() {
 
     private fun cancelUsbKeepAliveAfterForegroundFailure() {
         usbKeepAliveOwner.cancelLoop()
+        dlnaKeepAliveController.cancelLoop()
     }
 
     private fun releaseMediaSessionAfterForegroundFailure(reason: String) {

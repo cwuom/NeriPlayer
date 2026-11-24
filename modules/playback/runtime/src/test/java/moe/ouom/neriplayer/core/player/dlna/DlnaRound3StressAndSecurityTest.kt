@@ -499,4 +499,115 @@ class DlnaRound3StressAndSecurityTest {
         org.junit.Assert.assertNotEquals(v1Export, v2Export)
         assertTrue(v1Export.startsWith(baseExport.removeSuffix(".audio") + "_"))
     }
+
+    @Test
+    fun samsungZFold6LockScreenAutoAdvanceAndStartupRaceRegression() {
+        // 1. Pre-Play in-flight STOPPED poll right after SetAVTransportURI must KeepPolling (never clobber to PAUSED)
+        val prePlayInFlightStopped = DlnaCastStateMachine.evaluatePoll(
+            DlnaCastStateMachine.PollObservation(
+                previousState = DlnaTransportState.TRANSITIONING,
+                currentState = DlnaTransportState.STOPPED,
+                positionMs = 0L,
+                durationMs = 210_000L,
+                userPausedOrStopped = false,
+                generationId = 21L,
+                activeGenerationId = 21L,
+                hasStartedPlayingInGeneration = false,
+                consecutiveStoppedPolls = 1,
+                playCommandSentInGeneration = false
+            )
+        )
+        assertEquals(DlnaCastStateMachine.PollDecision.KeepPolling, prePlayInFlightStopped)
+
+        // 2. Post-Play startup grace window while renderer opens HTTP stream must KeepPolling (never flip notification to PAUSED)
+        val postPlayStartupGrace = DlnaCastStateMachine.evaluatePoll(
+            DlnaCastStateMachine.PollObservation(
+                previousState = DlnaTransportState.TRANSITIONING,
+                currentState = DlnaTransportState.STOPPED,
+                positionMs = 0L,
+                durationMs = 210_000L,
+                userPausedOrStopped = false,
+                generationId = 21L,
+                activeGenerationId = 21L,
+                hasStartedPlayingInGeneration = false,
+                consecutiveStoppedPolls = 2,
+                playCommandSentInGeneration = true,
+                playCommandStartPositionMs = 0L,
+                elapsedSincePlayCommandMs = 1_500L
+            )
+        )
+        assertEquals(DlnaCastStateMachine.PollDecision.KeepPolling, postPlayStartupGrace)
+
+        // 3. Long screen-off Doze/sleep (> 15s) across full song duration on Z Fold6 must trigger TrackEnded
+        val screenOffFullSongEof = DlnaCastStateMachine.evaluatePoll(
+            DlnaCastStateMachine.PollObservation(
+                previousState = DlnaTransportState.PLAYING,
+                currentState = DlnaTransportState.STOPPED,
+                positionMs = 0L,
+                durationMs = 210_000L,
+                userPausedOrStopped = false,
+                generationId = 21L,
+                activeGenerationId = 21L,
+                hasStartedPlayingInGeneration = true,
+                consecutiveStoppedPolls = 1,
+                lastPlayingPositionMs = 18_000L,
+                elapsedSinceLastPlayingPollMs = 195_000L,
+                playCommandSentInGeneration = true,
+                playCommandStartPositionMs = 0L,
+                elapsedSincePlayCommandMs = 213_000L
+            )
+        )
+        assertEquals(DlnaCastStateMachine.PollDecision.TrackEnded(21L), screenOffFullSongEof)
+
+        // 4. Screen locked immediately after Play before any PLAYING poll was observed, waking at EOF -> TrackEnded
+        val immediateLockBeforeFirstPlayingPollEof = DlnaCastStateMachine.evaluatePoll(
+            DlnaCastStateMachine.PollObservation(
+                previousState = DlnaTransportState.TRANSITIONING,
+                currentState = DlnaTransportState.STOPPED,
+                positionMs = 0L,
+                durationMs = 200_000L,
+                userPausedOrStopped = false,
+                generationId = 22L,
+                activeGenerationId = 22L,
+                hasStartedPlayingInGeneration = false,
+                consecutiveStoppedPolls = 1,
+                lastPlayingPositionMs = 0L,
+                elapsedSinceLastPlayingPollMs = 0L,
+                playCommandSentInGeneration = true,
+                playCommandStartPositionMs = 5_000L,
+                elapsedSincePlayCommandMs = 196_000L
+            )
+        )
+        assertEquals(
+            DlnaCastStateMachine.PollDecision.TrackEnded(22L),
+            immediateLockBeforeFirstPlayingPollEof
+        )
+
+        // 5. Sustained STOPPED after startup grace far before track end falls back to SyncPlayback(isPlaying=false)
+        val sustainedEarlyStop = DlnaCastStateMachine.evaluatePoll(
+            DlnaCastStateMachine.PollObservation(
+                previousState = DlnaTransportState.TRANSITIONING,
+                currentState = DlnaTransportState.STOPPED,
+                positionMs = 0L,
+                durationMs = 200_000L,
+                userPausedOrStopped = false,
+                generationId = 22L,
+                activeGenerationId = 22L,
+                hasStartedPlayingInGeneration = false,
+                consecutiveStoppedPolls = 10,
+                playCommandSentInGeneration = true,
+                playCommandStartPositionMs = 0L,
+                elapsedSincePlayCommandMs = 20_000L
+            )
+        )
+        assertEquals(
+            DlnaCastStateMachine.PollDecision.SyncPlayback(
+                isPlaying = false,
+                positionMs = 0L,
+                durationMs = 200_000L,
+                markStartedPlaying = false
+            ),
+            sustainedEarlyStop
+        )
+    }
 }
