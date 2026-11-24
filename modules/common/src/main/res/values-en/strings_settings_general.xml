@@ -25,6 +25,9 @@
     <string name="settings_prefer_high_refresh_rate_desc">Request the highest refresh rate supported by this device. Power, thermal, and system settings can still limit it.</string>
     <string name="settings_playback_idle_shutdown_dialog_title">Exit after being paused for</string>
     <string name="settings_playback_idle_shutdown_off">Never</string>
+    <string name="settings_playback_background_recovery">Resume background playback</string>
+    <string name="settings_playback_background_recovery_allowed">Battery optimization is off. Playback resumes if the system ends the app</string>
+    <string name="settings_playback_background_recovery_restricted">Turn off battery optimization so playback resumes after games or low memory end the app</string>
     <string name="settings_clear_config">Clear Configuration</string>
     <string name="settings_ui_scale">UI Scale</string>
     <string name="settings_ui_scale_dpi">UI Scale (DPI)</string>

@@ -119,7 +119,6 @@ import moe.ouom.neriplayer.data.model.settings.navigation.StartDestinationSnapsh
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotCached
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutAction
@@ -447,8 +446,8 @@ private fun NeriAppContent(
         .collectAsStateWithLifecycle(
             initialValue = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
         )
-    val initialAdvancedBlurQuality = remember {
-        AdvancedBlurQualityPreference.defaultForDevice(isCurrentBuildDimensity())
+    val initialAdvancedBlurQuality = remember(context) {
+        AdvancedBlurQualityPreference.defaultForCurrentDevice(context)
     }
     val advancedBlurQuality by repo.advancedBlurQualityFlow.collectAsStateWithLifecycle(
         initialValue = initialAdvancedBlurQuality

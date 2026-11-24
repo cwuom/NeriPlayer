@@ -83,6 +83,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.content.YouTubeLocaleSettingsS
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.PlaybackServiceIdleShutdownSetting
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.PlaybackBackgroundRecoveryItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.SettingsAudioQualitySection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.lyrics.SettingsLyricsSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.appearance.SettingsMotionSection
@@ -386,6 +387,7 @@ internal fun SettingsScreen(
                                     highlightPulse = settingsHighlightPulse,
                                     onHighlightFinished = onSettingsHighlightFinished
                                 )
+                                PlaybackBackgroundRecoveryItem()
                                 MiuixSettingsSectionIntro(
                                     title = stringResource(CoreCommonR.string.settings_ui_scale),
                                     description = stringResource(CoreCommonR.string.settings_ui_scale_global_desc)

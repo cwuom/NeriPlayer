@@ -25,9 +25,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -815,14 +813,6 @@ internal fun buildNowPlayingCoverSource(
     )
 }
 
-internal fun Modifier.nowPlayingCoverPanelModifier(
-    wideLandscape: Boolean,
-    columnScope: ColumnScope
-): Modifier = with(columnScope) {
-    if (wideLandscape) this@nowPlayingCoverPanelModifier.fillMaxWidth()
-    else this@nowPlayingCoverPanelModifier.align(Alignment.CenterHorizontally)
-}
-
 internal fun resolveNowPlayingCoverSize(
     wideLandscape: Boolean,
     landscape: Boolean,
@@ -835,6 +825,9 @@ internal fun resolveNowPlayingCoverSize(
     // 竖屏封面是视觉主角, 让它接近七成宽而不是只占一半多
     else -> minOf(maxWidth * 0.72f, maxHeight * 0.65f)
 }
+
+/** 父布局已经按约束算好封面边长, 面板只铺满给定的高度 */
+internal val NowPlayingParentSizedCover = Dp.Infinity
 
 internal fun resolveNowPlayingAdaptiveCoverSize(
     maxWidth: Dp,
@@ -854,7 +847,7 @@ internal fun resolveNowPlayingCoverViewport(windowWidth: Dp, orientation: Int): 
 }
 
 @Composable
-private fun currentNowPlayingCoverViewport(): NowPlayingCoverViewport {
+internal fun currentNowPlayingCoverViewport(): NowPlayingCoverViewport {
     val width = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() }
     return resolveNowPlayingCoverViewport(width, LocalConfiguration.current.orientation)
 }

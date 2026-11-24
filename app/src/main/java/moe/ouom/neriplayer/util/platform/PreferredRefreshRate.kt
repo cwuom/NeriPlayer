@@ -27,12 +27,15 @@ internal const val AMBIENT_REFRESH_RATE_HZ = 60f
 /** 触摸结束后多久才降频，惯性滚动和点按反馈都在这之前结束 */
 internal const val AMBIENT_REFRESH_RATE_IDLE_MS = 3_000L
 
+/** 省电或严重温控时任何页面静置都降到 60 Hz, 静止画面看不出差别, 一碰屏幕仍立刻恢复 */
 internal fun isAmbientRefreshRateIdle(
     nowPlayingShown: Boolean,
     resumed: Boolean,
     touching: Boolean,
-    idleForMs: Long
-): Boolean = nowPlayingShown && resumed && !touching && idleForMs >= AMBIENT_REFRESH_RATE_IDLE_MS
+    idleForMs: Long,
+    powerPressure: Boolean = false
+): Boolean = (nowPlayingShown || powerPressure) && resumed && !touching &&
+    idleForMs >= AMBIENT_REFRESH_RATE_IDLE_MS
 
 /** 屏幕本来就不高于 60 Hz 时没有可省的，返回 null 沿用原偏好 */
 internal fun resolveAmbientRefreshRate(supportedRefreshRates: Iterable<Float>): Float? {

@@ -34,6 +34,7 @@ import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreferenc
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
+import moe.ouom.neriplayer.data.settings.appearance.isCurrentDeviceEntryLevelBlurDevice
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeDynamicColor
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeFollowSystemDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeForceDark
@@ -140,6 +141,7 @@ class SettingsRepository(private val context: Context) {
     private val autoSettingSpecRepository = AutoSettingSpecRepository(context)
     private val usbExclusiveSettingsStore = UsbExclusiveSettingsStore(context)
     private val isDimensityBuild = isCurrentBuildDimensity()
+    private val isEntryLevelBlurBuild by lazy { isCurrentDeviceEntryLevelBlurDevice(context) }
 
     val defaultPlaybackControlLayoutPreferences: PlaybackControlLayoutPreferences
         get() = defaultPlaybackControlLayoutPreferences(context.resources.configuration.smallestScreenWidthDp)
@@ -447,7 +449,8 @@ class SettingsRepository(private val context: Context) {
         dataStoreSettingFlow { preferences ->
             AdvancedBlurQualityPreference.resolve(
                 value = preferences[SettingsKeys.ADVANCED_BLUR_QUALITY],
-                isDimensityDevice = isDimensityBuild
+                isDimensityDevice = isDimensityBuild,
+                isEntryLevelDevice = isEntryLevelBlurBuild
             )
         }
 

@@ -174,6 +174,7 @@ import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.util.crash.CrashReportStore
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.effect.rememberSystemPowerPressure
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.util.platform.NightModeHelper
@@ -356,6 +357,9 @@ class MainActivity : ComponentActivity() {
     private var nowPlayingOrientationState = NowPlayingOrientationState()
     private var preferHighRefreshRate = false
     private var nowPlayingShownForRefreshRate = false
+    private var powerPressureForRefreshRate = false
+    private val ambientRefreshRateEligible: Boolean
+        get() = nowPlayingShownForRefreshRate || powerPressureForRefreshRate
     private var ambientRefreshRateActive = false
     private var touchInProgress = false
     private var lastTouchAtMs = 0L
@@ -1161,6 +1165,15 @@ class MainActivity : ComponentActivity() {
                                             !showDialog && !showErrorDialog &&
                                             pendingInvite == null && loudPlaybackConfirmation == null
                                         var appGlobalDialogVisible by remember { mutableStateOf(true) }
+                                        val reduceRefreshUnderPressure =
+                                            rememberSystemPowerPressure().reduceOptionalEffects
+                                        LaunchedEffect(reduceRefreshUnderPressure) {
+                                            if (powerPressureForRefreshRate != reduceRefreshUnderPressure) {
+                                                powerPressureForRefreshRate = reduceRefreshUnderPressure
+                                                lastTouchAtMs = SystemClock.uptimeMillis()
+                                                updateWindowRefreshRate()
+                                            }
+                                        }
                                         NeriApp(
                                             initialThemeSnapshot = startupThemeSnapshot,
                                             initialStartDestinationSnapshot =
@@ -1735,10 +1748,11 @@ class MainActivity : ComponentActivity() {
             nowPlayingShown = nowPlayingShownForRefreshRate,
             resumed = resumed,
             touching = touchInProgress,
-            idleForMs = idleForMs
+            idleForMs = idleForMs,
+            powerPressure = powerPressureForRefreshRate
         )
         ambientRefreshRateActive = applyPreferredHighRefreshRate(preferHighRefreshRate, ambientIdle)
-        if (nowPlayingShownForRefreshRate && resumed && !touchInProgress && !ambientIdle) {
+        if (ambientRefreshRateEligible && resumed && !touchInProgress && !ambientIdle) {
             refreshRateHandler.postDelayed(refreshRateCheck, AMBIENT_REFRESH_RATE_IDLE_MS - idleForMs)
         }
     }
@@ -1752,7 +1766,7 @@ class MainActivity : ComponentActivity() {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 touchInProgress = false
-                if (nowPlayingShownForRefreshRate) updateWindowRefreshRate()
+                if (ambientRefreshRateEligible) updateWindowRefreshRate()
             }
         }
         return super.dispatchTouchEvent(ev)

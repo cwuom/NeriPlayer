@@ -171,6 +171,31 @@ class NowPlayingPortraitImmersiveLayoutTest {
         assertActionsReachable(height = 560, fontScale = 1.3f, placement = NowPlayingControlPlacement.LOWER,
             toggleAtRuntime = true)
 
+    // 3:2 手机刚好高于紧凑竖屏阈值, 放大的默认封面曾把最后测量的底部工具栏压成没有图标的空胶囊
+    @Test
+    fun shortWidePortraitDefaultCoverKeepsDockedToolbarActionsReachable() =
+        assertActionsReachable(height = 640, fontScale = 1f, placement = NowPlayingControlPlacement.LOWER,
+            immersive = false, width = 420)
+
+    @Test
+    fun shortWidePortraitDefaultCoverKeepsLargeTextActionsReachable() =
+        assertActionsReachable(height = 680, fontScale = 1.3f, placement = NowPlayingControlPlacement.LOWER,
+            style = UiStyle.Material, immersive = false, width = 420)
+
+    @Test
+    fun tallPortraitDefaultCoverKeepsItsWidthBasedSize() {
+        val settings = SettingsRepository(composeRule.activity.applicationContext)
+        runBlocking { settings.setNowPlayingImmersiveMode(false) }
+        // Material 暂停时封面不做收缩, 量到的就是布局给出的边长
+        render(height = 800, fontScale = 1f, style = UiStyle.Material)
+        val layout = composeRule.onNodeWithTag("nowPlayingPhonePortraitLayout", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        val cover = composeRule.onNodeWithTag("nowPlayingPhonePortraitCover", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        // 高度充足时封面仍按内容宽度的 72% 取边长, 不能因为预留控件高度被缩小
+        assertEquals((layout.right - layout.left).value * 0.72f, (cover.right - cover.left).value, 1.5f)
+    }
+
     @Test
     fun cleanImmersiveModeLongPressTogglesWithoutSnackbarOrChangingPlayback() {
         val settings = SettingsRepository(composeRule.activity.applicationContext)
@@ -257,17 +282,21 @@ class NowPlayingPortraitImmersiveLayoutTest {
         fontScale: Float,
         placement: NowPlayingControlPlacement,
         style: UiStyle = UiStyle.Clean,
-        toggleAtRuntime: Boolean = false
+        toggleAtRuntime: Boolean = false,
+        immersive: Boolean = true,
+        width: Int = 360
     ) =
-        UiFailureDiagnostics.onFailure("now-playing-immersive-360x$height-font-$fontScale-$placement") {
+        UiFailureDiagnostics.onFailure(
+            "now-playing-${if (immersive) "immersive" else "default"}-${width}x$height-font-$fontScale-$placement"
+        ) {
             runBlocking {
                 SettingsRepository(composeRule.activity.applicationContext).apply {
-                    setNowPlayingImmersiveMode(!toggleAtRuntime)
+                    setNowPlayingImmersiveMode(immersive && !toggleAtRuntime)
                     setPlaybackControlLayoutPreferences(PlaybackControlLayoutPreferences(
                         nowPlayingPlacement = placement, nowPlayingSize = PlaybackControlSize.LARGE))
                 }
             }
-            render(height, fontScale, style)
+            render(height, fontScale, style, width)
             val transport = hasContentDescription(label(CoreCommonR.string.player_play)) or
                 hasContentDescription(label(CoreCommonR.string.player_pause)) or
                 hasContentDescription(label(CoreCommonR.string.player_restore_volume)) or
@@ -287,7 +316,7 @@ class NowPlayingPortraitImmersiveLayoutTest {
             }
             val viewport = composeRule.onNodeWithTag(ViewportTag, useUnmergedTree = true)
                 .getUnclippedBoundsInRoot()
-            assertEquals(360f, (viewport.right - viewport.left).value, 1f)
+            assertEquals(width.toFloat(), (viewport.right - viewport.left).value, 1f)
             assertEquals(height - 48f, (viewport.bottom - viewport.top).value, 1f)
 
             val playbackButtons = listOf(CoreCommonR.string.player_shuffle, CoreCommonR.string.player_previous,
