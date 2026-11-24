@@ -36,6 +36,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockConstruction
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.robolectric.annotation.Config
 
@@ -43,6 +44,30 @@ import org.robolectric.annotation.Config
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
 class YouTubeAuthRefreshLifecycleTest {
+    @Test
+    fun `background auth never loads a page when the requested route cannot be installed`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val installing = CompletableDeferred<Unit>()
+            val installed = CompletableDeferred<Boolean>()
+            withManager(awaitRoute = { installing.complete(Unit); installed.await() }) { manager, _ ->
+                val view = mock(WebView::class.java)
+                manager.setWebView(view)
+                val refresh = launch {
+                    assertFalse(manager.refreshIfNeeded("unavailable route", force = true).refreshed)
+                }
+                installing.await()
+                verify(view, never()).loadUrl(anyString())
+                installed.complete(false)
+                refresh.join()
+                verify(view, never()).loadUrl(anyString())
+                verify(view).destroy()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun `changing accounts clears persisted rotation status after the previous worker finishes`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -189,7 +214,10 @@ class YouTubeAuthRefreshLifecycleTest {
         }
     }
 
-    private suspend fun withManager(block: suspend (YouTubeAuthAutoRefreshManager, RefreshTestAuthStore) -> Unit) {
+    private suspend fun withManager(
+        awaitRoute: suspend (Context) -> Boolean = { true },
+        block: suspend (YouTubeAuthAutoRefreshManager, RefreshTestAuthStore) -> Unit
+    ) {
         val context = mock(Context::class.java)
         `when`(context.applicationContext).thenReturn(context)
         val client = OkHttpClient.Builder().addInterceptor { chain ->
@@ -203,7 +231,7 @@ class YouTubeAuthRefreshLifecycleTest {
         val enabled = YouTubeFeatureGate.isEnabled()
         YouTubeFeatureGate.update(true)
         try {
-            block(YouTubeAuthAutoRefreshManager(context, { client }, store), store)
+            block(YouTubeAuthAutoRefreshManager(context, { client }, store, awaitRoute), store)
         } finally {
             YouTubeFeatureGate.update(enabled)
             client.dispatcher.executorService.shutdown()

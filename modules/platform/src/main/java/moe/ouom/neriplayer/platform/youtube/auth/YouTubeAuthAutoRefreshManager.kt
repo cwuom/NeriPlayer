@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.platform.youtube.api.web.installYouTubeBackgroundWebV
 import moe.ouom.neriplayer.platform.youtube.api.web.removeYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.network.weblogin.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.network.weblogin.WebViewNetworkRoute
 import moe.ouom.neriplayer.platform.youtube.auth.web.applyYouTubeWebCookies
 import moe.ouom.neriplayer.platform.youtube.auth.web.collectYouTubeWebCookies
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
@@ -168,7 +169,8 @@ private fun createCookieRotationStateStore(
 class YouTubeAuthAutoRefreshManager(
     context: Context,
     httpClientProvider: () -> okhttp3.OkHttpClient,
-    private val authStore: YouTubeAuthStore
+    private val authStore: YouTubeAuthStore,
+    private val awaitWebViewRoute: suspend (Context) -> Boolean = WebViewNetworkRoute::awaitBackgroundAuthRoute
 ) : YouTubeAuthRefresher {
     companion object {
         private const val TAG = "YouTubeAuthRefresh"
@@ -648,11 +650,12 @@ class YouTubeAuthAutoRefreshManager(
             return false
         }
         val deferred = CompletableDeferred<Boolean>()
-        capturedHeaders = null
-        pendingPageLoad = deferred
         val started = withContext(Dispatchers.Main) {
+            activeWebView.stopLoading()
+            if (!awaitWebViewRoute(applicationContext) || ForegroundWebLoginGuard.isActive) return@withContext false
             authStore.runIfCurrent(snapshot) {
-                activeWebView.stopLoading()
+                capturedHeaders = null
+                pendingPageLoad = deferred
                 activeWebView.loadUrl(url)
             }
         }

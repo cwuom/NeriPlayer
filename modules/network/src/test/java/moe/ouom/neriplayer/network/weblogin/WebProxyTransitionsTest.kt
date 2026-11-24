@@ -15,6 +15,17 @@ class WebProxyTransitionsTest {
     private val custom = Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("localhost", 8888))
 
     @Test
+    fun `background auth honors encrypted DNS without overriding system and direct proxy choices`() {
+        assertTrue(supportsBackgroundAuthDns(false, null))
+        assertTrue(supportsBackgroundAuthDns(false, Proxy.NO_PROXY))
+        assertFalse(supportsBackgroundAuthDns(true, null))
+        assertFalse(supportsBackgroundAuthDns(true, Proxy.NO_PROXY))
+        assertTrue(supportsBackgroundAuthDns(true, custom))
+        val socks = Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved("localhost", 1080))
+        assertTrue(supportsBackgroundAuthDns(true, socks))
+    }
+
+    @Test
     fun `only system clears the Chromium override`() {
         assertNull(webProxyConfig(null))
         assertEquals(listOf("direct://"), webProxyConfig(Proxy.NO_PROXY)?.proxyRules?.map { it.url })

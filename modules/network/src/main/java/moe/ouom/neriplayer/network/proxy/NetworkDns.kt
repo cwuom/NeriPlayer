@@ -23,6 +23,8 @@ object NetworkDns : Dns {
     @Volatile
     private var resolver: Dns = Dns.SYSTEM
 
+    internal val usesDnsOverHttps: Boolean get() = resolver !== Dns.SYSTEM
+
     private val transport by lazy {
         // DNS requests run on a separate dispatcher and never inherit media authentication
         OkHttpClient.Builder()

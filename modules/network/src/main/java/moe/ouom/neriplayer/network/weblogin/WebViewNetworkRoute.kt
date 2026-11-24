@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.network.proxy.DynamicProxySelector
+import moe.ouom.neriplayer.network.proxy.NetworkDns
 
 internal class WebProxyTransitions(
     private val desired: () -> Proxy?,
@@ -60,6 +61,9 @@ object WebViewNetworkRoute {
         scope.launch { awaitCurrent(context) }
     }
 
+    suspend fun awaitBackgroundAuthRoute(context: Context): Boolean =
+        awaitCurrent(context) && supportsBackgroundAuthDns(NetworkDns.usesDnsOverHttps, DynamicProxySelector.overrideProxy)
+
     suspend fun awaitCurrent(context: Context): Boolean = withContext(Dispatchers.Main.immediate) {
         transitions.awaitCurrent {
             // older WebView providers can use the platform route if Android confirms it is direct
@@ -93,3 +97,7 @@ object WebViewNetworkRoute {
         }
     }
 }
+
+// WebView 不使用 OkHttp 的 DoH，只有明确安装的代理能代它解析认证站点的域名
+internal fun supportsBackgroundAuthDns(usesDnsOverHttps: Boolean, proxy: Proxy?): Boolean =
+    !usesDnsOverHttps || proxy?.address() != null
