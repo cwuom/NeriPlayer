@@ -1,11 +1,15 @@
 package moe.ouom.neriplayer.data.local.database.dao.stats
 
 import androidx.room.Dao
+import androidx.room.Insert
 import androidx.room.RawQuery
+import androidx.room.Transaction
 import androidx.sqlite.db.SupportSQLiteQuery
 import kotlinx.coroutines.flow.Flow
 import androidx.room.Query
 import androidx.room.Upsert
+import moe.ouom.neriplayer.data.local.database.entity.stats.MAX_PLAYBACK_LISTENING_INTERVAL_MS
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackListeningIntervalEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatCounterShardEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatDailyCounterShardEntity
@@ -30,12 +34,23 @@ data class PlaybackStatsWeekdayRow(
 
 @Dao
 interface PlaybackStatsDao {
+    @Insert
+    suspend fun insertListeningInterval(interval: PlaybackListeningIntervalEntity)
+
     @Query(
-        "INSERT OR REPLACE INTO playback_stat_hour (hour_start_at, identity_key, local_hour, listened_ms, epoch_started_at) " +
-            "VALUES (:start, :key, :hour, :duration + COALESCE((SELECT listened_ms FROM playback_stat_hour " +
-            "WHERE hour_start_at = :start AND identity_key = :key AND local_hour = :hour), 0), :epoch)"
+        "UPDATE playback_listening_interval SET end_at = :end WHERE id = (SELECT id FROM playback_listening_interval " +
+            "WHERE identity_key = :key AND end_at = :start AND local_hour = :hour AND epoch_started_at = :epoch " +
+            "AND start_at >= :end - $MAX_PLAYBACK_LISTENING_INTERVAL_MS LIMIT 1)"
     )
-    suspend fun addHourlyListening(start: Long, key: String, hour: Int, duration: Long, epoch: Long)
+    suspend fun extendListeningInterval(key: String, start: Long, end: Long, hour: Int, epoch: Long): Int
+
+    @Transaction
+    suspend fun appendListeningInterval(interval: PlaybackListeningIntervalEntity) {
+        if (extendListeningInterval(interval.identityKey, interval.startAt, interval.endAt,
+                interval.localHour, interval.epochStartedAt) == 0) {
+            insertListeningInterval(interval)
+        }
+    }
 
     @RawQuery
     suspend fun queryHourlyListening(query: SupportSQLiteQuery): List<PlaybackStatsHourRow>
@@ -48,6 +63,16 @@ interface PlaybackStatsDao {
 
     @Query("DELETE FROM playback_stat_hour WHERE NOT EXISTS (SELECT 1 FROM playback_stat s WHERE s.identity_key = playback_stat_hour.identity_key)")
     suspend fun deleteOrphanHours()
+
+    @Query("DELETE FROM playback_listening_interval WHERE epoch_started_at < :epoch")
+    suspend fun clearIntervalsBeforeEpoch(epoch: Long)
+
+    @Query("DELETE FROM playback_listening_interval WHERE identity_key IN (:keys)")
+    suspend fun deleteTrackIntervals(keys: List<String>)
+
+    @Query("DELETE FROM playback_listening_interval WHERE NOT EXISTS " +
+        "(SELECT 1 FROM playback_stat s WHERE s.identity_key = playback_listening_interval.identity_key)")
+    suspend fun deleteOrphanIntervals()
 
     @Query(
         "SELECT * FROM playback_stat " +

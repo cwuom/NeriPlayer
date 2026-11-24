@@ -14,6 +14,7 @@ import java.security.MessageDigest
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsPendingDeltaEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsEventReceiptEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackListeningIntervalEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.toEntity
 import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPage
@@ -279,8 +280,13 @@ internal class PlaybackStatsRoomStore(
         counterEpochStartedAt: Long,
         now: Long
     ) {
-        if (clearedAt > readLong(CLEARED_AT_METADATA_KEY)) database.playbackStatsDao().clearHoursBeforeEpoch(clearedAt)
-        database.playbackStatsDao().deleteOrphanHours()
+        val stats = database.playbackStatsDao()
+        if (clearedAt > readLong(CLEARED_AT_METADATA_KEY)) {
+            stats.clearHoursBeforeEpoch(clearedAt)
+            stats.clearIntervalsBeforeEpoch(clearedAt)
+        }
+        stats.deleteOrphanHours()
+        stats.deleteOrphanIntervals()
         database.syncMetadataDao().upsertMigrationMetadata(
             metadata(CUTOVER_STATE_METADATA_KEY, ROOM_PRIMARY_STATE, now)
         )
@@ -565,7 +571,10 @@ internal class PlaybackStatsRoomStore(
                 boundary = previousDay
             }
             for (hour in playbackListeningHours(delta.playedAt, delta.listenedMs, zone)) {
-                dao.addHourlyListening(hour.startAt, identityKey, hour.localHour, hour.durationMs, delta.epochStartedAt)
+                dao.appendListeningInterval(PlaybackListeningIntervalEntity(
+                    identityKey = identityKey, startAt = hour.startAt, endAt = hour.startAt + hour.durationMs,
+                    localHour = hour.localHour, epochStartedAt = delta.epochStartedAt
+                ))
             }
         }
         database.playbackStatsSnapshotDao().deletePendingDelta(delta.id)
@@ -589,6 +598,7 @@ internal class PlaybackStatsRoomStore(
         val dao = database.playbackStatsDao()
         keys.asSequence().chunked(500).forEach {
             dao.deleteTrackHours(it)
+            dao.deleteTrackIntervals(it)
             dao.deleteStats(it)
         }
         if (keys.isNotEmpty()) advanceRevision()
@@ -720,6 +730,7 @@ internal fun PlaybackStatEntity.toDomain(): TrackStat {
 internal fun PlaybackStatBucketEntity.toDomain(): PlaybackStatBucket {
     return PlaybackStatBucket(
         dayStartAt = dayStartAt,
+        recordedLocalDate = recordedLocalDate,
         id = id,
         name = name,
         artist = artist,
@@ -755,6 +766,7 @@ internal fun PlaybackStatCounterShardEntity.toDomain(): SyncPlaybackCounterShard
 internal fun PlaybackStatDailyCounterShardEntity.toDomain(): SyncPlaybackCounterShard {
     return SyncPlaybackCounterShard(
         deviceId = deviceId,
+        recordedLocalDate = recordedLocalDate,
         epochStartedAt = epochStartedAt,
         totalListenMs = totalListenMs,
         playCount = playCount,
@@ -783,6 +795,7 @@ internal fun SyncPlaybackCounterShard.toDailyEntity(
 ): PlaybackStatDailyCounterShardEntity {
     return PlaybackStatDailyCounterShardEntity(
         dayStartAt = dayStartAt,
+        recordedLocalDate = recordedLocalDate,
         identityKey = identityKey,
         deviceId = deviceId,
         epochStartedAt = epochStartedAt,

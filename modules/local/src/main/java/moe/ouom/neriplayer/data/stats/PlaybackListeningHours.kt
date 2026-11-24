@@ -19,8 +19,7 @@ internal fun playbackListeningHours(endAt: Long, listenedMs: Long, zone: ZoneId)
         // 某些地区在半点切换夏令时，先结束当前偏移下的这段计时
         val transition = zone.rules.nextTransition(instant)?.instant?.toEpochMilli() ?: Long.MAX_VALUE
         val next = minOf(endAt, nextHour, transition)
-        val start = local.truncatedTo(ChronoUnit.HOURS).toInstant().toEpochMilli()
-        yield(PlaybackListeningHour(start, local.hour, next - cursor))
+        yield(PlaybackListeningHour(cursor, local.hour, next - cursor))
         cursor = next
     }
 }

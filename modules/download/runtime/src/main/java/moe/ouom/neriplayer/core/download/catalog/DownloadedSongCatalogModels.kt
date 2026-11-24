@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.catalog
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
 import com.google.gson.stream.JsonWriter
@@ -497,6 +498,7 @@ internal fun DownloadedSong.toMetadataPersistenceSong(updatedSong: SongItem): So
         channelId = sourceChannel ?: updatedSong.channelId,
         audioId = resolvedSourceAudioId ?: updatedSong.audioId,
         subAudioId = sourceSubAudioId ?: updatedSong.subAudioId,
+        youtubeContentLabel = updatedSong.youtubeContentLabel ?: youtubeContentLabel,
         playlistContextId = sourcePlaylistContextId ?: updatedSong.playlistContextId,
         sourceStableKey = remoteSource?.stableKey() ?: updatedSong.sourceStableKey
     )
@@ -590,6 +592,7 @@ private fun catalogSongToJson(song: DownloadedSong, includeOriginalLyrics: Boole
         put("sourceChannelId", song.sourceChannelId)
         put("sourceAudioId", song.sourceAudioId)
         put("sourceSubAudioId", song.sourceSubAudioId)
+        put("youtubeContentLabel", song.youtubeContentLabel?.name)
         put("sourcePlaylistContextId", song.sourcePlaylistContextId)
     }
 }
@@ -696,6 +699,7 @@ private fun JSONObject.toCatalogSong(includeOriginalLyrics: Boolean): Downloaded
         sourceAudioId = optString("sourceAudioId").takeIf(String::isNotBlank),
         sourceSubAudioId = optString("sourceSubAudioId")
             .takeIf(String::isNotBlank),
+        youtubeContentLabel = YouTubeContentLabel.fromName(optString("youtubeContentLabel")),
         sourcePlaylistContextId = optString("sourcePlaylistContextId")
             .takeIf(String::isNotBlank)
     ).withRecoveredRemoteSourceStableKey()
@@ -843,5 +847,7 @@ private fun DownloadedSong.listPresentationKey(): String {
         append(coverPath.orEmpty())
         append('|')
         append(coverUrl.orEmpty())
+        append('|')
+        append(youtubeContentLabel?.cacheCode ?: '-')
     }
 }

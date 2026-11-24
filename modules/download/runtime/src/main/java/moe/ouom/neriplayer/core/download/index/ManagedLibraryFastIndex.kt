@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.index
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import java.io.File
 import java.security.MessageDigest
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
@@ -31,7 +32,8 @@ internal data class ManagedLibraryIndexEntry(
     // optional temporal metadata keeps warm previews ordered across migration
     val logicalCreatedAtMs: Long? = null,
     val createdAtSource: String? = null,
-    val createdAtConfidence: String? = null
+    val createdAtConfidence: String? = null,
+    val youtubeContentLabel: YouTubeContentLabel? = null
 )
 
 internal object ManagedLibraryFastIndex {
@@ -155,6 +157,7 @@ internal object ManagedLibraryFastIndex {
             put("channelId", channelId)
             put("audioId", audioId)
             put("subAudioId", subAudioId)
+            put("youtubeContentLabel", youtubeContentLabel?.name)
             put("playlistContextId", playlistContextId)
             put("durationMs", durationMs)
             put("coverPath", coverPath)
@@ -192,6 +195,7 @@ internal object ManagedLibraryFastIndex {
             channelId = optString("channelId").takeIf(String::isNotBlank),
             audioId = optString("audioId").takeIf(String::isNotBlank),
             subAudioId = optString("subAudioId").takeIf(String::isNotBlank),
+            youtubeContentLabel = YouTubeContentLabel.fromName(optString("youtubeContentLabel")),
             playlistContextId = optString("playlistContextId").takeIf(String::isNotBlank),
             durationMs = optLong("durationMs").takeIf { has("durationMs") && it > 0L },
             coverPath = optString("coverPath").takeIf(String::isNotBlank),

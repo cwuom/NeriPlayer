@@ -42,6 +42,7 @@ internal fun projectDownloadedSongEdits(
         sourceChannelId = source.channelId,
         sourceAudioId = source.audioId,
         sourceSubAudioId = source.subAudioId,
+        youtubeContentLabel = updatedSong.youtubeContentLabel ?: existing.youtubeContentLabel,
         sourcePlaylistContextId = source.playlistContextId
     ).withRecoveredRemoteSourceStableKey()
 }

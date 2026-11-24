@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.stats
 
+import java.time.Instant
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatCounterShardEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatDailyCounterShardEntity
@@ -10,6 +11,7 @@ import moe.ouom.neriplayer.data.local.database.store.stats.toDomain
 import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatEntity
 import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaybackCounterArithmetic
+import moe.ouom.neriplayer.data.model.sync.mergeRecordedPlaybackDates
 
 internal object PlaybackStatsDeltaPolicy {
     private const val MIN_LISTEN_MS_FOR_PLAY_COUNT = 30_000L
@@ -49,16 +51,24 @@ internal object PlaybackStatsDeltaPolicy {
         previousDaily: PlaybackStatDailyCounterShardEntity?
     ): Pair<PlaybackStatBucketEntity, PlaybackStatDailyCounterShardEntity> {
         val session = DeltaTotals(listenedMs, playCount, playedAt.coerceAtLeast(delta.epochStartedAt))
-        val bucketTotals = previousBucket?.takeIf { it.firstPlayedAt >= delta.epochStartedAt }.totals() + session
+        val prior = previousBucket?.takeIf { it.firstPlayedAt >= delta.epochStartedAt }
+        val recordedDate = delta.recordedZone()?.let { Instant.ofEpochMilli(day).atZone(it).toLocalDate().toString() }
+        val bucketTotals = prior.totals() + session
         val bucket = PlaybackStatBucketEntity(day, track.identityKey, track.id, track.name, track.artist, track.album,
             track.albumId, track.coverUrl, track.durationMs, bucketTotals.listenMs, bucketTotals.playCount,
             bucketTotals.lastPlayedAt, bucketTotals.firstPlayedAt,
-            track.mediaUri, track.localFilePath, track.localFileName, track.customName, track.customArtist, track.customCoverUrl)
+            track.mediaUri, track.localFilePath, track.localFileName, track.customName, track.customArtist, track.customCoverUrl,
+            recordedDateAfterAppend(prior != null, prior?.recordedLocalDate, recordedDate))
         val dailyTotals = previousDaily.totals() + session
         val daily = PlaybackStatDailyCounterShardEntity(day, track.identityKey, delta.deviceId, delta.epochStartedAt,
-            dailyTotals.listenMs, dailyTotals.playCount, dailyTotals.firstPlayedAt, dailyTotals.lastPlayedAt)
+            dailyTotals.listenMs, dailyTotals.playCount, dailyTotals.firstPlayedAt, dailyTotals.lastPlayedAt,
+            recordedDateAfterAppend(previousDaily != null, previousDaily?.recordedLocalDate, recordedDate))
         return bucket to daily
     }
+
+    // 已有计数缺少录制地时，新事件不能证明整段历史的日期
+    private fun recordedDateAfterAppend(hasPrevious: Boolean, previous: String?, recorded: String?): String? =
+        if (hasPrevious && previous == null) null else mergeRecordedPlaybackDates(previous, recorded)
 
     private fun previousTrack(rows: PlaybackStatsDeltaRows, epochStartedAt: Long): TrackStat? =
         rows.track?.toDomain()?.takeUnless { shouldStartNewStatsEpoch(it, epochStartedAt) }

@@ -31,6 +31,20 @@ class SyncPlaybackStatMappingTest {
     )
 
     @Test
+    fun `daily metadata preserves valid civil dates and ignores impossible peer dates`() {
+        val valid = bucket.copy(recordedLocalDate = "2024-02-29")
+        val mapped = SyncPlaybackStatMapping.fromPlaybackStatBucket(valid)
+        assertEquals("2024-02-29", mapped.recordedLocalDate)
+        assertEquals(mapped, SyncPlaybackStatMapping.sanitize(mapped, Host))
+        assertFalse(SyncPlaybackStatMapping.sameMetadata(mapped, mapped.copy(recordedLocalDate = null)))
+        val invalid = mapped.copy(recordedLocalDate = "24/2/29",
+            counterShards = listOf(SyncPlaybackCounterShard(deviceId = "a", recordedLocalDate = "2025-02-29")))
+        val sanitized = requireNotNull(SyncPlaybackStatMapping.sanitize(invalid, Host))
+        assertNull(sanitized.recordedLocalDate)
+        assertNull(sanitized.counterShards.single().recordedLocalDate)
+    }
+
+    @Test
     fun `overflowing shard sums cannot invent a legacy counter base`() {
         val shards = listOf("a", "b").map { device ->
             SyncPlaybackCounterShard(deviceId = device, totalListenMs = Long.MAX_VALUE, playCount = Int.MAX_VALUE)

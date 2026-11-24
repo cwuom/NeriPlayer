@@ -9,6 +9,23 @@ import org.junit.Test
 
 class SyncPlaybackStatsMergePolicyTest {
     @Test
+    fun `date line devices keep both recorded dates when merging with an old peer`() {
+        fun bucket(device: String, date: String?) = SyncPlaybackStatBucket(
+            dayStartAt = 100, identityKey = "track", lastPlayedAt = 120, firstPlayedAt = 110,
+            totalListenMs = 10, playCount = 1, recordedLocalDate = date,
+            counterShards = listOf(SyncPlaybackCounterShard(device, 0, 10, 1, 110, 120, date))
+        )
+        val west = bucket("west", "2026-11-22")
+        val east = bucket("east", "2026-11-23")
+        val both = requireNotNull(SyncPlaybackStatsMergePolicy.mergeBucket(west, east, 0))
+        assertEquals(both, SyncPlaybackStatsMergePolicy.mergeBucket(east, west, 0))
+        assertEquals(20L, both.totalListenMs)
+        assertEquals(west.recordedLocalDate, both.recordedLocalDate)
+        assertEquals(listOf("2026-11-23", "2026-11-22"), both.counterShards.map { it.recordedLocalDate })
+        assertEquals(both, SyncPlaybackStatsMergePolicy.mergeBucket(both, bucket("west", null), 0))
+    }
+
+    @Test
     fun `clear barrier drops remote stats recorded before clear`() {
         val clearedAt = 1_000L
         val remote = trackStat(

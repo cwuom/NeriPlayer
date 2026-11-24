@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.data.sync.merge.stats
 
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.mergeRecordedPlaybackDates
+import moe.ouom.neriplayer.data.model.sync.validRecordedPlaybackDate
 
 object SyncCounterShardPolicy {
     fun normalizeCounterShards(
@@ -16,6 +18,7 @@ object SyncCounterShardPolicy {
                     if (lastPlayedAt > 0L && (it == 0L || it > lastPlayedAt)) lastPlayedAt else it
                 }
                 shard.copy(
+                    recordedLocalDate = shard.recordedLocalDate.validRecordedPlaybackDate(),
                     epochStartedAt = shard.epochStartedAt.coerceAtLeast(0L),
                     totalListenMs = shard.totalListenMs.coerceAtLeast(0L),
                     playCount = shard.playCount.coerceAtLeast(0),
@@ -35,6 +38,7 @@ object SyncCounterShardPolicy {
         right: SyncPlaybackCounterShard
     ): SyncPlaybackCounterShard {
         return left.copy(
+            recordedLocalDate = mergeRecordedPlaybackDates(left.recordedLocalDate, right.recordedLocalDate),
             totalListenMs = maxOf(left.totalListenMs, right.totalListenMs),
             playCount = maxOf(left.playCount, right.playCount),
             firstPlayedAt = minPositivePlayedAt(left.firstPlayedAt, right.firstPlayedAt),

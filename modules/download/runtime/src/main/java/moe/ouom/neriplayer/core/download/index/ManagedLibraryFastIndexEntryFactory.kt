@@ -39,6 +39,7 @@ internal object ManagedLibraryFastIndexEntryFactory {
             channelId = song.channelId,
             audioId = song.audioId,
             subAudioId = song.subAudioId,
+            youtubeContentLabel = song.youtubeContentLabel,
             playlistContextId = song.playlistContextId,
             durationMs = song.durationMs.takeIf { it > 0L },
             coverPath = coverPath,

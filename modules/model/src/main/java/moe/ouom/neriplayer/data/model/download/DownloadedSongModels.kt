@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.model.download
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
+
 data class DownloadedSong(
     val id: Long,
     val name: String,
@@ -34,7 +36,8 @@ data class DownloadedSong(
     val sourceAudioId: String? = null,
     val sourceSubAudioId: String? = null,
     val sourcePlaylistContextId: String? = null,
-    val localFileName: String? = null
+    val localFileName: String? = null,
+    val youtubeContentLabel: YouTubeContentLabel? = null
 ) {
     fun displayName(): String = customName ?: name
     fun displayArtist(): String = customArtist ?: artist

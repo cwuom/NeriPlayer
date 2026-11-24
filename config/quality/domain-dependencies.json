@@ -148,6 +148,12 @@
       "moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata$Companion"
     ],
     "bridges": {
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel": [
+        "Fieldref Companion:Lmoe/ouom/neriplayer/data/model/youtube/music/YouTubeContentLabel$Companion;"
+      ],
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel$Companion": [
+        "Methodref fromName:(Ljava/lang/String;)Lmoe/ouom/neriplayer/data/model/youtube/music/YouTubeContentLabel;"
+      ],
       "moe.ouom.neriplayer.core.download.storage.metadata.serialization.ManagedDownloadRestorableMetadataJsonKt": [
         "Methodref fromJson:(Lmoe/ouom/neriplayer/data/model/download/ManagedDownloadRestorableMetadata$Companion;Lorg/json/JSONObject;)Lmoe/ouom/neriplayer/data/model/download/ManagedDownloadRestorableMetadata;"
       ]
@@ -166,6 +172,7 @@
       "moe.ouom.neriplayer.data.model.SongIdentity"
     ],
     "bridges": {
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel": [],
       "moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogModelsKt": [
         "Methodref isResolvableLocalReference:(Ljava/lang/String;)Z"
       ],
@@ -196,6 +203,7 @@
       "moe.ouom.neriplayer.data.model.download.DownloadedSong"
     ],
     "bridges": {
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel": [],
       "moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState": [],
       "moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata": [],
       "moe.ouom.neriplayer.core.download.catalog.DownloadedSongBuilderKt": [

@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.core.download.metadata
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
@@ -360,7 +362,7 @@ class DownloadedAudioMetadataStoreTest {
 
     @Test
     fun `restoring metadata keeps lyric content when the incoming song has no lyrics`() {
-        val restored = preserveMissingDownloadedMetadataLyrics(
+        val restored = preserveMissingDownloadedSongMetadata(
             song = testSong(),
             metadata = DownloadedAudioMetadata(
                 matchedLyric = "[00:01.00]stored lyric",
@@ -378,7 +380,7 @@ class DownloadedAudioMetadataStoreTest {
 
     @Test
     fun `explicit lyric clearing does not resurrect content or match provenance`() {
-        val cleared = preserveMissingDownloadedMetadataLyrics(
+        val cleared = preserveMissingDownloadedSongMetadata(
             song = testSong(),
             metadata = DownloadedAudioMetadata(
                 matchedLyric = "stored lyric",
@@ -629,6 +631,17 @@ class DownloadedAudioMetadataStoreTest {
         )
 
         assertEquals("[00:00.00]authoritative lyric", baseline.originalLyric)
+    }
+
+    @Test
+    fun `metadata edits preserve an existing label only for the same source`() {
+        val song = testSong().copy(mediaUri = "ytmusic://video/example", channelId = "youtubeMusic")
+        val metadata = DownloadedAudioMetadata(stableKey = song.stableKey(), youtubeContentLabel = YouTubeContentLabel.MUSIC_VIDEO)
+
+        assertEquals(YouTubeContentLabel.MUSIC_VIDEO, preserveMissingDownloadedSongMetadata(song, metadata).youtubeContentLabel)
+        assertNull(preserveMissingDownloadedSongMetadata(song, metadata.copy(stableKey = "another-song")).youtubeContentLabel)
+        val updated = song.copy(youtubeContentLabel = YouTubeContentLabel.EXPLICIT_MUSIC_VIDEO)
+        assertEquals(updated.youtubeContentLabel, preserveMissingDownloadedSongMetadata(updated, metadata).youtubeContentLabel)
     }
 
     private fun testSong(): SongItem {

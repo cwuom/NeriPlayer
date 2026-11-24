@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download.storage
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import org.json.JSONArray
 import org.json.JSONObject
@@ -10,6 +12,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ManagedDownloadStorageJsonCodecTest {
+    @Test
+    fun `queued and interrupted downloads retain the content label and tolerate old and future metadata`() {
+        val song = SongItem(
+            7L, "Song", "Artist", "Album", 0L, 0L, null,
+            mediaUri = "ytmusic://video/example", channelId = "youtubeMusic", youtubeContentLabel = YouTubeContentLabel.MUSIC_VIDEO
+        )
+        val codec = ManagedDownloadStorageJsonCodec
+        val pending = ManagedDownloadStorage.PendingDownloadQueueEntry("key", song, order = 0, queuedAtMs = 10L)
+        val queue = codec.serializePendingDownloadQueuePayload(listOf(pending), updatedAtMs = 11L)
+        assertEquals(song.youtubeContentLabel, codec.parsePendingDownloadQueuePayload(queue).single().song.youtubeContentLabel)
+        val resume = codec.workingResumeMetadataToJson(song)
+        assertEquals(song.youtubeContentLabel, codec.workingResumeMetadataSongFromJson(resume.toString())?.youtubeContentLabel)
+        resume.put("youtubeContentLabel", "FUTURE_LABEL")
+        assertEquals(null, requireNotNull(codec.workingResumeMetadataSongFromJson(resume.toString())).youtubeContentLabel)
+        resume.remove("youtubeContentLabel")
+        assertEquals(null, requireNotNull(codec.workingResumeMetadataSongFromJson(resume.toString())).youtubeContentLabel)
+    }
+
 
     @Test
     fun `stored entries skip non objects and entries without a name or reference`() {

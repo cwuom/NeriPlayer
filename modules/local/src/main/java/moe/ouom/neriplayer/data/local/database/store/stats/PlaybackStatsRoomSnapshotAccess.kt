@@ -258,5 +258,5 @@ private fun SyncTrackStat.toEntity(local: PlaybackStatEntity?) = PlaybackStatEnt
 
 private fun SyncPlaybackStatBucket.toEntity(local: PlaybackStatBucketEntity?) = PlaybackStatBucketEntity(
     dayStartAt, identityKey, id, name, artist, album, albumId, coverUrl, durationMs, totalListenMs, playCount, lastPlayedAt, firstPlayedAt,
-    mediaUri, local?.localFilePath, local?.localFileName, local?.customName, local?.customArtist, local?.customCoverUrl
+    mediaUri, local?.localFilePath, local?.localFileName, local?.customName, local?.customArtist, local?.customCoverUrl, recordedLocalDate
 )

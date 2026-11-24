@@ -9,6 +9,12 @@ class PlaybackListeningHoursTest {
     private fun split(end: String, duration: Long, zone: String) =
         playbackListeningHours(Instant.parse(end).toEpochMilli(), duration, ZoneId.of(zone)).toList()
 
+    @Test fun retainsTheActualStartOfPartialLocalHours() {
+        val rows = split("2026-11-23T00:15:00Z", 600_000, "Asia/Kolkata")
+        assertEquals(Instant.parse("2026-11-23T00:05:00Z").toEpochMilli(), rows.single().startAt)
+        assertEquals(5, rows.single().localHour)
+    }
+
     @Test fun splitsAtMidnightUsingTheListeningTimeZone() {
         val hours = split("2026-11-22T16:00:05Z", 15_000, "Asia/Singapore")
         assertEquals(listOf(23, 0), hours.map { it.localHour })

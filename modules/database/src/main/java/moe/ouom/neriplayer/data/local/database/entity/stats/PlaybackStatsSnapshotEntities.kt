@@ -183,11 +183,14 @@ data class PlaybackStatsSnapshotBucketData(
     @ColumnInfo(name = "custom_artist")
     val customArtist: String?,
     @ColumnInfo(name = "custom_cover_url")
-    val customCoverUrl: String?
+    val customCoverUrl: String?,
+    @ColumnInfo(name = "recorded_local_date")
+    val recordedLocalDate: String? = null
 )
 
 fun PlaybackStatBucketEntity.toSnapshotData() = PlaybackStatsSnapshotBucketData(
     dayStartAt = dayStartAt,
+    recordedLocalDate = recordedLocalDate,
     identityKey = identityKey,
     id = id,
     name = name,
@@ -210,6 +213,7 @@ fun PlaybackStatBucketEntity.toSnapshotData() = PlaybackStatsSnapshotBucketData(
 
 fun PlaybackStatsSnapshotBucketData.toEntity() = PlaybackStatBucketEntity(
     dayStartAt = dayStartAt,
+    recordedLocalDate = recordedLocalDate,
     identityKey = identityKey,
     id = id,
     name = name,
@@ -283,11 +287,14 @@ data class PlaybackStatsSnapshotDailyCounterData(
     @ColumnInfo(name = "first_played_at")
     val firstPlayedAt: Long,
     @ColumnInfo(name = "last_played_at")
-    val lastPlayedAt: Long
+    val lastPlayedAt: Long,
+    @ColumnInfo(name = "recorded_local_date")
+    val recordedLocalDate: String? = null
 )
 
 fun PlaybackStatDailyCounterShardEntity.toSnapshotData() = PlaybackStatsSnapshotDailyCounterData(
     dayStartAt = dayStartAt,
+    recordedLocalDate = recordedLocalDate,
     identityKey = identityKey,
     deviceId = deviceId,
     epochStartedAt = epochStartedAt,
@@ -299,6 +306,7 @@ fun PlaybackStatDailyCounterShardEntity.toSnapshotData() = PlaybackStatsSnapshot
 
 fun PlaybackStatsSnapshotDailyCounterData.toEntity() = PlaybackStatDailyCounterShardEntity(
     dayStartAt = dayStartAt,
+    recordedLocalDate = recordedLocalDate,
     identityKey = identityKey,
     deviceId = deviceId,
     epochStartedAt = epochStartedAt,

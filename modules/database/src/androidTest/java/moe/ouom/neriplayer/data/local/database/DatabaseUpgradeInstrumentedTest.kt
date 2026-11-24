@@ -23,6 +23,27 @@ class DatabaseUpgradeInstrumentedTest {
     )
 
     @Test
+    fun version22PreservesLegacyHourTotalsWithoutInventingIntervals() {
+        val databaseName = "database-upgrade-listening-intervals-v22"
+        helper.createDatabase(databaseName, 22).use { database ->
+            database.execSQL("INSERT INTO playback_stat_hour VALUES (5400000, 'track', 7, 900000, 0)")
+        }
+        helper.runMigrationsAndValidate(databaseName, 23, true, NeriUserDataDatabase.MIGRATION_22_23)
+            .use { database ->
+                database.query("SELECT hour_start_at, local_hour, listened_ms FROM playback_stat_hour").use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(5400000L, cursor.getLong(0))
+                    assertEquals(7, cursor.getInt(1))
+                    assertEquals(900000L, cursor.getLong(2))
+                }
+                database.query("SELECT COUNT(*) FROM playback_listening_interval").use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(0, cursor.getInt(0))
+                }
+            }
+    }
+
+    @Test
     fun everyHistoricalUpgradeReachesTheCurrentRoomSchema() {
         for (version in 1 until NeriUserDataDatabase.FINAL_DB_VERSION) {
             val databaseName = "database-upgrade-from-v$version"

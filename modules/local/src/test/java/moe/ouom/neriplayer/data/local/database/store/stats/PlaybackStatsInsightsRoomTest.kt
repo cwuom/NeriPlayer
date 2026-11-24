@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.database.store.stats
 
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -109,6 +110,34 @@ class PlaybackStatsInsightsRoomTest {
             assertEquals(5L, insights.albumCount)
             assertEquals(listOf(150L, 140L, 60L, 50L, 20L), insights.albums.map { it.totalListenMs })
             assertEquals(listOf(2L, 2L, 1L, 2L, 1L), insights.albums.map { it.trackCount })
+        }
+    }
+
+    @Test
+    fun weekdayAndSingleDayRanksUseTheRecordedCivilDateAcrossTheDateLine() = runTest {
+        withRoom { db, store ->
+            val dao = db.playbackStatsDao()
+            // 基里蒂马蒂的周一和檀香山的周日共享同一个绝对午夜
+            val dayStartAt = Instant.parse("2026-11-22T10:00:00Z").toEpochMilli()
+            val t = track(1, "Singer", "Record", 100, dayStartAt)
+            dao.upsertStats(listOf(t.toEntity()))
+            dao.upsertBuckets(listOf(bucket(t).copy(recordedLocalDate = "2026-11-22", playCount = 2).toEntity()))
+            val west = SyncPlaybackCounterShard("west", 0, 40, 1, dayStartAt + 1, dayStartAt + 10, "2026-11-22")
+            val east = SyncPlaybackCounterShard("east", 0, 60, 1, dayStartAt + 20, dayStartAt + 30, "2026-11-23")
+            dao.upsertDailyCounterShards(listOf(west, east).map { it.toDailyEntity(dayStartAt, t.identityKey) })
+            val all = store.readInsights(PlaybackStatsQuery(), 1)
+            assertEquals(listOf(60L, 0L, 0L, 0L, 0L, 0L, 40L), all.weekdayListenMs)
+            assertEquals(2L, all.activeDays)
+
+            val mondayStart = java.time.LocalDate.parse("2026-11-23").atStartOfDay(java.time.ZoneId.systemDefault())
+                .toInstant().toEpochMilli()
+            val query = PlaybackStatsQuery(range = PlaybackStatsTimeRange(mondayStart, mondayStart + day))
+            val monday = store.readInsights(query, 1)
+            assertEquals(60L, monday.summary.totalListenMs)
+            assertEquals(60L, monday.artists.single().totalListenMs)
+            assertEquals(listOf(60L, 0L, 0L, 0L, 0L, 0L, 0L), monday.weekdayListenMs)
+            assertEquals(dayStartAt + 20, monday.earliestListenAt)
+            assertEquals(1L, monday.activeDays)
         }
     }
 

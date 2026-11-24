@@ -21,7 +21,7 @@ internal suspend fun PlaybackStatsRoomStore.readInsights(query: PlaybackStatsQue
         val filtered = sql.filteredTracksSql()
         val args = sql.filteredArguments()
         val window = query.resolvedRange
-        val bounds = listOf(window.startInclusive ?: Long.MIN_VALUE, window.endExclusive)
+        val bounds = dayBucketBounds(window.startInclusive ?: Long.MIN_VALUE, window.endExclusive)
         val artists = dao.queryRanking(insightRankingQuery(filtered, args, artist = true, limit = rankLimit))
         val albums = dao.queryRanking(insightRankingQuery(filtered, args, artist = false, limit = rankLimit))
         val weekdays = dao.queryWeekdays(weekdayQuery(filtered, args, bounds))
@@ -116,13 +116,11 @@ private fun insightRankingQuery(filtered: String, args: List<Any>, artist: Boole
     return SimpleSQLiteQuery(query, (args + limit).toTypedArray())
 }
 
-private fun weekdayQuery(filtered: String, args: List<Any>, bounds: List<Long>): SimpleSQLiteQuery {
+private fun weekdayQuery(filtered: String, args: List<Any>, bounds: List<Any>): SimpleSQLiteQuery {
     val query = """
-        WITH selected AS ($filtered),
+        WITH selected AS ($filtered), ${dayBucketEventsSql()},
         events AS (
-            SELECT date(b.day_start_at / 1000, 'unixepoch', 'localtime') AS day, b.total_listen_ms, b.play_count
-            FROM playback_stat_bucket b JOIN selected s USING (identity_key)
-            WHERE b.day_start_at >= ? AND b.day_start_at < ?
+            SELECT b.day, b.total_listen_ms, b.play_count FROM day_events b JOIN selected s USING (identity_key)
             UNION ALL
             SELECT date(last_played_at / 1000, 'unixepoch', 'localtime') AS day, total_listen_ms, play_count
             FROM selected s WHERE first_played_at > 0

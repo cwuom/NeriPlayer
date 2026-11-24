@@ -360,7 +360,7 @@ private fun SyncTrackStat.toPrimaryEntity(local: PlaybackStatEntity?) = Playback
 
 private fun SyncPlaybackStatBucket.toPrimaryEntity(local: PlaybackStatBucketEntity?) = PlaybackStatBucketEntity(dayStartAt, identityKey,
     id, name, artist, album, albumId, coverUrl, durationMs, totalListenMs, playCount, lastPlayedAt, firstPlayedAt, mediaUri,
-    local?.localFilePath, local?.localFileName, local?.customName, local?.customArtist, local?.customCoverUrl)
+    local?.localFilePath, local?.localFileName, local?.customName, local?.customArtist, local?.customCoverUrl, recordedLocalDate)
 
 private data class DiffBucketTotals(val listenMs: Long, val playCount: Int, val firstPlayedAt: Long, val lastPlayedAt: Long, val latest: PlaybackStatBucketEntity) {
     fun plus(row: PlaybackStatBucketEntity) = copy(

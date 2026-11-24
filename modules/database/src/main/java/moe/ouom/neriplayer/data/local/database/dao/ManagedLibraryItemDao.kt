@@ -39,6 +39,8 @@ interface ManagedLibraryItemDao {
             "cover_key_preview = CASE WHEN metadata_revision <= :metadataRevision " +
             "THEN COALESCE(:coverKeyPreview, cover_key_preview) " +
             "ELSE cover_key_preview END, " +
+            "youtube_content_label = CASE WHEN metadata_revision <= :metadataRevision " +
+            "THEN COALESCE(:youtubeContentLabel, youtube_content_label) ELSE youtube_content_label END, " +
             "metadata_revision = CASE " +
             "WHEN metadata_revision < :metadataRevision THEN :metadataRevision " +
             "ELSE metadata_revision END " +
@@ -55,6 +57,7 @@ interface ManagedLibraryItemDao {
         locatorHint: String?,
         titlePreview: String,
         artistPreview: String,
+        youtubeContentLabel: String?,
         coverKeyPreview: String?,
         metadataRevision: Long
     ): Int
