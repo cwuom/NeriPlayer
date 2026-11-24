@@ -29,9 +29,7 @@ import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.annotation.SuppressLint
 import android.content.ClipData
-import android.content.Context
 import android.content.res.Configuration
-import android.os.PowerManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
@@ -212,6 +210,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsCoverFligh
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsCoverFlightRow
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingLyricsToolbarAction
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
+import moe.ouom.neriplayer.ui.effect.rememberSystemPowerPressure
 import moe.ouom.neriplayer.R as AppR
 
 private const val LyricsSwipeBackThresholdPx = 50f
@@ -340,9 +339,7 @@ fun LyricsScreen(
     val durationMs = currentSong?.durationMs ?: 0L
 
     val context = LocalContext.current
-    val lowPowerLyricsRendering = remember(context) {
-        context.isSystemPowerSaveMode()
-    }
+    val lowPowerLyricsRendering = rememberSystemPowerPressure().reduceOptionalEffects
     val currentCoverUrl = rememberSongDisplayCoverUrl(currentSong)
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -1488,11 +1485,6 @@ internal fun LyricsContentPane(
         playbackSessionKey = playbackSessionKey,
         stableEmbeddedViewport = true
     )
-}
-
-internal fun Context.isSystemPowerSaveMode(): Boolean {
-    val powerManager = getSystemService(PowerManager::class.java) ?: return false
-    return powerManager.isPowerSaveMode
 }
 
 @Composable

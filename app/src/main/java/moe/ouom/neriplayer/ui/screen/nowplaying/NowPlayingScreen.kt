@@ -165,7 +165,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.component.playback.NeriPlayPauseButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsScreen
-import moe.ouom.neriplayer.ui.screen.lyrics.isSystemPowerSaveMode
+import moe.ouom.neriplayer.ui.effect.rememberSystemPowerPressure
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsSecondaryLineMode
 import moe.ouom.neriplayer.ui.screen.lyrics.hasDisplayableLyricTranslation
 import moe.ouom.neriplayer.ui.screen.lyrics.resolveEffectivePhoneticLyrics
@@ -1073,7 +1073,7 @@ fun NowPlayingScreen(
         compactWideLayout = windowWidthDp < 720.dp,
         compactPortrait = useCompactPortraitLayout
     )
-    val lowPowerLyricsRendering = remember(context, effectiveShowLyricsScreen) { context.isSystemPowerSaveMode() }
+    val lowPowerLyricsRendering = rememberSystemPowerPressure().reduceOptionalEffects
 
     // 歌词偏移 (平台 + 用户自定义)
     val totalOffset = rememberNowPlayingLyricOffset(

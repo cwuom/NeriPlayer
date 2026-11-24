@@ -115,6 +115,16 @@ class PreferredRefreshRateWindowTest {
         assertEquals(90f, resolveAmbientRefreshRate(listOf(48f, 90f)))
     }
 
+    @Test
+    fun `power pressure lets any quiet screen drop to the ambient rate`() {
+        val quiet = AMBIENT_REFRESH_RATE_IDLE_MS
+        assertEquals(true, isAmbientRefreshRateIdle(false, true, false, quiet, powerPressure = true))
+        assertEquals(false, isAmbientRefreshRateIdle(false, true, true, quiet, powerPressure = true))
+        assertEquals(false, isAmbientRefreshRateIdle(false, true, false, quiet - 1, powerPressure = true))
+        assertEquals(false, isAmbientRefreshRateIdle(false, false, false, quiet, powerPressure = true))
+        assertEquals(false, isAmbientRefreshRateIdle(false, true, false, quiet, powerPressure = false))
+    }
+
     private fun display(currentRate: Float, vararg supportedRates: Float): Display =
         mock(Display::class.java).also { display ->
             `when`(display.refreshRate).thenReturn(currentRate)

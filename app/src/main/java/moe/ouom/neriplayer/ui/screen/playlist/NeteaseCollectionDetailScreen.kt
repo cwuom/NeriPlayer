@@ -24,6 +24,8 @@ package moe.ouom.neriplayer.ui.screen.playlist
  */
 
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.animation.PlayingBarSpec
+import moe.ouom.neriplayer.ui.animation.rememberPlayingBarsState
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
@@ -32,15 +34,6 @@ import android.content.Context
 import android.content.res.Resources
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -98,7 +91,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistLoadErrorDialog
@@ -115,6 +107,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1449,82 +1445,42 @@ internal fun copySongInfoAction(
     }
 }
 
+private val PlayingIndicatorBarSpecs = listOf(
+    PlayingBarSpec(from = 0.3f, to = 1f, durationMillis = 300),
+    PlayingBarSpec(from = 0.5f, to = 1f, durationMillis = 350),
+    PlayingBarSpec(from = 0.4f, to = 1f, durationMillis = 400)
+)
+private const val PlayingIndicatorFlatHeight = 0.35f
+private val PlayingIndicatorBarWidth = 3.dp
+private val PlayingIndicatorBarGap = 1.dp
+private val PlayingIndicatorBarMaxHeight = 12.dp
+
 @Composable
 fun PlayingIndicator(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.primary,
     animate: Boolean = true
 ) {
-    val transition = rememberInfiniteTransition(label = "playing")
-    val flatHeight = 0.35f
-    val transitionSpec: FiniteAnimationSpec<Float> =
-        if (animate) snap() else tween(durationMillis = 180, easing = FastOutSlowInEasing)
-    val animatedValues = listOf(
-        transition.animateFloat(
-            initialValue = 0.3f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 300),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "bar1"
-        ),
-        transition.animateFloat(
-            initialValue = 0.5f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 350),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "bar2"
-        ),
-        transition.animateFloat(
-            initialValue = 0.4f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 400),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "bar3"
-        )
+    val bars = rememberPlayingBarsState(PlayingIndicatorBarSpecs, PlayingIndicatorFlatHeight, animate)
+    // 在绘制阶段读取高度并按布局同样的整像素取整, 每帧只重绘不重组
+    Spacer(
+        modifier
+            .height(PlayingIndicatorBarMaxHeight)
+            .width(PlayingIndicatorBarWidth * 3 + PlayingIndicatorBarGap * 2)
+            // 独立图层: 每帧只重录这三根条, 不连带整行列表文字一起重录
+            .graphicsLayer()
+            .drawBehind {
+                val barWidthPx = PlayingIndicatorBarWidth.roundToPx().toFloat()
+                val stepPx = barWidthPx + PlayingIndicatorBarGap.roundToPx()
+                for (index in 0 until bars.size) {
+                    val barHeightPx = (PlayingIndicatorBarMaxHeight * bars[index]).roundToPx().toFloat()
+                    drawRoundRect(
+                        color = color,
+                        topLeft = Offset(index * stepPx, size.height - barHeightPx),
+                        size = Size(barWidthPx, barHeightPx),
+                        cornerRadius = CornerRadius(minOf(barWidthPx, barHeightPx) / 2f)
+                    )
+                }
+            }
     )
-    val barHeights = listOf(
-        animateFloatAsState(
-            targetValue = playingBarHoldTarget(animate, animatedValues[0], flatHeight),
-            animationSpec = transitionSpec,
-            label = "bar1Hold"
-        ).value,
-        animateFloatAsState(
-            targetValue = playingBarHoldTarget(animate, animatedValues[1], flatHeight),
-            animationSpec = transitionSpec,
-            label = "bar2Hold"
-        ).value,
-        animateFloatAsState(
-            targetValue = playingBarHoldTarget(animate, animatedValues[2], flatHeight),
-            animationSpec = transitionSpec,
-            label = "bar3Hold"
-        ).value
-    )
-
-    val barWidth = 3.dp
-    val barMaxHeight = 12.dp
-
-    Row(
-        modifier = modifier.height(barMaxHeight),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(1.dp)
-    ) {
-        barHeights.forEach { barHeight ->
-            Box(
-                Modifier
-                    .width(barWidth)
-                    .height(barMaxHeight * barHeight)
-                    .clip(RoundedCornerShape(50))
-                    .background(color)
-            )
-        }
-    }
 }
-
-private fun playingBarHoldTarget(animate: Boolean, animated: State<Float>, flatHeight: Float): Float =
-    if (animate) animated.value else flatHeight

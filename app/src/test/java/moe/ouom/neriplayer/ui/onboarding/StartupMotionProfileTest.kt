@@ -17,7 +17,8 @@ class StartupMotionProfileTest {
         maxRefreshRate: Int = 120,
         lowRamDevice: Boolean = false,
         powerSaveMode: Boolean = false,
-        dimensity: Boolean = false
+        dimensity: Boolean = false,
+        entryLevelBlur: Boolean = false
     ) = StartupDeviceSpec(
         displayName = "Test Phone",
         modelCode = "TP-1",
@@ -30,8 +31,26 @@ class StartupMotionProfileTest {
         lowRamDevice = lowRamDevice,
         powerSaveMode = powerSaveMode,
         dimensityDevice = dimensity,
-        dimensityBlurCompatibility = dimensity
+        dimensityBlurCompatibility = dimensity,
+        entryLevelBlurDevice = entryLevelBlur
     )
+
+    @Test
+    fun `entry level gpus keep the lightweight blur quality outside the immersive preset`() {
+        val entry = spec(entryLevelBlur = true)
+        assertEquals(
+            AdvancedBlurQuality.UltraLow,
+            startupMotionConfigFor(StartupMotionPreset.Balanced, entry).advancedBlurQuality
+        )
+        assertEquals(
+            AdvancedBlurQuality.UltraLow,
+            startupMotionConfigFor(StartupMotionPreset.Light, entry).advancedBlurQuality
+        )
+        assertEquals(
+            AdvancedBlurQuality.Default,
+            startupMotionConfigFor(StartupMotionPreset.Balanced, spec()).advancedBlurQuality
+        )
+    }
 
     @Test
     fun `total memory rounds up to the marketed capacity`() {

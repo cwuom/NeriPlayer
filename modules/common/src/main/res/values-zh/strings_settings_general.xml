@@ -25,6 +25,9 @@
     <string name="settings_prefer_high_refresh_rate_desc">请求设备支持的最高刷新率；省电、温控和系统设置仍可能限制刷新率</string>
     <string name="settings_playback_idle_shutdown_dialog_title">暂停多久后退出</string>
     <string name="settings_playback_idle_shutdown_off">不自动退出</string>
+    <string name="settings_playback_background_recovery">后台播放自动恢复</string>
+    <string name="settings_playback_background_recovery_allowed">已关闭电池优化，播放进程被系统结束后会自动续播</string>
+    <string name="settings_playback_background_recovery_restricted">关闭电池优化后，打游戏或系统回收内存结束播放时可自动续播</string>
     <string name="settings_clear_config">清除配置</string>
     <string name="settings_ui_scale">UI 缩放</string>
     <string name="settings_ui_scale_dpi">UI 缩放 (DPI)</string>
