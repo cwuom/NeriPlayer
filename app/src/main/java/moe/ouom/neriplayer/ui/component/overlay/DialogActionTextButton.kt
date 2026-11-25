@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -26,10 +27,17 @@ internal fun DialogActionTextButton(
     shape: Shape = ButtonDefaults.textShape,
     colors: ButtonColors? = null,
     contentPadding: PaddingValues = ButtonDefaults.TextButtonContentPadding,
+    destructive: Boolean = false,
     content: @Composable RowScope.() -> Unit
 ) {
     if (colors == null && LocalDialogButtonSlot.current == DialogButtonSlot.Confirm && !NeriDesign.isClean) {
-        FilledDialogActionButton(onClick = onClick, modifier = modifier, enabled = enabled, content = content)
+        FilledDialogActionButton(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            destructive = destructive,
+            content = content
+        )
         return
     }
     TextButton(
@@ -37,7 +45,9 @@ internal fun DialogActionTextButton(
         modifier = modifier,
         enabled = enabled,
         shape = shape,
-        colors = colors ?: ButtonDefaults.textButtonColors(),
+        colors = colors ?: ButtonDefaults.textButtonColors(
+            contentColor = if (destructive) MaterialTheme.colorScheme.error else Color.Unspecified
+        ),
         contentPadding = contentPadding,
         content = content
     )
@@ -50,18 +60,20 @@ internal fun FilledDialogActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    destructive: Boolean = false,
     content: @Composable RowScope.() -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     Button(
         onClick = onClick,
         modifier = modifier.dialogSlotButtonSize(44.dp),
         enabled = enabled,
         shape = if (NeriDesign.isClean) CircleShape else MaterialDialogActionShape,
         colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            containerColor = if (destructive) colors.error else colors.primary,
+            contentColor = if (destructive) colors.onError else colors.onPrimary,
+            disabledContainerColor = colors.surfaceVariant,
+            disabledContentColor = colors.onSurfaceVariant
         ),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
         content = content

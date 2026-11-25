@@ -169,8 +169,8 @@ private fun TextLogClearConfirmDialog(
         title = { Text(stringResource(AppR.string.dialog_confirm_clear)) },
         text = { Text(stringResource(messageRes)) },
         confirmButton = {
-            DialogActionTextButton(onClick = onConfirm) {
-                Text(stringResource(CoreCommonR.string.common_clear_all), color = MaterialTheme.colorScheme.error)
+            DialogActionTextButton(onClick = onConfirm, destructive = true) {
+                Text(stringResource(CoreCommonR.string.common_clear_all))
             }
         },
         dismissButton = {
