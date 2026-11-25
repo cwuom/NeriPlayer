@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store.stats
 
 
+import java.time.Instant
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -583,7 +584,8 @@ internal class PlaybackStatsRoomStore(
             for (hour in playbackListeningHours(delta.playedAt, delta.listenedMs, zone)) {
                 dao.appendListeningInterval(PlaybackListeningIntervalEntity(
                     identityKey = identityKey, startAt = hour.startAt, endAt = hour.startAt + hour.durationMs,
-                    localHour = hour.localHour, epochStartedAt = delta.epochStartedAt
+                    localHour = hour.localHour, epochStartedAt = delta.epochStartedAt,
+                    recordedLocalDate = Instant.ofEpochMilli(hour.startAt).atZone(zone).toLocalDate().toString()
                 ))
             }
         }
@@ -619,7 +621,7 @@ internal class PlaybackStatsRoomStore(
         val sql = PlaybackStatsSqlQuery(query, dao.hasBuckets())
         val hours = LongArray(24)
         dao.queryHourlyListening(sql.hourlyListening()).forEach { hours[it.localHour] = it.listenedMs }
-        addSyncedHourTotals(sql, query.resolvedRange, hours)
+        addSyncedHourTotals(sql, hours)
         hours.toList()
     }
 

@@ -42,6 +42,7 @@ class DatabaseUpgradeInstrumentedTest {
                     "VALUES (?,'a',1,'Song','Artist','Album',1,0,90000,1,?,?)",
                     arrayOf(day, day + 24 * hour, day))
             }
+            db.execSQL("UPDATE playback_stat_bucket SET recorded_local_date = '1970-01-01' WHERE day_start_at = ?", arrayOf(firstDay))
             db.execSQL("INSERT INTO playback_stat_hour VALUES (?, 'a', 1, 900, 7)", arrayOf(firstDay + hour))
             fun addInterval(at: Long, length: Long, localHour: Int) {
                 db.execSQL("INSERT INTO playback_listening_interval (identity_key,start_at,end_at,local_hour,epoch_started_at) " +
@@ -76,6 +77,20 @@ class DatabaseUpgradeInstrumentedTest {
                 assertTrue(it.moveToFirst())
                 assertEquals(2, it.getInt(0))
                 assertEquals(4, it.getInt(1))
+            }
+            db.query("SELECT recorded_local_date FROM playback_stat_hour ORDER BY hour_start_at").use { rows ->
+                assertTrue(rows.moveToFirst())
+                assertEquals("1970-01-01", rows.getString(0))
+                assertTrue(rows.moveToNext())
+                assertTrue(rows.isNull(0))
+            }
+            db.query("SELECT recorded_local_date FROM playback_listening_interval ORDER BY start_at").use { rows ->
+                repeat(3) {
+                    assertTrue(rows.moveToNext())
+                    assertEquals("1970-01-01", rows.getString(0))
+                }
+                assertTrue(rows.moveToNext())
+                assertTrue(rows.isNull(0))
             }
         }
     }

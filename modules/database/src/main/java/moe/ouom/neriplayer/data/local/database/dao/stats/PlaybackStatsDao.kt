@@ -50,14 +50,14 @@ interface PlaybackStatsDao {
     @Query(
         "UPDATE playback_listening_interval SET end_at = :end WHERE id = (SELECT id FROM playback_listening_interval " +
             "WHERE identity_key = :key AND end_at = :start AND local_hour = :hour AND epoch_started_at = :epoch " +
-            "AND start_at >= :end - $MAX_PLAYBACK_LISTENING_INTERVAL_MS LIMIT 1)"
+            "AND recorded_local_date IS :recordedDate AND start_at >= :end - $MAX_PLAYBACK_LISTENING_INTERVAL_MS LIMIT 1)"
     )
-    suspend fun extendListeningInterval(key: String, start: Long, end: Long, hour: Int, epoch: Long): Int
+    suspend fun extendListeningInterval(key: String, start: Long, end: Long, hour: Int, epoch: Long, recordedDate: String?): Int
 
     @Transaction
     suspend fun appendListeningInterval(interval: PlaybackListeningIntervalEntity) {
         if (extendListeningInterval(interval.identityKey, interval.startAt, interval.endAt,
-                interval.localHour, interval.epochStartedAt) == 0) {
+                interval.localHour, interval.epochStartedAt, interval.recordedLocalDate) == 0) {
             insertListeningInterval(interval)
         }
     }

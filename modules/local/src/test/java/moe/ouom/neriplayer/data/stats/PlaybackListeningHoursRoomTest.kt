@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
+import java.util.TimeZone
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStore
@@ -17,9 +18,11 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackListeningHoursRoomTest {
-    @Test fun clipsActualIntervalsAtUtcMidnightWhileKeepingTheOriginalLocalHour() = runTest {
+    @Test fun groupsWholeDaysByRecordingDateAndClipsShorterRangesByInstant() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java).build()
+        val previousZone = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
         try {
             val store = PlaybackStatsRoomStore(database)
             store.importLegacyAndPromote(emptyList(), emptyList(), PlaybackStatsSyncCounterSnapshot(), 0, 0)
@@ -36,8 +39,8 @@ class PlaybackListeningHoursRoomTest {
                 assertEquals(hours[5], hours.sum())
                 return hours[5]
             }
-            assertEquals(15 * minute, duration(midnight, midnight + 86_400_000))
-            assertEquals(15 * minute, duration(midnight - 86_400_000, midnight))
+            assertEquals(30 * minute, duration(midnight, midnight + 86_400_000))
+            assertEquals(0L, duration(midnight - 86_400_000, midnight))
             assertEquals(2 * minute, duration(midnight - minute, midnight + minute))
             assertEquals(0L, duration(midnight - 15 * minute, midnight - 5 * minute))
             assertEquals(30 * minute, repo.readHourlyListening(PlaybackStatsQuery()).sum())
@@ -46,11 +49,13 @@ class PlaybackListeningHoursRoomTest {
                 rows.moveToFirst()
                 assertEquals(2, rows.getInt(0))
             }
-            db.execSQL("INSERT INTO playback_stat_hour VALUES (?, ?, 5, 9000, 0)",
+            db.execSQL("INSERT INTO playback_stat_hour (hour_start_at, identity_key, local_hour, listened_ms, epoch_started_at) " +
+                "VALUES (?, ?, 5, 9000, 0)",
                 arrayOf<Any>(midnight - 30 * minute, song.toStatisticsMetadata().identityKey))
-            assertEquals(15 * minute, duration(midnight, midnight + 86_400_000))
-            assertEquals(15 * minute + 9000, duration(midnight - 86_400_000, midnight))
+            assertEquals(30 * minute, duration(midnight, midnight + 86_400_000))
+            assertEquals(9000L, duration(midnight - 86_400_000, midnight))
         } finally {
+            TimeZone.setDefault(previousZone)
             database.close()
         }
     }

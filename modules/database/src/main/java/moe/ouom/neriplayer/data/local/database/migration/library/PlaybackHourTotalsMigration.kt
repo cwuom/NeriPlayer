@@ -15,8 +15,22 @@ internal object PlaybackHourTotalsMigration : Migration(23, 24) {
             db.execSQL("ALTER TABLE $table ADD COLUMN hourly_totals TEXT NOT NULL DEFAULT '[]'")
             db.execSQL("ALTER TABLE $table ADD COLUMN local_hourly_totals TEXT NOT NULL DEFAULT '[]'")
         }
+        addRecordedDate(db, "playback_stat_hour", "hour_start_at", "listened_ms > 0")
+        addRecordedDate(db, "playback_listening_interval", "start_at", "end_at > start_at")
         copyObservedHours(db, historicalSource(db))
     }
+
+    private fun addRecordedDate(db: SupportSQLiteDatabase, table: String, timestamp: String, measured: String) {
+        db.execSQL("ALTER TABLE $table ADD COLUMN recorded_local_date TEXT")
+        val date = matchingBucketValue("recorded_local_date", "$table.identity_key", "$table.$timestamp")
+        db.execSQL("UPDATE $table SET recorded_local_date = ($date) WHERE $measured AND epoch_started_at >= 0 " +
+            "AND $timestamp >= 0 AND local_hour BETWEEN 0 AND 23")
+    }
+
+    private fun matchingBucketValue(column: String, identity: String, observedAt: String) =
+        "SELECT k.$column FROM playback_stat_bucket k WHERE k.identity_key = $identity " +
+            "AND k.day_start_at BETWEEN $observedAt - $DAY_SEARCH_MS AND $observedAt " +
+            "AND k.last_played_at >= $observedAt ORDER BY k.day_start_at DESC LIMIT 1"
 
     // 已参与同步的数据库副本共享这个标识，可识别两台设备上相同的历史明细
     private fun historicalSource(db: SupportSQLiteDatabase): String {
@@ -69,12 +83,7 @@ internal object PlaybackHourTotalsMigration : Migration(23, 24) {
                 CASE WHEN o.is_interval = 1 THEN o.observed_at - ((o.observed_at - b.day_start_at) % $HOUR_MS)
                      ELSE o.observed_at END AS hour_partition
             FROM observations o JOIN playback_stat_bucket b ON b.identity_key = o.identity_key
-                AND b.day_start_at = (
-                    SELECT MAX(k.day_start_at) FROM playback_stat_bucket k
-                    WHERE k.identity_key = o.identity_key
-                      AND k.day_start_at BETWEEN o.observed_at - $DAY_SEARCH_MS AND o.observed_at
-                      AND k.last_played_at >= o.observed_at
-                )
+                AND b.day_start_at = (${matchingBucketValue("day_start_at", "o.identity_key", "o.observed_at")})
             WHERE o.epoch >= 0 AND o.observed_at >= 0 AND o.local_hour BETWEEN 0 AND 23
         ), totals AS (
             SELECT day, identity_key, epoch, MIN(observed_at) AS hour_start, local_hour,

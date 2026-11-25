@@ -51,7 +51,7 @@ class PlaybackHourTotalsMigrationTest {
         val zone = ZoneId.of("Australia/Lord_Howe")
         fun at(hour: Int, minute: Int) = day.atTime(hour, minute).atZone(zone).toInstant().toEpochMilli()
         val hours = migratedBuckets(null) { db ->
-            db.execSQL("INSERT INTO playback_stat_bucket VALUES (?,'a',?,90)", arrayOf(at(0, 0), at(4, 0)))
+            db.execSQL("INSERT INTO playback_stat_bucket VALUES (?,'a',?,90,'2024-10-06')", arrayOf(at(0, 0), at(4, 0)))
             fun addInterval(hour: Int, minute: Int, duration: Long) {
                 val start = at(hour, minute)
                 db.execSQL("INSERT INTO playback_listening_interval VALUES ('a',0,?,?,?)", arrayOf<Any>(start, start + duration, hour))
@@ -65,15 +65,32 @@ class PlaybackHourTotalsMigrationTest {
         assertEquals(80L, hours.filter { it.hourStartAt in at(3, 0) until at(4, 0) }.sumOf { it.totalListenMs })
     }
 
+    @Test
+    fun onlyTheMatchingBucketCanSupplyTheOriginalRecordingDate() {
+        migratedBuckets(null, afterMigration = { db ->
+            fun recordedDates(table: String, orderBy: String) =
+                db.query("SELECT recorded_local_date FROM $table ORDER BY $orderBy").use { rows ->
+                    buildList { while (rows.moveToNext()) add(if (rows.isNull(0)) null else rows.getString(0)) }
+                }
+            assertEquals(listOf("1970-01-01", null, null), recordedDates("playback_stat_hour", "hour_start_at"))
+            assertEquals(listOf("1970-01-01", null, null), recordedDates("playback_listening_interval", "start_at"))
+        }) { db ->
+            db.execSQL("INSERT INTO playback_stat_bucket VALUES (0,'a',86419000,90,'1970-01-01'),(86400000,'a',86419000,90,NULL)")
+            db.execSQL("INSERT INTO playback_stat_hour VALUES ('a',0,0,0,10),('a',0,86400000,0,10),('missing',0,90000000,1,10)")
+            db.execSQL("INSERT INTO playback_listening_interval VALUES ('a',0,100,110,0),('a',0,86400100,86400110,0),('missing',0,90000100,90000110,1)")
+        }
+    }
+
     private fun migratedBuckets(
         instance: String?,
+        afterMigration: (SupportSQLiteDatabase) -> Unit = {},
         populate: (SupportSQLiteDatabase) -> Unit = ::addExampleHistory
     ): List<List<SyncPlaybackHourTotal>> {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val config = SupportSQLiteOpenHelper.Configuration.builder(context).callback(object : SupportSQLiteOpenHelper.Callback(23) {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE migration_metadata (key TEXT PRIMARY KEY, value TEXT)")
-                db.execSQL("CREATE TABLE playback_stat_bucket (day_start_at INTEGER, identity_key TEXT, last_played_at INTEGER, total_listen_ms INTEGER)")
+                db.execSQL("CREATE TABLE playback_stat_bucket (day_start_at INTEGER, identity_key TEXT, last_played_at INTEGER, total_listen_ms INTEGER, recorded_local_date TEXT)")
                 db.execSQL("CREATE TABLE playback_stat_snapshot_bucket (snapshot_id TEXT)")
                 db.execSQL("CREATE TABLE playback_stat_hour (identity_key TEXT, epoch_started_at INTEGER, hour_start_at INTEGER, local_hour INTEGER, listened_ms INTEGER)")
                 db.execSQL("CREATE TABLE playback_listening_interval (identity_key TEXT, epoch_started_at INTEGER, start_at INTEGER, end_at INTEGER, local_hour INTEGER)")
@@ -87,6 +104,7 @@ class PlaybackHourTotalsMigrationTest {
             if (instance != null) db.execSQL("INSERT INTO migration_metadata VALUES ('playback_stats_capture_database_instance', ?)", arrayOf(instance))
             populate(db)
             PlaybackHourTotalsMigration.migrate(db)
+            afterMigration(db)
             db.query("SELECT hourly_totals, local_hourly_totals, total_listen_ms FROM playback_stat_bucket ORDER BY day_start_at, identity_key").use { cursor ->
                 buildList {
                     while (cursor.moveToNext()) {
@@ -100,7 +118,7 @@ class PlaybackHourTotalsMigrationTest {
     }
 
     private fun addExampleHistory(db: SupportSQLiteDatabase) {
-        db.execSQL("INSERT INTO playback_stat_bucket VALUES (0,'a',4000000,90),(0,'b',5000,90),(86400000,'a',86409000,90),(86400000,'c',86409000,90)")
+        db.execSQL("INSERT INTO playback_stat_bucket VALUES (0,'a',4000000,90,NULL),(0,'b',5000,90,NULL),(86400000,'a',86409000,90,NULL),(86400000,'c',86409000,90,NULL)")
         db.execSQL("INSERT INTO playback_stat_hour VALUES ('a',0,0,0,10),('a',0,3600000,1,15),('b',0,0,0,20)")
         db.execSQL("INSERT INTO playback_listening_interval VALUES ('a',0,86408000,86408030,0)")
     }

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.local.database.store.stats
 import java.time.Instant
 import java.time.ZoneId
 import androidx.sqlite.db.SimpleSQLiteQuery
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsTimeRange
 import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.stats.PlaybackStatsCursor
 import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
@@ -10,7 +11,8 @@ import moe.ouom.neriplayer.data.stats.PlaybackStatsSort
 import moe.ouom.neriplayer.data.local.database.entity.stats.MAX_PLAYBACK_LISTENING_INTERVAL_MS
 
 internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasBuckets: Boolean, hasLegacyStats: Boolean = !hasBuckets) {
-    private val range = query.resolvedRange
+    val range = query.resolvedRange
+    val hourDates by lazy(LazyThreadSafetyMode.NONE) { range.completeCivilDates() }
     private val allTime = range.startInclusive == null && range.endExclusive == Long.MAX_VALUE
     val usesLegacyBreakdown = !allTime && hasLegacyStats
     private val arguments = mutableListOf<Any>()
@@ -30,23 +32,35 @@ internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasB
 
     fun hourlyListening(): SimpleSQLiteQuery {
         val start = range.startInclusive ?: Long.MIN_VALUE
-        val earliestIntervalStart = start.coerceAtLeast(0L) - MAX_PLAYBACK_LISTENING_INTERVAL_MS
-        val params = mutableListOf<Any>(start, range.endExclusive, earliestIntervalStart)
+        val end = range.endExclusive
+        val dates = hourDates
+        val scan = if (dates == null) (start.coerceAtLeast(0L) - MAX_PLAYBACK_LISTENING_INTERVAL_MS) to end
+            else candidateDayBounds(start, end)
+        val params = mutableListOf<Any>(start, end, scan.first, scan.second)
+        val dateBounds = if (dates == null) "" else {
+            params.add(dates.first)
+            params.add(dates.second)
+            ", ? AS first_day, ? AS until_day"
+        }
         val tracks = if (query.minimumListenMs > 0 || query.requirePlayCount) {
-            params.addAll(arguments)
-            params.add(query.minimumListenMs)
+            params.addAll(filteredArguments())
             " AND identity_key IN (SELECT identity_key FROM ($source) WHERE $filter)"
         } else ""
-        // 旧小时桶只能按整点筛选，新区间按实际相交的毫秒数计入
+        fun selectRange(absolute: String): String = if (dates == null) absolute else
+            "((recorded_local_date >= first_day AND recorded_local_date < until_day) OR (recorded_local_date IS NULL AND $absolute))"
+        val clipped = "MIN(end_at, until_ms) - MAX(start_at, from_ms)"
+        val duration = if (dates == null) clipped else
+            "CASE WHEN recorded_local_date IS NULL THEN $clipped ELSE end_at - start_at END"
         val sql = """
-            WITH bounds AS (SELECT ? AS from_ms, ? AS until_ms, ? AS earliest_start),
+            WITH bounds AS (SELECT ? AS from_ms, ? AS until_ms, ? AS scan_from, ? AS scan_until$dateBounds),
             slices AS (
                 SELECT identity_key, local_hour, listened_ms FROM bounds CROSS JOIN playback_stat_hour
-                WHERE hour_start_at >= from_ms AND hour_start_at < until_ms
+                WHERE hour_start_at >= scan_from AND hour_start_at < scan_until
+                    AND ${selectRange("hour_start_at >= from_ms AND hour_start_at < until_ms")}
                 UNION ALL
-                SELECT identity_key, local_hour, MIN(end_at, until_ms) - MAX(start_at, from_ms) AS listened_ms
-                FROM bounds CROSS JOIN playback_listening_interval
-                WHERE start_at >= earliest_start AND start_at < until_ms AND end_at > from_ms
+                SELECT identity_key, local_hour, $duration AS listened_ms FROM bounds CROSS JOIN playback_listening_interval
+                WHERE start_at >= scan_from AND start_at < scan_until
+                    AND ${selectRange("start_at < until_ms AND end_at > from_ms")}
             ),
             hours AS (
                 SELECT local_hour, SUM(listened_ms >> 32) AS hi, SUM(listened_ms & 4294967295) AS lo
@@ -60,18 +74,27 @@ internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasB
     fun filteredTracksSql(): String = "SELECT * FROM ($source) WHERE $filter"
 
     fun syncedHourBuckets(): SimpleSQLiteQuery {
-        // 录制地日期在换线或夏令时调整时可能长于 24 小时
-        val earliestDay = (range.startInclusive ?: 0L).coerceAtLeast(0L) - java.time.Duration.ofDays(2).toMillis()
-        val params = mutableListOf<Any>(earliestDay, range.endExclusive)
+        val bounds = candidateDayBounds(range.startInclusive ?: Long.MIN_VALUE, range.endExclusive)
+        val params = mutableListOf<Any>(bounds.first, bounds.second)
         val tracks = if (query.minimumListenMs > 0 || query.requirePlayCount) {
             params.addAll(filteredArguments())
             " AND identity_key IN (SELECT identity_key FROM ($source) WHERE $filter)"
         } else ""
         return SimpleSQLiteQuery(
-            "SELECT hourly_totals, local_hourly_totals FROM playback_stat_bucket " +
-                "WHERE day_start_at >= ? AND day_start_at < ? AND hourly_totals != '[]' AND hourly_totals != local_hourly_totals$tracks",
+            "SELECT hourly_totals, local_hourly_totals, day_start_at, identity_key, recorded_local_date " +
+                "FROM playback_stat_bucket WHERE day_start_at >= ? AND day_start_at < ? AND hourly_totals != '[]' AND hourly_totals != local_hourly_totals$tracks",
             params.toTypedArray()
         )
+    }
+
+    fun differingHourShardDates(): SimpleSQLiteQuery {
+        val bounds = candidateDayBounds(range.startInclusive ?: Long.MIN_VALUE, range.endExclusive)
+        return SimpleSQLiteQuery("""
+            SELECT c.day_start_at, c.identity_key, c.device_id, c.epoch_started_at, c.recorded_local_date
+            FROM playback_stat_daily_counter_shard c JOIN playback_stat_bucket b USING (day_start_at, identity_key)
+            WHERE c.day_start_at >= ? AND c.day_start_at < ?
+                AND c.recorded_local_date IS NOT b.recorded_local_date AND b.hourly_totals != b.local_hourly_totals
+        """.trimIndent(), arrayOf(bounds.first, bounds.second))
     }
 
     fun filteredArguments(): List<Any> = arguments + query.minimumListenMs
@@ -167,13 +190,26 @@ private fun PlaybackStatsSort.sqlColumn(): String = when (this) {
 // 两端设备的当地午夜最多相差一天多，先用时间戳索引限流，再筛选录制日期
 private const val DATE_LINE_MARGIN_MS = 2 * 24 * 60 * 60 * 1000L
 
+private fun candidateDayBounds(start: Long, end: Long): Pair<Long, Long> =
+    (start.coerceAtLeast(Long.MIN_VALUE + DATE_LINE_MARGIN_MS) - DATE_LINE_MARGIN_MS) to
+        (end.coerceAtMost(Long.MAX_VALUE - DATE_LINE_MARGIN_MS) + DATE_LINE_MARGIN_MS)
+
 internal fun dayBucketBounds(start: Long, end: Long): List<Any> {
     val zone = ZoneId.systemDefault()
-    return listOf(
-        start.coerceAtLeast(Long.MIN_VALUE + DATE_LINE_MARGIN_MS) - DATE_LINE_MARGIN_MS,
-        end.coerceAtMost(Long.MAX_VALUE - DATE_LINE_MARGIN_MS) + DATE_LINE_MARGIN_MS,
-        start, end, civilMidnightBound(start, zone), civilMidnightBound(end, zone)
-    )
+    val bounds = candidateDayBounds(start, end)
+    return listOf(bounds.first, bounds.second, start, end, civilMidnightBound(start, zone), civilMidnightBound(end, zone))
+}
+
+private fun PlaybackStatsTimeRange.completeCivilDates(): Pair<String, String>? {
+    val start = startInclusive ?: return null
+    if (start >= endExclusive) return null
+    val zone = ZoneId.systemDefault()
+    fun midnightDate(millis: Long): String? {
+        val instant = Instant.ofEpochMilli(millis)
+        val day = instant.atZone(zone).toLocalDate()
+        return day.toString().takeIf { day.atStartOfDay(zone).toInstant() == instant }
+    }
+    return (midnightDate(start) ?: return null) to (midnightDate(endExclusive) ?: return null)
 }
 
 private fun civilMidnightBound(millis: Long, zone: ZoneId): String {

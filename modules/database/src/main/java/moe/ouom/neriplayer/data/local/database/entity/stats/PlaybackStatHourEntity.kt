@@ -14,5 +14,6 @@ data class PlaybackStatHourEntity(
     @ColumnInfo(name = "identity_key") val identityKey: String,
     @ColumnInfo(name = "local_hour") val localHour: Int,
     @ColumnInfo(name = "listened_ms") val listenedMs: Long,
-    @ColumnInfo(name = "epoch_started_at") val epochStartedAt: Long
+    @ColumnInfo(name = "epoch_started_at") val epochStartedAt: Long,
+    @ColumnInfo(name = "recorded_local_date") val recordedLocalDate: String? = null
 )

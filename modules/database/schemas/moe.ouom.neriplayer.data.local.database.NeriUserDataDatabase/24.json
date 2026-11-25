@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 24,
-    "identityHash": "143fc2eb9b9eec10c1ba7af92995aee2",
+    "identityHash": "1be77f08654bd2d41e36ef27d12734b7",
     "entities": [
       {
         "tableName": "local_playlist",
@@ -2058,7 +2058,7 @@
       },
       {
         "tableName": "playback_stat_hour",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`hour_start_at` INTEGER NOT NULL, `identity_key` TEXT NOT NULL, `local_hour` INTEGER NOT NULL, `listened_ms` INTEGER NOT NULL, `epoch_started_at` INTEGER NOT NULL, PRIMARY KEY(`hour_start_at`, `identity_key`, `local_hour`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`hour_start_at` INTEGER NOT NULL, `identity_key` TEXT NOT NULL, `local_hour` INTEGER NOT NULL, `listened_ms` INTEGER NOT NULL, `epoch_started_at` INTEGER NOT NULL, `recorded_local_date` TEXT, PRIMARY KEY(`hour_start_at`, `identity_key`, `local_hour`))",
         "fields": [
           {
             "fieldPath": "hourStartAt",
@@ -2089,6 +2089,11 @@
             "columnName": "epoch_started_at",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "recordedLocalDate",
+            "columnName": "recorded_local_date",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -2113,7 +2118,7 @@
       },
       {
         "tableName": "playback_listening_interval",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `identity_key` TEXT NOT NULL, `start_at` INTEGER NOT NULL, `end_at` INTEGER NOT NULL, `local_hour` INTEGER NOT NULL, `epoch_started_at` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `identity_key` TEXT NOT NULL, `start_at` INTEGER NOT NULL, `end_at` INTEGER NOT NULL, `local_hour` INTEGER NOT NULL, `epoch_started_at` INTEGER NOT NULL, `recorded_local_date` TEXT)",
         "fields": [
           {
             "fieldPath": "id",
@@ -2150,6 +2155,11 @@
             "columnName": "epoch_started_at",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "recordedLocalDate",
+            "columnName": "recorded_local_date",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -4096,7 +4106,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '143fc2eb9b9eec10c1ba7af92995aee2')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1be77f08654bd2d41e36ef27d12734b7')"
     ]
   }
 }
