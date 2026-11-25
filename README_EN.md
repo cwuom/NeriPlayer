@@ -221,11 +221,13 @@ Download the APK for your device architecture from the [latest stable release](h
 | `x86` / `x86_64` | Desktop emulators, Intel devices, or Chromebooks |
 
 > [!IMPORTANT]
-> Stable releases are published manually after a batch of features is finished and may contain undiscovered issues.
+> We publish stable releases manually once a batch of features is complete and passes testing. Some issues may still go undetected.
 
 ### b. Download a Nightly prerelease
 
 Choose a prerelease marked **Nightly** on [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases). Each Nightly includes a signed APK for each of the four architectures listed above. CI checks the latest commit on the default branch daily at 22:00 (UTC+8) and publishes at most one Nightly per commit.
+
+If you run into a problem with a Nightly prerelease, you’re welcome to [report it anytime](https://github.com/cwuom/NeriPlayer/issues/new?template=bug-report.yml). Include the build version and steps to reproduce the problem so we can investigate.
 
 ### c. Download a CI build
 
