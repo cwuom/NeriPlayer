@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -121,7 +122,7 @@ fun SafeModeScreen(
             title = { Text(stringResource(AppR.string.safe_mode_reset_login_confirm_title)) },
             text = { Text(stringResource(AppR.string.safe_mode_reset_login_confirm_message)) },
             confirmButton = {
-                TextButton(
+                DialogActionTextButton(
                     enabled = !busy,
                     onClick = {
                         scope.launch {
@@ -166,7 +167,7 @@ fun SafeModeScreen(
             title = { Text(stringResource(AppR.string.safe_mode_reset_settings_confirm_title)) },
             text = { Text(stringResource(AppR.string.safe_mode_reset_settings_confirm_message)) },
             confirmButton = {
-                TextButton(
+                DialogActionTextButton(
                     enabled = !busy,
                     onClick = {
                         scope.launch {

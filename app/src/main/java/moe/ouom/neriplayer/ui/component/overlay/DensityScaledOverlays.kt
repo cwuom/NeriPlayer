@@ -36,6 +36,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -102,7 +104,7 @@ internal fun DensityScaledAlertDialog(
         properties == null -> Modifier.imePadding()
         else -> Modifier
     }
-    val dialogModifier = safeSurface.scaleOverlaySurfaceWidth(surfaceScale).then(modifier)
+    val dialogModifier = safeSurface.scaleOverlaySurfaceWidth(surfaceScale, windowProperties).then(modifier)
     if (isClean) {
         CleanAlertDialog(
             onDismissRequest = onDismissRequest,
@@ -135,7 +137,7 @@ internal fun DensityScaledAlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = localizedWindowContent {
             ApplyOverlayWindowNavigationBarPolicy()
-            confirmButton()
+            CompositionLocalProvider(LocalDialogButtonSlot provides DialogButtonSlot.Confirm, content = confirmButton)
         },
         modifier = dialogModifier,
         dismissButton = if (localizedNeutralButton != null) {
@@ -249,21 +251,29 @@ internal fun DensityScaledModalBottomSheet(
     }
 }
 
-private fun Modifier.scaleOverlaySurfaceWidth(surfaceScale: Float): Modifier {
+@Composable
+private fun Modifier.scaleOverlaySurfaceWidth(surfaceScale: Float, properties: DialogProperties): Modifier {
     if (!shouldScaleOverlaySurface(surfaceScale)) {
         return this
     }
-    return layout { measurable, constraints ->
-        val scaledConstraints = constraints.copy(
-            maxWidth = resolveScaledOverlaySurfaceMaxWidth(
-                availableWidthPx = constraints.maxWidth,
-                minimumWidthPx = constraints.minWidth,
-                surfaceScale = surfaceScale
-            )
-        )
-        val placeable = measurable.measure(scaledConstraints)
-        layout(placeable.width, placeable.height) {
-            placeable.placeRelative(0, 0)
+    val hostWidth = LocalWindowInfo.current.containerSize.width
+    val widthModifier = remember(
+        hostWidth, LocalDensity.current, surfaceScale, properties.usePlatformDefaultWidth,
+        properties.decorFitsSystemWindows
+    ) {
+        var unscaledWidth = 0
+        Modifier.layout { measurable, constraints ->
+            val width = if (constraints.hasBoundedWidth) {
+                // 浮窗重测时可能传回卡片已缩放的宽度，同一宿主宽度只应用一次缩放
+                unscaledWidth = maxOf(unscaledWidth, constraints.maxWidth)
+                resolveScaledOverlaySurfaceMaxWidth(unscaledWidth, constraints.minWidth, surfaceScale)
+                    .coerceAtMost(constraints.maxWidth)
+            } else constraints.maxWidth
+            val placeable = measurable.measure(constraints.copy(maxWidth = width))
+            layout(placeable.width, placeable.height) {
+                placeable.placeRelative(0, 0)
+            }
         }
     }
+    return then(widthModifier)
 }

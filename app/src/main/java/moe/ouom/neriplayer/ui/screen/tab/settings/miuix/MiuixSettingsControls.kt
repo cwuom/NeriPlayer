@@ -58,7 +58,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -79,6 +78,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import moe.ouom.neriplayer.ui.component.overlay.DialogButtonSlot
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
 import moe.ouom.neriplayer.ui.component.overlay.LocalDialogButtonSlot
 import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.component.overlay.useCompactAlertLayout
@@ -207,7 +207,7 @@ internal fun MiuixSettingsTextButton(
     text: @Composable () -> Unit
 ) {
     val context = LocalContext.current
-    TextButton(
+    DialogActionTextButton(
         onClick = {
             context.performHapticFeedback()
             onClick()
@@ -215,11 +215,6 @@ internal fun MiuixSettingsTextButton(
         modifier = modifier.dialogSlotButtonSize(40.dp),
         enabled = enabled,
         shape = buttonShape,
-        colors = ButtonDefaults.textButtonColors(
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary,
-            disabledContainerColor = Color.Transparent
-        ),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
     ) {
         text()
