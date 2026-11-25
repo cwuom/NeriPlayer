@@ -15,12 +15,19 @@ internal object PlaybackHourTotalsMigration : Migration(23, 24) {
             db.execSQL("ALTER TABLE $table ADD COLUMN hourly_totals TEXT NOT NULL DEFAULT '[]'")
             db.execSQL("ALTER TABLE $table ADD COLUMN local_hourly_totals TEXT NOT NULL DEFAULT '[]'")
         }
-        // 已参与同步的数据库副本共享这个标识，可识别两台设备上相同的历史明细
+        copyObservedHours(db, historicalSource(db))
+    }
+
+    // 已参与同步的数据库副本共享这个标识，可识别两台设备上相同的历史明细
+    private fun historicalSource(db: SupportSQLiteDatabase): String {
         val previousInstance = db.query("SELECT value FROM migration_metadata WHERE key = 'playback_stats_capture_database_instance'").use {
             if (it.moveToFirst()) it.getString(0) else null
         }
         val instance = previousInstance?.let { runCatching { UUID.fromString(it) }.getOrNull() } ?: UUID.randomUUID()
-        val device = "legacy-hour-$instance"
+        return "legacy-hour-$instance"
+    }
+
+    private fun copyObservedHours(db: SupportSQLiteDatabase, device: String) {
         db.query(observedHours()).use { cursor ->
             val totals = mutableListOf<SyncPlaybackHourTotal>()
             var day = 0L
@@ -49,7 +56,7 @@ internal object PlaybackHourTotalsMigration : Migration(23, 24) {
         }
     }
 
-    // 保留旧小时桶的绝对整点。旧区间已按录制地的小时切分，用该曲目的日桶作整点锚点
+    // 旧区间没有时区，日桶午夜只用于区分回拨前后的小时，记录时间取自实际观测
     private fun observedHours() = """
         WITH observations(identity_key, epoch, observed_at, local_hour, duration, is_interval) AS (
             SELECT identity_key, epoch_started_at, hour_start_at, local_hour, listened_ms, 0
@@ -58,9 +65,9 @@ internal object PlaybackHourTotalsMigration : Migration(23, 24) {
             SELECT identity_key, epoch_started_at, start_at, local_hour, end_at - start_at, 1
             FROM playback_listening_interval WHERE end_at > start_at
         ), matched AS (
-            SELECT b.day_start_at AS day, o.identity_key, o.epoch, o.local_hour, o.duration,
+            SELECT b.day_start_at AS day, o.identity_key, o.epoch, o.local_hour, o.duration, o.observed_at,
                 CASE WHEN o.is_interval = 1 THEN o.observed_at - ((o.observed_at - b.day_start_at) % $HOUR_MS)
-                     ELSE o.observed_at END AS hour_start
+                     ELSE o.observed_at END AS hour_partition
             FROM observations o JOIN playback_stat_bucket b ON b.identity_key = o.identity_key
                 AND b.day_start_at = (
                     SELECT MAX(k.day_start_at) FROM playback_stat_bucket k
@@ -70,9 +77,9 @@ internal object PlaybackHourTotalsMigration : Migration(23, 24) {
                 )
             WHERE o.epoch >= 0 AND o.observed_at >= 0 AND o.local_hour BETWEEN 0 AND 23
         ), totals AS (
-            SELECT day, identity_key, epoch, hour_start, local_hour,
+            SELECT day, identity_key, epoch, MIN(observed_at) AS hour_start, local_hour,
                 SUM(duration >> 32) AS hi, SUM(duration & 4294967295) AS lo
-            FROM matched GROUP BY day, identity_key, epoch, hour_start, local_hour
+            FROM matched GROUP BY day, identity_key, epoch, hour_partition, local_hour
         )
         SELECT day, identity_key, epoch, hour_start, local_hour,
             CASE WHEN hi + (lo >> 32) > 2147483647 THEN 9223372036854775807

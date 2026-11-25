@@ -49,6 +49,7 @@ class DatabaseUpgradeInstrumentedTest {
             }
             addInterval(firstDay + hour + 2000, 100, 1)
             addInterval(firstDay + 2 * hour + 2000, 500, 1)
+            addInterval(firstDay + 2 * hour + 8000, 75, 1)
             addInterval(nextDay + 500, 300, 0)
             db.execSQL("INSERT INTO playback_stat_hour VALUES (?, 'unmatched', 11, 600, 7)", arrayOf(nextDay))
         }
@@ -58,14 +59,14 @@ class DatabaseUpgradeInstrumentedTest {
                 val first = PlaybackHourTotalsCodec.decode(rows.getString(0))
                 assertEquals(rows.getString(0), rows.getString(1))
                 assertEquals(90000L, rows.getLong(2))
-                assertEquals(listOf(1000L, 500L), first.map { it.totalListenMs })
-                assertEquals(listOf(firstDay + hour, firstDay + 2 * hour), first.map { it.hourStartAt })
+                assertEquals(listOf(1000L, 575L), first.map { it.totalListenMs })
+                assertEquals(listOf(firstDay + hour, firstDay + 2 * hour + 2000), first.map { it.hourStartAt })
                 assertEquals(listOf(1, 1), first.map { it.localHour })
                 assertTrue(rows.moveToNext())
                 val second = PlaybackHourTotalsCodec.decode(rows.getString(0)).single()
                 assertEquals(rows.getString(0), rows.getString(1))
                 assertEquals(300L, second.totalListenMs)
-                assertEquals(nextDay, second.hourStartAt)
+                assertEquals(nextDay + 500, second.hourStartAt)
                 assertEquals(0, second.localHour)
                 assertEquals(first.map { it.deviceId }.distinct(), listOf(second.deviceId))
                 assertEquals("legacy-hour-$captureInstance", second.deviceId)
@@ -74,7 +75,7 @@ class DatabaseUpgradeInstrumentedTest {
             db.query("SELECT (SELECT COUNT(*) FROM playback_stat_hour), (SELECT COUNT(*) FROM playback_listening_interval)").use {
                 assertTrue(it.moveToFirst())
                 assertEquals(2, it.getInt(0))
-                assertEquals(3, it.getInt(1))
+                assertEquals(4, it.getInt(1))
             }
         }
     }
