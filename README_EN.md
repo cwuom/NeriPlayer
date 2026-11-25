@@ -12,8 +12,8 @@
   <a href="https://github.com/cwuom/NeriPlayer/releases">
     <img alt="Downloads" src="https://img.shields.io/github/downloads/cwuom/NeriPlayer/total?style=social" />
   </a>
-  <a href="https://github.com/cwuom/NeriPlayer/releases">
-    <img alt="Release" src="https://img.shields.io/github/v/release/cwuom/NeriPlayer?include_prereleases&label=Release" />
+  <a href="https://github.com/cwuom/NeriPlayer/releases/latest">
+    <img alt="Stable release" src="https://img.shields.io/github/v/release/cwuom/NeriPlayer?label=Release" />
   </a>
   <img alt="Android 9+" src="https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&logoColor=white" />
   <a href="https://t.me/ouom_pub">
@@ -210,9 +210,9 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 
 ## Getting Started
 
-### a. Download a Release build (recommended)
+### a. Download the stable release (recommended)
 
-Go to [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases) and download the APK for your device architecture.
+Download the APK for your device architecture from the [latest stable release](https://github.com/cwuom/NeriPlayer/releases/latest).
 
 | APK Architecture (ABI) | Target Devices |
 | :--- | :--- |
@@ -221,16 +221,20 @@ Go to [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases) and downlo
 | `x86` / `x86_64` | Desktop emulators, Intel devices, or Chromebooks |
 
 > [!IMPORTANT]
-> Releases are pushed manually after a batch of features is finished and may contain undiscovered issues.
+> Stable releases are published manually after a batch of features is finished and may contain undiscovered issues.
 
-### b. Download a CI build
+### b. Download a Nightly prerelease
 
-1. Go to [GitHub Actions](https://github.com/cwuom/NeriPlayer/actions), download the Artifacts from the latest successful build, and extract them.
+Choose a prerelease marked **Nightly** on [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases). Each Nightly includes a signed APK for each of the four architectures listed above. CI checks the latest commit on the default branch daily at 22:00 (UTC+8) and publishes at most one Nightly per commit.
+
+### c. Download a CI build
+
+1. Go to [Android CI](https://github.com/cwuom/NeriPlayer/actions/workflows/android_ci.yml), download the Artifacts from the latest successful build, and extract them.
 2. Or visit [NeriPlayer CI Builds](https://t.me/neriplayer_ci).
 
-> Master CI uploads an `arm64-v8a` APK by default; the manual Release workflow builds multi-ABI APKs.
+> CI on the master branch uploads an `arm64-v8a` APK by default.
 
-### c. Local build
+### d. Local build
 
 1. Clone the repository and initialize submodules:
    ```bash
@@ -475,7 +479,7 @@ Shipped work is tracked in [Releases](https://github.com/cwuom/NeriPlayer/releas
 
 ## Contributing, Support, and License
 
-- **Contributing**: read [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md) first. Core playback, local data, sync, and recovery paths are maintained first, and Releases are pushed manually in feature batches.
+- **Contributing**: read [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md) first. Core playback, local data, sync, and recovery paths are maintained first, and stable releases are published manually in feature batches.
 - **Support**: donations are not accepted; issues, pull requests, and shared usage feedback are welcome.
 - **License**: NeriPlayer is released under **GPL-3.0**. You may use, modify, and distribute it, and modified distributions must stay under GPL-3.0. Full terms are in [LICENSE](./LICENSE).
 - **Native source license**: the [native source license note](./modules/native/src/main/cpp/README.md) grants an alternative license with attribution conditions for the NeriPlayer-owned native sources it lists. Third-party sources and unlisted content are excluded.
