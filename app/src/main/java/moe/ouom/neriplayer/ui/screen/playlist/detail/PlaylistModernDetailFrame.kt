@@ -127,6 +127,7 @@ internal fun PlaylistModernDetailFrame(
     selectionCount: Int?,
     onExitSelection: () -> Unit,
     onLocatePlaying: (() -> Unit)?,
+    searchPlaceholder: String? = null,
     modifier: Modifier = Modifier,
     listModifier: Modifier = Modifier,
     normalActions: @Composable RowScope.(Color) -> Unit = {},
@@ -146,6 +147,8 @@ internal fun PlaylistModernDetailFrame(
     val headerSearchFocused = search.headerFocused
     val dockedSearchFocused = search.dockedFocused
     val selectionMode = selectionCount != null
+    val searchPlaceholderText = searchPlaceholder
+        ?: stringResource(CoreCommonR.string.search_playlist)
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     // 按框架实际可用尺寸判断两栏, 分屏或嵌在小容器里时自动回到单列
@@ -408,7 +411,7 @@ internal fun PlaylistModernDetailFrame(
                                 PlaylistModernStableSearchField(
                                     query = searchQuery,
                                     onQueryChange = search.onQueryChange,
-                                    placeholder = stringResource(CoreCommonR.string.search_playlist),
+                                    placeholder = searchPlaceholderText,
                                     inputState = searchInputState,
                                     onFocusChanged = search.onDockedFocusChanged,
                                     focusRequester = if (searchFieldFocusInHeader) {
@@ -452,7 +455,7 @@ internal fun PlaylistModernDetailFrame(
                                                     PlaylistModernHeroSearchField(
                                                         query = searchQuery,
                                                         onQueryChange = search.onQueryChange,
-                                                        placeholder = stringResource(CoreCommonR.string.search_playlist),
+                                                        placeholder = searchPlaceholderText,
                                                         inputState = searchInputState,
                                                         onFocusChanged = {
                                                             search.onHeaderFocusChanged(it)
