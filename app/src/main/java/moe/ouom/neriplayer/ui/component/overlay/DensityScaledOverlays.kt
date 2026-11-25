@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -89,14 +90,20 @@ internal fun DensityScaledAlertDialog(
 ) {
     val surfaceScale = LocalOverlaySurfaceScale.current
     val compact = text != null && useCompactAlertLayout()
+    val isClean = NeriDesign.isClean
+    // 让系统在首帧前给 Material 浮窗定位，避免系统栏边距改变窗口高度后再次居中
     val windowProperties = properties ?: DialogProperties(
-        decorFitsSystemWindows = false,
+        decorFitsSystemWindows = !isClean,
         usePlatformDefaultWidth = !compact
     )
     // 让弹窗的可用高度跟随键盘，避免系统只平移到输入框而遮住底部操作
-    val safeSurface = if (windowProperties.decorFitsSystemWindows) Modifier else Modifier.safeDrawingPadding()
+    val safeSurface = when {
+        !windowProperties.decorFitsSystemWindows -> Modifier.safeDrawingPadding()
+        properties == null -> Modifier.imePadding()
+        else -> Modifier
+    }
     val dialogModifier = safeSurface.scaleOverlaySurfaceWidth(surfaceScale).then(modifier)
-    if (NeriDesign.isClean) {
+    if (isClean) {
         CleanAlertDialog(
             onDismissRequest = onDismissRequest,
             confirmButton = {

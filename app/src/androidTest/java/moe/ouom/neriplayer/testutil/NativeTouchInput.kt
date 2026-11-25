@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.testutil
 
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.graphics.Rect
+import android.os.Build
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyCharacterMap
@@ -102,8 +103,10 @@ internal fun ComposeTestRule.awaitAboveKeyboard(action: SemanticsNodeInteraction
             val keyboard = automation.windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
             val imeBounds = Rect().also { keyboard?.getBoundsInScreen(it) }
             lastGeometry = "screen=$button clipped=${node.boundsInRoot} size=${node.size} ime=$imeBounds"
-            val ready = ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true &&
-                !button.isEmpty && !imeBounds.isEmpty && button.bottom <= imeBounds.top &&
+            // Android 10 及以下按窗口遮挡推算 IME，浮窗避开键盘后需读取实际输入法窗口
+            val imeVisible = !imeBounds.isEmpty && (Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+                ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true)
+            val ready = imeVisible && !button.isEmpty && button.bottom <= imeBounds.top &&
                 node.boundsInRoot.height >= with(density) { 32.dp.toPx() } &&
                 node.boundsInRoot.height + 1f >= node.size.height
             // 输入法出现时浮窗还会移动，待按钮的屏幕坐标稳定后再注入触摸
