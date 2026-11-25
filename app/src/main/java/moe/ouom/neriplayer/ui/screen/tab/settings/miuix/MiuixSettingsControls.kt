@@ -37,7 +37,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -76,11 +75,10 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.unit.Dp
-import moe.ouom.neriplayer.ui.component.overlay.DialogButtonSlot
 import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
-import moe.ouom.neriplayer.ui.component.overlay.LocalDialogButtonSlot
+import moe.ouom.neriplayer.ui.component.overlay.FilledDialogActionButton
 import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
+import moe.ouom.neriplayer.ui.component.overlay.dialogSlotButtonSize
 import moe.ouom.neriplayer.ui.component.overlay.useCompactAlertLayout
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.ui.window.DialogProperties
@@ -102,15 +100,6 @@ private val CleanFieldShape = RoundedCornerShape(16.dp)
 
 private val buttonShape: Shape
     @Composable get() = if (NeriDesign.isClean) CircleShape else MiuixControlShape
-
-/** Inside a clean dialog action slot the button becomes the whole pill. */
-@Composable
-private fun Modifier.dialogSlotButtonSize(defaultHeight: Dp): Modifier =
-    if (NeriDesign.isClean && LocalDialogButtonSlot.current != DialogButtonSlot.None) {
-        fillMaxWidth().heightIn(min = 46.dp)
-    } else {
-        heightIn(min = defaultHeight)
-    }
 
 @Composable
 internal fun MiuixSettingsDialog(
@@ -148,21 +137,13 @@ internal fun MiuixSettingsButton(
     content: @Composable RowScope.() -> Unit
 ) {
     val context = LocalContext.current
-    Button(
+    FilledDialogActionButton(
         onClick = {
             context.performHapticFeedback()
             onClick()
         },
-        modifier = modifier.dialogSlotButtonSize(44.dp),
+        modifier = modifier,
         enabled = enabled,
-        shape = buttonShape,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-        ),
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
         content = content
     )
 }
