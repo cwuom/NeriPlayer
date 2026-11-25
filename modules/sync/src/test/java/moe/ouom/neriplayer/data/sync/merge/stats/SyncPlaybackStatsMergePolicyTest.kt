@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.sync.merge.stats
 
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import org.junit.Assert.assertEquals
@@ -8,6 +9,27 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncPlaybackStatsMergePolicyTest {
+    @Test
+    fun `hourly amounts converge across devices retries old peers and clear epochs`() {
+        val first = SyncPlaybackHourTotal("phone", 0, 0, 8, 14)
+        val later = first.copy(totalListenMs = 26)
+        val tablet = later.copy(deviceId = "tablet")
+        val nextEpoch = first.copy(epochStartedAt = 100, totalListenMs = 9)
+        val resetCounter = SyncPlaybackCounterShard("phone", 100, 9, 1, 105, 114)
+        val oldCounter = SyncPlaybackCounterShard("phone", 0, 26, 1, 20, 46)
+        val local = SyncPlaybackStatBucket(identityKey = "song", firstPlayedAt = 20, lastPlayedAt = 114,
+            counterShards = listOf(oldCounter, resetCounter), hourlyTotals = listOf(nextEpoch, first))
+        val remote = local.copy(hourlyTotals = listOf(tablet, later))
+        val merged = requireNotNull(SyncPlaybackStatsMergePolicy.mergeBucket(local, remote, 0))
+        assertEquals(listOf(later, nextEpoch, tablet), merged.hourlyTotals)
+        assertEquals(merged, SyncPlaybackStatsMergePolicy.mergeBucket(remote, local, 0))
+        assertEquals(merged, SyncPlaybackStatsMergePolicy.mergeBucket(merged, remote, 0))
+        assertEquals(merged, SyncPlaybackStatsMergePolicy.mergeBucket(merged, merged.copy(hourlyTotals = emptyList()), 0))
+        val afterClear = requireNotNull(SyncPlaybackStatsMergePolicy.mergeBucket(merged, remote, 100))
+        assertEquals(listOf(nextEpoch), afterClear.hourlyTotals)
+        assertEquals(9L, afterClear.totalListenMs)
+    }
+
     @Test
     fun `date line devices keep both recorded dates when merging with an old peer`() {
         fun bucket(device: String, date: String?) = SyncPlaybackStatBucket(

@@ -18,6 +18,7 @@ internal fun legacyCursor(rows: List<Map<String, Any?>>): Cursor {
     doAnswer { columns.indexOf(it.getArgument<String>(0)) }.`when`(cursor).getColumnIndex(anyString())
     doAnswer { value(it.getArgument(0)) == null }.`when`(cursor).isNull(anyInt())
     doAnswer { value(it.getArgument(0))?.toString() }.`when`(cursor).getString(anyInt())
+    doAnswer { value(it.getArgument(0)).toString().toInt() }.`when`(cursor).getInt(anyInt())
     doAnswer { value(it.getArgument(0)).toString().toLong() }.`when`(cursor).getLong(anyInt())
     doAnswer { value(it.getArgument(0)).toString().toDouble() }.`when`(cursor).getDouble(anyInt())
     doAnswer { value(it.getArgument(0)) as ByteArray }.`when`(cursor).getBlob(anyInt())

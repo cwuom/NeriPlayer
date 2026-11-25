@@ -5,6 +5,7 @@ import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
 
 @Entity(tableName = "playback_stats_snapshot")
 data class PlaybackStatsSnapshotEntity(
@@ -185,12 +186,18 @@ data class PlaybackStatsSnapshotBucketData(
     @ColumnInfo(name = "custom_cover_url")
     val customCoverUrl: String?,
     @ColumnInfo(name = "recorded_local_date")
-    val recordedLocalDate: String? = null
+    val recordedLocalDate: String? = null,
+    @ColumnInfo(name = "hourly_totals", defaultValue = "'[]'")
+    val hourlyTotals: List<SyncPlaybackHourTotal> = emptyList(),
+    @ColumnInfo(name = "local_hourly_totals", defaultValue = "'[]'")
+    val localHourlyTotals: List<SyncPlaybackHourTotal> = emptyList()
 )
 
 fun PlaybackStatBucketEntity.toSnapshotData() = PlaybackStatsSnapshotBucketData(
     dayStartAt = dayStartAt,
     recordedLocalDate = recordedLocalDate,
+    hourlyTotals = hourlyTotals,
+    localHourlyTotals = localHourlyTotals,
     identityKey = identityKey,
     id = id,
     name = name,
@@ -214,6 +221,8 @@ fun PlaybackStatBucketEntity.toSnapshotData() = PlaybackStatsSnapshotBucketData(
 fun PlaybackStatsSnapshotBucketData.toEntity() = PlaybackStatBucketEntity(
     dayStartAt = dayStartAt,
     recordedLocalDate = recordedLocalDate,
+    hourlyTotals = hourlyTotals,
+    localHourlyTotals = localHourlyTotals,
     identityKey = identityKey,
     id = id,
     name = name,

@@ -17,5 +17,6 @@ data class PlaybackListeningIntervalEntity(
     @ColumnInfo(name = "start_at") val startAt: Long,
     @ColumnInfo(name = "end_at") val endAt: Long,
     @ColumnInfo(name = "local_hour") val localHour: Int,
-    @ColumnInfo(name = "epoch_started_at") val epochStartedAt: Long
+    @ColumnInfo(name = "epoch_started_at") val epochStartedAt: Long,
+    @ColumnInfo(name = "recorded_local_date") val recordedLocalDate: String? = null
 )

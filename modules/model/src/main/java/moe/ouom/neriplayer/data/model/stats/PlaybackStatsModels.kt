@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.model.stats
 
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
+
 enum class PlaybackStatsPeriod {
     DAY,
     WEEK,
@@ -33,7 +35,8 @@ data class PlaybackStatBucket(
     val customArtist: String?,
     val customCoverUrl: String?,
     val identityKey: String,
-    val recordedLocalDate: String? = null
+    val recordedLocalDate: String? = null,
+    val hourlyTotals: List<SyncPlaybackHourTotal> = emptyList()
 )
 
 data class PlaybackStatsHotPlaylist(

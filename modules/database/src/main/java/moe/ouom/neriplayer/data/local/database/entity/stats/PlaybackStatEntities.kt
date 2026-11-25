@@ -6,6 +6,8 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
 import moe.ouom.neriplayer.data.model.stats.TrackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHours
 
 @Entity(
     tableName = "playback_stat",
@@ -116,7 +118,11 @@ data class PlaybackStatBucketEntity(
     @ColumnInfo(name = "custom_cover_url")
     val customCoverUrl: String?,
     @ColumnInfo(name = "recorded_local_date")
-    val recordedLocalDate: String? = null
+    val recordedLocalDate: String? = null,
+    @ColumnInfo(name = "hourly_totals", defaultValue = "'[]'")
+    val hourlyTotals: List<SyncPlaybackHourTotal> = emptyList(),
+    @ColumnInfo(name = "local_hourly_totals", defaultValue = "'[]'")
+    val localHourlyTotals: List<SyncPlaybackHourTotal> = emptyList()
 )
 
 @Entity(
@@ -217,6 +223,7 @@ fun PlaybackStatBucket.toEntity(): PlaybackStatBucketEntity {
     return PlaybackStatBucketEntity(
         dayStartAt = dayStartAt,
         recordedLocalDate = recordedLocalDate,
+        hourlyTotals = SyncPlaybackHours.merge(hourlyTotals),
         identityKey = identityKey,
         id = id,
         name = name,
