@@ -59,6 +59,21 @@ internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasB
 
     fun filteredTracksSql(): String = "SELECT * FROM ($source) WHERE $filter"
 
+    fun syncedHourBuckets(): SimpleSQLiteQuery {
+        // 录制地日期在换线或夏令时调整时可能长于 24 小时
+        val earliestDay = (range.startInclusive ?: 0L).coerceAtLeast(0L) - java.time.Duration.ofDays(2).toMillis()
+        val params = mutableListOf<Any>(earliestDay, range.endExclusive)
+        val tracks = if (query.minimumListenMs > 0 || query.requirePlayCount) {
+            params.addAll(filteredArguments())
+            " AND identity_key IN (SELECT identity_key FROM ($source) WHERE $filter)"
+        } else ""
+        return SimpleSQLiteQuery(
+            "SELECT hourly_totals, local_hourly_totals FROM playback_stat_bucket " +
+                "WHERE day_start_at >= ? AND day_start_at < ? AND hourly_totals != '[]' AND hourly_totals != local_hourly_totals$tracks",
+            params.toTypedArray()
+        )
+    }
+
     fun filteredArguments(): List<Any> = arguments + query.minimumListenMs
 
     fun page(after: PlaybackStatsCursor?, limit: Int, before: Boolean = false): SimpleSQLiteQuery {

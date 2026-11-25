@@ -14,6 +14,16 @@ import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatBucketEn
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatCounterShardEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatDailyCounterShardEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatEntity
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
+
+data class PlaybackBucketHoursRow(
+    val dayStartAt: Long, val identityKey: String,
+    val hourlyTotals: List<SyncPlaybackHourTotal>, val localHourlyTotals: List<SyncPlaybackHourTotal>
+)
+
+private const val STORED_BUCKET_HOURS = "SELECT day_start_at AS dayStartAt, identity_key AS identityKey, " +
+    "hourly_totals AS hourlyTotals, local_hourly_totals AS localHourlyTotals FROM playback_stat_bucket " +
+    "WHERE (hourly_totals <> '[]' OR local_hourly_totals <> '[]')"
 
 data class PlaybackStatsSummaryRow(
     val trackCount: Long,
@@ -150,6 +160,12 @@ interface PlaybackStatsDao {
 
     @Query("SELECT * FROM playback_stat_bucket WHERE day_start_at = :day AND identity_key = :key")
     suspend fun getBucket(day: Long, key: String): PlaybackStatBucketEntity?
+
+    @Query(STORED_BUCKET_HOURS)
+    suspend fun storedBucketHours(): List<PlaybackBucketHoursRow>
+
+    @Query("$STORED_BUCKET_HOURS AND identity_key IN (:keys)")
+    suspend fun storedBucketHoursForTracks(keys: List<String>): List<PlaybackBucketHoursRow>
 
     @Query("SELECT * FROM playback_stat_counter_shard WHERE identity_key = :key ORDER BY device_id, epoch_started_at")
     suspend fun getTrackCounters(key: String): List<PlaybackStatCounterShardEntity>

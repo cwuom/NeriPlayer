@@ -33,6 +33,8 @@ import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsSyncCounterSnapshot
 import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.model.stats.playbackStatsDayStartAt
+import moe.ouom.neriplayer.data.local.database.dao.stats.PlaybackBucketHoursRow
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.stats.PlaybackStatsCursor
 import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
@@ -291,16 +293,23 @@ class PlaybackStatsRoomStoreSnapshotLifecycleTest {
             dailyShardsByBucketKey = mapOf(PlaybackStatsSyncCounterSnapshot.dailyCounterKey(day, "c") to listOf(tablet))
         )
 
+        val rewritten = listOf("a", "b", "d", "e", "c")
+        val kept = SyncPlaybackHourTotal("phone", 15, day, 0, 90)
+        val stale = kept.copy(epochStartedAt = 10)
+        doReturn(listOf(PlaybackBucketHoursRow(day, "e", listOf(stale, kept), listOf(stale, kept))))
+            .`when`(stats).storedBucketHoursForTracks(rewritten)
         store.writeIncremental(previous, next, previousDaily, nextDaily, previousCounters, nextCounters,
             counterEpochStartedAt = 15, clearedAt = 12, now = 900)
 
-        val rewritten = listOf("a", "b", "d", "e", "c")
         verify(stats).deleteDailyCounterShards(rewritten)
         verify(stats).deleteCounterShards(rewritten)
         verify(stats).deleteBuckets(rewritten)
         verify(stats).deleteStats(listOf("d"))
         verify(stats).upsertStats(listOf(stat("a"), stat("b", listen = 2_000), stat("e"), stat("c")).map(TrackStat::toEntity))
-        verify(stats).upsertBuckets(listOf(bucket(day, "e", listen = 200), bucket(day, "c", listen = 300)).map(PlaybackStatBucket::toEntity))
+        verify(stats).upsertBuckets(listOf(
+            bucket(day, "e", listen = 200).toEntity().copy(hourlyTotals = listOf(kept), localHourlyTotals = listOf(kept)),
+            bucket(day, "c", listen = 300).toEntity()
+        ))
         verify(stats).upsertCounterShards(listOf(phoneNew.toTrackEntity("a")))
         verify(stats).upsertDailyCounterShards(listOf(tablet.toDailyEntity(day, "c")))
         assertEquals(

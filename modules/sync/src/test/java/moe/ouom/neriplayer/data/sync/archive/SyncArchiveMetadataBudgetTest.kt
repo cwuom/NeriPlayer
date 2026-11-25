@@ -11,6 +11,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import moe.ouom.neriplayer.data.model.sync.SyncData
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlay
@@ -144,6 +146,21 @@ class SyncArchiveMetadataBudgetTest {
         }
         assertTrue(writer.lastReferencedPaths.isEmpty())
         assertNoWorkspace(readerDirectory(writer))
+    }
+
+    @Test fun dailyHourDetailsCountTowardsTheSamePagedRecordBudgetOnBothArchiveVersions() = runBlocking {
+        val totals = (0..2).map { hour -> SyncPlaybackHourTotal("phone", 0, hour * 3_600_000L, hour, 50) }
+        val data = SyncData(lastModified = 1, playbackStatBuckets = listOf(
+            SyncPlaybackStatBucket(identityKey = "track", hourlyTotals = totals)))
+        for (version in listOf(3, 4)) {
+            fixture(data, version).use { archive ->
+                val reader = repository(SyncArchiveMetadataLimits(maxObjects = 3))
+                val result = reader.readDataset(archive.content, reader.playbackDatasets, { it }, { it }, archive::fetch)
+                result.getOrNull()?.close()
+                assertTrue(result.exceptionOrNull() is IOException)
+                assertTrue(reader.lastReferencedPaths.isEmpty())
+            }
+        }
     }
 
     @Test fun syncDataAndDatasetWritersRefuseAnArchiveTheirReaderCannotRetain() = runBlocking {

@@ -8,8 +8,8 @@ import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapsho
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotCounterEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotDailyCounterEntity
-import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatBucketEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.toEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.toSnapshotData
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
@@ -90,7 +90,7 @@ internal class PlaybackStatsRoomSnapshotAccess(private val store: PlaybackStatsR
             }
             SyncPlaybackStatsMergePolicy.mergeBucket(local, incoming, barrier)
         }
-        writeBuckets(id, merged)
+        writeBuckets(id, merged, barrier)
     }
 
     private suspend fun finishLegacyMerge(id: String, barrier: Long) {
@@ -149,13 +149,13 @@ internal class PlaybackStatsRoomSnapshotAccess(private val store: PlaybackStatsR
         } }.chunked(500).forEach { dao.upsertCounters(it) }
     }
 
-    internal suspend fun writeBuckets(id: String, buckets: List<SyncPlaybackStatBucket>) = database.withTransaction {
+    internal suspend fun writeBuckets(id: String, buckets: List<SyncPlaybackStatBucket>, clearedAt: Long = 0L) = database.withTransaction {
         for ((day, page) in buckets.groupBy { it.dayStartAt }) {
             val keys = page.map { it.identityKey }
             val existing = dao.bucketsByKeys(id, day, keys).associateBy { it.bucket.identityKey }
             dao.deleteDailyCountersByKeys(id, day, keys)
             dao.upsertBuckets(page.map { incoming ->
-                PlaybackStatsSnapshotBucketEntity(id, incoming.toEntity(existing[incoming.identityKey]?.bucket?.toEntity()).toSnapshotData())
+                PlaybackStatsSnapshotBucketEntity(id, incoming.toPrimaryEntity(existing[incoming.identityKey]?.bucket?.toEntity(), clearedAt).toSnapshotData())
             })
             page.asSequence().flatMap { bucket -> bucket.counterShards.asSequence().map { shard ->
                 PlaybackStatsSnapshotDailyCounterEntity(id, shard.toDailyEntity(day, bucket.identityKey).toSnapshotData())
@@ -203,7 +203,7 @@ internal class PlaybackStatsRoomSnapshotAccess(private val store: PlaybackStatsR
                     dao.deleteDailyCountersByKeys(id, at, keys)
                 }
             }
-            writeBuckets(id, normalized)
+            writeBuckets(id, normalized, clearedAt)
             day = page.last().bucket.dayStartAt
             identity = page.last().bucket.identityKey
         }
@@ -254,9 +254,4 @@ private data class PlaybackBucketTotals(val identityKey: String, val listenMs: L
 private fun SyncTrackStat.toEntity(local: PlaybackStatEntity?) = PlaybackStatEntity(
     identityKey, id, name, artist, album, albumId, coverUrl, durationMs, totalListenMs, playCount, lastPlayedAt, firstPlayedAt,
     mediaUri, local?.localFilePath, local?.localFileName, local?.customName, local?.customArtist, local?.customCoverUrl
-)
-
-private fun SyncPlaybackStatBucket.toEntity(local: PlaybackStatBucketEntity?) = PlaybackStatBucketEntity(
-    dayStartAt, identityKey, id, name, artist, album, albumId, coverUrl, durationMs, totalListenMs, playCount, lastPlayedAt, firstPlayedAt,
-    mediaUri, local?.localFilePath, local?.localFileName, local?.customName, local?.customArtist, local?.customCoverUrl, recordedLocalDate
 )

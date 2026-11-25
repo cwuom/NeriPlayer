@@ -177,7 +177,7 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 ### 🔄 Sync, stats, and backup
 
 - **GitHub / WebDAV sync**: playlists, favorites, recent plays, deletion records, and playback stats, stored on remotes you own.
-- **Playback stats**: explore track, artist, and album rankings, active days, and listening by weekday and hour. Browse previous days, weeks, months, and years or choose a custom date range. This version starts recording hourly listening on each device.
+- **Playback stats**: explore track, artist, and album rankings, listening days, and listening by weekday and hour. Browse by day, week, month, year, or a custom date range. With sync enabled, recorded hourly totals are available across devices. Each listening interval's exact start and end times stay on the device that recorded it.
 - **Traffic stats**: split into Wi-Fi, mobile, and roaming.
 - **Backup and restore**: playlist JSON import and export.
 - **Configuration export**: excludes login state by default; optionally encrypted with auth included.

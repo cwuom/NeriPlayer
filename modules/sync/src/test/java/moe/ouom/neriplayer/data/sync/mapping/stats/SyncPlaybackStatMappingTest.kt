@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.sync.mapping.stats
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
 import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncSystemPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
@@ -29,6 +30,21 @@ class SyncPlaybackStatMappingTest {
         localFilePath = null, localFileName = null, customName = null, customArtist = null,
         customCoverUrl = null, identityKey = "remote:42"
     )
+
+    @Test
+    fun `changes to hourly listening alone are detected and partial or malformed rows are normalized`() {
+        val first = SyncPlaybackHourTotal("phone", 0, 0, 8, 14)
+        val later = first.copy(totalListenMs = 26)
+        val other = first.copy(localHour = 9, hourStartAt = 3_600_000)
+        val dirty = listOf(other, first, later, later.copy(deviceId = " "), first.copy(epochStartedAt = -1),
+            first.copy(hourStartAt = -1), first.copy(localHour = 24), first.copy(totalListenMs = 0))
+        val mapped = SyncPlaybackStatMapping.fromPlaybackStatBucket(bucket.copy(hourlyTotals = dirty))
+        assertEquals(listOf(later, other), mapped.hourlyTotals)
+        assertEquals(mapped, SyncPlaybackStatMapping.sanitize(mapped.copy(hourlyTotals = dirty), Host))
+        assertTrue(SyncPlaybackStatMapping.sameMetadata(mapped, mapped.copy(hourlyTotals = dirty)))
+        assertFalse(SyncPlaybackStatMapping.sameMetadata(mapped, mapped.copy(hourlyTotals = listOf(first, other))))
+        assertFalse(SyncPlaybackStatMapping.sameMetadata(mapped, mapped.copy(hourlyTotals = emptyList())))
+    }
 
     @Test
     fun `daily metadata preserves valid civil dates and ignores impossible peer dates`() {

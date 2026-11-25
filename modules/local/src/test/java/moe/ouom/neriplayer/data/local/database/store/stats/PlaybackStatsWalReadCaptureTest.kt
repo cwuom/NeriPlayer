@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsSyncCounterSnapshot
 import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
@@ -55,6 +56,7 @@ class PlaybackStatsWalReadCaptureTest {
         assertEquals(listOf(listOf(shard("phone")), emptyList()), tracks.map { it.counterShards })
         assertEquals(listOf(DAY to "a", DAY to "b", 2 * DAY to "a"), buckets.map { it.dayStartAt to it.identityKey })
         assertEquals("1970-01-02", buckets.first().recordedLocalDate)
+        assertEquals(listOf(hour), buckets.first().hourlyTotals)
         assertEquals(listOf(listOf(shard("tablet").copy(recordedLocalDate = "1970-01-02")), emptyList(), listOf(shard("phone"))), buckets.map { it.counterShards })
     }
 
@@ -117,6 +119,7 @@ class PlaybackStatsWalReadCaptureTest {
 
         assertEquals(listOf("a", "b"), tracks)
         assertEquals("1970-01-02", buckets.first().recordedLocalDate)
+        assertEquals(listOf(hour), buckets.first().hourlyTotals)
         assertEquals("1970-01-02", buckets.first().counterShards.single().recordedLocalDate)
     }
 
@@ -149,7 +152,7 @@ class PlaybackStatsWalReadCaptureTest {
         return store.apply {
             importLegacyAndPromote(
                 stats = listOf(stat("a"), stat("b")),
-                dailyStats = listOf(bucket(DAY, "a").copy(recordedLocalDate = "1970-01-02"), bucket(DAY, "b"), bucket(2 * DAY, "a")),
+                dailyStats = listOf(bucket(DAY, "a").copy(recordedLocalDate = "1970-01-02", hourlyTotals = listOf(hour)), bucket(DAY, "b"), bucket(2 * DAY, "a")),
                 counterSnapshot = PlaybackStatsSyncCounterSnapshot(
                     trackShardsByIdentity = mapOf("a" to listOf(shard("phone"))),
                     dailyShardsByBucketKey = mapOf(
@@ -168,6 +171,7 @@ class PlaybackStatsWalReadCaptureTest {
         const val WAL_NAME = "wal-capture.db"
         const val TRUNCATE_NAME = "truncate-capture.db"
         const val DAY = 86_400_000L
+        val hour = SyncPlaybackHourTotal("tablet", 0L, DAY, 8, 900L)
 
         fun stat(key: String) = TrackStat(
             7, "song $key", "artist", "album", 3, null, 180_000, 1_000, 2, 300, 100,

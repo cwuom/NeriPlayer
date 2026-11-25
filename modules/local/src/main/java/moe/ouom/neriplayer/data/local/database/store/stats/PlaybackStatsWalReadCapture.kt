@@ -17,6 +17,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackHourTotalsCodec
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
 import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
@@ -94,7 +95,7 @@ internal class PlaybackStatsWalReadCapture private constructor(private val reade
 
     private fun bucketPage(day: Long?, identity: String?): List<PlaybackStatBucket> {
         val boundary = if (day == null) "" else " WHERE (day_start_at, identity_key) > (?, ?)"
-        return reader.rawQuery("SELECT day_start_at, $TRACK_COLUMNS, recorded_local_date FROM playback_stat_bucket$boundary " +
+        return reader.rawQuery("SELECT day_start_at, $TRACK_COLUMNS, recorded_local_date, hourly_totals FROM playback_stat_bucket$boundary " +
             "ORDER BY day_start_at, identity_key LIMIT $SYNC_PLAYBACK_PAGE_RECORDS",
             day?.let { arrayOf(it.toString(), checkNotNull(identity)) }).use { cursor ->
             buildList { while (cursor.moveToNext()) add(cursor.bucket()) }
@@ -216,7 +217,8 @@ internal class PlaybackStatsWalReadCapture private constructor(private val reade
 
         private fun Cursor.bucket() = PlaybackStatBucket(getLong(0), getLong(2), getString(3), getString(4), getString(5), getLong(6),
             nullableString(7), getLong(8), getLong(9), getInt(10), getLong(11), getLong(12), nullableString(13), nullableString(14),
-            nullableString(15), nullableString(16), nullableString(17), nullableString(18), getString(1), nullableString(19))
+            nullableString(15), nullableString(16), nullableString(17), nullableString(18), getString(1), nullableString(19),
+            PlaybackHourTotalsCodec.decode(getString(20)))
 
         private fun Cursor.counter(offset: Int) = SyncPlaybackCounterShard(getString(offset), getLong(offset + 1), getLong(offset + 2),
             getInt(offset + 3), getLong(offset + 4), getLong(offset + 5))

@@ -18,7 +18,7 @@ import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsPending
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsEventReceiptEntity
 
 private const val PLAYBACK_STAT_PAYLOAD_COLUMNS = "id, name, artist, album, album_id, cover_url, duration_ms, total_listen_ms, play_count, last_played_at, first_played_at, media_uri, local_file_path, local_file_name, custom_name, custom_artist, custom_cover_url"
-private const val PLAYBACK_BUCKET_PAYLOAD_COLUMNS = "$PLAYBACK_STAT_PAYLOAD_COLUMNS, recorded_local_date"
+private const val PLAYBACK_BUCKET_PAYLOAD_COLUMNS = "$PLAYBACK_STAT_PAYLOAD_COLUMNS, recorded_local_date, hourly_totals, local_hourly_totals"
 
 @Dao
 interface PlaybackStatsSnapshotDao {
@@ -102,10 +102,12 @@ interface PlaybackStatsSnapshotDao {
     @Query("DELETE FROM playback_stat_snapshot_track WHERE snapshot_id = :id")
     suspend fun deleteTrack(id: String)
 
-    @Query("INSERT INTO playback_stat_snapshot_bucket (snapshot_id, day_start_at, identity_key, id, name, artist, album, album_id, cover_url, duration_ms, total_listen_ms, play_count, last_played_at, first_played_at, media_uri, local_file_path, local_file_name, custom_name, custom_artist, custom_cover_url, recorded_local_date) SELECT :id, day_start_at, identity_key, id, name, artist, album, album_id, cover_url, duration_ms, total_listen_ms, play_count, last_played_at, first_played_at, media_uri, local_file_path, local_file_name, custom_name, custom_artist, custom_cover_url, recorded_local_date FROM playback_stat_bucket")
+    @Query("INSERT INTO playback_stat_snapshot_bucket (snapshot_id, day_start_at, identity_key, $PLAYBACK_BUCKET_PAYLOAD_COLUMNS) " +
+        "SELECT :id, day_start_at, identity_key, $PLAYBACK_BUCKET_PAYLOAD_COLUMNS FROM playback_stat_bucket")
     suspend fun freezeBucket(id: String)
 
-    @Query("INSERT INTO playback_stat_bucket (day_start_at, identity_key, id, name, artist, album, album_id, cover_url, duration_ms, total_listen_ms, play_count, last_played_at, first_played_at, media_uri, local_file_path, local_file_name, custom_name, custom_artist, custom_cover_url, recorded_local_date) SELECT day_start_at, identity_key, id, name, artist, album, album_id, cover_url, duration_ms, total_listen_ms, play_count, last_played_at, first_played_at, media_uri, local_file_path, local_file_name, custom_name, custom_artist, custom_cover_url, recorded_local_date FROM playback_stat_snapshot_bucket WHERE snapshot_id = :id")
+    @Query("INSERT INTO playback_stat_bucket (day_start_at, identity_key, $PLAYBACK_BUCKET_PAYLOAD_COLUMNS) " +
+        "SELECT day_start_at, identity_key, $PLAYBACK_BUCKET_PAYLOAD_COLUMNS FROM playback_stat_snapshot_bucket WHERE snapshot_id = :id")
     suspend fun publishBucket(id: String)
 
     @Query("DELETE FROM playback_stat_snapshot_bucket WHERE snapshot_id = :id")

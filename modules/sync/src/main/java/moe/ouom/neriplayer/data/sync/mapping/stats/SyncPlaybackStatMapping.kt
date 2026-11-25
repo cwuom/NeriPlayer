@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.data.sync.policy.isLocalMediaUri
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
 import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHours
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.data.model.sync.validRecordedPlaybackDate
@@ -56,6 +57,7 @@ object SyncPlaybackStatMapping {
         return SyncPlaybackStatBucket(
             dayStartAt = bucket.dayStartAt,
             recordedLocalDate = bucket.recordedLocalDate,
+            hourlyTotals = SyncPlaybackHours.merge(bucket.hourlyTotals),
             identityKey = bucket.identityKey,
             name = bucket.name,
             artist = bucket.artist,
@@ -110,6 +112,7 @@ object SyncPlaybackStatMapping {
         return bucket.copy(
             dayStartAt = bucket.dayStartAt.coerceAtLeast(0L),
             recordedLocalDate = bucket.recordedLocalDate.validRecordedPlaybackDate(),
+            hourlyTotals = SyncPlaybackHours.merge(bucket.hourlyTotals),
             totalListenMs = bucket.totalListenMs.coerceAtLeast(0L),
             playCount = bucket.playCount.coerceAtLeast(0),
             lastPlayedAt = lastPlayedAt,
@@ -146,7 +149,8 @@ object SyncPlaybackStatMapping {
             sameBucketIdentity(a, b) &&
             sameBucketDescription(a, b) &&
             sameBucketCounters(a, b) &&
-            normalizeCounterShards(a.counterShards) == normalizeCounterShards(b.counterShards)
+            normalizeCounterShards(a.counterShards) == normalizeCounterShards(b.counterShards) &&
+            SyncPlaybackHours.merge(a.hourlyTotals) == SyncPlaybackHours.merge(b.hourlyTotals)
 
     private fun sameBucketIdentity(a: SyncPlaybackStatBucket, b: SyncPlaybackStatBucket): Boolean =
         a.identityKey == b.identityKey && a.id == b.id && a.albumId == b.albumId &&

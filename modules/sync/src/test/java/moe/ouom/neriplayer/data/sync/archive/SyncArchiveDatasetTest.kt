@@ -5,8 +5,11 @@ package moe.ouom.neriplayer.data.sync.archive
 import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
+import kotlinx.serialization.protobuf.ProtoNumber
 import moe.ouom.neriplayer.data.model.sync.*
 import moe.ouom.neriplayer.data.sync.dataset.SyncPlaybackKeyOrder
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SYNC_PLAYBACK_PAGE_RECORDS
@@ -20,6 +23,37 @@ import java.io.DataOutputStream
 
 class SyncArchiveDatasetTest {
     @get:Rule val temporary = TemporaryFolder()
+
+    @Serializable
+    private data class PreviousBucket(
+        @ProtoNumber(2) val identityKey: String = "",
+        @ProtoNumber(6) val totalListenMs: Long = 0,
+        @ProtoNumber(18) val recordedLocalDate: String? = null
+    )
+
+    @Test fun dailyHoursSurviveV3StagingAndV4PublicationAlongsideOldBuckets() = runBlocking {
+        val old = PreviousBucket("a-old", 45, "2026-11-24")
+        val current = SyncPlaybackStatBucket(identityKey = "b-new", totalListenMs = 75, recordedLocalDate = "2026-11-24",
+            hourlyTotals = listOf(SyncPlaybackHourTotal("phone", 3, 1_800_000, 6, 45),
+                SyncPlaybackHourTotal("tablet", 1, 1_800_000, 19, 30)))
+        val bytes = ProtoBuf.encodeToByteArray(current)
+        assertEquals(PreviousBucket("b-new", 75, "2026-11-24"), ProtoBuf.decodeFromByteArray<PreviousBucket>(bytes))
+        val (manifest, objects) = archive(frames(9 to ProtoBuf.encodeToByteArray(old), 9 to bytes), 2)
+        val expected = listOf(SyncPlaybackStatBucket(identityKey = old.identityKey, totalListenMs = old.totalListenMs,
+            recordedLocalDate = old.recordedLocalDate), current)
+        val reader = SyncArchiveRepository(temporary.newFolder())
+        reader.readDataset(manifest, reader.playbackDatasets, { it }, { it }, { Result.success(objects.getValue(it)) })
+            .getOrThrow().use { staged ->
+                assertEquals(expected, staged.readForTest().playbackStatBuckets)
+                reader.prepareCancellable(staged).use { v4 ->
+                    val published = v4.objects.associate { it.path to it.content }
+                    val restored = SyncArchiveRepository(temporary.newFolder()).read(v4.content) { path ->
+                        Result.success(published.getValue(path))
+                    }.getOrThrow()
+                    assertEquals(expected, restored.playbackStatBuckets)
+                }
+            }
+    }
 
     @Test fun legacyV3RecordOrderStagesAndExportsStatisticsWithoutChangingOtherSections() = runBlocking {
         val input = SyncData(lastModified = 1,

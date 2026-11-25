@@ -279,7 +279,8 @@ data class SyncPlaybackStatBucket(
     @ProtoNumber(15) val counterBaseListenMs: Long = 0L,
     @ProtoNumber(16) val counterBasePlayCount: Int = 0,
     @ProtoNumber(17) val counterShards: List<SyncPlaybackCounterShard> = emptyList(),
-    @ProtoNumber(18) val recordedLocalDate: String? = null
+    @ProtoNumber(18) val recordedLocalDate: String? = null,
+    @ProtoNumber(19) val hourlyTotals: List<SyncPlaybackHourTotal> = emptyList()
 )
 
 @Serializable

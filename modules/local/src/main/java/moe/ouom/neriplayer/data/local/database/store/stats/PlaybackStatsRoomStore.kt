@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.dao.stats.PlaybackBucketHoursRow
 import moe.ouom.neriplayer.data.local.database.dao.stats.PlaybackStatsSnapshotDao
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatCounterShardEntity
@@ -35,6 +36,7 @@ import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsSyncCounterSnapshot
 import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHours
 
 internal data class PlaybackStatsRoomSnapshot(
     val stats: List<TrackStat>,
@@ -94,6 +96,7 @@ internal class PlaybackStatsRoomStore(
     ) {
         database.withTransaction {
             val dao = database.playbackStatsDao()
+            val storedHours = dao.storedBucketHours().associateBy { it.dayStartAt to it.identityKey }
             dao.deleteAllDailyCounterShards()
             dao.deleteAllCounterShards()
             dao.deleteAllBuckets()
@@ -101,7 +104,9 @@ internal class PlaybackStatsRoomStore(
             insertAll(
                 stats = stats,
                 dailyStats = dailyStats,
-                counterSnapshot = counterSnapshot
+                counterSnapshot = counterSnapshot,
+                storedHours = storedHours,
+                clearedAt = clearedAt
             )
             markRoomPrimary(
                 clearedAt = clearedAt,
@@ -138,7 +143,9 @@ internal class PlaybackStatsRoomStore(
 
         database.withTransaction {
             val dao = database.playbackStatsDao()
+            val storedHours = mutableMapOf<Pair<Long, String>, PlaybackBucketHoursRow>()
             changedKeys.asSequence().writeBatches { chunk ->
+                dao.storedBucketHoursForTracks(chunk).associateByTo(storedHours) { it.dayStartAt to it.identityKey }
                 dao.deleteDailyCounterShards(chunk)
                 dao.deleteCounterShards(chunk)
                 dao.deleteBuckets(chunk)
@@ -153,7 +160,7 @@ internal class PlaybackStatsRoomStore(
                     chunk.asSequence().mapNotNull(nextByKey::get)
                         .map(TrackStat::toEntity)
                         .writeBatches(dao::upsertStats)
-                    chunkBuckets.map(PlaybackStatBucket::toEntity)
+                    chunkBuckets.map { it.toEntity(storedHours[it.dayStartAt to it.identityKey], clearedAt) }
                         .writeBatches(dao::upsertBuckets)
                     chunk.asSequence()
                         .flatMap { key ->
@@ -246,13 +253,16 @@ internal class PlaybackStatsRoomStore(
     private suspend fun insertAll(
         stats: List<TrackStat>,
         dailyStats: List<PlaybackStatBucket>,
-        counterSnapshot: PlaybackStatsSyncCounterSnapshot
+        counterSnapshot: PlaybackStatsSyncCounterSnapshot,
+        storedHours: Map<Pair<Long, String>, PlaybackBucketHoursRow>,
+        clearedAt: Long
     ) {
         val statKeys = stats.mapTo(mutableSetOf(), TrackStat::identityKey)
         val validBuckets = dailyStats.asSequence().filter { it.identityKey in statKeys }
         val dao = database.playbackStatsDao()
         stats.asSequence().map(TrackStat::toEntity).writeBatches(dao::upsertStats)
-        validBuckets.map(PlaybackStatBucket::toEntity).writeBatches(dao::upsertBuckets)
+        validBuckets.map { it.toEntity(storedHours[it.dayStartAt to it.identityKey], clearedAt) }
+            .writeBatches(dao::upsertBuckets)
         stats.asSequence()
             .flatMap { stat ->
                 counterSnapshot.trackShards(stat.identityKey).asSequence().map { shard ->
@@ -609,6 +619,7 @@ internal class PlaybackStatsRoomStore(
         val sql = PlaybackStatsSqlQuery(query, dao.hasBuckets())
         val hours = LongArray(24)
         dao.queryHourlyListening(sql.hourlyListening()).forEach { hours[it.localHour] = it.listenedMs }
+        addSyncedHourTotals(sql, query.resolvedRange, hours)
         hours.toList()
     }
 
@@ -727,10 +738,17 @@ internal fun PlaybackStatEntity.toDomain(): TrackStat {
     )
 }
 
+private fun PlaybackStatBucket.toEntity(previous: PlaybackBucketHoursRow?, clearedAt: Long): PlaybackStatBucketEntity =
+    toEntity().copy(
+        hourlyTotals = SyncPlaybackHours.merge(previous?.hourlyTotals, hourlyTotals, clearedAt),
+        localHourlyTotals = SyncPlaybackHours.merge(previous?.localHourlyTotals, clearedAt = clearedAt)
+    )
+
 internal fun PlaybackStatBucketEntity.toDomain(): PlaybackStatBucket {
     return PlaybackStatBucket(
         dayStartAt = dayStartAt,
         recordedLocalDate = recordedLocalDate,
+        hourlyTotals = hourlyTotals,
         id = id,
         name = name,
         artist = artist,

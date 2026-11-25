@@ -24,6 +24,9 @@ import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatHourEnti
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackListeningIntervalEntity
 import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackListeningIntervalMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackStatHourMigration
+import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackHourTotalsMigration
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackHourTotalsCodec
+import androidx.room.TypeConverters
 import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackStatsPagedMigration
 import moe.ouom.neriplayer.data.local.database.dao.stats.PlaybackStatsDao
 import moe.ouom.neriplayer.data.local.database.dao.FavoritePlaylistDao
@@ -91,8 +94,9 @@ import moe.ouom.neriplayer.data.local.database.migration.download.DownloadFinali
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadBatchMigration
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadRecoveryCursorMigration
 
-private const val NERI_USER_DATA_FINAL_VERSION = 23
+private const val NERI_USER_DATA_FINAL_VERSION = 24
 
+@TypeConverters(PlaybackHourTotalsCodec::class)
 @Database(
     entities = [
         LocalPlaylistEntity::class,
@@ -236,7 +240,8 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
             MIGRATION_19_20,
             MIGRATION_20_21,
             MIGRATION_21_22,
-            MIGRATION_22_23
+            MIGRATION_22_23,
+            MIGRATION_23_24
         )
 
         private fun checkMainProcess(context: Context) {
@@ -270,6 +275,7 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
         val MIGRATION_20_21: Migration = LocalSourceProvenanceMigration
         val MIGRATION_21_22: Migration = PlaybackStatHourMigration
         val MIGRATION_22_23: Migration = PlaybackListeningIntervalMigration
+        val MIGRATION_23_24: Migration = PlaybackHourTotalsMigration
 
         const val FINAL_DB_VERSION = NERI_USER_DATA_FINAL_VERSION
     }
