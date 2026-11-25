@@ -12,8 +12,8 @@
   <a href="https://github.com/cwuom/NeriPlayer/releases">
     <img alt="Downloads" src="https://img.shields.io/github/downloads/cwuom/NeriPlayer/total?style=social" />
   </a>
-  <a href="https://github.com/cwuom/NeriPlayer/releases">
-    <img alt="Release" src="https://img.shields.io/github/v/release/cwuom/NeriPlayer?include_prereleases&label=Release" />
+  <a href="https://github.com/cwuom/NeriPlayer/releases/latest">
+    <img alt="Stable release" src="https://img.shields.io/github/v/release/cwuom/NeriPlayer?label=Release" />
   </a>
   <img alt="Android 9+" src="https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&logoColor=white" />
   <a href="https://t.me/ouom_pub">
@@ -208,9 +208,9 @@ NeriPlayer 是基于 **Jetpack Compose + Media3** 的原生 Android 音频播放
 
 ## 快速体验 / Getting Started
 
-### a. 下载 Release 版本（推荐）
+### a. 下载稳定版（推荐）
 
-前往 [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases)，下载对应架构的 APK。
+在[最新稳定版](https://github.com/cwuom/NeriPlayer/releases/latest)页面下载适合设备架构的 APK。
 
 | APK 架构 (ABI) | 适用设备 |
 | :--- | :--- |
@@ -219,16 +219,22 @@ NeriPlayer 是基于 **Jetpack Compose + Media3** 的原生 Android 音频播放
 | `x86` / `x86_64` | 桌面模拟器、Intel 设备或 Chromebook |
 
 > [!IMPORTANT]
-> Release 在一批功能完成后手动发布，可能包含尚未发现的问题。
+> 稳定版在一批功能完成并通过测试后手动发布，但可能仍然包含尚未发现的问题。
 
-### b. 下载 CI 版本
+### b. 下载 Nightly 预发布版
 
-1. 前往 [GitHub Actions](https://github.com/cwuom/NeriPlayer/actions)，下载最近一次成功构建的 Artifacts 并解压。
+在 [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases) 中选择标有 **Nightly** 的预发布版。每版提供上表四种架构的已签名 APK。CI 每天 22:00（UTC+8）检查默认分支的最新提交，每个提交只发布一次 Nightly。
+
+如果你在使用 Nightly 预发布版时遇到问题，也欢迎随时[提交问题报告](https://github.com/cwuom/NeriPlayer/issues/new?template=bug-report.yml)。请附上构建版本和复现步骤，方便我们定位问题。
+
+### c. 下载 CI 版本
+
+1. 前往 [Android CI](https://github.com/cwuom/NeriPlayer/actions/workflows/android_ci.yml)，下载最近一次成功构建的 Artifacts 并解压。
 2. 或访问 Telegram 频道 [NeriPlayer CI Builds](https://t.me/neriplayer_ci)。
 
-> master 分支 CI 默认上传 `arm64-v8a` APK，手动 Release 流程构建多 ABI APK。
+> master 分支 CI 默认上传 `arm64-v8a` APK。
 
-### c. 本地构建
+### d. 本地构建
 
 1. 克隆仓库并初始化子模块：
    ```bash
@@ -473,7 +479,7 @@ NeriPlayer 可把本地元数据同步到**你自己的** GitHub 仓库或 WebDA
 
 ## 参与、支持与许可 / Contributing, Support & License
 
-- **参与贡献**：请先阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。核心播放、本地数据、同步与恢复链路优先维护，Release 按功能批次手动发布。
+- **参与贡献**：请先阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。核心播放、本地数据、同步与恢复链路优先维护，稳定版按功能批次手动发布。
 - **支持项目**：暂不接受任何形式的捐赠，欢迎通过 Issue、PR 或分享使用体验支持项目。
 - **许可证**：NeriPlayer 使用 **GPL-3.0** 发布，可自由使用、修改和分发，分发修改版时须继续遵守 GPL-3.0，详细条款见 [LICENSE](./LICENSE)。
 - **Native 源码授权**：[说明](./modules/native/src/main/cpp/README.md)中列出的 NeriPlayer 自有 Native 源码另有附带署名条件的替代授权，第三方源码与未列入的内容不适用。

@@ -13,15 +13,29 @@ on:
         required: true
         default: true
         type: boolean
+  workflow_call:
+    inputs:
+      nightly_tag:
+        description: Nightly tag for the triggering default-branch commit
+        required: true
+        type: string
+    secrets:
+      KEYSTORE_B64:
+        required: true
+      KEYSTORE_PASSWORD:
+        required: true
+      KEY_PASSWORD:
+        required: true
 
 permissions:
   contents: read
 
 env:
   GRADLE_OPTS: -Dorg.gradle.caching=true
+  NIGHTLY_TAG: ${{ inputs.nightly_tag }}
 
 concurrency:
-  group: manual-release-${{ github.repository }}-${{ inputs.target_ref }}
+  group: manual-release-${{ github.repository }}-${{ inputs.target_ref || inputs.nightly_tag }}
   cancel-in-progress: false
 
 jobs:
@@ -33,6 +47,8 @@ jobs:
     steps:
       - name: Guard release destination
         env:
+          DEFAULT_BRANCH_REF: ${{ format('refs/heads/{0}', github.event.repository.default_branch) }}
+          TARGET_REF: ${{ inputs.target_ref }}
           TEST_RELEASE: ${{ inputs.test_release }}
         run: |
           set -euo pipefail
@@ -40,11 +56,15 @@ jobs:
             echo "::error::Only unsigned test releases are allowed outside cwuom/NeriPlayer."
             exit 1
           fi
+          if [[ -z "$TARGET_REF" && ( "$GITHUB_REF" != "$DEFAULT_BRANCH_REF" || "$NIGHTLY_TAG" != "nightly-${GITHUB_SHA}" ) ]]; then
+            echo "::error::Nightly releases must target the triggering default-branch commit."
+            exit 1
+          fi
 
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.target_ref }}
+          ref: ${{ inputs.target_ref || github.sha }}
           fetch-depth: 0
           submodules: recursive
           persist-credentials: false
@@ -76,10 +96,14 @@ jobs:
           short_sha="$(git rev-parse --short HEAD)"
           target_sha="$(git rev-parse HEAD)"
           tag_name="NeriPlayer-${short_sha}.${BUILD_VERSION_TIMESTAMP}"
+          tag_patterns=('refs/tags/NeriPlayer-*')
           if [[ "$TEST_RELEASE" == "true" ]]; then
             tag_name="${tag_name}-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          elif [[ -n "$NIGHTLY_TAG" ]]; then
+            tag_name="$NIGHTLY_TAG"
+            tag_patterns+=('refs/tags/nightly-*')
           fi
-          previous_tag="$(git for-each-ref --merged HEAD --sort=-creatordate --format='%(refname:short)' 'refs/tags/NeriPlayer-*' | head -n 1 || true)"
+          previous_tag="$(git for-each-ref --merged HEAD --sort=-creatordate --count=1 --format='%(refname:strip=2)' "${tag_patterns[@]}")"
           {
             echo "tag_name=${tag_name}"
             echo "target_sha=${target_sha}"
@@ -257,6 +281,7 @@ jobs:
           TAG_NAME: ${{ steps.meta.outputs.tag_name }}
           TARGET_SHA: ${{ steps.meta.outputs.target_sha }}
           TEST_RELEASE: ${{ inputs.test_release }}
+          BUILD_VERSION_TIMESTAMP: ${{ steps.identity.outputs.build_version_timestamp }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -268,12 +293,16 @@ jobs:
           fi
 
           release_options=(--latest)
+          title="$TAG_NAME"
           if [[ "$TEST_RELEASE" == "true" ]]; then
             release_options=(--draft --prerelease --latest=false)
+          elif [[ -n "$NIGHTLY_TAG" ]]; then
+            release_options=(--prerelease --latest=false)
+            title="NeriPlayer Nightly ${TARGET_SHA:0:8}.${BUILD_VERSION_TIMESTAMP}"
           fi
           gh release create "${TAG_NAME}" "${release_files[@]}" \
             --repo "${REPO}" \
             --target "${TARGET_SHA}" \
-            --title "${TAG_NAME}" \
+            --title "${title}" \
             --notes-file release-notes.md \
             "${release_options[@]}"

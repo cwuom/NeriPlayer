@@ -15,6 +15,7 @@ on:
       - '.github/workflows/sync_labels.yml'
       - '.github/workflows/automation_checks.yml'
       - '.github/workflows/manual_release.yml'
+      - '.github/workflows/nightly_release.yml'
       - '.github/workflows/recover_keystore.yml'
   pull_request:
     paths-ignore:
@@ -28,6 +29,7 @@ on:
       - '.github/workflows/sync_labels.yml'
       - '.github/workflows/automation_checks.yml'
       - '.github/workflows/manual_release.yml'
+      - '.github/workflows/nightly_release.yml'
       - '.github/workflows/recover_keystore.yml'
   workflow_dispatch:
 
