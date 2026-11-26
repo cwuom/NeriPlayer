@@ -189,10 +189,21 @@ class MainTabReselectTest {
     @Test
     fun `frame steps ease out and finish exactly when the duration runs out`() {
         val duration = SCROLL_TO_TOP_DURATION_MS
-        val early = scrollToTopFrameStep(1000f, 0f, 16f, duration)
-        val late = scrollToTopFrameStep(1000f, duration - 64f, duration - 48f, duration)
-        assertTrue(early > late)
-        assertEquals(1000f, scrollToTopFrameStep(1000f, duration - 8f, duration + 8f, duration))
+        val frameMs = 16f
+        var remaining = 1000f
+        var elapsed = 0f
+        val steps = mutableListOf<Float>()
+        // 模拟同一次回顶的逐帧推进，而不是用同一个剩余距离比较不同时刻
+        while (remaining > 0f) {
+            val step = scrollToTopFrameStep(remaining, elapsed, elapsed + frameMs, duration)
+            steps += step
+            remaining -= step
+            elapsed += frameMs
+        }
+
+        assertTrue(steps.zipWithNext().all { (earlier, later) -> earlier >= later })
+        assertEquals(1000f, steps.sum(), 0.01f)
+        assertEquals(kotlin.math.ceil(duration / frameMs).toInt(), steps.size)
         assertEquals(1000f, scrollToTopFrameStep(1000f, duration + 8f, duration + 24f, duration))
     }
 
