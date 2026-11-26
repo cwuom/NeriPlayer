@@ -543,17 +543,18 @@
       "methods": [
         "SettingsHostScreen",
         "selectSettingsHostPage",
-        "SettingsHostScreen$lambda$19",
-        "SettingsHostScreen$lambda$19$1",
-        "SettingsHostScreen$lambda$19$1$2",
-        "SettingsHostScreen$lambda$19$1$2$0",
-        "SettingsHostScreen$lambda$19$1$2$0$0",
-        "SettingsHostScreen$lambda$19$1$2$0$0$0$0",
-        "SettingsHostScreen$lambda$19$1$2$0$1",
-        "SettingsHostScreen$lambda$19$1$2$0$1$0$0",
-        "SettingsHostScreen$lambda$19$1$2$0$1$1$0",
-        "SettingsHostScreen$lambda$19$1$2$0$2",
-        "SettingsHostScreen$lambda$19$1$2$0$2$0$0"
+        "reselectSettingsHost",
+        "SettingsHostScreen$lambda$21",
+        "SettingsHostScreen$lambda$21$1",
+        "SettingsHostScreen$lambda$21$1$2",
+        "SettingsHostScreen$lambda$21$1$2$0",
+        "SettingsHostScreen$lambda$21$1$2$0$0",
+        "SettingsHostScreen$lambda$21$1$2$0$0$0$0",
+        "SettingsHostScreen$lambda$21$1$2$0$1",
+        "SettingsHostScreen$lambda$21$1$2$0$1$0$0",
+        "SettingsHostScreen$lambda$21$1$2$0$1$1$0",
+        "SettingsHostScreen$lambda$21$1$2$0$2",
+        "SettingsHostScreen$lambda$21$1$2$0$2$0$0"
       ]
     },
     {
@@ -564,13 +565,13 @@
         "NeriAppContent$lambda$185",
         "NeriAppContent$lambda$185$3$0",
         "NeriAppContent$lambda$185$RenderMainTabRoute",
-        "NeriAppContent$lambda$185$RenderMainTabRoute$26",
         "NeriAppContent$lambda$185$RenderMainTabRoute$27",
         "NeriAppContent$lambda$185$RenderMainTabRoute$28",
         "NeriAppContent$lambda$185$RenderMainTabRoute$29",
         "NeriAppContent$lambda$185$RenderMainTabRoute$30",
-        "NeriAppContent$lambda$185$RenderMainTabRoute$30$1",
-        "NeriAppContent$lambda$185$32"
+        "NeriAppContent$lambda$185$RenderMainTabRoute$31",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$31$2",
+        "NeriAppContent$lambda$185$33"
       ]
     },
     {
