@@ -34,13 +34,12 @@ internal fun PlayerManager.observePlatformPlayHistorySync() {
                 reporter = null
                 return@flatMapLatest emptyFlow()
             }
-            // 从关闭切到开启时重新建会话，开启前听过的时长不补报
             val active = reporter ?: PlatformPlayHistoryReporter(
                 scope = scope,
                 port = AppPlatformPlayHistoryPort,
                 songKey = AppQueueSongIdentity::stableKey
             ).also { reporter = it }
-            active.flags = flags
+            active.updateFlags(flags)
             combine(currentSongFlow, isPlayingFlow, playbackPositionFlow) { song, playing, positionMs ->
                 PlayerSample(active, song, playing, positionMs)
             }

@@ -75,6 +75,34 @@ class PlatformPlayReportTrackerTest {
     }
 
     @Test
+    fun `stopping at the end of the queue settles the listen once`() {
+        tracker.onSongChanged(song(1, durationMs = 60_000))
+        tracker.onPlayingChanged(true)
+        advance(58_500)
+        tracker.onProgress(58_500)
+
+        val finished = tracker.onPlayingChanged(false).single() as PlatformPlayReportEvent.Finished
+        assertTrue(finished.completed)
+        assertEquals(58_500L, finished.listenedMs)
+        assertTrue(tracker.onProgress(0).isEmpty())
+        assertTrue(tracker.onSongChanged(song(2)).isEmpty())
+    }
+
+    @Test
+    fun `stale position from the previous track is not treated as a repeat`() {
+        tracker.onSongChanged(song(1, durationMs = 40_000))
+        tracker.onPlayingChanged(true)
+        tracker.onProgress(39_000)
+        advance(200)
+
+        assertTrue(tracker.onProgress(0).isEmpty())
+        advance(10_000)
+        val finished = tracker.onSongChanged(song(2)).single() as PlatformPlayReportEvent.Finished
+        assertEquals(10_200L, finished.listenedMs)
+        assertFalse(finished.completed)
+    }
+
+    @Test
     fun `heartbeats follow listened time and pauses add one with the paused position`() {
         tracker.onSongChanged(song(1))
         tracker.onPlayingChanged(true)

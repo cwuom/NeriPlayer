@@ -50,14 +50,31 @@ class BiliHistoryApiTest {
     }
 
     @Test
-    fun `paused account history skips the heartbeat and reuses the cached state`() = runBlocking {
+    fun `paused account history skips the heartbeat`() = runBlocking {
         val requests = mutableListOf<Request>()
         val api = BiliHistoryApi(loggedIn, fakeHttp(requests) { """{"code":0,"data":true}""" })
 
         api.reportHeartbeat(target, 10L)
-        api.reportHeartbeat(target, 20L)
 
         assertEquals(listOf("/x/v2/history/shadow"), requests.map { it.url.encodedPath })
+    }
+
+    @Test
+    fun `pausing history on bilibili stops the very next heartbeat`() = runBlocking {
+        var paused = false
+        val requests = mutableListOf<Request>()
+        val api = BiliHistoryApi(loggedIn, fakeHttp(requests) { request ->
+            if (request.url.encodedPath.endsWith("shadow")) """{"code":0,"data":$paused}""" else """{"code":0}"""
+        })
+
+        api.reportHeartbeat(target, 10L)
+        paused = true
+        api.reportHeartbeat(target, 20L)
+
+        assertEquals(
+            listOf("/x/v2/history/shadow", "/x/click-interface/web/heartbeat", "/x/v2/history/shadow"),
+            requests.map { it.url.encodedPath }
+        )
     }
 
     @Test

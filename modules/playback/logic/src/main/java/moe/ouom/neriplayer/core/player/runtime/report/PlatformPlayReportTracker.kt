@@ -72,6 +72,12 @@ class PlatformPlayReportTracker(
         }
         collectSegment()
         segmentStartElapsedMs = null
+        // 队列最后一首播完时不会切歌，停在片尾就直接结算，避免记录一直悬着
+        if (isNearEnd()) {
+            val finished = finishSession(completed = true)
+            resetSession()
+            return listOfNotNull(finished)
+        }
         // 暂停时补一次心跳，让平台记录到暂停位置
         return listOfNotNull(heartbeat())
     }
@@ -81,8 +87,7 @@ class PlatformPlayReportTracker(
         val resolved = positionMs.coerceAtLeast(0L)
         val previous = lastPositionMs
         lastPositionMs = resolved
-        if (hasPlaybackPositionWrapped(previous, resolved, current.durationMs)) {
-            collectSegment()
+        if (hasPlaybackPositionWrapped(previous, resolved, current.durationMs) && hasHeardMostOf(current)) {
             val finished = finishSession(completed = true, positionMs = previous ?: resolved)
             resetSession()
             lastPositionMs = resolved
@@ -94,6 +99,13 @@ class PlatformPlayReportTracker(
         startSegment()
         if (listenedMs - listenedAtLastHeartbeatMs < heartbeatIntervalMs) return emptyList()
         return listOfNotNull(heartbeat())
+    }
+
+    // 只有真正听过大半首才算单曲循环，切歌时残留的上一首进度不会被当成播完
+    private fun hasHeardMostOf(current: SongItem): Boolean {
+        collectSegment()
+        startSegment()
+        return listenedMs * 2 >= current.durationMs
     }
 
     private fun heartbeat(): PlatformPlayReportEvent.Heartbeat? {

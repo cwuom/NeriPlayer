@@ -9,7 +9,7 @@
     <string name="disclaimer_summary_data_title">数据默认留在设备</string>
     <string name="disclaimer_summary_data_body">设置、历史、下载记录、崩溃报告和本地诊断默认保存在设备中，不用于广告或行为画像。</string>
     <string name="disclaimer_summary_sync_title">同步由你决定</string>
-    <string name="disclaimer_summary_sync_body">只有启用 GitHub、WebDAV、一起听或自建服务后，选中的数据才会发送到对应服务。</string>
+    <string name="disclaimer_summary_sync_body">只有启用 GitHub、WebDAV、一起听、自建服务或播放记录同步后，选中的数据才会发送到对应服务。</string>
     <string name="disclaimer_show_details">查看完整说明</string>
     <string name="disclaimer_hide_details">收起完整说明</string>
     <string name="disclaimer_section1_title">软件与内容范围</string>

@@ -9,7 +9,7 @@
     <string name="disclaimer_summary_data_title">Data stays on your device by default</string>
     <string name="disclaimer_summary_data_body">Settings, history, download records, crash reports, and local diagnostics stay on-device and are never used for advertising or profiling.</string>
     <string name="disclaimer_summary_sync_title">Sync is your choice</string>
-    <string name="disclaimer_summary_sync_body">Selected data is sent only after you enable GitHub, WebDAV, Listen Together, or a self-hosted service.</string>
+    <string name="disclaimer_summary_sync_body">Selected data is sent only after you enable GitHub, WebDAV, Listen Together, a self-hosted service, or listening history sync.</string>
     <string name="disclaimer_show_details">Read full details</string>
     <string name="disclaimer_hide_details">Hide full details</string>
     <string name="disclaimer_section1_title">App and content scope</string>
