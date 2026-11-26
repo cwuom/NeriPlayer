@@ -23,4 +23,5 @@
     <string name="platform_bilibili">哔哩哔哩</string>
     <string name="platform_netease">网易云音乐</string>
     <string name="platform_netease_short">网易云</string>
+    <string name="action_scroll_to_top">回到顶部</string>
 </resources>

@@ -150,6 +150,9 @@ import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollMainTabToTop
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeNeteasePlaylistSectionState
@@ -466,6 +469,9 @@ fun HomeScreen(
             }
             LargeTopAppBar(
                 title = { Text(appBarTitle, modifier = Modifier.padding(start = appBarTitleInset)) },
+                modifier = Modifier.scrollToTopOnTitleBarTap {
+                    scrollMainTabToTop(topAppBarState) { gridState.scrollToTopForReselect() }
+                },
                 actions = homeActions, scrollBehavior = scrollBehavior,
                 windowInsets = WindowInsets(0), colors = toolbarColors
             )

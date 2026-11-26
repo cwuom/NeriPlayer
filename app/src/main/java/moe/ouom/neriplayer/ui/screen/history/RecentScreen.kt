@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -119,6 +120,8 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
@@ -193,6 +196,7 @@ fun RecentScreen(
 
     val displayed = rememberRecentSearchResults(recentSongs, query, context, showSearch)
     val displayedSongs = displayed.songs
+    val listState = rememberLazyListState()
 
     // 多选
     var selectionMode by remember { mutableStateOf(false) }
@@ -255,7 +259,8 @@ fun RecentScreen(
                             }
                         },
                         onSongClick = onSongClick,
-                        onRequestClear = { showClearConfirm = true }
+                        onRequestClear = { showClearConfirm = true },
+                        modifier = Modifier.scrollToTopOnTitleBarTap { listState.scrollToTopForReselect() }
                     )
                 } else {
                     RecentSelectionTopBar(
@@ -305,6 +310,7 @@ fun RecentScreen(
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
+                    state = listState,
                     contentPadding = PaddingValues(bottom = 16.dp + mini)
                 ) {
                     itemsIndexed(
@@ -499,10 +505,12 @@ internal fun RecentBrowseTopBar(
     onBack: () -> Unit,
     onToggleSearch: () -> Unit,
     onSongClick: (List<SongItem>, Int) -> Unit,
-    onRequestClear: () -> Unit
+    onRequestClear: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     TopAppBar(
         title = { Text(stringResource(CoreCommonR.string.recent_title)) },
+        modifier = modifier,
         navigationIcon = {
             HapticIconButton(onClick = onBack) {
                 Icon(

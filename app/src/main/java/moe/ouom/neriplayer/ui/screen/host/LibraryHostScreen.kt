@@ -25,6 +25,8 @@ package moe.ouom.neriplayer.ui.screen.host
 
 import android.os.Parcelable
 import moe.ouom.neriplayer.ui.navigation.HostSceneRenderer
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
 import moe.ouom.neriplayer.ui.navigation.PassThroughHostSceneRenderer
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
@@ -304,6 +306,7 @@ internal fun LibraryHostScreen(
     localPlaylistSourceRoute: (Long) -> String? = { null },
     onOpenRecent: () -> Unit,
     onOpenStats: () -> Unit = {},
+    reselectRequests: MainTabReselectRequests? = null,
     offlineMode: Boolean = false,
     coherentFeedbackEnabled: Boolean = false,
     renderScene: HostSceneRenderer = PassThroughHostSceneRenderer
@@ -403,6 +406,19 @@ internal fun LibraryHostScreen(
     LaunchedEffect(selected) {
         if (selected != null) {
             skipDetailCloseAnimation = false
+        }
+    }
+
+    // 根页面持有分页与各平台列表的选择，回顶交给它判断当前列表
+    val libraryRootReselectRequests = remember { MainTabReselectRequests() }
+    MainTabReselectEffect(reselectRequests) {
+        cancelPendingNeteaseCoverWarmup()
+        if (selected != null) {
+            skipDetailCloseAnimation = false
+            creatorParents = emptyList()
+            selected = null
+        } else {
+            libraryRootReselectRequests.dispatch()
         }
     }
 
@@ -586,6 +602,7 @@ internal fun LibraryHostScreen(
                             biliListState = biliListState,
                             qqMusicListState = qqMusicListState,
                             topAppBarState = topAppBarState,
+                            reselectRequests = libraryRootReselectRequests,
                             offlineMode = offlineMode,
                             onLocalPlaylistClick = { playlist ->
                                 skipDetailCloseAnimation = false

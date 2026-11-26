@@ -118,6 +118,8 @@ import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionActions
@@ -487,6 +489,9 @@ fun YouTubeMusicPlaylistDetailScreen(
         topBar = {
             if (!selectionMode) {
                 TopAppBar(
+                    modifier = Modifier.scrollToTopOnTitleBarTap {
+                        listState.scrollToTopForReselect()
+                    },
                     title = {
                         Text(
                             text = resolvedPlaylist.title,

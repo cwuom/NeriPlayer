@@ -59,6 +59,8 @@ import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorItemsUiState
@@ -142,6 +144,7 @@ fun YouTubeMusicCreatorItemsScreen(
                         )
                     }
                 },
+                modifier = Modifier.scrollToTopOnTitleBarTap { listState.scrollToTopForReselect() },
                 windowInsets = WindowInsets.statusBars,
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )

@@ -34,6 +34,10 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.buildSettingsSearchEntrie
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.resolveSettingsSearchHighlightTarget
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.searchSettingsEntries
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsSearchScrollAnchor
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
+import moe.ouom.neriplayer.ui.navigation.scrollMainTabToTop
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
@@ -115,6 +119,7 @@ internal class SettingsNavigationState(
     val splitLayout: Boolean,
     val activePageState: MutableState<SettingsPage?>,
     val homeTopAppBarState: TopAppBarState,
+    val homeListState: LazyListState,
     val detailTopAppBarStates: Map<SettingsPage, TopAppBarState>,
     val detailListStates: Map<SettingsPage, LazyListState>,
     val searchQueryState: MutableState<String>,
@@ -168,6 +173,20 @@ internal class SettingsNavigationState(
 
     fun navigateBack() {
         activePage = backTarget
+    }
+
+    /** 回到设置首页；分栏时首页仍带默认详情页，已在该状态时返回 false 交给调用方回顶部 */
+    fun returnToRoot(): Boolean {
+        if (activePage == initialSettingsPage(splitLayout)?.destination) return false
+        activePage = null
+        return true
+    }
+
+    /** 重选设置 Tab：先回设置首页，已在首页时滚回顶部并展开顶部栏 */
+    suspend fun handleReselect() {
+        if (!returnToRoot()) {
+            scrollMainTabToTop(homeTopAppBarState) { homeListState.scrollToTopForReselect() }
+        }
     }
 
     fun clearHighlight() {
@@ -273,7 +292,8 @@ internal fun rememberSettingsNavigationState(
     mobileDataFollowDefaultAudioQuality: Boolean,
     backgroundImageUri: String?,
     splitLayout: Boolean = settingsSplitLayout(),
-    internationalEnabled: Boolean
+    internationalEnabled: Boolean,
+    reselectRequests: MainTabReselectRequests? = null
 ): SettingsNavigationState {
     val activePageState = rememberInitialSettingsPageState()
     val homeTopAppBarState = rememberTopAppBarState()
@@ -292,6 +312,7 @@ internal fun rememberSettingsNavigationState(
         splitLayout = splitLayout,
         activePageState = activePageState,
         homeTopAppBarState = homeTopAppBarState,
+        homeListState = listState,
         detailTopAppBarStates = detailTopAppBarStates,
         detailListStates = detailListStates,
         searchQueryState = searchQueryState,
@@ -309,6 +330,7 @@ internal fun rememberSettingsNavigationState(
 
     // 分栏时默认显示通用页只是展示兜底，不写回状态，窗口变窄后仍回到设置首页
     ObserveSettingsSearchScroll(searchQueryState, listState)
+    MainTabReselectEffect(reselectRequests, navigation) { it.handleReselect() }
     val eligiblePendingNavigation = pendingSettingsNavigationForPage(
         navigation.activePage, pendingNavigationState.value
     )

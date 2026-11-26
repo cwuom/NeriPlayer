@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
@@ -66,6 +67,8 @@ import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableRankVideoItems
 import moe.ouom.neriplayer.platform.bilibili.api.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.ui.component.common.NeriChoiceChip
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -108,6 +111,11 @@ internal fun BiliMusicRankDetailScreen(
     )
     val ui by vm.uiState.collectAsStateWithLifecycle()
     val state = ui.biliMusicRank
+    val listState = rememberLazyListState()
+    // 列表为空时会卸载，原先重新出现时从顶部开始；状态提升后保持这一行为
+    LaunchedEffect(state.songs.isEmpty()) {
+        if (state.songs.isEmpty()) listState.requestScrollToItem(0)
+    }
     // 播放中时详情页会被常驻迷你播放器遮住底部，列表末尾需要额外预留它的高度
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     // 详情页打开时首页不再组合，HomeScreen 的 wasOffline 恢复刷新不会抵达这个目的地；因此这里
@@ -158,6 +166,7 @@ internal fun BiliMusicRankDetailScreen(
                         )
                     }
                 },
+                modifier = Modifier.scrollToTopOnTitleBarTap { listState.scrollToTopForReselect() },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     scrolledContainerColor = Color.Transparent
@@ -225,6 +234,7 @@ internal fun BiliMusicRankDetailScreen(
                 }
                 when {
                     state.songs.isNotEmpty() -> LazyColumn(
+                        state = listState,
                         contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
                         modifier = Modifier.fillMaxSize()
                     ) {
@@ -305,6 +315,10 @@ internal fun BiliMusicHotDetailScreen(
     )
     val ui by vm.uiState.collectAsStateWithLifecycle()
     val state = ui.biliMusicHot
+    val listState = rememberLazyListState()
+    LaunchedEffect(state.items.isEmpty()) {
+        if (state.items.isEmpty()) listState.requestScrollToItem(0)
+    }
     // 播放中时详情页会被常驻迷你播放器遮住底部，列表末尾需要额外预留它的高度
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     // 与 [BiliMusicRankDetailScreen] 同理：详情页打开时首页不再组合，HomeScreen 的 wasOffline
@@ -349,6 +363,7 @@ internal fun BiliMusicHotDetailScreen(
                         )
                     }
                 },
+                modifier = Modifier.scrollToTopOnTitleBarTap { listState.scrollToTopForReselect() },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     scrolledContainerColor = Color.Transparent
@@ -372,6 +387,7 @@ internal fun BiliMusicHotDetailScreen(
             }
             when {
                 state.items.isNotEmpty() -> LazyColumn(
+                    state = listState,
                     contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
                     modifier = Modifier.fillMaxSize()
                 ) {

@@ -74,6 +74,8 @@ import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.ui.component.download.DownloadedSongDeleteProgressCard
 import moe.ouom.neriplayer.ui.component.download.isDownloadedSongDeletionRunning
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
@@ -350,7 +352,8 @@ internal fun DownloadManagerContent(
             onExitSelection = selection::exitSelectionMode,
             onOpenDownloadProgress = onOpenDownloadProgress,
             onRefresh = onRefresh,
-            onEnterSelection = selection::enterSelectionMode
+            onEnterSelection = selection::enterSelectionMode,
+            onTitleBarTap = { listState.scrollToTopForReselect() }
         )
 
         DownloadedSongDeleteProgressCard(
@@ -438,7 +441,8 @@ private fun DownloadManagerTopBar(
     onExitSelection: () -> Unit,
     onOpenDownloadProgress: () -> Unit,
     onRefresh: () -> Unit,
-    onEnterSelection: () -> Unit
+    onEnterSelection: () -> Unit,
+    onTitleBarTap: suspend () -> Unit
 ) {
     val context = LocalContext.current
     TopAppBar(
@@ -460,6 +464,7 @@ private fun DownloadManagerTopBar(
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
             }
         },
+        modifier = if (selectionMode) Modifier else Modifier.scrollToTopOnTitleBarTap(onTitleBarTap),
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent,
             scrolledContainerColor = Color.Transparent

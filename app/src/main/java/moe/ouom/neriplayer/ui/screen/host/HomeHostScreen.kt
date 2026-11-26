@@ -25,6 +25,10 @@ package moe.ouom.neriplayer.ui.screen.host
 
 import android.content.Context
 import moe.ouom.neriplayer.ui.navigation.HostSceneRenderer
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
+import moe.ouom.neriplayer.ui.navigation.scrollMainTabToTop
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
 import moe.ouom.neriplayer.ui.navigation.PassThroughHostSceneRenderer
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
@@ -229,6 +233,7 @@ internal fun HomeHostScreen(
     homeUsageLoaded: Boolean = true,
     offlineMode: Boolean = false,
     runtimeState: HomeHostRuntimeState = rememberHomeHostRuntimeState(),
+    reselectRequests: MainTabReselectRequests? = null,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onSongClickWithSourceRoute: (List<SongItem>, Int, String?) -> Unit = { songs, index, _ ->
         onSongClick(songs, index)
@@ -349,6 +354,20 @@ internal fun HomeHostScreen(
         cancelPendingNeteaseCoverWarmup()
         skipDetailCloseAnimation = true
         selected = null
+    }
+
+    MainTabReselectEffect(reselectRequests) {
+        cancelPendingNeteaseCoverWarmup()
+        if (selected != null) {
+            // 直接回首页而不是逐级返回，首页滚动位置仍按原逻辑恢复
+            skipDetailCloseAnimation = false
+            selected = null
+        } else {
+            clearPendingHomeScrollRestore()
+            scrollMainTabToTop(runtimeState.topAppBarState) {
+                gridState.scrollToTopForReselect()
+            }
+        }
     }
 
     LaunchedEffect(selected) {

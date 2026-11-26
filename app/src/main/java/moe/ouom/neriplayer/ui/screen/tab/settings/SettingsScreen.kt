@@ -145,6 +145,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.rememberSetting
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageHost
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.rememberSettingsNavigationState
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsHomePageItems
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldShowSettingsDetailHeader
 import moe.ouom.neriplayer.ui.theme.NeriDesign
@@ -164,7 +165,8 @@ internal fun SettingsScreen(
     listState: LazyListState,
     bindings: AppSettingsHostBindings,
     isActive: Boolean,
-    onNavigateToDownloadManager: () -> Unit
+    onNavigateToDownloadManager: () -> Unit,
+    reselectRequests: MainTabReselectRequests?
 ) {
     val appearanceState = bindings.state.appearance
     val configuration = LocalConfiguration.current
@@ -279,7 +281,8 @@ internal fun SettingsScreen(
         dynamicColor = appearanceState.theme.dynamicColorEnabled,
         mobileDataFollowDefaultAudioQuality = playbackState.defaultAudioQuality.mobileDataFollowDefaultAudioQuality,
         backgroundImageUri = appearanceState.visualBackground.backgroundImageUri,
-        internationalEnabled = otherState.internationalizationEnabled
+        internationalEnabled = otherState.internationalizationEnabled,
+        reselectRequests = reselectRequests
     )
     LaunchedEffect(environment.settingsVisible, environment.requestedPage) {
         navigation.consumeHomeShortcut(environment.settingsVisible, environment.requestedPage, environment.onPageRequestConsumed)

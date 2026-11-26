@@ -100,6 +100,8 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.navigation.rememberMainTabDetailVisibilityState
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsSheet
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
@@ -472,6 +474,9 @@ fun BiliPlaylistDetailScreen(
             Column {
                 if (!selectionMode) {
                     TopAppBar(
+                        modifier = Modifier.scrollToTopOnTitleBarTap {
+                            listState.scrollToTopForReselect()
+                        },
                         title = {
                             Text(
                                 text = ui.header?.title ?: playlist.title,

@@ -76,6 +76,9 @@ import androidx.compose.ui.geometry.Rect
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollMainTabToTop
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassBackdropRegistrationEnabled
@@ -189,6 +192,9 @@ internal fun MiuixSettingsHomeScaffold(
                     ) {
                         title()
                     }
+                },
+                modifier = Modifier.scrollToTopOnTitleBarTap {
+                    scrollMainTabToTop(topAppBarState) { listState.scrollToTopForReselect() }
                 },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -492,6 +498,9 @@ internal fun MiuixSettingsDetailScaffold(
                             )
                         }
                     }
+                },
+                modifier = Modifier.scrollToTopOnTitleBarTap {
+                    scrollMainTabToTop(topAppBarState) { listState.scrollToTopForReselect() }
                 },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
