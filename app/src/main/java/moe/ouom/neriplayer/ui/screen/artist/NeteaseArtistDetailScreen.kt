@@ -77,6 +77,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistDetailUiState
@@ -143,6 +145,7 @@ fun NeteaseArtistDetailScreen(
                         )
                     }
                 },
+                modifier = Modifier.scrollToTopOnTitleBarTap { listState.scrollToTopForReselect() },
                 windowInsets = WindowInsets.statusBars,
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )

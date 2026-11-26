@@ -170,6 +170,13 @@ internal class SettingsNavigationState(
         activePage = backTarget
     }
 
+    /** 回到设置首页；分栏时首页仍带默认详情页，已在该状态时返回 false 交给调用方回顶部 */
+    fun returnToRoot(): Boolean {
+        if (activePage == initialSettingsPage(splitLayout)?.destination) return false
+        activePage = null
+        return true
+    }
+
     fun clearHighlight() {
         highlightTargetState.value = null
     }

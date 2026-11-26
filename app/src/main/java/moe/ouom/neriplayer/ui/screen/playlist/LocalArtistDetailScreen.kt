@@ -94,6 +94,8 @@ import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.screen.artist.CreatorDetailAdaptiveLayout
 import moe.ouom.neriplayer.ui.screen.artist.CreatorDetailProfileCard
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
@@ -328,6 +330,9 @@ fun LocalArtistDetailScreen(
             topBar = {
                 if (!selectionMode) {
                     TopAppBar(
+                        modifier = Modifier.scrollToTopOnTitleBarTap {
+                            listState.scrollToTopForReselect()
+                        },
                         title = {
                             Text(
                                 text = title,

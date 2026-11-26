@@ -199,6 +199,10 @@ import moe.ouom.neriplayer.ui.navigation.resolveMainTabNavigationMotionTarget
 import moe.ouom.neriplayer.ui.navigation.selectMainTabRouteContent
 import moe.ouom.neriplayer.ui.navigation.shouldAcceptObservedMainTabRoute
 import moe.ouom.neriplayer.ui.navigation.shouldDispatchMainTabNavigation
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectDispatcher
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.isMainTabReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
 import moe.ouom.neriplayer.ui.navigation.shouldUseAdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.playback.visual.AppNowPlayingOverlay
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingCoverAssetRefresh
@@ -1340,6 +1344,22 @@ private fun NeriAppContent(
                     restoreState = true
                 }
             }
+            val mainTabReselectDispatcher = remember { MainTabReselectDispatcher() }
+            // 只有底栏/侧栏点击才区分重复点击，快捷方式等程序化跳转保持原有切换语义
+            fun onMainTabClicked(route: String) {
+                if (
+                    isMainTabReselect(
+                        selectedRoute = selectedMainTabRoute,
+                        currentRoute = currentRoute,
+                        pendingRoute = pendingMainTabRoute,
+                        targetRoute = route
+                    )
+                ) {
+                    mainTabReselectDispatcher.dispatch(route)
+                    return
+                }
+                navigateToMainTab(route)
+            }
             fun showLauncherShortcutToast(messageRes: Int) {
                 AppFeedback.showToast(
                     context = context,
@@ -1514,6 +1534,7 @@ private fun NeriAppContent(
                         homeUsageLoaded = homeUsageSnapshot.isLoaded,
                         offlineMode = offlineMode,
                         runtimeState = homeHostRuntimeState,
+                        reselectRequests = mainTabReselectDispatcher.requestsFor(Destinations.Home.route),
                         onSongClick = ::playSongsAndOpenNowPlaying,
                         onSongClickWithSourceRoute = ::playSongsAndOpenNowPlaying,
                         onPlayBiliAudioWithSourceRoute = ::playBiliAudioAndOpenNowPlayingWithSource,
@@ -1542,6 +1563,7 @@ private fun NeriAppContent(
                         onSongPlayNext = ::addSongToQueueNextFromSearch,
                         onSongAddToQueueEnd = ::addSongToQueueEndFromSearch,
                         onPlayParts = ::playBiliPartsAndOpenNowPlaying,
+                        reselectRequests = mainTabReselectDispatcher.requestsFor(Destinations.Explore.route),
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
                         renderScene = { sceneMotion, sceneDepth, sceneContent ->
                             navigationSceneRenderer.RenderMainTabNavigationScene(sceneMotion, sceneDepth, sceneContent)
@@ -1564,6 +1586,7 @@ private fun NeriAppContent(
                         onOpenStats = {
                             navController.navigate(Destinations.PlaybackStats.route)
                         },
+                        reselectRequests = mainTabReselectDispatcher.requestsFor(Destinations.Library.route),
                         offlineMode = offlineMode,
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
                         renderScene = { sceneMotion, sceneDepth, sceneContent ->
@@ -1595,6 +1618,7 @@ private fun NeriAppContent(
                         ),
                         onBackgroundImageAlphaPreview = { pendingBackgroundImageAlpha = it },
                         snackbarHostState = snackbarHostState,
+                        reselectRequests = mainTabReselectDispatcher.requestsFor(Destinations.Settings.route),
                         renderScene = { sceneMotion, sceneDepth, sceneContent ->
                             navigationSceneRenderer.RenderMainTabNavigationScene(sceneMotion, sceneDepth, sceneContent)
                         }
@@ -1602,6 +1626,11 @@ private fun NeriAppContent(
                 }
                 val debugContent: @Composable () -> Unit = {
                         val debugHomeScrollState = rememberScrollState()
+                        MainTabReselectEffect(
+                            mainTabReselectDispatcher.requestsFor(Destinations.Debug.route)
+                        ) {
+                            debugHomeScrollState.scrollToTopForReselect()
+                        }
                         val crashActionOwner = remember(context, composeResources) {
                             appDebugCrashActionOwner(context) {
                                 composeResources.getString(AppR.string.test_exception_message)
@@ -1750,7 +1779,7 @@ private fun NeriAppContent(
                         ),
                         baseBlurRequested = advancedGlassController.isBaseBlurRequested,
                         snackbarHostState = snackbarHostState,
-                        onMainTabSelected = ::navigateToMainTab,
+                        onMainTabSelected = ::onMainTabClicked,
                         onExpandNowPlaying = {
                             showNowPlaying = true
                         },

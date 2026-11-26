@@ -55,6 +55,8 @@ import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.screen.playlist.LOCAL_PLAYLIST_ACTIONS_KEY
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistHeroMeta
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistModernActionSheet
@@ -339,6 +341,9 @@ internal fun PlaylistModernDetailFrame(
                                 }
 
                                 normalActions(playlistTopBarContentColor)
+                            },
+                            modifier = Modifier.scrollToTopOnTitleBarTap {
+                                listState.scrollToTopForReselect()
                             },
                             windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(

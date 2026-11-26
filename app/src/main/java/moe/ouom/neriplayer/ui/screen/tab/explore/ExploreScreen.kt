@@ -192,6 +192,11 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
+import moe.ouom.neriplayer.ui.navigation.scrollMainTabToTop
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
@@ -446,7 +451,8 @@ fun ExploreScreen(
     onSongPlayPreservingQueue: (SongItem) -> Unit = {},
     onSongPlayNext: (SongItem) -> Unit = {},
     onSongAddToQueueEnd: (SongItem) -> Unit = {},
-    onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
+    onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    reselectRequests: MainTabReselectRequests? = null
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
@@ -787,6 +793,20 @@ fun ExploreScreen(
         }
     )
 
+    // 与顶部栏折叠判定使用同一套「当前列表」规则
+    val scrollExploreToTop: suspend () -> Unit = {
+        scrollMainTabToTop(topAppBarState) {
+            when {
+                searchQuery.isNotEmpty() -> searchListState.scrollToTopForReselect()
+                ui.selectedSearchSource == SearchSource.NETEASE -> gridState.scrollToTopForReselect()
+                ui.selectedSearchSource == SearchSource.YOUTUBE_MUSIC ->
+                    youtubeGridState.scrollToTopForReselect()
+                else -> Unit
+            }
+        }
+    }
+    MainTabReselectEffect(reselectRequests, scrollExploreToTop)
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -805,6 +825,7 @@ fun ExploreScreen(
         topBar = {
             LargeTopAppBar(
                 title = { Text(stringResource(AppR.string.nav_explore)) },
+                modifier = Modifier.scrollToTopOnTitleBarTap(scrollExploreToTop),
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,

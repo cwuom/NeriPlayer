@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -84,10 +85,10 @@ internal fun PlaybackStatsContent(
     miniPlayerHeight: Dp,
     tablet: Boolean,
     modifier: Modifier = Modifier,
+    rankingListState: LazyListState = rememberLazyListState(),
     filters: @Composable () -> Unit = {},
     overviewContent: (@Composable () -> Unit)? = null
 ) {
-    val rankingListState = rememberLazyListState()
     val displayedRequest = state.loadedRequest ?: request
     val displayedSortMode = state.loadedQuery?.let { StatsSortMode.valueOf(it.sort.name) } ?: sortMode
     BoxWithConstraints(modifier.testTag("statsContent"), contentAlignment = Alignment.TopCenter) {

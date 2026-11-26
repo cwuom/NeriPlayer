@@ -131,4 +131,28 @@ class SettingsSplitLayoutCrossingTest {
 
         assertEquals(SettingsPage.About, navigation.activePage)
     }
+
+    @Test
+    fun `reselect returns a nested page straight to the settings home`() {
+        render(initialSplit = false)
+        composeRule.runOnIdle {
+            navigation.activePage = SettingsPage.StorageCacheDetails
+
+            assertEquals(true, navigation.returnToRoot())
+            assertNull(navigation.activePage)
+            assertEquals(false, navigation.returnToRoot())
+        }
+    }
+
+    @Test
+    fun `reselect in split layout falls back to the default detail page`() {
+        render(initialSplit = true)
+        composeRule.runOnIdle {
+            assertEquals(false, navigation.returnToRoot())
+
+            navigation.activePage = SettingsPage.Storage
+            assertEquals(true, navigation.returnToRoot())
+            assertEquals(SettingsPage.General, navigation.activePage)
+        }
+    }
 }

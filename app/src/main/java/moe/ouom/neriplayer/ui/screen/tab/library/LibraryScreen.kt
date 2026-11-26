@@ -90,6 +90,11 @@ import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistDeleteResultGlobally
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
+import moe.ouom.neriplayer.ui.navigation.scrollMainTabToTop
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
@@ -259,7 +264,8 @@ fun LibraryScreen(
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
     onOpenRecent: () -> Unit = {},
     onOpenStats: () -> Unit = {},
-    offlineMode: Boolean = false
+    offlineMode: Boolean = false,
+    reselectRequests: MainTabReselectRequests? = null
 ) {
     val vm: LibraryViewModel = viewModel()
     val ui by vm.uiState.collectAsStateWithLifecycle()
@@ -295,6 +301,22 @@ fun LibraryScreen(
     }
     val pullGate = remember { LibraryPullGate() }
     var serverListState by remember { mutableStateOf<LazyListState?>(null) }
+    // 顶部栏折叠判定和重复点击回顶共用同一份「当前列表」
+    fun activeListState(): LazyListState? = when (orderedTabs.getOrNull(pagerState.currentPage)) {
+        LibraryTab.LOCAL -> localListState
+        LibraryTab.FAVORITE -> favoriteListState
+        LibraryTab.NETEASE,
+        LibraryTab.NETEASEALBUM -> if (selectedNeteaseCategory == NETEASE_CATEGORY_ALBUM) {
+            neteaseAlbumState
+        } else {
+            neteaseListState
+        }
+        LibraryTab.YTMUSIC -> youtubeMusicListState
+        LibraryTab.BILI -> biliListState
+        LibraryTab.QQMUSIC -> qqMusicListState
+        LibraryTab.MY_MUSIC -> serverListState
+        null -> null
+    }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
         // follow the finger and stay put; a release snap reads as an unwanted bounce
@@ -302,60 +324,20 @@ fun LibraryScreen(
         canScroll = {
             // an active pull owns the upward drag so it can be pushed back and cancelled
             if (pullGate.pulling) return@exitUntilCollapsedScrollBehavior false
-            when (orderedTabs.getOrNull(pagerState.currentPage)) {
-                LibraryTab.LOCAL -> shouldAllowCollapsingTopAppBar(
-                    localListState.canScrollForward,
-                    localListState.canScrollBackward,
-                    topAppBarState.collapsedFraction
-                )
-                LibraryTab.FAVORITE -> shouldAllowCollapsingTopAppBar(
-                    favoriteListState.canScrollForward,
-                    favoriteListState.canScrollBackward,
-                    topAppBarState.collapsedFraction
-                )
-                LibraryTab.NETEASE,
-                LibraryTab.NETEASEALBUM -> {
-                    val activeListState = if (
-                        selectedNeteaseCategory == NETEASE_CATEGORY_ALBUM
-                    ) {
-                        neteaseAlbumState
-                    } else {
-                        neteaseListState
-                    }
-                    shouldAllowCollapsingTopAppBar(
-                        activeListState.canScrollForward,
-                        activeListState.canScrollBackward,
-                        topAppBarState.collapsedFraction
-                    )
-                }
-                LibraryTab.YTMUSIC -> shouldAllowCollapsingTopAppBar(
-                    youtubeMusicListState.canScrollForward,
-                    youtubeMusicListState.canScrollBackward,
-                    topAppBarState.collapsedFraction
-                )
-                LibraryTab.BILI -> shouldAllowCollapsingTopAppBar(
-                    biliListState.canScrollForward,
-                    biliListState.canScrollBackward,
-                    topAppBarState.collapsedFraction
-                )
-                LibraryTab.QQMUSIC -> shouldAllowCollapsingTopAppBar(
-                    qqMusicListState.canScrollForward,
-                    qqMusicListState.canScrollBackward,
-                    topAppBarState.collapsedFraction
-                )
-                LibraryTab.MY_MUSIC -> shouldAllowCollapsingTopAppBar(
-                    canScrollForward = serverListState?.canScrollForward == true,
-                    canScrollBackward = serverListState?.canScrollBackward == true,
-                    collapsedFraction = topAppBarState.collapsedFraction
-                )
-                null -> shouldAllowCollapsingTopAppBar(
-                    canScrollForward = false,
-                    canScrollBackward = false,
-                    collapsedFraction = topAppBarState.collapsedFraction
-                )
-            }
+            val activeListState = activeListState()
+            shouldAllowCollapsingTopAppBar(
+                canScrollForward = activeListState?.canScrollForward == true,
+                canScrollBackward = activeListState?.canScrollBackward == true,
+                collapsedFraction = topAppBarState.collapsedFraction
+            )
         }
     )
+    val scrollLibraryToTop: suspend () -> Unit = {
+        scrollMainTabToTop(topAppBarState) {
+            activeListState()?.scrollToTopForReselect()
+        }
+    }
+    MainTabReselectEffect(reselectRequests, scrollLibraryToTop)
     val scope = rememberCoroutineScope()
     val windowWidthDp = currentWindowWidthDp()
     val isTabletLayout = windowWidthDp >= 720.dp
@@ -384,6 +366,7 @@ fun LibraryScreen(
     ) {
         LargeTopAppBar(
             title = { Text(stringResource(CoreCommonR.string.library_title)) },
+            modifier = Modifier.scrollToTopOnTitleBarTap(scrollLibraryToTop),
             scrollBehavior = scrollBehavior,
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,

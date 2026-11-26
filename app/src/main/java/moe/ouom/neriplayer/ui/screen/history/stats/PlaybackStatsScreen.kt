@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -39,6 +40,8 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.stats.PlaybackStatsSort
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
@@ -89,6 +92,8 @@ fun PlaybackStatsScreen(
         )
     }
     val tablet = usePlaybackStatsTabletLayout(currentWindowWidthDp())
+    // 与下方内容同一组 key，筛选或排序变化时照旧回到新列表顶部
+    val rankingListState = key(selection, showRankings, sort) { rememberLazyListState() }
 
     if (showClearDialog) {
         AlertDialog(
@@ -121,7 +126,8 @@ fun PlaybackStatsScreen(
                     onSortModeChange = { sortMode = it },
                     onBack = onBack,
                     onClearRequest = { showClearDialog = true },
-                    showSort = showRankings
+                    showSort = showRankings,
+                    modifier = Modifier.scrollToTopOnTitleBarTap { rankingListState.scrollToTopForReselect() }
                 )
             }
         ) { innerPadding ->
@@ -138,6 +144,7 @@ fun PlaybackStatsScreen(
                     miniPlayerHeight = mini,
                     tablet = tablet,
                     modifier = Modifier.fillMaxSize().padding(innerPadding),
+                    rankingListState = rankingListState,
                     filters = {
                         StatsDateControls(selection, today, firstWeekday) { selection = it }
                         StatsViewSelector(showRankings) { showRankings = it }
@@ -162,11 +169,13 @@ internal fun PlaybackStatsTopBar(
     onSortModeChange: (StatsSortMode) -> Unit,
     onBack: () -> Unit,
     onClearRequest: () -> Unit,
-    showSort: Boolean = true
+    showSort: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
     var showSortMenu by remember { mutableStateOf(false) }
     TopAppBar(
         title = { Text(stringResource(AppR.string.stats_title)) },
+        modifier = modifier,
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent
         ),

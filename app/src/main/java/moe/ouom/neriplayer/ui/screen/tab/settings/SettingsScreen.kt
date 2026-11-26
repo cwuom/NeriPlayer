@@ -145,6 +145,10 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.rememberSetting
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageHost
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.rememberSettingsNavigationState
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
+import moe.ouom.neriplayer.ui.navigation.scrollMainTabToTop
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsHomePageItems
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldShowSettingsDetailHeader
 import moe.ouom.neriplayer.ui.theme.NeriDesign
@@ -164,7 +168,8 @@ internal fun SettingsScreen(
     listState: LazyListState,
     bindings: AppSettingsHostBindings,
     isActive: Boolean,
-    onNavigateToDownloadManager: () -> Unit
+    onNavigateToDownloadManager: () -> Unit,
+    reselectRequests: MainTabReselectRequests? = null
 ) {
     val appearanceState = bindings.state.appearance
     val configuration = LocalConfiguration.current
@@ -283,6 +288,13 @@ internal fun SettingsScreen(
     )
     LaunchedEffect(environment.settingsVisible, environment.requestedPage) {
         navigation.consumeHomeShortcut(environment.settingsVisible, environment.requestedPage, environment.onPageRequestConsumed)
+    }
+    MainTabReselectEffect(reselectRequests) {
+        if (!navigation.returnToRoot()) {
+            scrollMainTabToTop(navigation.homeTopAppBarState) {
+                listState.scrollToTopForReselect()
+            }
+        }
     }
     val isSettingsSplitLayout = navigation.splitLayout
     val activeSettingsPage = navigation.activePage

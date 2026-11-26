@@ -151,6 +151,8 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.navigation.rememberMainTabDetailVisibilityState
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionActions
@@ -593,6 +595,9 @@ fun DetailScreen(
                     // 顶部栏: 普通模式 / 多选模式
                     if (!selectionMode) {
                         TopAppBar(
+                            modifier = Modifier.scrollToTopOnTitleBarTap {
+                                listState.scrollToTopForReselect()
+                            },
                             title = {
                                 Text(
                                     text = ui.header?.name ?: stringResource(CoreCommonR.string.playlist_title),

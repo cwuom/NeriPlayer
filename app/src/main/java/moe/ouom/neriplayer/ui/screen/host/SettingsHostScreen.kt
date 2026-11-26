@@ -25,6 +25,8 @@ package moe.ouom.neriplayer.ui.screen.host
 
 import androidx.compose.animation.AnimatedContent
 import moe.ouom.neriplayer.ui.navigation.HostSceneRenderer
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
 import androidx.compose.animation.SizeTransform
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Surface
@@ -111,7 +113,8 @@ internal fun isSettingsScreenSettled(
 @Composable
 internal fun SettingsHostScreen(
     bindings: AppSettingsHostBindings,
-    renderScene: HostSceneRenderer
+    renderScene: HostSceneRenderer,
+    reselectRequests: MainTabReselectRequests? = null
 ) {
     val coherentFeedbackEnabled = bindings.environment.coherentFeedbackEnabled
 
@@ -149,6 +152,15 @@ internal fun SettingsHostScreen(
             captureSettingsListPosition()
         }
         requestedScreenState = target
+    }
+
+    val settingsReselectRequests = remember { MainTabReselectRequests() }
+    MainTabReselectEffect(reselectRequests) {
+        if (requestedScreenState != SettingsScreenState.Settings) {
+            requestScreen(SettingsScreenState.Settings)
+        } else {
+            settingsReselectRequests.dispatch()
+        }
     }
 
     val backScreenState = requestedScreenState.nextTowards(SettingsScreenState.Settings)
@@ -243,6 +255,7 @@ internal fun SettingsHostScreen(
                                 listState = settingsListState,
                                 bindings = bindings,
                                 isActive = requestedScreenState == SettingsScreenState.Settings,
+                                reselectRequests = settingsReselectRequests,
                                 onNavigateToDownloadManager = {
                                     requestScreen(SettingsScreenState.DownloadManager)
                                 }
