@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -67,7 +68,25 @@ internal fun <T> selectSettingsHostPage(
     SettingsScreenState.DownloadProgress -> downloadProgress
 }
 
-private fun SettingsScreenState.saveableKey(): String = "settings_host:${name}"
+internal fun SettingsScreenState.saveableKey(): String = "settings_host:${name}"
+
+/**
+ * 重选设置 Tab。下载页是从设置的子页进入的，直接切回会恢复那个子页；
+ * 此时设置页不在组合中，丢掉它保存的状态，一次重选就能回到设置根页面。
+ */
+internal fun reselectSettingsHost(
+    requestedState: SettingsScreenState,
+    saveableStateHolder: SaveableStateHolder,
+    returnToSettings: () -> Unit,
+    dispatchToSettingsRoot: () -> Unit
+) {
+    if (requestedState == SettingsScreenState.Settings) {
+        dispatchToSettingsRoot()
+        return
+    }
+    saveableStateHolder.removeState(SettingsScreenState.Settings.saveableKey())
+    returnToSettings()
+}
 
 private val SettingsScreenState.navigationDepth: Int
     get() = when (this) {
@@ -156,11 +175,18 @@ internal fun SettingsHostScreen(
 
     val settingsReselectRequests = remember { MainTabReselectRequests() }
     MainTabReselectEffect(reselectRequests) {
-        if (requestedScreenState != SettingsScreenState.Settings) {
-            requestScreen(SettingsScreenState.Settings)
-        } else {
-            settingsReselectRequests.dispatch()
-        }
+        reselectSettingsHost(
+            requestedState = requestedScreenState,
+            saveableStateHolder = saveableStateHolder,
+            returnToSettings = {
+                // 子页状态连同折叠的顶部栏一起重置，首页列表也回顶，避免列表停在旧位置而栏已展开
+                pendingSettingsListRestoreIndex = null
+                pendingSettingsListRestoreOffset = 0
+                settingsListState.requestScrollToItem(0)
+                requestScreen(SettingsScreenState.Settings)
+            },
+            dispatchToSettingsRoot = settingsReselectRequests::dispatch
+        )
     }
 
     val backScreenState = requestedScreenState.nextTowards(SettingsScreenState.Settings)
