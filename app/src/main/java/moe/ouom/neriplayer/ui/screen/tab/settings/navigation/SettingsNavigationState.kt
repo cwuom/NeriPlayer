@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.NonRestartableComposable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -34,6 +35,10 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.buildSettingsSearchEntrie
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.resolveSettingsSearchHighlightTarget
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.searchSettingsEntries
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsSearchScrollAnchor
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
+import moe.ouom.neriplayer.ui.navigation.scrollMainTabToTop
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
@@ -177,6 +182,13 @@ internal class SettingsNavigationState(
         return true
     }
 
+    /** 重选设置 Tab：先回设置首页，已在首页时滚回顶部并展开顶部栏 */
+    suspend fun handleReselect(homeListState: LazyListState) {
+        if (!returnToRoot()) {
+            scrollMainTabToTop(homeTopAppBarState) { homeListState.scrollToTopForReselect() }
+        }
+    }
+
     fun clearHighlight() {
         highlightTargetState.value = null
     }
@@ -231,6 +243,17 @@ internal class SettingsSearchScrollOwner(
     }
 }
 
+// 不可重启：只是挂接监听，省掉参数变化检查生成的分支
+@Composable
+@NonRestartableComposable
+private fun ObserveSettingsReselect(
+    requests: MainTabReselectRequests?,
+    navigation: SettingsNavigationState,
+    listState: LazyListState
+) {
+    MainTabReselectEffect(requests) { navigation.handleReselect(listState) }
+}
+
 @Composable
 private fun ObserveSettingsSearchScroll(
     queryState: MutableState<String>,
@@ -280,7 +303,8 @@ internal fun rememberSettingsNavigationState(
     mobileDataFollowDefaultAudioQuality: Boolean,
     backgroundImageUri: String?,
     splitLayout: Boolean = settingsSplitLayout(),
-    internationalEnabled: Boolean
+    internationalEnabled: Boolean,
+    reselectRequests: MainTabReselectRequests? = null
 ): SettingsNavigationState {
     val activePageState = rememberInitialSettingsPageState()
     val homeTopAppBarState = rememberTopAppBarState()
@@ -316,6 +340,7 @@ internal fun rememberSettingsNavigationState(
 
     // 分栏时默认显示通用页只是展示兜底，不写回状态，窗口变窄后仍回到设置首页
     ObserveSettingsSearchScroll(searchQueryState, listState)
+    ObserveSettingsReselect(reselectRequests, navigation, listState)
     val eligiblePendingNavigation = pendingSettingsNavigationForPage(
         navigation.activePage, pendingNavigationState.value
     )

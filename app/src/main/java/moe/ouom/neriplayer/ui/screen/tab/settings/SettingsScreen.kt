@@ -145,10 +145,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.rememberSetting
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageHost
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.rememberSettingsNavigationState
-import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
 import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
-import moe.ouom.neriplayer.ui.navigation.scrollMainTabToTop
-import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsHomePageItems
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldShowSettingsDetailHeader
 import moe.ouom.neriplayer.ui.theme.NeriDesign
@@ -169,7 +166,7 @@ internal fun SettingsScreen(
     bindings: AppSettingsHostBindings,
     isActive: Boolean,
     onNavigateToDownloadManager: () -> Unit,
-    reselectRequests: MainTabReselectRequests? = null
+    reselectRequests: MainTabReselectRequests?
 ) {
     val appearanceState = bindings.state.appearance
     val configuration = LocalConfiguration.current
@@ -284,17 +281,11 @@ internal fun SettingsScreen(
         dynamicColor = appearanceState.theme.dynamicColorEnabled,
         mobileDataFollowDefaultAudioQuality = playbackState.defaultAudioQuality.mobileDataFollowDefaultAudioQuality,
         backgroundImageUri = appearanceState.visualBackground.backgroundImageUri,
-        internationalEnabled = otherState.internationalizationEnabled
+        internationalEnabled = otherState.internationalizationEnabled,
+        reselectRequests = reselectRequests
     )
     LaunchedEffect(environment.settingsVisible, environment.requestedPage) {
         navigation.consumeHomeShortcut(environment.settingsVisible, environment.requestedPage, environment.onPageRequestConsumed)
-    }
-    MainTabReselectEffect(reselectRequests) {
-        if (!navigation.returnToRoot()) {
-            scrollMainTabToTop(navigation.homeTopAppBarState) {
-                listState.scrollToTopForReselect()
-            }
-        }
     }
     val isSettingsSplitLayout = navigation.splitLayout
     val activeSettingsPage = navigation.activePage

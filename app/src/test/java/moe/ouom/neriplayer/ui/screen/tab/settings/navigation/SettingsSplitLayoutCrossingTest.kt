@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -22,6 +23,7 @@ class SettingsSplitLayoutCrossingTest {
     private var splitLayout by mutableStateOf(false)
     private var international by mutableStateOf(false)
     private lateinit var navigation: SettingsNavigationState
+    private val reselectRequests = MainTabReselectRequests()
 
     private fun render(initialSplit: Boolean) {
         splitLayout = initialSplit
@@ -32,7 +34,8 @@ class SettingsSplitLayoutCrossingTest {
                 mobileDataFollowDefaultAudioQuality = false,
                 backgroundImageUri = null,
                 splitLayout = splitLayout,
-                internationalEnabled = international
+                internationalEnabled = international,
+                reselectRequests = reselectRequests
             )
         }
         composeRule.waitForIdle()
@@ -154,5 +157,19 @@ class SettingsSplitLayoutCrossingTest {
             assertEquals(true, navigation.returnToRoot())
             assertEquals(SettingsPage.General, navigation.activePage)
         }
+    }
+
+    @Test
+    fun `tab reselect closes the open settings page and then stays on the home`() {
+        render(initialSplit = false)
+        composeRule.runOnIdle { navigation.activePage = SettingsPage.StorageCacheDetails }
+
+        reselectRequests.dispatch()
+        composeRule.waitForIdle()
+        assertNull(navigation.activePage)
+
+        reselectRequests.dispatch()
+        composeRule.waitForIdle()
+        assertNull(navigation.activePage)
     }
 }
