@@ -594,6 +594,12 @@ NeriPlayer 功能面较宽，提交前优先保护以下链路。
   - 它与第三方平台播放历史无关。
 - BilibiliSponsorBlock 默认关闭，只发送当前 BV 号的 SHA-256 前缀，并在本地执行跳转。
 - 一起听期间 BilibiliSponsorBlock 保持关闭，公开接口结果不写入同步或房间状态。
+- 播放记录同步（`core/player/report`）：
+  - 网易云与 Bilibili 各有一个开关，默认关闭，开关在账号页而不在播放设置页。
+  - 只观察 `currentSongFlow`、`isPlayingFlow`、`playbackPositionFlow`，不在播放核心里加上报调用点。
+  - 网易云走 clientlog eapi 并以 `os=osx` 身份上报；旧的 weapi weblog 会返回成功但被服务端丢弃，不要改回去。
+  - Bilibili 心跳参数与 PiliPlus 一致，账号暂停历史记录时不上报。
+  - 上报失败只记日志，不重试，也不能当作登录失效处理。
 - 32-bit 高解析系统输出优先保留普通系统输出的高精度管线，并旁路响度均衡、声道平衡、音频可视化和应用内倍速。改动时同步确认设置文案和测试。
 - 本地扫描先返回快速元数据，再由后台任务补全歌曲名、歌手、专辑和封面，首次扫描结果不是最终形态。
 

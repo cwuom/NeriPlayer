@@ -40,6 +40,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.platform.bilibili.api.auth.BiliCookieSession
 import moe.ouom.neriplayer.platform.bilibili.api.auth.BiliCookieSource
 import moe.ouom.neriplayer.platform.bilibili.api.comment.BiliCommentApi
+import moe.ouom.neriplayer.platform.bilibili.api.history.BiliHistoryApi
+import moe.ouom.neriplayer.data.model.bilibili.playback.BiliPlayHistoryTarget
 import moe.ouom.neriplayer.platform.bilibili.api.http.BILI_WEB_REFERER
 import moe.ouom.neriplayer.platform.bilibili.api.http.BILI_WEB_USER_AGENT
 import moe.ouom.neriplayer.data.model.bilibili.collection.CollectionArchiveItem
@@ -212,6 +214,7 @@ class BiliClient(
 
     private val cookieSession = BiliCookieSession(cookieRepo, http)
     private val comments = BiliCommentApi(cookieRepo, cookieSession, http)
+    private val history = BiliHistoryApi(cookieRepo, http)
     // 字幕 CDN 直接返回文件内容, 关闭重定向避免 Cookie 被带到其他主机
     private val subtitleHttp: OkHttpClient = http.newBuilder()
         .callTimeout(SUBTITLE_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -1840,5 +1843,13 @@ class BiliClient(
 
     suspend fun setVideoCommentLiked(aid: Long, commentId: String, liked: Boolean): JSONObject =
         comments.setVideoCommentLiked(aid, commentId, liked)
+
+    // 观看历史 //
+
+    suspend fun hasPlayHistoryLogin(): Boolean = history.hasLogin()
+
+    /** [playedSec] 为 -1 表示已看完 */
+    suspend fun reportPlayHeartbeat(target: BiliPlayHistoryTarget, playedSec: Long) =
+        history.reportHeartbeat(target, playedSec)
 
 }

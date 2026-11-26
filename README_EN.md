@@ -91,7 +91,7 @@ NeriPlayer is a native Android audio player built with **Jetpack Compose + Media
 - **Local-first**: cache, downloads, playlists, history, settings, and auth data are stored on the device.
 - **Optional sync**: playlists, favorites, recent plays, and playback stats can sync to your own GitHub repository (private by default when created in-app) or a WebDAV remote.
 - **User-owned data**: synced data goes only to storage you control, never through a maintainer-operated server.
-- **Account safety**: to avoid triggering third-party risk control, NeriPlayer never uploads playback history or stats to those platforms.
+- **Account safety**: playback history and stats are not sent to third-party platforms by default. If you want platform rankings or watch history, turn on NetEase / Bilibili listening history sync separately in Settings → Third-party Sign-in.
 
 > 💡 **Three independent features**
 >
@@ -442,7 +442,8 @@ Shipped work is tracked in [Releases](https://github.com/cwuom/NeriPlayer/releas
 
 ### Other
 
-- Long-audio position memory never overrides a start position you set, and is not written back to third-party platform history.
+- Long-audio position memory never overrides a start position you set, and is not itself written back to third-party platform history.
+- Listening history sync (off by default) is turned on per platform in Settings → Third-party Sign-in. A NetEase song counts toward listening records and rankings after 30 seconds or when it finishes; Bilibili receives playback progress, and nothing is sent while the account has history paused on Bilibili. Failed reports never affect playback and are not retried.
 - Bilibili SponsorBlock queries a public API and is disabled in Listen Together rooms.
 
 ---
@@ -454,7 +455,7 @@ Shipped work is tracked in [Releases](https://github.com/cwuom/NeriPlayer/releas
 - Cache, downloads, local playlists, history, playback stats, settings, and auth data are stored on the device.
 - Metadata such as playlists, favorites, history, and playback stats syncs only when you enable GitHub or WebDAV sync.
 - Audio cache, downloaded files, cookies, and playback tokens are never uploaded to the developer.
-- For account safety, local playback history and stats are never written back to third-party music platforms.
+- Playback history and stats are not sent to third-party platforms by default. Only after you enable listening history sync in Settings → Third-party Sign-in are song / video IDs, listening time, and playback progress sent to NetEase Cloud Music or Bilibili under your account.
 - Configuration exports exclude login state by default; including it exports auth and sync credentials, so set a password and keep it private.
 - Android system cloud backup and device transfer are disabled by default.
 - Access logs and risk-control policies on third-party platforms are handled under those platforms' own privacy policies.

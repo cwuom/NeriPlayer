@@ -105,6 +105,7 @@ internal fun searchSettingsEntries(
 
 internal fun AutoSettingInfo.settingsPage(): SettingsPage? {
     if (keyName == "lan_listen_nudge_ms") return SettingsPage.ListenTogether
+    if (keyName in PlayHistorySyncSettingKeys) return SettingsPage.Accounts
     if (keyName in LyricAppearanceSettingKeys) {
         return SettingsPage.Lyrics
     }
@@ -339,6 +340,12 @@ private fun motionCardIndex(targetId: String): Int {
         else -> 0
     }
 }
+
+// 开关渲染在账号页的平台卡片下，不在播放设置页
+private val PlayHistorySyncSettingKeys = setOf(
+    "netease_play_history_sync_enabled",
+    "bili_play_history_sync_enabled"
+)
 
 private val DynamicColorHiddenSearchTargets = setOf(
     "manual:theme_seed_color"
@@ -1192,6 +1199,12 @@ private val SettingSearchAliases = mapOf(
         "本地音源",
         "本地还原",
         "bendi yinyuan"
+    ),
+    "netease_play_history_sync_enabled" to listOf(
+        "网易云", "听歌记录", "听歌排行", "scrobble", "history", "tingge jilu"
+    ),
+    "bili_play_history_sync_enabled" to listOf(
+        "哔哩哔哩", "观看历史", "历史记录", "watch history", "heartbeat", "lishi jilu"
     ),
     "bili_sponsor_block_enabled" to listOf(
         "哔哩哔哩",
