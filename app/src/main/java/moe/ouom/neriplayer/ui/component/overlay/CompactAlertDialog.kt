@@ -107,6 +107,6 @@ internal fun CompactMaterialActions(
     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         dismissButton?.invoke()
         neutralButton?.invoke()
-        confirmButton()
+        CompositionLocalProvider(LocalDialogButtonSlot provides DialogButtonSlot.Confirm, content = confirmButton)
     }
 }

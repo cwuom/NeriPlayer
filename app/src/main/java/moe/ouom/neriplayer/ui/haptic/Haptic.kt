@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.BorderStroke
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
 import moe.ouom.neriplayer.ui.theme.neriOutlinedButtonBorder
 
 private const val VIBRATION_EFFECT_CLICK = 0
@@ -168,11 +169,11 @@ fun HapticTextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    colors: ButtonColors = ButtonDefaults.textButtonColors(),
+    colors: ButtonColors? = null,
     contentPadding: PaddingValues = ButtonDefaults.TextButtonContentPadding,
     content: @Composable RowScope.() -> Unit
 ) {
-    TextButton(
+    DialogActionTextButton(
         onClick = hapticClick(LocalContext.current, HapticFeedbackEffect.Click, onClick),
         modifier = modifier,
         enabled = enabled,

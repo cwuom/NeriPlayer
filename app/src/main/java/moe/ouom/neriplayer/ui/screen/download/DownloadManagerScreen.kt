@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -645,7 +646,7 @@ private fun DownloadSingleDeleteDialog(
         title = { Text(stringResource(AppR.string.dialog_confirm_delete)) },
         text = { Text(stringResource(CoreCommonR.string.download_delete_confirm, songName)) },
         confirmButton = {
-            TextButton(enabled = !deletionInProgress, onClick = onConfirm) {
+            DialogActionTextButton(enabled = !deletionInProgress, onClick = onConfirm) {
                 Text(stringResource(CoreCommonR.string.action_delete))
             }
         },
@@ -677,7 +678,7 @@ private fun DownloadMultiDeleteDialog(
             )
         },
         confirmButton = {
-            TextButton(enabled = !deletionInProgress, onClick = onConfirm) {
+            DialogActionTextButton(enabled = !deletionInProgress, onClick = onConfirm) {
                 Text(stringResource(CoreCommonR.string.action_delete))
             }
         },

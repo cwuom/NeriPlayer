@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -606,7 +607,7 @@ fun DownloadProgressScreen(
             title = { Text(stringResource(CoreCommonR.string.download_clear_confirm_title)) },
             text = { Text(stringResource(CoreCommonR.string.download_clear_confirm_message)) },
             confirmButton = {
-                TextButton(
+                DialogActionTextButton(
                     onClick = {
                         context.performHapticFeedback()
                         clearTriggeredFromScreen = true

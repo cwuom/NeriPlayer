@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -45,6 +46,8 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 
+private const val CalendarWeekRows = 6
+
 @Composable
 internal fun StatsCalendarMonth(
     month: YearMonth, today: LocalDate, start: LocalDate?, end: LocalDate?, firstWeekday: DayOfWeek,
@@ -59,7 +62,8 @@ internal fun StatsCalendarMonth(
     val endpoint = if (NeriDesign.isClean) colors.onSurface else colors.primary
     val onEndpoint = if (NeriDesign.isClean) colors.surface else colors.onPrimary
     val leading = (month.atDay(1).dayOfWeek.value - firstWeekday.value + 7) % 7
-    val cells = leading + month.lengthOfMonth()
+    val dayStyle = MaterialTheme.typography.bodyMedium
+    val dayHeight = maxOf(36.dp, with(LocalDensity.current) { dayStyle.lineHeight.toDp() })
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(month.format(monthFormatter), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
@@ -80,12 +84,13 @@ internal fun StatsCalendarMonth(
                     textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
             }
         }
-        repeat((cells + 6) / 7) { week ->
+        repeat(CalendarWeekRows) { week ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                val cell = Modifier.weight(1f).padding(vertical = 2.dp)
                 repeat(7) { index ->
                     val number = week * 7 + index - leading + 1
                     if (number !in 1..month.lengthOfMonth()) {
-                        Spacer(Modifier.weight(1f))
+                        Spacer(cell.heightIn(min = dayHeight))
                     } else {
                         val day = month.atDay(number)
                         val edge = day == start || day == end
@@ -93,7 +98,7 @@ internal fun StatsCalendarMonth(
                         val enabled = day <= today
                         val label = day.format(spoken)
                         Box(
-                            modifier = Modifier.weight(1f).padding(vertical = 2.dp)
+                            modifier = cell
                                 .clip(CircleShape)
                                 .background(when {
                                     edge -> endpoint
@@ -105,11 +110,11 @@ internal fun StatsCalendarMonth(
                                 .semantics {
                                     contentDescription = label
                                     selected = edge || inRange
-                                }.testTag("statsDateDay:$day").heightIn(min = 36.dp),
+                                }.testTag("statsDateDay:$day").heightIn(min = dayHeight),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(numbers.format(number), maxLines = 1, softWrap = false,
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = dayStyle,
                                 fontWeight = if (edge || day == today) FontWeight.Bold else FontWeight.Normal,
                                 color = when {
                                     edge -> onEndpoint

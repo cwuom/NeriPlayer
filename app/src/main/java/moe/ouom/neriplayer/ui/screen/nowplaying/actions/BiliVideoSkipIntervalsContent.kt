@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SkipNext
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
@@ -665,7 +666,7 @@ internal fun BiliVideoSkipIntervalsContent(
             title = { Text(stringResource(AppR.string.dialog_confirm_delete)) },
             text = { Text(deleteConfirmationText) },
             confirmButton = {
-                TextButton(
+                DialogActionTextButton(
                     onClick = {
                         lockSelectedTargetForEditing()
                         draftIntervals = draftIntervals.filterNot { it == interval }
@@ -690,7 +691,7 @@ internal fun BiliVideoSkipIntervalsContent(
             title = { Text(stringResource(AppR.string.dialog_confirm_clear)) },
             text = { Text(clearConfirmationText) },
             confirmButton = {
-                TextButton(
+                DialogActionTextButton(
                     onClick = {
                         lockSelectedTargetForEditing()
                         draftIntervals = emptyList()

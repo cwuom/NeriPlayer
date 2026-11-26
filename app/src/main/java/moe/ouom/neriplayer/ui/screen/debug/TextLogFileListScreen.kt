@@ -65,6 +65,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
@@ -168,8 +169,8 @@ private fun TextLogClearConfirmDialog(
         title = { Text(stringResource(AppR.string.dialog_confirm_clear)) },
         text = { Text(stringResource(messageRes)) },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(stringResource(CoreCommonR.string.common_clear_all), color = MaterialTheme.colorScheme.error)
+            DialogActionTextButton(onClick = onConfirm, destructive = true) {
+                Text(stringResource(CoreCommonR.string.common_clear_all))
             }
         },
         dismissButton = {
