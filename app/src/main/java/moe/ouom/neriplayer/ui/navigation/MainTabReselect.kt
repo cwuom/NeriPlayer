@@ -177,6 +177,20 @@ private fun LazyGridState.distanceToTop(): Float {
  * 不用 animateScrollToItem(0)：它按平均尺寸估算终点，条目高度差异大时会先停在半路，
  * 停顿后再硬跳到顶部。
  */
+/**
+ * 处理逻辑挂在目标对象上的版本。调用方传入不捕获变量的 [onReselect]，
+ * 编译器无需为它生成记忆化分支，适合放在受复杂度门禁约束的页面里。
+ */
+@Composable
+internal fun <T> MainTabReselectEffect(
+    requests: MainTabReselectRequests?,
+    target: T,
+    onReselect: suspend (T) -> Unit
+) {
+    val latestTarget by rememberUpdatedState(target)
+    MainTabReselectEffect(requests) { onReselect(latestTarget) }
+}
+
 internal suspend fun LazyListState.scrollToTopForReselect() {
     if (!canScrollBackward) return
     val jumpIndex = layoutInfo.visibleItemsInfo.size * SCROLL_TO_TOP_JUMP_SCREENS

@@ -9,7 +9,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.NonRestartableComposable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -120,6 +119,7 @@ internal class SettingsNavigationState(
     val splitLayout: Boolean,
     val activePageState: MutableState<SettingsPage?>,
     val homeTopAppBarState: TopAppBarState,
+    val homeListState: LazyListState,
     val detailTopAppBarStates: Map<SettingsPage, TopAppBarState>,
     val detailListStates: Map<SettingsPage, LazyListState>,
     val searchQueryState: MutableState<String>,
@@ -183,7 +183,7 @@ internal class SettingsNavigationState(
     }
 
     /** 重选设置 Tab：先回设置首页，已在首页时滚回顶部并展开顶部栏 */
-    suspend fun handleReselect(homeListState: LazyListState) {
+    suspend fun handleReselect() {
         if (!returnToRoot()) {
             scrollMainTabToTop(homeTopAppBarState) { homeListState.scrollToTopForReselect() }
         }
@@ -241,17 +241,6 @@ internal class SettingsSearchScrollOwner(
             if (query.isNotBlank()) scrollToStart()
         }
     }
-}
-
-// 不可重启：只是挂接监听，省掉参数变化检查生成的分支
-@Composable
-@NonRestartableComposable
-private fun ObserveSettingsReselect(
-    requests: MainTabReselectRequests?,
-    navigation: SettingsNavigationState,
-    listState: LazyListState
-) {
-    MainTabReselectEffect(requests) { navigation.handleReselect(listState) }
 }
 
 @Composable
@@ -323,6 +312,7 @@ internal fun rememberSettingsNavigationState(
         splitLayout = splitLayout,
         activePageState = activePageState,
         homeTopAppBarState = homeTopAppBarState,
+        homeListState = listState,
         detailTopAppBarStates = detailTopAppBarStates,
         detailListStates = detailListStates,
         searchQueryState = searchQueryState,
@@ -340,7 +330,7 @@ internal fun rememberSettingsNavigationState(
 
     // 分栏时默认显示通用页只是展示兜底，不写回状态，窗口变窄后仍回到设置首页
     ObserveSettingsSearchScroll(searchQueryState, listState)
-    ObserveSettingsReselect(reselectRequests, navigation, listState)
+    MainTabReselectEffect(reselectRequests, navigation) { it.handleReselect() }
     val eligiblePendingNavigation = pendingSettingsNavigationForPage(
         navigation.activePage, pendingNavigationState.value
     )
