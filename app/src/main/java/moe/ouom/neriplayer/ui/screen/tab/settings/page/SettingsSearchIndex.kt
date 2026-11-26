@@ -228,8 +228,7 @@ internal fun settingsSearchScrollAnchor(
     return when (page) {
         SettingsPage.Accounts -> SettingsSearchScrollAnchor(itemIndex = 0)
         SettingsPage.Language -> when (targetId) {
-            "manual:youtube_content_suggestion_basis", "manual:youtube_content_hide_explicit",
-            "manual:youtube_content_hide_videos" -> SettingsSearchScrollAnchor(itemIndex = 2)
+            "manual:youtube_content_hide_explicit", "manual:youtube_content_hide_videos" -> SettingsSearchScrollAnchor(itemIndex = 2)
             else -> SettingsSearchScrollAnchor(itemIndex = 1)
         }
         SettingsPage.Theme -> when (targetId) {
@@ -467,8 +466,6 @@ internal fun manualSettingsSearchEntries(resources: Resources, internationalEnab
     val discoveryEntries = if (internationalEnabled) {
         val section = resources.safeString(AppR.string.youtube_content_page)
         listOf(
-            entry(SettingsPage.Language, AppR.string.youtube_content_suggestion_basis, CoreCommonR.string.settings_page_language,
-                "youtube_content_suggestion_basis", listOf(section, "playlist recommendations", "playlist suggestions", "歌单推荐依据", "歌单收藏依据")),
             entry(SettingsPage.Language, AppR.string.youtube_content_hide_explicit, CoreCommonR.string.settings_page_language,
                 "youtube_content_hide_explicit", listOf(section, "explicit", "露骨")),
             entry(SettingsPage.Language, AppR.string.youtube_content_hide_videos, CoreCommonR.string.settings_page_language,

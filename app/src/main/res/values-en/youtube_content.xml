@@ -3,13 +3,6 @@
     <string name="youtube_content_language">Default content language</string>
     <string name="youtube_content_country">Default content country or region</string>
     <string name="youtube_content_automatic">Automatic (%1$s)</string>
-    <string name="youtube_content_suggestion_basis">Playlist recommendation basis</string>
-    <string name="youtube_content_suggestion_title">Playlist title</string>
-    <string name="youtube_content_suggestion_tracks">Playlist tracks</string>
-    <string name="youtube_content_suggestion_both">Playlist title and tracks</string>
     <string name="youtube_content_hide_explicit">Hide explicit content</string>
     <string name="youtube_content_hide_videos">Hide music videos</string>
-    <string name="youtube_content_suggestions">Discover similar songs on YouTube Music</string>
-    <string name="youtube_content_suggestions_empty">No new recommendations for this playlist</string>
-    <string name="youtube_content_suggestions_error">Could not load YouTube Music recommendations</string>
 </resources>

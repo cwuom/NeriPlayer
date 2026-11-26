@@ -55,7 +55,6 @@ class SettingsSearchLocaleTest {
             AppR.string.youtube_content_country to "manual:youtube_content_country"
         )
         val discoveryControls = mapOf(
-            AppR.string.youtube_content_suggestion_basis to "manual:youtube_content_suggestion_basis",
             AppR.string.youtube_content_hide_explicit to "manual:youtube_content_hide_explicit",
             AppR.string.youtube_content_hide_videos to "manual:youtube_content_hide_videos"
         )

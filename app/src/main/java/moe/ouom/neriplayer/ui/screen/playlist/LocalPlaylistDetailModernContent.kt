@@ -775,16 +775,6 @@ internal fun LocalPlaylistDetailModernContent(
                         }
                     }
                 }
-                if (!offlineMode && !selectionMode && !isSystemPlaylist) {
-                    item(key = "youtube_playlist_suggestions") {
-                        PlaylistYouTubeSuggestions(
-                            title = playlist.name,
-                            songs = tabSongs,
-                            onPlay = onSongClick,
-                            onAdd = { song -> scope.launch { repo.addSongToPlaylist(playlistId, song) } }
-                        )
-                    }
-                }
             },
             overlays = {
                 // 删除歌单二次确认

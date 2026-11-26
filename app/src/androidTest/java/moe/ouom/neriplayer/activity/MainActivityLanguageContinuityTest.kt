@@ -302,7 +302,7 @@ class MainActivityLanguageContinuityTest {
     private fun assertDiscoveryControls(language: Language, visible: Boolean) {
         val inPage = hasAnyAncestor(hasTestTag(settingsPageTransitionSceneTag(SettingsPage.Language)))
         val list = composeRule.onNode(hasScrollToIndexAction() and inPage)
-        for (title in listOf(AppR.string.youtube_content_suggestion_basis, AppR.string.youtube_content_hide_explicit, AppR.string.youtube_content_hide_videos)) {
+        for (title in listOf(AppR.string.youtube_content_hide_explicit, AppR.string.youtube_content_hide_videos)) {
             val text = hasText(label(title, language))
             val row = composeRule.onNode(text and inPage)
             if (visible) {
