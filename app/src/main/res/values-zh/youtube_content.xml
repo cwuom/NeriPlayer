@@ -3,13 +3,6 @@
     <string name="youtube_content_language">默认内容语言</string>
     <string name="youtube_content_country">默认内容国家或地区</string>
     <string name="youtube_content_automatic">自动（%1$s）</string>
-    <string name="youtube_content_suggestion_basis">歌单推荐依据</string>
-    <string name="youtube_content_suggestion_title">歌单标题</string>
-    <string name="youtube_content_suggestion_tracks">歌单曲目</string>
-    <string name="youtube_content_suggestion_both">歌单标题与曲目</string>
     <string name="youtube_content_hide_explicit">隐藏露骨内容</string>
     <string name="youtube_content_hide_videos">隐藏音乐视频</string>
-    <string name="youtube_content_suggestions">用 YouTube Music 发现相似歌曲</string>
-    <string name="youtube_content_suggestions_empty">暂时没有更多推荐</string>
-    <string name="youtube_content_suggestions_error">无法加载 YouTube Music 推荐</string>
 </resources>

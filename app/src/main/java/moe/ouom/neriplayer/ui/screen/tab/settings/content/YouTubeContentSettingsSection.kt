@@ -32,7 +32,6 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.settings.updateYouTubeContentPreferences
 import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentPreferences
 import moe.ouom.neriplayer.common.R as CommonR
-import moe.ouom.neriplayer.platform.youtube.settings.PlaylistSuggestionSource
 import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
@@ -103,16 +102,6 @@ internal fun YouTubeContentSettingsSection(
 
     val prefs by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
     Column {
-        ContentChoice(
-            modifier = rowModifier("youtube_content_suggestion_basis"),
-            title = stringResource(R.string.youtube_content_suggestion_basis),
-            selected = prefs.playlistSuggestionSource.name,
-            choices = listOf(
-                PlaylistSuggestionSource.Title.name to stringResource(R.string.youtube_content_suggestion_title),
-                PlaylistSuggestionSource.Tracks.name to stringResource(R.string.youtube_content_suggestion_tracks),
-                PlaylistSuggestionSource.Both.name to stringResource(R.string.youtube_content_suggestion_both)
-            )
-        ) { code -> updateContentPreferences { it.copy(playlistSuggestionSource = PlaylistSuggestionSource.valueOf(code)) } }
         ContentToggle(rowModifier("youtube_content_hide_explicit"), stringResource(R.string.youtube_content_hide_explicit), prefs.hideExplicit) { hide ->
             updateContentPreferences { it.copy(hideExplicit = hide) }
         }
@@ -126,6 +115,9 @@ private fun localizedChoices(codes: List<String>, displayLocale: Locale, label: 
     val collator = Collator.getInstance(displayLocale)
     return codes.map { it to label(it) }.sortedWith { a, b -> collator.compare(a.second, b.second) }
 }
+
+// 短列表直接选更快，只有语言、地区这类长列表才需要搜索框
+private const val SEARCHABLE_CHOICE_THRESHOLD = 3
 
 @Composable
 internal fun ContentChoice(
@@ -155,7 +147,7 @@ internal fun ContentChoice(
             title = { Text(title) },
             text = {
                 LazyColumn(Modifier.heightIn(max = 400.dp)) {
-                    if (choices.size > PlaylistSuggestionSource.entries.size) {
+                    if (choices.size > SEARCHABLE_CHOICE_THRESHOLD) {
                         item {
                             MiuixSettingsTextField(
                                 value = query,
