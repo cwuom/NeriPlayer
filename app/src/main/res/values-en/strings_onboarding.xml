@@ -3,7 +3,7 @@
     <!-- Onboarding & Disclaimer -->
     <string name="disclaimer_title">Usage &amp; Privacy</string>
     <string name="disclaimer_intro">Before you start, see how the app connects to services, stores data, and requests permissions.</string>
-    <string name="disclaimer_last_updated">Updated November 21, 2026</string>
+    <string name="disclaimer_last_updated">Updated November 26, 2026</string>
     <string name="disclaimer_summary_content_title">Content comes from third parties</string>
     <string name="disclaimer_summary_content_body">NeriPlayer plays content from platforms you choose to access. It does not host media files.</string>
     <string name="disclaimer_summary_data_title">Data stays on your device by default</string>
@@ -235,6 +235,7 @@
     <string name="onboarding_finish_style">Look</string>
     <string name="onboarding_finish_motion">Motion</string>
     <string name="disclaimer_section3_bullet4">Before enabling a third-party account or self-hosted service, review and accept its terms and privacy policy yourself.</string>
+    <string name="disclaimer_section3_bullet5">Listening history sync is optional and off by default. When it is on, the IDs, listening time, and playback progress of NetEase Cloud Music songs and Bilibili videos you play are sent to that platform under your signed-in account and counted in its listening records or watch history.</string>
     <string name="disclaimer_section4_bullet4">Listen Together connects to the NeriPlayer Listen Together service by default and can be switched to a self-hosted one. Inside a room, your nickname, playback state, and track details are shared with room members.</string>
     <string name="disclaimer_section4_bullet5">The motion recommendation during setup reads only the device model, chipset, memory, and refresh rate, and is computed on this device. Nothing is uploaded.</string>
 </resources>

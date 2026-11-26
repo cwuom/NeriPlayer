@@ -127,4 +127,11 @@
     <string name="auth_storage_unavailable_message">Both system secure storage and compatibility encrypted storage are unavailable, so this account cannot be kept after a restart. This sign-in or import has been blocked. Restore device storage and system security services, then try again.</string>
     <string name="auth_storage_save_failed">Cannot save account credentials. Check device storage and system security services, then try again</string>
     <string name="auth_storage_clear_failed">Cannot clear the saved account. Check device storage, then try again</string>
+    <string name="settings_play_history_sync_title">Listening history sync</string>
+    <string name="settings_play_history_sync_desc">Send what you play in NeriPlayer to your platform accounts so their rankings, weekly reports and history stay complete. Off by default</string>
+    <string name="settings_play_history_sync_netease">Sync to NetEase Cloud Music</string>
+    <string name="settings_play_history_sync_netease_desc">After 30 seconds or when a song finishes, count it in NetEase listening records and rankings</string>
+    <string name="settings_play_history_sync_bili">Sync to Bilibili</string>
+    <string name="settings_play_history_sync_bili_desc">Report playback progress so videos appear in your Bilibili watch history; has no effect while the account has history paused</string>
+    <string name="settings_play_history_sync_sign_in_required">Sign in to this platform to turn it on</string>
 </resources>

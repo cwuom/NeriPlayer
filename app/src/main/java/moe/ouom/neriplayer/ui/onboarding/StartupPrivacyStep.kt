@@ -277,7 +277,8 @@ private val StartupPolicySections = listOf(
             AppR.string.disclaimer_section3_bullet1,
             AppR.string.disclaimer_section3_bullet2,
             AppR.string.disclaimer_section3_bullet3,
-            AppR.string.disclaimer_section3_bullet4
+            AppR.string.disclaimer_section3_bullet4,
+            AppR.string.disclaimer_section3_bullet5
         )
     ),
     StartupPolicySection(

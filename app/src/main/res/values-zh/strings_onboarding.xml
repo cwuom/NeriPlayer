@@ -3,7 +3,7 @@
     <!-- Onboarding & Disclaimer -->
     <string name="disclaimer_title">使用说明与隐私</string>
     <string name="disclaimer_intro">开始之前，请了解应用如何连接第三方服务、保存数据与请求权限</string>
-    <string name="disclaimer_last_updated">更新于 2026 年 11 月 21 日</string>
+    <string name="disclaimer_last_updated">更新于 2026 年 11 月 26 日</string>
     <string name="disclaimer_summary_content_title">内容来自第三方</string>
     <string name="disclaimer_summary_content_body">NeriPlayer 用于浏览和播放你主动访问的平台内容，不托管音视频文件。</string>
     <string name="disclaimer_summary_data_title">数据默认留在设备</string>
@@ -234,6 +234,7 @@
     <string name="onboarding_finish_style">风格</string>
     <string name="onboarding_finish_motion">动效</string>
     <string name="disclaimer_section3_bullet4">启用第三方账号或自建服务前，请自行阅读并确认其服务条款与隐私政策。</string>
+    <string name="disclaimer_section3_bullet5">播放记录同步为可选功能，默认关闭；开启后，你收听的网易云音乐歌曲与哔哩哔哩视频的编号、收听时长和播放进度，会以你的登录身份发送给对应平台，计入其听歌记录或观看历史。</string>
     <string name="disclaimer_section4_bullet4">一起听默认连接 NeriPlayer 一起听服务，也可以切换为自建服务；加入房间后，昵称、播放状态和曲目信息会在房间成员之间同步。</string>
     <string name="disclaimer_section4_bullet5">初次设置中的动效推荐只读取设备型号、芯片、内存和屏幕刷新率，并在本机完成计算，不会上传。</string>
 </resources>

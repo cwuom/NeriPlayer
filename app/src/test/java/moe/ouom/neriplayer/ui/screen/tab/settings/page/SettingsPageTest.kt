@@ -157,6 +157,16 @@ class SettingsPageTest {
     }
 
     @Test
+    fun playHistorySyncSettingsOpenAccountsPage() {
+        listOf("netease_play_history_sync_enabled", "bili_play_history_sync_enabled").forEach { key ->
+            val setting = AutoSettingsMetadata.settings.first { it.keyName == key }
+
+            assertEquals(SettingsPage.Accounts, setting.settingsPage())
+            assertEquals("setting:$key", setting.searchTargetId())
+        }
+    }
+
+    @Test
     fun dynamicColorSettingOpensThemePage() {
         val dynamicColor = AutoSettingsMetadata.settings.first {
             it.keyName == "dynamic_color"

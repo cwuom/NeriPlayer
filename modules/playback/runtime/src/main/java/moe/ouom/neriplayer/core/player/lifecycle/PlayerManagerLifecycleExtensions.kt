@@ -135,6 +135,7 @@ import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapsh
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.settings.usb.toUsbExclusivePreferences
+import moe.ouom.neriplayer.core.player.report.observePlatformPlayHistorySync
 import java.io.File
 
 private const val MEDIA_CACHE_DIRECTORY_NAME = "media_cache"
@@ -1128,6 +1129,7 @@ private fun PlayerManager.createCachedPlaybackDataSourceFactory(
 private fun PlayerManager.observePlaybackSettings() {
     attachLiveLyricSurfaces()
     observeBiliSubtitleLyricsSettings()
+    observePlatformPlayHistorySync()
     ioScope.launch {
         settingsRepo.audioQualityFlow.collect { q ->
             val previousQuality = preferredQuality

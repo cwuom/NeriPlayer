@@ -496,4 +496,23 @@ abstract class PlaybackSettingsSection protected constructor() {
         titleRes = CoreCommonR.string.settings_preempt_audio_focus,
         descriptionRes = CoreCommonR.string.settings_preempt_audio_focus_desc
     )
+
+    // 会把收听行为发给第三方平台，必须由用户在账号页主动开启
+    @AutoSetting(order = 190, ui = SettingUiType.Custom)
+    val neteasePlayHistorySyncEnabled = autoSwitchSetting(
+        key = "netease_play_history_sync_enabled",
+        defaultValue = false,
+        titleRes = CoreCommonR.string.settings_play_history_sync_netease,
+        descriptionRes = CoreCommonR.string.settings_play_history_sync_netease_desc,
+        iconRes = CoreCommonR.drawable.ic_netease_cloud_music
+    )
+
+    @AutoSetting(order = 191, ui = SettingUiType.Custom)
+    val biliPlayHistorySyncEnabled = autoSwitchSetting(
+        key = "bili_play_history_sync_enabled",
+        defaultValue = false,
+        titleRes = CoreCommonR.string.settings_play_history_sync_bili,
+        descriptionRes = CoreCommonR.string.settings_play_history_sync_bili_desc,
+        iconRes = CoreCommonR.drawable.ic_bilibili
+    )
 }
