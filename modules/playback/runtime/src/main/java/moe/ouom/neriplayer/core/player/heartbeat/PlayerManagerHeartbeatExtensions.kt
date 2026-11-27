@@ -359,6 +359,11 @@ internal fun PlayerManager.restoreHeartbeatModeFromState(mode: Int, insertedKeys
     setHeartbeatMode(HeartbeatMode.normalized(mode), userInitiated = false)
 }
 
+/** 外部整体替换队列（换歌单播放）时调用：此后队列里的歌都不归心动模式所有。 */
+internal fun clearHeartbeatInsertedSongs() {
+    synchronized(heartbeatInsertedKeys) { heartbeatInsertedKeys.clear() }
+}
+
 /** 落盘用：当前队列里由心动模式插入的歌。 */
 internal fun heartbeatInsertedKeysSnapshot(): List<String> =
     synchronized(heartbeatInsertedKeys) { heartbeatInsertedKeys.toList() }
@@ -423,6 +428,8 @@ private fun PlayerManager.applyHeartbeatBatch(
 ) {
     if (heartbeatSessionGeneration.get() != generation || heartbeatModeState != HeartbeatMode.ON) {
         NPLogger.d(TAG, "补货结果属于已结束的心动会话（reason=$reason），丢弃")
+        // 旧请求占着补货名额时，新会话开启时的那次检查被跳过了，这里替它补一次
+        fillHeartbeatQueueAsync("sessionChanged")
         return
     }
     if (heartbeatPendingAnchor() != anchor) {
