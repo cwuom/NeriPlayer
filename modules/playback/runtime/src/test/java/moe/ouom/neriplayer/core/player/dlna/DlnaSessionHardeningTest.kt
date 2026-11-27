@@ -28,8 +28,10 @@ import moe.ouom.neriplayer.core.player.dlna.session.isMidTrackPause
 import moe.ouom.neriplayer.core.player.dlna.session.isStartupPauseGraceActive
 import moe.ouom.neriplayer.core.player.dlna.session.resolveRemotePlayingForHandoff
 import moe.ouom.neriplayer.core.player.dlna.session.shouldAdoptExternalResume
+import moe.ouom.neriplayer.core.player.dlna.session.shouldSendGaplessNextUriToRenderer
 import moe.ouom.neriplayer.core.player.runtime.refresh.YouTubePlaybackRecoveryStrategy
 import moe.ouom.neriplayer.core.player.url.resolveYouTubeRequireDirect
+import moe.ouom.neriplayer.data.model.playback.dlna.DlnaDevice
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaTransportState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -413,5 +415,178 @@ class DlnaSessionHardeningTest {
             server.stop()
             tempFile.delete()
         }
+    }
+
+    @Test(timeout = 8_000L)
+    fun mediaServer_handlesConcurrentRangeSeeksWhileMultipleStreamsStayOpen() {
+        val tempFile = java.nio.file.Files.createTempFile("dlna-range-seek", ".flac").toFile()
+        val server = DlnaMediaServer()
+        val stalledSockets = mutableListOf<java.net.Socket>()
+        try {
+            val payload = ByteArray(512 * 1024) { ((it * 31 + 7) and 0xFF).toByte() }
+            tempFile.writeBytes(payload)
+            val port = server.start()
+            val streamPath = server.registerStream(
+                extension = "flac",
+                content = DlnaMediaServer.StreamContent.FileContent(
+                    file = tempFile,
+                    contentType = "audio/flac",
+                    contentFeatures = ""
+                )
+            )
+            // 模拟渲染器保持 4 条未读完的长流连接（TCP 发送缓冲写满阻塞），验证后续多次 Range 拖动进度不会死锁饥饿
+            repeat(4) {
+                val sock = java.net.Socket("127.0.0.1", port).apply {
+                    soTimeout = 3_000
+                    receiveBufferSize = 4096
+                }
+                stalledSockets += sock
+                val req = "GET $streamPath HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nConnection: close\r\n\r\n"
+                sock.getOutputStream().write(req.toByteArray(Charsets.US_ASCII))
+                sock.getOutputStream().flush()
+                val headerBuf = ByteArray(128)
+                val readCount = sock.getInputStream().read(headerBuf)
+                assertTrue(readCount > 0)
+            }
+            val url = java.net.URI.create(server.buildUrl("127.0.0.1", streamPath)).toURL()
+            val offsets = listOf(0, 65_536, 131_072, 262_144, 393_216, 500_000)
+            for (start in offsets) {
+                val end = (start + 4095).coerceAtMost(payload.lastIndex)
+                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 3_000
+                    readTimeout = 3_000
+                    setRequestProperty("Range", "bytes=$start-$end")
+                }
+                try {
+                    assertEquals(206, conn.responseCode)
+                    val slice = conn.inputStream.use { it.readBytes() }
+                    assertEquals(end - start + 1, slice.size)
+                    for (i in slice.indices) {
+                        assertEquals(payload[start + i], slice[i])
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            }
+        } finally {
+            stalledSockets.forEach { runCatching { it.close() } }
+            server.stop()
+            tempFile.delete()
+        }
+    }
+
+    @Test
+    fun shanlingEm7_trackEndPauseAtOneSecond_triggersTrackEndedAndPreservesStartPauseSafety() {
+        val paused = DlnaTransportState.PAUSED_PLAYBACK
+        // 山灵 EM7 自然播完一首 4:00 曲目后会进入 PAUSED_PLAYBACK 并将 RelTime 拉回 00:00:01 (1000ms)
+        assertTrue(
+            DlnaCastStateMachine.isPausedAtTrackEnd(
+                positionMs = 1_000L,
+                durationMs = 240_000L,
+                lastPlayingPositionMs = 235_200L,
+                elapsedSinceLastPlayingPollMs = 1_100L
+            )
+        )
+        assertFalse(
+            isMidTrackPause(
+                transport = paused,
+                positionMs = 1_000L,
+                durationMs = 240_000L,
+                startupGraceActive = false,
+                lastPlayingPositionMs = 235_200L,
+                elapsedSinceLastPlayingPollMs = 1_100L
+            )
+        )
+        val firstEndPoll = DlnaCastStateMachine.evaluatePoll(
+            DlnaCastStateMachine.PollObservation(
+                previousState = DlnaTransportState.PLAYING,
+                currentState = paused,
+                positionMs = 1_000L,
+                durationMs = 240_000L,
+                userPausedOrStopped = false,
+                generationId = 5L,
+                activeGenerationId = 5L,
+                hasStartedPlayingInGeneration = true,
+                consecutiveStoppedPolls = 0,
+                lastPlayingPositionMs = 235_200L,
+                consecutiveEndPausedPolls = 1,
+                elapsedSinceLastPlayingPollMs = 1_100L
+            )
+        )
+        assertEquals(DlnaCastStateMachine.PollDecision.KeepPolling, firstEndPoll)
+
+        val secondEndPoll = DlnaCastStateMachine.evaluatePoll(
+            DlnaCastStateMachine.PollObservation(
+                previousState = paused,
+                currentState = paused,
+                positionMs = 1_000L,
+                durationMs = 240_000L,
+                userPausedOrStopped = false,
+                generationId = 5L,
+                activeGenerationId = 5L,
+                hasStartedPlayingInGeneration = true,
+                consecutiveStoppedPolls = 0,
+                lastPlayingPositionMs = 235_200L,
+                consecutiveEndPausedPolls = 2,
+                elapsedSinceLastPlayingPollMs = 2_100L
+            )
+        )
+        assertEquals(DlnaCastStateMachine.PollDecision.TrackEnded(5L), secondEndPoll)
+
+        // 反例：歌曲刚开播到 1s 时用户在山灵 EM7 面板按暂停，绝不能误判为曲尾切歌
+        assertFalse(
+            DlnaCastStateMachine.isPausedAtTrackEnd(
+                positionMs = 1_000L,
+                durationMs = 240_000L,
+                lastPlayingPositionMs = 1_000L,
+                elapsedSinceLastPlayingPollMs = 300L
+            )
+        )
+        val genuineStartPause = DlnaCastStateMachine.evaluatePoll(
+            DlnaCastStateMachine.PollObservation(
+                previousState = DlnaTransportState.PLAYING,
+                currentState = paused,
+                positionMs = 1_000L,
+                durationMs = 240_000L,
+                userPausedOrStopped = false,
+                generationId = 5L,
+                activeGenerationId = 5L,
+                hasStartedPlayingInGeneration = true,
+                consecutiveStoppedPolls = 0,
+                lastPlayingPositionMs = 1_000L,
+                consecutiveEndPausedPolls = 0,
+                elapsedSinceLastPlayingPollMs = 300L
+            )
+        )
+        assertEquals(
+            DlnaCastStateMachine.PollDecision.SyncPlayback(
+                isPlaying = false,
+                positionMs = 1_000L,
+                durationMs = 240_000L,
+                markStartedPlaying = false
+            ),
+            genuineStartPause
+        )
+    }
+
+    @Test
+    fun shouldSendGaplessNextUriToRenderer_skipsShanlingEm7WhileKeepingStandardRenderers() {
+        val em7 = DlnaDevice(
+            udn = "uuid:em7",
+            friendlyName = "Shanling EM7",
+            manufacturer = "Shanling",
+            modelName = "EM7",
+            location = "http://192.168.1.50:49152/description.xml",
+            host = "192.168.1.50",
+            avTransportControlUrl = "http://192.168.1.50:49152/ctl"
+        )
+        val standardRenderer = em7.copy(
+            udn = "uuid:wiim",
+            friendlyName = "WiiM Pro",
+            manufacturer = "Linkplay",
+            modelName = "WiiM Pro"
+        )
+        assertFalse(shouldSendGaplessNextUriToRenderer(em7))
+        assertTrue(shouldSendGaplessNextUriToRenderer(standardRenderer))
     }
 }

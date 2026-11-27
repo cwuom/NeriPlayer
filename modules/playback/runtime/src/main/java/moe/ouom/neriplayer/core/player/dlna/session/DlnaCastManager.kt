@@ -226,8 +226,9 @@ object DlnaCastManager {
         if (!state.isCastingActive || (userPausedOrStopped && !desiredRemotePlaying)) return false
         val nowMono = monotonicBootElapsedMs()
         val playSent = playCommandConfirmedGen == trackGenerationCounter.get()
-        val startupGrace = isStartupPauseGraceActive(hasStartedPlayingInGeneration, playSent, if (playSent && playCommandSentBootMs > 0L) (nowMono - playCommandSentBootMs).coerceAtLeast(0L) else 0L)
-        if (rendererMediaConfirmed && isMidTrackPause(state.transportState, state.remotePositionMs, state.remoteDurationMs, startupGrace, lastPlayingPositionMs, elapsedSinceLastPlayingSampleMs(lastPlayingPositionMs, lastPlayingSampleMonoMs, nowMono))) return false
+        val elapsedPlayMs = if (playSent && playCommandSentBootMs > 0L) (nowMono - playCommandSentBootMs).coerceAtLeast(0L) else 0L
+        val startupGrace = isStartupPauseGraceActive(hasStartedPlayingInGeneration, playSent, elapsedPlayMs)
+        if (rendererMediaConfirmed && isMidTrackPause(state.transportState, state.remotePositionMs, state.remoteDurationMs, startupGrace, lastPlayingPositionMs, elapsedSinceLastPlayingSampleMs(lastPlayingPositionMs, lastPlayingSampleMonoMs, nowMono), playSent, playCommandStartPosMs, elapsedPlayMs)) return false
         return desiredRemotePlaying || state.connectionStatus == DlnaConnectionStatus.CONNECTING ||
             state.transportState == DlnaTransportState.PLAYING || state.transportState == DlnaTransportState.TRANSITIONING
     }
@@ -763,7 +764,11 @@ object DlnaCastManager {
                 ) {
                     queuedNext = null
                     if (oldNext.sentToRenderer && connectionGenerationCounter.get() == connGen) {
-                        runCatching { controlClient.setNextAvTransportUri(device, "", "") }
+                        transportMutex.withLock {
+                            if (connectionGenerationCounter.get() == connGen && queuedNext == null) {
+                                runCatching { controlClient.setNextAvTransportUri(device, "", "") }
+                            }
+                        }
                     }
                     if (oldNext.streamPath.isNotBlank() && oldNext.streamPath != activeStreamPath) {
                         mediaServer.unregisterStream(oldNext.streamPath)
@@ -1066,7 +1071,7 @@ object DlnaCastManager {
 
                         var publishedPosMs = postPlaySeekMs
                         if (postPlaySeekMs > 1_500L || (seekOccurredDuringPlay && postPlaySeekMs >= 0L)) {
-                            delay(250L)
+                            awaitReadyForPostPlaySeek(device, controlClient, isStale) { desiredRemotePlaying }
                             if (isStale()) return
                             var targetToSendAfterDelay: Long? = null
                             synchronized(sessionStateLock) {
@@ -1167,6 +1172,9 @@ object DlnaCastManager {
             device = state.activeDevice ?: return
             desiredRemotePlaying = true
             userPausedOrStopped = false
+            hasStartedPlayingInGeneration = false
+            playCommandConfirmedGen = -1L
+            playCommandSentBootMs = 0L
             consecutiveStoppedPolls = 0
             consecutiveEndPausedPolls = 0
             if (!rendererMediaConfirmed) {
@@ -1214,10 +1222,9 @@ object DlnaCastManager {
                 if (pendingSeek != null) {
                     pendingPausedSeekMs = null
                     val prePausedSeekSeq = seekSequenceCounter.get()
-                    delay(200L)
-                    if (isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn) &&
-                        seekSequenceCounter.get() == prePausedSeekSeq
-                    ) {
+                    val seekStale = { !isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn) }
+                    awaitReadyForPostPlaySeek(device, controlClient, seekStale) { desiredRemotePlaying }
+                    if (!seekStale() && seekSequenceCounter.get() == prePausedSeekSeq) {
                         controlClient.seekRelTime(device, pendingSeek)
                     }
                 }
@@ -1441,7 +1448,7 @@ object DlnaCastManager {
                     break
                 }
                 val startupGrace = isStartupPauseGraceActive(hasStartedPlayingInGeneration, playCmdSentForGen, elapsedSincePlayCmdMs)
-                val confirmedMidPause = rendererMediaConfirmed && isMidTrackPause(transport, posInfo?.positionMs, posInfo?.durationMs, startupGrace, lastPlayingPositionMs, elapsedSinceLastPlayingMs)
+                val confirmedMidPause = rendererMediaConfirmed && isMidTrackPause(transport, posInfo?.positionMs, posInfo?.durationMs, startupGrace, lastPlayingPositionMs, elapsedSinceLastPlayingMs, playCmdSentForGen, playCommandStartPosMs, elapsedSincePlayCmdMs)
                 lockController.followTransport(transport, desiredRemotePlaying, confirmedMidPause)
                 if (shouldAdoptExternalResume(transport, currentTrackUriLoadedGen == activeTrackGen, userPausedOrStopped, desiredRemotePlaying, nowMonoMs, lastUserPauseAtMs)) {
                     synchronized(sessionStateLock) { desiredRemotePlaying = true; userPausedOrStopped = false }
@@ -1464,6 +1471,15 @@ object DlnaCastManager {
                         ) {
                             promoteGaplessNextTrack(device, connectionGen, pendingNext, posInfo, vol)
                             lastObservedTransportState = transport
+                            withTimeoutOrNull(DLNA_POLL_INTERVAL_MS) { pollNudgeChannel.receive() }
+                            continue
+                        } else if (!userPausedOrStopped && transport == DlnaTransportState.PAUSED_PLAYBACK) {
+                            // 渲染器切入 NextURI（封面与元数据已加载）却停在 00:00 暂停态：补发 Play 并晋升为当前曲目
+                            val resumed = transportMutex.withLock {
+                                connectionGenerationCounter.get() == connectionGen && controlClient.play(device).isSuccess
+                            }
+                            if (resumed) promoteGaplessNextTrack(device, connectionGen, pendingNext, posInfo, vol)
+                            else dispatchTrackEndedFromPoll(connectionGen, activeTrackGen)
                             withTimeoutOrNull(DLNA_POLL_INTERVAL_MS) { pollNudgeChannel.receive() }
                             continue
                         } else if (!userPausedOrStopped &&
@@ -1496,7 +1512,10 @@ object DlnaCastManager {
                             positionMs = posMs,
                             durationMs = durMs,
                             lastPlayingPositionMs = lastPlayingPositionMs,
-                            elapsedSinceLastPlayingPollMs = elapsedSinceLastPlayingMs
+                            elapsedSinceLastPlayingPollMs = elapsedSinceLastPlayingMs,
+                            playCommandSentInGeneration = playCmdSentForGen,
+                            playCommandStartPositionMs = playCommandStartPosMs,
+                            elapsedSincePlayCommandMs = elapsedSincePlayCmdMs
                         )
                     ) {
                         consecutiveEndPausedPolls++
@@ -1640,6 +1659,19 @@ object DlnaCastManager {
                 }
                 return@launch
             }
+            if (!shouldSendGaplessNextUriToRenderer(device)) {
+                // 本地磁盘缓存已预热完毕；跳过发送 SetNextAVTransportURI，避免部分固件播放中途被重置或曲尾停在 00:00 暂停态
+                runCatching { outcome.streamContent.ephemeralFileToDeleteOnUnregister?.delete() }
+                nextUriMutex.withLock {
+                    if (!isCancelled()) {
+                        queuedNext = QueuedNextTrack.notSent(
+                            connGen, forTrackGen, targetQueueRev, nextSong,
+                            outcome.snapshot, outcome.qualityReport, urlResolution.result.audioInfo
+                        )
+                    }
+                }
+                return@launch
+            }
             val lanIp = DlnaLanAddressResolver.resolveLanIpv4ForTarget(device.host) ?: run {
                 runCatching { outcome.streamContent.ephemeralFileToDeleteOnUnregister?.delete() }
                 return@launch
@@ -1658,46 +1690,32 @@ object DlnaCastManager {
                 val nextStreamUrl = mediaServer.buildUrl(lanIp, nextStreamPath)
                 val nextCoverUrl = nextCoverPath?.let { mediaServer.buildUrl(lanIp, it) }
                 val nextDidl = DidlLiteBuilder.buildDidlLite(nextSnapshot, nextStreamUrl, nextCoverUrl)
-                nextUriMutex.withLock {
-                    if (isCancelled()) return@withLock
-                    val sendRes = controlClient.setNextAvTransportUri(device, nextStreamUrl, nextDidl)
+                nextUriMutex.withLock nextLock@{
+                    if (isCancelled()) return@nextLock
+                    val sendRes = transportMutex.withLock {
+                        if (isCancelled()) return@nextLock
+                        controlClient.setNextAvTransportUri(device, nextStreamUrl, nextDidl)
+                    }
                     if (isCancelled()) {
                         if (sendRes.isSuccess && connGen == connectionGenerationCounter.get()) {
-                            runCatching { controlClient.setNextAvTransportUri(device, "", "") }
+                            transportMutex.withLock {
+                                if (connGen == connectionGenerationCounter.get()) {
+                                    runCatching { controlClient.setNextAvTransportUri(device, "", "") }
+                                }
+                            }
                         }
-                        return@withLock
+                        return@nextLock
                     }
                     if (sendRes.isSuccess) {
-                        queuedNext = QueuedNextTrack(
-                            connectionGen = connGen,
-                            forGenerationId = forTrackGen,
-                            queueRevision = targetQueueRev,
-                            song = nextSong,
-                            snapshot = nextSnapshot,
-                            qualityReport = outcome.qualityReport,
-                            audioInfo = urlResolution.result.audioInfo,
-                            streamUrl = nextStreamUrl,
-                            streamPath = nextStreamPath,
-                            coverPath = nextCoverPath,
-                            didl = nextDidl,
-                            sentToRenderer = true
+                        queuedNext = QueuedNextTrack.accepted(
+                            connGen, forTrackGen, targetQueueRev, nextSong, nextSnapshot, outcome.qualityReport,
+                            urlResolution.result.audioInfo, nextStreamUrl, nextStreamPath, nextCoverPath, nextDidl
                         )
                         streamHandedOff = true
                     } else {
-                        queuedNext = QueuedNextTrack(
-                            connectionGen = connGen,
-                            forGenerationId = forTrackGen,
-                            queueRevision = targetQueueRev,
-                            song = nextSong,
-                            snapshot = nextSnapshot,
-                            qualityReport = outcome.qualityReport,
-                            audioInfo = urlResolution.result.audioInfo,
-                            streamUrl = nextStreamUrl,
-                            streamPath = "",
-                            coverPath = nextCoverPath,
-                            didl = nextDidl,
-                            sentToRenderer = false,
-                            rejectedByRenderer = true
+                        queuedNext = QueuedNextTrack.notSent(
+                            connGen, forTrackGen, targetQueueRev, nextSong, nextSnapshot, outcome.qualityReport,
+                            urlResolution.result.audioInfo, nextStreamUrl, nextCoverPath, nextDidl
                         )
                     }
                 }
@@ -1786,54 +1804,34 @@ object DlnaCastManager {
         // 部分渲染器在 Stop/SetURI 后仍保留 NextURI，不清掉会播放旧曲目或请求已注销的地址（410）
         val device = _castStateFlow.value.activeDevice
         if (old?.sentToRenderer == true && device != null && old.connectionGen == connectionGenerationCounter.get()) {
-            scope.launch { nextUriMutex.withLock { if (old.connectionGen == connectionGenerationCounter.get()) runCatching { controlClient.setNextAvTransportUri(device, "", "") } } }
+            scope.launch {
+                nextUriMutex.withLock {
+                    if (old.connectionGen == connectionGenerationCounter.get() && queuedNext == null) {
+                        transportMutex.withLock {
+                            if (old.connectionGen == connectionGenerationCounter.get() && queuedNext == null) {
+                                runCatching { controlClient.setNextAvTransportUri(device, "", "") }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
     private fun subscribeGenaIfAvailable(device: DlnaDevice, connectionGen: Long, callbackPath: String) {
-        val eventSubUrl = device.avTransportEventSubUrl.takeIf { it.isNotBlank() } ?: run {
-            if (connectionGen == connectionGenerationCounter.get()) {
-                mediaServer.clearGenaSubscriptions()
+        genaRenewal.subscribeInitial(
+            device = device,
+            callbackPath = callbackPath,
+            controlClient = controlClient,
+            mediaServer = mediaServer,
+            sessionLock = sessionStateLock,
+            isCurrentConnection = { connectionGenerationCounter.get() == connectionGen },
+            isActiveSid = { sid -> activeGenaSid == sid },
+            onSubscribed = { eventSubUrl, sid ->
+                activeGenaSid = sid
+                activeGenaEventSubUrl = eventSubUrl
             }
-            return
-        }
-        val lanIp = DlnaLanAddressResolver.resolveLanIpv4ForTarget(device.host) ?: run {
-            if (connectionGen == connectionGenerationCounter.get()) {
-                mediaServer.clearGenaSubscriptions()
-            }
-            return
-        }
-        val callbackUrl = mediaServer.buildUrl(lanIp, callbackPath)
-        mediaServer.genaSubscriptionInFlight = true
-        try {
-            controlClient.subscribeGena(eventSubUrl, callbackUrl).onSuccess { sub ->
-                var registered = false
-                synchronized(sessionStateLock) {
-                    if (connectionGen == connectionGenerationCounter.get()) {
-                        activeGenaSid = sub.sid
-                        activeGenaEventSubUrl = eventSubUrl
-                        mediaServer.registerGenaSubscription(sub.sid)
-                        registered = true
-                        genaRenewal.start(eventSubUrl, sub.sid, sub.timeoutSeconds) { connectionGen == connectionGenerationCounter.get() && activeGenaSid == sub.sid }
-                    }
-                }
-                if (!registered) {
-                    runCatching { controlClient.unsubscribeGena(eventSubUrl, sub.sid) }
-                }
-            }.onFailure {
-                synchronized(sessionStateLock) {
-                    if (connectionGen == connectionGenerationCounter.get()) {
-                        mediaServer.clearGenaSubscriptions()
-                    }
-                }
-            }
-        } finally {
-            synchronized(sessionStateLock) {
-                if (connectionGen == connectionGenerationCounter.get()) {
-                    mediaServer.genaSubscriptionInFlight = false
-                }
-            }
-        }
+        )
     }
 
     private fun handleGenaNotify(values: Map<String, String>) {

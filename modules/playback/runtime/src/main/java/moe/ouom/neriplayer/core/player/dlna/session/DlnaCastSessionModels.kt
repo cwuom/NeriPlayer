@@ -39,7 +39,63 @@ internal data class QueuedNextTrack(
     val didl: String,
     val sentToRenderer: Boolean,
     val rejectedByRenderer: Boolean = false
-)
+) {
+    companion object {
+        fun accepted(
+            connectionGen: Long,
+            forGenerationId: Long,
+            queueRevision: Long,
+            song: SongItem,
+            snapshot: DlnaPlaybackSnapshot,
+            qualityReport: DlnaAudioQualityReport,
+            audioInfo: PlaybackAudioInfo?,
+            streamUrl: String,
+            streamPath: String,
+            coverPath: String?,
+            didl: String
+        ) = QueuedNextTrack(
+            connectionGen = connectionGen,
+            forGenerationId = forGenerationId,
+            queueRevision = queueRevision,
+            song = song,
+            snapshot = snapshot,
+            qualityReport = qualityReport,
+            audioInfo = audioInfo,
+            streamUrl = streamUrl,
+            streamPath = streamPath,
+            coverPath = coverPath,
+            didl = didl,
+            sentToRenderer = true
+        )
+
+        fun notSent(
+            connectionGen: Long,
+            forGenerationId: Long,
+            queueRevision: Long,
+            song: SongItem,
+            snapshot: DlnaPlaybackSnapshot,
+            qualityReport: DlnaAudioQualityReport,
+            audioInfo: PlaybackAudioInfo?,
+            streamUrl: String = "",
+            coverPath: String? = null,
+            didl: String = ""
+        ) = QueuedNextTrack(
+            connectionGen = connectionGen,
+            forGenerationId = forGenerationId,
+            queueRevision = queueRevision,
+            song = song,
+            snapshot = snapshot,
+            qualityReport = qualityReport,
+            audioInfo = audioInfo,
+            streamUrl = streamUrl,
+            streamPath = "",
+            coverPath = coverPath,
+            didl = didl,
+            sentToRenderer = false,
+            rejectedByRenderer = true
+        )
+    }
+}
 
 internal sealed interface DlnaUrlResolution {
     data class Success(val result: SongUrlResult.Success) : DlnaUrlResolution

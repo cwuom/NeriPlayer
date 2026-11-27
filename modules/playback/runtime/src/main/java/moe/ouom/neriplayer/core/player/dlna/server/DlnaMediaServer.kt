@@ -13,10 +13,10 @@ import java.net.Socket
 import java.net.SocketException
 import java.util.Locale
 import java.util.UUID
-import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -40,6 +40,7 @@ class DlnaMediaServer(
         private const val MAX_HEADER_BYTES = 8192
         private const val HEADER_READ_DEADLINE_MS = 15_000L
         private const val STREAM_BUFFER_BYTES = 64 * 1024
+        private const val MAX_HTTP_WORKERS = 64
         private const val MAX_ARTWORK_BYTES = 8 * 1024 * 1024
         private const val MAX_ARTWORK_COUNT = 8
         private const val MAX_ARTWORK_CACHE_BYTES = 24 * 1024 * 1024
@@ -124,13 +125,15 @@ class DlnaMediaServer(
     @Synchronized
     fun start(): Int {
         if (isRunning) return port
-        val socket = ServerSocket(0, 32, InetAddress.getByName("0.0.0.0"))
+        val socket = ServerSocket(0, 64, InetAddress.getByName("0.0.0.0"))
+        // 使用 SynchronousQueue 立即派生工作线程：渲染器（如山灵 EM7）在播放与拖动进度条做二分 Range 探测时
+        // 会同时保持多条未读完的流连接阻塞在 out.write，若用有界队列配小 corePoolSize 会把后续 Range 请求卡死在队列里
         val pool = ThreadPoolExecutor(
-            2,
-            12,
-            30L,
+            0,
+            MAX_HTTP_WORKERS,
+            60L,
             TimeUnit.SECONDS,
-            ArrayBlockingQueue(24)
+            SynchronousQueue()
         ) { runnable ->
             Thread(runnable, "NeriDlnaHttpWorker").apply { isDaemon = true }
         }

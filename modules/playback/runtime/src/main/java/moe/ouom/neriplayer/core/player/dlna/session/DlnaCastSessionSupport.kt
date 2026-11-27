@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.player.dlna.session
 
 import android.os.SystemClock
+import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.dlna.protocol.UpnpControlClient
 import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.data.model.SongItem
@@ -84,7 +86,10 @@ internal fun isMidTrackPause(
     durationMs: Long?,
     startupGraceActive: Boolean = false,
     lastPlayingPositionMs: Long = 0L,
-    elapsedSinceLastPlayingPollMs: Long = 0L
+    elapsedSinceLastPlayingPollMs: Long = 0L,
+    playCommandSentInGeneration: Boolean = false,
+    playCommandStartPositionMs: Long = 0L,
+    elapsedSincePlayCommandMs: Long = 0L
 ): Boolean {
     if (transport != DlnaTransportState.PAUSED_PLAYBACK || startupGraceActive) return false
     if (durationMs == null || durationMs <= 0L || positionMs == null) return false
@@ -92,7 +97,10 @@ internal fun isMidTrackPause(
             positionMs = positionMs,
             durationMs = durationMs,
             lastPlayingPositionMs = lastPlayingPositionMs,
-            elapsedSinceLastPlayingPollMs = elapsedSinceLastPlayingPollMs
+            elapsedSinceLastPlayingPollMs = elapsedSinceLastPlayingPollMs,
+            playCommandSentInGeneration = playCommandSentInGeneration,
+            playCommandStartPositionMs = playCommandStartPositionMs,
+            elapsedSincePlayCommandMs = elapsedSincePlayCommandMs
         )
     ) {
         return false
@@ -124,6 +132,32 @@ internal fun collectMissingDeviceOptions(
         additions[device.udn] = defaults
     }
     return additions
+}
+
+/**
+ * 山灵 EM7 等固件在播放中途收到 SetNextAVTransportURI 会偶发中断当前流并回退到 00:01 暂停，
+ * 或在曲尾切入 NextURI 后停在 00:00 的 PAUSED_PLAYBACK 不出声；对其仅做本地缓存预热，曲尾由控制器统一切歌下发 Play。
+ */
+internal fun shouldSendGaplessNextUriToRenderer(device: DlnaDevice): Boolean =
+    !device.isLikelyShanlingEm7
+
+/**
+ * Play 刚返回时部分渲染器仍处于 TRANSITIONING 打开流阶段，过早发 Seek 会报 701 或打断解码回退到开头；
+ * 先等待退出 TRANSITIONING（最多约 2.25s）再发送初始/恢复 Seek。
+ */
+internal suspend fun awaitReadyForPostPlaySeek(
+    device: DlnaDevice,
+    controlClient: UpnpControlClient,
+    isStale: () -> Boolean,
+    desiredPlaying: () -> Boolean
+) {
+    delay(250L)
+    repeat(8) {
+        if (isStale() || !desiredPlaying()) return
+        val state = controlClient.getTransportState(device).getOrNull()
+        if (state != DlnaTransportState.TRANSITIONING) return
+        delay(250L)
+    }
 }
 
 internal class DelegatingLanSocketFactory(

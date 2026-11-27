@@ -5,6 +5,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.core.player.dlna.protocol.UpnpControlClient
+import moe.ouom.neriplayer.core.player.dlna.server.DlnaLanAddressResolver
+import moe.ouom.neriplayer.core.player.dlna.server.DlnaMediaServer
+import moe.ouom.neriplayer.data.model.playback.dlna.DlnaDevice
 
 /**
  * 在 GENA 订阅过期前续订。
@@ -39,6 +43,52 @@ internal class DlnaGenaRenewalScheduler(
     fun cancel() {
         job?.cancel()
         job = null
+    }
+
+    fun subscribeInitial(
+        device: DlnaDevice,
+        callbackPath: String,
+        controlClient: UpnpControlClient,
+        mediaServer: DlnaMediaServer,
+        sessionLock: Any,
+        isCurrentConnection: () -> Boolean,
+        isActiveSid: (String) -> Boolean,
+        onSubscribed: (eventSubUrl: String, sid: String) -> Unit
+    ) {
+        val eventSubUrl = device.avTransportEventSubUrl.takeIf { it.isNotBlank() } ?: run {
+            if (isCurrentConnection()) mediaServer.clearGenaSubscriptions()
+            return
+        }
+        val lanIp = DlnaLanAddressResolver.resolveLanIpv4ForTarget(device.host) ?: run {
+            if (isCurrentConnection()) mediaServer.clearGenaSubscriptions()
+            return
+        }
+        val callbackUrl = mediaServer.buildUrl(lanIp, callbackPath)
+        mediaServer.genaSubscriptionInFlight = true
+        try {
+            controlClient.subscribeGena(eventSubUrl, callbackUrl).onSuccess { sub ->
+                var registered = false
+                synchronized(sessionLock) {
+                    if (isCurrentConnection()) {
+                        onSubscribed(eventSubUrl, sub.sid)
+                        mediaServer.registerGenaSubscription(sub.sid)
+                        registered = true
+                        start(eventSubUrl, sub.sid, sub.timeoutSeconds) {
+                            isCurrentConnection() && isActiveSid(sub.sid)
+                        }
+                    }
+                }
+                if (!registered) runCatching { controlClient.unsubscribeGena(eventSubUrl, sub.sid) }
+            }.onFailure {
+                synchronized(sessionLock) {
+                    if (isCurrentConnection()) mediaServer.clearGenaSubscriptions()
+                }
+            }
+        } finally {
+            synchronized(sessionLock) {
+                if (isCurrentConnection()) mediaServer.genaSubscriptionInFlight = false
+            }
+        }
     }
 
     companion object {
