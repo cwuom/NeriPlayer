@@ -47,6 +47,21 @@ class NowPlayingShuffleModeTest {
     }
 
     @Test
+    fun `heartbeat is turned off before shuffle captures its restore queue`() {
+        // 心动开着时切到非网易云歌，按钮显示默认档，再点一下进随机：必须先关心动再开随机
+        assertEquals(
+            listOf(ShuffleModeStep.Heartbeat(false), ShuffleModeStep.Shuffle(true)),
+            planShuffleModeSteps(SHUFFLE, shuffleEnabled = false, heartbeatEnabled = true)
+        )
+        // 从随机切到心动：先关随机再开心动
+        assertEquals(
+            listOf(ShuffleModeStep.Shuffle(false), ShuffleModeStep.Heartbeat(true)),
+            planShuffleModeSteps(HEARTBEAT, shuffleEnabled = true, heartbeatEnabled = false)
+        )
+        assertEquals(emptyList<ShuffleModeStep>(), planShuffleModeSteps(OFF, shuffleEnabled = false, heartbeatEnabled = false))
+    }
+
+    @Test
     fun `applying a mode leaves shuffle and heartbeat matching the button`() {
         val source = StartupPreviewPlaybackSource(song, emptyList())
 

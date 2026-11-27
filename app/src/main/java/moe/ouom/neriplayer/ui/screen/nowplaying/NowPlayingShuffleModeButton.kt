@@ -55,19 +55,44 @@ internal fun nextNowPlayingShuffleMode(
     NowPlayingShuffleMode.HEARTBEAT -> NowPlayingShuffleMode.OFF
 }
 
+internal sealed interface ShuffleModeStep {
+    data class Shuffle(val enabled: Boolean) : ShuffleModeStep
+    data class Heartbeat(val enabled: Boolean) : ShuffleModeStep
+}
+
 /**
- * 按目标档位同时设置随机和心动两个开关，保证按钮看到的就是实际生效的。
- * 先关随机再开心动：一起听房间会拒绝开启心动，这时停在默认档，用户还能继续点回随机。
+ * 切到目标档位要按什么顺序改两个开关。
+ *
+ * 要关心动就最先关：关心动会删掉插进来的心动歌，若先开随机，随机记下的「还原队列」
+ * 里还带着心动歌，之后关随机时长度对不上，原队列就还原不回来了。
+ * 要开心动就最后开：一起听房间会拒绝开启，这时停在默认档，用户还能继续点回随机。
  */
+internal fun planShuffleModeSteps(
+    target: NowPlayingShuffleMode,
+    shuffleEnabled: Boolean,
+    heartbeatEnabled: Boolean
+): List<ShuffleModeStep> {
+    val wantShuffle = target == NowPlayingShuffleMode.SHUFFLE
+    val wantHeartbeat = target == NowPlayingShuffleMode.HEARTBEAT
+    return buildList {
+        if (heartbeatEnabled && !wantHeartbeat) add(ShuffleModeStep.Heartbeat(false))
+        if (shuffleEnabled != wantShuffle) add(ShuffleModeStep.Shuffle(wantShuffle))
+        if (!heartbeatEnabled && wantHeartbeat) add(ShuffleModeStep.Heartbeat(true))
+    }
+}
+
+/** 按目标档位设置随机和心动两个开关，保证按钮看到的就是实际生效的。 */
 internal fun NowPlayingPlaybackSource.applyShuffleMode(
     target: NowPlayingShuffleMode,
     shuffleEnabled: Boolean,
     heartbeatEnabled: Boolean
 ) {
-    val wantShuffle = target == NowPlayingShuffleMode.SHUFFLE
-    val wantHeartbeat = target == NowPlayingShuffleMode.HEARTBEAT
-    if (shuffleEnabled != wantShuffle) setShuffle(wantShuffle)
-    if (heartbeatEnabled != wantHeartbeat) setHeartbeatEnabled(wantHeartbeat)
+    planShuffleModeSteps(target, shuffleEnabled, heartbeatEnabled).forEach { step ->
+        when (step) {
+            is ShuffleModeStep.Shuffle -> setShuffle(step.enabled)
+            is ShuffleModeStep.Heartbeat -> setHeartbeatEnabled(step.enabled)
+        }
+    }
 }
 
 @Composable
