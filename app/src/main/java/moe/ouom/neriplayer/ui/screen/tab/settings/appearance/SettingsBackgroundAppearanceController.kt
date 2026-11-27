@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import kotlin.math.absoluteValue
+import moe.ouom.neriplayer.ui.feedback.launchOrShowUnavailable
 
 internal class SettingsBackgroundImageDraft(
     private val blurState: MutableFloatState,
@@ -145,10 +146,12 @@ private fun createBackgroundImageImportOwner(
 )
 
 private class BackgroundImagePickerAction(
+    private val context: Context,
     private val launcher: ManagedActivityResultLauncher<PickVisualMediaRequest, Uri?>
 ) {
+    // 没有系统照片选择器时 PickVisualMedia 会回退到 OPEN_DOCUMENT，电视上同样可能无人处理
     val launch: () -> Unit = {
-        launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        launcher.launchOrShowUnavailable(context, PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
 }
 
@@ -164,7 +167,7 @@ internal fun rememberSettingsBackgroundImagePicker(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = handler.callback
     )
-    return BackgroundImagePickerAction(launcher).launch
+    return BackgroundImagePickerAction(context, launcher).launch
 }
 
 internal data class NowPlayingBackgroundExclusion(

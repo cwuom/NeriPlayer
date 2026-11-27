@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.safemode
 
 import android.app.Application
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.LocalActivityResultRegistryOwner
@@ -47,7 +48,7 @@ class SafeModeConfigExportTest {
     private val messages = CopyOnWriteArrayList<String>()
     private var requestCode: Int? = null
     private var launchCount = 0
-    private var failLaunch = false
+    private var launchFailure: RuntimeException? = null
     private val registry = object : ActivityResultRegistry() {
         override fun <I, O> onLaunch(
             requestCode: Int,
@@ -56,7 +57,7 @@ class SafeModeConfigExportTest {
             options: ActivityOptionsCompat?
         ) {
             check(contract is ActivityResultContracts.CreateDocument)
-            if (failLaunch) throw IllegalStateException("synthetic picker failure")
+            launchFailure?.let { throw it }
             this@SafeModeConfigExportTest.requestCode = requestCode
             launchCount++
         }
@@ -87,17 +88,34 @@ class SafeModeConfigExportTest {
     @Test
     fun `picker launch failure releases the prepared selection so recovery export can retry`() {
         render()
-        failLaunch = true
+        launchFailure = IllegalStateException("synthetic picker failure")
         openOptions()
         button(CoreCommonR.string.settings_backup_action_export).performClick()
 
         composeRule.runOnIdle { assertEquals(1, messages.size) }
         button(AppR.string.safe_mode_export_config).assertIsEnabled()
-        failLaunch = false
+        launchFailure = null
         openOptions()
         button(CoreCommonR.string.settings_backup_action_export).performClick()
         assertEquals(1, launchCount)
         completePicker(null)
+    }
+
+    @Test
+    fun `playlist export without a document picker reports unavailable and stays retryable`() {
+        render()
+        launchFailure = ActivityNotFoundException("no DocumentsUI")
+
+        button(AppR.string.safe_mode_export_playlists).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(listOf(string(CoreCommonR.string.error_no_app_for_action)), messages.toList())
+            assertEquals(0, launchCount)
+        }
+        button(AppR.string.safe_mode_export_playlists).assertIsEnabled()
+        launchFailure = null
+        button(AppR.string.safe_mode_export_playlists).performClick()
+        composeRule.runOnIdle { assertEquals(1, launchCount) }
     }
 
     private fun render() {

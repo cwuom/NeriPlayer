@@ -55,6 +55,7 @@ import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
 import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.util.platform.tryLaunch
 
 @Composable
 fun SafeModeScreen(
@@ -259,7 +260,10 @@ fun SafeModeScreen(
                         onExport = {
                             val currentReport = report ?: return@CrashLogPreviewCard
                             exportReport = currentReport
-                            exportLauncher.launch(currentReport.file.name)
+                            if (!exportLauncher.tryLaunch(currentReport.file.name)) {
+                                exportReport = null
+                                showMessage(composeResources.getString(CoreCommonR.string.error_no_app_for_action))
+                            }
                         }
                     )
                 }

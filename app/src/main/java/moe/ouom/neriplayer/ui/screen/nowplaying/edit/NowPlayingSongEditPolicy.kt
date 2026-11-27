@@ -560,6 +560,16 @@ internal fun resolvePendingLocalCoverReplacementTarget(
     return pendingSong
 }
 
+/** 选择器打不开时不会回调结果，需要撤销刚记下的待替换歌曲，避免之后误用 */
+internal fun startEditCoverPicker(
+    song: SongItem,
+    launchPicker: () -> Boolean,
+    setPendingSong: (SongItem?) -> Unit
+) {
+    setPendingSong(song)
+    if (!launchPicker()) setPendingSong(null)
+}
+
 internal fun withVerifiedEditCoverPickerTarget(
     sourceUri: Uri?,
     pendingSong: SongItem?,

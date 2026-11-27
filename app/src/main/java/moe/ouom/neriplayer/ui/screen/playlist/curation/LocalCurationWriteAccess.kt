@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.data.local.media.curation.FolderArtworkLocator
 import moe.ouom.neriplayer.data.local.media.curation.LocalMediaWriteAccess
 import moe.ouom.neriplayer.data.local.media.curation.LocalMediaWriteAccessPlan
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.feedback.launchOrShowUnavailable
 
 /**
  * 一次授权流程中已经弹出的请求；只用于判断进度，Activity 重建后丢失也无妨，
@@ -92,7 +93,8 @@ internal fun rememberLocalCurationWriteAccessRequester(
                 is LocalMediaWriteAccessPlan.FolderGrant -> {
                     if (writeAccessMadeProgress(progress.folderPendingSongs, plan.pendingSongs)) {
                         progress.folderPendingSongs = plan.pendingSongs
-                        folderLauncher.launch(plan.suggestedFolder?.let(FolderArtworkLocator::documentUriFor))
+                        val folder = plan.suggestedFolder?.let(FolderArtworkLocator::documentUriFor)
+                        if (!folderLauncher.launchOrShowUnavailable(context, folder)) denied()
                     } else {
                         denied()
                     }
