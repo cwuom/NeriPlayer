@@ -289,7 +289,7 @@
     <string name="settings_no_cache">No cache</string>
     <string name="settings_cache_unlimited">Unlimited</string>
     <string name="settings_download_management">Download Management</string>
-    <string name="settings_download_expand">Location, file format, and download tasks</string>
+    <string name="settings_download_expand">Audio quality, metadata, and download tasks</string>
     <string name="settings_download_progress">Download Progress</string>
     <string name="settings_download_songs_count" formatted="false">%d/%d songs</string>
     <string name="settings_download_manager">Download Manager</string>

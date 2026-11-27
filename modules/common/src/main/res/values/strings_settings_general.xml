@@ -289,7 +289,7 @@
     <string name="settings_no_cache">不缓存 (0 MB)</string>
     <string name="settings_cache_unlimited">无上限</string>
     <string name="settings_download_management">下载管理</string>
-    <string name="settings_download_expand">下载目录、保存格式与任务管理</string>
+    <string name="settings_download_expand">下载音质、元数据与任务管理</string>
     <string name="settings_download_progress">下载进度</string>
     <string name="settings_download_songs_count" formatted="false">%d/%d 首歌曲</string>
     <string name="settings_download_manager">下载管理</string>
