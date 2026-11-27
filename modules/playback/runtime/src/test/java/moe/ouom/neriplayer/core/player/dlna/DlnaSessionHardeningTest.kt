@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.player.dlna.session.dlnaPollIntervalMs
 import moe.ouom.neriplayer.core.player.dlna.session.DLNA_EXTERNAL_RESUME_GRACE_MS
 import moe.ouom.neriplayer.core.player.dlna.session.DlnaNetworkAndLockController
 import moe.ouom.neriplayer.core.player.dlna.session.followTransport
+import moe.ouom.neriplayer.core.player.dlna.session.isMidTrackPause
 import moe.ouom.neriplayer.core.player.dlna.session.resolveRemotePlayingForHandoff
 import moe.ouom.neriplayer.core.player.dlna.session.shouldAdoptExternalResume
 import moe.ouom.neriplayer.core.player.runtime.refresh.YouTubePlaybackRecoveryStrategy
@@ -99,6 +100,28 @@ class DlnaSessionHardeningTest {
         playingIntent.followTransport(DlnaTransportState.STOPPED, desiredRemotePlaying = true)
         playingIntent.followTransport(DlnaTransportState.TRANSITIONING, desiredRemotePlaying = false)
         verify(playingIntent, never()).releaseCastLocks()
+    }
+
+    @Test
+    fun midTrackPause_isDistinguishedFromEndOfTrackPause() {
+        val paused = DlnaTransportState.PAUSED_PLAYBACK
+        assertTrue(isMidTrackPause(paused, positionMs = 60_000L, durationMs = 180_000L))
+        // 部分渲染器在自然结束时上报 PAUSED_PLAYBACK，这是切下一首的时机，不能当作用户暂停
+        assertFalse(isMidTrackPause(paused, positionMs = 178_000L, durationMs = 180_000L))
+        assertFalse(isMidTrackPause(paused, positionMs = 60_000L, durationMs = 0L))
+        assertFalse(isMidTrackPause(paused, positionMs = null, durationMs = 180_000L))
+        assertFalse(isMidTrackPause(DlnaTransportState.PLAYING, positionMs = 60_000L, durationMs = 180_000L))
+    }
+
+    @Test
+    fun castLocks_releaseOnRendererSidePauseButNotAtTrackEnd() {
+        val midTrack = mock(DlnaNetworkAndLockController::class.java)
+        midTrack.followTransport(DlnaTransportState.PAUSED_PLAYBACK, desiredRemotePlaying = true, confirmedMidTrackPause = true)
+        verify(midTrack).releaseCastLocks()
+
+        val trackEnd = mock(DlnaNetworkAndLockController::class.java)
+        trackEnd.followTransport(DlnaTransportState.PAUSED_PLAYBACK, desiredRemotePlaying = true, confirmedMidTrackPause = false)
+        verify(trackEnd, never()).releaseCastLocks()
     }
 
     @Test

@@ -161,6 +161,7 @@
     <string name="dlna_err_lan_lost">Wi-Fi / LAN connection lost</string>
     <string name="dlna_err_renderer_unreachable">Lost contact with %1$s. Switched back to this device (paused)</string>
     <string name="dlna_err_wav_fallback_too_large">This track is too long to cast via WAV fallback (not enough cache space). Turn off strict lossless or pick a renderer that supports the original format</string>
+    <string name="dlna_err_listen_together_active">Leave the Listen Together room before casting to a DLNA device</string>
     <string name="dlna_err_login_required">Sign-in is required to cast this track</string>
     <string name="dlna_err_no_playable_url">Unable to resolve a playable URL for "%1$s"</string>
     <string name="dlna_err_materialize_failed">Failed to buffer or read audio stream locally</string>

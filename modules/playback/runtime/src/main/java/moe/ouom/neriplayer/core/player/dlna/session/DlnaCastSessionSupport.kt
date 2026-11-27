@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.model.playback.dlna.DlnaTransportState
 internal const val DLNA_POLL_INTERVAL_MS = 1_000L
 internal const val DLNA_IDLE_POLL_INTERVAL_MS = 5_000L
 internal const val DLNA_EXTERNAL_RESUME_GRACE_MS = 3_000L
+internal const val DLNA_END_OF_TRACK_TOLERANCE_MS = 5_000L
 
 internal fun monotonicBootElapsedMs(): Long {
     val bootMs = runCatching { SystemClock.elapsedRealtime() }.getOrDefault(0L)
@@ -58,12 +59,26 @@ internal fun isRequestedLosslessForSong(song: SongItem): Boolean = when {
     else -> PlayerManager.effectiveNeteaseQuality() in setOf("lossless", "hires", "jyeffect", "sky", "jymaster")
 }
 
+/**
+ * 曲中确认的暂停。部分渲染器（如山灵 EM7）在自然结束时也上报 PAUSED_PLAYBACK，
+ * 那是切下一首的时机，不能当成用户暂停去释放保活；曲长未知时也按保守处理。
+ */
+internal fun isMidTrackPause(transport: DlnaTransportState?, positionMs: Long?, durationMs: Long?): Boolean =
+    transport == DlnaTransportState.PAUSED_PLAYBACK &&
+        durationMs != null && durationMs > 0L &&
+        positionMs != null && positionMs < durationMs - DLNA_END_OF_TRACK_TOLERANCE_MS
+
 /** 锁跟随渲染器实际状态：渲染器上直接恢复播放要拿回锁（否则 Wi-Fi 省电导致拉流卡顿），暂停后再释放 */
-internal fun DlnaNetworkAndLockController.followTransport(transport: DlnaTransportState?, desiredRemotePlaying: Boolean) {
+internal fun DlnaNetworkAndLockController.followTransport(
+    transport: DlnaTransportState?,
+    desiredRemotePlaying: Boolean,
+    confirmedMidTrackPause: Boolean = false
+) {
     when (transport) {
         DlnaTransportState.PLAYING -> acquireCastLocks()
-        DlnaTransportState.PAUSED_PLAYBACK, DlnaTransportState.STOPPED ->
-            if (!desiredRemotePlaying) releaseCastLocks()
+        DlnaTransportState.PAUSED_PLAYBACK ->
+            if (!desiredRemotePlaying || confirmedMidTrackPause) releaseCastLocks()
+        DlnaTransportState.STOPPED -> if (!desiredRemotePlaying) releaseCastLocks()
         else -> Unit
     }
 }

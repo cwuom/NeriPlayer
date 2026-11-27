@@ -208,7 +208,7 @@ object DlnaCastManager {
         val state = _castStateFlow.value
         if (!state.isCastingActive) return false
         return if (rendererMediaConfirmed) {
-            state.transportState == DlnaTransportState.PLAYING
+            resolveRemotePlayingForHandoff(state.transportState, desiredRemotePlaying)
         } else {
             desiredRemotePlaying
         }
@@ -224,6 +224,7 @@ object DlnaCastManager {
         val state = _castStateFlow.value
         if (!state.isCastingActive) return false
         if (userPausedOrStopped && !desiredRemotePlaying) return false
+        if (rendererMediaConfirmed && isMidTrackPause(state.transportState, state.remotePositionMs, state.remoteDurationMs)) return false
         return desiredRemotePlaying ||
             state.connectionStatus == DlnaConnectionStatus.CONNECTING ||
             state.transportState == DlnaTransportState.PLAYING ||
@@ -334,6 +335,7 @@ object DlnaCastManager {
     fun selectDevice(device: DlnaDevice) {
         if (!initialized) return
         val host = playerHost
+        host?.castBlockedReason()?.let { reason -> _castStateFlow.update { it.copy(errorMessage = reason) }; host.onDlnaCastError(reason); return }
         val currentSong = host?.currentSong()
         val previousState = _castStateFlow.value
         val previousDevice = previousState.activeDevice
@@ -1208,7 +1210,7 @@ object DlnaCastManager {
             }.onSuccess {
                 if (!isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) return@onSuccess
                 val pendingSeek = pendingPausedSeekMs
-                if (pendingSeek != null && pendingSeek > 1_500L) {
+                if (pendingSeek != null) {
                     pendingPausedSeekMs = null
                     val prePausedSeekSeq = seekSequenceCounter.get()
                     delay(200L)
@@ -1432,7 +1434,7 @@ object DlnaCastManager {
                     handleRendererUnreachable(device, connectionGen)
                     break
                 }
-                lockController.followTransport(transport, desiredRemotePlaying)
+                lockController.followTransport(transport, desiredRemotePlaying, rendererMediaConfirmed && isMidTrackPause(transport, posInfo?.positionMs, posInfo?.durationMs))
                 if (shouldAdoptExternalResume(transport, currentTrackUriLoadedGen == activeTrackGen, userPausedOrStopped, desiredRemotePlaying, monotonicBootElapsedMs(), lastUserPauseAtMs)) {
                     synchronized(sessionStateLock) { desiredRemotePlaying = true; userPausedOrStopped = false }
                 }

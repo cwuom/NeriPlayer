@@ -60,4 +60,6 @@ internal interface PlayerSyncHost {
     fun currentSong(): SongItem?
     fun currentPositionMs(): Long
     fun isLocalPlaying(): Boolean
+    // 一起听房间里由独立的 LAN 引擎发声并接管播放命令，此时投送会与房间音频同时出声
+    fun castBlockedReason(): String? = null
 }

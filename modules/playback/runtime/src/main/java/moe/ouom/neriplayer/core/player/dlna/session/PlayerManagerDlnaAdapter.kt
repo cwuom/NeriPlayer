@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding
 import moe.ouom.neriplayer.core.player.dlna.protocol.DlnaProtocolInfo
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
@@ -77,6 +78,13 @@ internal object PlayerManagerDlnaAdapter : PlayerSyncHost {
         DlnaCastManager.castSong(song = song, startPositionMs = positionMs, autoPlay = DlnaCastManager.isRemotePlaying())
         return true
     }
+
+    override fun castBlockedReason(): String? =
+        if (LanPlaybackBinding.externalAudio) {
+            PlayerManager.getLocalizedString(CoreCommonR.string.dlna_err_listen_together_active)
+        } else {
+            null
+        }
 
     override fun onSwitchBackToLocal(resumePositionMs: Long, wasPlaying: Boolean) {
         val manager = PlayerManager
