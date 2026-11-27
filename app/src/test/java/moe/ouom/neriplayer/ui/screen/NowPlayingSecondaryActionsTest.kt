@@ -263,6 +263,8 @@ class NowPlayingSecondaryActionsTest {
                 song.copy(neteaseArtists = listOf(NeteaseArtistSummary(1L, "artist")))
             )
         )
+        // 统计页、热门歌单重放的老数据只剩专辑来源标签
+        assertTrue(isNeteaseExclusiveFeatureAvailable(song.copy(album = "Netease|1234")))
         // 网易云歌曲因版权回落到 B 站音源播放时，歌曲对象仍是网易云的，三个入口照常显示
         assertTrue(
             isNeteaseExclusiveFeatureAvailable(

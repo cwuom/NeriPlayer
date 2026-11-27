@@ -45,6 +45,12 @@ class HeartbeatSongIdentityTest {
     }
 
     @Test
+    fun `identity key treats the legacy netease album tag as netease`() {
+        // 统计页、热门歌单重放的网易云歌没有 channelId，只剩专辑来源标签
+        assertEquals("netease:123", HeartbeatSongIdentity.identityKey(song(123, "x").copy(album = "Netease|456")))
+    }
+
+    @Test
     fun `identity key normalizes the stats stable key to the playing song key`() {
         // 统计库与同步写的是「数字id|来源|音频标识」，播放中的歌没有该字段、
         // 按「播放来源:id」计算；两边必须算出同一个键，否则「不喜欢」与队列去重命中不了

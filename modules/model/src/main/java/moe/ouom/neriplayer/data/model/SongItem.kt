@@ -73,8 +73,10 @@ data class SongItem(
             ListenTogetherChannels.NETEASE -> return "netease"
             ListenTogetherChannels.LOCAL -> return "local"
         }
-        // 老数据可能没有 channelId，只能靠平台明细字段回推
+        // 老数据可能没有 channelId，只能靠平台明细字段回推；统计页、热门歌单重放的网易云歌
+        // 只剩专辑来源标签，不认它就会被当成本地歌，丢掉百科、心动和不喜欢入口
         if (!neteaseArtists.isNullOrEmpty()) return "netease"
+        if (album.startsWith(SongSourceTags.NETEASE)) return "netease"
         if (album.startsWith(SongSourceTags.BILIBILI)) return "bili"
         return "local"
     }
