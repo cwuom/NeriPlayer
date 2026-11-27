@@ -12,8 +12,9 @@ import org.json.JSONObject
  * 调用方应当静默降级，而不是当成错误抛给用户。
  */
 sealed class PlaymodeIntelligenceResult {
-    data class Success(val song: SongItem) : PlaymodeIntelligenceResult()
-
+    /** [song] 是第一首，[songs] 是本次返回里能解析出来的全部歌曲（按接口顺序） */
+    data class Success(val song: SongItem, val songs: List<SongItem> = listOf(song)) :
+        PlaymodeIntelligenceResult()
     /** code 301：未登录，属于预期情况，调用方静默降级 */
     data object RequiresLogin : PlaymodeIntelligenceResult()
 
@@ -87,12 +88,14 @@ object PlaymodeIntelligenceResponseParser {
             ?: return PlaymodeIntelligenceResult.Failure(CODE_UNPARSABLE, "data 结构无法识别")
         if (data.length() == 0) return PlaymodeIntelligenceResult.Empty
 
+        val songs = ArrayList<SongItem>(data.length())
         for (index in 0 until data.length()) {
             val songJson = data.optJSONObject(index) ?: continue
-            val song = parseSong(songJson) ?: continue
-            return PlaymodeIntelligenceResult.Success(song)
+            parseSong(songJson)?.let(songs::add)
         }
-        return PlaymodeIntelligenceResult.Failure(CODE_UNPARSABLE, "data 中没有可解析的歌曲")
+        val first = songs.firstOrNull()
+            ?: return PlaymodeIntelligenceResult.Failure(CODE_UNPARSABLE, "data 中没有可解析的歌曲")
+        return PlaymodeIntelligenceResult.Success(first, songs)
     }
 
     /**

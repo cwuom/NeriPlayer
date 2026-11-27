@@ -3,6 +3,7 @@
 package moe.ouom.neriplayer.core.player.persistence
 
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
+import moe.ouom.neriplayer.core.player.heartbeat.heartbeatInsertedKeysSnapshot
 import moe.ouom.neriplayer.core.player.heartbeat.heartbeatModeState
 import moe.ouom.neriplayer.core.player.runtime.persistence.PlaybackStatePersistenceCoordinator
 
@@ -39,7 +40,8 @@ else statePersistenceCoordinator.prepare {
             repeatMode = if (keepPlaybackModeStateEnabled) repeatModeSetting else Player.REPEAT_MODE_OFF,
             // 心动模式是用户显式功能开关，不是循环/随机那种瞬态播放模式，
             // 因此不受 keepPlaybackModeStateEnabled 管，照样落盘；恢复侧见 applyRestoredStateSnapshot。
-            heartbeatMode = HeartbeatMode.normalized(heartbeatModeState)
+            heartbeatMode = HeartbeatMode.normalized(heartbeatModeState),
+            heartbeatInsertedKeys = heartbeatInsertedKeysSnapshot()
         ),
         keepShuffleMode = keepPlaybackModeStateEnabled
     )

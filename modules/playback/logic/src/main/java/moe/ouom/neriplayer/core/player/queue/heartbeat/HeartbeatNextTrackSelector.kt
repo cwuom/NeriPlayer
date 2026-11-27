@@ -26,4 +26,26 @@ interface HeartbeatNextTrackSelector {
      * @return 下一首歌曲；无可用候选时返回 `null`
      */
     suspend fun selectNext(currentSong: SongItem, currentQueue: List<SongItem>): SongItem?
+
+    /**
+     * 一次挑最多 [limit] 首心动歌曲，供开启心动模式时整段填进队列。
+     *
+     * 返回的歌互不重复，也不与 [currentQueue] 里的歌重复；拿不到时返回空列表。
+     * 默认实现反复调用 [selectNext]，每选一首就把它当成已在队列里，能批量取的实现应当覆盖。
+     */
+    suspend fun selectBatch(
+        currentSong: SongItem,
+        currentQueue: List<SongItem>,
+        limit: Int,
+    ): List<SongItem> {
+        val picked = ArrayList<SongItem>(limit.coerceAtLeast(0))
+        val pickedKeys = HashSet<String>()
+        while (picked.size < limit) {
+            val next = selectNext(currentSong, currentQueue + picked) ?: break
+            // 实现没有按队列排除时会反复给同一首，停下比死循环好
+            if (!pickedKeys.add(HeartbeatScorer.identityKey(next))) break
+            picked.add(next)
+        }
+        return picked
+    }
 }

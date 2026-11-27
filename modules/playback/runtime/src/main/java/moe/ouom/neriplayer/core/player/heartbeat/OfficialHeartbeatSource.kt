@@ -63,6 +63,28 @@ class OfficialHeartbeatSource(
         }
     }
 
+    /**
+     * 一次取一批官方推荐。官方顺序原样保留，只去掉已在队列里的歌和「不喜欢」名单里的歌，
+     * 与单首时「命中名单就重新请求」是同一个口径，只是批量时直接略过不必重试。
+     */
+    override suspend fun selectBatch(
+        currentSong: SongItem,
+        currentQueue: List<SongItem>,
+        limit: Int,
+    ): List<SongItem> {
+        if (!repository.isLoggedIn()) return emptyList()
+        val disliked = readDislikedIdentities()
+        val blocked = HashSet<String>(disliked)
+        currentQueue.mapTo(blocked) { HeartbeatScorer.identityKey(it) }
+        blocked.add(HeartbeatScorer.identityKey(currentSong))
+        return try {
+            repository.fetchSongBatch(currentSong.id, limit) { HeartbeatScorer.identityKey(it) !in blocked }
+        } catch (error: Throwable) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            emptyList()
+        }
+    }
+
     /** 单次官方请求，失败一律折算成 null（不打断播放链路）。 */
     private suspend fun fetchOnce(currentSong: SongItem, bypassCache: Boolean): SongItem? = try {
         repository.fetchNextSong(currentSong.id, bypassCache)

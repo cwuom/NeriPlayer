@@ -76,7 +76,8 @@ internal fun PersistedState.toPlaybackState(): PersistedPlaybackState {
         shouldResumePlayback = shouldResumePlayback,
         repeatMode = repeatMode,
         shuffleEnabled = shuffleEnabled,
-        heartbeatMode = heartbeatMode
+        heartbeatMode = heartbeatMode,
+        heartbeatInsertedKeys = heartbeatInsertedKeys
     )
 }
 
@@ -88,7 +89,8 @@ internal fun PersistedState.withPlaybackState(playbackState: PersistedPlaybackSt
         shouldResumePlayback = playbackState.shouldResumePlayback,
         repeatMode = playbackState.repeatMode,
         shuffleEnabled = playbackState.shuffleEnabled,
-        heartbeatMode = playbackState.heartbeatMode
+        heartbeatMode = playbackState.heartbeatMode,
+        heartbeatInsertedKeys = playbackState.heartbeatInsertedKeys
     )
 }
 

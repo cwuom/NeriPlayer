@@ -26,8 +26,7 @@ class LocalHeartbeatCandidateSource(
 ) : HeartbeatNextTrackSelector {
 
     override suspend fun selectNext(currentSong: SongItem, currentQueue: List<SongItem>): SongItem? {
-        val cached = cache.getOrBuild { buildPool() }
-        val pool = withSkips(withDisliked(withSupplementalTiers(cached, currentSong)))
+        val pool = scoredPool(currentSong)
         if (pool.isEmpty) return null
         return HeartbeatScorer.pickBest(
             pool = pool,
@@ -37,6 +36,29 @@ class LocalHeartbeatCandidateSource(
         )
     }
 
+    /** 候选池只建一次，再按分数依次取，避免为每一首都重读一遍收藏、历史和名单。 */
+    override suspend fun selectBatch(
+        currentSong: SongItem,
+        currentQueue: List<SongItem>,
+        limit: Int,
+    ): List<SongItem> {
+        val pool = scoredPool(currentSong)
+        if (pool.isEmpty) return emptyList()
+        val excluded = excludedIdentities
+        val queue = ArrayList(currentQueue)
+        val picked = ArrayList<SongItem>(limit.coerceAtLeast(0))
+        while (picked.size < limit) {
+            val next = HeartbeatScorer.pickBest(pool, currentSong, queue, excluded) ?: break
+            picked.add(next)
+            queue.add(next)
+        }
+        return picked
+    }
+
+    private suspend fun scoredPool(currentSong: SongItem): HeartbeatCandidatePool {
+        val cached = cache.getOrBuild { buildPool() }
+        return withSkips(withDisliked(withSupplementalTiers(cached, currentSong)))
+    }
     /**
      * 把用户主动跳过的次数打到候选上（任务书 §七 第三阶段）。
      *

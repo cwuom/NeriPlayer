@@ -333,8 +333,54 @@ class NeteasePlaymodeIntelligenceRepositoryTest {
         )
     }
 
+    // ---------- 批量取歌 ----------
+
+    @Test
+    fun `批量取歌从上一页最后一首接着请求直到凑够数量`() = runTest {
+        var page = 0
+        val api = FakePlaymodeIntelligenceApi(intelligence = {
+            val start = 10_000L + page * 10
+            page++
+            pageJson((start until start + 10).toList())
+        })
+
+        val songs = repository(api).fetchSongBatch(SONG_ID, limit = 25)
+
+        assertEquals(25, songs.size)
+        assertEquals(3, api.loadIntelligenceRequests.size)
+        assertEquals(listOf(10, 10, 10), api.loadIntelligenceCounts)
+        // 第二页以第一页最后一首为起点
+        assertEquals(10_009L, api.loadIntelligenceRequests[1].songId)
+    }
+
+    @Test
+    fun `批量取歌按调用方条件过滤并在没有新歌时停止`() = runTest {
+        val api = FakePlaymodeIntelligenceApi(intelligence = { pageJson(listOf(SONG_ID, 21L, 22L, 23L)) })
+
+        val songs = repository(api).fetchSongBatch(SONG_ID, limit = 30) { it.id != 22L }
+
+        // 种子歌本身和被过滤的歌都不要；第二页全是重复的，停止请求
+        assertEquals(listOf(21L, 23L), songs.map { it.id })
+        assertEquals(2, api.loadIntelligenceRequests.size)
+    }
+
+    @Test
+    fun `批量取歌请求失败时返回已经拿到的部分`() = runTest {
+        var page = 0
+        val api = FakePlaymodeIntelligenceApi(intelligence = {
+            page++
+            if (page == 1) pageJson(listOf(31L, 32L)) else throw IOException("boom")
+        })
+
+        assertEquals(listOf(31L, 32L), repository(api).fetchSongBatch(SONG_ID, limit = 30).map { it.id })
+    }
+
     // ---------- helpers ----------
 
+    private fun pageJson(ids: List<Long>): String = ids.joinToString(
+        prefix = "{\"code\":200,\"data\":[",
+        postfix = "]}",
+    ) { id -> "{\"id\":$id,\"name\":\"song$id\",\"dt\":1000,\"ar\":[],\"al\":{\"id\":1,\"name\":\"A\"}}" }
     private fun repository(
         api: NeteasePlaymodeIntelligenceApi,
         nowMs: () -> Long = { System.currentTimeMillis() },
@@ -351,7 +397,7 @@ class NeteasePlaymodeIntelligenceRepositoryTest {
         val isLoggedIn: Boolean get() = hasLogin
         val likedPlaylistIdRequests = mutableListOf<Long>()
         val loadIntelligenceRequests = mutableListOf<IntelligenceRequest>()
-
+        val loadIntelligenceCounts = mutableListOf<Int>()
         override fun hasLogin(): Boolean = hasLogin
 
         override fun currentUserId(): Long = userId
@@ -365,8 +411,10 @@ class NeteasePlaymodeIntelligenceRepositoryTest {
             songId: Long,
             playlistId: Long,
             startMusicId: Long,
+            count: Int,
         ): String {
             loadIntelligenceRequests += IntelligenceRequest(songId, playlistId, startMusicId)
+            loadIntelligenceCounts += count
             return intelligence()
         }
     }

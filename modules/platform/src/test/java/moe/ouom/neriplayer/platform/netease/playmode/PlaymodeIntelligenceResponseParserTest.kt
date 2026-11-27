@@ -14,6 +14,21 @@ import org.junit.Test
 class PlaymodeIntelligenceResponseParserTest {
 
     @Test
+    fun `success keeps every parsable song in order`() {
+        val raw = """{"code":200,"data":[
+            {"id":1,"name":"one","dt":1000,"ar":[],"al":{"id":1,"name":"A"}},
+            {"broken":true},
+            {"id":2,"name":"two","dt":1000,"ar":[],"al":{"id":1,"name":"A"}}
+        ]}"""
+
+        val result = PlaymodeIntelligenceResponseParser.parse(raw)
+
+        assertTrue(result is PlaymodeIntelligenceResult.Success)
+        result as PlaymodeIntelligenceResult.Success
+        assertEquals(1L, result.song.id)
+        assertEquals(listOf(1L, 2L), result.songs.map { it.id })
+    }
+    @Test
     fun `code 301 means not logged in`() {
         val result = PlaymodeIntelligenceResponseParser.parse("""{"code":301,"message":null}""")
 

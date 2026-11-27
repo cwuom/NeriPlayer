@@ -45,18 +45,32 @@ class HeartbeatNextTrackCoordinator(
 
     override suspend fun selectNext(currentSong: SongItem, currentQueue: List<SongItem>): SongItem? {
         val generation = sessionGeneration
-        val official = selectFromOfficial(currentSong, currentQueue, generation)
-        if (generation == sessionGeneration) {
-            if (official != null) {
-                lastResultFromOfficial = true
-                synchronized(lock) { failureCounts.remove(HeartbeatScorer.identityKey(currentSong)) }
-            } else {
-                lastResultFromOfficial = false
-            }
-        }
+        val official = selectFromOfficial(currentSong, generation) { it.selectNext(currentSong, currentQueue) }
+        recordOfficialOutcome(currentSong, generation, official != null)
         return official ?: localSource?.selectNext(currentSong, currentQueue)
     }
 
+    /** 与 [selectNext] 同一套熔断规则：官方给出非空批次就原样返回，否则整批走本地。 */
+    override suspend fun selectBatch(
+        currentSong: SongItem,
+        currentQueue: List<SongItem>,
+        limit: Int,
+    ): List<SongItem> {
+        val generation = sessionGeneration
+        val official = selectFromOfficial(currentSong, generation) { source ->
+            source.selectBatch(currentSong, currentQueue, limit).takeIf { it.isNotEmpty() }
+        }
+        recordOfficialOutcome(currentSong, generation, official != null)
+        return official ?: localSource?.selectBatch(currentSong, currentQueue, limit).orEmpty()
+    }
+
+    private fun recordOfficialOutcome(currentSong: SongItem, generation: Int, succeeded: Boolean) {
+        if (generation != sessionGeneration) return
+        lastResultFromOfficial = succeeded
+        if (succeeded) {
+            synchronized(lock) { failureCounts.remove(HeartbeatScorer.identityKey(currentSong)) }
+        }
+    }
     /** 用户重新开启心动模式时调用，重置熔断与失败计数 */
     fun reset() {
         synchronized(lock) {
@@ -86,11 +100,11 @@ class HeartbeatNextTrackCoordinator(
     /** 仅供测试与诊断 */
     fun isOfficialCircuitOpen(): Boolean = officialCircuitOpen
 
-    private suspend fun selectFromOfficial(
+    private suspend fun <T : Any> selectFromOfficial(
         currentSong: SongItem,
-        currentQueue: List<SongItem>,
         generation: Int,
-    ): SongItem? {
+        fetch: suspend (HeartbeatNextTrackSelector) -> T?,
+    ): T? {
         val source = officialSource ?: return null
         if (officialCircuitOpen) return null
         val key = HeartbeatScorer.identityKey(currentSong)
@@ -98,7 +112,7 @@ class HeartbeatNextTrackCoordinator(
         if (alreadyFailed >= MAX_CONSECUTIVE_FAILURES) return null
 
         val result = try {
-            source.selectNext(currentSong, currentQueue)
+            fetch(source)
         } catch (error: Throwable) {
             // 官方源实现约定自行吞异常，这里再兜一层，防止实现违约把播放打断
             if (error is kotlinx.coroutines.CancellationException) throw error

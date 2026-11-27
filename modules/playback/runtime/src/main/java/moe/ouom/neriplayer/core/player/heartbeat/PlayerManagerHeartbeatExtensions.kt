@@ -3,8 +3,9 @@
 package moe.ouom.neriplayer.core.player.heartbeat
 
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,16 +13,15 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
-import moe.ouom.neriplayer.core.player.playback.playAtIndex
-import moe.ouom.neriplayer.core.player.playback.queueNavigationTransitionFade
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatCandidateExhaustionTracker
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatNextTrackCoordinator
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatNextTrackSelector
-import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatPendingNextStore
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatQueuePlan
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatScorer
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
 import moe.ouom.neriplayer.platform.netease.playmode.NeteasePlaymodeIntelligenceRepository
 
 private const val TAG = "NERI-Heartbeat"
@@ -78,12 +78,22 @@ private var heartbeatOfficialRepository: NeteasePlaymodeIntelligenceRepository? 
 @Volatile
 private var heartbeatSelectorHolder: HeartbeatNextTrackSelector? = null
 
-/** 最近一次已发起预取的歌曲身份键：同一首歌会被多次发布（改歌词偏移、改标题），
- *  没有它就会为一首歌反复请求接口。 */
-private val heartbeatLastPrefetchAnchor = AtomicReference<String?>(null)
+/** 开启心动模式时一次往队列里补多少首。 */
+internal const val HEARTBEAT_BATCH_SIZE = 30
 
-/** 预取的下一首就绪快照，用于把挂起的官方接口桥接到同步推进链路。 */
-private val heartbeatPending = HeartbeatPendingNextStore()
+/** 当前歌后面连续的心动歌少于等于这个数时，再补一批，免得播到头才去请求。 */
+internal const val HEARTBEAT_REFILL_THRESHOLD = 3
+
+/**
+ * 心动模式插进队列的歌（身份键）。
+ *
+ * 心动歌插在当前歌后面，原队列剩下的歌顺延；关闭心动时按这份记录把它们删掉，
+ * 队列回到开启前的样子。随播放状态一起落盘，冷启动后关掉也能还原。
+ */
+private val heartbeatInsertedKeys = LinkedHashSet<String>()
+
+/** 同一时间只补一批：补完之前切歌触发的补货请求直接跳过，补完后按新的当前歌再检查一次。 */
+private val heartbeatFillInFlight = AtomicBoolean(false)
 
 /**
  * 心动模式会话代次，每次开关状态变化就 +1。
@@ -118,19 +128,6 @@ private fun PlayerManager.heartbeatPendingAnchor(): String? =
 /** 心动模式只对网易云音源生效：外部音源（B 站 / YouTube）既不预取也不接管推进。 */
 internal fun PlayerManager.isHeartbeatSourceSupported(): Boolean =
     _currentSongFlow.value?.isNeteaseSource() == true
-
-/** 预取到的下一首；没有、或不是为当前歌预取的，则返回 null。仅供推进链路读取。 */
-internal val PlayerManager.heartbeatReadyNextSong: SongItem?
-    get() {
-        val anchor = heartbeatPendingAnchor() ?: return null
-        return heartbeatPending.current(anchor)
-    }
-
-/** 取走预取结果（一次性语义），避免同一首歌被连续播放两次。 */
-internal fun PlayerManager.consumeHeartbeatReadyNextSong(): SongItem? {
-    val anchor = heartbeatPendingAnchor() ?: return null
-    return heartbeatPending.take(anchor)
-}
 
 /** 由 `app` 的 DI 容器在启动时安装一次。 */
 fun installHeartbeatSelector(selector: HeartbeatNextTrackSelector) {
@@ -243,8 +240,8 @@ private fun isHeartbeatOfficialCircuitOpen(): Boolean =
 /**
  * 开启或关闭心动模式。
  *
- * 开启时会异步预取一次下一首（任务书 §3.5 步骤 2），避免播完才请求导致卡顿；
- * 关闭时复位选择器内部状态（失败计数/熔断）与预取快照，下次开启重新计数。
+ * 开启时在当前歌后面一次补 [HEARTBEAT_BATCH_SIZE] 首心动歌，原队列顺延；
+ * 关闭时复位选择器内部状态（失败计数/熔断），并把插进去的心动歌删掉，还原原队列。
  *
  * [userInitiated] 标记这次调用是不是用户点出来的。恢复上次会话的状态也会走本函数，
  * 那种情况不该被当成「用户刚开启」，否则冷启动会凭空弹提示。
@@ -272,7 +269,7 @@ fun PlayerManager.setHeartbeatMode(
         scheduleStatePersist()
         NPLogger.d(TAG, "setHeartbeatMode: $normalized, source=$commandSource")
         if (normalized == HeartbeatMode.OFF) {
-            heartbeatPending.clear()
+            removeHeartbeatSongsFromQueue(restoreQueue = commandSource == PlaybackCommandSource.LOCAL)
             heartbeatCandidateExhaustion.reset()
             (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
             // 任务书 §3.6：退出心动模式时让候选池缓存失效，
@@ -283,7 +280,9 @@ fun PlayerManager.setHeartbeatMode(
             // 重新开启视为新会话：清空上一次会话的失败曲目黑名单（任务书 §3.5）
             (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
             refreshHeartbeatOfficialAvailability()
-            requestHeartbeatSelectionAsync("enable")
+            // 用户重新开启是新会话；状态恢复要沿用落盘的记录，否则冷启动后关不回原队列
+            if (userInitiated) synchronized(heartbeatInsertedKeys) { heartbeatInsertedKeys.clear() }
+            fillHeartbeatQueueAsync("enable")
             // 只有用户主动开启才计数：状态恢复走的是同一个函数，但那是静默的。
             if (userInitiated) heartbeatUserEnabledStateFlow.value += 1
         }
@@ -352,174 +351,134 @@ fun PlayerManager.disableHeartbeatForListenTogetherRoom() {
  * 清理预取、重置选择器，恢复路径与用户手动开开关保持同一套不变量。
  * `userInitiated = false`：这是恢复上次状态，不是用户刚点出来的，不该弹提示。
  */
-internal fun PlayerManager.restoreHeartbeatModeFromState(mode: Int) {
+internal fun PlayerManager.restoreHeartbeatModeFromState(mode: Int, insertedKeys: List<String> = emptyList()) {
+    synchronized(heartbeatInsertedKeys) {
+        heartbeatInsertedKeys.clear()
+        heartbeatInsertedKeys.addAll(insertedKeys)
+    }
     setHeartbeatMode(HeartbeatMode.normalized(mode), userInitiated = false)
 }
 
-/**
- * 当前歌变化后的预取入口，由 [PlayerManager.publishCurrentSong] 调用。
- *
- * 用户点队列里别的歌、换一张歌单播放时，上一首的预取结果锚点对不上而被判为过期；
- * 若只在心动自己追加后预取，下一次播完就会先播一首普通队列歌，心动流被截断一次。
- */
+/** 落盘用：当前队列里由心动模式插入的歌。 */
+internal fun heartbeatInsertedKeysSnapshot(): List<String> =
+    synchronized(heartbeatInsertedKeys) { heartbeatInsertedKeys.toList() }
+
+/** 当前歌变化后检查一次：后面的心动歌快播完了就再补一批。由 [PlayerManager.publishCurrentSong] 调用。 */
 internal fun PlayerManager.heartbeatOnCurrentSongChanged(song: SongItem?) {
-    val anchor = song?.let { HeartbeatScorer.identityKey(it) } ?: return
-    if (!claimHeartbeatPrefetchAnchor(anchor)) return
-    requestHeartbeatSelectionAsync("songChanged")
+    if (song == null) return
+    fillHeartbeatQueueAsync("songChanged")
 }
 
-/** 返回 true 表示这首歌还没预取过；已经请求过（在途或已就绪）就不再重复请求。 */
-private fun PlayerManager.claimHeartbeatPrefetchAnchor(anchor: String): Boolean =
-    heartbeatLastPrefetchAnchor.getAndSet(anchor) != anchor
+private fun heartbeatKeyOf(song: SongItem): String = HeartbeatScorer.identityKey(song)
+
+private fun heartbeatInsertedSnapshot(): Set<String> =
+    synchronized(heartbeatInsertedKeys) { heartbeatInsertedKeys.toSet() }
+
+private fun PlayerManager.shouldFillHeartbeatQueue(): Boolean {
+    if (heartbeatModeState != HeartbeatMode.ON) return false
+    // 外部音源（B 站 / YouTube）没有网易云 id 可问；一起听房间的队列由房间控制
+    if (!isHeartbeatSourceSupported() || isListenTogetherActive()) return false
+    if (currentIndex !in currentPlaylist.indices) return false
+    return HeartbeatQueuePlan.upcomingCount(currentPlaylist, currentIndex, heartbeatInsertedSnapshot()) <=
+        HEARTBEAT_REFILL_THRESHOLD
+}
 
 /**
- * 异步预取一次心动候选。
+ * 在当前歌后面补一批心动歌。
  *
- * 只由心跳自身触发，不阻塞任何调用方；异常全部吞掉并记录，
- * 因为「预取失败」是预期情况，静默降级到原有模式即可。
+ * 选歌在后台线程，改队列回到主线程；期间开关被切过（代次变了）或用户切走了歌，结果整份丢弃，
+ * 切走的情况再按新的当前歌检查一次。拿不到歌按原有顺序继续播，不打断播放。
  */
-internal fun PlayerManager.requestHeartbeatSelectionAsync(reason: String) {
-    if (heartbeatModeState != HeartbeatMode.ON) return
-    if (!isHeartbeatSourceSupported()) {
-        // 外部音源（B 站 / YouTube）没有网易云 id 可问，预取只会白跑一次网络
-        heartbeatPending.clear()
-        return
-    }
+internal fun PlayerManager.fillHeartbeatQueueAsync(reason: String) {
+    if (!shouldFillHeartbeatQueue()) return
     val selector = heartbeatSelectorHolder ?: return
     val currentSong = _currentSongFlow.value ?: return
-    val anchor = HeartbeatScorer.identityKey(currentSong)
+    if (!heartbeatFillInFlight.compareAndSet(false, true)) return
+    val anchor = heartbeatKeyOf(currentSong)
     val generation = heartbeatSessionGeneration.get()
-    // 当前歌之后的尾巴会被心动候选整段替换，不应算作「已经在队列里」：
-    // 否则从「我喜欢的音乐」开始播放时，整个收藏都会被排除，本地候选一个都挑不出来。
-    val queue = currentPlaylist.take(currentIndex + 1)
+    val queue = currentPlaylist.toList()
     PlayerDependencies.launchBackgroundIo {
-        val next = try {
-            selector.selectNext(currentSong, queue)
+        val batch = try {
+            selector.selectBatch(currentSong, queue, HEARTBEAT_BATCH_SIZE)
         } catch (error: CancellationException) {
+            heartbeatFillInFlight.set(false)
             throw error
         } catch (error: Throwable) {
-            NPLogger.w(TAG, "预取失败（reason=$reason），本次沿用原有模式", error)
-            null
+            NPLogger.w(TAG, "补充心动歌失败（reason=$reason），按原队列继续", error)
+            emptyList()
         }
-        // 请求期间开关被切过：同一首歌上关掉再打开时锚点不变，只有代次能识别出新旧会话。
-        if (heartbeatSessionGeneration.get() != generation) {
-            NPLogger.d(TAG, "预取结果属于已结束的心动会话（reason=$reason），丢弃")
-            return@launchBackgroundIo
-        }
-        // 请求期间用户可能已经切走：锚点变了就整份作废，免得把 A 的候选当成 B 的下一首。
-        if (heartbeatPendingAnchor() != anchor) {
-            NPLogger.d(TAG, "预取结果已过期（reason=$reason），丢弃")
-            return@launchBackgroundIo
-        }
-        if (next == null) {
-            heartbeatPending.publish(anchor, null)
-            heartbeatCandidateExhaustion.onNoCandidate(HeartbeatScorer.identityKey(currentSong))
-            refreshHeartbeatOfficialAvailability()
-            NPLogger.d(TAG, "预取无候选（reason=$reason）")
-        } else {
-            heartbeatPending.publish(anchor, next)
-            heartbeatCandidateExhaustion.onCandidate()
-            refreshHeartbeatOfficialAvailability(honorLastResult = true)
-            NPLogger.d(TAG, "预取成功（reason=$reason）：${next.name}/${next.id}")
+        mainScope.launch {
+            heartbeatFillInFlight.set(false)
+            applyHeartbeatBatch(reason, anchor, generation, currentSong, batch)
         }
     }
 }
 
-/**
- * 挂起版「下一首」入口：直接选一首并播放。
- *
- * 供 UI（设置项/更多操作）等本身就在协程里的调用方使用，
- * 播放推进链路请改用同步的 [heartbeatAdvanceOrFallback]，避免在主线程等待 IO。
- */
-internal suspend fun PlayerManager.tryAdvanceWithHeartbeat(
+private fun PlayerManager.applyHeartbeatBatch(
     reason: String,
-    commandSource: PlaybackCommandSource = activePlaybackCommandSource,
-): Boolean {
-    if (heartbeatModeState != HeartbeatMode.ON) return false
-    if (!isHeartbeatSourceSupported()) {
-        heartbeatPending.clear()
-        return false
+    anchor: String,
+    generation: Int,
+    seedSong: SongItem,
+    batch: List<SongItem>,
+) {
+    if (heartbeatSessionGeneration.get() != generation || heartbeatModeState != HeartbeatMode.ON) {
+        NPLogger.d(TAG, "补货结果属于已结束的心动会话（reason=$reason），丢弃")
+        return
     }
-    val selector = heartbeatSelectorHolder ?: return false
-    if (!initialized) return false
-    val currentSong = _currentSongFlow.value ?: return false
-
-    val next = try {
-        selector.selectNext(currentSong, currentPlaylist.toList())
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: Throwable) {
-        NPLogger.w(TAG, "selectNext 失败（reason=$reason），回退原有模式", error)
-        null
+    if (heartbeatPendingAnchor() != anchor) {
+        NPLogger.d(TAG, "补货期间当前歌已变（reason=$reason），按新歌重新检查")
+        fillHeartbeatQueueAsync("anchorMoved")
+        return
     }
-    if (next == null) {
-        heartbeatCandidateExhaustion.onNoCandidate(HeartbeatScorer.identityKey(currentSong))
-        NPLogger.d(TAG, "心动模式无候选（reason=$reason），回退原有模式")
-        return false
+    if (batch.isEmpty()) {
+        heartbeatCandidateExhaustion.onNoCandidate(heartbeatKeyOf(seedSong))
+        refreshHeartbeatOfficialAvailability()
+        NPLogger.d(TAG, "没有可补的心动歌（reason=$reason）")
+        return
     }
     heartbeatCandidateExhaustion.onCandidate()
     refreshHeartbeatOfficialAvailability(honorLastResult = true)
-    NPLogger.d(TAG, "心动模式选中下一首（reason=$reason）：${next.name}/${next.id}")
-    appendHeartbeatSongAndPlay(next, commandSource)
-    return true
+    insertHeartbeatBatch(batch)
+}
+
+private fun PlayerManager.insertHeartbeatBatch(batch: List<SongItem>) {
+    val inserted = heartbeatInsertedSnapshot()
+    var added = emptyList<SongItem>()
+    updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
+        val plan = HeartbeatQueuePlan.insertion(snapshot.playlist, snapshot.currentIndex, inserted, batch)
+            ?: return@updateCurrentQueue null
+        added = plan.songs
+        PlayerQueueSnapshot.from(plan.playlist, snapshot.currentIndex)
+    } ?: return
+    synchronized(heartbeatInsertedKeys) { added.forEach { heartbeatInsertedKeys.add(heartbeatKeyOf(it)) } }
+    emitHeartbeatQueueUpdate()
+    NPLogger.d(TAG, "补充心动歌 ${added.size} 首，queueSize=${currentPlaylist.size}")
 }
 
 /**
- * 把心动模式选中的歌曲接到「心动流」末尾并播放。
+ * 关闭心动模式时删掉插进来的心动歌；正在播的那首保留，不打断播放，播完接回原队列。
  *
- * 为什么不再插播：心动模式的语义是「从当前这首歌往后长出一条持续更新的歌流」。
- * 插到 NEXT 位置时，配合 `PlayerQueueEditOwner.insertNext` 的「已存在则先移除」
- * 策略，队列长度始终不变，用户听到的就是「十几首歌反复循环、偶尔混进一首新歌」。
- *
- * 做法是把当前歌之后的歌整段换成心动候选：先截断到当前歌，再追加候选，
- * 由 `PlayerQueueEditOwner.appendReplacingTail` 在**同一次**队列更新里完成。
- * 这样队列里的歌永远等于「已播过的 + 心动流」，不会留下「排在后面却永远轮不到」的孤儿歌。
- *
- * 截断只发生在真正切歌时（本函数被调用时），开启心动模式本身不动队列——
- * 用户开了开关又关掉，队列不会少任何一首歌。
- *
- * 复用既有的 `queueEdits.insert(...)` 与 `playAtIndex`，
- * 不复制第二份插入逻辑，保证队列修订号、持久化、命令上报与其他插入路径完全一致。
+ * 一起听房间自动关闭时 [restoreQueue] 为 false：房间队列由房间同步，不能在本地改。
  */
-internal fun PlayerManager.appendHeartbeatSongAndPlay(
-    song: SongItem,
-    commandSource: PlaybackCommandSource,
-    resetFailureCount: Boolean = true,
-) {
-    if (currentPlaylist.isEmpty()) {
-        playPlaylist(listOf(song), 0, commandSource)
-        return
+private fun PlayerManager.removeHeartbeatSongsFromQueue(restoreQueue: Boolean) {
+    val keys = synchronized(heartbeatInsertedKeys) {
+        heartbeatInsertedKeys.toSet().also { heartbeatInsertedKeys.clear() }
     }
-    var appendedIndex = -1
-    val updatedQueue = updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
-        // `appendReplacingTail` 已把当前下标指向新接上的候选，
-        // 不需要再 selecting 一次，否则会把候选又指回原歌。
-        val planned = queueEdits.appendReplacingTail(snapshot, song, _currentSongFlow.value)
-            ?: return@updateCurrentQueue null
-        appendedIndex = planned.insertedIndex
-        planned.queue
+    if (!restoreQueue || keys.isEmpty()) return
+    updateCurrentQueue(bumpDisplayRevision = true) { snapshot ->
+        queueEdits.remove(snapshot, HeartbeatQueuePlan.removalIndices(snapshot.playlist, snapshot.currentIndex, keys))
     } ?: return
+    emitHeartbeatQueueUpdate()
+    NPLogger.d(TAG, "关闭心动模式，已还原原队列，queueSize=${currentPlaylist.size}")
+}
 
-    // 播放失败后的接管不能清零，否则「连续失败」永远攒不到上限，退化成无限重试。
-    if (resetFailureCount) consecutivePlayFailures = 0
-    // 与普通「下一首」共用同一套切歌策略：淡入淡出跟随用户设置，
-    // 长音频一律从头播（记忆进度属于「手动续播」的语义，推荐出来的歌不该续到一半）。
-    playAtIndex(
-        index = updatedQueue.currentIndex,
-        useTrackTransitionFade = queueNavigationTransitionFade(),
-        commandSource = commandSource,
-        allowRememberedLongFormPosition = false,
-    )
+private fun PlayerManager.emitHeartbeatQueueUpdate() {
     emitPlaybackCommand(
-        type = "PLAY_FROM_QUEUE",
-        source = commandSource,
-        queue = updatedQueue.playlist,
-        currentIndex = updatedQueue.currentIndex,
+        type = "SET_QUEUE",
+        source = PlaybackCommandSource.LOCAL,
+        queue = currentPlaylist.toList(),
+        currentIndex = currentIndex,
         positionMs = _playbackPositionMs.value,
     )
     scheduleStatePersist(debounceMs = 0L)
-    NPLogger.d(
-        TAG,
-        "appendHeartbeatSongAndPlay: song=${song.name}/${song.id}, appendIndex=$appendedIndex, queueSize=${updatedQueue.playlist.size}",
-    )
 }

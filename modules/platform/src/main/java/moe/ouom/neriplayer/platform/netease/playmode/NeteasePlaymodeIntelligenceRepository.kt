@@ -17,6 +17,11 @@ private const val CACHE_TTL_MS = 30_000L
 /** 缓存只服务于连续切歌的短窗口，超过这个条数按插入顺序淘汰最旧的。 */
 private const val MAX_CACHE_ENTRIES = 8
 
+/** 接口单次最多返回的歌曲数（客户端校验上限）。 */
+private const val BATCH_PAGE_SIZE = 10
+
+/** 一次批量取歌最多发几次请求：接口可能每次只给几首，不能为凑满数量无限请求。 */
+private const val MAX_BATCH_ROUNDS = 6
 /**
  * 心动模式数据层。
  *
@@ -92,25 +97,89 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
     /** [fetchNextSong] 的别名：与 [isOfficialAvailable] 配对，供上层统一命名使用。 */
     suspend fun nextSong(songId: Long): SongItem? = fetchNextSong(songId)
 
+    /**
+     * 一次取一批心动推荐，供开启心动模式时整段填进队列。
+     *
+     * 接口单次最多给 [BATCH_PAGE_SIZE] 首，所以用上一页最后一首做下一页的起点往后接，
+     * 直到凑够 [limit] 首、某一页没有新歌或请求满 [MAX_BATCH_ROUNDS] 次。
+     * [accept] 由调用方过滤掉不该进队列的歌（已在队列里、被标记不喜欢），过滤后仍按接口顺序。
+     * 与 [fetchNextSong] 一样从不抛异常（取消除外），失败时返回已经拿到的部分。
+     */
+    suspend fun fetchSongBatch(
+        seedSongId: Long,
+        limit: Int,
+        accept: (SongItem) -> Boolean = { true },
+    ): List<SongItem> {
+        if (seedSongId <= 0L || limit <= 0) return emptyList()
+        val userId = api.currentUserId()
+        val picked = LinkedHashMap<Long, SongItem>()
+        return withContext(Dispatchers.IO) {
+            runCatching { loadBatch(seedSongId, userId, limit, accept, picked) }
+                .getOrElse { error ->
+                    if (error is CancellationException) throw error
+                    NPLogger.w(TAG, "批量获取心动模式推荐失败: songId=$seedSongId", error)
+                }
+            picked.values.toList()
+        }
+    }
+
+    private suspend fun loadBatch(
+        seedSongId: Long,
+        userId: Long,
+        limit: Int,
+        accept: (SongItem) -> Boolean,
+        picked: LinkedHashMap<Long, SongItem>,
+    ) {
+        val playlistId = likedPlaylistFor(userId) ?: return
+        // 用 while 而不是 repeat：挂起函数里被 lambda 改写的局部变量会编译成 kotlin.jvm.internal.Ref，
+        // 本包的域依赖白名单不允许引用它
+        var seed = seedSongId
+        var rounds = 0
+        while (rounds < MAX_BATCH_ROUNDS) {
+            rounds++
+            val page = requestSongs(seed, playlistId, BATCH_PAGE_SIZE) ?: return
+            val fresh = page.filter { it.id != seedSongId && it.id !in picked && accept(it) }
+            for (song in fresh) {
+                picked[song.id] = song
+                if (picked.size >= limit) return
+            }
+            if (fresh.isEmpty()) return
+            seed = page.last().id
+        }
+        NPLogger.d(TAG, "心动模式批量取歌达到请求上限: picked=${picked.size}/$limit")
+    }
+
     private suspend fun load(currentSongId: Long, userId: Long): SongItem? {
+        val playlistId = likedPlaylistFor(userId) ?: return null
+        val song = requestSongs(currentSongId, playlistId, count = 1)?.firstOrNull() ?: return null
+        putCache(userId, currentSongId, song)
+        return song
+    }
+
+    /** 未登录或没有红心歌单时返回 null，调用方静默降级。 */
+    private suspend fun likedPlaylistFor(userId: Long): Long? {
         if (userId <= 0L) {
             // 未登录属于预期情况：静默降级，不打错误日志
             NPLogger.d(TAG, "心动模式跳过: 未登录")
             return null
         }
-
         val playlistId = resolveLikedPlaylistId(userId)
         if (playlistId == null || playlistId <= 0L) {
             // 没有真实红心歌单 id 时不能用 0 占位去请求，直接降级
             NPLogger.w(TAG, "心动模式跳过: 未找到红心歌单 userId=$userId")
             return null
         }
+        return playlistId
+    }
 
+    /** 请求一页推荐；null 表示这次请求失败或不可用，空列表表示接口没给歌。 */
+    private suspend fun requestSongs(currentSongId: Long, playlistId: Long, count: Int): List<SongItem>? {
         val raw = try {
             api.loadIntelligence(
                 songId = currentSongId,
                 playlistId = playlistId,
                 startMusicId = currentSongId,
+                count = count,
             )
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -118,12 +187,8 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
             NPLogger.w(TAG, "心动模式请求失败: songId=$currentSongId", io)
             return null
         }
-
         return when (val result = PlaymodeIntelligenceResponseParser.parse(raw)) {
-            is PlaymodeIntelligenceResult.Success -> {
-                putCache(userId, currentSongId, result.song)
-                result.song
-            }
+            is PlaymodeIntelligenceResult.Success -> result.songs
             PlaymodeIntelligenceResult.RequiresLogin -> {
                 NPLogger.d(TAG, "心动模式不可用: 未登录 (code=301)")
                 null
@@ -140,9 +205,10 @@ class NeteasePlaymodeIntelligenceRepository internal constructor(
                 NPLogger.d(TAG, "心动模式原始响应(Failure): ${raw.take(800)}")
                 null
             }
-            // 穷尽性由编译器保证；不要依赖编译器自动补的 NoWhenBranchMatchedException 兜底分支，
+            // 剩下的只有 Empty：已登录但没有推荐，批量取歌据此停止翻页，不算失败。
+            // 不写成穷尽分支：编译器会补 NoWhenBranchMatchedException 兜底，
             // 域依赖白名单不允许本包引用 kotlin.NoWhenBranchMatchedException。
-            else -> null
+            else -> emptyList()
         }
     }
 
@@ -211,7 +277,7 @@ internal interface NeteasePlaymodeIntelligenceApi {
     fun likedPlaylistId(userId: Long): Long?
 
     /** 调用 `/eapi/playmode/intelligence/list`（eapi 加密），返回原始 JSON。 */
-    suspend fun loadIntelligence(songId: Long, playlistId: Long, startMusicId: Long): String
+    suspend fun loadIntelligence(songId: Long, playlistId: Long, startMusicId: Long, count: Int): String
 }
 
 /**
@@ -245,10 +311,11 @@ internal class NeteaseClientPlaymodeIntelligenceApi(
         songId: Long,
         playlistId: Long,
         startMusicId: Long,
+        count: Int,
     ): String = client.getPlaymodeIntelligenceListCancellable(
         songId = songId,
         playlistId = playlistId,
         startMusicId = startMusicId,
-        count = 1,
+        count = count,
     )
 }

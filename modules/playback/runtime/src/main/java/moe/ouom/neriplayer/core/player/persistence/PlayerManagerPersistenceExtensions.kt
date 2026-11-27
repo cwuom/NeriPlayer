@@ -87,7 +87,8 @@ data class RestoredPlayerStateSnapshot(
     val shouldResumePlayback: Boolean,
     val originalPlaylistSize: Int,
     val persistedIndex: Int,
-    val heartbeatMode: Int = HeartbeatMode.OFF // 心动模式开关，默认 OFF 兼容旧存档
+    val heartbeatMode: Int = HeartbeatMode.OFF, // 心动模式开关，默认 OFF 兼容旧存档
+    val heartbeatInsertedKeys: List<String> = emptyList()
 )
 
 private val songMetadataRequestCoordinator = SongMetadataRequestCoordinator()
@@ -197,7 +198,7 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
     repeatModeSetting = snapshot.repeatMode
     syncExoRepeatMode()
     _repeatModeFlow.value = repeatModeSetting
-    restoreHeartbeatModeFromState(snapshot.heartbeatMode)
+    restoreHeartbeatModeFromState(snapshot.heartbeatMode, snapshot.heartbeatInsertedKeys)
     player.shuffleModeEnabled = snapshot.shuffleEnabled
 
     setRestoredPlayback(snapshot.resumePositionMs, snapshot.shouldResumePlayback)

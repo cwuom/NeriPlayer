@@ -50,7 +50,9 @@ data class PersistedState(
     val shuffleRestoreIndex: Int? = null,
     // 心动模式开关（moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode）。
     // 可空 + 默认 null：旧存档 JSON 里没有这个字段，Gson 反序列化时缺字段即为 null，恢复侧统一按 OFF 处理。
-    val heartbeatMode: Int? = null
+    val heartbeatMode: Int? = null,
+    // 心动模式插进队列的歌（身份键），关闭心动时据此还原原队列；旧存档为 null
+    val heartbeatInsertedKeys: List<String>? = null
 )
 
 data class PersistedPlaybackState(
@@ -61,5 +63,6 @@ data class PersistedPlaybackState(
     val repeatMode: Int? = null,
     val shuffleEnabled: Boolean? = null,
     // 心动模式开关；可空 + 默认 null 保证旧存档 Gson 反序列化兼容，恢复侧按 OFF 归一。
-    val heartbeatMode: Int? = null
+    val heartbeatMode: Int? = null,
+    val heartbeatInsertedKeys: List<String>? = null
 )

@@ -161,7 +161,8 @@ private fun buildRestoredStateSnapshot(
             shouldResumePlayback = data.shouldResumePlayback && currentIndex != -1,
             originalPlaylistSize = data.playlist.size,
             persistedIndex = data.index,
-            heartbeatMode = data.heartbeatMode ?: HeartbeatMode.OFF
+            heartbeatMode = data.heartbeatMode ?: HeartbeatMode.OFF,
+            heartbeatInsertedKeys = data.heartbeatInsertedKeys.orEmpty()
         )
         val identities = playbackLyricIdentityKeys(snapshot.playlist.getOrNull(snapshot.currentIndex),
             snapshot.playlist, snapshot.shuffleRestorePlaylist)
