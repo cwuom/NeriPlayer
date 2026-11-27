@@ -202,7 +202,7 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
     setRestoredPlayback(snapshot.resumePositionMs, snapshot.shouldResumePlayback)
     updateResumePlaybackRequested(false)
     _playbackPositionMs.value = restoredResumePositionMs
-    // 心动开关变化会立刻调度落盘：必须等进度等字段都恢复完，否则会用 0 进度覆盖存档
+    // 放在进度等字段之后：恢复心动开关不落盘，但仍按恢复完的状态做重置
     restoreHeartbeatModeFromState(snapshot.heartbeatMode, snapshot.heartbeatInsertedKeys)
     currentMediaUrlResolvedAtMs = 0L
     statePersistenceWriter.invalidate()

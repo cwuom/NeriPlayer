@@ -168,6 +168,18 @@ fun PlayerManager.setHeartbeatMode(
     mode: Int,
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
     userInitiated: Boolean = commandSource == PlaybackCommandSource.LOCAL,
+) = applyHeartbeatMode(mode, commandSource, userInitiated, restoring = false)
+
+/**
+ * [restoring] 为 true 时是冷启动恢复：只恢复开关和插入记录，不落盘也不补歌。
+ * 此时播放还没开始，落盘会把存档里「下次自动续播」的标记写成 false；
+ * 补歌等开始播放、当前歌第一次变化时再做。
+ */
+private fun PlayerManager.applyHeartbeatMode(
+    mode: Int,
+    commandSource: PlaybackCommandSource,
+    userInitiated: Boolean,
+    restoring: Boolean,
 ) {
     val normalized = HeartbeatMode.normalized(mode)
     // 一起听房间里不允许开启：房间里的播放由房间控制，心动模式选出来的歌没人会听。
@@ -189,10 +201,12 @@ fun PlayerManager.setHeartbeatMode(
         heartbeatSessionGeneration.incrementAndGet()
         // 暂停状态下切开关不会有任何播放操作，不主动落盘就得等下一次播放才写，
         // 中途进程被杀会让重启后的开关回退到旧值。
-        scheduleStatePersist()
-        NPLogger.d(TAG, "setHeartbeatMode: $normalized, source=$commandSource")
+        if (!restoring) scheduleStatePersist()
+        NPLogger.d(TAG, "setHeartbeatMode: $normalized, source=$commandSource, restoring=$restoring")
         if (normalized == HeartbeatMode.OFF) {
-            removeHeartbeatSongsFromQueue(restoreQueue = commandSource == PlaybackCommandSource.LOCAL)
+            removeHeartbeatSongsFromQueue(
+                restoreQueue = !restoring && commandSource == PlaybackCommandSource.LOCAL
+            )
             heartbeatCandidateExhaustion.reset()
             (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
         } else {
@@ -201,7 +215,7 @@ fun PlayerManager.setHeartbeatMode(
             (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
             // 用户重新开启是新会话；状态恢复要沿用落盘的记录，否则冷启动后关不回原队列
             if (userInitiated) synchronized(heartbeatInsertedKeys) { heartbeatInsertedKeys.clear() }
-            fillHeartbeatQueueAsync("enable")
+            if (!restoring) fillHeartbeatQueueAsync("enable")
         }
     }
     heartbeatModeStateFlow.value = normalized
@@ -230,16 +244,14 @@ fun PlayerManager.disableHeartbeatForListenTogetherRoom() {
 /**
  * 恢复上次退出时的心动模式开关。
  *
- * 走 [setHeartbeatMode] 而不是直接写 `heartbeatModeState`：开启时会顺带刷新官方可用性、
- * 清理预取、重置选择器，恢复路径与用户手动开开关保持同一套不变量。
- * `userInitiated = false`：这是恢复上次状态，不是用户刚点出来的，不该弹提示。
+ * 与用户手动切换走同一套状态重置，但不落盘、不补歌，见 [applyHeartbeatMode]。
  */
 internal fun PlayerManager.restoreHeartbeatModeFromState(mode: Int, insertedKeys: List<String> = emptyList()) {
     synchronized(heartbeatInsertedKeys) {
         heartbeatInsertedKeys.clear()
         heartbeatInsertedKeys.addAll(insertedKeys)
     }
-    setHeartbeatMode(HeartbeatMode.normalized(mode), userInitiated = false)
+    applyHeartbeatMode(mode, PlaybackCommandSource.LOCAL, userInitiated = false, restoring = true)
 }
 
 /** 外部整体替换队列（换歌单播放）时调用：此后队列里的歌都不归心动模式所有。 */
