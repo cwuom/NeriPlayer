@@ -103,7 +103,8 @@ internal suspend fun PlayerManager.resolveSongUrl(
     playbackRequestTokenOverride: Long? = null,
     deferNeteaseAutoBiliAlternates: Boolean = false,
     shouldApplyCacheMutation: () -> Boolean = { true },
-    preferYouTubeM4a: Boolean = false
+    preferYouTubeM4a: Boolean = false,
+    requireYouTubeDirect: Boolean = false
 ): SongUrlResult {
     val serverSong = song.isServerSong()
     logSongUrlResolutionRequest(
@@ -279,7 +280,8 @@ internal suspend fun PlayerManager.resolveSongUrl(
                 forceRefresh = forceRefresh,
                 youtubeRecoveryStrategy = youtubeRecoveryStrategy,
                 sideEffects = resolverSideEffects,
-                preferM4aOverride = preferYouTubeM4a
+                preferM4aOverride = preferYouTubeM4a,
+                requireDirectOverride = requireYouTubeDirect
             )
             isBiliTrack(song) -> getBiliAudioUrl(
                 song = song,
@@ -329,6 +331,11 @@ internal suspend fun PlayerManager.resolveSongUrl(
         resolvedResult
     }
 }
+
+internal fun resolveYouTubeRequireDirect(
+    strategy: YouTubePlaybackRecoveryStrategy?,
+    requireDirectOverride: Boolean
+): Boolean = (strategy?.requireDirect ?: false) || requireDirectOverride
 
 private fun isMp4CompatibleMime(mimeType: String?): Boolean {
     val clean = mimeType?.substringBefore(';')?.trim()?.lowercase() ?: return false
@@ -1899,7 +1906,9 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
     forceRefresh: Boolean = false,
     youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
     sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects(),
-    preferM4aOverride: Boolean = false
+    preferM4aOverride: Boolean = false,
+    // DLNA 只能把单个文件交给渲染器，HLS 播放列表里的分片地址无法被渲染器解析
+    requireDirectOverride: Boolean = false
 ): SongUrlResult = withContext(Dispatchers.IO) {
     val videoId = extractYouTubeMusicVideoId(song.mediaUri)
     if (videoId.isNullOrBlank()) {
@@ -1915,7 +1924,7 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
     try {
         val preferredQuality = youtubeRecoveryStrategy?.preferredQualityOverride
             ?: effectiveYouTubeQuality()
-        val requireDirect = youtubeRecoveryStrategy?.requireDirect ?: false
+        val requireDirect = resolveYouTubeRequireDirect(youtubeRecoveryStrategy, requireDirectOverride)
         // 首播保留用户选择; 出错恢复或 DLNA 投送时切到兼容性更高的 m4a 直链
         val preferM4a = youtubeRecoveryStrategy?.preferM4a ?: preferM4aOverride
         val resolvedPlayableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(

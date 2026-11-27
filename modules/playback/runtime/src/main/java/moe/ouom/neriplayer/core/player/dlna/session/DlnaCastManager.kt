@@ -32,7 +32,6 @@ import moe.ouom.neriplayer.core.player.dlna.server.DlnaMediaServer
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaCastState
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaConnectionStatus
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaDevice
@@ -86,6 +85,7 @@ object DlnaCastManager {
     private val seekSequenceCounter = AtomicLong(0L)
     private val sessionStateLock = Any()
     private val nextUriMutex = Mutex()
+    private val transportMutex = Mutex()
     private val volumeMutex = Mutex()
 
     @Volatile
@@ -137,27 +137,6 @@ object DlnaCastManager {
     @Volatile
     private var lastObservedTransportState = DlnaTransportState.UNKNOWN
     private val pollNudgeChannel = Channel<Unit>(Channel.CONFLATED)
-
-    internal sealed interface DlnaUrlResolution {
-        data class Success(val result: SongUrlResult.Success) : DlnaUrlResolution
-        data object RequiresLogin : DlnaUrlResolution
-        data class Failure(val customMessage: String? = null) : DlnaUrlResolution
-    }
-
-    // Hook callbacks invoked on main thread to keep PlayerManager in sync
-    internal interface PlayerSyncHost {
-        fun onSwitchToDlnaPauseLocal(willAutoPlay: Boolean = true)
-        fun onSwitchBackToLocal(resumePositionMs: Long, wasPlaying: Boolean)
-        fun onDlnaPlaybackStateChanged(isPlaying: Boolean, positionMs: Long, durationMs: Long)
-        fun onDlnaTrackEnded(generationId: Long)
-        fun onDlnaGaplessTransitionedToNext(expectedSong: SongItem)
-        fun peekNextAutoTrack(): SongItem?
-        fun onDlnaCastError(message: String)
-        suspend fun resolveSongUrlForDlna(song: SongItem, forPrequeue: Boolean = false): DlnaUrlResolution
-        fun currentSong(): SongItem?
-        fun currentPositionMs(): Long
-        fun isLocalPlaying(): Boolean
-    }
 
     @Volatile
     internal var playerHost: PlayerSyncHost? = null
@@ -840,8 +819,8 @@ object DlnaCastManager {
         mediaServer.unregisterStream(oldPath)
         lockController.releaseCastLocks()
         scope.launch {
-            if (connectionGenerationCounter.get() == expectedConnGen) {
-                controlClient.stop(device)
+            transportMutex.withLock {
+                if (connectionGenerationCounter.get() == expectedConnGen) controlClient.stop(device)
             }
         }
     }
@@ -990,9 +969,12 @@ object DlnaCastManager {
                         mediaServer.unregisterStream(previousStreamPath)
                     }
 
-                    // Stop any prior stream cleanly on renderer, then set new URI + DIDL
-                    controlClient.stop(device)
-                    val setRes = controlClient.setAvTransportUri(device, streamUrl, didl)
+                    // 同步 OkHttp 调用无法被取消：串行化 Stop+SetURI，并在 Stop 返回后复查，防止旧代际覆盖新 URI
+                    val setRes = transportMutex.withLock {
+                        controlClient.stop(device)
+                        if (isStale()) return
+                        controlClient.setAvTransportUri(device, streamUrl, didl)
+                    }
                     if (setRes.isFailure) {
                         failCastGeneration(
                             gen,
@@ -1038,7 +1020,8 @@ object DlnaCastManager {
                     }
 
                     if (desiredRemotePlaying) {
-                        val playRes = controlClient.play(device)
+                        // 与队列结束的 Stop 串行，避免在途的 Play 晚于 Stop 到达渲染器
+                        val playRes = transportMutex.withLock { if (isStale()) return; controlClient.play(device) }
                         if (playRes.isFailure) {
                             failCastGeneration(
                                 gen,
@@ -1693,6 +1676,7 @@ object DlnaCastManager {
                             song = nextSong,
                             snapshot = nextSnapshot,
                             qualityReport = outcome.qualityReport,
+                            audioInfo = urlResolution.result.audioInfo,
                             streamUrl = nextStreamUrl,
                             streamPath = nextStreamPath,
                             coverPath = nextCoverPath,
@@ -1708,6 +1692,7 @@ object DlnaCastManager {
                             song = nextSong,
                             snapshot = nextSnapshot,
                             qualityReport = outcome.qualityReport,
+                            audioInfo = urlResolution.result.audioInfo,
                             streamUrl = nextStreamUrl,
                             streamPath = "",
                             coverPath = nextCoverPath,
@@ -1781,7 +1766,7 @@ object DlnaCastManager {
         }
         withContext(Dispatchers.Main) {
             if (isCurrentSessionAndTrack(connectionGen, newGen, device.udn)) {
-                playerHost?.onDlnaGaplessTransitionedToNext(observedNext.song)
+                playerHost?.onDlnaGaplessTransitionedToNext(observedNext.song, observedNext.audioInfo)
                 playerHost?.onDlnaPlaybackStateChanged(
                     isPlaying = true,
                     positionMs = posInfo.positionMs.coerceAtLeast(0L),
@@ -1921,9 +1906,13 @@ object DlnaCastManager {
                 playCommandSentBootMs = 0L
                 playCommandStartPosMs = 0L
                 pendingPausedSeekMs = null
+                // 被拦截或失败后已无可播内容，保留播放意图会让保活一直续 WakeLock/WifiLock
+                desiredRemotePlaying = false
+                userPausedOrStopped = true
             }
         }
         mediaServer.unregisterStream(prevPath)
+        if (shouldStopRenderer) lockController.releaseCastLocks()
         if (shouldStopRenderer && device != null) {
             runCatching { controlClient.stop(device) }
         }

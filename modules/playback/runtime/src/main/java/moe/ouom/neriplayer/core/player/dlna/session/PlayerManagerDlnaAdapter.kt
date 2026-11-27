@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.core.player.url.resolveSongUrl
 import moe.ouom.neriplayer.core.player.url.tryReadVerifiedOfflineCacheResult
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.data.model.playback.SongUrlResult
@@ -39,7 +40,7 @@ import java.security.MessageDigest
 /**
  * Bridges [DlnaCastManager] with [PlayerManager] and [AudioPlayerService].
  */
-internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
+internal object PlayerManagerDlnaAdapter : PlayerSyncHost {
 
     override fun onSwitchToDlnaPauseLocal(willAutoPlay: Boolean) {
         val manager = PlayerManager
@@ -159,7 +160,7 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
         }
     }
 
-    override fun onDlnaGaplessTransitionedToNext(expectedSong: SongItem) {
+    override fun onDlnaGaplessTransitionedToNext(expectedSong: SongItem, audioInfo: PlaybackAudioInfo?) {
         val manager = PlayerManager
         if (!manager.initialized || !DlnaCastManager.isCastingActive()) return
         manager.playbackStatsOwner.onTrackEnded(writesEnabled = manager.initialized)
@@ -199,6 +200,7 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
                     manager.clearPendingSeekPosition()
                     manager.currentIndex = step.index
                     manager.setCurrentSongForPlayback(targetSong, syncLyricon = true)
+                    audioInfo?.let { manager._currentPlaybackAudioInfo.value = it }
                     manager._playbackPositionMs.value = 0L
                     manager.updateResumePlaybackRequested(true)
                     manager._playWhenReadyFlow.value = true
@@ -230,7 +232,7 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
     override suspend fun resolveSongUrlForDlna(
         song: SongItem,
         forPrequeue: Boolean
-    ): DlnaCastManager.DlnaUrlResolution {
+    ): DlnaUrlResolution {
         val manager = PlayerManager
         val sinkInfo = DlnaCastManager.castStateFlow.value.activeDevice?.sinkProtocolInfo.orEmpty()
         val silentSideEffects = RefreshResolverSideEffects(RefreshSideEffectGate { false })
@@ -250,7 +252,7 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
                         val extracted = extractFromSimpleCache(normalKey)
                         if (extracted != null) {
                             publishResolvedAudioInfoIfCurrent(manager, song, forPrequeue, normalCached)
-                            return DlnaCastManager.DlnaUrlResolution.Success(
+                            return DlnaUrlResolution.Success(
                                 normalCached.copy(url = extracted.absolutePath)
                             )
                         }
@@ -273,7 +275,8 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
             forceRefresh = false,
             sideEffects = resolverSideEffects,
             allowGenericPrefetchCache = false,
-            preferYouTubeM4a = true
+            preferYouTubeM4a = true,
+            requireYouTubeDirect = true
         )
         return materializeDlnaUrlResult(
             manager = manager,
@@ -292,7 +295,7 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
         sinkInfo: String,
         initial: SongUrlResult,
         incompatibleCachedMimeHint: String?
-    ): DlnaCastManager.DlnaUrlResolution {
+    ): DlnaUrlResolution {
         when (initial) {
             is SongUrlResult.Success -> {
                 if (initial.url.startsWith(OFFLINE_CACHE_URL_PREFIX)) {
@@ -310,7 +313,7 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
                         val extractedFile = extractFromSimpleCache(cacheKey)
                         if (extractedFile != null) {
                             publishResolvedAudioInfoIfCurrent(manager, song, forPrequeue, initial)
-                            return DlnaCastManager.DlnaUrlResolution.Success(
+                            return DlnaUrlResolution.Success(
                                 initial.copy(url = extractedFile.absolutePath)
                             )
                         }
@@ -321,26 +324,27 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
                         forceRefresh = true,
                         sideEffects = RefreshResolverSideEffects(RefreshSideEffectGate { false }),
                         allowGenericPrefetchCache = false,
-                        preferYouTubeM4a = true
+                        preferYouTubeM4a = true,
+                        requireYouTubeDirect = true
                     )
                     if (refreshed is SongUrlResult.Success && !refreshed.url.startsWith(OFFLINE_CACHE_URL_PREFIX)) {
                         publishResolvedAudioInfoIfCurrent(manager, song, forPrequeue, refreshed)
-                        return DlnaCastManager.DlnaUrlResolution.Success(refreshed)
+                        return DlnaUrlResolution.Success(refreshed)
                     }
                     if (!rendererCompatible) {
                         val msg = manager.getLocalizedString(
                             CoreCommonR.string.dlna_err_cached_format_unsupported,
                             cachedMime.orEmpty()
                         )
-                        return DlnaCastManager.DlnaUrlResolution.Failure(msg)
+                        return DlnaUrlResolution.Failure(msg)
                     }
-                    return DlnaCastManager.DlnaUrlResolution.Failure(null)
+                    return DlnaUrlResolution.Failure(null)
                 }
 
                 publishResolvedAudioInfoIfCurrent(manager, song, forPrequeue, initial)
-                return DlnaCastManager.DlnaUrlResolution.Success(initial)
+                return DlnaUrlResolution.Success(initial)
             }
-            SongUrlResult.RequiresLogin -> return DlnaCastManager.DlnaUrlResolution.RequiresLogin
+            SongUrlResult.RequiresLogin -> return DlnaUrlResolution.RequiresLogin
             else -> {
                 val customMsg = incompatibleCachedMimeHint?.let { mime ->
                     manager.getLocalizedString(
@@ -348,7 +352,7 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
                         mime
                     )
                 }
-                return DlnaCastManager.DlnaUrlResolution.Failure(customMsg)
+                return DlnaUrlResolution.Failure(customMsg)
             }
         }
     }

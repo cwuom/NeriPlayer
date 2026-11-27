@@ -17,6 +17,8 @@ import moe.ouom.neriplayer.core.player.dlna.session.DLNA_POLL_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.dlna.session.DlnaGenaRenewalScheduler
 import moe.ouom.neriplayer.core.player.dlna.session.dlnaPollIntervalMs
 import moe.ouom.neriplayer.core.player.dlna.session.resolveRemotePlayingForHandoff
+import moe.ouom.neriplayer.core.player.runtime.refresh.YouTubePlaybackRecoveryStrategy
+import moe.ouom.neriplayer.core.player.url.resolveYouTubeRequireDirect
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaTransportState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -39,6 +41,18 @@ class DlnaSessionHardeningTest {
         // 状态未稳定时才退回到意图
         assertTrue(resolveRemotePlayingForHandoff(DlnaTransportState.TRANSITIONING, desiredRemotePlaying = true))
         assertFalse(resolveRemotePlayingForHandoff(DlnaTransportState.UNKNOWN, desiredRemotePlaying = false))
+    }
+
+    @Test
+    fun youtubeCast_alwaysRequiresDirectStream() {
+        // 渲染器拿到的是单个文件，HLS 播放列表里的相对分片地址会被解析到 /dlna/stream/ 下导致 404
+        assertTrue(resolveYouTubeRequireDirect(strategy = null, requireDirectOverride = true))
+        val lenientRecovery = YouTubePlaybackRecoveryStrategy("high", requireDirect = false, preferM4a = true)
+        assertTrue(resolveYouTubeRequireDirect(lenientRecovery, requireDirectOverride = true))
+        // 本地播放保持原行为
+        assertFalse(resolveYouTubeRequireDirect(strategy = null, requireDirectOverride = false))
+        assertFalse(resolveYouTubeRequireDirect(lenientRecovery, requireDirectOverride = false))
+        assertTrue(resolveYouTubeRequireDirect(lenientRecovery.copy(requireDirect = true), requireDirectOverride = false))
     }
 
     @Test
