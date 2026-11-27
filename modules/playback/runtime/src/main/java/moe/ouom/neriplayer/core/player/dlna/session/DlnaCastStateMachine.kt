@@ -91,6 +91,15 @@ object DlnaCastStateMachine {
                     }
                 }
             }
+            if (!obs.userPausedOrStopped && isStartupPauseGraceActive(
+                    hasStartedPlayingInGeneration = obs.hasStartedPlayingInGeneration,
+                    playCommandSentInGeneration = obs.playCommandSentInGeneration,
+                    elapsedSincePlayCommandMs = obs.elapsedSincePlayCommandMs
+                )
+            ) {
+                // 切歌装入 URI 后、渲染器尚未从上一首的 PAUSED_PLAYBACK 切入 PLAYING 时，不能反向覆盖播放意图
+                return PollDecision.KeepPolling
+            }
             return PollDecision.SyncPlayback(
                 isPlaying = false,
                 positionMs = obs.positionMs.coerceAtLeast(0L),

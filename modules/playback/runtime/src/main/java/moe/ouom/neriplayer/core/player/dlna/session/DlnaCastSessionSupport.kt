@@ -6,12 +6,17 @@ import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaDevice
+import moe.ouom.neriplayer.data.model.playback.dlna.DlnaDeviceOptions
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaTransportState
+import java.net.InetAddress
+import java.net.Socket
+import javax.net.SocketFactory
 
 internal const val DLNA_POLL_INTERVAL_MS = 1_000L
 internal const val DLNA_IDLE_POLL_INTERVAL_MS = 5_000L
 internal const val DLNA_EXTERNAL_RESUME_GRACE_MS = 3_000L
 internal const val DLNA_END_OF_TRACK_TOLERANCE_MS = 5_000L
+internal const val DLNA_STARTUP_PAUSE_GRACE_MS = 12_000L
 
 internal fun monotonicBootElapsedMs(): Long {
     val bootMs = runCatching { SystemClock.elapsedRealtime() }.getOrDefault(0L)
@@ -59,14 +64,81 @@ internal fun isRequestedLosslessForSong(song: SongItem): Boolean = when {
     else -> PlayerManager.effectiveNeteaseQuality() in setOf("lossless", "hires", "jyeffect", "sky", "jymaster")
 }
 
+internal fun isStartupPauseGraceActive(
+    hasStartedPlayingInGeneration: Boolean,
+    playCommandSentInGeneration: Boolean,
+    elapsedSincePlayCommandMs: Long
+): Boolean = !hasStartedPlayingInGeneration && (
+    !playCommandSentInGeneration ||
+        elapsedSincePlayCommandMs <= 0L ||
+        elapsedSincePlayCommandMs < DLNA_STARTUP_PAUSE_GRACE_MS
+)
+
 /**
- * 曲中确认的暂停。部分渲染器（如山灵 EM7）在自然结束时也上报 PAUSED_PLAYBACK，
- * 那是切下一首的时机，不能当成用户暂停去释放保活；曲长未知时也按保守处理。
+ * 曲中确认的暂停。部分渲染器（如山灵 EM7）在自然结束时也上报 PAUSED_PLAYBACK（且可能将 RelTime 归零），
+ * 切歌启动窗口内也可能短暂残留上一首的 PAUSED_PLAYBACK，这些都不能当成用户暂停去释放保活锁。
  */
-internal fun isMidTrackPause(transport: DlnaTransportState?, positionMs: Long?, durationMs: Long?): Boolean =
-    transport == DlnaTransportState.PAUSED_PLAYBACK &&
-        durationMs != null && durationMs > 0L &&
-        positionMs != null && positionMs < durationMs - DLNA_END_OF_TRACK_TOLERANCE_MS
+internal fun isMidTrackPause(
+    transport: DlnaTransportState?,
+    positionMs: Long?,
+    durationMs: Long?,
+    startupGraceActive: Boolean = false,
+    lastPlayingPositionMs: Long = 0L,
+    elapsedSinceLastPlayingPollMs: Long = 0L
+): Boolean {
+    if (transport != DlnaTransportState.PAUSED_PLAYBACK || startupGraceActive) return false
+    if (durationMs == null || durationMs <= 0L || positionMs == null) return false
+    if (DlnaCastStateMachine.isPausedAtTrackEnd(
+            positionMs = positionMs,
+            durationMs = durationMs,
+            lastPlayingPositionMs = lastPlayingPositionMs,
+            elapsedSinceLastPlayingPollMs = elapsedSinceLastPlayingPollMs
+        )
+    ) {
+        return false
+    }
+    return positionMs < durationMs - DLNA_END_OF_TRACK_TOLERANCE_MS
+}
+
+internal fun elapsedSinceLastPlayingSampleMs(
+    lastPlayingPositionMs: Long,
+    lastSampleMonoMs: Long,
+    nowMonoMs: Long = monotonicBootElapsedMs()
+): Long = if (lastPlayingPositionMs > 0L && lastSampleMonoMs > 0L) {
+    (nowMonoMs - lastSampleMonoMs).coerceAtLeast(0L)
+} else {
+    0L
+}
+
+internal fun collectMissingDeviceOptions(
+    devices: List<DlnaDevice>,
+    existingKeys: Set<String>,
+    prefsStore: DlnaPreferencesStore
+): Map<String, DlnaDeviceOptions> {
+    val missing = devices.filter { it.udn !in existingKeys }
+    if (missing.isEmpty()) return emptyMap()
+    val additions = LinkedHashMap<String, DlnaDeviceOptions>(missing.size)
+    for (device in missing) {
+        val defaults = prefsStore.defaultOptionsForDevice(device)
+        prefsStore.saveDeviceOptions(device.udn, defaults)
+        additions[device.udn] = defaults
+    }
+    return additions
+}
+
+internal class DelegatingLanSocketFactory(
+    private val delegateProvider: () -> SocketFactory?
+) : SocketFactory() {
+    private fun delegate(): SocketFactory = delegateProvider() ?: getDefault()
+
+    override fun createSocket(): Socket = delegate().createSocket()
+    override fun createSocket(host: String?, port: Int): Socket = delegate().createSocket(host, port)
+    override fun createSocket(host: String?, port: Int, localHost: InetAddress?, localPort: Int): Socket =
+        delegate().createSocket(host, port, localHost, localPort)
+    override fun createSocket(host: InetAddress?, port: Int): Socket = delegate().createSocket(host, port)
+    override fun createSocket(address: InetAddress?, port: Int, localAddress: InetAddress?, localPort: Int): Socket =
+        delegate().createSocket(address, port, localAddress, localPort)
+}
 
 /** 锁跟随渲染器实际状态：渲染器上直接恢复播放要拿回锁（否则 Wi-Fi 省电导致拉流卡顿），暂停后再释放 */
 internal fun DlnaNetworkAndLockController.followTransport(

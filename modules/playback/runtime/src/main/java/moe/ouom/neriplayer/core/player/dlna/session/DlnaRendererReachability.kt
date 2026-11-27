@@ -20,10 +20,18 @@ internal class DlnaRendererReachability(
         firstFailureAtMs = -1L
     }
 
-    /** 返回 true 表示应判定渲染器失联 */
+    /**
+     * 返回 true 表示应判定渲染器失联。
+     * 若期间 `DlnaMediaServer` 仍在服务渲染器的音频流拉取或收到 GENA 事件，说明设备仍在局域网内正常工作，
+     * 即使息屏 Wi-Fi 省电或单线程 SOAP 暂忙导致主动轮询超时，也不能误杀正在播放的流。
+     */
     @Synchronized
-    fun record(reachable: Boolean, nowMs: Long): Boolean {
-        if (reachable) {
+    fun record(reachable: Boolean, nowMs: Long, lastPeerActivityAtMs: Long = -1L): Boolean {
+        val peerActiveSinceFailure = firstFailureAtMs >= 0L && lastPeerActivityAtMs >= firstFailureAtMs
+        val peerRecentlyActive = lastPeerActivityAtMs > 0L &&
+            nowMs >= lastPeerActivityAtMs &&
+            nowMs - lastPeerActivityAtMs <= RECENT_PEER_ACTIVITY_WINDOW_MS
+        if (reachable || peerActiveSinceFailure || peerRecentlyActive) {
             reset()
             return false
         }
@@ -34,7 +42,8 @@ internal class DlnaRendererReachability(
     }
 
     companion object {
-        const val DEFAULT_MIN_CONSECUTIVE_FAILURES = 3
-        const val DEFAULT_MIN_UNREACHABLE_MS = 30_000L
+        const val DEFAULT_MIN_CONSECUTIVE_FAILURES = 8
+        const val DEFAULT_MIN_UNREACHABLE_MS = 90_000L
+        const val RECENT_PEER_ACTIVITY_WINDOW_MS = 15_000L
     }
 }

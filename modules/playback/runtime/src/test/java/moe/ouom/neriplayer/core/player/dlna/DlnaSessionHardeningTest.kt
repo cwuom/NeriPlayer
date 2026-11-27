@@ -11,15 +11,21 @@ import moe.ouom.neriplayer.core.player.dlna.audio.LosslessSourceResolver
 import moe.ouom.neriplayer.core.player.dlna.audio.LosslessWavDecoder
 import moe.ouom.neriplayer.core.player.dlna.protocol.UpnpControlClient
 import moe.ouom.neriplayer.core.player.dlna.protocol.UpnpXmlParser
+import moe.ouom.neriplayer.core.player.dlna.server.DlnaLanAddressResolver
 import moe.ouom.neriplayer.core.player.dlna.server.DlnaMediaServer
 import moe.ouom.neriplayer.core.player.dlna.session.DLNA_IDLE_POLL_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.dlna.session.DLNA_POLL_INTERVAL_MS
+import moe.ouom.neriplayer.core.player.dlna.session.DLNA_STARTUP_PAUSE_GRACE_MS
+import moe.ouom.neriplayer.core.player.dlna.session.DelegatingLanSocketFactory
+import moe.ouom.neriplayer.core.player.dlna.session.DlnaCastStateMachine
 import moe.ouom.neriplayer.core.player.dlna.session.DlnaGenaRenewalScheduler
+import moe.ouom.neriplayer.core.player.dlna.session.DlnaRendererReachability
 import moe.ouom.neriplayer.core.player.dlna.session.dlnaPollIntervalMs
 import moe.ouom.neriplayer.core.player.dlna.session.DLNA_EXTERNAL_RESUME_GRACE_MS
 import moe.ouom.neriplayer.core.player.dlna.session.DlnaNetworkAndLockController
 import moe.ouom.neriplayer.core.player.dlna.session.followTransport
 import moe.ouom.neriplayer.core.player.dlna.session.isMidTrackPause
+import moe.ouom.neriplayer.core.player.dlna.session.isStartupPauseGraceActive
 import moe.ouom.neriplayer.core.player.dlna.session.resolveRemotePlayingForHandoff
 import moe.ouom.neriplayer.core.player.dlna.session.shouldAdoptExternalResume
 import moe.ouom.neriplayer.core.player.runtime.refresh.YouTubePlaybackRecoveryStrategy
@@ -243,5 +249,169 @@ class DlnaSessionHardeningTest {
         // 一小时 24/192 立体声约 4.1 GB，必须在解码前就被拒绝
         val hourHiRes = LosslessWavDecoder.estimatePcmBytes(3_600_000L, 192_000, 2, 24)!!
         assertTrue(hourHiRes > LosslessSourceResolver.wavFallbackPcmBudgetBytes(64L * gib))
+    }
+
+    @Test
+    fun lanSubnetMatch_ignoresCellularAndTunnelInterfacesAndPicksWifiSubnet() {
+        val candidates = listOf(
+            DlnaLanAddressResolver.LanSubnetCandidate(
+                ifaceName = "rmnet_data0",
+                localIpv4 = byteArrayOf(10, 88.toByte(), 0, 5),
+                hostAddress = "10.88.0.5",
+                prefixLength = 8
+            ),
+            DlnaLanAddressResolver.LanSubnetCandidate(
+                ifaceName = "tun0",
+                localIpv4 = byteArrayOf(192.toByte(), 168.toByte(), 31, 9),
+                hostAddress = "192.168.31.9",
+                prefixLength = 24
+            ),
+            DlnaLanAddressResolver.LanSubnetCandidate(
+                ifaceName = "wlan0",
+                localIpv4 = byteArrayOf(192.toByte(), 168.toByte(), 31, 20),
+                hostAddress = "192.168.31.20",
+                prefixLength = 24
+            )
+        )
+        val matched = DlnaLanAddressResolver.selectSubnetMatchedLanIpv4(
+            targetIpv4 = byteArrayOf(192.toByte(), 168.toByte(), 31, 88),
+            candidates = candidates
+        )
+        assertEquals("192.168.31.20", matched)
+        assertTrue(DlnaLanAddressResolver.isNonLanTunnelOrCellularInterface("v4-rmnet_data1"))
+        assertTrue(DlnaLanAddressResolver.isNonLanTunnelOrCellularInterface("ccmni0"))
+        assertFalse(DlnaLanAddressResolver.isNonLanTunnelOrCellularInterface("swlan0"))
+    }
+
+    @Test
+    fun upnpControlClient_routesThroughProvidedLanSocketFactory() {
+        var createdSockets = 0
+        val countingFactory = object : javax.net.SocketFactory() {
+            private val base = getDefault()
+            override fun createSocket(): java.net.Socket {
+                createdSockets++
+                return base.createSocket()
+            }
+            override fun createSocket(host: String?, port: Int) = base.createSocket(host, port).also { createdSockets++ }
+            override fun createSocket(host: String?, port: Int, localHost: InetAddress?, localPort: Int) =
+                base.createSocket(host, port, localHost, localPort).also { createdSockets++ }
+            override fun createSocket(host: InetAddress?, port: Int) = base.createSocket(host, port).also { createdSockets++ }
+            override fun createSocket(address: InetAddress?, port: Int, localAddress: InetAddress?, localPort: Int) =
+                base.createSocket(address, port, localAddress, localPort).also { createdSockets++ }
+        }
+        MockWebServer().use { server ->
+            server.start(InetAddress.getLoopbackAddress(), 0)
+            server.enqueue(MockResponse.Builder().code(200).setHeader("TIMEOUT", "Second-300").build())
+            val client = UpnpControlClient(DelegatingLanSocketFactory { countingFactory })
+            val granted = client.renewGena(server.url("/evt").toString(), "uuid:sid-lan", 300)
+            assertEquals(300, granted.getOrThrow())
+            assertTrue(createdSockets >= 1)
+        }
+    }
+
+    @Test
+    fun rendererReachability_keepsSessionAliveWhileMediaServerStreamsAudio() {
+        val reachability = DlnaRendererReachability()
+        // 息屏期间 SOAP 轮询被省电策略拖慢失败，但渲染器仍在持续从 DlnaMediaServer 拉取音频流
+        for (sec in 0..120 step 10) {
+            val nowMs = sec * 1_000L
+            assertFalse(
+                reachability.record(
+                    reachable = false,
+                    nowMs = nowMs,
+                    lastPeerActivityAtMs = nowMs - 2_000L
+                )
+            )
+        }
+        // 当渲染器真正断电、流拉取与 SOAP 均停止超过窗口后，才判定失联释放锁
+        val quietStartMs = 200_000L
+        for (i in 0 until DlnaRendererReachability.DEFAULT_MIN_CONSECUTIVE_FAILURES - 1) {
+            assertFalse(reachability.record(reachable = false, nowMs = quietStartMs + i * 5_000L, lastPeerActivityAtMs = 120_000L))
+        }
+        assertTrue(
+            reachability.record(
+                reachable = false,
+                nowMs = quietStartMs + DlnaRendererReachability.DEFAULT_MIN_UNREACHABLE_MS,
+                lastPeerActivityAtMs = 120_000L
+            )
+        )
+    }
+
+    @Test
+    fun midTrackPause_andStateMachine_protectTrackEndZeroResetAndStartupTransition() {
+        val paused = DlnaTransportState.PAUSED_PLAYBACK
+        // 山灵 EM7 自然播完时上报 PAUSED_PLAYBACK 且 RelTime 归零：属于曲尾切歌窗口，绝不能当曲中暂停释放保活锁
+        assertFalse(
+            isMidTrackPause(
+                transport = paused,
+                positionMs = 0L,
+                durationMs = 240_000L,
+                startupGraceActive = false,
+                lastPlayingPositionMs = 237_500L,
+                elapsedSinceLastPlayingPollMs = 1_000L
+            )
+        )
+        // 新曲目刚发 Play、渲染器尚停留在上一首的 PAUSED_PLAYBACK(00:00) 时：处于启动宽限窗口，既不释放锁也不反向置为暂停
+        val graceActive = isStartupPauseGraceActive(
+            hasStartedPlayingInGeneration = false,
+            playCommandSentInGeneration = true,
+            elapsedSincePlayCommandMs = 2_000L
+        )
+        assertTrue(graceActive)
+        assertFalse(isMidTrackPause(paused, positionMs = 0L, durationMs = 240_000L, startupGraceActive = graceActive))
+
+        val startupDecision = DlnaCastStateMachine.evaluatePoll(
+            DlnaCastStateMachine.PollObservation(
+                previousState = paused,
+                currentState = paused,
+                positionMs = 0L,
+                durationMs = 240_000L,
+                userPausedOrStopped = false,
+                generationId = 2L,
+                activeGenerationId = 2L,
+                hasStartedPlayingInGeneration = false,
+                consecutiveStoppedPolls = 0,
+                playCommandSentInGeneration = true,
+                elapsedSincePlayCommandMs = 2_000L
+            )
+        )
+        assertEquals(DlnaCastStateMachine.PollDecision.KeepPolling, startupDecision)
+
+        // 超过启动宽限窗口仍为 PAUSED_PLAYBACK（例如用户在渲染器面板直接按了暂停）：正常同步暂停并允许释放锁
+        val expiredGrace = isStartupPauseGraceActive(
+            hasStartedPlayingInGeneration = false,
+            playCommandSentInGeneration = true,
+            elapsedSincePlayCommandMs = DLNA_STARTUP_PAUSE_GRACE_MS + 1_000L
+        )
+        assertFalse(expiredGrace)
+        assertTrue(isMidTrackPause(paused, positionMs = 0L, durationMs = 240_000L, startupGraceActive = expiredGrace))
+    }
+
+    @Test
+    fun mediaServer_recordsPeerActivityWhenStreamingAudioAndClearsOnStop() {
+        val tempFile = java.nio.file.Files.createTempFile("dlna-peer-activity", ".flac").toFile()
+        val server = DlnaMediaServer()
+        try {
+            tempFile.writeBytes(ByteArray(32 * 1024) { (it and 0x7F).toByte() })
+            server.start()
+            assertEquals(0L, server.lastPeerActivityBootMs)
+            val streamPath = server.registerStream(
+                extension = "flac",
+                content = DlnaMediaServer.StreamContent.FileContent(
+                    file = tempFile,
+                    contentType = "audio/flac",
+                    contentFeatures = ""
+                )
+            )
+            val url = java.net.URI.create(server.buildUrl("127.0.0.1", streamPath)).toURL()
+            val bytes = url.openStream().use { it.readBytes() }
+            assertEquals(32 * 1024, bytes.size)
+            assertTrue(server.lastPeerActivityBootMs > 0L)
+            server.stop()
+            assertEquals(0L, server.lastPeerActivityBootMs)
+        } finally {
+            server.stop()
+            tempFile.delete()
+        }
     }
 }

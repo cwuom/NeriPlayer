@@ -35,16 +35,24 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class DlnaServiceKeepAliveController(
     private val context: Context,
     private val scope: CoroutineScope,
-    private val host: UsbExclusiveKeepAliveServiceHost
+    private val host: UsbExclusiveKeepAliveServiceHost,
+    private val holdKeepAliveProvider: () -> Boolean = {
+        DlnaCastManager.shouldHoldBackgroundKeepAlive() &&
+            !PlayerManager.isUsbExclusivePlaybackActiveForForegroundService()
+    },
+    private val appInForegroundProvider: () -> Boolean = { PlayerManager.usbExclusiveAppInForeground },
+    private val renewLocksAction: (Boolean) -> Unit = { force -> DlnaCastManager.renewCastLocks(forceRenew = force) }
 ) {
     companion object {
         private const val TAG = "NERI-DlnaKeepAlive"
-        private const val KEEPALIVE_INTERVAL_MS = 5_000L
+        private const val KEEPALIVE_INTERVAL_MS = 2_000L
         private const val VOLUME_STEP_PERCENT = 5
     }
 
     @Volatile
     private var screenInteractive = true
+    @Volatile
+    private var lastBackgroundOrScreenOff = false
     private var loopJob: Job? = null
     private var remoteSessionConfigured = false
     private var remoteVolumeControlMode = -1
@@ -58,7 +66,7 @@ internal class DlnaServiceKeepAliveController(
         }
         update(if (interactive) "screen_on" else "screen_off")
         if (!interactive && shouldHoldKeepAlive()) {
-            DlnaCastManager.renewCastLocks(forceRenew = true)
+            renewLocksAction(true)
             val reasserted = if (host.foregroundStarted()) {
                 host.reassertForeground("dlna_screen_off")
             } else {
@@ -81,16 +89,33 @@ internal class DlnaServiceKeepAliveController(
 
     fun update(reason: String) {
         if (!shouldHoldKeepAlive()) {
+            lastBackgroundOrScreenOff = false
             anchor.stop("inactive:$reason")
             loopJob?.cancel()
             loopJob = null
             return
+        }
+        val bgOrScreenOff = isBackgroundOrScreenOff()
+        val enteredBackground = bgOrScreenOff && !lastBackgroundOrScreenOff
+        lastBackgroundOrScreenOff = bgOrScreenOff
+        if (bgOrScreenOff) {
+            renewLocksAction(enteredBackground)
+            if (enteredBackground) {
+                if (host.foregroundStarted()) {
+                    host.reassertForeground("dlna_bg_enter:$reason")
+                } else {
+                    host.ensureForeground()
+                }
+            } else if (!host.foregroundStarted()) {
+                host.ensureForeground()
+            }
         }
         updateAnchor(reason)
         ensureLoop()
     }
 
     fun cancelLoop() {
+        lastBackgroundOrScreenOff = false
         loopJob?.cancel()
         loopJob = null
         anchor.stop("cancel_loop")
@@ -104,12 +129,10 @@ internal class DlnaServiceKeepAliveController(
         remoteVolumeControlMode = -1
     }
 
-    private fun shouldHoldKeepAlive(): Boolean =
-        DlnaCastManager.shouldHoldBackgroundKeepAlive() &&
-            !PlayerManager.isUsbExclusivePlaybackActiveForForegroundService()
+    private fun shouldHoldKeepAlive(): Boolean = holdKeepAliveProvider()
 
     private fun isBackgroundOrScreenOff(): Boolean =
-        !PlayerManager.usbExclusiveAppInForeground || !screenInteractive
+        !appInForegroundProvider() || !screenInteractive
 
     private fun updateAnchor(reason: String) {
         val shouldRunAnchor = shouldHoldKeepAlive() &&
@@ -132,7 +155,7 @@ internal class DlnaServiceKeepAliveController(
                     loopJob = null
                     return@launch
                 }
-                DlnaCastManager.renewCastLocks()
+                renewLocksAction(false)
                 if (isBackgroundOrScreenOff()) {
                     val ready = if (host.foregroundStarted()) {
                         host.reassertForeground("dlna_keepalive")

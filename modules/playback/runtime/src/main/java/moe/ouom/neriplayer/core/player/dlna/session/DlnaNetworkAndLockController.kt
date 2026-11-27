@@ -10,6 +10,11 @@ import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.core.player.dlna.server.DlnaLanAddressResolver
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.Socket
+import javax.net.SocketFactory
 
 /**
  * Manages Android lifecycle locks & LAN connectivity observation for DLNA discovery and casting:
@@ -176,6 +181,104 @@ internal class DlnaNetworkAndLockController(
             connectivityManager?.unregisterNetworkCallback(cb)
         }
     }
+
+    /**
+     * Resolves the Wi-Fi / Ethernet [Network] carrying [targetHost] so UPnP sockets stay pinned
+     * to LAN even when OEM "Intelligent Wi-Fi" shifts the default network to cellular (5G) while locked.
+     */
+    fun resolveLanNetworkForHost(targetHost: String?): Network? {
+        val cm = connectivityManager ?: return null
+        val candidates = LinkedHashSet<Network>()
+        synchronized(this) {
+            candidates.addAll(activeLanNetworks)
+        }
+        @Suppress("DEPRECATION")
+        runCatching { cm.allNetworks }.getOrNull().orEmpty().forEach { net ->
+            val caps = runCatching { cm.getNetworkCapabilities(net) }.getOrNull() ?: return@forEach
+            val isLan = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+            if (isLan && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                candidates.add(net)
+            }
+        }
+        if (candidates.isEmpty()) return null
+
+        val targetIpv4 = targetHost?.trim()?.takeIf { it.isNotEmpty() }?.let { host ->
+            runCatching { InetAddress.getByName(host) as? Inet4Address }.getOrNull()
+        }
+
+        var bestSubnetNetwork: Network? = null
+        var bestPrefix = -1
+        val validLanNetworks = ArrayList<Network>(candidates.size)
+
+        for (network in candidates) {
+            val linkProps = runCatching { cm.getLinkProperties(network) }.getOrNull() ?: continue
+            val ifaceName = linkProps.interfaceName.orEmpty()
+            if (ifaceName.isNotEmpty() && DlnaLanAddressResolver.isNonLanTunnelOrCellularInterface(ifaceName)) {
+                continue
+            }
+            var hasUsableIpv4 = false
+            for (linkAddr in linkProps.linkAddresses) {
+                val ipv4 = linkAddr.address as? Inet4Address ?: continue
+                if (ipv4.isLoopbackAddress || ipv4.isLinkLocalAddress) continue
+                hasUsableIpv4 = true
+                if (targetIpv4 != null) {
+                    val prefix = linkAddr.prefixLength.coerceIn(1, 32)
+                    if (DlnaLanAddressResolver.sameIpv4Subnet(ipv4.address, targetIpv4.address, prefix) &&
+                        prefix > bestPrefix
+                    ) {
+                        bestPrefix = prefix
+                        bestSubnetNetwork = network
+                    }
+                }
+            }
+            if (hasUsableIpv4) {
+                validLanNetworks.add(network)
+            }
+        }
+        if (bestSubnetNetwork != null) return bestSubnetNetwork
+        if (targetIpv4 != null) return validLanNetworks.firstOrNull()
+        return validLanNetworks.singleOrNull()
+    }
+
+    fun createLanSocketFactory(targetHostProvider: () -> String?): SocketFactory =
+        object : SocketFactory() {
+            private fun resolveFactory(explicitHost: String? = null): SocketFactory =
+                runCatching {
+                    resolveLanNetworkForHost(explicitHost ?: targetHostProvider())?.socketFactory
+                }.getOrNull() ?: getDefault()
+
+            override fun createSocket(): Socket =
+                runCatching { resolveFactory().createSocket() }
+                    .getOrElse { getDefault().createSocket() }
+
+            override fun createSocket(host: String?, port: Int): Socket =
+                runCatching { resolveFactory(host).createSocket(host, port) }
+                    .getOrElse { getDefault().createSocket(host, port) }
+
+            override fun createSocket(
+                host: String?,
+                port: Int,
+                localHost: InetAddress?,
+                localPort: Int
+            ): Socket =
+                runCatching { resolveFactory(host).createSocket(host, port, localHost, localPort) }
+                    .getOrElse { getDefault().createSocket(host, port, localHost, localPort) }
+
+            override fun createSocket(host: InetAddress?, port: Int): Socket =
+                runCatching { resolveFactory(host?.hostAddress).createSocket(host, port) }
+                    .getOrElse { getDefault().createSocket(host, port) }
+
+            override fun createSocket(
+                address: InetAddress?,
+                port: Int,
+                localAddress: InetAddress?,
+                localPort: Int
+            ): Socket =
+                runCatching {
+                    resolveFactory(address?.hostAddress).createSocket(address, port, localAddress, localPort)
+                }.getOrElse { getDefault().createSocket(address, port, localAddress, localPort) }
+        }
 
     fun releaseAll() {
         releaseMulticastLock()

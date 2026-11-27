@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.dlna.server
 
 import moe.ouom.neriplayer.core.player.dlna.protocol.UpnpXmlParser
+import moe.ouom.neriplayer.core.player.dlna.session.monotonicBootElapsedMs
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.IOException
@@ -103,6 +104,13 @@ class DlnaMediaServer(
     var expectedGenaCallbackPath: String? = null
     @Volatile
     var genaSubscriptionInFlight: Boolean = false
+    @Volatile
+    var lastPeerActivityBootMs: Long = 0L
+        private set
+
+    private fun markPeerActivity() {
+        lastPeerActivityBootMs = monotonicBootElapsedMs()
+    }
     private val artworkLock = Any()
     private val artworkQueue = ArrayDeque<ArtworkEntry>()
     private var artworkTotalBytes = 0
@@ -180,6 +188,7 @@ class DlnaMediaServer(
         expectedGenaCallbackPath = null
         genaSubscriptionInFlight = false
         allowedPeerHost = null
+        lastPeerActivityBootMs = 0L
         synchronized(artworkLock) {
             artworkQueue.clear()
             artworkTotalBytes = 0
@@ -292,6 +301,7 @@ class DlnaMediaServer(
                         return
                     }
                     if (method == "NOTIFY") {
+                        markPeerActivity()
                         handleGenaNotify(cleanPath, lines.drop(1), input, out)
                         return
                     }
@@ -301,10 +311,12 @@ class DlnaMediaServer(
                     }
                     val isHead = method == "HEAD"
                     if (cleanPath.startsWith("/dlna/artwork/")) {
+                        markPeerActivity()
                         serveArtwork(cleanPath, isHead, out)
                         return
                     }
                     if (cleanPath.startsWith("/dlna/stream/")) {
+                        markPeerActivity()
                         serveStream(cleanPath, lines.drop(1), isHead, out)
                         return
                     }
@@ -466,6 +478,7 @@ class DlnaMediaServer(
                 if (cursor < prefixLen && remaining > 0L) {
                     val take = minOf(prefixLen - cursor, remaining).toInt()
                     out.write(content.headerPrefix, cursor.toInt(), take)
+                    markPeerActivity()
                     cursor += take
                     remaining -= take
                 }
@@ -494,6 +507,7 @@ class DlnaMediaServer(
                 val read = raf.read(buf, 0, want)
                 if (read <= 0) break
                 out.write(buf, 0, read)
+                markPeerActivity()
                 remaining -= read
             }
         }

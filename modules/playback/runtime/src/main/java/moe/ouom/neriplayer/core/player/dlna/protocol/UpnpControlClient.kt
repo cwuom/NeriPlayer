@@ -9,23 +9,16 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
+import javax.net.SocketFactory
 
 /**
  * UPnP SOAP & GENA control client for DLNA MediaRenderers.
  * Always uses Proxy.NO_PROXY so LAN renderer traffic never traverses app/system proxies.
  */
 class UpnpControlClient(
-    private val httpClient: OkHttpClient = OkHttpClient.Builder()
-        .proxy(Proxy.NO_PROXY)
-        .connectTimeout(3_000L, TimeUnit.MILLISECONDS)
-        .readTimeout(5_000L, TimeUnit.MILLISECONDS)
-        .writeTimeout(5_000L, TimeUnit.MILLISECONDS)
-        .callTimeout(8_000L, TimeUnit.MILLISECONDS)
-        // 渲染器地址已绑定到描述文件主机，不能再被 3xx 带到别处
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .build()
+    private val httpClient: OkHttpClient = buildDefaultHttpClient()
 ) {
+    constructor(socketFactory: SocketFactory) : this(buildDefaultHttpClient(socketFactory))
     data class PositionInfo(
         val positionMs: Long,
         val durationMs: Long,
@@ -272,5 +265,19 @@ class UpnpControlClient(
 
     private companion object {
         const val MAX_SOAP_RESPONSE_BYTES = 256L * 1024L
+
+        fun buildDefaultHttpClient(
+            socketFactory: SocketFactory = SocketFactory.getDefault()
+        ): OkHttpClient = OkHttpClient.Builder()
+            .proxy(Proxy.NO_PROXY)
+            .socketFactory(socketFactory)
+            .connectTimeout(3_000L, TimeUnit.MILLISECONDS)
+            .readTimeout(5_000L, TimeUnit.MILLISECONDS)
+            .writeTimeout(5_000L, TimeUnit.MILLISECONDS)
+            .callTimeout(8_000L, TimeUnit.MILLISECONDS)
+            // 渲染器地址已绑定到描述文件主机，不能再被 3xx 带到别处
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
     }
 }

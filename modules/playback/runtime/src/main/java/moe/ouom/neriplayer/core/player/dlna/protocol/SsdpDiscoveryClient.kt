@@ -16,22 +16,29 @@ import java.net.URI
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.net.SocketFactory
 
 /**
  * Native Kotlin SSDP M-SEARCH discovery + manual device HTTP description probe.
  * Uses Proxy.NO_PROXY so LAN UPnP HTTP fetches never route through proxy servers.
  */
 class SsdpDiscoveryClient(
-    private val httpClient: OkHttpClient = OkHttpClient.Builder()
-        .proxy(Proxy.NO_PROXY)
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .connectTimeout(2_500L, TimeUnit.MILLISECONDS)
-        .readTimeout(3_500L, TimeUnit.MILLISECONDS)
-        .callTimeout(10_000L, TimeUnit.MILLISECONDS)
-        .build()
+    private val httpClient: OkHttpClient = buildDefaultHttpClient()
 ) {
+    constructor(socketFactory: SocketFactory) : this(buildDefaultHttpClient(socketFactory))
+
     companion object {
+        private fun buildDefaultHttpClient(
+            socketFactory: SocketFactory = SocketFactory.getDefault()
+        ): OkHttpClient = OkHttpClient.Builder()
+            .proxy(Proxy.NO_PROXY)
+            .socketFactory(socketFactory)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .connectTimeout(2_500L, TimeUnit.MILLISECONDS)
+            .readTimeout(3_500L, TimeUnit.MILLISECONDS)
+            .callTimeout(10_000L, TimeUnit.MILLISECONDS)
+            .build()
         const val SSDP_MULTICAST_HOST = "239.255.255.250"
         const val SSDP_PORT = 1900
         private const val MAX_DESCRIPTION_BYTES = 512 * 1024
