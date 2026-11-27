@@ -254,6 +254,20 @@ internal fun PlayerManager.restoreHeartbeatModeFromState(mode: Int, insertedKeys
     applyHeartbeatMode(mode, PlaybackCommandSource.LOCAL, userInitiated = false, restoring = true)
 }
 
+/**
+ * 随机与心动互斥：任何入口（平板迷你播放器、车机、歌单「随机播放」）开随机前都先关心动。
+ * 必须在随机记下「还原队列」之前关：先关才能把插进来的心动歌删掉，还原队列才是原队列。
+ */
+internal fun PlayerManager.turnOffHeartbeatBeforeShuffle(enabled: Boolean, commandSource: PlaybackCommandSource) {
+    if (!enabled || heartbeatModeState != HeartbeatMode.ON) return
+    setHeartbeatMode(HeartbeatMode.OFF, commandSource)
+}
+
+/** 用户自己把这首歌加进队列（下一首播放 / 添加到末尾）后，它就不再算心动插入的，关心动时不能删。 */
+internal fun releaseHeartbeatOwnership(song: SongItem) {
+    synchronized(heartbeatInsertedKeys) { heartbeatInsertedKeys.remove(heartbeatKeyOf(song)) }
+}
+
 /** 外部整体替换队列（换歌单播放）时调用：此后队列里的歌都不归心动模式所有。 */
 internal fun clearHeartbeatInsertedSongs() {
     synchronized(heartbeatInsertedKeys) { heartbeatInsertedKeys.clear() }
