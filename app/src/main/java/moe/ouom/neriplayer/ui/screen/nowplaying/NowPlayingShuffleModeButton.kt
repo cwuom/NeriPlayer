@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.Icon
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,10 +20,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 
 /** 播放页随机键的三档：网易云歌曲按 默认 → 随机 → 心动 → 默认 循环，其他音源只有前两档 */
@@ -74,20 +70,13 @@ internal fun NowPlayingShuffleModeButton(
     buttonSize: Dp,
     iconSize: Dp,
     activeColor: Color,
-    inactiveColor: Color,
-    snackbarHostState: SnackbarHostState,
-    scope: CoroutineScope
+    inactiveColor: Color
 ) {
     val mode = resolveNowPlayingShuffleMode(shuffleEnabled, heartbeatEnabled, heartbeatAvailable)
-    val heartbeatHint = stringResource(CoreCommonR.string.player_shuffle_heartbeat_next_hint)
     HapticIconButton(
         onClick = {
             val target = nextNowPlayingShuffleMode(mode, heartbeatAvailable)
             playbackSource.applyShuffleMode(target, shuffleEnabled, heartbeatEnabled)
-            // 告诉用户随机之后还有一档，否则只看图标很难发现能切到心动
-            if (target == NowPlayingShuffleMode.SHUFFLE && heartbeatAvailable) {
-                scope.launch { snackbarHostState.showNeriSnackbar(heartbeatHint) }
-            }
         },
         modifier = Modifier.size(buttonSize).testTag("nowPlayingShuffleModeButton")
     ) {
@@ -101,8 +90,9 @@ internal fun NowPlayingShuffleModeButton(
                     tint = tint
                 )
             } else {
+                // 只有默认档画角标，提示这里能切到随机和心动；选中后显示纯粹的当前模式
                 ShuffleIconWithHeartbeatBadge(
-                    showBadge = heartbeatAvailable,
+                    showBadge = heartbeatAvailable && shown == NowPlayingShuffleMode.OFF,
                     iconSize = iconSize,
                     tint = tint
                 )
@@ -112,7 +102,7 @@ internal fun NowPlayingShuffleModeButton(
 }
 
 /**
- * 网易云歌曲的随机图标右下角带一个心跳角标，没点过的人也能看出这里还能切到心动。
+ * 默认档的混合图标：随机图标右下角带心跳角标。
  * 角标底下先挖一个圆再画，背景是封面取色的渐变，没法用固定底色垫开。
  */
 @Composable

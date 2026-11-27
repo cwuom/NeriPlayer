@@ -1311,9 +1311,7 @@ fun NowPlayingScreen(
                                             buttonSize = controlsLayout.secondaryButtonSize,
                                             iconSize = secondaryIconSize,
                                             activeColor = nowPlayingActiveIconColor,
-                                            inactiveColor = LocalContentColor.current,
-                                            snackbarHostState = snackbarHostState,
-                                            scope = screenScope
+                                            inactiveColor = LocalContentColor.current
                                         )
 
                                         HapticIconButton(
